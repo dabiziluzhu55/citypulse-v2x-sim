@@ -1,0 +1,16 @@
+<configuration>
+<input>
+<net-file value="xiongan_test.net.xml"/>
+<route-files value="xiongan_test.rou.xml"/>
+</input>
+
+<time>
+<begin value="0"/>
+<end value="300"/>
+<step-length value="0.05"/>
+</time>
+
+<processing>
+<time-to-teleport value="-1"/>
+</processing>
+</configuration>
