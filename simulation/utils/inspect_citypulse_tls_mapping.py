@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 
 
 def load_citypulse_junctions(root):
-    result = {}
+    result = []
 
     for junction in root.findall("junction"):
         params = {
@@ -25,13 +25,15 @@ def load_citypulse_junctions(root):
         ]
 
         for intersection_id in intersection_ids:
-            result[intersection_id] = {
-                "intersection_id": intersection_id,
-                "junction_id": junction.get("id"),
-                "x": junction.get("x"),
-                "y": junction.get("y"),
-                "inc_lanes": set(junction.get("incLanes", "").split()),
-            }
+            result.append(
+                {
+                    "intersection_id": intersection_id,
+                    "junction_id": junction.get("id"),
+                    "x": junction.get("x"),
+                    "y": junction.get("y"),
+                    "inc_lanes": set(junction.get("incLanes", "").split()),
+                }
+            )
 
     return result
 
@@ -61,7 +63,7 @@ def inspect(net_xml, output_csv):
         if from_lane_id is None:
             continue
 
-        for target in targets.values():
+        for target in targets:
             if from_lane_id not in target["inc_lanes"]:
                 continue
 
@@ -84,6 +86,7 @@ def inspect(net_xml, output_csv):
     rows.sort(
         key=lambda item: (
             item["intersection_id"],
+            item["junction_id"],
             item["tls_id"],
             int(item["linkIndex"]),
         )

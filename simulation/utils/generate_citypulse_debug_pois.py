@@ -89,6 +89,22 @@ def add_line(root, line_id, x1, y1, x2, y2):
     )
 
 
+def report_junction_ids(report_item):
+    junction_ids = report_item.get("junction_ids")
+    if junction_ids:
+        return [str(junction_id) for junction_id in junction_ids]
+    if "junction_id" in report_item:
+        return [str(report_item["junction_id"])]
+    return []
+
+
+def report_distance(report_item, junction_id):
+    for item in report_item.get("junction_matches", []):
+        if str(item.get("junction_id")) == str(junction_id):
+            return item.get("match_distance_m", "")
+    return report_item.get("match_distance_m", "")
+
+
 def indent(elem, level=0):
     spaces = "\n" + level * "  "
     child_spaces = "\n" + (level + 1) * "  "
@@ -135,24 +151,44 @@ def main():
         if intersection_id not in report:
             continue
 
-        junction_id = str(report[intersection_id]["junction_id"])
-        if junction_id not in junction_xy:
-            continue
-
-        jx, jy = junction_xy[junction_id]
-        distance = report[intersection_id].get("match_distance_m", "")
-
-        add_poi(
-            root,
-            f"matched.{intersection_id}.junction.{junction_id}",
-            jx,
-            jy,
-            "255,0,0",
-            "citypulse_matched_junction",
-            f"{intersection_id} matched {junction_id} {distance}m",
+        report_item = report[intersection_id]
+        primary_junction_id = str(
+            report_item.get("primary_junction_id", report_item.get("junction_id", ""))
         )
 
-        add_line(root, f"error_line.{intersection_id}", csv_x, csv_y, jx, jy)
+        for junction_id in report_junction_ids(report_item):
+            if junction_id not in junction_xy:
+                continue
+
+            jx, jy = junction_xy[junction_id]
+            distance = report_distance(report_item, junction_id)
+            is_primary = junction_id == primary_junction_id
+            color = "255,0,0" if is_primary else "255,120,0"
+            poi_type = (
+                "citypulse_matched_junction"
+                if is_primary
+                else "citypulse_grouped_junction"
+            )
+            role = "primary" if is_primary else "grouped"
+
+            add_poi(
+                root,
+                f"matched.{intersection_id}.junction.{junction_id}",
+                jx,
+                jy,
+                color,
+                poi_type,
+                f"{intersection_id} {role} {junction_id} {distance}m",
+            )
+
+            add_line(
+                root,
+                f"error_line.{intersection_id}.{junction_id}",
+                csv_x,
+                csv_y,
+                jx,
+                jy,
+            )
 
     indent(root)
     output_path = Path(args.output)

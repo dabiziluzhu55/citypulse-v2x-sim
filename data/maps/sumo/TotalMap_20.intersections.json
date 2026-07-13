@@ -20,14 +20,15 @@
     "source_osm_node_ids": []
   },
   "demo_3": {
-    "junction_id": "3937",
-    "lon": 116.086046,
-    "lat": 38.982992,
-    "match_distance_m": 139.87,
+    "junction_id": "citypulse_demo_3",
+    "lon": 116.070252,
+    "lat": 38.976818,
+    "match_distance_m": 3.7,
     "xodr_junction_name": "",
-    "junction_lon": 116.08693872475325,
-    "junction_lat": 38.983565595795326,
-    "source_osm_node_ids": []
+    "junction_lon": 116.07027241525815,
+    "junction_lat": 38.97680025459062,
+    "source_osm_node_ids": [],
+    "manual_override": true
   },
   "demo_4": {
     "junction_id": "3935",
@@ -71,13 +72,34 @@
   },
   "demo_8": {
     "junction_id": "4394",
+    "primary_junction_id": "4394",
+    "junction_ids": [
+      "4394",
+      "4393"
+    ],
     "lon": 116.117896,
     "lat": 39.019992,
     "match_distance_m": 11.64,
     "xodr_junction_name": "",
     "junction_lon": 116.11780069505947,
     "junction_lat": 39.02000323803049,
-    "source_osm_node_ids": []
+    "junction_matches": [
+      {
+        "junction_id": "4394",
+        "junction_lon": 116.11780069505947,
+        "junction_lat": 39.02000323803049,
+        "match_distance_m": 11.64
+      },
+      {
+        "junction_id": "4393",
+        "junction_lon": 116.11801466636774,
+        "junction_lat": 39.01998685592418,
+        "match_distance_m": 14.36
+      }
+    ],
+    "match_type": "multi_junction",
+    "source_osm_node_ids": [],
+    "manual_override": true
   },
   "demo_9": {
     "junction_id": "3864",
@@ -101,13 +123,34 @@
   },
   "demo_11": {
     "junction_id": "4474",
+    "primary_junction_id": "4474",
+    "junction_ids": [
+      "4474",
+      "4306"
+    ],
     "lon": 115.840476,
     "lat": 39.069596,
     "match_distance_m": 15.03,
     "xodr_junction_name": "",
     "junction_lon": 115.84047533410322,
     "junction_lat": 39.0696929238392,
-    "source_osm_node_ids": []
+    "junction_matches": [
+      {
+        "junction_id": "4474",
+        "junction_lon": 115.84047533410322,
+        "junction_lat": 39.0696929238392,
+        "match_distance_m": 15.03
+      },
+      {
+        "junction_id": "4306",
+        "junction_lon": 115.84049553621105,
+        "junction_lat": 39.06948163220713,
+        "match_distance_m": 17.9
+      }
+    ],
+    "match_type": "multi_junction",
+    "source_osm_node_ids": [],
+    "manual_override": true
   },
   "demo_12": {
     "junction_id": "182",

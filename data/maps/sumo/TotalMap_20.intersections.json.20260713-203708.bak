@@ -1,0 +1,224 @@
+{
+  "demo_1": {
+    "junction_id": "4427",
+    "lon": 116.102265,
+    "lat": 39.004651,
+    "match_distance_m": 0.2,
+    "xodr_junction_name": "",
+    "junction_lon": 116.10226663297253,
+    "junction_lat": 39.00465074763003,
+    "source_osm_node_ids": []
+  },
+  "demo_2": {
+    "junction_id": "317",
+    "lon": 116.126756,
+    "lat": 38.99115,
+    "match_distance_m": 0.62,
+    "xodr_junction_name": "",
+    "junction_lon": 116.12675965447777,
+    "junction_lat": 38.99114715117407,
+    "source_osm_node_ids": []
+  },
+  "demo_3": {
+    "junction_id": "citypulse_demo_3",
+    "lon": 116.070252,
+    "lat": 38.976818,
+    "match_distance_m": 3.7,
+    "xodr_junction_name": "",
+    "junction_lon": 116.07027241525815,
+    "junction_lat": 38.97680025459062,
+    "source_osm_node_ids": [],
+    "manual_override": true
+  },
+  "demo_4": {
+    "junction_id": "3935",
+    "lon": 116.125562,
+    "lat": 38.985824,
+    "match_distance_m": 0.02,
+    "xodr_junction_name": "",
+    "junction_lon": 116.1255620109444,
+    "junction_lat": 38.98582386570557,
+    "source_osm_node_ids": []
+  },
+  "demo_5": {
+    "junction_id": "3807",
+    "lon": 116.090679,
+    "lat": 38.992321,
+    "match_distance_m": 0.23,
+    "xodr_junction_name": "",
+    "junction_lon": 116.09068035919238,
+    "junction_lat": 38.99231994691652,
+    "source_osm_node_ids": []
+  },
+  "demo_6": {
+    "junction_id": "3936",
+    "lon": 116.090112,
+    "lat": 38.983681,
+    "match_distance_m": 0.39,
+    "xodr_junction_name": "",
+    "junction_lon": 116.09011436816664,
+    "junction_lat": 38.98367933020957,
+    "source_osm_node_ids": []
+  },
+  "demo_7": {
+    "junction_id": "607",
+    "lon": 116.175968,
+    "lat": 39.038123,
+    "match_distance_m": 0.2,
+    "xodr_junction_name": "",
+    "junction_lon": 116.17596962192026,
+    "junction_lat": 39.0381230333033,
+    "source_osm_node_ids": []
+  },
+  "demo_8": {
+    "junction_id": "4394",
+    "primary_junction_id": "4394",
+    "junction_ids": [
+      "4394",
+      "4393"
+    ],
+    "lon": 116.117896,
+    "lat": 39.019992,
+    "match_distance_m": 11.64,
+    "xodr_junction_name": "",
+    "junction_lon": 116.11780069505947,
+    "junction_lat": 39.02000323803049,
+    "junction_matches": [
+      {
+        "junction_id": "4394",
+        "junction_lon": 116.11780069505947,
+        "junction_lat": 39.02000323803049,
+        "match_distance_m": 11.64
+      },
+      {
+        "junction_id": "4393",
+        "junction_lon": 116.11801466636774,
+        "junction_lat": 39.01998685592418,
+        "match_distance_m": 14.36
+      }
+    ],
+    "match_type": "multi_junction",
+    "source_osm_node_ids": [],
+    "manual_override": true
+  },
+  "demo_9": {
+    "junction_id": "3864",
+    "lon": 116.099512,
+    "lat": 38.984029,
+    "match_distance_m": 1.67,
+    "xodr_junction_name": "",
+    "junction_lon": 116.09952185774969,
+    "junction_lat": 38.98402142723796,
+    "source_osm_node_ids": []
+  },
+  "demo_10": {
+    "junction_id": "4162",
+    "lon": 116.146774,
+    "lat": 39.019003,
+    "match_distance_m": 0.8,
+    "xodr_junction_name": "",
+    "junction_lon": 116.14677475468618,
+    "junction_lat": 39.01899784214636,
+    "source_osm_node_ids": []
+  },
+  "demo_11": {
+    "junction_id": "4474",
+    "lon": 115.840476,
+    "lat": 39.069596,
+    "match_distance_m": 15.03,
+    "xodr_junction_name": "",
+    "junction_lon": 115.84047533410322,
+    "junction_lat": 39.0696929238392,
+    "source_osm_node_ids": []
+  },
+  "demo_12": {
+    "junction_id": "182",
+    "lon": 115.84084,
+    "lat": 39.061201,
+    "match_distance_m": 0.83,
+    "xodr_junction_name": "",
+    "junction_lon": 115.84084676241758,
+    "junction_lat": 39.06119998268326,
+    "source_osm_node_ids": []
+  },
+  "demo_13": {
+    "junction_id": "1204",
+    "lon": 115.904606,
+    "lat": 39.073391,
+    "match_distance_m": 0.87,
+    "xodr_junction_name": "",
+    "junction_lon": 115.9045997871648,
+    "junction_lat": 39.07338819537085,
+    "source_osm_node_ids": []
+  },
+  "demo_14": {
+    "junction_id": "882",
+    "lon": 115.919711,
+    "lat": 39.04986,
+    "match_distance_m": 1.27,
+    "xodr_junction_name": "",
+    "junction_lon": 115.91972126772518,
+    "junction_lat": 39.049858304645085,
+    "source_osm_node_ids": []
+  },
+  "demo_15": {
+    "junction_id": "1117",
+    "lon": 115.921381,
+    "lat": 39.049809,
+    "match_distance_m": 2.99,
+    "xodr_junction_name": "",
+    "junction_lon": 115.92139069725552,
+    "junction_lat": 39.049826752183584,
+    "source_osm_node_ids": []
+  },
+  "demo_16": {
+    "junction_id": "3279",
+    "lon": 115.943817,
+    "lat": 39.060829,
+    "match_distance_m": 0.49,
+    "xodr_junction_name": "",
+    "junction_lon": 115.94381787827305,
+    "junction_lat": 39.06083206086729,
+    "source_osm_node_ids": []
+  },
+  "demo_17": {
+    "junction_id": "3702",
+    "lon": 115.91002,
+    "lat": 39.060218,
+    "match_distance_m": 0.34,
+    "xodr_junction_name": "",
+    "junction_lon": 115.91002243682276,
+    "junction_lat": 39.06021687838958,
+    "source_osm_node_ids": []
+  },
+  "demo_18": {
+    "junction_id": "4409",
+    "lon": 115.916535,
+    "lat": 39.069129,
+    "match_distance_m": 0.57,
+    "xodr_junction_name": "",
+    "junction_lon": 115.91653276980023,
+    "junction_lat": 39.06913222796351,
+    "source_osm_node_ids": []
+  },
+  "demo_19": {
+    "junction_id": "891",
+    "lon": 115.917138,
+    "lat": 39.051524,
+    "match_distance_m": 0.9,
+    "xodr_junction_name": "",
+    "junction_lon": 115.91713911613819,
+    "junction_lat": 39.051529714619285,
+    "source_osm_node_ids": []
+  },
+  "demo_20": {
+    "junction_id": "3637",
+    "lon": 115.906918,
+    "lat": 39.066234,
+    "match_distance_m": 0.59,
+    "xodr_junction_name": "",
+    "junction_lon": 115.9069186942489,
+    "junction_lat": 39.066230224288574,
+    "source_osm_node_ids": []
+  }
+}
