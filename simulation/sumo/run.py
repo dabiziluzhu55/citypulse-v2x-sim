@@ -31,7 +31,7 @@ from .policy import (
 
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_SUMOCFG = DEFAULT_OUTPUT_DIR / "demo_1.sumocfg"
+DEFAULT_SUMOCFG = DEFAULT_OUTPUT_DIR / "official_tls.sumocfg"
 DEFAULT_MANIFEST = DEFAULT_OUTPUT_DIR / "tls_manifest.json"
 
 
@@ -372,4 +372,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

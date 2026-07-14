@@ -228,7 +228,12 @@ def synchronization_loop(args):
 if __name__ == "__main__":
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     DEFAULT_SUMOCFG = os.path.join(
-        PROJECT_ROOT, "data", "maps", "sumo", "xiongan_test.sumocfg"
+        PROJECT_ROOT,
+        "data",
+        "maps",
+        "sumo",
+        "generated",
+        "official_tls.sumocfg",
     )
 
     argparser = argparse.ArgumentParser(description=__doc__)

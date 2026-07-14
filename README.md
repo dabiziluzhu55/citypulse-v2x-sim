@@ -21,12 +21,14 @@ SUMO+CARLA联合仿真与交通协同管控平台。
 
 ## 快速开始
 
-### SUMO单独仿真+MaxPressure管控
+### SUMO 官方信号仿真
 
 ```bash
 export SUMO_HOME=/path/to/sumo
 cd /home/kemove/devdata1/zrl/citypulse-v2x-sim
-python algorithms/baseline/run_sumo_control.py --gui
+python -m simulation.sumo.build_tls --intersections demo_2
+python -m simulation.sumo.run --gui --realtime --mode fixed \
+  --intersection demo_2 --program demo_2_morning_peak
 ```
 
 ### CARLA+SUMO联合仿真

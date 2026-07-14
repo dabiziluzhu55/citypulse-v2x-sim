@@ -29,9 +29,9 @@ python -m simulation.sumo.build_tls --intersections demo_1
 - `TotalMap_20.signals.net.xml`：加入 demo_1 TLS 的派生路网。
 - `official_tls.add.xml`：三套官方 static program。
 - `tls_manifest.json`：算法运行时使用的官方路口到物理 TLS 映射。
-- `demo_1_connections.csv`：人工核对每个 linkIndex 的进口和转向。
-- `demo_1_validation.rou.xml`：四进口直行、左转、右转确定性车流。
-- `demo_1.sumocfg`：可直接运行的 SUMO 配置。
+- `official_tls_connections.csv`：人工核对每个 linkIndex 的进口和转向。
+- `official_tls_validation.rou.xml`：当前已选路口的确定性验证车流。
+- `official_tls.sumocfg`：可直接运行的 SUMO 配置。
 
 构建器不会修改 `TotalMap_20.net.xml`。任何 edge、junction、受控连接、周期或冲突校验失败都会以非零状态退出。
 
@@ -48,7 +48,7 @@ python -m simulation.sumo.run \
 
 另外两套方案分别是 `demo_1_off_peak` 和 `demo_1_evening_peak`。每次实验显式选择方案，表格中的时间范围仅作为元数据，不自动按仿真时钟切换。
 
-在 SUMO GUI 中对照 `demo_1_connections.csv` 检查：
+在 SUMO GUI 中对照 `official_tls_connections.csv` 检查：
 
 1. 相位 1 只保护东西向直行。
 2. 相位 2 只保护东西向左转和掉头。

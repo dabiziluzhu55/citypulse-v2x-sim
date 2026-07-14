@@ -302,6 +302,7 @@ def _build_templates(
     ]
     tls_ids = sorted({item.tls_id for item in own_connections})
     templates = {}
+    served_connections = set()
     for phase_mapping in config.topology.phases:
         protected = [
             item
@@ -320,6 +321,21 @@ def _build_templates(
             config.intersection_id,
             phase_mapping.phase_number,
         )
+        permissive = []
+        for group in phase_mapping.permissive:
+            matches = [
+                item
+                for item in own_connections
+                if item.approach in group.approaches
+                and item.movement == group.movement
+            ]
+            if not matches:
+                raise SignalConfigurationError(
+                    f"{config.intersection_id}/phase {phase_mapping.phase_number}: "
+                    f"no permissive {group.movement} connections matched for "
+                    f"{group.approaches}."
+                )
+            permissive.extend(matches)
         green = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         yellow = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         clearance = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
@@ -328,9 +344,15 @@ def _build_templates(
                 _set_state_char(green, connection, "g")
                 _set_state_char(yellow, connection, "g")
                 _set_state_char(clearance, connection, "g")
+                served_connections.add(connection)
+        for connection in permissive:
+            _set_state_char(green, connection, "g")
+            _set_state_char(yellow, connection, "y")
+            served_connections.add(connection)
         for connection in protected:
             _set_state_char(green, connection, "G")
             _set_state_char(yellow, connection, "y")
+            served_connections.add(connection)
         templates[phase_mapping.phase_number] = {
             tls_id: {
                 "green": "".join(green[tls_id]),
@@ -339,6 +361,19 @@ def _build_templates(
             }
             for tls_id in tls_ids
         }
+    unserved = [
+        connection
+        for connection in own_connections
+        if connection.movement != "blocked" and connection not in served_connections
+    ]
+    if unserved:
+        details = ", ".join(
+            f"{item.from_edge}->{item.to_edge}({item.movement})"
+            for item in unserved
+        )
+        raise SignalConfigurationError(
+            f"{config.intersection_id}: normal movements are never served: {details}."
+        )
     return templates
 
 
@@ -425,6 +460,8 @@ def _write_validation_routes(path: Path, connections: Sequence[ControlledConnect
         connections,
         key=lambda item: (item.direction == "t", item.from_lane, item.to_lane),
     ):
+        if connection.movement == "blocked":
+            continue
         key = (connection.intersection_id, connection.approach, connection.movement)
         candidates.setdefault(key, connection)
     for index, (key, connection) in enumerate(sorted(candidates.items())):
@@ -455,7 +492,7 @@ def _write_sumocfg(path: Path) -> None:
     root = ET.Element("configuration")
     input_node = ET.SubElement(root, "input")
     ET.SubElement(input_node, "net-file", {"value": "TotalMap_20.signals.net.xml"})
-    ET.SubElement(input_node, "route-files", {"value": "demo_1_validation.rou.xml"})
+    ET.SubElement(input_node, "route-files", {"value": "official_tls_validation.rou.xml"})
     ET.SubElement(input_node, "additional-files", {"value": "official_tls.add.xml"})
     time_node = ET.SubElement(root, "time")
     ET.SubElement(time_node, "begin", {"value": "0"})
@@ -492,9 +529,9 @@ def build(
     }
     additional_path = output_dir / "official_tls.add.xml"
     _write_additional(additional_path, selected, templates)
-    _write_connection_report(output_dir / "demo_1_connections.csv", connections)
-    _write_validation_routes(output_dir / "demo_1_validation.rou.xml", connections)
-    _write_sumocfg(output_dir / "demo_1.sumocfg")
+    _write_connection_report(output_dir / "official_tls_connections.csv", connections)
+    _write_validation_routes(output_dir / "official_tls_validation.rou.xml", connections)
+    _write_sumocfg(output_dir / "official_tls.sumocfg")
 
     manifest = {
         "schema_version": 1,

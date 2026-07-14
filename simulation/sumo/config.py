@@ -44,10 +44,17 @@ class SignalProgram:
 
 
 @dataclass(frozen=True)
+class MovementGroup:
+    movement: str
+    approaches: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PhaseMovement:
     phase_number: int
     movement: str
     approaches: Tuple[str, ...]
+    permissive: Tuple[MovementGroup, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -188,16 +195,25 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
         str(key): str(value)
         for key, value in raw.get("direction_mapping", {}).items()
     }
-    if set(direction_mapping.values()) - {"through", "left", "right"}:
+    if set(direction_mapping.values()) - {"through", "left", "right", "blocked"}:
         raise SignalConfigurationError(f"{intersection_id}: unsupported movement mapping.")
-    phases = tuple(
-        PhaseMovement(
-            phase_number=int(item["official_phase_no"]),
-            movement=str(item["movement"]),
-            approaches=tuple(str(value) for value in item["approaches"]),
+    phases = []
+    for item in raw.get("phases", []):
+        phases.append(
+            PhaseMovement(
+                phase_number=int(item["official_phase_no"]),
+                movement=str(item["movement"]),
+                approaches=tuple(str(value) for value in item["approaches"]),
+                permissive=tuple(
+                    MovementGroup(
+                        movement=str(group["movement"]),
+                        approaches=tuple(str(value) for value in group["approaches"]),
+                    )
+                    for group in item.get("permissive", [])
+                ),
+            )
         )
-        for item in raw.get("phases", [])
-    )
+    phases = tuple(phases)
     if not phases or len({item.phase_number for item in phases}) != len(phases):
         raise SignalConfigurationError(f"{intersection_id}: phase topology is invalid.")
     for item in phases:
@@ -210,15 +226,33 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
             raise SignalConfigurationError(
                 f"{intersection_id}/phase {item.phase_number}: unknown approaches {unknown}."
             )
+        for group in item.permissive:
+            if group.movement not in {"through", "left"}:
+                raise SignalConfigurationError(
+                    f"{intersection_id}/phase {item.phase_number}: "
+                    f"invalid permissive movement {group.movement!r}."
+                )
+            unknown = set(group.approaches) - set(approaches)
+            if unknown:
+                raise SignalConfigurationError(
+                    f"{intersection_id}/phase {item.phase_number}: "
+                    f"unknown permissive approaches {unknown}."
+                )
     right_policy = str(raw.get("right_turn_policy", ""))
     if right_policy != "permissive_always":
         raise SignalConfigurationError(
             f"{intersection_id}: only permissive_always is implemented for right turns."
         )
     u_turn_policy = str(raw.get("u_turn_policy", ""))
-    if u_turn_policy != "with_left":
+    if u_turn_policy not in {"with_left", "blocked"}:
         raise SignalConfigurationError(
-            f"{intersection_id}: only with_left is implemented for U-turns."
+            f"{intersection_id}: u_turn_policy must be with_left or blocked."
+        )
+    expected_u_turn_movement = "left" if u_turn_policy == "with_left" else "blocked"
+    if direction_mapping.get("t") != expected_u_turn_movement:
+        raise SignalConfigurationError(
+            f"{intersection_id}: direction 't' must map to "
+            f"{expected_u_turn_movement!r} for u_turn_policy={u_turn_policy!r}."
         )
     return IntersectionTopology(
         approaches=approaches,
