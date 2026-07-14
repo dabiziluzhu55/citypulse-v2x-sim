@@ -116,6 +116,33 @@ def _run_netconvert(
     subprocess.run(command, check=True)
 
 
+def _remove_empty_params(net_path: Path) -> int:
+    """Remove empty SUMO params that crash older NLHandler implementations."""
+    ET.register_namespace("xsi", "http://www.w3.org/2001/XMLSchema-instance")
+    tree = ET.parse(net_path)
+    root = tree.getroot()
+    removed = 0
+    for parent in root.iter():
+        for child in list(parent):
+            if child.tag != "param":
+                continue
+            if child.get("value", "").strip():
+                continue
+            parent.remove(child)
+            removed += 1
+    if not removed:
+        return 0
+
+    temporary_path = net_path.with_name(f"{net_path.name}.sanitized.tmp")
+    try:
+        tree.write(temporary_path, encoding="utf-8", xml_declaration=True)
+        temporary_path.replace(net_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+    return removed
+
+
 def _junction_and_request_index(via: str, junction_ids: Iterable[str]) -> Tuple[str, int]:
     for junction_id in sorted(junction_ids, key=len, reverse=True):
         match = re.match(rf"^:{re.escape(junction_id)}_(\d+)_", via)
@@ -520,6 +547,12 @@ def build(
     output_dir.mkdir(parents=True, exist_ok=True)
     target_net = output_dir / "TotalMap_20.signals.net.xml"
     _run_netconvert(netconvert, source_net, target_net, junction_ids)
+    removed_empty_params = _remove_empty_params(target_net)
+    if removed_empty_params:
+        print(
+            f"Removed {removed_empty_params} empty SUMO <param> elements "
+            f"from {target_net}."
+        )
     connections, state_lengths, request_foes = _inspect_generated_network(target_net, selected)
     templates = {
         config.intersection_id: _build_templates(
@@ -539,6 +572,7 @@ def build(
         "source_net_sha256": _sha256(source_net),
         "netconvert_version": _version(netconvert),
         "sumo_version": _version(sumo),
+        "removed_empty_params": removed_empty_params,
         "intersections": {},
     }
     for config in selected:

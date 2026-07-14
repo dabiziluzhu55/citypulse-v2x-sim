@@ -161,11 +161,6 @@ def append_citypulse_params(junction, intersection_ids, intersections, sumo_net)
             "param",
             {"key": f"{prefix}.match_distance_m", "value": f"{distance:.2f}"},
         )
-        ET.SubElement(
-            junction,
-            "param",
-            {"key": f"{prefix}.xodr_junction_name", "value": ""},
-        )
 
 
 def indent(elem, level=0):

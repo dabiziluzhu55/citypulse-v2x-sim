@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from simulation.sumo.build_tls import ControlledConnection, _build_templates
+from simulation.sumo.build_tls import (
+    ControlledConnection,
+    _build_templates,
+    _remove_empty_params,
+)
 from simulation.sumo.config import load_signal_configuration
 
 
@@ -196,6 +200,27 @@ class SignalConfigurationTests(unittest.TestCase):
                     self.assertTrue(
                         all(tls_states[stage][index] == "r" for index in blocked_uturns)
                     )
+
+    def test_empty_sumo_params_are_removed_without_touching_nonempty_values(self):
+        net_path = Path(self.temp_directory.name) / "test.net.xml"
+        net_path.write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<net>
+  <junction id="317">
+    <param key="empty" value=""/>
+    <param key="whitespace" value="   "/>
+    <param key="kept" value="demo_2"/>
+  </junction>
+</net>
+""",
+            encoding="utf-8",
+        )
+        self.assertEqual(_remove_empty_params(net_path), 2)
+        self.assertEqual(_remove_empty_params(net_path), 0)
+        content = net_path.read_text(encoding="utf-8")
+        self.assertNotIn('key="empty"', content)
+        self.assertNotIn('key="whitespace"', content)
+        self.assertIn('key="kept" value="demo_2"', content)
 
 
 if __name__ == "__main__":

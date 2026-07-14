@@ -374,14 +374,15 @@ def _annotate_sumo_junctions(tree, assignments):
                     "value": _format_distance(item["match_distance_m"]),
                 },
             )
-            ET.SubElement(
-                junction,
-                "param",
-                {
-                    "key": f"{prefix}.xodr_junction_name",
-                    "value": item["xodr_junction_name"],
-                },
-            )
+            if item["xodr_junction_name"]:
+                ET.SubElement(
+                    junction,
+                    "param",
+                    {
+                        "key": f"{prefix}.xodr_junction_name",
+                        "value": item["xodr_junction_name"],
+                    },
+                )
 
 
 def _write_intersection_report(report_file, assignments):

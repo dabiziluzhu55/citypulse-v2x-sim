@@ -34,6 +34,10 @@ python -m simulation.sumo.build_tls --intersections demo_2
 - `official_tls_validation.rou.xml`
 - `official_tls.sumocfg`
 
+构建器会自动从派生路网中删除 `value=""` 的空 `<param>`。这些空参数会让部分
+SUMO 版本在 `NLHandler::addParam` 中触发断言，因此不要跳过构建器而直接把基础
+`TotalMap_20.net.xml` 交给 `sumo-gui`。
+
 ## 固定配时验收
 
 早高峰方案：
