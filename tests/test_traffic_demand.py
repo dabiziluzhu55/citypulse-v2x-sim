@@ -95,6 +95,7 @@ class TrafficDemandTests(unittest.TestCase):
                 intersection_ids=["demo_2"],
             )
             self.assertEqual(len(result["scenarios"]), 3)
+            self.assertEqual(result["schema_version"], 2)
             self.assertEqual(
                 {
                     name: item["total_pcu"]
@@ -108,6 +109,9 @@ class TrafficDemandTests(unittest.TestCase):
             )
 
             route_path = output / "official_traffic_demo_2_morning_peak.rou.xml"
+            morning = result["scenarios"]["demo_2_morning_peak"]
+            self.assertEqual(len(morning["flows"]), 48)
+            self.assertEqual(set(morning["origins"]), {"west", "north", "south"})
             root = ET.parse(route_path).getroot()
             flows = root.findall("flow")
             self.assertEqual(len(flows), 48)

@@ -36,3 +36,6 @@ python simulation/carla_sumo/run_synchronization.py [--sumo-gui]
 多路口强化学习只提交官方目标相位，由 runner 独占 TraCI 并处理安全切换。
 真实车流构建见 [traffic_demand.md](traffic_demand.md)，算法契约见
 [algorithm_interface.md](algorithm_interface.md)。
+
+供后端调用的单会话 Python API、实时快照和施工/事故事件见
+[simulation_core_api.md](simulation_core_api.md)。

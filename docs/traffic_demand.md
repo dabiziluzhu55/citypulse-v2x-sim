@@ -78,11 +78,10 @@ sumo-gui -c data/maps/sumo/generated/official_traffic_demo_2_morning_peak.sumocf
 python -m simulation.sumo.run --gui --realtime --mode fixed
 ```
 
-平峰或晚高峰需要同时选择对应场景和 program：
+平峰或晚高峰通过 `period` 选择；runner 会自动编译对应会话场景：
 
 ```bash
 python -m simulation.sumo.run --gui --mode fixed \
-  --sumocfg data/maps/sumo/generated/official_traffic_demo_2_off_peak.sumocfg \
   --intersection demo_2 --period off_peak
 ```
 

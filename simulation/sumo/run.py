@@ -11,17 +11,9 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Dict, Sequence
-from uuid import uuid4
 
-from .build_tls import (
-    DEFAULT_MAPPING,
-    DEFAULT_OUTPUT_DIR,
-    DEFAULT_PLANS,
-    DEFAULT_TOPOLOGY,
-)
-from .config import SignalConfigurationError, load_signal_configuration
+from .config import SignalConfigurationError
 from .controller import SafePhaseController, SignalStage, TransitionTiming
-from .external_policy import HttpAlgorithmClient
 from .policy import (
     PROTOCOL_VERSION,
     IntersectionMetadata,
@@ -37,8 +29,6 @@ from .policy import (
 
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_SUMOCFG = DEFAULT_OUTPUT_DIR / "official_traffic_demo_2_morning_peak.sumocfg"
-DEFAULT_MANIFEST = DEFAULT_OUTPUT_DIR / "tls_manifest.json"
 
 
 def _load_sumo_modules():
@@ -354,162 +344,108 @@ def _validate_actions(
     return result
 
 
-def run(args: argparse.Namespace) -> None:
-    sumolib, traci = _load_sumo_modules()
-    configuration = load_signal_configuration(args.mapping, args.plans, args.topology)
-    selected_configs = configuration.select(args.intersection)
-    selected_manifest = _selected_manifest(_load_manifest(args.manifest), args.intersection)
-    programs = _select_programs(selected_configs, args.program, args.period)
-    if not args.sumocfg.is_file():
-        raise RuntimeError(f"SUMO configuration not found: {args.sumocfg}")
+def _parse_origins(values: Sequence[str]) -> Mapping[str, tuple[str, ...]]:
+    result = {}
+    for value in values:
+        if ":" not in value:
+            raise ValueError(f"Origin must use intersection:approach, got {value!r}.")
+        intersection_id, approach = value.split(":", 1)
+        if not intersection_id or not approach:
+            raise ValueError(f"Invalid origin {value!r}.")
+        result.setdefault(intersection_id, []).append(approach)
+    return {key: tuple(items) for key, items in result.items()}
 
-    binary = sumolib.checkBinary("sumo-gui" if args.gui else "sumo")
-    command = [
-        binary,
-        "--configuration-file",
-        str(args.sumocfg),
-        "--step-length",
-        str(args.step_length),
-        "--no-step-log",
-        "true",
-        "--collision.action",
-        "warn",
-        "--collision.check-junctions",
-        "true",
-        "--seed",
-        str(args.seed),
-    ]
-    if args.end is not None:
-        command.extend(("--end", str(args.end)))
 
-    controllers = {}
-    client = None
-    episode_id = str(uuid4())
-    finish_reason = "completed"
-    last_simulation_time = 0.0
-    total_departed = 0
-    total_arrived = 0
-    traci.start(command)
+def _load_events(path: Path | None):
+    if path is None:
+        return ()
+    from .events import AccidentEvent, LaneClosureEvent, SpeedLimitEvent
+
     try:
-        if args.mode == "fixed":
-            for config in selected_configs:
-                program_id = programs[config.intersection_id].program_id
-                item = selected_manifest[config.intersection_id]
-                if program_id not in item["program_ids"]:
-                    raise RuntimeError(
-                        f"{config.intersection_id}: program {program_id!r} was not generated."
-                    )
-                for tls_id in item["tls_ids"]:
-                    traci.trafficlight.setProgram(tls_id, program_id)
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Cannot read event file {path}: {exc}") from exc
+    result = []
+    for item in raw.get("events", []):
+        event_type = item.get("event_type")
+        common = {
+            "event_id": str(item["event_id"]),
+            "start_seconds": float(item["start_seconds"]),
+            "end_seconds": float(item["end_seconds"]),
+        }
+        if event_type == "lane_closure":
+            result.append(
+                LaneClosureEvent(
+                    **common,
+                    lane_ids=tuple(str(value) for value in item["lane_ids"]),
+                )
+            )
+        elif event_type == "speed_limit":
+            result.append(
+                SpeedLimitEvent(
+                    **common,
+                    lane_ids=tuple(str(value) for value in item["lane_ids"]),
+                    max_speed=float(item["max_speed"]),
+                )
+            )
+        elif event_type == "accident":
+            result.append(
+                AccidentEvent(
+                    **common,
+                    lane_id=str(item["lane_id"]),
+                    position_ratio=float(item["position_ratio"]),
+                )
+            )
         else:
-            if not args.algorithm_endpoint:
-                raise RuntimeError("--algorithm-endpoint is required in algorithm mode.")
-            controllers = _build_controllers(
-                selected_configs,
-                selected_manifest,
-                programs,
-                args.minimum_green,
-            )
-            metadata = _build_metadata(
-                traci,
-                selected_manifest,
-                programs,
-                args.period,
-                args.seed,
-                args.decision_interval,
-                args.minimum_green,
-                episode_id,
-            )
-            client = HttpAlgorithmClient(args.algorithm_endpoint, args.algorithm_timeout)
-            client.initialize(metadata)
-            for intersection_id, controller in controllers.items():
-                _apply_controller_state(
-                    traci, selected_manifest[intersection_id], controller
-                )
+            raise ValueError(f"Unsupported event_type: {event_type!r}")
+    return tuple(result)
 
-        next_decision = 0.0
-        decision_step = 0
-        simulation_steps = 0
-        departed_since_decision = 0
-        arrived_since_decision = 0
-        while (
-            traci.simulation.getMinExpectedNumber() > 0
-            and (args.end is None or traci.simulation.getTime() < args.end)
-        ):
-            started_at = time.perf_counter()
-            traci.simulationStep()
-            last_simulation_time = float(traci.simulation.getTime())
-            departed = int(traci.simulation.getDepartedNumber())
-            arrived = int(traci.simulation.getArrivedNumber())
-            departed_since_decision += departed
-            arrived_since_decision += arrived
-            total_departed += departed
-            total_arrived += arrived
-            if args.mode == "algorithm":
-                for intersection_id, controller in controllers.items():
-                    if controller.advance(last_simulation_time):
-                        _apply_controller_state(
-                            traci, selected_manifest[intersection_id], controller
-                        )
-                if last_simulation_time + 1e-9 >= next_decision:
-                    observation = _observe(
-                        traci,
-                        last_simulation_time,
-                        decision_step,
-                        metadata,
-                        controllers,
-                        departed_since_decision,
-                        arrived_since_decision,
-                    )
-                    actions = _validate_actions(
-                        client.decide(observation), controllers
-                    )
-                    for intersection_id, target_phase in actions.items():
-                        if target_phase is None:
-                            continue
-                        controller = controllers[intersection_id]
-                        if controller.request_phase(target_phase, last_simulation_time):
-                            _apply_controller_state(
-                                traci,
-                                selected_manifest[intersection_id],
-                                controller,
-                            )
-                    departed_since_decision = 0
-                    arrived_since_decision = 0
-                    decision_step += 1
-                    while next_decision <= last_simulation_time + 1e-9:
-                        next_decision += args.decision_interval
-            simulation_steps += 1
-            if simulation_steps % 200 == 0:
-                LOGGER.info(
-                    "t=%.1fs vehicles=%d mode=%s",
-                    last_simulation_time,
-                    traci.vehicle.getIDCount(),
-                    args.mode,
-                )
-            if args.realtime:
-                elapsed = time.perf_counter() - started_at
-                if elapsed < args.step_length:
-                    time.sleep(args.step_length - elapsed)
-    except BaseException:
-        finish_reason = "error"
+
+def run(args: argparse.Namespace) -> None:
+    from .session import SimulationConfig, SimulationManager
+
+    manager = SimulationManager()
+    duration = args.duration if args.duration is not None else args.end
+    config = SimulationConfig(
+        intersection_ids=tuple(args.intersection),
+        period=args.period,
+        origins=_parse_origins(args.origin),
+        window_start_seconds=args.window_start,
+        duration_seconds=duration,
+        flow_multiplier=args.flow_multiplier,
+        control_mode=args.mode,
+        algorithm_endpoint=args.algorithm_endpoint,
+        algorithm_timeout=args.algorithm_timeout,
+        decision_interval=args.decision_interval,
+        minimum_green=args.minimum_green,
+        seed=args.seed,
+        step_length=args.step_length,
+        gui=args.gui,
+        realtime=args.realtime,
+        snapshot_interval_seconds=args.snapshot_interval,
+        initial_events=_load_events(args.event_file),
+    )
+    session_id = manager.start(config)
+    LOGGER.info("Started SUMO session %s", session_id)
+    try:
+        while True:
+            snapshot = manager.snapshot(session_id)
+            if snapshot.state in {"STOPPED", "COMPLETED", "FAILED"}:
+                break
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        manager.stop(session_id)
+        manager.wait(session_id, timeout=30.0)
         raise
-    finally:
-        if client is not None:
-            try:
-                client.finish(
-                    {
-                        "protocol_version": PROTOCOL_VERSION,
-                        "episode_id": episode_id,
-                        "reason": finish_reason,
-                        "simulation_time": last_simulation_time,
-                        "departed_vehicles": total_departed,
-                        "arrived_vehicles": total_arrived,
-                    }
-                )
-            except Exception:
-                LOGGER.exception("Could not notify algorithm service that the run finished")
-        traci.close()
+    if snapshot.state == "FAILED":
+        raise RuntimeError(snapshot.error or "SUMO session failed.")
+    LOGGER.info(
+        "Session %s %s: departed=%d arrived=%d",
+        session_id,
+        snapshot.state,
+        snapshot.metrics.departed_vehicles,
+        snapshot.metrics.arrived_vehicles,
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -522,33 +458,34 @@ def parse_args() -> argparse.Namespace:
         default="morning_peak",
     )
     parser.add_argument(
-        "--program",
-        default="",
-        help="Optional exact program ID; normally inferred as demo_N_PERIOD.",
+        "--origin",
+        action="append",
+        default=[],
+        help="Repeatable official origin such as demo_2:west; default uses all origins.",
     )
+    parser.add_argument("--window-start", type=float, default=0.0)
+    parser.add_argument("--duration", type=float, default=None)
+    parser.add_argument("--flow-multiplier", type=float, default=1.0)
+    parser.add_argument("--event-file", type=Path, default=None)
     parser.add_argument("--algorithm-endpoint", default="")
     parser.add_argument("--algorithm-timeout", type=float, default=2.0)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--sumocfg", type=Path, default=DEFAULT_SUMOCFG)
-    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
-    parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING)
-    parser.add_argument("--plans", type=Path, default=DEFAULT_PLANS)
-    parser.add_argument("--topology", type=Path, default=DEFAULT_TOPOLOGY)
     parser.add_argument("--decision-interval", type=float, default=5.0)
     parser.add_argument("--minimum-green", type=float, default=5.0)
     parser.add_argument("--step-length", type=float, default=0.05)
+    parser.add_argument("--snapshot-interval", type=float, default=0.5)
     parser.add_argument(
         "--end",
         type=float,
         default=None,
-        help="Optional override; otherwise use the selected sumocfg end time.",
+        help="Deprecated alias for --duration.",
     )
     parser.add_argument("--gui", action="store_true")
     parser.add_argument("--realtime", action="store_true")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
-    if args.decision_interval <= 0 or args.step_length <= 0:
-        parser.error("decision interval and step length must be positive.")
+    if args.decision_interval <= 0 or args.step_length <= 0 or args.snapshot_interval <= 0:
+        parser.error("decision, step and snapshot intervals must be positive.")
     if args.end is not None and args.end <= 0:
         parser.error("end time must be positive.")
     if args.minimum_green < 0:
@@ -557,6 +494,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("algorithm timeout must be positive.")
     if args.seed < 0:
         parser.error("seed must be non-negative.")
+    if args.duration is not None and args.end is not None:
+        parser.error("use --duration or deprecated --end, not both.")
     return args
 
 

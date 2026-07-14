@@ -75,7 +75,7 @@ def _write_routes(
     intersection_manifest: Mapping[str, object],
     demand,
     period: DemandPeriod,
-) -> int:
+) -> Tuple[int, list[Mapping[str, object]]]:
     root = ET.Element("routes")
     vehicle_type_id = f"{_safe_id(intersection_id)}_official_passenger"
     ET.SubElement(
@@ -103,6 +103,7 @@ def _write_routes(
         for official_movement in approach.movements
     }
     flow_count = 0
+    flow_records = []
     for interval_index, interval in enumerate(period.intervals):
         begin = interval.start - period.start
         end = interval.end - period.start
@@ -111,14 +112,15 @@ def _write_routes(
                 count = interval.volumes[official_approach][official_movement]
                 if count == 0:
                     continue
+                flow_id = _safe_id(
+                    f"{intersection_id}_{period.period_id}_{interval_index:02d}_"
+                    f"{official_approach}_{official_movement}"
+                )
                 flow = ET.SubElement(
                     root,
                     "flow",
                     {
-                        "id": _safe_id(
-                            f"{intersection_id}_{period.period_id}_{interval_index:02d}_"
-                            f"{official_approach}_{official_movement}"
-                        ),
+                        "id": flow_id,
                         "type": vehicle_type_id,
                         "begin": str(begin),
                         "end": str(end),
@@ -129,10 +131,20 @@ def _write_routes(
                 )
                 from_edge, to_edge = routes[(official_approach, official_movement)]
                 ET.SubElement(flow, "route", {"edges": f"{from_edge} {to_edge}"})
+                flow_records.append(
+                    {
+                        "flow_id": flow_id,
+                        "official_approach": official_approach,
+                        "official_movement": official_movement,
+                        "begin": begin,
+                        "end": end,
+                        "number": count,
+                    }
+                )
                 flow_count += 1
     ET.indent(root, space="  ")
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
-    return flow_count
+    return flow_count, flow_records
 
 
 def _write_program_additional(
@@ -210,7 +222,7 @@ def build_traffic_scenarios(
             )
     output_dir.mkdir(parents=True, exist_ok=True)
     result = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": str(demand_path.resolve()),
         "unit": configuration.unit,
         "scenarios": {},
@@ -231,7 +243,7 @@ def build_traffic_scenarios(
             route_path = output_dir / f"official_traffic_{scenario_id}.rou.xml"
             sumocfg_path = output_dir / f"official_traffic_{scenario_id}.sumocfg"
             additional_path = output_dir / f"official_tls_{scenario_id}.add.xml"
-            flow_count = _write_routes(
+            flow_count, flow_records = _write_routes(
                 route_path,
                 intersection_id,
                 intersection_manifest,
@@ -264,6 +276,21 @@ def build_traffic_scenarios(
                 "demand_duration": period.duration,
                 "simulation_end": simulation_end,
                 "flow_count": flow_count,
+                "flows": flow_records,
+                "origins": {
+                    official_name: {
+                        "label": approach.label,
+                        "sumo_approach": approach.sumo_approach,
+                        "lane_ids": sorted(
+                            {
+                                f"{connection['from_edge']}_{connection['from_lane']}"
+                                for connection in intersection_manifest["connections"]
+                                if connection["approach"] == approach.sumo_approach
+                            }
+                        ),
+                    }
+                    for official_name, approach in demand.approaches.items()
+                },
                 "total_pcu": period.totals["all"],
                 "approach_totals": {
                     name: value for name, value in period.totals.items() if name != "all"
