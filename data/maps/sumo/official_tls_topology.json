@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "intersections": {
+    "demo_1": {
+      "right_turn_policy": "permissive_always",
+      "u_turn_policy": "with_left",
+      "approaches": {
+        "east": {
+          "incoming_edges": ["-56384"]
+        },
+        "west": {
+          "incoming_edges": ["-57217"]
+        },
+        "north": {
+          "incoming_edges": ["-56907"]
+        },
+        "south": {
+          "incoming_edges": ["-manual_demo1_missing_arm"]
+        }
+      },
+      "direction_mapping": {
+        "s": "through",
+        "l": "left",
+        "t": "left",
+        "r": "right"
+      },
+      "phases": [
+        {
+          "official_phase_no": 1,
+          "movement": "through",
+          "approaches": ["east", "west"]
+        },
+        {
+          "official_phase_no": 2,
+          "movement": "left",
+          "approaches": ["east", "west"]
+        },
+        {
+          "official_phase_no": 3,
+          "movement": "through",
+          "approaches": ["north", "south"]
+        },
+        {
+          "official_phase_no": 4,
+          "movement": "left",
+          "approaches": ["north", "south"]
+        }
+      ]
+    }
+  }
+}
+

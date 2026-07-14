@@ -23,3 +23,7 @@ algorithms/rl/checkpoints/
 # Logs & outputs
 *.log
 outputs/
+
+# Generated SUMO signal artifacts
+data/maps/sumo/generated/
+*.bak

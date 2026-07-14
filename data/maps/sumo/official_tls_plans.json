@@ -1,170 +1,44 @@
 {
-  "schema_version": 1,
-  "time_base": "seconds_from_midnight",
+  "schema_version": 2,
+  "time_base": "metadata_only",
   "source": "official_signal_plan",
   "intersections": {
     "demo_1": {
-      "junction_id": "825",
-      "tls_id": "TODO_FILL_TLS_ID",
-      "match_distance_m": 141.12,
-      "phase_mapping": [
-        {
-          "official_phase_no": 1,
-          "official_phase_name": "东西向直行",
-          "movement_key": "ew_through",
-          "sumo_link_indices": [],
-          "green_state": "G"
-        },
-        {
-          "official_phase_no": 2,
-          "official_phase_name": "东西向左转",
-          "movement_key": "ew_left",
-          "sumo_link_indices": [],
-          "green_state": "G"
-        },
-        {
-          "official_phase_no": 3,
-          "official_phase_name": "南北向直行",
-          "movement_key": "ns_through",
-          "sumo_link_indices": [],
-          "green_state": "G"
-        },
-        {
-          "official_phase_no": 4,
-          "official_phase_name": "南北向左转",
-          "movement_key": "ns_left",
-          "sumo_link_indices": [],
-          "green_state": "G"
-        }
-      ],
       "programs": [
         {
           "program_id": "demo_1_morning_peak",
           "period_type": "早高峰",
-          "time_range": {
-            "start": "07:00:00",
-            "end": "09:00:00"
-          },
+          "time_range": {"start": "07:00:00", "end": "09:00:00"},
           "cycle_duration": 160,
           "phases": [
-            {
-              "official_phase_no": 1,
-              "official_phase_name": "东西向直行",
-              "green": 38,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 43
-            },
-            {
-              "official_phase_no": 2,
-              "official_phase_name": "东西向左转",
-              "green": 32,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 37
-            },
-            {
-              "official_phase_no": 3,
-              "official_phase_name": "南北向直行",
-              "green": 32,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 37
-            },
-            {
-              "official_phase_no": 4,
-              "official_phase_name": "南北向左转",
-              "green": 38,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 43
-            }
+            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 38, "yellow": 3, "all_red": 2, "total": 43},
+            {"official_phase_no": 2, "official_phase_name": "东西向左转", "green": 32, "yellow": 3, "all_red": 2, "total": 37},
+            {"official_phase_no": 3, "official_phase_name": "南北向直行", "green": 32, "yellow": 3, "all_red": 2, "total": 37},
+            {"official_phase_no": 4, "official_phase_name": "南北向左转", "green": 38, "yellow": 3, "all_red": 2, "total": 43}
           ]
         },
         {
           "program_id": "demo_1_off_peak",
           "period_type": "平峰",
-          "time_range": {
-            "start": "14:30:00",
-            "end": "16:30:00"
-          },
+          "time_range": {"start": "14:30:00", "end": "16:30:00"},
           "cycle_duration": 140,
           "phases": [
-            {
-              "official_phase_no": 1,
-              "official_phase_name": "东西向直行",
-              "green": 27,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 32
-            },
-            {
-              "official_phase_no": 2,
-              "official_phase_name": "东西向左转",
-              "green": 33,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 38
-            },
-            {
-              "official_phase_no": 3,
-              "official_phase_name": "南北向直行",
-              "green": 33,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 38
-            },
-            {
-              "official_phase_no": 4,
-              "official_phase_name": "南北向左转",
-              "green": 27,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 32
-            }
+            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 27, "yellow": 3, "all_red": 2, "total": 32},
+            {"official_phase_no": 2, "official_phase_name": "东西向左转", "green": 33, "yellow": 3, "all_red": 2, "total": 38},
+            {"official_phase_no": 3, "official_phase_name": "南北向直行", "green": 33, "yellow": 3, "all_red": 2, "total": 38},
+            {"official_phase_no": 4, "official_phase_name": "南北向左转", "green": 27, "yellow": 3, "all_red": 2, "total": 32}
           ]
         },
         {
           "program_id": "demo_1_evening_peak",
           "period_type": "晚高峰",
-          "time_range": {
-            "start": "17:30:00",
-            "end": "19:30:00"
-          },
+          "time_range": {"start": "17:30:00", "end": "19:30:00"},
           "cycle_duration": 160,
           "phases": [
-            {
-              "official_phase_no": 1,
-              "official_phase_name": "东西向直行",
-              "green": 37,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 42
-            },
-            {
-              "official_phase_no": 2,
-              "official_phase_name": "东西向左转",
-              "green": 34,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 39
-            },
-            {
-              "official_phase_no": 3,
-              "official_phase_name": "南北向直行",
-              "green": 37,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 42
-            },
-            {
-              "official_phase_no": 4,
-              "official_phase_name": "南北向左转",
-              "green": 32,
-              "yellow": 3,
-              "all_red": 2,
-              "total": 37
-            }
+            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 37, "yellow": 3, "all_red": 2, "total": 42},
+            {"official_phase_no": 2, "official_phase_name": "东西向左转", "green": 34, "yellow": 3, "all_red": 2, "total": 39},
+            {"official_phase_no": 3, "official_phase_name": "南北向直行", "green": 37, "yellow": 3, "all_red": 2, "total": 42},
+            {"official_phase_no": 4, "official_phase_name": "南北向左转", "green": 32, "yellow": 3, "all_red": 2, "total": 37}
           ]
         }
       ]
