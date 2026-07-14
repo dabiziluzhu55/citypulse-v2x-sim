@@ -1,106 +1,100 @@
-"""Stable Python API exposed to traffic-control algorithms."""
+"""Stable data contract between SUMO and external signal-control algorithms."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Mapping, Protocol, Tuple
+from dataclasses import dataclass
+from typing import Mapping, Tuple
+
+
+PROTOCOL_VERSION = "1.0"
 
 
 @dataclass(frozen=True)
-class LaneObservation:
+class LaneMetadata:
     lane_id: str
-    vehicle_count: int
-    halting_count: int
-    mean_speed: float
-    waiting_time: float
+    edge_id: str
+    lane_index: int
+    role: str
+    length: float
+    max_speed: float
 
 
 @dataclass(frozen=True)
 class RoadConnectionMetadata:
-    """A legal movement through one controlled intersection."""
-
+    connection_id: str
     approach: str
     movement: str
-    from_edge: str
-    from_lane: int
-    to_edge: str
-    to_lane: int
+    from_lane: str
+    to_lane: str
     direction: str
 
 
 @dataclass(frozen=True)
-class IntersectionObservation:
-    intersection_id: str
-    current_phase: int
-    stage: str
-    stage_elapsed: float
-    approaches: Mapping[str, Tuple[LaneObservation, ...]]
-
-
-@dataclass(frozen=True)
-class VehicleObservation:
-    vehicle_id: str
-    road_id: str
-    lane_id: str
-    lane_index: int
-    lane_position: float
-    speed: float
-    allowed_speed: float
-    waiting_time: float
-    route: Tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class SimulationObservation:
-    simulation_time: float
-    intersections: Mapping[str, IntersectionObservation]
-    vehicles: Mapping[str, VehicleObservation] = field(default_factory=dict)
+class PhaseMetadata:
+    phase_id: int
+    name: str
+    movement: str
+    approaches: Tuple[str, ...]
+    green_seconds: float
+    yellow_seconds: float
+    clearance_seconds: float
+    connection_priorities: Mapping[str, str]
 
 
 @dataclass(frozen=True)
 class IntersectionMetadata:
     intersection_id: str
     phase_order: Tuple[int, ...]
-    phase_movements: Mapping[int, Tuple[str, Tuple[str, ...]]]
-    incoming_lanes: Mapping[str, Tuple[str, ...]]
-    tls_ids: Tuple[str, ...]
-    junction_ids: Tuple[str, ...] = ()
-    connections: Tuple[RoadConnectionMetadata, ...] = ()
+    phases: Mapping[int, PhaseMetadata]
+    lanes: Mapping[str, LaneMetadata]
+    incoming_lanes: Tuple[str, ...]
+    outgoing_lanes: Tuple[str, ...]
+    connections: Tuple[RoadConnectionMetadata, ...]
+    direct_neighbors: Tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class SimulationMetadata:
-    intersections: Mapping[str, IntersectionMetadata]
+    protocol_version: str
+    episode_id: str
+    period: str
+    seed: int
     decision_interval: float
     minimum_green: float
-    network_file: str = ""
+    intersections: Mapping[str, IntersectionMetadata]
 
 
 @dataclass(frozen=True)
-class VehicleAdvice:
-    """A bounded vehicle command applied by the runner, never directly by a policy."""
-
-    target_speed: float | None = None
-    lane_index: int | None = None
-    duration: float = 1.0
+class LaneObservation:
+    vehicle_count: int
+    halting_count: int
+    mean_speed: float
+    waiting_time: float
+    occupancy: float
 
 
 @dataclass(frozen=True)
-class ControlAction:
-    signal_phases: Mapping[str, int | None] = field(default_factory=dict)
-    vehicle_advisories: Mapping[str, VehicleAdvice] = field(default_factory=dict)
+class IntersectionObservation:
+    current_phase: int
+    pending_phase: int | None
+    stage: str
+    stage_elapsed: float
+    lanes: Mapping[str, LaneObservation]
 
 
-class SignalPolicy(Protocol):
-    """Algorithms return official phases and bounded vehicle advice."""
+@dataclass(frozen=True)
+class TrafficObservation:
+    active_vehicles: int
+    departed_vehicles: int
+    arrived_vehicles: int
+    min_expected_vehicles: int
 
-    def reset(self, metadata: SimulationMetadata) -> None:
-        ...
 
-    def act(
-        self, observation: SimulationObservation
-    ) -> ControlAction | Mapping[str, int | None]:
-        ...
-
-    def close(self) -> None:
-        ...
+@dataclass(frozen=True)
+class SimulationObservation:
+    protocol_version: str
+    episode_id: str
+    step_id: int
+    simulation_time: float
+    intersections: Mapping[str, IntersectionObservation]
+    traffic: TrafficObservation

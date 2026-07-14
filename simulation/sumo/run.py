@@ -1,18 +1,17 @@
-"""Run fixed official timing or a safe Python signal-control policy."""
+"""Run official fixed timing or an external signal-control algorithm."""
 
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import logging
 import os
 import sys
 import time
 from collections.abc import Mapping
-from numbers import Real
 from pathlib import Path
 from typing import Dict, Sequence
+from uuid import uuid4
 
 from .build_tls import (
     DEFAULT_MAPPING,
@@ -22,17 +21,18 @@ from .build_tls import (
 )
 from .config import SignalConfigurationError, load_signal_configuration
 from .controller import SafePhaseController, SignalStage, TransitionTiming
-from .external_policy import HttpControlPolicy
+from .external_policy import HttpAlgorithmClient
 from .policy import (
-    ControlAction,
+    PROTOCOL_VERSION,
     IntersectionMetadata,
     IntersectionObservation,
+    LaneMetadata,
     LaneObservation,
+    PhaseMetadata,
     RoadConnectionMetadata,
     SimulationMetadata,
     SimulationObservation,
-    VehicleAdvice,
-    VehicleObservation,
+    TrafficObservation,
 )
 
 
@@ -57,26 +57,15 @@ def _load_sumo_modules():
     return sumolib, traci
 
 
-def _load_policy(specification: str):
-    if ":" not in specification:
-        raise ValueError("--policy must use the form package.module:ClassName")
-    module_name, class_name = specification.split(":", 1)
-    module = importlib.import_module(module_name)
-    policy_type = getattr(module, class_name)
-    policy = policy_type()
-    for method in ("reset", "act", "close"):
-        if not callable(getattr(policy, method, None)):
-            raise TypeError(f"Policy {specification!r} has no callable {method}().")
-    return policy
-
-
 def _load_manifest(path: Path) -> Mapping[str, object]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise RuntimeError(
-            f"Generated manifest not found: {path}. Run python -m simulation.sumo.build_tls first."
+            f"Generated manifest not found: {path}. Run simulation.sumo.build_tls first."
         ) from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Invalid generated manifest {path}: {exc}") from exc
 
 
 def _selected_manifest(
@@ -93,68 +82,31 @@ def _selected_manifest(
     return result
 
 
-def _build_metadata(
-    selected_manifest: Mapping[str, Mapping[str, object]],
-    decision_interval: float,
-    minimum_green: float,
-    network_file: str = "",
-) -> SimulationMetadata:
-    intersections = {}
-    for intersection_id, item in selected_manifest.items():
-        movements = {
-            int(value["phase_number"]): (
-                str(value["movement"]),
-                tuple(str(name) for name in value["approaches"]),
+def _select_programs(configurations, requested: str, period: str):
+    programs = {}
+    for config in configurations:
+        program_id = requested or f"{config.intersection_id}_{period}"
+        if program_id not in config.programs:
+            raise SignalConfigurationError(
+                f"{config.intersection_id}: program {program_id!r} is unavailable. "
+                f"Available programs: {sorted(config.programs)}"
             )
-            for value in item["phase_movements"]
-        }
-        intersections[intersection_id] = IntersectionMetadata(
-            intersection_id=intersection_id,
-            phase_order=tuple(int(value) for value in item["phase_order"]),
-            phase_movements=movements,
-            incoming_lanes={
-                str(approach): tuple(str(lane_id) for lane_id in lane_ids)
-                for approach, lane_ids in item["incoming_lanes"].items()
-            },
-            tls_ids=tuple(str(value) for value in item["tls_ids"]),
-            junction_ids=tuple(str(value) for value in item["junction_ids"]),
-            connections=tuple(
-                RoadConnectionMetadata(
-                    approach=str(connection["approach"]),
-                    movement=str(connection["movement"]),
-                    from_edge=str(connection["from_edge"]),
-                    from_lane=int(connection["from_lane"]),
-                    to_edge=str(connection["to_edge"]),
-                    to_lane=int(connection["to_lane"]),
-                    direction=str(connection["direction"]),
-                )
-                for connection in item["connections"]
-            ),
-        )
-    return SimulationMetadata(
-        intersections=intersections,
-        decision_interval=decision_interval,
-        minimum_green=minimum_green,
-        network_file=network_file,
-    )
+        programs[config.intersection_id] = config.programs[program_id]
+    return programs
 
 
 def _build_controllers(
     configurations,
     selected_manifest: Mapping[str, Mapping[str, object]],
-    program_id: str,
+    programs,
     minimum_green: float,
 ) -> Dict[str, SafePhaseController]:
     controllers = {}
     for config in configurations:
-        if program_id not in config.programs:
-            raise SignalConfigurationError(
-                f"{config.intersection_id}: unknown program {program_id!r}."
-            )
-        program = config.programs[program_id]
         phase_order = tuple(
             int(value) for value in selected_manifest[config.intersection_id]["phase_order"]
         )
+        program = programs[config.intersection_id]
         controllers[config.intersection_id] = SafePhaseController(
             phase_order,
             {
@@ -166,6 +118,149 @@ def _build_controllers(
             start_time=0.0,
         )
     return controllers
+
+
+def _connection_id(index: int) -> str:
+    return f"connection_{index}"
+
+
+def _build_metadata(
+    traci,
+    selected_manifest: Mapping[str, Mapping[str, object]],
+    programs,
+    period: str,
+    seed: int,
+    decision_interval: float,
+    minimum_green: float,
+    episode_id: str,
+) -> SimulationMetadata:
+    incoming_edges = {
+        intersection_id: {
+            str(connection["from_edge"]) for connection in item["connections"]
+        }
+        for intersection_id, item in selected_manifest.items()
+    }
+    outgoing_edges = {
+        intersection_id: {
+            str(connection["to_edge"]) for connection in item["connections"]
+        }
+        for intersection_id, item in selected_manifest.items()
+    }
+    intersections = {}
+    for intersection_id, item in selected_manifest.items():
+        raw_connections = sorted(
+            item["connections"],
+            key=lambda value: (
+                str(value["approach"]),
+                str(value["from_edge"]),
+                int(value["from_lane"]),
+                str(value["to_edge"]),
+                int(value["to_lane"]),
+                int(value["link_index"]),
+            ),
+        )
+        connections = []
+        raw_by_id = {}
+        incoming_lanes = set()
+        outgoing_lanes = set()
+        lane_definitions = {}
+        for index, raw in enumerate(raw_connections):
+            connection_id = _connection_id(index)
+            from_lane = f"{raw['from_edge']}_{raw['from_lane']}"
+            to_lane = f"{raw['to_edge']}_{raw['to_lane']}"
+            incoming_lanes.add(from_lane)
+            outgoing_lanes.add(to_lane)
+            lane_definitions[from_lane] = (
+                str(raw["from_edge"]),
+                int(raw["from_lane"]),
+            )
+            lane_definitions[to_lane] = (
+                str(raw["to_edge"]),
+                int(raw["to_lane"]),
+            )
+            raw_by_id[connection_id] = raw
+            connections.append(
+                RoadConnectionMetadata(
+                    connection_id=connection_id,
+                    approach=str(raw["approach"]),
+                    movement=str(raw["movement"]),
+                    from_lane=from_lane,
+                    to_lane=to_lane,
+                    direction=str(raw["direction"]),
+                )
+            )
+        lanes = {}
+        for lane_id in sorted(incoming_lanes | outgoing_lanes):
+            if lane_id in incoming_lanes and lane_id in outgoing_lanes:
+                role = "both"
+            elif lane_id in incoming_lanes:
+                role = "incoming"
+            else:
+                role = "outgoing"
+            edge_id, lane_index = lane_definitions[lane_id]
+            lanes[lane_id] = LaneMetadata(
+                lane_id=lane_id,
+                edge_id=edge_id,
+                lane_index=lane_index,
+                role=role,
+                length=float(traci.lane.getLength(lane_id)),
+                max_speed=float(traci.lane.getMaxSpeed(lane_id)),
+            )
+
+        program = programs[intersection_id]
+        phase_plan = {phase.number: phase for phase in program.phases}
+        phase_movements = {
+            int(value["phase_number"]): value for value in item["phase_movements"]
+        }
+        phases = {}
+        for phase_id in (int(value) for value in item["phase_order"]):
+            priorities = {}
+            template = item["templates"][str(phase_id)]
+            for connection_id, raw in raw_by_id.items():
+                state = template[str(raw["tls_id"])]["green"][int(raw["link_index"])]
+                if state == "G":
+                    priorities[connection_id] = "protected"
+                elif state == "g":
+                    priorities[connection_id] = "permissive"
+            movement = phase_movements[phase_id]
+            timing = phase_plan[phase_id]
+            phases[phase_id] = PhaseMetadata(
+                phase_id=phase_id,
+                name=timing.name,
+                movement=str(movement["movement"]),
+                approaches=tuple(str(value) for value in movement["approaches"]),
+                green_seconds=timing.green,
+                yellow_seconds=timing.yellow,
+                clearance_seconds=timing.clearance,
+                connection_priorities=priorities,
+            )
+        neighbors = tuple(
+            sorted(
+                other_id
+                for other_id in selected_manifest
+                if other_id != intersection_id
+                and outgoing_edges[intersection_id] & incoming_edges[other_id]
+            )
+        )
+        intersections[intersection_id] = IntersectionMetadata(
+            intersection_id=intersection_id,
+            phase_order=tuple(int(value) for value in item["phase_order"]),
+            phases=phases,
+            lanes=lanes,
+            incoming_lanes=tuple(sorted(incoming_lanes)),
+            outgoing_lanes=tuple(sorted(outgoing_lanes)),
+            connections=tuple(connections),
+            direct_neighbors=neighbors,
+        )
+    return SimulationMetadata(
+        protocol_version=PROTOCOL_VERSION,
+        episode_id=episode_id,
+        period=period,
+        seed=seed,
+        decision_interval=decision_interval,
+        minimum_green=minimum_green,
+        intersections=intersections,
+    )
 
 
 def _state_key(stage: SignalStage) -> str:
@@ -187,153 +282,84 @@ def _apply_controller_state(traci, intersection_manifest, controller) -> None:
 def _observe(
     traci,
     simulation_time: float,
+    step_id: int,
     metadata: SimulationMetadata,
     controllers: Mapping[str, SafePhaseController],
+    departed_vehicles: int,
+    arrived_vehicles: int,
 ) -> SimulationObservation:
     observations = {}
     for intersection_id, intersection_metadata in metadata.intersections.items():
         controller = controllers[intersection_id]
-        approaches = {}
-        for approach, lane_ids in intersection_metadata.incoming_lanes.items():
-            lanes = []
-            for lane_id in lane_ids:
-                lanes.append(
-                    LaneObservation(
-                        lane_id=lane_id,
-                        vehicle_count=int(traci.lane.getLastStepVehicleNumber(lane_id)),
-                        halting_count=int(traci.lane.getLastStepHaltingNumber(lane_id)),
-                        mean_speed=float(traci.lane.getLastStepMeanSpeed(lane_id)),
-                        waiting_time=float(traci.lane.getWaitingTime(lane_id)),
-                    )
-                )
-            approaches[approach] = tuple(lanes)
+        lanes = {}
+        for lane_id in intersection_metadata.lanes:
+            vehicle_count = int(traci.lane.getLastStepVehicleNumber(lane_id))
+            lanes[lane_id] = LaneObservation(
+                vehicle_count=vehicle_count,
+                halting_count=int(traci.lane.getLastStepHaltingNumber(lane_id)),
+                mean_speed=(
+                    float(traci.lane.getLastStepMeanSpeed(lane_id))
+                    if vehicle_count
+                    else 0.0
+                ),
+                waiting_time=float(traci.lane.getWaitingTime(lane_id)),
+                occupancy=float(traci.lane.getLastStepOccupancy(lane_id)),
+            )
         observations[intersection_id] = IntersectionObservation(
-            intersection_id=intersection_id,
             current_phase=controller.current_phase,
+            pending_phase=controller.pending_phase,
             stage=controller.stage.value,
             stage_elapsed=controller.stage_elapsed(simulation_time),
-            approaches=approaches,
-        )
-    vehicles = {}
-    for vehicle_id in traci.vehicle.getIDList():
-        vehicles[vehicle_id] = VehicleObservation(
-            vehicle_id=vehicle_id,
-            road_id=str(traci.vehicle.getRoadID(vehicle_id)),
-            lane_id=str(traci.vehicle.getLaneID(vehicle_id)),
-            lane_index=int(traci.vehicle.getLaneIndex(vehicle_id)),
-            lane_position=float(traci.vehicle.getLanePosition(vehicle_id)),
-            speed=float(traci.vehicle.getSpeed(vehicle_id)),
-            allowed_speed=float(traci.vehicle.getAllowedSpeed(vehicle_id)),
-            waiting_time=float(traci.vehicle.getWaitingTime(vehicle_id)),
-            route=tuple(str(edge) for edge in traci.vehicle.getRoute(vehicle_id)),
+            lanes=lanes,
         )
     return SimulationObservation(
+        protocol_version=PROTOCOL_VERSION,
+        episode_id=metadata.episode_id,
+        step_id=step_id,
         simulation_time=simulation_time,
         intersections=observations,
-        vehicles=vehicles,
+        traffic=TrafficObservation(
+            active_vehicles=int(traci.vehicle.getIDCount()),
+            departed_vehicles=departed_vehicles,
+            arrived_vehicles=arrived_vehicles,
+            min_expected_vehicles=int(traci.simulation.getMinExpectedNumber()),
+        ),
     )
 
 
 def _validate_actions(
-    actions,
-    intersection_ids: Sequence[str],
-    vehicles: Mapping[str, VehicleObservation] | None = None,
-) -> ControlAction:
-    if isinstance(actions, ControlAction):
-        signal_phases = actions.signal_phases
-        vehicle_advisories = actions.vehicle_advisories
-    elif isinstance(actions, Mapping):
-        signal_phases = actions
-        vehicle_advisories = {}
-    else:
-        raise TypeError("Policy.act() must return ControlAction or a phase mapping.")
-    if not isinstance(signal_phases, Mapping):
-        raise TypeError("ControlAction.signal_phases must be a mapping.")
-    unknown = set(signal_phases) - set(intersection_ids)
+    actions: object,
+    controllers: Mapping[str, SafePhaseController],
+) -> Mapping[str, int | None]:
+    if not isinstance(actions, Mapping):
+        raise TypeError("Algorithm actions must be an object keyed by intersection ID.")
+    unknown = set(actions) - set(controllers)
     if unknown:
-        raise ValueError(f"Policy returned unknown intersections: {sorted(unknown)}")
-    phases = {}
-    for intersection_id, value in signal_phases.items():
+        raise ValueError(f"Algorithm returned unknown intersections: {sorted(unknown)}")
+    result = {}
+    for intersection_id, value in actions.items():
         if value is None:
-            phases[intersection_id] = None
-        elif isinstance(value, bool) or not isinstance(value, int):
+            result[intersection_id] = None
+            continue
+        if isinstance(value, bool) or not isinstance(value, int):
             raise TypeError(
-                f"Policy phase for {intersection_id} must be int or None, got {value!r}."
+                f"Action for {intersection_id} must be an integer phase or null."
             )
-        else:
-            phases[intersection_id] = value
-    if not isinstance(vehicle_advisories, Mapping):
-        raise TypeError("ControlAction.vehicle_advisories must be a mapping.")
-    available_vehicles = vehicles or {}
-    unknown_vehicles = set(vehicle_advisories) - set(available_vehicles)
-    if unknown_vehicles:
-        raise ValueError(
-            f"Policy returned inactive vehicles: {sorted(unknown_vehicles)}"
-        )
-    validated_advice = {}
-    for vehicle_id, advice in vehicle_advisories.items():
-        if not isinstance(advice, VehicleAdvice):
-            raise TypeError(f"Advice for {vehicle_id} must be VehicleAdvice.")
-        if isinstance(advice.duration, bool) or not isinstance(advice.duration, Real):
-            raise TypeError(f"Advice duration for {vehicle_id} must be numeric.")
-        if advice.duration <= 0:
-            raise ValueError(f"Advice duration for {vehicle_id} must be positive.")
-        if advice.target_speed is not None:
-            if isinstance(advice.target_speed, bool) or not isinstance(
-                advice.target_speed, Real
-            ):
-                raise TypeError(f"Target speed for {vehicle_id} must be numeric.")
-            if not 0 <= advice.target_speed <= available_vehicles[vehicle_id].allowed_speed:
-                raise ValueError(
-                    f"Target speed for {vehicle_id} must be between 0 and its "
-                    f"allowed speed {available_vehicles[vehicle_id].allowed_speed:g}."
-                )
-        if advice.lane_index is not None and (
-            isinstance(advice.lane_index, bool)
-            or not isinstance(advice.lane_index, int)
-            or advice.lane_index < 0
-        ):
-            raise ValueError(f"Lane index for {vehicle_id} must be a non-negative int.")
-        if advice.target_speed is None and advice.lane_index is None:
-            raise ValueError(f"Advice for {vehicle_id} contains no command.")
-        validated_advice[vehicle_id] = advice
-    return ControlAction(phases, validated_advice)
-
-
-def _expire_speed_advice(traci, simulation_time: float, expirations: Dict[str, float]) -> None:
-    active = set(traci.vehicle.getIDList())
-    for vehicle_id, expires_at in tuple(expirations.items()):
-        if vehicle_id not in active:
-            del expirations[vehicle_id]
-        elif simulation_time + 1e-9 >= expires_at:
-            traci.vehicle.setSpeed(vehicle_id, -1)
-            del expirations[vehicle_id]
-
-
-def _apply_vehicle_advice(
-    traci,
-    advisories: Mapping[str, VehicleAdvice],
-    simulation_time: float,
-    expirations: Dict[str, float],
-) -> None:
-    for vehicle_id, advice in advisories.items():
-        if advice.target_speed is not None:
-            traci.vehicle.setSpeed(vehicle_id, float(advice.target_speed))
-            expirations[vehicle_id] = simulation_time + float(advice.duration)
-        if advice.lane_index is not None:
-            traci.vehicle.changeLane(
-                vehicle_id,
-                int(advice.lane_index),
-                float(advice.duration),
+        if value not in controllers[intersection_id].phase_order:
+            raise ValueError(
+                f"Action for {intersection_id} must be one of "
+                f"{controllers[intersection_id].phase_order}, got {value}."
             )
+        result[intersection_id] = value
+    return result
 
 
 def run(args: argparse.Namespace) -> None:
     sumolib, traci = _load_sumo_modules()
     configuration = load_signal_configuration(args.mapping, args.plans, args.topology)
     selected_configs = configuration.select(args.intersection)
-    manifest = _load_manifest(args.manifest)
-    selected_manifest = _selected_manifest(manifest, args.intersection)
+    selected_manifest = _selected_manifest(_load_manifest(args.manifest), args.intersection)
+    programs = _select_programs(selected_configs, args.program, args.period)
     if not args.sumocfg.is_file():
         raise RuntimeError(f"SUMO configuration not found: {args.sumocfg}")
 
@@ -350,106 +376,114 @@ def run(args: argparse.Namespace) -> None:
         "warn",
         "--collision.check-junctions",
         "true",
+        "--seed",
+        str(args.seed),
     ]
     if args.end is not None:
         command.extend(("--end", str(args.end)))
 
     controllers = {}
-    policy = None
-    metadata = None
-    speed_advice_expirations: Dict[str, float] = {}
+    client = None
+    episode_id = str(uuid4())
+    finish_reason = "completed"
+    last_simulation_time = 0.0
+    total_departed = 0
+    total_arrived = 0
     traci.start(command)
     try:
         if args.mode == "fixed":
-            for intersection_id, item in selected_manifest.items():
-                if args.program not in item["program_ids"]:
+            for config in selected_configs:
+                program_id = programs[config.intersection_id].program_id
+                item = selected_manifest[config.intersection_id]
+                if program_id not in item["program_ids"]:
                     raise RuntimeError(
-                        f"{intersection_id}: program {args.program!r} was not generated."
+                        f"{config.intersection_id}: program {program_id!r} was not generated."
                     )
                 for tls_id in item["tls_ids"]:
-                    traci.trafficlight.setProgram(tls_id, args.program)
+                    traci.trafficlight.setProgram(tls_id, program_id)
         else:
-            if not args.policy and not args.policy_endpoint:
-                raise RuntimeError(
-                    "--policy or --policy-endpoint is required in policy mode."
-                )
+            if not args.algorithm_endpoint:
+                raise RuntimeError("--algorithm-endpoint is required in algorithm mode.")
             controllers = _build_controllers(
                 selected_configs,
                 selected_manifest,
-                args.program,
+                programs,
                 args.minimum_green,
             )
             metadata = _build_metadata(
+                traci,
                 selected_manifest,
+                programs,
+                args.period,
+                args.seed,
                 args.decision_interval,
                 args.minimum_green,
-                network_file=str(
-                    (args.sumocfg.parent / "TotalMap_20.signals.net.xml").resolve()
-                ),
+                episode_id,
             )
-            policy = (
-                HttpControlPolicy(args.policy_endpoint, args.policy_timeout)
-                if args.policy_endpoint
-                else _load_policy(args.policy)
-            )
-            policy.reset(metadata)
+            client = HttpAlgorithmClient(args.algorithm_endpoint, args.algorithm_timeout)
+            client.initialize(metadata)
             for intersection_id, controller in controllers.items():
                 _apply_controller_state(
                     traci, selected_manifest[intersection_id], controller
                 )
 
         next_decision = 0.0
-        step_count = 0
+        decision_step = 0
+        simulation_steps = 0
+        departed_since_decision = 0
+        arrived_since_decision = 0
         while (
             traci.simulation.getMinExpectedNumber() > 0
             and (args.end is None or traci.simulation.getTime() < args.end)
         ):
             started_at = time.perf_counter()
             traci.simulationStep()
-            simulation_time = float(traci.simulation.getTime())
-            if args.mode == "policy":
-                _expire_speed_advice(
-                    traci,
-                    simulation_time,
-                    speed_advice_expirations,
-                )
+            last_simulation_time = float(traci.simulation.getTime())
+            departed = int(traci.simulation.getDepartedNumber())
+            arrived = int(traci.simulation.getArrivedNumber())
+            departed_since_decision += departed
+            arrived_since_decision += arrived
+            total_departed += departed
+            total_arrived += arrived
+            if args.mode == "algorithm":
                 for intersection_id, controller in controllers.items():
-                    if controller.advance(simulation_time):
+                    if controller.advance(last_simulation_time):
                         _apply_controller_state(
                             traci, selected_manifest[intersection_id], controller
                         )
-                if simulation_time + 1e-9 >= next_decision:
+                if last_simulation_time + 1e-9 >= next_decision:
                     observation = _observe(
-                        traci, simulation_time, metadata, controllers
+                        traci,
+                        last_simulation_time,
+                        decision_step,
+                        metadata,
+                        controllers,
+                        departed_since_decision,
+                        arrived_since_decision,
                     )
                     actions = _validate_actions(
-                        policy.act(observation),
-                        args.intersection,
-                        observation.vehicles,
+                        client.decide(observation), controllers
                     )
-                    for intersection_id, target_phase in actions.signal_phases.items():
+                    for intersection_id, target_phase in actions.items():
                         if target_phase is None:
                             continue
                         controller = controllers[intersection_id]
-                        if controller.request_phase(target_phase, simulation_time):
+                        if controller.request_phase(target_phase, last_simulation_time):
                             _apply_controller_state(
                                 traci,
                                 selected_manifest[intersection_id],
                                 controller,
                             )
-                    _apply_vehicle_advice(
-                        traci,
-                        actions.vehicle_advisories,
-                        simulation_time,
-                        speed_advice_expirations,
-                    )
-                    while next_decision <= simulation_time + 1e-9:
+                    departed_since_decision = 0
+                    arrived_since_decision = 0
+                    decision_step += 1
+                    while next_decision <= last_simulation_time + 1e-9:
                         next_decision += args.decision_interval
-            step_count += 1
-            if step_count % 200 == 0:
+            simulation_steps += 1
+            if simulation_steps % 200 == 0:
                 LOGGER.info(
                     "t=%.1fs vehicles=%d mode=%s",
-                    simulation_time,
+                    last_simulation_time,
                     traci.vehicle.getIDCount(),
                     args.mode,
                 )
@@ -457,37 +491,57 @@ def run(args: argparse.Namespace) -> None:
                 elapsed = time.perf_counter() - started_at
                 if elapsed < args.step_length:
                     time.sleep(args.step_length - elapsed)
+    except BaseException:
+        finish_reason = "error"
+        raise
     finally:
-        if policy is not None:
-            policy.close()
+        if client is not None:
+            try:
+                client.finish(
+                    {
+                        "protocol_version": PROTOCOL_VERSION,
+                        "episode_id": episode_id,
+                        "reason": finish_reason,
+                        "simulation_time": last_simulation_time,
+                        "departed_vehicles": total_departed,
+                        "arrived_vehicles": total_arrived,
+                    }
+                )
+            except Exception:
+                LOGGER.exception("Could not notify algorithm service that the run finished")
         traci.close()
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("fixed", "policy"), default="fixed")
+    parser.add_argument("--mode", choices=("fixed", "algorithm"), default="fixed")
     parser.add_argument("--intersection", nargs="+", default=["demo_2"])
-    parser.add_argument("--program", default="demo_2_morning_peak")
-    parser.add_argument("--policy", default="")
     parser.add_argument(
-        "--policy-endpoint",
-        default="",
-        help="Remote service base URL exposing POST /reset, /act and /close.",
+        "--period",
+        choices=("morning_peak", "off_peak", "evening_peak"),
+        default="morning_peak",
     )
-    parser.add_argument("--policy-timeout", type=float, default=2.0)
+    parser.add_argument(
+        "--program",
+        default="",
+        help="Optional exact program ID; normally inferred as demo_N_PERIOD.",
+    )
+    parser.add_argument("--algorithm-endpoint", default="")
+    parser.add_argument("--algorithm-timeout", type=float, default=2.0)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--sumocfg", type=Path, default=DEFAULT_SUMOCFG)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING)
     parser.add_argument("--plans", type=Path, default=DEFAULT_PLANS)
     parser.add_argument("--topology", type=Path, default=DEFAULT_TOPOLOGY)
-    parser.add_argument("--decision-interval", type=float, default=1.0)
+    parser.add_argument("--decision-interval", type=float, default=5.0)
     parser.add_argument("--minimum-green", type=float, default=5.0)
     parser.add_argument("--step-length", type=float, default=0.05)
     parser.add_argument(
         "--end",
         type=float,
         default=None,
-        help="Optional override; otherwise use the end time in the selected sumocfg.",
+        help="Optional override; otherwise use the selected sumocfg end time.",
     )
     parser.add_argument("--gui", action="store_true")
     parser.add_argument("--realtime", action="store_true")
@@ -499,10 +553,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("end time must be positive.")
     if args.minimum_green < 0:
         parser.error("minimum green cannot be negative.")
-    if args.policy_timeout <= 0:
-        parser.error("policy timeout must be positive.")
-    if args.policy and args.policy_endpoint:
-        parser.error("use either --policy or --policy-endpoint, not both.")
+    if args.algorithm_timeout <= 0:
+        parser.error("algorithm timeout must be positive.")
+    if args.seed < 0:
+        parser.error("seed must be non-negative.")
     return args
 
 

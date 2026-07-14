@@ -32,7 +32,7 @@ python simulation/carla_sumo/run_synchronization.py [--sumo-gui]
 
 ## 纯 SUMO 管控
 
-`simulation.sumo.run` 提供固定配时、本地 Python 策略和远程 HTTP 策略三种使用方式。
-策略只提交官方相位及受约束的车辆建议，由 runner 独占 TraCI 并处理安全切换。
+`simulation.sumo.run` 提供固定配时和外部 HTTP 算法两种模式。Max Pressure、IPPO 和
+多路口强化学习只提交官方目标相位，由 runner 独占 TraCI 并处理安全切换。
 真实车流构建见 [traffic_demand.md](traffic_demand.md)，算法契约见
-[signal_control.md](signal_control.md)。
+[algorithm_interface.md](algorithm_interface.md)。

@@ -7,7 +7,7 @@ SUMO+CARLA联合仿真与交通协同管控平台。
 | 目录 | 说明 |
 |------|------|
 | `simulation/` | 仿真基础设施：SUMO、CARLA、联合同步、地图工具 |
-| `algorithms/` | 管控算法：基线、强化学习、评估指标 |
+| `algorithms/` | 算法组协作边界；正式算法由算法组独立维护 |
 | `backend/` | FastAPI后端（待实现） |
 | `frontend/` | Vue 前端（待实现） |
 | `data/maps/` | 示例地图数据 |
@@ -17,7 +17,8 @@ SUMO+CARLA联合仿真与交通协同管控平台。
 
 ## 架构说明
 
-**仿真与算法分离**：`simulation/` 负责世界模型与 TraCI/CARLA 交互；`algorithms/` 负责信号控制决策。算法可在纯SUMO模式运行，也可在联合仿真循环中通过hook注入
+**仿真与算法分离**：`simulation/` 独占 SUMO/TraCI；Max Pressure、IPPO 和多路口
+强化学习通过稳定 HTTP/JSON 接口接收状态并返回官方目标相位。
 
 ## 快速开始
 
@@ -28,7 +29,7 @@ export SUMO_HOME=/path/to/sumo
 cd /home/kemove/devdata1/zrl/citypulse-v2x-sim
 python -m simulation.sumo.build_tls --intersections demo_2
 python -m simulation.sumo.run --gui --realtime --mode fixed \
-  --intersection demo_2 --program demo_2_morning_peak
+  --intersection demo_2 --period morning_peak
 ```
 
 构建命令还会按赛方 15 分钟数据生成 `demo_2` 的早高峰、平峰和晚高峰真实车流。
@@ -45,3 +46,5 @@ python simulation/carla_sumo/run_synchronization.py --sumo-gui
 
 环境依赖见 [docs/setup.md](docs/setup.md)，官方信号数据结构、派生产物和算法接口见
 [docs/signal_control.md](docs/signal_control.md)。
+
+算法组只需阅读 [docs/algorithm_interface.md](docs/algorithm_interface.md)。

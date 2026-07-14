@@ -17,7 +17,7 @@ class SignalStage(str, Enum):
 
 
 class InvalidPhaseAction(ValueError):
-    """Raised before SUMO is mutated when a policy returns an invalid phase."""
+    """Raised before SUMO is mutated when an algorithm returns an invalid phase."""
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ class ControllerSnapshot:
 
 
 class SafePhaseController:
-    """Enforces minimum green, yellow and clearance around policy actions."""
+    """Enforces minimum green, yellow and clearance around algorithm actions."""
 
     def __init__(
         self,
@@ -149,4 +149,3 @@ class SafePhaseController:
             raise ValueError(
                 f"Simulation time moved backwards: {current_time} < {self._last_time}."
             )
-

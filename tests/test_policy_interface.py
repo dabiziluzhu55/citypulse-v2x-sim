@@ -1,98 +1,107 @@
 import unittest
 
-from simulation.sumo.external_policy import HttpControlPolicy
+from simulation.sumo.controller import SafePhaseController
+from simulation.sumo.external_policy import HttpAlgorithmClient
 from simulation.sumo.policy import (
-    ControlAction,
+    PROTOCOL_VERSION,
+    SimulationMetadata,
     SimulationObservation,
-    VehicleAdvice,
-    VehicleObservation,
+    TrafficObservation,
 )
 from simulation.sumo.run import _validate_actions
 
 
-def vehicle(vehicle_id="car_1", allowed_speed=13.9):
-    return VehicleObservation(
-        vehicle_id=vehicle_id,
-        road_id="edge_in",
-        lane_id="edge_in_0",
-        lane_index=0,
-        lane_position=10.0,
-        speed=8.0,
-        allowed_speed=allowed_speed,
-        waiting_time=0.0,
-        route=("edge_in", "edge_out"),
+class StubHttpClient(HttpAlgorithmClient):
+    def __init__(self, responses):
+        super().__init__("http://algorithm.test")
+        self.responses = responses
+        self.requests = []
+
+    def _post(self, path, payload):
+        self.requests.append((path, payload))
+        return self.responses[path]
+
+
+def observation(step_id=3):
+    return SimulationObservation(
+        protocol_version=PROTOCOL_VERSION,
+        episode_id="episode-test",
+        step_id=step_id,
+        simulation_time=15.0,
+        intersections={},
+        traffic=TrafficObservation(
+            active_vehicles=10,
+            departed_vehicles=2,
+            arrived_vehicles=1,
+            min_expected_vehicles=20,
+        ),
     )
 
 
-class StubHttpPolicy(HttpControlPolicy):
-    def __init__(self, response):
-        super().__init__("http://algorithm.test")
-        self.response = response
-
-    def _post(self, path, payload):
-        return self.response
-
-
 class PolicyInterfaceTests(unittest.TestCase):
-    def test_legacy_phase_mapping_remains_supported(self):
-        action = _validate_actions({"demo_2": 2}, ["demo_2"], {})
-        self.assertEqual(action.signal_phases, {"demo_2": 2})
-        self.assertEqual(action.vehicle_advisories, {})
-
-    def test_vehicle_advice_is_validated_against_live_vehicle_speed_limit(self):
-        vehicles = {"car_1": vehicle()}
-        action = _validate_actions(
-            ControlAction(
-                signal_phases={"demo_2": 1},
-                vehicle_advisories={
-                    "car_1": VehicleAdvice(
-                        target_speed=10.0,
-                        lane_index=1,
-                        duration=2.0,
-                    )
-                },
-            ),
-            ["demo_2"],
-            vehicles,
-        )
-        self.assertEqual(action.vehicle_advisories["car_1"].target_speed, 10.0)
-        with self.assertRaisesRegex(ValueError, "allowed speed"):
-            _validate_actions(
-                ControlAction(
-                    vehicle_advisories={
-                        "car_1": VehicleAdvice(target_speed=20.0)
-                    }
-                ),
-                ["demo_2"],
-                vehicles,
+    def setUp(self):
+        self.controllers = {
+            "demo_2": SafePhaseController(
+                (1, 2),
+                {1: (3.0, 0.0), 2: (3.0, 0.0)},
             )
-        with self.assertRaisesRegex(ValueError, "inactive vehicles"):
-            _validate_actions(
-                ControlAction(
-                    vehicle_advisories={
-                        "departed": VehicleAdvice(target_speed=5.0)
-                    }
-                ),
-                ["demo_2"],
-                vehicles,
-            )
+        }
 
-    def test_http_response_is_converted_to_public_action_types(self):
-        policy = StubHttpPolicy(
-            {
-                "signal_phases": {"demo_2": 2},
-                "vehicle_advisories": {
-                    "car_1": {
-                        "target_speed": 9.5,
-                        "lane_index": 1,
-                        "duration": 3.0,
-                    }
-                },
-            }
+    def test_initialize_requires_explicit_ready(self):
+        metadata = SimulationMetadata(
+            protocol_version=PROTOCOL_VERSION,
+            episode_id="episode-test",
+            period="morning_peak",
+            seed=42,
+            decision_interval=5.0,
+            minimum_green=5.0,
+            intersections={},
         )
-        action = policy.act(SimulationObservation(0.0, {}))
-        self.assertEqual(action.signal_phases["demo_2"], 2)
-        self.assertEqual(action.vehicle_advisories["car_1"].target_speed, 9.5)
+        client = StubHttpClient({"/initialize": {"ready": True}})
+        client.initialize(metadata)
+        self.assertEqual(client.requests[0][0], "/initialize")
+        self.assertEqual(client.requests[0][1]["protocol_version"], "1.0")
+
+        client = StubHttpClient({"/initialize": {}})
+        with self.assertRaisesRegex(RuntimeError, "ready"):
+            client.initialize(metadata)
+
+    def test_step_returns_phase_actions_and_must_echo_step_id(self):
+        client = StubHttpClient(
+            {"/step": {"step_id": 3, "actions": {"demo_2": 2}}}
+        )
+        actions = client.decide(observation())
+        self.assertEqual(actions, {"demo_2": 2})
+        self.assertEqual(client.requests[0][0], "/step")
+
+        stale = StubHttpClient(
+            {"/step": {"step_id": 2, "actions": {"demo_2": 2}}}
+        )
+        with self.assertRaisesRegex(ValueError, "echo"):
+            stale.decide(observation())
+
+    def test_actions_are_fully_validated(self):
+        self.assertEqual(
+            _validate_actions({"demo_2": 2}, self.controllers),
+            {"demo_2": 2},
+        )
+        self.assertEqual(
+            _validate_actions({"demo_2": None}, self.controllers),
+            {"demo_2": None},
+        )
+        with self.assertRaisesRegex(ValueError, "unknown intersections"):
+            _validate_actions({"demo_99": 1}, self.controllers)
+        with self.assertRaisesRegex(ValueError, "must be one of"):
+            _validate_actions({"demo_2": 9}, self.controllers)
+        with self.assertRaisesRegex(TypeError, "integer phase"):
+            _validate_actions({"demo_2": True}, self.controllers)
+
+    def test_finish_forwards_summary(self):
+        client = StubHttpClient({"/finish": {"ok": True}})
+        client.finish({"episode_id": "episode-test", "reason": "completed"})
+        self.assertEqual(client.requests, [
+            ("/finish", {"episode_id": "episode-test", "reason": "completed"})
+        ])
 
 
 if __name__ == "__main__":

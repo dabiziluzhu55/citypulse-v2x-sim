@@ -83,7 +83,7 @@ python -m simulation.sumo.run --gui --realtime --mode fixed
 ```bash
 python -m simulation.sumo.run --gui --mode fixed \
   --sumocfg data/maps/sumo/generated/official_traffic_demo_2_off_peak.sumocfg \
-  --intersection demo_2 --program demo_2_off_peak
+  --intersection demo_2 --period off_peak
 ```
 
 `official_tls.sumocfg` 和 `official_tls_validation.rou.xml` 仍只用于检查每个正常转向

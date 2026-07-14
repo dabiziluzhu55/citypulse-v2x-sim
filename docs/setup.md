@@ -5,7 +5,6 @@
 - SUMO（需设置 `SUMO_HOME`）
 - CARLA 0.9.16（联合仿真需设置 `CARLA_ROOT`）
 - Python 3.10
-- sumoITScontrol（MaxPressure 基线算法）
 
 ## 环境变量
 
