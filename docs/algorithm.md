@@ -25,6 +25,8 @@ algorithms/
 `{official_intersection_id: target_phase_no}`。runner 独占 TraCI，并负责黄灯、
 清空阶段和非法动作校验。
 
+接口字段、生命周期和策略示例见 [signal_control.md](signal_control.md)。
+
 ## 联合仿真集成（后续）
 
 联合仿真后续复用 `simulation.sumo.policy.SignalPolicy`，不再由算法直接写入

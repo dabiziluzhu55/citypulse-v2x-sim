@@ -40,4 +40,5 @@ export CARLA_ROOT=/path/to/CARLA_0.9.16
 python simulation/carla_sumo/run_synchronization.py --sumo-gui
 ```
 
-详见 [docs/setup.md](docs/setup.md)
+环境依赖见 [docs/setup.md](docs/setup.md)，官方信号数据结构、派生产物和算法接口见
+[docs/signal_control.md](docs/signal_control.md)。

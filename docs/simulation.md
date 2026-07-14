@@ -14,11 +14,11 @@ python simulation/utils/netcovert_sumo_20.py --keep-xodr
 
 该工具从 `TotalMap.osm` 生成 SUMO 路网，并可保留中间 OpenDRIVE 文件。
 
-## 构建官方信号
+## 官方信号
 
-```bash
-python -m simulation.sumo.build_tls --intersections demo_2
-```
+`simulation.sumo.build_tls` 根据官方配时、路口拓扑和基础路网生成可运行的派生
+路网。源配置、`generated/` 产物和算法接口见
+[signal_control.md](signal_control.md)。
 
 ## 联合仿真入口
 
@@ -30,7 +30,5 @@ python simulation/carla_sumo/run_synchronization.py [--sumo-gui]
 
 ## 纯 SUMO 管控
 
-```bash
-python -m simulation.sumo.run --gui --mode fixed \
-  --intersection demo_2 --program demo_2_morning_peak
-```
+`simulation.sumo.run` 提供固定配时和 Python 策略两种模式。策略只提交官方相位
+编号，由 runner 独占 TraCI 并处理安全切换。
