@@ -60,6 +60,9 @@
 | `official_tls.sumocfg` | 组合派生路网、additional 和验证车流的 SUMO 配置 | 是 |
 | `official_tls_validation.rou.xml` | 覆盖已配置正常转向的确定性验证车辆，不代表真实交通需求 | 仅验收 |
 | `official_tls_connections.csv` | 供人工核对 approach、movement、linkIndex 和连接方向 | 仅诊断 |
+| `official_traffic_demo_N_PERIOD.rou.xml` | 由官方 15 分钟数据生成的精确数量车流 | 是 |
+| `official_traffic_demo_N_PERIOD.sumocfg` | 真实车流、信号路网和对应配时的场景入口 | 是 |
+| `traffic_manifest.json` | 场景官方时间、文件名、时长和 PCU 合计 | 是 |
 
 `tls_manifest.json` 还记录基础路网哈希、SUMO/netconvert 版本和被移除的空
 `<param>` 数量。算法应读取 runner 提供的 metadata，不应自行解析 manifest。
@@ -74,7 +77,7 @@ class SignalPolicy(Protocol):
 
     def act(
         self, observation: SimulationObservation
-    ) -> Mapping[str, int | None]: ...
+    ) -> ControlAction | Mapping[str, int | None]: ...
 
     def close(self) -> None: ...
 ```
@@ -111,6 +114,11 @@ class SignalPolicy(Protocol):
 - `phase_movements`：相位对应的主要保护运动及进口。
 - `incoming_lanes`：按 approach 分组的 SUMO lane。
 - `tls_ids`：底层物理 TLS，仅供诊断，不应作为算法主键。
+- `junction_ids`：该官方路口对应的 SUMO junction。
+- `connections`：可通行的 approach、movement、from/to edge 与 lane。
+
+`SimulationMetadata.network_file` 给出本次派生路网路径。通常算法只需使用
+`connections` 和 `incoming_lanes`，不必解析完整的 46 MB net.xml。
 
 ### SimulationObservation
 
@@ -123,6 +131,68 @@ class SignalPolicy(Protocol):
 
 每条 lane 提供 `vehicle_count`、`halting_count`、`mean_speed` 和
 `waiting_time`。这些值来自 TraCI 上一个仿真步。
+
+`observation.vehicles` 以活动车辆 ID 为键，提供 road、lane、lane index、lane
+position、速度、道路限速、等待时间和完整 route，供车速引导及换道算法使用。
+
+### 信号与车辆联合动作
+
+旧策略返回相位字典仍然兼容。联合动作示例：
+
+```python
+from simulation.sumo.policy import ControlAction, VehicleAdvice
+
+return ControlAction(
+    signal_phases={"demo_2": 2},
+    vehicle_advisories={
+        "vehicle_id": VehicleAdvice(
+            target_speed=8.5,
+            lane_index=1,
+            duration=2.0,
+        )
+    },
+)
+```
+
+目标速度不得超过该车当前 `allowed_speed`，车辆必须仍处于仿真中，duration 必须为
+正数。runner 在 duration 到期后调用 `setSpeed(vehicle_id, -1)` 恢复 SUMO 自主速度。
+换道请求由 runner 调用 TraCI；车道不存在或车辆当前不能换道时，SUMO 会拒绝请求。
+
+### 远程 HTTP 算法
+
+算法可以独立进程或独立机器运行，只需暴露三个 JSON 接口：
+
+- `POST /reset`：接收 `SimulationMetadata`，返回任意 JSON 对象。
+- `POST /act`：接收 `SimulationObservation`，返回控制动作。
+- `POST /close`：仿真退出通知，返回任意 JSON 对象。
+
+启动命令：
+
+```bash
+pip install -r backend/requirements.txt
+uvicorn algorithms.baseline.http_policy_server:app --host 127.0.0.1 --port 8001
+
+# 另一个终端
+python -m simulation.sumo.run --mode policy --gui \
+  --policy-endpoint http://127.0.0.1:8001 --policy-timeout 2
+```
+
+`algorithms.baseline.http_policy_server` 是可直接联调的最长队列示例，算法同学可以复制
+它的三个端点并替换 `act()` 内部决策逻辑。
+
+`/act` 响应格式：
+
+```json
+{
+  "signal_phases": {"demo_2": 2},
+  "vehicle_advisories": {
+    "vehicle_id": {"target_speed": 8.5, "lane_index": 1, "duration": 2.0}
+  }
+}
+```
+
+响应可省略任意一部分。HTTP 超时、非法 JSON、未知字段、不活动车辆、超速建议或非法
+相位都会终止仿真并给出明确错误，避免算法失联后继续写入不确定控制。
 
 ### 安全约束
 

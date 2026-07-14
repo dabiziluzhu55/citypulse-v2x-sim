@@ -25,6 +25,7 @@ from .config import (
     SignalConfigurationError,
     load_signal_configuration,
 )
+from .traffic import TrafficDemandError
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -607,12 +608,18 @@ def build(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    from .build_traffic import build_traffic_scenarios
+
+    build_traffic_scenarios(
+        manifest,
+        output_dir=output_dir,
+    )
     return manifest
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--intersections", nargs="+", default=["demo_1"])
+    parser.add_argument("--intersections", nargs="+", default=["demo_2"])
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING)
     parser.add_argument("--plans", type=Path, default=DEFAULT_PLANS)
     parser.add_argument("--topology", type=Path, default=DEFAULT_TOPOLOGY)
@@ -632,7 +639,12 @@ def main() -> None:
             source_net=args.source_net,
             output_dir=args.output_dir,
         )
-    except (SignalConfigurationError, RuntimeError, subprocess.CalledProcessError) as exc:
+    except (
+        SignalConfigurationError,
+        TrafficDemandError,
+        RuntimeError,
+        subprocess.CalledProcessError,
+    ) as exc:
         raise SystemExit(f"TLS build failed: {exc}") from exc
     print(
         "Built official TLS artifacts for: "

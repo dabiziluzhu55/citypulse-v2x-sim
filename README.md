@@ -31,6 +31,9 @@ python -m simulation.sumo.run --gui --realtime --mode fixed \
   --intersection demo_2 --program demo_2_morning_peak
 ```
 
+构建命令还会按赛方 15 分钟数据生成 `demo_2` 的早高峰、平峰和晚高峰真实车流。
+数据口径、总量校验和场景切换见 [docs/traffic_demand.md](docs/traffic_demand.md)。
+
 ### CARLA+SUMO联合仿真
 
 ```bash

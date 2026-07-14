@@ -26,9 +26,13 @@ python simulation/utils/netcovert_sumo_20.py --keep-xodr
 python simulation/carla_sumo/run_synchronization.py [--sumo-gui]
 ```
 
-默认配置：`data/maps/sumo/generated/official_tls.sumocfg`，运行前必须先构建官方信号。
+默认配置：
+`data/maps/sumo/generated/official_traffic_demo_2_morning_peak.sumocfg`，运行前必须先
+构建官方信号。`official_tls.sumocfg` 仅用于验证转向。
 
 ## 纯 SUMO 管控
 
-`simulation.sumo.run` 提供固定配时和 Python 策略两种模式。策略只提交官方相位
-编号，由 runner 独占 TraCI 并处理安全切换。
+`simulation.sumo.run` 提供固定配时、本地 Python 策略和远程 HTTP 策略三种使用方式。
+策略只提交官方相位及受约束的车辆建议，由 runner 独占 TraCI 并处理安全切换。
+真实车流构建见 [traffic_demand.md](traffic_demand.md)，算法契约见
+[signal_control.md](signal_control.md)。
