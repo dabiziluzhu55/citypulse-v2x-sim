@@ -26,13 +26,23 @@
 - 所有正常转向至少被一个相位放行；
 - 受保护绿之间不能被 SUMO foe 矩阵判定为冲突。
 
+拓扑支持两种写法：相位语义在所有时段一致时使用顶层 `phases`；相位编号在不同时段
+代表不同放行方向，或相位数量不同时，使用 `programs -> program_id -> phases`。
+`demo_4` 使用后一种写法，因为早高峰相位 1 为“南北向直行”，晚高峰相位 1 为
+“东西向直行”，且平峰只有 3 个相位。相位中的 `protected` 可追加受保护放行组，
+`permissive` 可追加让行放行组。
+
+生成的 `tls_manifest.json` 会在每个路口的 `programs` 对象内保存对应的
+`phase_order`、`phase_movements` 和 `templates`。runner 在启动场景时按当前
+`program_id` 选择这一组数据，因此平峰控制动作不会误用早高峰的相位含义。
+
 灯色由构建器生成：`G` 是受保护绿，`g` 是让行绿，`y` 是黄灯，`r` 是红灯。算法只
 返回官方 phase ID，不接触灯色字符串、`tls_id` 或 `linkIndex`。
 
 ## 构建
 
 ```bash
-python -m simulation.sumo.build_tls --intersections demo_2
+python -m simulation.sumo.build_tls --intersections demo_2 demo_4
 ```
 
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。

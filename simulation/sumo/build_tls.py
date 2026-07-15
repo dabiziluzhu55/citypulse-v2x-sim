@@ -19,6 +19,7 @@ from typing import Dict, Iterable, List, Mapping, MutableMapping, Sequence, Tupl
 from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 from .config import (
     IntersectionConfiguration,
+    PhaseMovement,
     SignalConfigurationError,
     load_signal_configuration,
 )
@@ -321,6 +322,7 @@ def _build_templates(
     connections: Sequence[ControlledConnection],
     state_lengths: Mapping[str, int],
     request_foes: Mapping[str, Mapping[int, str]],
+    phase_mappings: Sequence[PhaseMovement] | None = None,
 ) -> Mapping[int, Mapping[str, Mapping[str, str]]]:
     own_connections = [
         item for item in connections if item.intersection_id == config.intersection_id
@@ -328,7 +330,9 @@ def _build_templates(
     tls_ids = sorted({item.tls_id for item in own_connections})
     templates = {}
     served_connections = set()
-    for phase_mapping in config.topology.phases:
+    if phase_mappings is None:
+        phase_mappings = config.topology.phases
+    for phase_mapping in phase_mappings:
         protected = [
             item
             for item in own_connections
@@ -340,6 +344,21 @@ def _build_templates(
                 f"{config.intersection_id}/phase {phase_mapping.phase_number}: "
                 "no protected connections matched."
             )
+        for group in phase_mapping.protected:
+            matches = [
+                item
+                for item in own_connections
+                if item.approach in group.approaches
+                and item.movement == group.movement
+            ]
+            if not matches:
+                raise SignalConfigurationError(
+                    f"{config.intersection_id}/phase {phase_mapping.phase_number}: "
+                    f"no protected {group.movement} connections matched for "
+                    f"{group.approaches}."
+                )
+            protected.extend(matches)
+        protected = list(dict.fromkeys(protected))
         _validate_protected_movements(
             protected,
             request_foes,
@@ -415,14 +434,19 @@ def _append_phase(parent: ET.Element, duration: float, state: str, name: str) ->
 def _write_additional(
     path: Path,
     selected: Sequence[IntersectionConfiguration],
-    templates_by_intersection: Mapping[str, Mapping[int, Mapping[str, Mapping[str, str]]]],
+    templates_by_intersection: Mapping[
+        str,
+        Mapping[str, Mapping[int, Mapping[str, Mapping[str, str]]]],
+    ],
 ) -> None:
     root = ET.Element("additional")
     seen = set()
     for config in selected:
-        templates = templates_by_intersection[config.intersection_id]
-        tls_ids = sorted({tls for value in templates.values() for tls in value})
         for program in config.programs.values():
+            templates = templates_by_intersection[config.intersection_id][
+                program.program_id
+            ]
+            tls_ids = sorted({tls for value in templates.values() for tls in value})
             for tls_id in tls_ids:
                 key = (tls_id, program.program_id)
                 if key in seen:
@@ -491,9 +515,16 @@ def build(
         )
     connections, state_lengths, request_foes = _inspect_generated_network(target_net, selected)
     templates = {
-        config.intersection_id: _build_templates(
-            config, connections, state_lengths, request_foes
-        )
+        config.intersection_id: {
+            program.program_id: _build_templates(
+                config,
+                connections,
+                state_lengths,
+                request_foes,
+                config.topology.phases_for(program.program_id),
+            )
+            for program in config.programs.values()
+        }
         for config in selected
     }
     additional_path = layout.signal_programs_file
@@ -519,12 +550,25 @@ def build(
             item for item in connections if item.intersection_id == config.intersection_id
         ]
         intersection_templates = templates[config.intersection_id]
+        program_views = {}
+        for program in config.programs.values():
+            phase_movements = config.topology.phases_for(program.program_id)
+            program_templates = intersection_templates[program.program_id]
+            program_views[program.program_id] = {
+                "phase_order": [item.phase_number for item in phase_movements],
+                "phase_movements": [asdict(item) for item in phase_movements],
+                "templates": {
+                    str(phase_number): value
+                    for phase_number, value in program_templates.items()
+                },
+            }
+        default_program_view = program_views[next(iter(config.programs))]
         manifest["intersections"][config.intersection_id] = {
             "junction_ids": list(config.junction_ids),
             "tls_ids": sorted({item.tls_id for item in own_connections}),
             "program_ids": list(config.programs),
-            "phase_order": [item.phase_number for item in config.topology.phases],
-            "phase_movements": [asdict(item) for item in config.topology.phases],
+            "phase_order": default_program_view["phase_order"],
+            "phase_movements": default_program_view["phase_movements"],
             "incoming_lanes": {
                 approach: sorted(
                     {
@@ -535,10 +579,8 @@ def build(
                 )
                 for approach in config.topology.approaches
             },
-            "templates": {
-                str(phase_number): value
-                for phase_number, value in intersection_templates.items()
-            },
+            "templates": default_program_view["templates"],
+            "programs": program_views,
             "connections": [asdict(item) for item in own_connections],
         }
     manifest_path = layout.tls_manifest

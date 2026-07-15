@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Dict, Sequence
 
-from .config import SignalConfigurationError
+from .config import SignalConfigurationError, SignalProgram
 from .controller import SafePhaseController, SignalStage, TransitionTiming
 from .policy import (
     PROTOCOL_VERSION,
@@ -83,6 +83,26 @@ def _select_programs(configurations, requested: str, period: str):
             )
         programs[config.intersection_id] = config.programs[program_id]
     return programs
+
+
+def _select_program_manifests(
+    selected_manifest: Mapping[str, Mapping[str, object]],
+    programs: Mapping[str, SignalProgram],
+) -> Mapping[str, Mapping[str, object]]:
+    result = {}
+    for intersection_id, item in selected_manifest.items():
+        program_id = programs[intersection_id].program_id
+        program_views = item.get("programs", {})
+        if program_views:
+            if program_id not in program_views:
+                raise RuntimeError(
+                    f"{intersection_id}: generated manifest has no view for "
+                    f"program {program_id!r}."
+                )
+            result[intersection_id] = {**item, **program_views[program_id]}
+        else:
+            result[intersection_id] = item
+    return result
 
 
 def _build_controllers(

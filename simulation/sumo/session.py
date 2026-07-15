@@ -485,6 +485,7 @@ class SimulationManager:
             _load_manifest,
             _load_sumo_modules,
             _select_programs,
+            _select_program_manifests,
             _selected_manifest,
             _validate_actions,
         )
@@ -517,6 +518,9 @@ class SimulationManager:
                 config.intersection_ids,
             )
             programs = _select_programs(selected_configs, "", config.period)
+            selected_manifest = _select_program_manifests(
+                selected_manifest, programs
+            )
             command = [
                 sumolib.checkBinary("sumo-gui" if config.gui else "sumo"),
                 "--configuration-file",

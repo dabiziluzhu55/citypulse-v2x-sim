@@ -68,6 +68,34 @@ class TrafficDemandTests(unittest.TestCase):
             "right",
         )
 
+        demo_4 = load_traffic_demands(DEMANDS).intersections["demo_4"]
+        self.assertEqual(
+            {name: period.totals["all"] for name, period in demo_4.periods.items()},
+            {"morning_peak": 3413, "off_peak": 1999, "evening_peak": 4073},
+        )
+        self.assertEqual(
+            demo_4.periods["morning_peak"].totals,
+            {"east": 894, "west": 741, "north": 865, "south": 913, "all": 3413},
+        )
+        self.assertEqual(
+            demo_4.periods["off_peak"].totals,
+            {"east": 474, "west": 512, "north": 490, "south": 523, "all": 1999},
+        )
+        self.assertEqual(
+            demo_4.periods["evening_peak"].totals,
+            {"east": 1054, "west": 916, "north": 983, "south": 1120, "all": 4073},
+        )
+        self.assertTrue(
+            all(len(period.intervals) == 8 for period in demo_4.periods.values())
+        )
+        self.assertTrue(
+            all(
+                mapping.movements
+                == {"left": "left", "through": "through", "right": "right"}
+                for mapping in demo_4.approaches.values()
+            )
+        )
+
     def test_declared_total_mismatch_is_rejected(self):
         raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
         raw["intersections"]["demo_2"]["periods"][0]["expected_totals"]["all"] = 1

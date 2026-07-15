@@ -25,6 +25,7 @@ class SignalConfigurationTests(unittest.TestCase):
                 {
                     "demo_1": {"junction_id": "4427"},
                     "demo_2": {"junction_id": "317"},
+                    "demo_4": {"junction_id": "3935"},
                 }
             ),
             encoding="utf-8",
@@ -85,6 +86,103 @@ class SignalConfigurationTests(unittest.TestCase):
             self.assertEqual([phase.number for phase in program.phases], [1, 2])
             self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
             self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+
+        demo_4 = self.load().intersections["demo_4"]
+        self.assertEqual(demo_4.junction_ids, ("3935",))
+        self.assertEqual(
+            demo_4.topology.approaches,
+            {
+                "east": ("-50333",),
+                "west": ("-57186",),
+                "north": ("-56732",),
+                "south": ("-57229",),
+            },
+        )
+        self.assertEqual(
+            {key: value.cycle_duration for key, value in demo_4.programs.items()},
+            {
+                "demo_4_morning_peak": 180,
+                "demo_4_off_peak": 140,
+                "demo_4_evening_peak": 180,
+            },
+        )
+        self.assertEqual(
+            {
+                key: [phase.number for phase in value.phases]
+                for key, value in demo_4.programs.items()
+            },
+            {
+                "demo_4_morning_peak": [1, 2, 3, 4],
+                "demo_4_off_peak": [1, 2, 3],
+                "demo_4_evening_peak": [1, 2, 3, 4],
+            },
+        )
+        self.assertEqual(
+            [
+                phase.movement
+                for phase in demo_4.topology.phases_for("demo_4_off_peak")
+            ],
+            ["through", "through", "through"],
+        )
+
+    def test_demo_4_program_templates_support_protected_and_permissive_groups(self):
+        config = self.load().intersections["demo_4"]
+        connections = []
+        index = 0
+        for approach in ("east", "west", "north", "south"):
+            for direction, movement in (
+                ("r", "right"),
+                ("s", "through"),
+                ("l", "left"),
+            ):
+                connections.append(
+                    ControlledConnection(
+                        intersection_id="demo_4",
+                        junction_id="3935",
+                        tls_id="3935",
+                        link_index=index,
+                        approach=approach,
+                        movement=movement,
+                        from_edge=config.topology.approaches[approach][0],
+                        from_lane=0,
+                        to_edge=f"out_{approach}_{movement}",
+                        to_lane=0,
+                        direction=direction,
+                        via=f":3935_{index}_0",
+                        request_index=index,
+                    )
+                )
+                index += 1
+        state_length = len(connections)
+        no_foes = {value: "0" * state_length for value in range(state_length)}
+
+        morning = _build_templates(
+            config,
+            connections,
+            {"3935": state_length},
+            {"3935": no_foes},
+            config.topology.phases_for("demo_4_morning_peak"),
+        )
+        west_through = 4
+        west_left = 5
+        self.assertEqual(morning[3]["3935"]["green"][west_through], "G")
+        self.assertEqual(morning[3]["3935"]["green"][west_left], "G")
+
+        off_peak = _build_templates(
+            config,
+            connections,
+            {"3935": state_length},
+            {"3935": no_foes},
+            config.topology.phases_for("demo_4_off_peak"),
+        )
+        north_through = 7
+        north_left = 8
+        south_through = 10
+        south_left = 11
+        self.assertEqual(off_peak[1]["3935"]["green"][north_through], "G")
+        self.assertEqual(off_peak[1]["3935"]["green"][south_through], "G")
+        self.assertEqual(off_peak[1]["3935"]["green"][north_left], "g")
+        self.assertEqual(off_peak[1]["3935"]["green"][south_left], "g")
 
     def test_templates_keep_right_turns_permissive(self):
         config = self.load().intersections["demo_1"]

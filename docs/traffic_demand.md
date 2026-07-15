@@ -4,7 +4,8 @@
 
 赛方表格按 15 分钟给出进口转向交通量，单位为 PCU。源数据保存在
 `data/maps/sumo/official_traffic_demands.json`，生成文件保存在
-`data/maps/sumo/generated/`。当前 `demo_2` 使用小客车，`1 vehicle = 1 PCU`，
+`data/maps/sumo/generated/`。当前已配置的 `demo_2`、`demo_4` 使用小客车，
+`1 vehicle = 1 PCU`，
 因此生成车辆数与表格 PCU 数严格相等。
 
 `demo_2` 三个时段的校验总量为：
@@ -14,6 +15,14 @@
 | 早高峰 | 07:00-09:00 | 816 | 903 | 1042 | 2761 |
 | 平峰 | 14:30-16:30 | 474 | 545 | 483 | 1502 |
 | 晚高峰 | 17:30-19:30 | 693 | 847 | 759 | 2299 |
+
+`demo_4` 三个时段的校验总量为：
+
+| 时段 | 官方时间 | 东进口 | 西进口 | 北进口 | 南进口 | 合计 |
+|---|---:|---:|---:|---:|---:|---:|
+| 早高峰 | 07:00-09:00 | 894 | 741 | 865 | 913 | 3413 |
+| 平峰 | 14:30-16:30 | 474 | 512 | 490 | 523 | 1999 |
+| 晚高峰 | 17:30-19:30 | 1054 | 916 | 983 | 1120 | 4073 |
 
 配置中的 `expected_totals` 不是重复数据，而是防止人工录入错误的校验值。构建器会
 检查每个区间恰好 900 秒、区间连续覆盖完整时段、每个值为非负整数，并重新计算
@@ -36,12 +45,21 @@
 官方字符串直接当作 SUMO direction。构建器通过 `tls_manifest.json` 中实际连接反查
 `from_edge -> to_edge`；找不到或找到多条不同路线时立即终止。
 
+`demo_4` 的官方方位与 SUMO 转向一致，四个 incoming edge 为：
+
+| 官方进口 | SUMO approach | incoming edge |
+|---|---|---|
+| 东进口 | `east` | `-50333` |
+| 西进口 | `west` | `-57186` |
+| 北进口 | `north` | `-56732` |
+| 南进口 | `south` | `-57229` |
+
 ## 构建与运行
 
 服务器上设置 `SUMO_HOME` 后执行：
 
 ```bash
-python -m simulation.sumo.build_tls --intersections demo_2
+python -m simulation.sumo.build_tls --intersections demo_2 demo_4
 ```
 
 该命令一次生成公共信号路网以及三个真实交通场景：
@@ -90,7 +108,7 @@ python -m simulation.sumo.run --gui --realtime --mode fixed
 
 ```bash
 python -m simulation.sumo.run --gui --mode fixed \
-  --intersection demo_2 --period off_peak
+  --intersection demo_4 --period off_peak
 ```
 
 ## 扩展其他路口
@@ -98,7 +116,9 @@ python -m simulation.sumo.run --gui --mode fixed \
 每增加一个路口，按以下顺序维护：
 
 1. 在 `official_tls_plans.json` 录入官方配时。
-2. 在 `official_tls_topology.json` 录入 SUMO incoming edge 与相位运动。
+2. 在 `official_tls_topology.json` 录入 SUMO incoming edge 与相位运动。如果三个
+   program 的相位编号、数量或含义不同，使用 `programs -> program_id -> phases`；
+   三个 program 完全共用相位语义时才使用顶层 `phases`。
 3. 在 `official_traffic_demands.json` 录入官方进口、转向映射和每个 15 分钟值。
 4. 构建后检查 `generated/reports/official_tls_connections.csv`，再用真实场景 GUI 查看每种转向。
 5. 运行单元测试，确认区间、合计、路线和接口校验均通过。
