@@ -6,6 +6,8 @@ import {
   CESIUM_OSM_BUILDINGS_ASSET_ID,
   XIONGAN_3DTILES_CALIBRATION,
   XIONGAN_3DTILES_DEFAULT_URL,
+  XIONGAN_ROAD_VISUAL_SEGMENTS,
+  type RoadVisualLevel,
 } from '../../constants/mapDefaults'
 import { useAppMapView } from '../../composables/useAppMapView'
 
@@ -15,6 +17,69 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 
 let viewer: Cesium.Viewer | null = null
+let roadEntities: Cesium.Entity[] = []
+
+const ROAD_STYLE: Record<RoadVisualLevel, {
+  baseWidth: number
+  glowWidth: number
+  glowPower: number
+  baseColor: Cesium.Color
+  glowColor: Cesium.Color
+}> = {
+  arterial: {
+    baseWidth: 16,
+    glowWidth: 4,
+    glowPower: 0.18,
+    baseColor: Cesium.Color.fromCssColorString('#07345d').withAlpha(0.72),
+    glowColor: Cesium.Color.fromCssColorString('#20e8ff').withAlpha(0.96),
+  },
+  secondary: {
+    baseWidth: 10,
+    glowWidth: 3,
+    glowPower: 0.14,
+    baseColor: Cesium.Color.fromCssColorString('#062744').withAlpha(0.64),
+    glowColor: Cesium.Color.fromCssColorString('#56f0ff').withAlpha(0.76),
+  },
+  connector: {
+    baseWidth: 7,
+    glowWidth: 2,
+    glowPower: 0.1,
+    baseColor: Cesium.Color.fromCssColorString('#041c32').withAlpha(0.54),
+    glowColor: Cesium.Color.fromCssColorString('#8ff8ff').withAlpha(0.58),
+  },
+}
+
+function requestSceneRender(currentViewer: Cesium.Viewer): void {
+  currentViewer.scene.requestRender()
+}
+
+function optimizeCesiumViewer(currentViewer: Cesium.Viewer): void {
+  const { scene } = currentViewer
+  currentViewer.resolutionScale = window.devicePixelRatio > 1 ? 0.82 : 1
+  currentViewer.targetFrameRate = 45
+
+  scene.requestRenderMode = true
+  scene.maximumRenderTimeChange = 1 / 15
+  scene.highDynamicRange = false
+  scene.fog.enabled = false
+  scene.globe.enableLighting = false
+
+  if (scene.skyAtmosphere) {
+    scene.skyAtmosphere.show = false
+  }
+  if (scene.sun) {
+    scene.sun.show = false
+  }
+  if (scene.moon) {
+    scene.moon.show = false
+  }
+  if (scene.skyBox) {
+    scene.skyBox.show = false
+  }
+
+  currentViewer.camera.percentageChanged = 0.02
+  currentViewer.camera.changed.addEventListener(() => requestSceneRender(currentViewer))
+}
 
 function applyTilesetCalibration(tileset: Cesium.Cesium3DTileset): void {
   const calibration = XIONGAN_3DTILES_CALIBRATION
@@ -64,12 +129,20 @@ async function loadLocalBuildings(currentViewer: Cesium.Viewer): Promise<void> {
   const configuredUrl = import.meta.env.VITE_XIONGAN_3DTILES_URL?.trim()
   const tilesetUrl = configuredUrl || XIONGAN_3DTILES_DEFAULT_URL
   const tileset = await Cesium.Cesium3DTileset.fromUrl(tilesetUrl, {
-    maximumScreenSpaceError: 20,
+    maximumScreenSpaceError: 24,
     cacheBytes: 256 * 1024 * 1024,
     maximumCacheOverflowBytes: 128 * 1024 * 1024,
     dynamicScreenSpaceError: true,
+    dynamicScreenSpaceErrorDensity: 0.0028,
+    dynamicScreenSpaceErrorFactor: 16,
     cullWithChildrenBounds: true,
     preloadWhenHidden: false,
+    skipLevelOfDetail: true,
+    baseScreenSpaceError: 1024,
+    skipScreenSpaceErrorFactor: 16,
+    skipLevels: 1,
+    immediatelyLoadDesiredLevelOfDetail: false,
+    loadSiblings: false,
   })
 
   tileset.tileFailed.addEventListener((event) => {
@@ -79,11 +152,13 @@ async function loadLocalBuildings(currentViewer: Cesium.Viewer): Promise<void> {
 
   applyTilesetCalibration(tileset)
   currentViewer.scene.primitives.add(tileset)
+  requestSceneRender(currentViewer)
 }
 
 async function loadOsmBuildings(currentViewer: Cesium.Viewer): Promise<void> {
   const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(CESIUM_OSM_BUILDINGS_ASSET_ID)
   currentViewer.scene.primitives.add(tileset)
+  requestSceneRender(currentViewer)
 }
 
 async function createOfflineBaseLayer(): Promise<Cesium.ImageryLayer> {
@@ -124,6 +199,75 @@ function addTiandituLayers(currentViewer: Cesium.Viewer, token: string): void {
   })
 }
 
+function toRoadPositions(coordinates: Array<[number, number]>, height = 1.8): Cesium.Cartesian3[] {
+  return coordinates.map(([lon, lat]) => Cesium.Cartesian3.fromDegrees(lon, lat, height))
+}
+
+function addRoadVisualLayer(currentViewer: Cesium.Viewer): void {
+  roadEntities = XIONGAN_ROAD_VISUAL_SEGMENTS.flatMap((segment) => {
+    const style = ROAD_STYLE[segment.level]
+    const positions = toRoadPositions(segment.coordinates)
+    const baseEntity = currentViewer.entities.add({
+      id: `road-base-${segment.id}`,
+      name: `${segment.name} 底色`,
+      polyline: {
+        positions,
+        width: style.baseWidth,
+        material: style.baseColor,
+        clampToGround: false,
+      },
+    })
+    const glowEntity = currentViewer.entities.add({
+      id: `road-glow-${segment.id}`,
+      name: `${segment.name} 光效`,
+      polyline: {
+        positions,
+        width: style.glowWidth,
+        material: new Cesium.PolylineGlowMaterialProperty({
+          glowPower: style.glowPower,
+          taperPower: 0.45,
+          color: style.glowColor,
+        }),
+        clampToGround: false,
+      },
+    })
+    return [baseEntity, glowEntity]
+  })
+
+  addIntersectionBeacons(currentViewer)
+  requestSceneRender(currentViewer)
+}
+
+function addIntersectionBeacons(currentViewer: Cesium.Viewer): void {
+  const beaconPoints: Array<[number, number]> = [
+    [115.9326, 39.0645],
+    [115.9375, 39.0643],
+    [115.9357, 39.0611],
+    [115.932, 39.0608],
+  ]
+
+  const beacons = beaconPoints.map(([lon, lat], index) => currentViewer.entities.add({
+    id: `road-beacon-${index}`,
+    position: Cesium.Cartesian3.fromDegrees(lon, lat, 5),
+    ellipse: {
+      semiMajorAxis: 28,
+      semiMinorAxis: 28,
+      height: 3,
+      material: Cesium.Color.fromCssColorString('#21e6ff').withAlpha(0.18),
+      outline: true,
+      outlineColor: Cesium.Color.fromCssColorString('#21e6ff').withAlpha(0.72),
+      outlineWidth: 2,
+    },
+  }))
+
+  roadEntities.push(...beacons)
+}
+
+function clearRoadVisualLayer(currentViewer: Cesium.Viewer): void {
+  roadEntities.forEach((entity) => currentViewer.entities.remove(entity))
+  roadEntities = []
+}
+
 async function initViewer() {
   const ionToken = import.meta.env.VITE_CESIUM_ION_TOKEN?.trim()
   const tiandituToken = import.meta.env.VITE_TIANDITU_TOKEN?.trim()
@@ -154,9 +298,14 @@ async function initViewer() {
     fullscreenButton: false,
     infoBox: false,
     selectionIndicator: false,
+    shadows: false,
+    shouldAnimate: false,
+    useBrowserRecommendedResolution: true,
     baseLayer,
     ...(ionToken ? { terrain: Cesium.Terrain.fromWorldTerrain() } : {}),
   })
+
+  optimizeCesiumViewer(viewer)
 
   if (tiandituToken) {
     addTiandituLayers(viewer, tiandituToken)
@@ -165,6 +314,7 @@ async function initViewer() {
   }
 
   viewer.scene.globe.depthTestAgainstTerrain = Boolean(ionToken)
+  addRoadVisualLayer(viewer)
 
   try {
     await loadLocalBuildings(viewer)
@@ -186,6 +336,7 @@ async function initViewer() {
 
   mapView.registerCesium(viewer)
   loading.value = false
+  requestSceneRender(viewer)
 }
 
 onMounted(() => {
@@ -194,6 +345,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   mapView.unregisterCesium()
+  if (viewer) {
+    clearRoadVisualLayer(viewer)
+  }
   viewer?.destroy()
   viewer = null
 })

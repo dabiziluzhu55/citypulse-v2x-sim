@@ -3,6 +3,8 @@ import type Map from 'ol/Map'
 import { easeOut } from 'ol/easing'
 import { fromLonLat, transformExtent } from 'ol/proj'
 import { MAP_FIT_PADDING, MAP_FLY_DURATION_MS } from '../constants/mapLayout'
+import { DEFAULT_CESIUM_CAMERA_PRESET_ID, resolveCesiumCameraPreset } from '../constants/mapDefaults'
+import type { CesiumCameraPreset } from '../types/map'
 
 export type StoredMapViewport =
   | { kind: 'center'; center: [number, number]; zoom: number }
@@ -10,9 +12,10 @@ export type StoredMapViewport =
 
 export interface ApplyViewportOptions {
   duration?: number
+  cameraPreset?: CesiumCameraPreset
 }
 
-const CESIUM_CAMERA_PITCH = Cesium.Math.toRadians(-45)
+const DEFAULT_CAMERA_PRESET = resolveCesiumCameraPreset(DEFAULT_CESIUM_CAMERA_PRESET_ID)
 
 export function zoomToCameraHeight(zoom: number, latitude: number): number {
   const latRad = (latitude * Math.PI) / 180
@@ -47,31 +50,61 @@ export function applyOlViewport(
   })
 }
 
+function boundsCenter(bounds: [number, number, number, number]): [number, number] {
+  const [minLon, minLat, maxLon, maxLat] = bounds
+  return [(minLon + maxLon) / 2, (minLat + maxLat) / 2]
+}
+
+function boundsCameraHeight(
+  bounds: [number, number, number, number],
+  preset: CesiumCameraPreset,
+): number {
+  const [minLon, minLat, maxLon, maxLat] = bounds
+  const widthMeters = Cesium.Cartesian3.distance(
+    Cesium.Cartesian3.fromDegrees(minLon, (minLat + maxLat) / 2),
+    Cesium.Cartesian3.fromDegrees(maxLon, (minLat + maxLat) / 2),
+  )
+  const heightMeters = Cesium.Cartesian3.distance(
+    Cesium.Cartesian3.fromDegrees((minLon + maxLon) / 2, minLat),
+    Cesium.Cartesian3.fromDegrees((minLon + maxLon) / 2, maxLat),
+  )
+  const range = Math.max(widthMeters, heightMeters) * (preset.rangeMultiplier ?? 1)
+  return Math.max(preset.height, range)
+}
+
+function cameraOrientation(preset: CesiumCameraPreset): Cesium.HeadingPitchRollValues {
+  return {
+    heading: Cesium.Math.toRadians(preset.headingDegrees),
+    pitch: Cesium.Math.toRadians(preset.pitchDegrees),
+    roll: Cesium.Math.toRadians(preset.rollDegrees ?? 0),
+  }
+}
+
 export function applyCesiumViewport(
   viewer: Cesium.Viewer,
   viewport: StoredMapViewport,
   options: ApplyViewportOptions = {},
 ): void {
   const durationSec = (options.duration ?? MAP_FLY_DURATION_MS) / 1000
+  const preset = options.cameraPreset ?? DEFAULT_CAMERA_PRESET
 
   if (viewport.kind === 'bounds') {
-    const [minLon, minLat, maxLon, maxLat] = viewport.bounds
+    const [lon, lat] = boundsCenter(viewport.bounds)
     void viewer.camera.flyTo({
-      destination: Cesium.Rectangle.fromDegrees(minLon, minLat, maxLon, maxLat),
+      destination: Cesium.Cartesian3.fromDegrees(lon, lat, boundsCameraHeight(viewport.bounds, preset)),
+      orientation: cameraOrientation(preset),
       duration: durationSec,
+      complete: () => viewer.scene.requestRender(),
     })
     return
   }
 
   const [lon, lat] = viewport.center
-  const height = zoomToCameraHeight(viewport.zoom, lat)
+  const height = Math.max(zoomToCameraHeight(viewport.zoom, lat), preset.height)
   void viewer.camera.flyTo({
     destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
-    orientation: {
-      heading: 0,
-      pitch: CESIUM_CAMERA_PITCH,
-      roll: 0,
-    },
+    orientation: cameraOrientation(preset),
     duration: durationSec,
+    complete: () => viewer.scene.requestRender(),
   })
 }
