@@ -1,41 +1,35 @@
-# CityPulse V2X Sim
+# CityPulse V2X Simulation
 
-SUMO+CARLA联合仿真与交通协同管控平台。
+城市交通与车路云协同仿真可视化项目，包含 Vue 3 仪表盘前端和 FastAPI Mock 后端。
 
-## 目录结构
+## 环境要求
 
-| 目录 | 说明 |
-|------|------|
-| `simulation/` | 仿真基础设施：SUMO、CARLA、联合同步、地图工具 |
-| `algorithms/` | 管控算法：基线、强化学习、评估指标 |
-| `backend/` | FastAPI后端（待实现） |
-| `frontend/` | Vue 前端（待实现） |
-| `data/maps/` | 示例地图数据 |
-| `configs/` | 全局配置 |
-| `scripts/` | 一键运行脚本（待补充） |
-| `docs/` | 项目文档 |
+- Node.js 20.19+ 或 22.12+
+- Python 3.10+
 
-## 架构说明
+## 启动后端
 
-**仿真与算法分离**：`simulation/` 负责世界模型与 TraCI/CARLA 交互；`algorithms/` 负责信号控制决策。算法可在纯SUMO模式运行，也可在联合仿真循环中通过hook注入
-
-## 快速开始
-
-### SUMO单独仿真+MaxPressure管控
-
-```bash
-export SUMO_HOME=/path/to/sumo
-cd /home/kemove/devdata1/zrl/citypulse-v2x-sim
-python algorithms/baseline/run_sumo_control.py --gui
+```powershell
+cd backend
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8001
 ```
 
-### CARLA+SUMO联合仿真
+## 启动前端
 
-```bash
-export SUMO_HOME=/path/to/sumo
-export CARLA_ROOT=/path/to/CARLA_0.9.16
-# 先启动 CARLA 服务端
-python simulation/carla_sumo/run_synchronization.py --sumo-gui
+```powershell
+cd frontend
+npm install
+npm run dev
 ```
 
-详见 [docs/setup.md](docs/setup.md)
+前端默认地址为 `http://127.0.0.1:5173`，开发代理连接 `http://127.0.0.1:8001`。
+
+## 构建检查
+
+```powershell
+cd frontend
+npm run build
+```
+
+雄安新区本地 3D Tiles 可通过环境变量 `XIONGAN_3DTILES_DIR` 指定；未配置时后端仍可正常提供其他 Mock API。

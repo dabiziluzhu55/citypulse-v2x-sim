@@ -21,7 +21,7 @@ import {
 <style scoped>
 .dashboard-bottom-rail-left {
   position: fixed;
-  left: var(--dashboard-bottom-rail-left-edge, 76px);
+  left: calc(var(--dashboard-bottom-rail-left-edge, 76px) + 205px);
   right: calc(50% - var(--dashboard-bottom-connect-half, 269.59px) - var(--dashboard-bottom-rail-center-gap, 500px) - var(--dashboard-bottom-rail-right-inset, 100px));
   bottom: var(--dashboard-bottom-dock-offset-y, 12px);
   z-index: 5;
@@ -31,8 +31,9 @@ import {
   height: 30px;
   min-width: 120px;
   object-fit: fill;
-  /* 右侧锚定斜切帽；左侧由容器左缘自然对齐边框，保持顶边线连续 */
-  object-position: right bottom;
+  object-position: left bottom;
+  transform: scaleX(-1);
+  transform-origin: center;
 }
 
 @media (max-width: 1320px) {

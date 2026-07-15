@@ -31,7 +31,7 @@ import cornerTopRightBg from '../../../assets/design/chrome/corner-top-right.svg
 
 /* 左上.svg：外角在 SVG 左缘，斜切朝向标题 */
 .dashboard-top-rail--left {
-  left: calc(var(--dashboard-top-corner-inset, 16px) - var(--dashboard-frame-edge-outset, 14px));
+  left: calc(var(--dashboard-top-corner-inset, 16px) - var(--dashboard-frame-edge-outset, 14px) + 125px);
   right: calc(
     50% + var(--dashboard-top-title-half, 387.5px) - var(--dashboard-top-rail-center-bias, 80px)
   );
@@ -39,11 +39,13 @@ import cornerTopRightBg from '../../../assets/design/chrome/corner-top-right.svg
 
 .dashboard-top-rail--left .dashboard-top-rail__art {
   object-position: left top;
+  transform: scaleX(-1);
+  transform-origin: center;
 }
 
 /* 左上 (1).svg：外角在 SVG 右缘，斜切朝向标题 */
 .dashboard-top-rail--right {
-  right: calc(var(--dashboard-top-corner-inset, 16px) - var(--dashboard-frame-edge-outset, 14px));
+  right: calc(var(--dashboard-top-corner-inset, 16px) - var(--dashboard-frame-edge-outset, 14px) + 125px);
   left: calc(
     50% + var(--dashboard-top-title-half, 387.5px) - var(--dashboard-top-rail-center-bias, 80px)
   );
@@ -51,6 +53,8 @@ import cornerTopRightBg from '../../../assets/design/chrome/corner-top-right.svg
 
 .dashboard-top-rail--right .dashboard-top-rail__art {
   object-position: right top;
+  transform: scaleX(-1);
+  transform-origin: center;
 }
 
 @media (max-width: 1320px) {

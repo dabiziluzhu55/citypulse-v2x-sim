@@ -102,7 +102,7 @@ const { nowLabel } = useDashboardClock()
 .dashboard-header__title-wrap {
   position: absolute;
   left: 50%;
-  top: 0;
+  top: -17px;
   transform: translateX(-50%);
   background-repeat: no-repeat;
   background-position: center;

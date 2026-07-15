@@ -21,7 +21,7 @@ import {
 .dashboard-bottom-rail-right {
   position: fixed;
   left: auto;
-  right: var(--dashboard-bottom-rail-right-edge, 76px);
+  right: calc(var(--dashboard-bottom-rail-right-edge, 76px) + 205px);
   width: var(--dashboard-bottom-rail-art-width, 562px);
   bottom: var(--dashboard-bottom-dock-offset-y, 12px);
   height: var(--dashboard-bottom-rail-height, 30px);
