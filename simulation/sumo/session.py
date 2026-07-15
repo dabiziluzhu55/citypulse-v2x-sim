@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 from uuid import uuid4
 
+from .artifacts import GeneratedArtifactLayout
 from .events import (
     AccidentEvent,
     DisturbanceEvent,
@@ -220,10 +221,13 @@ def _lane_specs(net_path: Path, required: set[str]):
 
 
 def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatalog:
-    traffic = _read_json(generated_dir / "traffic_manifest.json")
-    tls = _read_json(generated_dir / "tls_manifest.json")
+    layout = GeneratedArtifactLayout(generated_dir)
+    traffic = _read_json(layout.traffic_manifest)
+    tls = _read_json(layout.tls_manifest)
     if int(traffic.get("schema_version", 0)) != 2:
         raise SessionError("Rebuild traffic artifacts to obtain manifest schema_version 2.")
+    if int(tls.get("schema_version", 0)) != 2:
+        raise SessionError("Rebuild signal artifacts to obtain manifest schema_version 2.")
     mapping_path = generated_dir.parent / "TotalMap_20.intersections.json"
     mapping = _read_json(mapping_path)
     scenarios = traffic.get("scenarios", {})
@@ -235,7 +239,7 @@ def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatal
         for connection in tls["intersections"][intersection_id]["connections"]:
             required_lanes.add(f"{connection['from_edge']}_{connection['from_lane']}")
             required_lanes.add(f"{connection['to_edge']}_{connection['to_lane']}")
-    specs = _lane_specs(generated_dir / "TotalMap_20.signals.net.xml", required_lanes)
+    specs = _lane_specs(layout.network_file, required_lanes)
 
     intersections = {}
     period_order = {"morning_peak": 0, "off_peak": 1, "evening_peak": 2}
@@ -507,7 +511,9 @@ class SimulationManager:
             )
             selected_configs = configuration.select(config.intersection_ids)
             selected_manifest = _selected_manifest(
-                _load_manifest(self.generated_dir / "tls_manifest.json"),
+                _load_manifest(
+                    GeneratedArtifactLayout(self.generated_dir).tls_manifest
+                ),
                 config.intersection_ids,
             )
             programs = _select_programs(selected_configs, "", config.period)

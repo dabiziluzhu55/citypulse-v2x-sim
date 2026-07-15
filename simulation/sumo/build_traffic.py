@@ -5,11 +5,14 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import re
+import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Mapping, Sequence, Tuple
 
+from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 from .traffic import (
     ApproachDemandMapping,
     DemandPeriod,
@@ -21,8 +24,8 @@ from .traffic import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SUMO_DIR = PROJECT_ROOT / "data" / "maps" / "sumo"
 DEFAULT_DEMANDS = SUMO_DIR / "official_traffic_demands.json"
-DEFAULT_OUTPUT_DIR = SUMO_DIR / "generated"
-DEFAULT_MANIFEST = DEFAULT_OUTPUT_DIR / "tls_manifest.json"
+DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
+DEFAULT_MANIFEST = GeneratedArtifactLayout(DEFAULT_OUTPUT_DIR).tls_manifest
 
 
 def _safe_id(value: str) -> str:
@@ -173,6 +176,7 @@ def _write_program_additional(
 
 def _write_sumocfg(
     path: Path,
+    network_path: Path,
     route_filename: str,
     additional_filename: str,
     period: DemandPeriod,
@@ -181,7 +185,8 @@ def _write_sumocfg(
     simulation_end = period.duration + drain_seconds
     root = ET.Element("configuration")
     input_node = ET.SubElement(root, "input")
-    ET.SubElement(input_node, "net-file", {"value": "TotalMap_20.signals.net.xml"})
+    relative_network = os.path.relpath(network_path, path.parent).replace(os.sep, "/")
+    ET.SubElement(input_node, "net-file", {"value": relative_network})
     ET.SubElement(input_node, "route-files", {"value": route_filename})
     ET.SubElement(input_node, "additional-files", {"value": additional_filename})
     time_node = ET.SubElement(root, "time")
@@ -220,7 +225,11 @@ def build_traffic_scenarios(
                 "Requested intersections are absent from the TLS manifest: "
                 f"{sorted(missing_from_manifest)}"
             )
-    output_dir.mkdir(parents=True, exist_ok=True)
+    layout = GeneratedArtifactLayout(output_dir)
+    layout.create_base_directories()
+    if (output_dir / "traffic").exists():
+        shutil.rmtree(output_dir / "traffic")
+        (output_dir / "traffic").mkdir(parents=True)
     result = {
         "schema_version": 2,
         "source": str(demand_path.resolve()),
@@ -240,9 +249,13 @@ def build_traffic_scenarios(
                     f"{period.program_id!r} is absent from the TLS manifest."
                 )
             scenario_id = f"{intersection_id}_{period.period_id}"
-            route_path = output_dir / f"official_traffic_{scenario_id}.rou.xml"
-            sumocfg_path = output_dir / f"official_traffic_{scenario_id}.sumocfg"
-            additional_path = output_dir / f"official_tls_{scenario_id}.add.xml"
+            scenario_dir = layout.traffic_scenario_dir(
+                intersection_id, period.period_id
+            )
+            scenario_dir.mkdir(parents=True, exist_ok=True)
+            route_path = scenario_dir / "routes.rou.xml"
+            sumocfg_path = scenario_dir / "simulation.sumocfg"
+            additional_path = scenario_dir / "signals.add.xml"
             flow_count, flow_records = _write_routes(
                 route_path,
                 intersection_id,
@@ -251,12 +264,13 @@ def build_traffic_scenarios(
                 period,
             )
             _write_program_additional(
-                output_dir / "official_tls.add.xml",
+                layout.signal_programs_file,
                 additional_path,
                 period.program_id,
             )
             simulation_end = _write_sumocfg(
                 sumocfg_path,
+                layout.network_file,
                 route_path.name,
                 additional_path.name,
                 period,
@@ -270,9 +284,9 @@ def build_traffic_scenarios(
                     "start": _clock(period.start),
                     "end": _clock(period.end),
                 },
-                "route_file": route_path.name,
-                "additional_file": additional_path.name,
-                "sumocfg": sumocfg_path.name,
+                "route_file": layout.relative(route_path),
+                "additional_file": layout.relative(additional_path),
+                "sumocfg": layout.relative(sumocfg_path),
                 "demand_duration": period.duration,
                 "simulation_end": simulation_end,
                 "flow_count": flow_count,
@@ -296,7 +310,7 @@ def build_traffic_scenarios(
                     name: value for name, value in period.totals.items() if name != "all"
                 },
             }
-    manifest_path = output_dir / "traffic_manifest.json"
+    manifest_path = layout.traffic_manifest
     manifest_path.write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

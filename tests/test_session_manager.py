@@ -5,6 +5,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from simulation.sumo.artifacts import GeneratedArtifactLayout
 from simulation.sumo.session import (
     SessionBusyError,
     SimulationConfig,
@@ -16,12 +17,14 @@ from test_session_scenario import write_fixture
 
 def complete_generated_fixture(root: Path):
     generated = write_fixture(root)
-    (generated / "TotalMap_20.signals.net.xml").write_text(
+    layout = GeneratedArtifactLayout(generated)
+    layout.network_file.write_text(
         """<net><edge id="in"><lane id="in_0" length="100" speed="13.9"/></edge>
 <edge id="out"><lane id="out_0" length="120" speed="12"/></edge></net>""",
         encoding="utf-8",
     )
     tls = {
+        "schema_version": 2,
         "intersections": {
             "demo_2": {
                 "connections": [
@@ -36,7 +39,7 @@ def complete_generated_fixture(root: Path):
             }
         }
     }
-    (generated / "tls_manifest.json").write_text(json.dumps(tls), encoding="utf-8")
+    layout.tls_manifest.write_text(json.dumps(tls), encoding="utf-8")
     mapping = {"demo_2": {"lon": 116.1, "lat": 39.0}}
     (generated.parent / "TotalMap_20.intersections.json").write_text(
         json.dumps(mapping), encoding="utf-8"

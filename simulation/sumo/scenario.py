@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_GENERATED_DIR = PROJECT_ROOT / "data" / "maps" / "sumo" / "generated"
 DEFAULT_SESSION_ROOT = PROJECT_ROOT / "outputs" / "sessions"
 
 
@@ -134,9 +134,8 @@ def compile_session_scenario(
     if step_length <= 0:
         raise ScenarioCompilationError("step_length must be positive.")
 
-    traffic_manifest = _load_json(
-        generated_dir / "traffic_manifest.json", "traffic manifest"
-    )
+    layout = GeneratedArtifactLayout(generated_dir)
+    traffic_manifest = _load_json(layout.traffic_manifest, "traffic manifest")
     if int(traffic_manifest.get("schema_version", 0)) != 2:
         raise ScenarioCompilationError(
             "traffic_manifest.json must use schema_version 2; rebuild official TLS."
@@ -180,7 +179,7 @@ def compile_session_scenario(
         raise ScenarioCompilationError(
             f"duration_seconds exceeds the remaining period ({maximum_duration:g}s)."
         )
-    net_path = generated_dir / "TotalMap_20.signals.net.xml"
+    net_path = layout.network_file
     if not net_path.is_file():
         raise ScenarioCompilationError(f"Generated signal network is missing: {net_path}")
     window_end = window_start_seconds + actual_duration

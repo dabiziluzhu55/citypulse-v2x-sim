@@ -4,14 +4,20 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from simulation.sumo.artifacts import GeneratedArtifactLayout
 from simulation.sumo.scenario import ScenarioCompilationError, compile_session_scenario
 
 
 def write_fixture(root: Path):
     generated = root / "generated"
-    generated.mkdir()
-    (generated / "TotalMap_20.signals.net.xml").write_text("<net/>", encoding="utf-8")
-    (generated / "demo.rou.xml").write_text(
+    layout = GeneratedArtifactLayout(generated)
+    layout.create_base_directories()
+    layout.network_file.write_text("<net/>", encoding="utf-8")
+    scenario_dir = layout.traffic_scenario_dir("demo_2", "morning_peak")
+    scenario_dir.mkdir(parents=True)
+    route_file = scenario_dir / "routes.rou.xml"
+    additional_file = scenario_dir / "signals.add.xml"
+    route_file.write_text(
         """<routes>
   <vType id="demo_car" vClass="passenger"/>
   <flow id="flow_west_0" type="demo_car" begin="0" end="900" number="10"><route edges="in out"/></flow>
@@ -21,7 +27,7 @@ def write_fixture(root: Path):
 </routes>""",
         encoding="utf-8",
     )
-    (generated / "demo.add.xml").write_text(
+    additional_file.write_text(
         '<additional><tlLogic id="317" programID="demo_2_morning_peak"/></additional>',
         encoding="utf-8",
     )
@@ -39,8 +45,8 @@ def write_fixture(root: Path):
                 "period_id": "morning_peak",
                 "official_time_range": {"start": "07:00:00", "end": "07:30:00"},
                 "demand_duration": 1800,
-                "route_file": "demo.rou.xml",
-                "additional_file": "demo.add.xml",
+                "route_file": layout.relative(route_file),
+                "additional_file": layout.relative(additional_file),
                 "flows": flows,
                 "origins": {
                     "west": {"label": "西进口", "sumo_approach": "west", "lane_ids": ["in_0"]},
@@ -49,7 +55,7 @@ def write_fixture(root: Path):
             }
         },
     }
-    (generated / "traffic_manifest.json").write_text(
+    layout.traffic_manifest.write_text(
         json.dumps(manifest), encoding="utf-8"
     )
     return generated

@@ -44,22 +44,30 @@
 python -m simulation.sumo.build_tls --intersections demo_2
 ```
 
-该命令一次生成信号路网、验证车流以及三个真实交通场景：
+该命令一次生成公共信号路网以及三个真实交通场景：
 
 ```text
-official_traffic_demo_2_morning_peak.rou.xml
-official_traffic_demo_2_morning_peak.sumocfg
-official_tls_demo_2_morning_peak.add.xml
-official_traffic_demo_2_off_peak.rou.xml
-official_traffic_demo_2_off_peak.sumocfg
-official_tls_demo_2_off_peak.add.xml
-official_traffic_demo_2_evening_peak.rou.xml
-official_traffic_demo_2_evening_peak.sumocfg
-official_tls_demo_2_evening_peak.add.xml
-traffic_manifest.json
+generated/
+  network/TotalMap_20.signals.net.xml
+  signals/official_tls.add.xml
+  manifests/tls_manifest.json
+  manifests/traffic_manifest.json
+  reports/official_tls_connections.csv
+  traffic/demo_2/morning_peak/
+    routes.rou.xml
+    signals.add.xml
+    simulation.sumocfg
+  traffic/demo_2/off_peak/
+    routes.rou.xml
+    signals.add.xml
+    simulation.sumocfg
+  traffic/demo_2/evening_peak/
+    routes.rou.xml
+    signals.add.xml
+    simulation.sumocfg
 ```
 
-每个场景使用独立的 `official_tls_demo_2_PERIOD.add.xml`，其中只保留与车流时段对应的
+每个场景使用独立的 `signals.add.xml`，其中只保留与车流时段对应的
 program，保证直接用 `sumo-gui` 打开时不会误选其他时段配时。
 
 每个场景把本时段起点归一化为仿真 `t=0`，保留 `traffic_manifest.json` 中的官方
@@ -69,7 +77,7 @@ program，保证直接用 `sumo-gui` 打开时不会误选其他时段配时。
 直接检查 GUI：
 
 ```bash
-sumo-gui -c data/maps/sumo/generated/official_traffic_demo_2_morning_peak.sumocfg
+sumo-gui -c data/maps/sumo/generated/traffic/demo_2/morning_peak/simulation.sumocfg
 ```
 
 固定配时 runner（默认就是 `demo_2` 早高峰）：
@@ -85,9 +93,6 @@ python -m simulation.sumo.run --gui --mode fixed \
   --intersection demo_2 --period off_peak
 ```
 
-`official_tls.sumocfg` 和 `official_tls_validation.rou.xml` 仍只用于检查每个正常转向
-能否通过，不代表真实车流。
-
 ## 扩展其他路口
 
 每增加一个路口，按以下顺序维护：
@@ -95,7 +100,7 @@ python -m simulation.sumo.run --gui --mode fixed \
 1. 在 `official_tls_plans.json` 录入官方配时。
 2. 在 `official_tls_topology.json` 录入 SUMO incoming edge 与相位运动。
 3. 在 `official_traffic_demands.json` 录入官方进口、转向映射和每个 15 分钟值。
-4. 构建后检查 `official_tls_connections.csv`，再用 GUI 查看每种转向。
+4. 构建后检查 `generated/reports/official_tls_connections.csv`，再用真实场景 GUI 查看每种转向。
 5. 运行单元测试，确认区间、合计、路线和接口校验均通过。
 
 如果后续加入公交车或货车，不能继续直接把 PCU 当车辆数。应在需求配置中增加车型

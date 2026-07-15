@@ -1,8 +1,4 @@
-"""Build a derived SUMO network and official signal programs.
-
-The canonical TotalMap_20.net.xml is read-only. All generated files are placed
-under data/maps/sumo/generated.
-"""
+"""Build a derived SUMO network and official signal programs."""
 
 from __future__ import annotations
 
@@ -20,6 +16,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, MutableMapping, Sequence, Tuple
 
+from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 from .config import (
     IntersectionConfiguration,
     SignalConfigurationError,
@@ -34,7 +31,7 @@ DEFAULT_MAPPING = SUMO_DIR / "TotalMap_20.intersections.json"
 DEFAULT_PLANS = SUMO_DIR / "official_tls_plans.json"
 DEFAULT_TOPOLOGY = SUMO_DIR / "official_tls_topology.json"
 DEFAULT_BASE_NET = SUMO_DIR / "TotalMap_20.net.xml"
-DEFAULT_OUTPUT_DIR = SUMO_DIR / "generated"
+DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
 
 
 @dataclass(frozen=True)
@@ -469,69 +466,6 @@ def _write_connection_report(path: Path, connections: Sequence[ControlledConnect
             writer.writerow(row)
 
 
-def _write_validation_routes(path: Path, connections: Sequence[ControlledConnection]) -> None:
-    root = ET.Element("routes")
-    ET.SubElement(
-        root,
-        "vType",
-        {
-            "id": "validation_car",
-            "vClass": "passenger",
-            "accel": "2.6",
-            "decel": "4.5",
-            "length": "5.0",
-            "maxSpeed": "13.9",
-        },
-    )
-    candidates = {}
-    for connection in sorted(
-        connections,
-        key=lambda item: (item.direction == "t", item.from_lane, item.to_lane),
-    ):
-        if connection.movement == "blocked":
-            continue
-        key = (connection.intersection_id, connection.approach, connection.movement)
-        candidates.setdefault(key, connection)
-    for index, (key, connection) in enumerate(sorted(candidates.items())):
-        intersection_id, approach, movement = key
-        flow = ET.SubElement(
-            root,
-            "flow",
-            {
-                "id": f"{intersection_id}_{approach}_{movement}",
-                "type": "validation_car",
-                "begin": f"{index * 1.5:g}",
-                "end": "200",
-                "period": "30",
-                "departLane": str(connection.from_lane),
-                "departSpeed": "max",
-            },
-        )
-        ET.SubElement(
-            flow,
-            "route",
-            {"edges": f"{connection.from_edge} {connection.to_edge}"},
-        )
-    ET.indent(root, space="  ")
-    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
-
-
-def _write_sumocfg(path: Path) -> None:
-    root = ET.Element("configuration")
-    input_node = ET.SubElement(root, "input")
-    ET.SubElement(input_node, "net-file", {"value": "TotalMap_20.signals.net.xml"})
-    ET.SubElement(input_node, "route-files", {"value": "official_tls_validation.rou.xml"})
-    ET.SubElement(input_node, "additional-files", {"value": "official_tls.add.xml"})
-    time_node = ET.SubElement(root, "time")
-    ET.SubElement(time_node, "begin", {"value": "0"})
-    ET.SubElement(time_node, "end", {"value": "200"})
-    ET.SubElement(time_node, "step-length", {"value": "0.05"})
-    processing = ET.SubElement(root, "processing")
-    ET.SubElement(processing, "time-to-teleport", {"value": "-1"})
-    ET.indent(root, space="  ")
-    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
-
-
 def build(
     intersection_ids: Sequence[str],
     mapping_path: Path = DEFAULT_MAPPING,
@@ -545,8 +479,9 @@ def build(
     junction_ids = sorted({item for config in selected for item in config.junction_ids})
     netconvert = _binary("netconvert")
     sumo = _binary("sumo")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    target_net = output_dir / "TotalMap_20.signals.net.xml"
+    layout = GeneratedArtifactLayout(output_dir)
+    layout.reset()
+    target_net = layout.network_file
     _run_netconvert(netconvert, source_net, target_net, junction_ids)
     removed_empty_params = _remove_empty_params(target_net)
     if removed_empty_params:
@@ -561,19 +496,22 @@ def build(
         )
         for config in selected
     }
-    additional_path = output_dir / "official_tls.add.xml"
+    additional_path = layout.signal_programs_file
     _write_additional(additional_path, selected, templates)
-    _write_connection_report(output_dir / "official_tls_connections.csv", connections)
-    _write_validation_routes(output_dir / "official_tls_validation.rou.xml", connections)
-    _write_sumocfg(output_dir / "official_tls.sumocfg")
+    _write_connection_report(layout.connections_report, connections)
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source_net": str(source_net.resolve()),
         "source_net_sha256": _sha256(source_net),
         "netconvert_version": _version(netconvert),
         "sumo_version": _version(sumo),
         "removed_empty_params": removed_empty_params,
+        "artifacts": {
+            "network_file": layout.relative(layout.network_file),
+            "signal_programs_file": layout.relative(layout.signal_programs_file),
+            "connections_report": layout.relative(layout.connections_report),
+        },
         "intersections": {},
     }
     for config in selected:
@@ -603,7 +541,7 @@ def build(
             },
             "connections": [asdict(item) for item in own_connections],
         }
-    manifest_path = output_dir / "tls_manifest.json"
+    manifest_path = layout.tls_manifest
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

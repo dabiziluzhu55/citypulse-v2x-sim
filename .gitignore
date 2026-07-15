@@ -24,6 +24,6 @@ algorithms/rl/checkpoints/
 *.log
 outputs/
 
-# Generated SUMO signal artifacts
+# Rebuildable SUMO artifacts
 data/maps/sumo/generated/
 *.bak

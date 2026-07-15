@@ -36,18 +36,21 @@ python -m simulation.sumo.build_tls --intersections demo_2
 ```
 
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。
+完整构建会先清空该目录，防止旧路口和旧版平铺文件残留。
 
-| 生成文件 | 用途 |
+| 生成路径 | 用途 |
 |---|---|
-| `TotalMap_20.signals.net.xml` | 加入目标 TLS 的派生路网 |
-| `official_tls.add.xml` | 所有官方 SUMO signal programs |
-| `tls_manifest.json` | runner 使用的相位、连接、lane 和灯色桥接数据 |
-| `official_tls_validation.rou.xml` | 检查每个正常转向能否通过，不代表真实车流 |
-| `official_tls_connections.csv` | 人工核对 connection、movement 和 linkIndex |
-| `official_traffic_demo_N_PERIOD.rou.xml` | 真实 15 分钟车流 |
-| `official_traffic_demo_N_PERIOD.sumocfg` | 对应时段的可运行场景 |
-| `official_tls_demo_N_PERIOD.add.xml` | 只包含该时段 program 的信号文件 |
-| `traffic_manifest.json` | 场景时长、官方时间和 PCU 合计 |
+| `network/TotalMap_20.signals.net.xml` | 加入目标 TLS 的公共派生路网 |
+| `signals/official_tls.add.xml` | 所有官方 SUMO signal programs |
+| `manifests/tls_manifest.json` | runner 使用的相位、连接、lane 和灯色桥接数据 |
+| `manifests/traffic_manifest.json` | 场景路径、官方时间和 PCU 合计 |
+| `reports/official_tls_connections.csv` | 人工核对 connection、movement 和 linkIndex |
+| `traffic/demo_N/PERIOD/routes.rou.xml` | 该路口、该时段的真实 15 分钟车流 |
+| `traffic/demo_N/PERIOD/signals.add.xml` | 只包含该时段 program 的信号文件 |
+| `traffic/demo_N/PERIOD/simulation.sumocfg` | 可直接运行的独立场景 |
+
+生成目录根层只保留上述分类目录。旧的转向验证车流、验证用 `sumocfg` 和 debug POI
+工具已经删除；路线正确性由配置校验、连接报告、单元测试和真实场景 GUI 检查共同保证。
 
 真实车流的数据口径和场景命令见 [traffic_demand.md](traffic_demand.md)。
 

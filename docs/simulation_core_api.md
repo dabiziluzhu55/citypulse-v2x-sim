@@ -21,7 +21,8 @@ lane。前端应从 catalog 生成选项，不要硬编码 `demo_2`、`west` 或
 python -m simulation.sumo.build_tls --intersections demo_2
 ```
 
-该命令生成 schema v2 的 `traffic_manifest.json`。旧生成物会被内核拒绝，重新构建即可。
+该命令在 `generated/manifests/` 下生成 schema v2 的信号与车流 manifest。旧生成物会被
+内核拒绝，重新构建即可。
 
 ## 启动会话
 

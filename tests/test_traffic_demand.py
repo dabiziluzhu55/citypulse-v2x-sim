@@ -4,6 +4,7 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from simulation.sumo.artifacts import GeneratedArtifactLayout
 from simulation.sumo.build_traffic import build_traffic_scenarios
 from simulation.sumo.traffic import TrafficDemandError, load_traffic_demands
 
@@ -79,7 +80,9 @@ class TrafficDemandTests(unittest.TestCase):
     def test_generated_flows_have_exact_counts_and_routes(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
-            (output / "official_tls.add.xml").write_text(
+            layout = GeneratedArtifactLayout(output)
+            layout.create_base_directories()
+            layout.signal_programs_file.write_text(
                 """<additional>
   <tlLogic id="317" programID="demo_2_morning_peak"/>
   <tlLogic id="317" programID="demo_2_off_peak"/>
@@ -108,7 +111,10 @@ class TrafficDemandTests(unittest.TestCase):
                 },
             )
 
-            route_path = output / "official_traffic_demo_2_morning_peak.rou.xml"
+            route_path = (
+                layout.traffic_scenario_dir("demo_2", "morning_peak")
+                / "routes.rou.xml"
+            )
             morning = result["scenarios"]["demo_2_morning_peak"]
             self.assertEqual(len(morning["flows"]), 48)
             self.assertEqual(set(morning["origins"]), {"west", "north", "south"})
@@ -143,7 +149,8 @@ class TrafficDemandTests(unittest.TestCase):
                 )
             )
             config = ET.parse(
-                output / "official_traffic_demo_2_morning_peak.sumocfg"
+                layout.traffic_scenario_dir("demo_2", "morning_peak")
+                / "simulation.sumocfg"
             ).getroot()
             self.assertEqual(config.find("time/end").get("value"), "7500")
             self.assertEqual(
@@ -151,10 +158,18 @@ class TrafficDemandTests(unittest.TestCase):
                 route_path.name,
             )
             additional_name = config.find("input/additional-files").get("value")
-            self.assertEqual(additional_name, "official_tls_demo_2_morning_peak.add.xml")
-            tls_programs = ET.parse(output / additional_name).getroot().findall("tlLogic")
+            self.assertEqual(additional_name, "signals.add.xml")
+            tls_programs = ET.parse(route_path.parent / additional_name).getroot().findall(
+                "tlLogic"
+            )
             self.assertEqual(len(tls_programs), 1)
             self.assertEqual(tls_programs[0].get("programID"), "demo_2_morning_peak")
+            self.assertEqual(
+                config.find("input/net-file").get("value"),
+                "../../../network/TotalMap_20.signals.net.xml",
+            )
+            self.assertTrue(layout.traffic_manifest.is_file())
+            self.assertEqual(list(output.glob("*.xml")), [])
 
 
 if __name__ == "__main__":
