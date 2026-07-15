@@ -36,8 +36,9 @@
 `phase_order`、`phase_movements` 和 `templates`。runner 在启动场景时按当前
 `program_id` 选择这一组数据，因此平峰控制动作不会误用早高峰的相位含义。
 
-灯色由构建器生成：`G` 是受保护绿，`g` 是让行绿，`y` 是黄灯，`r` 是红灯。算法只
-返回官方 phase ID，不接触灯色字符串、`tls_id` 或 `linkIndex`。
+灯色由构建器生成：`G` 是受保护绿，`g` 是让行绿，`y` 是黄灯，`r` 是红灯。算法的
+信号动作只返回官方 phase ID，不接触灯色字符串、`tls_id` 或 `linkIndex`；协议 2.0
+还允许同时返回单车目标速度和当前道路换道请求。
 
 ## 构建
 
@@ -94,11 +95,12 @@ python -m simulation.sumo.run --mode algorithm --gui \
 
 runner 独占 TraCI 信号写权限，并负责：
 
-- 在算法动作写入 SUMO 前验证路口和 phase ID；
+- 在算法动作写入 SUMO 前完整验证路口、phase ID、车辆、速度和目标车道；
 - 满足最小绿灯后才开始切换；
 - 执行当前相位对应的黄灯和全红；
 - 切换期间保留算法提交的最新目标；
 - 同步控制一个官方路口对应的多个物理 TLS；
+- 以一个决策周期为租约执行单车速度和换道动作；
 - 算法超时、失联或返回非法数据时停止仿真。
 
 算法通信字段和响应格式以 [algorithm_interface.md](algorithm_interface.md) 为唯一对外契约。

@@ -8,6 +8,11 @@
 `1 vehicle = 1 PCU`，
 因此生成车辆数与表格 PCU 数严格相等。
 
+车型动力和排放参数独立保存在 `data/maps/sumo/vehicle_profiles.json`。需求文件中的
+`vehicle_type: "passenger"` 引用同名画像；默认使用汽油小客车和
+`HBEFA3/PC_G_EU4`，生成的 `<vType>` 会携带 `emissionClass`，供运行期通过 TraCI
+采集瞬时油耗。后续增加车型时应新增画像并引用其 ID，不要在生成器中硬编码参数。
+
 `demo_2` 三个时段的校验总量为：
 
 | 时段 | 官方时间 | 西进口 | 北进口 | 南进口 | 合计 |

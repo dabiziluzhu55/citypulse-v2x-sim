@@ -24,6 +24,7 @@ from .config import (
     load_signal_configuration,
 )
 from .traffic import TrafficDemandError
+from .vehicle_profiles import VehicleProfileError
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -663,6 +664,7 @@ def main() -> None:
     except (
         SignalConfigurationError,
         TrafficDemandError,
+        VehicleProfileError,
         RuntimeError,
         subprocess.CalledProcessError,
     ) as exc:

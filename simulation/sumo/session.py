@@ -25,6 +25,7 @@ from .events import (
     SpeedLimitEvent,
 )
 from .external_policy import HttpAlgorithmClient
+from .policy import PROTOCOL_VERSION
 from .scenario import (
     DEFAULT_GENERATED_DIR,
     DEFAULT_SESSION_ROOT,
@@ -131,6 +132,24 @@ class VehicleRuntimeSnapshot:
     angle: float
     road_id: str
     lane_id: str
+    controllable: bool = False
+    type_id: str = ""
+    acceleration: float = 0.0
+    lane_index: int = -1
+    lane_position: float = 0.0
+    allowed_speed: float = 0.0
+    route_id: str = ""
+    route_index: int = -1
+    waiting_time: float = 0.0
+    time_loss: float = 0.0
+    distance: float = 0.0
+    fuel_rate_mg_s: float = 0.0
+    fuel_total_mg: float = 0.0
+    fuel_total_ml: float = 0.0
+    hard_braking_events: int = 0
+    next_intersection_id: str | None = None
+    target_speed: float | None = None
+    target_lane_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -142,6 +161,9 @@ class SessionMetrics:
     halting_vehicles: int = 0
     total_waiting_time: float = 0.0
     mean_speed: float = 0.0
+    fuel_consumed_mg: float = 0.0
+    fuel_consumed_ml: float = 0.0
+    hard_braking_events: int = 0
 
 
 @dataclass(frozen=True)
@@ -491,6 +513,11 @@ class SimulationManager:
         )
         from .config import load_signal_configuration
         from .build_tls import DEFAULT_MAPPING, DEFAULT_PLANS, DEFAULT_TOPOLOGY
+        from .vehicle import (
+            VehicleActionController,
+            VehicleTelemetryTracker,
+            build_vehicle_type_metadata,
+        )
 
         config = record.config
         scenario = record.scenario
@@ -499,6 +526,8 @@ class SimulationManager:
         scheduler = None
         controllers = {}
         fixed_tracker = None
+        vehicle_tracker = None
+        vehicle_action_controller = None
         last_snapshot = record.snapshot
         stop_requested = False
         finish_reason = "completed"
@@ -535,6 +564,18 @@ class SimulationManager:
                 "warn",
             ]
             traci.start(command)
+            vehicle_types = build_vehicle_type_metadata(
+                scenario.vehicle_type_profiles,
+                scenario.vehicle_profiles,
+            )
+            tls_to_intersection = {
+                str(tls_id): intersection_id
+                for intersection_id, item in selected_manifest.items()
+                for tls_id in item["tls_ids"]
+            }
+            vehicle_tracker = VehicleTelemetryTracker(
+                traci, vehicle_types, tls_to_intersection
+            )
             lane_targets = _lane_targets(traci, selected_manifest)
             scheduler = DisturbanceScheduler(
                 traci, lane_targets, scenario.duration_seconds
@@ -565,11 +606,15 @@ class SimulationManager:
                     decision_interval=config.decision_interval,
                     minimum_green=config.minimum_green,
                     episode_id=record.session_id,
+                    vehicle_types=vehicle_types,
                 )
                 client = HttpAlgorithmClient(
                     config.algorithm_endpoint, config.algorithm_timeout
                 )
                 client.initialize(metadata)
+                vehicle_action_controller = VehicleActionController(
+                    traci, vehicle_tracker
+                )
                 for intersection_id, controller in controllers.items():
                     _apply_controller_state(
                         traci, selected_manifest[intersection_id], controller
@@ -593,6 +638,7 @@ class SimulationManager:
                 traci.simulationStep()
                 elapsed = float(traci.simulation.getTime())
                 scheduler.tick(elapsed)
+                vehicle_tracker.tick(elapsed)
                 if fixed_tracker is not None:
                     fixed_tracker.tick(traci, elapsed)
                 departed = int(traci.simulation.getDepartedNumber())
@@ -619,17 +665,30 @@ class SimulationManager:
                             controllers,
                             departed_since_decision,
                             arrived_since_decision,
+                            vehicle_tracker=vehicle_tracker,
+                            previous_action_results=(
+                                vehicle_action_controller.previous_results()
+                            ),
                         )
-                        actions = _validate_actions(client.decide(observation), controllers)
-                        for intersection_id, target in actions.items():
-                            if target is not None and controllers[intersection_id].request_phase(
-                                target, elapsed
-                            ):
+                        decision = client.decide(observation)
+                        signal_actions = _validate_actions(
+                            decision.signal_actions, controllers
+                        )
+                        vehicle_actions = vehicle_action_controller.validate(
+                            decision.vehicle_actions
+                        )
+                        for intersection_id, target in signal_actions.items():
+                            if controllers[intersection_id].request_phase(target, elapsed):
                                 _apply_controller_state(
                                     traci,
                                     selected_manifest[intersection_id],
                                     controllers[intersection_id],
                                 )
+                        vehicle_action_controller.apply(
+                            decision_step,
+                            vehicle_actions,
+                            config.decision_interval,
+                        )
                         departed_since_decision = 0
                         arrived_since_decision = 0
                         decision_step += 1
@@ -649,6 +708,8 @@ class SimulationManager:
                         total_departed,
                         total_arrived,
                         sequence,
+                        vehicle_tracker,
+                        vehicle_action_controller,
                     )
                     self._publish(record, last_snapshot)
                     while next_snapshot <= elapsed + 1e-9:
@@ -657,6 +718,23 @@ class SimulationManager:
                     spent = time.perf_counter() - loop_started
                     if spent < config.step_length:
                         time.sleep(config.step_length - spent)
+            sequence += 1
+            final_elapsed = float(traci.simulation.getTime())
+            last_snapshot = _capture_snapshot(
+                record,
+                traci,
+                selected_manifest,
+                controllers,
+                fixed_tracker,
+                scheduler,
+                final_elapsed,
+                total_departed,
+                total_arrived,
+                sequence,
+                vehicle_tracker,
+                vehicle_action_controller,
+            )
+            self._publish(record, last_snapshot)
             finish_reason = "stopped" if stop_requested else "completed"
         except BaseException as exc:
             finish_reason = "error"
@@ -670,16 +748,26 @@ class SimulationManager:
             if scheduler is not None:
                 scheduler.close()
                 last_snapshot = replace(last_snapshot, events=scheduler.snapshots())
+            if vehicle_action_controller is not None:
+                try:
+                    vehicle_action_controller.release()
+                except Exception:
+                    pass
             if client is not None:
                 try:
                     client.finish(
                         {
-                            "protocol_version": "1.0",
+                            "protocol_version": PROTOCOL_VERSION,
                             "episode_id": record.session_id,
-                            "reason": "error" if finish_reason == "error" else "completed",
+                            "reason": finish_reason,
                             "simulation_time": last_snapshot.elapsed_seconds,
                             "departed_vehicles": total_departed,
                             "arrived_vehicles": total_arrived,
+                            "fuel_consumed_mg": last_snapshot.metrics.fuel_consumed_mg,
+                            "fuel_consumed_ml": last_snapshot.metrics.fuel_consumed_ml,
+                            "hard_braking_events": (
+                                last_snapshot.metrics.hard_braking_events
+                            ),
                         }
                     )
                 except Exception:
@@ -794,6 +882,8 @@ def _capture_snapshot(
     total_departed,
     total_arrived,
     sequence,
+    vehicle_tracker,
+    vehicle_action_controller,
 ) -> SimulationSnapshot:
     intersections = {}
     unique_lanes = set()
@@ -833,9 +923,58 @@ def _capture_snapshot(
             stage_elapsed=signal[3],
             lanes=lanes,
         )
+    telemetry = vehicle_tracker.observations(reset_interval=False)
     vehicle_values = []
     speeds = []
     for vehicle_id in traci.vehicle.getIDList():
+        vehicle_id = str(vehicle_id)
+        observation = telemetry.get(vehicle_id)
+        if observation is not None:
+            action = (
+                vehicle_action_controller.current_action(vehicle_id)
+                if vehicle_action_controller is not None
+                else None
+            )
+            speed = observation.motion.speed_mps
+            speeds.append(speed)
+            vehicle_values.append(
+                VehicleRuntimeSnapshot(
+                    vehicle_id=vehicle_id,
+                    x=observation.position.x_m,
+                    y=observation.position.y_m,
+                    speed=speed,
+                    angle=observation.motion.angle_deg,
+                    road_id=observation.location.road_id,
+                    lane_id=observation.location.lane_id,
+                    controllable=True,
+                    type_id=observation.type_id,
+                    acceleration=observation.motion.acceleration_mps2,
+                    lane_index=observation.location.lane_index,
+                    lane_position=observation.location.lane_position_m,
+                    allowed_speed=observation.motion.allowed_speed_mps,
+                    route_id=observation.location.route_id,
+                    route_index=observation.location.route_index,
+                    waiting_time=observation.traffic.accumulated_waiting_time_s,
+                    time_loss=observation.traffic.time_loss_s,
+                    distance=observation.traffic.distance_m,
+                    fuel_rate_mg_s=observation.energy.fuel_rate_mg_s,
+                    fuel_total_mg=observation.energy.fuel_total_mg,
+                    fuel_total_ml=observation.energy.fuel_total_ml,
+                    hard_braking_events=(
+                        observation.driving_events.hard_braking_total
+                    ),
+                    next_intersection_id=(
+                        observation.next_signal.intersection_id
+                        if observation.next_signal
+                        else None
+                    ),
+                    target_speed=(action.target_speed_mps if action else None),
+                    target_lane_index=(
+                        action.target_lane_index if action else None
+                    ),
+                )
+            )
+            continue
         x, y = traci.vehicle.getPosition(vehicle_id)
         speed = float(traci.vehicle.getSpeed(vehicle_id))
         speeds.append(speed)
@@ -853,6 +992,7 @@ def _capture_snapshot(
     halting = sum(int(traci.lane.getLastStepHaltingNumber(lane)) for lane in unique_lanes)
     waiting = sum(float(traci.lane.getWaitingTime(lane)) for lane in unique_lanes)
     scenario = record.scenario
+    fuel_mg, fuel_ml, braking = vehicle_tracker.totals()
     return SimulationSnapshot(
         session_id=record.session_id,
         state="RUNNING",
@@ -874,5 +1014,8 @@ def _capture_snapshot(
             halting_vehicles=halting,
             total_waiting_time=waiting,
             mean_speed=sum(speeds) / len(speeds) if speeds else 0.0,
+            fuel_consumed_mg=fuel_mg,
+            fuel_consumed_ml=fuel_ml,
+            hard_braking_events=braking,
         ),
     )

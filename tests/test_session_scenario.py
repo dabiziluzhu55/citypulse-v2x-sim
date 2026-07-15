@@ -39,6 +39,18 @@ def write_fixture(root: Path):
     ]
     manifest = {
         "schema_version": 2,
+        "vehicle_profile_schema_version": 1,
+        "vehicle_profiles": {
+            "passenger": json.loads(
+                (
+                    Path(__file__).resolve().parents[1]
+                    / "data"
+                    / "maps"
+                    / "sumo"
+                    / "vehicle_profiles.json"
+                ).read_text(encoding="utf-8")
+            )["profiles"]["passenger"]
+        },
         "scenarios": {
             "demo_2_morning_peak": {
                 "intersection_id": "demo_2",
@@ -47,6 +59,8 @@ def write_fixture(root: Path):
                 "demand_duration": 1800,
                 "route_file": layout.relative(route_file),
                 "additional_file": layout.relative(additional_file),
+                "vehicle_profile_id": "passenger",
+                "sumo_vehicle_type_id": "demo_car",
                 "flows": flows,
                 "origins": {
                     "west": {"label": "西进口", "sumo_approach": "west", "lane_ids": ["in_0"]},
@@ -85,6 +99,7 @@ class SessionScenarioTests(unittest.TestCase):
             self.assertEqual([(flow.get("begin"), flow.get("end")) for flow in flows], [("0", "450"), ("450", "900")])
             self.assertEqual(compiled.planned_vehicle_count, 15)
             self.assertEqual(compiled.official_start_seconds, 7 * 3600)
+            self.assertEqual(compiled.vehicle_type_profiles, {"demo_car": "passenger"})
             config = ET.parse(compiled.sumocfg).getroot()
             self.assertEqual(config.find("time/end").get("value"), "900")
 

@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import xml.etree.ElementTree as ET
+from dataclasses import asdict
 from pathlib import Path
 from typing import Mapping, Sequence, Tuple
 
@@ -19,11 +20,13 @@ from .traffic import (
     TrafficDemandError,
     load_traffic_demands,
 )
+from .vehicle_profiles import VehicleProfileError, load_vehicle_profiles
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SUMO_DIR = PROJECT_ROOT / "data" / "maps" / "sumo"
 DEFAULT_DEMANDS = SUMO_DIR / "official_traffic_demands.json"
+DEFAULT_VEHICLE_PROFILES = SUMO_DIR / "vehicle_profiles.json"
 DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
 DEFAULT_MANIFEST = GeneratedArtifactLayout(DEFAULT_OUTPUT_DIR).tls_manifest
 
@@ -78,23 +81,13 @@ def _write_routes(
     intersection_manifest: Mapping[str, object],
     demand,
     period: DemandPeriod,
+    vehicle_profile,
 ) -> Tuple[int, list[Mapping[str, object]]]:
     root = ET.Element("routes")
-    vehicle_type_id = f"{_safe_id(intersection_id)}_official_passenger"
-    ET.SubElement(
-        root,
-        "vType",
-        {
-            "id": vehicle_type_id,
-            "vClass": demand.vehicle_type,
-            "accel": "2.6",
-            "decel": "4.5",
-            "sigma": "0.5",
-            "length": "5",
-            "minGap": "2.5",
-            "maxSpeed": "13.9",
-        },
+    vehicle_type_id = (
+        f"{_safe_id(intersection_id)}_official_{_safe_id(demand.vehicle_type)}"
     )
+    ET.SubElement(root, "vType", vehicle_profile.sumo_attributes(vehicle_type_id))
     routes = {
         (official_approach, official_movement): _movement_route(
             intersection_id,
@@ -203,10 +196,20 @@ def _write_sumocfg(
 def build_traffic_scenarios(
     tls_manifest: Mapping[str, object],
     demand_path: Path = DEFAULT_DEMANDS,
+    vehicle_profile_path: Path = DEFAULT_VEHICLE_PROFILES,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     intersection_ids: Sequence[str] | None = None,
 ) -> Mapping[str, object]:
     configuration = load_traffic_demands(demand_path)
+    profiles = load_vehicle_profiles(vehicle_profile_path)
+    referenced_profiles = {
+        demand.vehicle_type for demand in configuration.intersections.values()
+    }
+    missing_profiles = referenced_profiles - set(profiles)
+    if missing_profiles:
+        raise VehicleProfileError(
+            f"Traffic demand references unknown vehicle profiles: {sorted(missing_profiles)}"
+        )
     manifest_intersections = tls_manifest.get("intersections", {})
     requested = (
         tuple(intersection_ids)
@@ -233,7 +236,13 @@ def build_traffic_scenarios(
     result = {
         "schema_version": 2,
         "source": str(demand_path.resolve()),
+        "vehicle_profile_source": str(vehicle_profile_path.resolve()),
+        "vehicle_profile_schema_version": 1,
         "unit": configuration.unit,
+        "vehicle_profiles": {
+            profile_id: asdict(profiles[profile_id])
+            for profile_id in sorted(referenced_profiles)
+        },
         "scenarios": {},
     }
     for intersection_id in requested:
@@ -262,6 +271,7 @@ def build_traffic_scenarios(
                 intersection_manifest,
                 demand,
                 period,
+                profiles[demand.vehicle_type],
             )
             _write_program_additional(
                 layout.signal_programs_file,
@@ -290,6 +300,11 @@ def build_traffic_scenarios(
                 "demand_duration": period.duration,
                 "simulation_end": simulation_end,
                 "flow_count": flow_count,
+                "vehicle_profile_id": demand.vehicle_type,
+                "sumo_vehicle_type_id": (
+                    f"{_safe_id(intersection_id)}_official_"
+                    f"{_safe_id(demand.vehicle_type)}"
+                ),
                 "flows": flow_records,
                 "origins": {
                     official_name: {
@@ -322,6 +337,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--demand", type=Path, default=DEFAULT_DEMANDS)
+    parser.add_argument(
+        "--vehicle-profiles", type=Path, default=DEFAULT_VEHICLE_PROFILES
+    )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--intersections", nargs="+", default=None)
     return parser.parse_args()
@@ -333,10 +351,11 @@ def main() -> None:
         result = build_traffic_scenarios(
             _load_manifest(args.manifest),
             demand_path=args.demand,
+            vehicle_profile_path=args.vehicle_profiles,
             output_dir=args.output_dir,
             intersection_ids=args.intersections,
         )
-    except TrafficDemandError as exc:
+    except (TrafficDemandError, VehicleProfileError) as exc:
         raise SystemExit(f"Traffic build failed: {exc}") from exc
     print("Built official traffic scenarios: " + ", ".join(result["scenarios"]))
 

@@ -1,30 +1,26 @@
-# 算法组接口文档
+# 算法组 HTTP 接口（协议 2.0）
 
-算法组只需要实现一个 HTTP 服务，不需要安装 SUMO，不需要读取地图 XML，也不要调用
-TraCI。固定配时由仿真端自行运行；Max Pressure、IPPO 和多路口强化学习共用下面同一套
-接口。
+算法服务不需要安装 SUMO、读取地图 XML 或调用 TraCI。仿真端独占 TraCI，通过同步
+HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信号灯和车辆动作。
 
-## 你们需要实现的接口
+协议 2.0 不兼容旧版 1.0。请求和响应均使用 `Content-Type: application/json`；非 2xx、
+超时、非法 JSON、版本或 episode/step 回显错误以及非法动作都会终止本轮仿真。
 
-服务地址由双方约定，例如 `http://127.0.0.1:8001`。请求和响应均为
-`Content-Type: application/json`。
+## 接口概览
 
 | 接口 | 调用次数 | 用途 |
 |---|---:|---|
-| `POST /initialize` | 每轮 1 次 | 接收路口、相位、车道和连接关系 |
-| `POST /step` | 每个决策周期 1 次 | 接收实时交通状态，返回目标相位 |
-| `POST /finish` | 每轮 1 次 | 通知本轮结束和汇总指标 |
-
-HTTP 非 2xx、超时、非法 JSON、错误 `step_id` 或非法相位都会让本轮仿真停止。
+| `POST /initialize` | 每轮 1 次 | 接收路口拓扑、相位、车道、车型和控制能力 |
+| `POST /step` | 每个决策周期 1 次 | 接收路口与单车实时状态，返回全部动作 |
+| `POST /finish` | 每轮 1 次 | 接收结束原因和汇总指标 |
 
 ## 1. 初始化
 
-仿真端请求 `POST /initialize`。下面是精简示例，真实请求会包含所有受控路口、车道和
-connection：
+初始化请求保留原有 `intersections` 结构，并新增车型画像和车辆控制能力：
 
 ```json
 {
-  "protocol_version": "1.0",
+  "protocol_version": "2.0",
   "episode_id": "550e8400-e29b-41d4-a716-446655440000",
   "period": "morning_peak",
   "seed": 42,
@@ -43,10 +39,7 @@ connection：
           "green_seconds": 33.0,
           "yellow_seconds": 3.0,
           "clearance_seconds": 0.0,
-          "connection_priorities": {
-            "connection_0": "protected",
-            "connection_1": "permissive"
-          }
+          "connection_priorities": {"connection_0": "protected"}
         }
       },
       "lanes": {
@@ -59,8 +52,8 @@ connection：
           "max_speed": 13.9
         }
       },
-      "incoming_lanes": ["-56734_0", "-56734_1"],
-      "outgoing_lanes": ["-56736_0", "-56736_1"],
+      "incoming_lanes": ["-56734_0"],
+      "outgoing_lanes": ["-56736_0"],
       "connections": [
         {
           "connection_id": "connection_0",
@@ -73,36 +66,54 @@ connection：
       ],
       "direct_neighbors": []
     }
+  },
+  "vehicle_types": {
+    "demo_2_official_passenger": {
+      "type_id": "demo_2_official_passenger",
+      "profile_id": "passenger",
+      "vehicle_class": "passenger",
+      "powertrain": "gasoline",
+      "emission_class": "HBEFA3/PC_G_EU4",
+      "accel_mps2": 2.6,
+      "decel_mps2": 4.5,
+      "length_m": 5.0,
+      "width_m": 1.8,
+      "min_gap_m": 2.5,
+      "max_speed_mps": 13.9,
+      "fuel_density_mg_per_ml": 745.0,
+      "hard_braking_threshold_mps2": -3.0
+    }
+  },
+  "vehicle_control": {
+    "supported_actions": ["target_speed_mps", "target_lane_index"],
+    "action_lease_seconds": 5.0,
+    "speed_unit": "m/s",
+    "lane_change_scope": "current_edge"
   }
 }
 ```
 
-算法服务必须响应：
-
-```json
-{"ready": true}
-```
-
-需要保存的静态字段：
-
-- `phase_order`：允许返回的动作集合，顺序在本轮内固定。
-- `incoming_lanes`、`outgoing_lanes`：状态向量的推荐固定顺序。
-- `connections`：每个车流运动的上游和下游车道。
-- `phases[*].connection_priorities`：该相位放行的 connection；值为
-  `protected` 或 `permissive`。
-- `direct_neighbors`：路网中直接连接的其他受控路口。多路口算法也可以直接使用请求中
-  的全部 `intersections`。
-
-`role` 为 `incoming`、`outgoing` 或 `both`。`max_speed` 单位是 m/s，`length` 单位是
-米。`period` 表示当前官方车流时段，`seed` 是本轮实际传给 SUMO 的随机种子。
-
-## 2. 决策
-
-仿真端按 `decision_interval` 请求 `POST /step`：
+算法必须响应：
 
 ```json
 {
-  "protocol_version": "1.0",
+  "protocol_version": "2.0",
+  "episode_id": "550e8400-e29b-41d4-a716-446655440000",
+  "ready": true
+}
+```
+
+`phase_order` 是该路口允许的动作集合；`connections` 描述上下游车道；
+`connection_priorities` 表示相位放行的 protected/permissive movement。算法应保存这些
+静态信息，不要在每一步重新推断拓扑。
+
+## 2. 决策请求
+
+仿真端按 `decision_interval` 调用 `/step`：
+
+```json
+{
+  "protocol_version": "2.0",
   "episode_id": "550e8400-e29b-41d4-a716-446655440000",
   "step_id": 12,
   "simulation_time": 60.0,
@@ -119,14 +130,50 @@ connection：
           "mean_speed": 3.2,
           "waiting_time": 41.5,
           "occupancy": 27.0
-        },
-        "-56736_0": {
-          "vehicle_count": 2,
-          "halting_count": 0,
-          "mean_speed": 11.8,
-          "waiting_time": 0.0,
-          "occupancy": 5.0
         }
+      }
+    }
+  },
+  "vehicles": {
+    "demo_2_morning_peak_00_west_left.0": {
+      "type_id": "demo_2_official_passenger",
+      "position": {"x_m": 512.4, "y_m": 308.1},
+      "motion": {
+        "speed_mps": 6.2,
+        "acceleration_mps2": -0.8,
+        "angle_deg": 92.0,
+        "allowed_speed_mps": 13.9
+      },
+      "location": {
+        "road_id": "-56734",
+        "lane_id": "-56734_0",
+        "lane_index": 0,
+        "lane_position_m": 148.5,
+        "route_id": "route_0",
+        "route_index": 0,
+        "route_edges": ["-56734", "-56736"]
+      },
+      "traffic": {
+        "waiting_time_s": 0.0,
+        "accumulated_waiting_time_s": 4.2,
+        "time_loss_s": 8.5,
+        "distance_m": 320.1
+      },
+      "next_signal": {
+        "intersection_id": "demo_2",
+        "tls_id": "317",
+        "distance_m": 68.9,
+        "state": "G"
+      },
+      "energy": {
+        "fuel_rate_mg_s": 684.2,
+        "fuel_since_last_decision_mg": 2410.5,
+        "fuel_total_mg": 10520.4,
+        "fuel_total_ml": 14.1213
+      },
+      "driving_events": {
+        "hard_braking_since_last_decision": 0,
+        "hard_braking_total": 1
       }
     }
   },
@@ -134,118 +181,135 @@ connection：
     "active_vehicles": 37,
     "departed_vehicles": 4,
     "arrived_vehicles": 3,
-    "min_expected_vehicles": 1200
+    "min_expected_vehicles": 1200,
+    "fuel_consumed_mg": 245800.0,
+    "fuel_consumed_ml": 329.9329,
+    "hard_braking_events": 12
+  },
+  "previous_action_results": {
+    "step_id": 11,
+    "vehicles": {
+      "demo_2_morning_peak_00_west_left.0": {
+        "requested": {"target_speed_mps": 7.0, "target_lane_index": 1},
+        "actual_speed_mps": 6.2,
+        "actual_lane_index": 1,
+        "speed_status": "applied",
+        "lane_change_status": "completed"
+      }
+    }
   }
 }
 ```
 
-算法服务返回：
+字段口径：
+
+- `stage` 为 `GREEN`、`YELLOW` 或 `CLEARANCE`；信号切换安全过程由仿真端负责。
+- 速度单位为 m/s，加速度为 m/s²，位置、里程和信号距离为米，角度为度。
+- `waiting_time_s` 是当前连续等待，`accumulated_waiting_time_s` 是车辆累计等待，
+  `time_loss_s` 是相对理想行程损失的累计时间。
+- `fuel_rate_mg_s` 来自 SUMO HBEFA 排放模型；周期和累计油耗由仿真端逐步积分。
+- 急制动在加速度首次进入 `<= -3.0 m/s²` 时计一次，持续制动不重复计数。
+- `next_signal` 只返回下一处已选受控路口；不存在时为 `null`。
+- `active_vehicles` 等于本次 `vehicles` 中的官方可控车辆数，不包含事故占位车。
+- `departed_vehicles` 和 `arrived_vehicles` 是本决策周期增量，其余汇总油耗和急制动为
+  本轮累计值。
+
+## 3. 决策响应
 
 ```json
 {
+  "protocol_version": "2.0",
+  "episode_id": "550e8400-e29b-41d4-a716-446655440000",
   "step_id": 12,
   "actions": {
-    "demo_2": 2
+    "signals": {
+      "demo_2": {"target_phase": 2}
+    },
+    "vehicles": {
+      "demo_2_morning_peak_00_west_left.0": {
+        "target_speed_mps": 8.0,
+        "target_lane_index": 1
+      }
+    }
   }
 }
 ```
 
-规则只有四条：
+动作规则：
 
-1. `step_id` 必须原样返回，防止旧响应作用到新状态。
-2. 动作值必须来自该路口的 `phase_order`。
-3. 返回 `null` 或省略某个路口表示保持当前目标相位。
-4. 只返回目标相位。黄灯、全红、最小绿灯和多个物理 TLS 同步由仿真端负责。
+1. `protocol_version`、`episode_id` 和 `step_id` 必须原样回显。
+2. `actions` 必须且只能包含对象 `signals` 和 `vehicles`，二者允许为空。
+3. 信号动作必须使用初始化给出的路口和 phase ID；省略路口表示保持当前目标相位。
+4. 车辆动作只能引用本次请求的车辆；动作至少设置速度或车道之一。
+5. `target_speed_mps` 必须在 `[0, allowed_speed_mps]` 内。SUMO 仍执行跟车、防碰撞和限速。
+6. `target_lane_index` 只指当前 road 上的车道；internal edge、越界车道和禁行车道非法。
+7. 单车动作只租用一个决策周期。下一周期省略速度会恢复 SUMO 自主速度，换道不续期。
+8. 换道可能因安全间隙不足而未完成；下一步返回 `completed` 或 `not_completed`，这不是协议错误。
+9. 仿真端在写入任何 TraCI 状态前验证全部动作；任意非法动作都会拒绝整步并终止 episode。
 
-`stage` 可能是 `GREEN`、`YELLOW` 或 `CLEARANCE`。切换过程中可以继续给新目标，仿真端
-会在安全条件满足后执行最新目标。
-
-`current_phase` 是当前仍在执行或正在退出的相位；`pending_phase` 是已经接收、等待切入
-的目标相位，没有待切换目标时为 `null`。
-
-`vehicle_count` 和 `halting_count` 是车辆数，`mean_speed` 单位是 m/s，
-`waiting_time` 是该车道所有车辆累计等待秒数，`occupancy` 是百分比。空车道的
-`mean_speed` 固定为 `0.0`。
-
-## 3. 结束
-
-仿真端请求 `POST /finish`：
+## 4. 结束
 
 ```json
 {
-  "protocol_version": "1.0",
+  "protocol_version": "2.0",
   "episode_id": "550e8400-e29b-41d4-a716-446655440000",
   "reason": "completed",
   "simulation_time": 7500.0,
   "departed_vehicles": 2761,
-  "arrived_vehicles": 2761
+  "arrived_vehicles": 2761,
+  "fuel_consumed_mg": 18230000.0,
+  "fuel_consumed_ml": 24469.7987,
+  "hard_braking_events": 184
 }
 ```
 
-`reason` 为 `completed` 或 `error`。算法服务返回任意 JSON 对象即可，例如：
+`reason` 为 `completed`、`stopped` 或 `error`。服务返回任意 JSON 对象即可，例如
+`{"ok": true}`。
 
-```json
-{"ok": true}
-```
-
-## 各算法怎么取数据
-
-- 固定配时：不启动算法服务，仿真端使用官方配时。
-- Max Pressure：遍历某相位的 `connection_priorities`，用 connection 的
-  `from_lane.halting_count - to_lane.halting_count` 计算压力，再对相位求和。
-- IPPO：每个路口是一个 agent；按 `incoming_lanes + outgoing_lanes` 顺序拼车道状态，
-  按 `phase_order` 把离散动作下标还原成 phase ID。
-- 多路口强化学习：一次 `/step` 已包含所有路口；可使用全部路口状态进行集中训练，或用
-  `direct_neighbors` 截取邻居状态。
-
-奖励由算法组自行定义。常用量已经提供：排队车辆 `halting_count`、累计等待
-`waiting_time`、速度、占有率和本决策周期到达车辆数 `traffic.arrived_vehicles`。
-`/finish` 即 episode 结束信号。
-
-## 最小 Python 空壳
-
-下面代码没有算法逻辑，只保持当前相位，适合先联通接口：
+## 最小 FastAPI 服务
 
 ```python
 from fastapi import FastAPI
 
 app = FastAPI()
-metadata = None
+
 
 @app.post("/initialize")
 def initialize(body: dict):
-    global metadata
-    metadata = body
-    return {"ready": True}
+    return {
+        "protocol_version": "2.0",
+        "episode_id": body["episode_id"],
+        "ready": True,
+    }
+
 
 @app.post("/step")
 def step(body: dict):
-    actions = {
-        intersection_id: state["current_phase"]
+    signal_actions = {
+        intersection_id: {"target_phase": state["current_phase"]}
         for intersection_id, state in body["intersections"].items()
     }
-    return {"step_id": body["step_id"], "actions": actions}
+    return {
+        "protocol_version": "2.0",
+        "episode_id": body["episode_id"],
+        "step_id": body["step_id"],
+        "actions": {"signals": signal_actions, "vehicles": {}},
+    }
+
 
 @app.post("/finish")
 def finish(body: dict):
     return {"ok": True}
 ```
 
-例如保存为 `algorithm_server.py` 后运行：
-
 ```bash
 pip install fastapi uvicorn
 uvicorn algorithm_server:app --host 0.0.0.0 --port 8001
-```
 
-启动算法服务后，仿真组使用：
-
-```bash
-python -m simulation.sumo.run --mode algorithm \
+python -m simulation.sumo.run --mode algorithm --gui --realtime \
   --algorithm-endpoint http://127.0.0.1:8001 \
-  --intersection demo_2 --period morning_peak --seed 42
+  --intersection demo_2 --period morning_peak --decision-interval 1
 ```
 
-算法服务和仿真可以在不同机器，只需把 `127.0.0.1` 换成算法服务可访问的 IP。
-强化学习需要多轮 episode 时，多次启动该命令并改变 `--seed` 即可；每轮会产生新的
-`episode_id`，结束时都会调用 `/finish`。
+算法与 SUMO 可以位于不同机器，只需将 endpoint 换成算法服务可访问地址。多轮训练时改变
+`--seed`；每轮都会生成新的 `episode_id` 并调用 initialize/step/finish。

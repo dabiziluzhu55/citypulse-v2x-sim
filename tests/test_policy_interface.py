@@ -57,44 +57,69 @@ class PolicyInterfaceTests(unittest.TestCase):
             minimum_green=5.0,
             intersections={},
         )
-        client = StubHttpClient({"/initialize": {"ready": True}})
+        client = StubHttpClient({
+            "/initialize": {
+                "protocol_version": "2.0",
+                "episode_id": "episode-test",
+                "ready": True,
+            }
+        })
         client.initialize(metadata)
         self.assertEqual(client.requests[0][0], "/initialize")
-        self.assertEqual(client.requests[0][1]["protocol_version"], "1.0")
+        self.assertEqual(client.requests[0][1]["protocol_version"], "2.0")
 
-        client = StubHttpClient({"/initialize": {}})
+        client = StubHttpClient({
+            "/initialize": {
+                "protocol_version": "2.0",
+                "episode_id": "episode-test",
+            }
+        })
         with self.assertRaisesRegex(RuntimeError, "ready"):
             client.initialize(metadata)
 
     def test_step_returns_phase_actions_and_must_echo_step_id(self):
         client = StubHttpClient(
-            {"/step": {"step_id": 3, "actions": {"demo_2": 2}}}
+            {"/step": {
+                "protocol_version": "2.0",
+                "episode_id": "episode-test",
+                "step_id": 3,
+                "actions": {
+                    "signals": {"demo_2": {"target_phase": 2}},
+                    "vehicles": {},
+                },
+            }}
         )
-        actions = client.decide(observation())
-        self.assertEqual(actions, {"demo_2": 2})
+        decision = client.decide(observation())
+        self.assertEqual(decision.signal_actions, {"demo_2": {"target_phase": 2}})
+        self.assertEqual(decision.vehicle_actions, {})
         self.assertEqual(client.requests[0][0], "/step")
 
         stale = StubHttpClient(
-            {"/step": {"step_id": 2, "actions": {"demo_2": 2}}}
+            {"/step": {
+                "protocol_version": "2.0",
+                "episode_id": "episode-test",
+                "step_id": 2,
+                "actions": {"signals": {}, "vehicles": {}},
+            }}
         )
         with self.assertRaisesRegex(ValueError, "echo"):
             stale.decide(observation())
 
     def test_actions_are_fully_validated(self):
         self.assertEqual(
-            _validate_actions({"demo_2": 2}, self.controllers),
+            _validate_actions({"demo_2": {"target_phase": 2}}, self.controllers),
             {"demo_2": 2},
         )
         self.assertEqual(
-            _validate_actions({"demo_2": None}, self.controllers),
-            {"demo_2": None},
+            _validate_actions({}, self.controllers),
+            {},
         )
         with self.assertRaisesRegex(ValueError, "unknown intersections"):
-            _validate_actions({"demo_99": 1}, self.controllers)
+            _validate_actions({"demo_99": {"target_phase": 1}}, self.controllers)
         with self.assertRaisesRegex(ValueError, "must be one of"):
-            _validate_actions({"demo_2": 9}, self.controllers)
+            _validate_actions({"demo_2": {"target_phase": 9}}, self.controllers)
         with self.assertRaisesRegex(TypeError, "integer phase"):
-            _validate_actions({"demo_2": True}, self.controllers)
+            _validate_actions({"demo_2": {"target_phase": True}}, self.controllers)
 
     def test_finish_forwards_summary(self):
         client = StubHttpClient({"/finish": {"ok": True}})

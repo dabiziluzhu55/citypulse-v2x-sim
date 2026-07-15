@@ -33,7 +33,8 @@ python simulation/carla_sumo/run_synchronization.py [--sumo-gui]
 ## 纯 SUMO 管控
 
 `simulation.sumo.run` 提供固定配时和外部 HTTP 算法两种模式。Max Pressure、IPPO 和
-多路口强化学习只提交官方目标相位，由 runner 独占 TraCI 并处理安全切换。
+多路口强化学习通过 HTTP 协议 2.0 提交官方目标相位、单车目标速度和当前道路换道请求；
+runner 独占 TraCI，负责信号安全切换、动作校验和车辆控制租约。
 真实车流构建见 [traffic_demand.md](traffic_demand.md)，算法契约见
 [algorithm_interface.md](algorithm_interface.md)。
 

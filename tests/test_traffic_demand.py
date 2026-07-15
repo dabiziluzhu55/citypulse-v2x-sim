@@ -6,6 +6,7 @@ from pathlib import Path
 
 from simulation.sumo.artifacts import GeneratedArtifactLayout
 from simulation.sumo.build_traffic import build_traffic_scenarios
+from simulation.sumo.scenario import compile_session_scenario
 from simulation.sumo.traffic import TrafficDemandError, load_traffic_demands
 
 
@@ -110,6 +111,7 @@ class TrafficDemandTests(unittest.TestCase):
             output = Path(directory)
             layout = GeneratedArtifactLayout(output)
             layout.create_base_directories()
+            layout.network_file.write_text("<net/>", encoding="utf-8")
             layout.signal_programs_file.write_text(
                 """<additional>
   <tlLogic id="317" programID="demo_2_morning_peak"/>
@@ -147,6 +149,12 @@ class TrafficDemandTests(unittest.TestCase):
             self.assertEqual(len(morning["flows"]), 48)
             self.assertEqual(set(morning["origins"]), {"west", "north", "south"})
             root = ET.parse(route_path).getroot()
+            vehicle_type = root.find("vType")
+            self.assertEqual(vehicle_type.get("emissionClass"), "HBEFA3/PC_G_EU4")
+            self.assertEqual(vehicle_type.get("width"), "1.8")
+            self.assertEqual(
+                morning["vehicle_profile_id"], "passenger"
+            )
             flows = root.findall("flow")
             self.assertEqual(len(flows), 48)
             self.assertEqual(sum(int(flow.get("number")) for flow in flows), 2761)
@@ -198,6 +206,23 @@ class TrafficDemandTests(unittest.TestCase):
             )
             self.assertTrue(layout.traffic_manifest.is_file())
             self.assertEqual(list(output.glob("*.xml")), [])
+
+            compiled = compile_session_scenario(
+                "profile-session",
+                ["demo_2"],
+                "morning_peak",
+                duration_seconds=60,
+                generated_dir=output,
+                session_root=output / "sessions",
+            )
+            self.assertEqual(
+                compiled.vehicle_type_profiles,
+                {"demo_2_official_passenger": "passenger"},
+            )
+            self.assertEqual(
+                compiled.vehicle_profiles["passenger"].emission_class,
+                "HBEFA3/PC_G_EU4",
+            )
 
 
 if __name__ == "__main__":

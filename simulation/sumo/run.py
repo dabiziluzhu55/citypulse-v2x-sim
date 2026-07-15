@@ -21,10 +21,13 @@ from .policy import (
     LaneMetadata,
     LaneObservation,
     PhaseMetadata,
+    PreviousActionResults,
     RoadConnectionMetadata,
     SimulationMetadata,
     SimulationObservation,
     TrafficObservation,
+    VehicleControlMetadata,
+    VehicleTypeMetadata,
 )
 
 
@@ -143,6 +146,7 @@ def _build_metadata(
     decision_interval: float,
     minimum_green: float,
     episode_id: str,
+    vehicle_types: Mapping[str, VehicleTypeMetadata] | None = None,
 ) -> SimulationMetadata:
     incoming_edges = {
         intersection_id: {
@@ -270,6 +274,15 @@ def _build_metadata(
         decision_interval=decision_interval,
         minimum_green=minimum_green,
         intersections=intersections,
+        vehicle_types=vehicle_types or {},
+        vehicle_control=(
+            VehicleControlMetadata(
+                supported_actions=("target_speed_mps", "target_lane_index"),
+                action_lease_seconds=decision_interval,
+            )
+            if vehicle_types
+            else None
+        ),
     )
 
 
@@ -297,6 +310,8 @@ def _observe(
     controllers: Mapping[str, SafePhaseController],
     departed_vehicles: int,
     arrived_vehicles: int,
+    vehicle_tracker=None,
+    previous_action_results: PreviousActionResults | None = None,
 ) -> SimulationObservation:
     observations = {}
     for intersection_id, intersection_metadata in metadata.intersections.items():
@@ -322,6 +337,12 @@ def _observe(
             stage_elapsed=controller.stage_elapsed(simulation_time),
             lanes=lanes,
         )
+    vehicle_observations = (
+        vehicle_tracker.observations(reset_interval=True) if vehicle_tracker else {}
+    )
+    fuel_mg, fuel_ml, braking = (
+        vehicle_tracker.totals() if vehicle_tracker else (0.0, 0.0, 0)
+    )
     return SimulationObservation(
         protocol_version=PROTOCOL_VERSION,
         episode_id=metadata.episode_id,
@@ -329,10 +350,21 @@ def _observe(
         simulation_time=simulation_time,
         intersections=observations,
         traffic=TrafficObservation(
-            active_vehicles=int(traci.vehicle.getIDCount()),
+            active_vehicles=(
+                len(vehicle_observations)
+                if vehicle_tracker
+                else int(traci.vehicle.getIDCount())
+            ),
             departed_vehicles=departed_vehicles,
             arrived_vehicles=arrived_vehicles,
             min_expected_vehicles=int(traci.simulation.getMinExpectedNumber()),
+            fuel_consumed_mg=fuel_mg,
+            fuel_consumed_ml=fuel_ml,
+            hard_braking_events=braking,
+        ),
+        vehicles=vehicle_observations,
+        previous_action_results=(
+            previous_action_results or PreviousActionResults(step_id=None)
         ),
     )
 
@@ -348,19 +380,21 @@ def _validate_actions(
         raise ValueError(f"Algorithm returned unknown intersections: {sorted(unknown)}")
     result = {}
     for intersection_id, value in actions.items():
-        if value is None:
-            result[intersection_id] = None
-            continue
-        if isinstance(value, bool) or not isinstance(value, int):
+        if not isinstance(value, Mapping) or set(value) != {"target_phase"}:
             raise TypeError(
-                f"Action for {intersection_id} must be an integer phase or null."
+                f"Signal action for {intersection_id} must contain only target_phase."
             )
-        if value not in controllers[intersection_id].phase_order:
+        target = value["target_phase"]
+        if isinstance(target, bool) or not isinstance(target, int):
+            raise TypeError(
+                f"Action for {intersection_id} must be an integer phase."
+            )
+        if target not in controllers[intersection_id].phase_order:
             raise ValueError(
                 f"Action for {intersection_id} must be one of "
-                f"{controllers[intersection_id].phase_order}, got {value}."
+                f"{controllers[intersection_id].phase_order}, got {target}."
             )
-        result[intersection_id] = value
+        result[intersection_id] = target
     return result
 
 
