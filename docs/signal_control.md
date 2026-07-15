@@ -48,6 +48,11 @@ python -m simulation.sumo.build_tls --intersections demo_2 demo_4
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。
 完整构建会先清空该目录，防止旧路口和旧版平铺文件残留。
 
+构建器会先检查基础路网中的 junction 类型。已经是 `traffic_light` 的路口会保留原有
+`linkIndex` 和冲突矩阵，不再重复传给 `netconvert --tls.set`；只有 `priority` 等尚未
+信号化的路口才交给 `netconvert`。传给旧版 SUMO 前还会在临时副本中移除空
+`<param>`，基础路网文件本身不会被修改。
+
 | 生成路径 | 用途 |
 |---|---|
 | `network/TotalMap_20.signals.net.xml` | 加入目标 TLS 的公共派生路网 |

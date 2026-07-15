@@ -97,22 +97,60 @@ def _run_netconvert(
     source_net: Path,
     target_net: Path,
     junction_ids: Sequence[str],
-) -> None:
+) -> Tuple[bool, int]:
     target_net.parent.mkdir(parents=True, exist_ok=True)
-    command = [
-        netconvert,
-        "--sumo-net-file",
-        str(source_net),
-        "--tls.set",
-        ",".join(junction_ids),
-        "--tls.default-type",
-        "static",
-        "--offset.disable-normalization",
-        "true",
-        "--output-file",
-        str(target_net),
+    junction_types = _read_junction_types(source_net, junction_ids)
+    junctions_to_signal = [
+        junction_id
+        for junction_id in junction_ids
+        if junction_types[junction_id] != "traffic_light"
     ]
-    subprocess.run(command, check=True)
+    if not junctions_to_signal:
+        shutil.copy2(source_net, target_net)
+        return False, 0
+
+    sanitized_source = target_net.with_name(
+        f".{target_net.name}.netconvert-input.net.xml"
+    )
+    shutil.copy2(source_net, sanitized_source)
+    try:
+        removed_empty_params = _remove_empty_params(sanitized_source)
+        command = [
+            netconvert,
+            "--sumo-net-file",
+            str(sanitized_source),
+            "--tls.set",
+            ",".join(junctions_to_signal),
+            "--tls.default-type",
+            "static",
+            "--offset.disable-normalization",
+            "true",
+            "--output-file",
+            str(target_net),
+        ]
+        subprocess.run(command, check=True)
+    finally:
+        sanitized_source.unlink(missing_ok=True)
+    return True, removed_empty_params
+
+
+def _read_junction_types(
+    net_path: Path, junction_ids: Sequence[str]
+) -> Mapping[str, str]:
+    requested = set(junction_ids)
+    result = {}
+    for _, elem in ET.iterparse(net_path, events=("end",)):
+        if elem.tag == "junction":
+            junction_id = elem.get("id", "")
+            if junction_id in requested:
+                result[junction_id] = elem.get("type", "")
+        elem.clear()
+    missing = requested - set(result)
+    if missing:
+        raise SignalConfigurationError(
+            f"Mapped junctions are missing from source network: {sorted(missing)}"
+        )
+    return result
 
 
 def _remove_empty_params(net_path: Path) -> int:
@@ -506,8 +544,10 @@ def build(
     layout = GeneratedArtifactLayout(output_dir)
     layout.reset()
     target_net = layout.network_file
-    _run_netconvert(netconvert, source_net, target_net, junction_ids)
-    removed_empty_params = _remove_empty_params(target_net)
+    netconvert_applied, removed_empty_params = _run_netconvert(
+        netconvert, source_net, target_net, junction_ids
+    )
+    removed_empty_params += _remove_empty_params(target_net)
     if removed_empty_params:
         print(
             f"Removed {removed_empty_params} empty SUMO <param> elements "
@@ -537,6 +577,7 @@ def build(
         "source_net_sha256": _sha256(source_net),
         "netconvert_version": _version(netconvert),
         "sumo_version": _version(sumo),
+        "netconvert_applied": netconvert_applied,
         "removed_empty_params": removed_empty_params,
         "artifacts": {
             "network_file": layout.relative(layout.network_file),

@@ -1,12 +1,16 @@
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from simulation.sumo.build_tls import (
     ControlledConnection,
     _build_templates,
+    _read_junction_types,
     _remove_empty_params,
+    _run_netconvert,
 )
 from simulation.sumo.config import load_signal_configuration
 
@@ -319,6 +323,67 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertNotIn('key="empty"', content)
         self.assertNotIn('key="whitespace"', content)
         self.assertIn('key="kept" value="demo_2"', content)
+
+    def write_source_network(self):
+        source = Path(self.temp_directory.name) / "source.net.xml"
+        source.write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<net>
+  <junction id="317" type="priority">
+    <param key="empty" value=""/>
+  </junction>
+  <junction id="3935" type="traffic_light">
+    <param key="kept" value="demo_4"/>
+  </junction>
+</net>
+""",
+            encoding="utf-8",
+        )
+        return source
+
+    def test_existing_tls_is_copied_without_calling_netconvert(self):
+        source = self.write_source_network()
+        target = Path(self.temp_directory.name) / "generated" / "target.net.xml"
+        self.assertEqual(
+            _read_junction_types(source, ["3935"]),
+            {"3935": "traffic_light"},
+        )
+        with patch("simulation.sumo.build_tls.subprocess.run") as run:
+            applied, removed = _run_netconvert(
+                "netconvert", source, target, ["3935"]
+            )
+        run.assert_not_called()
+        self.assertFalse(applied)
+        self.assertEqual(removed, 0)
+        self.assertEqual(target.read_bytes(), source.read_bytes())
+
+    def test_netconvert_only_receives_unsignalized_junctions_and_clean_input(self):
+        source = self.write_source_network()
+        target = Path(self.temp_directory.name) / "generated" / "target.net.xml"
+
+        def fake_run(command, check):
+            self.assertTrue(check)
+            tls_index = command.index("--tls.set") + 1
+            self.assertEqual(command[tls_index], "317")
+            input_index = command.index("--sumo-net-file") + 1
+            sanitized_source = Path(command[input_index])
+            self.assertNotIn('value=""', sanitized_source.read_text(encoding="utf-8"))
+            shutil.copy2(sanitized_source, target)
+
+        with patch(
+            "simulation.sumo.build_tls.subprocess.run", side_effect=fake_run
+        ) as run:
+            applied, removed = _run_netconvert(
+                "netconvert", source, target, ["317", "3935"]
+            )
+        self.assertEqual(run.call_count, 1)
+        self.assertTrue(applied)
+        self.assertEqual(removed, 1)
+        self.assertTrue(target.is_file())
+        self.assertEqual(
+            list(target.parent.glob("*.netconvert-input.net.xml")),
+            [],
+        )
 
 
 if __name__ == "__main__":
