@@ -1,0 +1,53 @@
+:root {
+  --rs-text-primary: #ffffff;
+  --rs-text-secondary: #e8f6ff;
+  --rs-text-label: #9dd4ff;
+  --rs-text-muted: #6b9bb8;
+  --rs-accent-gold: #ffe47a;
+  --rs-accent-cyan: #21e6ff;
+}
+
+/* 视觉像素 → CSS 像素（补偿 content scale） */
+.right-sidebar__canvas {
+  --rs-font-section: calc(23px / var(--rs-content-scale, 1));
+  --rs-font-table-head: calc(18px / var(--rs-content-scale, 1));
+  --rs-font-table-body: calc(17px / var(--rs-content-scale, 1));
+  --rs-font-flow: calc(16px / var(--rs-content-scale, 1));
+  --rs-font-chart: calc(18px / var(--rs-content-scale, 1));
+  --rs-font-export: calc(16px / var(--rs-content-scale, 1));
+  --rs-font-meta: calc(12px / var(--rs-content-scale, 1));
+}
+
+.right-sidebar__table-head {
+  font-size: var(--rs-font-table-head);
+}
+
+.right-sidebar__log-row {
+  font-size: var(--rs-font-table-body);
+}
+
+.right-sidebar__log-flow {
+  font-size: var(--rs-font-flow);
+}
+
+.right-sidebar__table-meta {
+  font-size: var(--rs-font-meta);
+  color: var(--rs-text-muted);
+}
+
+.right-sidebar__chart-title {
+  font-size: var(--rs-font-chart);
+}
+
+.right-sidebar__export-btn {
+  font-size: var(--rs-font-export);
+}
+
+.right-sidebar__empty,
+.right-sidebar__empty-text {
+  font-size: calc(13px / var(--rs-content-scale, 1));
+}
+
+.rs-section-header__title {
+  font-size: var(--rs-font-section);
+}

@@ -1,20 +1,27 @@
 {
-  "name": "citypulse-v2x-frontend",
-  "private": true,
+  "name": "citypulse-v2x-sim-frontend",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.5.13"
+    "cesium": "^1.131.0",
+    "echarts": "^5.6.0",
+    "element-plus": "^2.10.4",
+    "ol": "^10.6.1",
+    "vue": "^3.5.17",
+    "vue-router": "^4.5.1"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.1",
-    "typescript": "~5.7.2",
-    "vite": "^6.0.5",
-    "vue-tsc": "^2.2.0"
+    "@types/node": "^24.0.13",
+    "@vitejs/plugin-vue": "^6.0.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4",
+    "vite-plugin-cesium": "^1.2.23",
+    "vue-tsc": "^3.0.1"
   }
 }
