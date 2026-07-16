@@ -128,6 +128,8 @@ class SignalConfigurationTests(unittest.TestCase):
             ],
             ["through", "through", "through"],
         )
+        self.assertEqual(demo_4.topology.u_turn_policy, "with_left")
+        self.assertEqual(demo_4.topology.direction_mapping["t"], "uturn")
 
     def test_demo_4_program_templates_support_protected_and_permissive_groups(self):
         config = self.load().intersections["demo_4"]
@@ -157,6 +159,25 @@ class SignalConfigurationTests(unittest.TestCase):
                     )
                 )
                 index += 1
+        for approach in ("north", "south"):
+            connections.append(
+                ControlledConnection(
+                    intersection_id="demo_4",
+                    junction_id="3935",
+                    tls_id="3935",
+                    link_index=index,
+                    approach=approach,
+                    movement="uturn",
+                    from_edge=config.topology.approaches[approach][0],
+                    from_lane=0,
+                    to_edge=f"out_{approach}_uturn",
+                    to_lane=0,
+                    direction="t",
+                    via=f":3935_{index}_0",
+                    request_index=index,
+                )
+            )
+            index += 1
         state_length = len(connections)
         no_foes = {value: "0" * state_length for value in range(state_length)}
 
@@ -169,8 +190,12 @@ class SignalConfigurationTests(unittest.TestCase):
         )
         west_through = 4
         west_left = 5
+        north_uturn = 12
+        south_uturn = 13
         self.assertEqual(morning[3]["3935"]["green"][west_through], "G")
         self.assertEqual(morning[3]["3935"]["green"][west_left], "G")
+        self.assertEqual(morning[2]["3935"]["green"][north_uturn], "G")
+        self.assertEqual(morning[2]["3935"]["green"][south_uturn], "G")
 
         off_peak = _build_templates(
             config,
@@ -187,6 +212,8 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(off_peak[1]["3935"]["green"][south_through], "G")
         self.assertEqual(off_peak[1]["3935"]["green"][north_left], "g")
         self.assertEqual(off_peak[1]["3935"]["green"][south_left], "g")
+        self.assertEqual(off_peak[1]["3935"]["green"][north_uturn], "g")
+        self.assertEqual(off_peak[1]["3935"]["green"][south_uturn], "g")
 
     def test_templates_keep_right_turns_permissive(self):
         config = self.load().intersections["demo_1"]

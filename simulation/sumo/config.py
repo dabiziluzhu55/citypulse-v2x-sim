@@ -272,7 +272,13 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
         str(key): str(value)
         for key, value in raw.get("direction_mapping", {}).items()
     }
-    if set(direction_mapping.values()) - {"through", "left", "right", "blocked"}:
+    if set(direction_mapping.values()) - {
+        "through",
+        "left",
+        "right",
+        "uturn",
+        "blocked",
+    }:
         raise SignalConfigurationError(f"{intersection_id}: unsupported movement mapping.")
     raw_programs = raw.get("programs", {})
     if raw.get("phases") and raw_programs:
@@ -307,11 +313,15 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
         raise SignalConfigurationError(
             f"{intersection_id}: u_turn_policy must be with_left or blocked."
         )
-    expected_u_turn_movement = "left" if u_turn_policy == "with_left" else "blocked"
-    if direction_mapping.get("t") != expected_u_turn_movement:
+    configured_u_turn_movement = direction_mapping.get("t")
+    valid_u_turn_movements = (
+        {"left", "uturn"} if u_turn_policy == "with_left" else {"blocked"}
+    )
+    if configured_u_turn_movement not in valid_u_turn_movements:
         raise SignalConfigurationError(
             f"{intersection_id}: direction 't' must map to "
-            f"{expected_u_turn_movement!r} for u_turn_policy={u_turn_policy!r}."
+            f"one of {sorted(valid_u_turn_movements)} for "
+            f"u_turn_policy={u_turn_policy!r}."
         )
     return IntersectionTopology(
         approaches=approaches,

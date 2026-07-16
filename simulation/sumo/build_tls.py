@@ -356,6 +356,20 @@ def _validate_protected_movements(
                 )
 
 
+def _movement_matches(
+    config: IntersectionConfiguration,
+    connection: ControlledConnection,
+    requested_movement: str,
+) -> bool:
+    if connection.movement == requested_movement:
+        return True
+    return (
+        config.topology.u_turn_policy == "with_left"
+        and requested_movement == "left"
+        and connection.movement == "uturn"
+    )
+
+
 def _build_templates(
     config: IntersectionConfiguration,
     connections: Sequence[ControlledConnection],
@@ -376,7 +390,7 @@ def _build_templates(
             item
             for item in own_connections
             if item.approach in phase_mapping.approaches
-            and item.movement == phase_mapping.movement
+            and _movement_matches(config, item, phase_mapping.movement)
         ]
         if not protected:
             raise SignalConfigurationError(
@@ -388,7 +402,7 @@ def _build_templates(
                 item
                 for item in own_connections
                 if item.approach in group.approaches
-                and item.movement == group.movement
+                and _movement_matches(config, item, group.movement)
             ]
             if not matches:
                 raise SignalConfigurationError(
@@ -410,7 +424,7 @@ def _build_templates(
                 item
                 for item in own_connections
                 if item.approach in group.approaches
-                and item.movement == group.movement
+                and _movement_matches(config, item, group.movement)
             ]
             if not matches:
                 raise SignalConfigurationError(

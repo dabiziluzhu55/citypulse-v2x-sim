@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from simulation.sumo.artifacts import GeneratedArtifactLayout
-from simulation.sumo.build_traffic import build_traffic_scenarios
+from simulation.sumo.build_traffic import _movement_route, build_traffic_scenarios
 from simulation.sumo.scenario import compile_session_scenario
 from simulation.sumo.traffic import TrafficDemandError, load_traffic_demands
 
@@ -105,6 +105,34 @@ class TrafficDemandTests(unittest.TestCase):
             path.write_text(json.dumps(raw), encoding="utf-8")
             with self.assertRaisesRegex(TrafficDemandError, "do not match"):
                 load_traffic_demands(path)
+
+    def test_demo_4_left_demand_does_not_select_the_uturn_connection(self):
+        demand = load_traffic_demands(DEMANDS).intersections["demo_4"]
+        manifest = {
+            "connections": [
+                {
+                    "approach": "north",
+                    "movement": "left",
+                    "from_edge": "-57229",
+                    "to_edge": "-50675",
+                },
+                {
+                    "approach": "north",
+                    "movement": "uturn",
+                    "from_edge": "-57229",
+                    "to_edge": "-56733",
+                },
+            ]
+        }
+        self.assertEqual(
+            _movement_route(
+                "demo_4",
+                manifest,
+                demand.approaches["north"],
+                "left",
+            ),
+            ("-57229", "-50675"),
+        )
 
     def test_generated_flows_have_exact_counts_and_routes(self):
         with tempfile.TemporaryDirectory() as directory:
