@@ -270,7 +270,7 @@ def _inspect_generated_network(
                 f"{config.intersection_id}: connection from {raw['from']} is not TLS controlled."
             )
         direction = raw.get("dir", "")
-        movement = config.topology.direction_mapping.get(direction)
+        movement = config.topology.movement_for_direction(raw["from"], direction)
         if movement is None:
             raise SignalConfigurationError(
                 f"{config.intersection_id}: unsupported SUMO direction {direction!r} "

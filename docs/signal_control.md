@@ -30,7 +30,9 @@
 代表不同放行方向，或相位数量不同时，使用 `programs -> program_id -> phases`。
 `demo_4` 使用后一种写法，因为早高峰相位 1 为“南北向直行”，晚高峰相位 1 为
 “东西向直行”，且平峰只有 3 个相位。相位中的 `protected` 可追加受保护放行组，
-`permissive` 可追加让行放行组。
+`permissive` 可追加让行放行组。五岔口还可以使用 `approach_direction_mapping` 覆盖单个进口的
+SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转路线，其他没有官方分流依据的
+大角度 `L/R` 连接保持阻断。
 
 当官方要求同相位放行、但 SUMO foe 矩阵判定主放行轨迹彼此冲突时，可把该相位的
 `priority` 设置为 `permissive`。相位仍按官方周期同时显示绿灯，但使用 `g` 让车辆
@@ -51,7 +53,7 @@
 ## 构建
 
 ```bash
-python -m simulation.sumo.build_tls --intersections demo_2 demo_4 demo_5 demo_6
+python -m simulation.sumo.build_tls --intersections demo_2 demo_4 demo_5 demo_6 demo_9
 ```
 
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。

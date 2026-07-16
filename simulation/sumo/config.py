@@ -63,6 +63,7 @@ class PhaseMovement:
 class IntersectionTopology:
     approaches: Mapping[str, Tuple[str, ...]]
     direction_mapping: Mapping[str, str]
+    approach_direction_mapping: Mapping[str, Mapping[str, str]]
     right_turn_policy: str
     u_turn_policy: str
     phases: Tuple[PhaseMovement, ...]
@@ -89,6 +90,12 @@ class IntersectionTopology:
                 f"Incoming edge {edge_id!r} belongs to {len(matches)} approaches."
             )
         return matches[0]
+
+    def movement_for_direction(self, edge_id: str, direction: str) -> str | None:
+        approach = self.approach_for_edge(edge_id)
+        return self.approach_direction_mapping.get(approach, {}).get(
+            direction, self.direction_mapping.get(direction)
+        )
 
     def phases_for(self, program_id: str) -> Tuple[PhaseMovement, ...]:
         if self.program_phases:
@@ -287,6 +294,28 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
         "blocked",
     }:
         raise SignalConfigurationError(f"{intersection_id}: unsupported movement mapping.")
+    approach_direction_mapping = {
+        str(approach): {
+            str(direction): str(movement)
+            for direction, movement in mappings.items()
+        }
+        for approach, mappings in raw.get("approach_direction_mapping", {}).items()
+    }
+    unknown_approaches = set(approach_direction_mapping) - set(approaches)
+    if unknown_approaches:
+        raise SignalConfigurationError(
+            f"{intersection_id}: direction overrides use unknown approaches "
+            f"{sorted(unknown_approaches)}."
+        )
+    override_movements = {
+        movement
+        for mappings in approach_direction_mapping.values()
+        for movement in mappings.values()
+    }
+    if override_movements - {"through", "left", "right", "uturn", "blocked"}:
+        raise SignalConfigurationError(
+            f"{intersection_id}: unsupported approach movement mapping."
+        )
     raw_programs = raw.get("programs", {})
     if raw.get("phases") and raw_programs:
         raise SignalConfigurationError(
@@ -333,6 +362,7 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
     return IntersectionTopology(
         approaches=approaches,
         direction_mapping=direction_mapping,
+        approach_direction_mapping=approach_direction_mapping,
         right_turn_policy=right_policy,
         u_turn_policy=u_turn_policy,
         phases=phases,

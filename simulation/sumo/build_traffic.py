@@ -17,6 +17,7 @@ from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 from .traffic import (
     ApproachDemandMapping,
     DemandPeriod,
+    RouteSplit,
     TrafficDemandError,
     load_traffic_demands,
 )
@@ -75,6 +76,70 @@ def _movement_route(
     return route_pairs[0]
 
 
+def _movement_routes(
+    intersection_id: str,
+    intersection_manifest: Mapping[str, object],
+    approach: ApproachDemandMapping,
+    official_movement: str,
+    splits: Sequence[RouteSplit],
+) -> Tuple[Tuple[Tuple[str, str], int], ...]:
+    if not splits:
+        return (
+            (
+                _movement_route(
+                    intersection_id,
+                    intersection_manifest,
+                    approach,
+                    official_movement,
+                ),
+                1,
+            ),
+        )
+
+    sumo_movement = approach.movements[official_movement]
+    route_pairs = sorted(
+        {
+            (str(item["from_edge"]), str(item["to_edge"]))
+            for item in intersection_manifest.get("connections", [])
+            if item.get("approach") == approach.sumo_approach
+            and item.get("movement") == sumo_movement
+        }
+    )
+    routes_by_target = {
+        to_edge: (from_edge, to_edge) for from_edge, to_edge in route_pairs
+    }
+    configured_targets = {item.to_edge for item in splits}
+    if (
+        len(routes_by_target) != len(route_pairs)
+        or set(routes_by_target) != configured_targets
+    ):
+        raise TrafficDemandError(
+            f"{intersection_id}/{approach.official_name}/{official_movement}: "
+            f"configured split targets {sorted(configured_targets)} do not match "
+            f"SUMO routes {route_pairs}."
+        )
+    return tuple(
+        (routes_by_target[item.to_edge], item.weight)
+        for item in sorted(splits, key=lambda value: value.to_edge)
+    )
+
+
+def _allocate_route_counts(
+    count: int,
+    weighted_routes: Sequence[Tuple[Tuple[str, str], int]],
+) -> Tuple[int, ...]:
+    total_weight = sum(weight for _, weight in weighted_routes)
+    allocated = [count * weight // total_weight for _, weight in weighted_routes]
+    remainders = [count * weight % total_weight for _, weight in weighted_routes]
+    order = sorted(
+        range(len(weighted_routes)),
+        key=lambda index: (-remainders[index], weighted_routes[index][0]),
+    )
+    for index in order[: count - sum(allocated)]:
+        allocated[index] += 1
+    return tuple(allocated)
+
+
 def _write_routes(
     path: Path,
     intersection_id: str,
@@ -89,14 +154,21 @@ def _write_routes(
     )
     ET.SubElement(root, "vType", vehicle_profile.sumo_attributes(vehicle_type_id))
     routes = {
-        (official_approach, official_movement): _movement_route(
+        (official_approach, official_movement): _movement_routes(
             intersection_id,
             intersection_manifest,
             approach,
             official_movement,
+            period.route_splits.get(official_approach, {}).get(
+                official_movement, ()
+            ),
         )
         for official_approach, approach in demand.approaches.items()
         for official_movement in approach.movements
+        if any(
+            interval.volumes[official_approach][official_movement] > 0
+            for interval in period.intervals
+        )
     }
     flow_count = 0
     flow_records = []
@@ -108,36 +180,50 @@ def _write_routes(
                 count = interval.volumes[official_approach][official_movement]
                 if count == 0:
                     continue
-                flow_id = _safe_id(
-                    f"{intersection_id}_{period.period_id}_{interval_index:02d}_"
-                    f"{official_approach}_{official_movement}"
-                )
-                flow = ET.SubElement(
-                    root,
-                    "flow",
-                    {
-                        "id": flow_id,
-                        "type": vehicle_type_id,
-                        "begin": str(begin),
-                        "end": str(end),
-                        "number": str(count),
-                        "departLane": "best",
-                        "departSpeed": "max",
-                    },
-                )
-                from_edge, to_edge = routes[(official_approach, official_movement)]
-                ET.SubElement(flow, "route", {"edges": f"{from_edge} {to_edge}"})
-                flow_records.append(
-                    {
-                        "flow_id": flow_id,
-                        "official_approach": official_approach,
-                        "official_movement": official_movement,
-                        "begin": begin,
-                        "end": end,
-                        "number": count,
-                    }
-                )
-                flow_count += 1
+                weighted_routes = routes[(official_approach, official_movement)]
+                route_counts = _allocate_route_counts(count, weighted_routes)
+                for route_index, (((from_edge, to_edge), _), route_count) in enumerate(
+                    zip(weighted_routes, route_counts)
+                ):
+                    if route_count == 0:
+                        continue
+                    suffix = (
+                        f"_route{route_index:02d}"
+                        if len(weighted_routes) > 1
+                        else ""
+                    )
+                    flow_id = _safe_id(
+                        f"{intersection_id}_{period.period_id}_{interval_index:02d}_"
+                        f"{official_approach}_{official_movement}{suffix}"
+                    )
+                    flow = ET.SubElement(
+                        root,
+                        "flow",
+                        {
+                            "id": flow_id,
+                            "type": vehicle_type_id,
+                            "begin": str(begin),
+                            "end": str(end),
+                            "number": str(route_count),
+                            "departLane": "best",
+                            "departSpeed": "max",
+                        },
+                    )
+                    ET.SubElement(flow, "route", {"edges": f"{from_edge} {to_edge}"})
+                    flow_records.append(
+                        {
+                            "flow_id": flow_id,
+                            "official_approach": official_approach,
+                            "official_movement": official_movement,
+                            "route_index": route_index,
+                            "from_edge": from_edge,
+                            "to_edge": to_edge,
+                            "begin": begin,
+                            "end": end,
+                            "number": route_count,
+                        }
+                    )
+                    flow_count += 1
     ET.indent(root, space="  ")
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
     return flow_count, flow_records

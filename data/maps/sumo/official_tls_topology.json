@@ -266,6 +266,52 @@
           "approaches": ["north", "south"]
         }
       ]
+    },
+    "demo_9": {
+      "right_turn_policy": "permissive_always",
+      "u_turn_policy": "blocked",
+      "approaches": {
+        "east": {"incoming_edges": ["-56619"]},
+        "west": {"incoming_edges": ["-50339"]},
+        "north": {"incoming_edges": ["-57214"]},
+        "northeast": {"incoming_edges": ["-50241"]},
+        "south": {"incoming_edges": ["-56369"]}
+      },
+      "direction_mapping": {
+        "s": "through",
+        "l": "left",
+        "L": "blocked",
+        "r": "right",
+        "R": "blocked",
+        "t": "blocked"
+      },
+      "approach_direction_mapping": {
+        "east": {"R": "right"},
+        "northeast": {"s": "blocked"}
+      },
+      "phases": [
+        {
+          "official_phase_no": 1,
+          "movement": "through",
+          "approaches": ["north", "south"],
+          "permissive": [
+            {"movement": "left", "approaches": ["north", "south"]}
+          ]
+        },
+        {
+          "official_phase_no": 2,
+          "movement": "through",
+          "approaches": ["east", "west"],
+          "permissive": [
+            {"movement": "left", "approaches": ["east", "west"]}
+          ]
+        },
+        {
+          "official_phase_no": 3,
+          "movement": "left",
+          "approaches": ["northeast"]
+        }
+      ]
     }
   }
 }
