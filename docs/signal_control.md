@@ -34,6 +34,12 @@
 SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转路线，其他没有官方分流依据的
 大角度 `L/R` 连接保持阻断。
 
+`demo_12` 的平峰相位原始数据之和为 `215s`，但截图周期单元格写成 `195s`；晚高峰相位之和为
+`180s`，周期单元格写成 `178s`。构建配置以每个相位的绿灯、黄灯和全红原始值为准。其南北
+左转轨迹被 junction 182 的 foe 矩阵判定为冲突，因此相位 4 使用让行绿 `g`。`demo_14` 的
+“东、北放行”相位把北直行设为受保护绿、东/北左转设为让行绿，并阻断官方表中为空的动作。
+`demo_15` 的南北和东西直行使用受保护绿，同相位左转使用让行绿。
+
 当官方要求同相位放行、但 SUMO foe 矩阵判定主放行轨迹彼此冲突时，可把该相位的
 `priority` 设置为 `permissive`。相位仍按官方周期同时显示绿灯，但使用 `g` 让车辆
 按冲突矩阵避让，而不是生成互相冲突的受保护绿 `G`。
@@ -53,7 +59,8 @@ SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转
 ## 构建
 
 ```bash
-python -m simulation.sumo.build_tls --intersections demo_2 demo_4 demo_5 demo_6 demo_9
+python -m simulation.sumo.build_tls \
+  --intersections demo_2 demo_4 demo_5 demo_6 demo_9 demo_12 demo_14 demo_15
 ```
 
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。
