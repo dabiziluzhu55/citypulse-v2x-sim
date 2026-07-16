@@ -1,0 +1,42 @@
+{
+  "name": "雄安20路口早高峰施工占道场景",
+  "template_id": "xiongan20",
+  "network_source": "prebuilt_sumo",
+  "traffic_flow": {
+    "mode": "morning_peak",
+    "flow_scale": 1.2,
+    "vehicle_types": {
+      "car": 0.75,
+      "bus": 0.1,
+      "truck": 0.1,
+      "bike": 0.05
+    },
+    "duration": 3600
+  },
+  "od_groups": [
+    {
+      "od_id": "od_001",
+      "origin": "main_road_entrance",
+      "destination": "school",
+      "vehicles_per_hour": 800,
+      "start_time": 0,
+      "end_time": 3600
+    }
+  ],
+  "traffic_light": {
+    "initial_plan": "fixed_time",
+    "cycle_length": 90,
+    "min_green": 10,
+    "max_green": 60,
+    "yellow_time": 3
+  },
+  "disturbances": [
+    {
+      "type": "lane_closure",
+      "edge_id": "E12",
+      "lane_id": "E12_0",
+      "start_time": 600,
+      "duration": 900
+    }
+  ]
+}

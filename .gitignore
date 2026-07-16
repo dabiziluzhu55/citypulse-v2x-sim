@@ -5,10 +5,15 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.*
+!.env.example
 
 # Node
 node_modules/
 dist/
+.vite/
+coverage/
+*.tsbuildinfo
 
 # RL checkpoints
 algorithms/rl/checkpoints/
@@ -19,11 +24,17 @@ algorithms/rl/checkpoints/
 
 # OS
 .DS_Store
+Thumbs.db
 
-# Logs & outputs
+# Logs, outputs, and local verification artifacts
 *.log
 outputs/
 
 # Generated SUMO signal artifacts
 data/maps/sumo/generated/
 *.bak
+
+# Frontend UI capture artifacts
+current-ui*.png
+historical-ui-contact-sheet.jpg
+assets/preview/
