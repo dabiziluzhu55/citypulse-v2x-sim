@@ -17,6 +17,10 @@ export interface CesiumCameraPreset {
   headingDegrees: number
   rollDegrees?: number
   rangeMultiplier?: number
+  maxCameraHeight?: number
+  localViewRadiusMeters?: number
+  minimumZoomDistance?: number
+  maximumZoomDistance?: number
 }
 
 export interface MapViewport {

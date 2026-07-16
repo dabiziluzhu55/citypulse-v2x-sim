@@ -72,6 +72,14 @@ function boundsCameraHeight(
   return Math.max(preset.height, range)
 }
 
+function cruiseCameraHeight(preset: CesiumCameraPreset): number {
+  const radiusBasedHeight = (preset.localViewRadiusMeters ?? preset.height) * 0.7
+  const desiredHeight = Math.max(preset.height, radiusBasedHeight)
+  return preset.maxCameraHeight === undefined
+    ? desiredHeight
+    : Math.min(desiredHeight, preset.maxCameraHeight)
+}
+
 function cameraOrientation(preset: CesiumCameraPreset): Cesium.HeadingPitchRollValues {
   return {
     heading: Cesium.Math.toRadians(preset.headingDegrees),
@@ -90,8 +98,11 @@ export function applyCesiumViewport(
 
   if (viewport.kind === 'bounds') {
     const [lon, lat] = boundsCenter(viewport.bounds)
+    const height = preset.id === 'road-cruise'
+      ? cruiseCameraHeight(preset)
+      : boundsCameraHeight(viewport.bounds, preset)
     void viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(lon, lat, boundsCameraHeight(viewport.bounds, preset)),
+      destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
       orientation: cameraOrientation(preset),
       duration: durationSec,
       complete: () => viewer.scene.requestRender(),
@@ -100,7 +111,10 @@ export function applyCesiumViewport(
   }
 
   const [lon, lat] = viewport.center
-  const height = Math.max(zoomToCameraHeight(viewport.zoom, lat), preset.height)
+  const defaultHeight = Math.max(zoomToCameraHeight(viewport.zoom, lat), preset.height)
+  const height = preset.id === 'road-cruise'
+    ? Math.min(defaultHeight, cruiseCameraHeight(preset))
+    : defaultHeight
   void viewer.camera.flyTo({
     destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
     orientation: cameraOrientation(preset),

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import * as Cesium from 'cesium'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import {
   CESIUM_OSM_BUILDINGS_ASSET_ID,
   XIONGAN_3DTILES_CALIBRATION,
   XIONGAN_3DTILES_DEFAULT_URL,
+  resolveCesiumCameraPreset,
 } from '../../constants/mapDefaults'
 import { useAppMapView } from '../../composables/useAppMapView'
 
@@ -15,6 +16,78 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 
 let viewer: Cesium.Viewer | null = null
+let localTileset: Cesium.Cesium3DTileset | null = null
+
+const DEFAULT_TILESET_SSE = 16
+const MOVING_TILESET_SSE = 28
+const CRUISE_TILESET_SSE = 22
+const DEFAULT_CACHE_BYTES = 256 * 1024 * 1024
+const DEFAULT_CACHE_OVERFLOW_BYTES = 128 * 1024 * 1024
+const CRUISE_CACHE_BYTES = 384 * 1024 * 1024
+const CRUISE_CACHE_OVERFLOW_BYTES = 192 * 1024 * 1024
+
+let defaultMinimumZoomDistance = 1
+let defaultMaximumZoomDistance = Number.POSITIVE_INFINITY
+let defaultFoveatedScreenSpaceError = true
+let defaultFoveatedTimeDelay = 0.2
+
+function isCruisePreset(): boolean {
+  return mapView.cameraPreset.value === 'road-cruise'
+}
+
+function applyCruiseRenderingProfile(currentViewer: Cesium.Viewer): void {
+  const cruise = isCruisePreset()
+  const controller = currentViewer.scene.screenSpaceCameraController
+  const preset = resolveCesiumCameraPreset(mapView.cameraPreset.value)
+
+  controller.minimumZoomDistance = cruise
+    ? (preset.minimumZoomDistance ?? 150)
+    : defaultMinimumZoomDistance
+  controller.maximumZoomDistance = cruise
+    ? (preset.maximumZoomDistance ?? 1600)
+    : defaultMaximumZoomDistance
+
+  currentViewer.scene.fog.enabled = cruise
+  if (cruise) {
+    currentViewer.scene.fog.density = 0.00045
+    currentViewer.scene.fog.minimumBrightness = 0.12
+  }
+
+  if (localTileset) {
+    localTileset.maximumScreenSpaceError = cruise ? CRUISE_TILESET_SSE : DEFAULT_TILESET_SSE
+    localTileset.cacheBytes = cruise ? CRUISE_CACHE_BYTES : DEFAULT_CACHE_BYTES
+    localTileset.maximumCacheOverflowBytes = cruise
+      ? CRUISE_CACHE_OVERFLOW_BYTES
+      : DEFAULT_CACHE_OVERFLOW_BYTES
+    localTileset.dynamicScreenSpaceErrorFactor = cruise ? 12 : 4
+    localTileset.foveatedScreenSpaceError = cruise ? true : defaultFoveatedScreenSpaceError
+    localTileset.foveatedTimeDelay = cruise ? 0.35 : defaultFoveatedTimeDelay
+  }
+
+  requestSceneRender(currentViewer)
+}
+
+const stopPresetWatch = watch(
+  () => mapView.cameraPreset.value,
+  () => {
+    if (viewer) {
+      applyCruiseRenderingProfile(viewer)
+    }
+  },
+)
+
+function handleCameraMoveStart(): void {
+  if (isCruisePreset() && localTileset) {
+    localTileset.maximumScreenSpaceError = MOVING_TILESET_SSE
+  }
+}
+
+function handleCameraMoveEnd(): void {
+  if (viewer && isCruisePreset() && localTileset) {
+    localTileset.maximumScreenSpaceError = CRUISE_TILESET_SSE
+    requestSceneRender(viewer)
+  }
+}
 
 function requestSceneRender(currentViewer: Cesium.Viewer): void {
   currentViewer.scene.requestRender()
@@ -86,7 +159,11 @@ async function loadLocalBuildings(currentViewer: Cesium.Viewer): Promise<void> {
     error.value = `部分 3D Tiles 加载失败：${event.message || event.url || '未知'}`
   })
   applyTilesetCalibration(tileset)
+  localTileset = tileset
+  defaultFoveatedScreenSpaceError = tileset.foveatedScreenSpaceError
+  defaultFoveatedTimeDelay = tileset.foveatedTimeDelay
   currentViewer.scene.primitives.add(tileset)
+  applyCruiseRenderingProfile(currentViewer)
   requestSceneRender(currentViewer)
 }
 
@@ -182,6 +259,11 @@ async function initViewer() {
   })
 
   optimizeCesiumViewer(viewer)
+  defaultMinimumZoomDistance = viewer.scene.screenSpaceCameraController.minimumZoomDistance
+  defaultMaximumZoomDistance = viewer.scene.screenSpaceCameraController.maximumZoomDistance
+  viewer.camera.moveStart.addEventListener(handleCameraMoveStart)
+  viewer.camera.moveEnd.addEventListener(handleCameraMoveEnd)
+  applyCruiseRenderingProfile(viewer)
   if (tiandituToken) addTiandituLayers(viewer, tiandituToken)
 
   viewer.scene.globe.depthTestAgainstTerrain = Boolean(ionToken)
@@ -211,9 +293,15 @@ async function initViewer() {
 onMounted(() => { void initViewer() })
 
 onUnmounted(() => {
+  stopPresetWatch()
   mapView.unregisterCesium()
+  if (viewer) {
+    viewer.camera.moveStart.removeEventListener(handleCameraMoveStart)
+    viewer.camera.moveEnd.removeEventListener(handleCameraMoveEnd)
+  }
   viewer?.destroy()
   viewer = null
+  localTileset = null
 })
 </script>
 
