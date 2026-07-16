@@ -96,10 +96,10 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(
             demo_4.topology.approaches,
             {
-                "east": ("-50333",),
-                "west": ("-57186",),
-                "north": ("-56732",),
-                "south": ("-57229",),
+                "east": ("-57186",),
+                "west": ("-50333",),
+                "north": ("-57229",),
+                "south": ("-56732",),
             },
         )
         self.assertEqual(
