@@ -32,6 +32,10 @@
 “东西向直行”，且平峰只有 3 个相位。相位中的 `protected` 可追加受保护放行组，
 `permissive` 可追加让行放行组。
 
+当官方要求同相位放行、但 SUMO foe 矩阵判定主放行轨迹彼此冲突时，可把该相位的
+`priority` 设置为 `permissive`。相位仍按官方周期同时显示绿灯，但使用 `g` 让车辆
+按冲突矩阵避让，而不是生成互相冲突的受保护绿 `G`。
+
 生成的 `tls_manifest.json` 会在每个路口的 `programs` 对象内保存对应的
 `phase_order`、`phase_movements` 和 `templates`。runner 在启动场景时按当前
 `program_id` 选择这一组数据，因此平峰控制动作不会误用早高峰的相位含义。
@@ -47,7 +51,7 @@
 ## 构建
 
 ```bash
-python -m simulation.sumo.build_tls --intersections demo_2 demo_4 demo_5
+python -m simulation.sumo.build_tls --intersections demo_2 demo_4 demo_5 demo_6
 ```
 
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。

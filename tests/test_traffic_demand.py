@@ -119,6 +119,28 @@ class TrafficDemandTests(unittest.TestCase):
             all(len(period.intervals) == 8 for period in demo_5.periods.values())
         )
 
+        demo_6 = load_traffic_demands(DEMANDS).intersections["demo_6"]
+        self.assertEqual(
+            {name: period.totals["all"] for name, period in demo_6.periods.items()},
+            {"morning_peak": 4455, "off_peak": 3210, "evening_peak": 4909},
+        )
+        self.assertEqual(
+            demo_6.periods["morning_peak"].totals,
+            {"east": 1588, "west": 875, "south": 964, "north": 1028, "all": 4455},
+        )
+        self.assertEqual(
+            demo_6.periods["off_peak"].totals,
+            {"east": 870, "west": 924, "south": 674, "north": 742, "all": 3210},
+        )
+        self.assertEqual(
+            demo_6.periods["evening_peak"].totals,
+            {"east": 1543, "west": 1265, "south": 1139, "north": 962, "all": 4909},
+        )
+        self.assertEqual(set(demo_6.approaches), {"east", "west", "south", "north"})
+        self.assertTrue(
+            all(len(period.intervals) == 8 for period in demo_6.periods.values())
+        )
+
     def test_declared_total_mismatch_is_rejected(self):
         raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
         raw["intersections"]["demo_2"]["periods"][0]["expected_totals"]["all"] = 1
@@ -179,6 +201,42 @@ class TrafficDemandTests(unittest.TestCase):
         actual = {
             (approach_name, movement): _movement_route(
                 "demo_5", manifest, approach, movement
+            )
+            for approach_name, approach in demand.approaches.items()
+            for movement in approach.movements
+        }
+        self.assertEqual(actual, expected)
+
+    def test_demo_6_official_movements_select_the_expected_routes(self):
+        demand = load_traffic_demands(DEMANDS).intersections["demo_6"]
+        expected = {
+            ("east", "left"): ("-56623", "-50818"),
+            ("east", "through"): ("-56623", "-56614"),
+            ("east", "right"): ("-56623", "-57585"),
+            ("west", "left"): ("-50334", "-57585"),
+            ("west", "through"): ("-50334", "-50342"),
+            ("west", "right"): ("-50334", "-50818"),
+            ("north", "left"): ("-50819", "-50342"),
+            ("north", "through"): ("-50819", "-50818"),
+            ("north", "right"): ("-50819", "-56614"),
+            ("south", "left"): ("-57584", "-56614"),
+            ("south", "through"): ("-57584", "-57585"),
+            ("south", "right"): ("-57584", "-50342"),
+        }
+        manifest = {
+            "connections": [
+                {
+                    "approach": approach,
+                    "movement": movement,
+                    "from_edge": route[0],
+                    "to_edge": route[1],
+                }
+                for (approach, movement), route in expected.items()
+            ]
+        }
+        actual = {
+            (approach_name, movement): _movement_route(
+                "demo_6", manifest, approach, movement
             )
             for approach_name, approach in demand.approaches.items()
             for movement in approach.movements

@@ -386,17 +386,19 @@ def _build_templates(
     if phase_mappings is None:
         phase_mappings = config.topology.phases
     for phase_mapping in phase_mappings:
-        protected = [
+        primary = [
             item
             for item in own_connections
             if item.approach in phase_mapping.approaches
             and _movement_matches(config, item, phase_mapping.movement)
         ]
-        if not protected:
+        if not primary:
             raise SignalConfigurationError(
                 f"{config.intersection_id}/phase {phase_mapping.phase_number}: "
-                "no protected connections matched."
+                "no primary connections matched."
             )
+        protected = list(primary) if phase_mapping.priority == "protected" else []
+        permissive = list(primary) if phase_mapping.priority == "permissive" else []
         for group in phase_mapping.protected:
             matches = [
                 item
@@ -418,7 +420,6 @@ def _build_templates(
             config.intersection_id,
             phase_mapping.phase_number,
         )
-        permissive = []
         for group in phase_mapping.permissive:
             matches = [
                 item

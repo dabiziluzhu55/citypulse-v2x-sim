@@ -54,6 +54,7 @@ class PhaseMovement:
     phase_number: int
     movement: str
     approaches: Tuple[str, ...]
+    priority: str = "protected"
     protected: Tuple[MovementGroup, ...] = ()
     permissive: Tuple[MovementGroup, ...] = ()
 
@@ -206,6 +207,7 @@ def _parse_phase_movements(
             phase_number=int(item["official_phase_no"]),
             movement=str(item["movement"]),
             approaches=tuple(str(value) for value in item["approaches"]),
+            priority=str(item.get("priority", "protected")),
             protected=tuple(
                 MovementGroup(
                     movement=str(group["movement"]),
@@ -228,6 +230,11 @@ def _parse_phase_movements(
             f"{intersection_id}/{context}: phase topology is empty or duplicated."
         )
     for item in phases:
+        if item.priority not in {"protected", "permissive"}:
+            raise SignalConfigurationError(
+                f"{intersection_id}/{context}/phase {item.phase_number}: "
+                f"invalid priority {item.priority!r}."
+            )
         if item.movement not in {"through", "left"}:
             raise SignalConfigurationError(
                 f"{intersection_id}/{context}/phase {item.phase_number}: "
