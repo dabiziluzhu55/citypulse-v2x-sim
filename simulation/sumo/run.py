@@ -476,6 +476,7 @@ def run(args: argparse.Namespace) -> None:
         step_length=args.step_length,
         gui=args.gui,
         realtime=args.realtime,
+        playback_speed=args.playback_speed,
         snapshot_interval_seconds=args.snapshot_interval,
         initial_events=_load_events(args.event_file),
     )
@@ -536,6 +537,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--gui", action="store_true")
     parser.add_argument("--realtime", action="store_true")
+    parser.add_argument(
+        "--playback-speed",
+        type=float,
+        choices=(1.0, 1.25, 1.5, 2.0, 3.0, 5.0),
+        default=None,
+        help="Pace simulation at the selected wall-clock multiplier.",
+    )
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
     if args.decision_interval <= 0 or args.step_length <= 0 or args.snapshot_interval <= 0:

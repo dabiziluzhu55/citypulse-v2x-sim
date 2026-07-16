@@ -47,6 +47,33 @@ class UnknownSessionError(SessionError):
     pass
 
 
+PLAYBACK_SPEEDS = (1.0, 1.25, 1.5, 2.0, 3.0, 5.0)
+
+
+def _normalize_playback_speed(value: object) -> float:
+    if isinstance(value, bool):
+        raise ValueError("playback speed must be a number, not a boolean.")
+    try:
+        speed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid playback speed: {value!r}.") from exc
+    if speed not in PLAYBACK_SPEEDS:
+        raise ValueError(
+            f"playback speed must be one of {PLAYBACK_SPEEDS}, got {value!r}."
+        )
+    return speed
+
+
+def _playback_delay_seconds(
+    step_length: float,
+    playback_speed: float | None,
+    spent_seconds: float,
+) -> float:
+    if playback_speed is None:
+        return 0.0
+    return max(0.0, step_length / playback_speed - spent_seconds)
+
+
 @dataclass(frozen=True)
 class SimulationConfig:
     intersection_ids: tuple[str, ...]
@@ -64,6 +91,8 @@ class SimulationConfig:
     step_length: float = 0.05
     gui: bool = False
     realtime: bool = False
+    playback_speed: float | None = None
+    start_paused: bool = False
     snapshot_interval_seconds: float = 0.5
     initial_events: tuple[DisturbanceEvent, ...] = ()
 
@@ -103,6 +132,7 @@ class SimulationCatalog:
     event_types: tuple[str, ...] = ("lane_closure", "speed_limit", "accident")
     flow_multiplier_min: float = 0.1
     flow_multiplier_max: float = 5.0
+    playback_speeds: tuple[float, ...] = PLAYBACK_SPEEDS
 
 
 @dataclass(frozen=True)
@@ -175,6 +205,7 @@ class SimulationSnapshot:
     duration_seconds: float
     progress: float
     official_time: str
+    playback_speed: float | None = None
     intersections: Mapping[str, IntersectionRuntimeSnapshot] = field(default_factory=dict)
     vehicles: tuple[VehicleRuntimeSnapshot, ...] = ()
     events: tuple[EventSnapshot, ...] = ()
@@ -199,6 +230,8 @@ class _SessionRecord:
     subscribers: list[queue.Queue[SimulationSnapshot]] = field(default_factory=list)
     snapshot: SimulationSnapshot | None = None
     thread: threading.Thread | None = None
+    paused: bool = False
+    playback_speed: float | None = None
 
 
 class SnapshotSubscription:
@@ -371,7 +404,17 @@ class SimulationManager:
                 generated_dir=self.generated_dir,
                 session_root=self.session_root,
             )
-            record = _SessionRecord(session_id, config, scenario)
+            record = _SessionRecord(
+                session_id,
+                config,
+                scenario,
+                paused=config.start_paused,
+                playback_speed=(
+                    _normalize_playback_speed(config.playback_speed)
+                    if config.playback_speed is not None
+                    else (1.0 if config.realtime or config.start_paused else None)
+                ),
+            )
             record.snapshot = self._empty_snapshot(record, "STARTING")
             self._sessions[session_id] = record
             self._active_session_id = session_id
@@ -387,6 +430,24 @@ class SimulationManager:
 
     def stop(self, session_id: str) -> None:
         self._command(session_id, "stop")
+
+    def pause(self, session_id: str) -> None:
+        self.set_playing(session_id, False)
+
+    def resume(self, session_id: str) -> None:
+        self.set_playing(session_id, True)
+
+    def set_playing(self, session_id: str, playing: bool) -> None:
+        if not isinstance(playing, bool):
+            raise ValueError("playing must be a boolean.")
+        self._command(session_id, "resume" if playing else "pause")
+
+    def set_playback_speed(self, session_id: str, speed: float) -> None:
+        self._command(
+            session_id,
+            "set_playback_speed",
+            _normalize_playback_speed(speed),
+        )
 
     def add_event(self, session_id: str, event: DisturbanceEvent) -> str:
         if not event.event_id:
@@ -430,6 +491,11 @@ class SimulationManager:
             raise ScenarioCompilationError("seed and snapshot interval are invalid.")
         if config.decision_interval <= 0 or config.minimum_green < 0:
             raise ScenarioCompilationError("Algorithm timing values are invalid.")
+        if config.playback_speed is not None:
+            try:
+                _normalize_playback_speed(config.playback_speed)
+            except ValueError as exc:
+                raise ScenarioCompilationError(str(exc)) from exc
         lane_ids = {
             lane.lane_id
             for intersection_id in config.intersection_ids
@@ -448,7 +514,12 @@ class SimulationManager:
 
     def _command(self, session_id: str, name: str, payload: object = None) -> None:
         record = self._record(session_id)
-        if record.snapshot.state not in {"STARTING", "RUNNING", "STOPPING"}:
+        if record.snapshot.state not in {
+            "STARTING",
+            "RUNNING",
+            "PAUSED",
+            "STOPPING",
+        }:
             raise SessionError(f"Session {session_id} is not active.")
         command = _Command(name=name, payload=payload)
         record.commands.put(command)
@@ -496,6 +567,7 @@ class SimulationManager:
             official_time=_format_clock(
                 scenario.official_start_seconds + scenario.window_start_seconds
             ),
+            playback_speed=record.playback_speed,
             error=error,
         )
 
@@ -620,7 +692,14 @@ class SimulationManager:
                         traci, selected_manifest[intersection_id], controller
                     )
 
-            self._publish(record, replace(record.snapshot, state="RUNNING"))
+            self._publish(
+                record,
+                replace(
+                    record.snapshot,
+                    state="PAUSED" if record.paused else "RUNNING",
+                    playback_speed=record.playback_speed,
+                ),
+            )
             next_decision = 0.0
             decision_step = 0
             next_snapshot = 0.0
@@ -630,11 +709,20 @@ class SimulationManager:
                 traci.simulation.getMinExpectedNumber() > 0
                 and traci.simulation.getTime() < scenario.duration_seconds
             ):
-                loop_started = time.perf_counter()
                 current_time = float(traci.simulation.getTime())
-                if self._process_commands(record, scheduler, current_time):
+                stop_requested, sequence = self._process_commands(
+                    record,
+                    scheduler,
+                    current_time,
+                    sequence,
+                    wait_timeout=0.1 if record.paused else 0.0,
+                )
+                if stop_requested:
                     stop_requested = True
                     break
+                if record.paused:
+                    continue
+                loop_started = time.perf_counter()
                 traci.simulationStep()
                 elapsed = float(traci.simulation.getTime())
                 scheduler.tick(elapsed)
@@ -714,10 +802,15 @@ class SimulationManager:
                     self._publish(record, last_snapshot)
                     while next_snapshot <= elapsed + 1e-9:
                         next_snapshot += config.snapshot_interval_seconds
-                if config.realtime:
+                if record.playback_speed is not None:
                     spent = time.perf_counter() - loop_started
-                    if spent < config.step_length:
-                        time.sleep(config.step_length - spent)
+                    delay = _playback_delay_seconds(
+                        config.step_length,
+                        record.playback_speed,
+                        spent,
+                    )
+                    if delay > 0:
+                        time.sleep(delay)
             sequence += 1
             final_elapsed = float(traci.simulation.getTime())
             last_snapshot = _capture_snapshot(
@@ -785,29 +878,97 @@ class SimulationManager:
                 if self._active_session_id == record.session_id:
                     self._active_session_id = None
 
-    def _process_commands(self, record, scheduler, current_time: float) -> bool:
+    def _process_commands(
+        self,
+        record,
+        scheduler,
+        current_time: float,
+        sequence: int,
+        *,
+        wait_timeout: float = 0.0,
+    ) -> tuple[bool, int]:
         stop = False
+        first = True
         while True:
             try:
-                command = record.commands.get_nowait()
+                if first and wait_timeout > 0:
+                    command = record.commands.get(timeout=wait_timeout)
+                else:
+                    command = record.commands.get_nowait()
             except queue.Empty:
                 break
+            first = False
             try:
                 if command.name == "stop":
                     stop = True
+                elif command.name == "pause":
+                    if not record.paused:
+                        record.paused = True
+                        sequence += 1
+                        self._publish(
+                            record,
+                            replace(
+                                record.snapshot,
+                                state="PAUSED",
+                                sequence=sequence,
+                            ),
+                        )
+                elif command.name == "resume":
+                    if record.paused:
+                        record.paused = False
+                        sequence += 1
+                        self._publish(
+                            record,
+                            replace(
+                                record.snapshot,
+                                state="RUNNING",
+                                sequence=sequence,
+                            ),
+                        )
+                elif command.name == "set_playback_speed":
+                    speed = _normalize_playback_speed(command.payload)
+                    if record.playback_speed != speed:
+                        record.playback_speed = speed
+                        sequence += 1
+                        self._publish(
+                            record,
+                            replace(
+                                record.snapshot,
+                                playback_speed=speed,
+                                sequence=sequence,
+                            ),
+                        )
                 elif command.name == "add_event":
                     scheduler.schedule(
                         command.payload, current_time=current_time
                     )
+                    sequence += 1
+                    self._publish(
+                        record,
+                        replace(
+                            record.snapshot,
+                            events=scheduler.snapshots(),
+                            sequence=sequence,
+                        ),
+                    )
                 elif command.name == "cancel_event":
                     scheduler.cancel(str(command.payload))
+                    sequence += 1
+                    self._publish(
+                        record,
+                        replace(
+                            record.snapshot,
+                            events=scheduler.snapshots(),
+                            sequence=sequence,
+                        ),
+                    )
                 else:
                     raise SessionError(f"Unknown session command: {command.name}")
             except BaseException as exc:
                 command.error = exc
             finally:
                 command.completed.set()
-        return stop
+        return stop, sequence
 
     def _fail_pending_commands(self, record) -> None:
         while True:
@@ -995,7 +1156,7 @@ def _capture_snapshot(
     fuel_mg, fuel_ml, braking = vehicle_tracker.totals()
     return SimulationSnapshot(
         session_id=record.session_id,
-        state="RUNNING",
+        state="PAUSED" if record.paused else "RUNNING",
         sequence=sequence,
         elapsed_seconds=elapsed,
         duration_seconds=scenario.duration_seconds,
@@ -1003,6 +1164,7 @@ def _capture_snapshot(
         official_time=_format_clock(
             scenario.official_start_seconds + scenario.window_start_seconds + elapsed
         ),
+        playback_speed=record.playback_speed,
         intersections=intersections,
         vehicles=tuple(vehicle_values),
         events=scheduler.snapshots(),

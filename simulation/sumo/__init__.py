@@ -3,11 +3,12 @@
 from .config import load_signal_configuration
 from .controller import SafePhaseController, SignalStage
 from .events import AccidentEvent, LaneClosureEvent, SpeedLimitEvent
-from .session import SimulationConfig, SimulationManager
+from .session import PLAYBACK_SPEEDS, SimulationConfig, SimulationManager
 
 __all__ = [
     "AccidentEvent",
     "LaneClosureEvent",
+    "PLAYBACK_SPEEDS",
     "SafePhaseController",
     "SignalStage",
     "SimulationConfig",
