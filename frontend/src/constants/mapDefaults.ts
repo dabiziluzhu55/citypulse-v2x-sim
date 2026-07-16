@@ -1,10 +1,18 @@
 import type { CesiumCameraPreset, CesiumCameraPresetId } from '../types/map'
 import type { ScenarioTemplate } from '../types/scenario'
 
-/** 雄安测试区域默认视野（WGS84: [lon, lat]） */
-export const DEFAULT_MAP_CENTER: [number, number] = [115.9348, 39.0631]
+/**
+ * 3D Tiles 真实中心（从 tileset.json transform 反算）：
+ *   lon=115.954990  lat=38.986486
+ * 子节点分布范围：
+ *   LON 115.797~116.113  LAT 38.712~39.154
+ *   实际密集建筑区中心：lon≈115.981  lat≈38.985
+ */
 
-export const DEFAULT_MAP_ZOOM = 13
+/** 地图默认中心对齐 3D Tiles 真实中心（WGS84: [lon, lat]） */
+export const DEFAULT_MAP_CENTER: [number, number] = [115.981, 38.985]
+
+export const DEFAULT_MAP_ZOOM = 14
 
 /** Cesium 相机默认高度（米） */
 export const DEFAULT_CESIUM_CAMERA_HEIGHT = 2000
@@ -91,9 +99,14 @@ export const XIONGAN_3DTILES_CALIBRATION: TilesetCalibration = {
   scale: 1,
 }
 
-/** [minLon, minLat, maxLon, maxLat] */
+/**
+ * 地图边界对齐 3D Tiles 子节点实际分布范围：
+ *   LON 115.797~116.113  LAT 38.712~39.154
+ * 取密集建筑核心区（约 5km 半径）作为默认边界。
+ * [minLon, minLat, maxLon, maxLat]
+ */
 export const XIONGAN_MAP_BOUNDS: [number, number, number, number] = [
-  115.92696, 39.05825, 115.94267, 39.06798,
+  115.936, 38.951, 116.026, 39.019,
 ]
 
 export type RoadVisualLevel = 'arterial' | 'secondary' | 'connector'
@@ -105,106 +118,182 @@ export interface RoadVisualSegment {
   coordinates: Array<[number, number]>
 }
 
+/**
+ * 道路骨架坐标已对齐 3D Tiles 真实中心（115.981, 38.985）。
+ * 坐标依据 tileset.json 中心点 + 标准城市路网间距估算：
+ *   主干道间距约 500m，次干道约 300m，联络道约 200m。
+ */
 export const XIONGAN_ROAD_VISUAL_SEGMENTS: RoadVisualSegment[] = [
   {
-    id: 'east-west-main-1',
-    name: '东西向主干道 A',
+    id: 'ew-arterial-north',
+    name: '东西向主干道 北',
     level: 'arterial',
     coordinates: [
-      [115.9274, 39.0649],
-      [115.9305, 39.0647],
-      [115.9348, 39.0645],
-      [115.9392, 39.0642],
-      [115.9422, 39.064],
+      [115.946, 39.001],
+      [115.958, 39.001],
+      [115.970, 39.001],
+      [115.981, 39.001],
+      [115.993, 39.001],
+      [116.005, 39.001],
+      [116.016, 39.001],
     ],
   },
   {
-    id: 'east-west-main-2',
-    name: '东西向主干道 B',
+    id: 'ew-arterial-center',
+    name: '东西向主干道 中',
     level: 'arterial',
     coordinates: [
-      [115.928, 39.0608],
-      [115.9315, 39.0609],
-      [115.9357, 39.0611],
-      [115.9394, 39.0613],
-      [115.9416, 39.0614],
+      [115.946, 38.985],
+      [115.958, 38.985],
+      [115.970, 38.985],
+      [115.981, 38.985],
+      [115.993, 38.985],
+      [116.005, 38.985],
+      [116.016, 38.985],
     ],
   },
   {
-    id: 'north-south-main-1',
-    name: '南北向主干道 A',
+    id: 'ew-arterial-south',
+    name: '东西向主干道 南',
     level: 'arterial',
     coordinates: [
-      [115.932, 39.0588],
-      [115.9322, 39.0617],
-      [115.9326, 39.0645],
-      [115.933, 39.0673],
+      [115.946, 38.969],
+      [115.958, 38.969],
+      [115.970, 38.969],
+      [115.981, 38.969],
+      [115.993, 38.969],
+      [116.005, 38.969],
+      [116.016, 38.969],
     ],
   },
   {
-    id: 'north-south-main-2',
-    name: '南北向主干道 B',
+    id: 'ns-arterial-west',
+    name: '南北向主干道 西',
     level: 'arterial',
     coordinates: [
-      [115.9382, 39.0586],
-      [115.9379, 39.0612],
-      [115.9375, 39.0643],
-      [115.9371, 39.0672],
+      [115.958, 38.960],
+      [115.958, 38.969],
+      [115.958, 38.977],
+      [115.958, 38.985],
+      [115.958, 38.993],
+      [115.958, 39.001],
+      [115.958, 39.010],
     ],
   },
   {
-    id: 'secondary-school-loop',
-    name: '学校片区环路',
+    id: 'ns-arterial-center',
+    name: '南北向主干道 中',
+    level: 'arterial',
+    coordinates: [
+      [115.981, 38.960],
+      [115.981, 38.969],
+      [115.981, 38.977],
+      [115.981, 38.985],
+      [115.981, 38.993],
+      [115.981, 39.001],
+      [115.981, 39.010],
+    ],
+  },
+  {
+    id: 'ns-arterial-east',
+    name: '南北向主干道 东',
+    level: 'arterial',
+    coordinates: [
+      [116.005, 38.960],
+      [116.005, 38.969],
+      [116.005, 38.977],
+      [116.005, 38.985],
+      [116.005, 38.993],
+      [116.005, 39.001],
+      [116.005, 39.010],
+    ],
+  },
+  {
+    id: 'ew-secondary-1',
+    name: '东西向次干道 A',
     level: 'secondary',
     coordinates: [
-      [115.9362, 39.0591],
-      [115.9387, 39.059],
-      [115.9406, 39.0605],
-      [115.9401, 39.062],
-      [115.9372, 39.0621],
-      [115.9362, 39.0591],
+      [115.958, 38.977],
+      [115.970, 38.977],
+      [115.981, 38.977],
+      [115.993, 38.977],
+      [116.005, 38.977],
     ],
   },
   {
-    id: 'secondary-event-loop',
-    name: '事件片区环路',
+    id: 'ew-secondary-2',
+    name: '东西向次干道 B',
     level: 'secondary',
     coordinates: [
-      [115.9294, 39.0643],
-      [115.9316, 39.0665],
-      [115.9347, 39.0666],
-      [115.9354, 39.0648],
-      [115.9294, 39.0643],
+      [115.958, 38.993],
+      [115.970, 38.993],
+      [115.981, 38.993],
+      [115.993, 38.993],
+      [116.005, 38.993],
     ],
   },
   {
-    id: 'connector-1',
-    name: '联络道 1',
-    level: 'connector',
+    id: 'ns-secondary-1',
+    name: '南北向次干道 A',
+    level: 'secondary',
     coordinates: [
-      [115.9301, 39.0609],
-      [115.9311, 39.0627],
-      [115.9326, 39.0645],
+      [115.970, 38.969],
+      [115.970, 38.977],
+      [115.970, 38.985],
+      [115.970, 38.993],
+      [115.970, 39.001],
     ],
   },
   {
-    id: 'connector-2',
-    name: '联络道 2',
-    level: 'connector',
+    id: 'ns-secondary-2',
+    name: '南北向次干道 B',
+    level: 'secondary',
     coordinates: [
-      [115.9357, 39.0611],
-      [115.9367, 39.0627],
-      [115.9375, 39.0643],
+      [115.993, 38.969],
+      [115.993, 38.977],
+      [115.993, 38.985],
+      [115.993, 38.993],
+      [115.993, 39.001],
     ],
   },
   {
-    id: 'connector-3',
-    name: '联络道 3',
+    id: 'connector-nw',
+    name: '联络道 西北',
     level: 'connector',
     coordinates: [
-      [115.9326, 39.0645],
-      [115.9347, 39.0666],
-      [115.9371, 39.0672],
+      [115.958, 39.001],
+      [115.964, 39.005],
+      [115.970, 39.001],
+    ],
+  },
+  {
+    id: 'connector-ne',
+    name: '联络道 东北',
+    level: 'connector',
+    coordinates: [
+      [115.993, 39.001],
+      [115.999, 39.005],
+      [116.005, 39.001],
+    ],
+  },
+  {
+    id: 'connector-sw',
+    name: '联络道 西南',
+    level: 'connector',
+    coordinates: [
+      [115.958, 38.969],
+      [115.964, 38.965],
+      [115.970, 38.969],
+    ],
+  },
+  {
+    id: 'connector-se',
+    name: '联络道 东南',
+    level: 'connector',
+    coordinates: [
+      [115.993, 38.969],
+      [115.999, 38.965],
+      [116.005, 38.969],
     ],
   },
 ]
@@ -215,27 +304,27 @@ export interface TemplateMapViewport {
   bounds?: [number, number, number, number]
 }
 
-/** 各场景模板在雄安新区内的地理视野 */
+/** 各场景模板视野对齐 3D Tiles 真实位置 */
 export const TEMPLATE_MAP_REGISTRY: Record<string, TemplateMapViewport> = {
   xiongan20: {
-    center: [115.9348, 39.0631],
+    center: [115.981, 38.985],
     zoom: 15,
-    bounds: [115.928, 39.059, 115.941, 39.067],
+    bounds: [115.936, 38.951, 116.026, 39.019],
   },
   corridor4: {
-    center: [115.9312, 39.0645],
+    center: [115.970, 38.985],
     zoom: 16,
-    bounds: [115.929, 39.0625, 115.934, 39.066],
+    bounds: [115.952, 38.972, 115.988, 38.998],
   },
   school: {
-    center: [115.9385, 39.0602],
+    center: [116.000, 38.972],
     zoom: 16,
-    bounds: [115.936, 39.058, 115.941, 39.062],
+    bounds: [115.986, 38.962, 116.014, 38.982],
   },
   event: {
-    center: [115.9325, 39.0662],
+    center: [115.981, 39.001],
     zoom: 15,
-    bounds: [115.929, 39.064, 115.936, 39.068],
+    bounds: [115.960, 38.990, 116.002, 39.012],
   },
 }
 

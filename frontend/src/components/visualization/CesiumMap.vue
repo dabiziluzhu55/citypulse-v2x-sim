@@ -6,8 +6,6 @@ import {
   CESIUM_OSM_BUILDINGS_ASSET_ID,
   XIONGAN_3DTILES_CALIBRATION,
   XIONGAN_3DTILES_DEFAULT_URL,
-  XIONGAN_ROAD_VISUAL_SEGMENTS,
-  type RoadVisualLevel,
 } from '../../constants/mapDefaults'
 import { useAppMapView } from '../../composables/useAppMapView'
 
@@ -17,37 +15,6 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 
 let viewer: Cesium.Viewer | null = null
-let roadEntities: Cesium.Entity[] = []
-
-const ROAD_STYLE: Record<RoadVisualLevel, {
-  baseWidth: number
-  glowWidth: number
-  glowPower: number
-  baseColor: Cesium.Color
-  glowColor: Cesium.Color
-}> = {
-  arterial: {
-    baseWidth: 6,
-    glowWidth: 2.5,
-    glowPower: 0.22,
-    baseColor: Cesium.Color.fromCssColorString('#07345d').withAlpha(0.82),
-    glowColor: Cesium.Color.fromCssColorString('#20e8ff').withAlpha(0.92),
-  },
-  secondary: {
-    baseWidth: 4,
-    glowWidth: 1.8,
-    glowPower: 0.18,
-    baseColor: Cesium.Color.fromCssColorString('#062744').withAlpha(0.72),
-    glowColor: Cesium.Color.fromCssColorString('#56f0ff').withAlpha(0.80),
-  },
-  connector: {
-    baseWidth: 2.5,
-    glowWidth: 1.2,
-    glowPower: 0.14,
-    baseColor: Cesium.Color.fromCssColorString('#041c32').withAlpha(0.62),
-    glowColor: Cesium.Color.fromCssColorString('#8ff8ff').withAlpha(0.66),
-  },
-}
 
 function requestSceneRender(currentViewer: Cesium.Viewer): void {
   currentViewer.scene.requestRender()
@@ -57,21 +24,16 @@ function optimizeCesiumViewer(currentViewer: Cesium.Viewer): void {
   const { scene } = currentViewer
   currentViewer.resolutionScale = window.devicePixelRatio > 1 ? 0.82 : 1
   currentViewer.targetFrameRate = 45
-
   scene.requestRenderMode = true
   scene.maximumRenderTimeChange = 1 / 15
   scene.highDynamicRange = false
   scene.fog.enabled = false
   scene.globe.enableLighting = false
-
-  // 影像未加载时显示深色背景，避免默认蓝色
   scene.globe.baseColor = Cesium.Color.fromCssColorString('#0d1b2a')
-
   if (scene.skyAtmosphere) scene.skyAtmosphere.show = false
   if (scene.sun) scene.sun.show = false
   if (scene.moon) scene.moon.show = false
   if (scene.skyBox) scene.skyBox.show = false
-
   currentViewer.camera.percentageChanged = 0.02
   currentViewer.camera.changed.addEventListener(() => requestSceneRender(currentViewer))
 }
@@ -134,33 +96,44 @@ async function loadOsmBuildings(currentViewer: Cesium.Viewer): Promise<void> {
   requestSceneRender(currentViewer)
 }
 
-/**
- * 天地图影像层通过 addImageryProvider 叠加，不作为 baseLayer 传入 Viewer。
- * 原因：new WebMapTileServiceImageryProvider() 是同步构造，provider 内部异步就绪，
- * 若直接传给 Viewer baseLayer，Cesium 在 provider 未就绪时渲染 globe.baseColor（蓝色）。
- * 叠加方式不存在此问题，Cesium 会在 provider 就绪后自动开始请求瓦片。
- */
 function addTiandituLayers(currentViewer: Cesium.Viewer, token: string): void {
-  const makeProvider = (layer: 'img' | 'cia') => new Cesium.WebMapTileServiceImageryProvider({
-    url: `https://t{s}.tianditu.gov.cn/${layer}_w/wmts?tk=${encodeURIComponent(token)}`,
-    layer,
-    style: 'default',
-    format: 'tiles',
-    tileMatrixSetID: 'w',
-    subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'],
-    minimumLevel: 1,
-    maximumLevel: 18,
-  })
+  const makeProvider = (layer: 'img' | 'cia') => {
+    const provider = new Cesium.WebMapTileServiceImageryProvider({
+      url: `https://t{s}.tianditu.gov.cn/${layer}_w/wmts?tk=${encodeURIComponent(token)}`,
+      layer,
+      style: 'default',
+      format: 'tiles',
+      tileMatrixSetID: 'w',
+      subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'],
+      minimumLevel: 0,
+      maximumLevel: 18,
+    })
+
+    provider.errorEvent.addEventListener((providerError) => {
+      console.error(`[CesiumMap] 天地图 ${layer} provider 请求失败`, {
+        message: providerError.message,
+        timesRetried: providerError.timesRetried,
+        retry: providerError.retry,
+      })
+    })
+    return provider
+  }
 
   const imgLayer = currentViewer.imageryLayers.addImageryProvider(makeProvider('img'), 0)
-  imgLayer.errorEvent.addEventListener((e) => {
-    console.error('[CesiumMap] 天地图影像瓦片失败:', e.message)
-  })
+  imgLayer.show = true
+  imgLayer.alpha = 1
+  imgLayer.brightness = 1
+  imgLayer.contrast = 1
+  imgLayer.saturation = 1
 
   const ciaLayer = currentViewer.imageryLayers.addImageryProvider(makeProvider('cia'))
-  ciaLayer.errorEvent.addEventListener((e) => {
-    console.error('[CesiumMap] 天地图注记瓦片失败:', e.message)
-  })
+  ciaLayer.show = true
+  ciaLayer.alpha = 1
+  ciaLayer.brightness = 1
+  ciaLayer.contrast = 1
+  ciaLayer.saturation = 1
+
+  requestSceneRender(currentViewer)
 }
 
 async function createOfflineBaseLayer(): Promise<Cesium.ImageryLayer> {
@@ -170,68 +143,6 @@ async function createOfflineBaseLayer(): Promise<Cesium.ImageryLayer> {
   return new Cesium.ImageryLayer(provider)
 }
 
-function addRoadVisualLayer(currentViewer: Cesium.Viewer): void {
-  roadEntities = XIONGAN_ROAD_VISUAL_SEGMENTS.flatMap((segment) => {
-    const style = ROAD_STYLE[segment.level]
-    const positions = segment.coordinates.map(([lon, lat]) =>
-      Cesium.Cartesian3.fromDegrees(lon, lat),
-    )
-    const base = currentViewer.entities.add({
-      id: `road-base-${segment.id}`,
-      polyline: {
-        positions,
-        width: style.baseWidth,
-        material: style.baseColor,
-        clampToGround: true,
-        classificationType: Cesium.ClassificationType.TERRAIN,
-      },
-    })
-    const glow = currentViewer.entities.add({
-      id: `road-glow-${segment.id}`,
-      polyline: {
-        positions,
-        width: style.glowWidth,
-        material: new Cesium.PolylineGlowMaterialProperty({
-          glowPower: style.glowPower,
-          taperPower: 0.5,
-          color: style.glowColor,
-        }),
-        clampToGround: true,
-        classificationType: Cesium.ClassificationType.TERRAIN,
-      },
-    })
-    return [base, glow]
-  })
-
-  const beaconPoints: Array<[number, number]> = [
-    [115.958, 38.985], [115.981, 38.985], [116.005, 38.985],
-    [115.970, 39.001], [115.993, 39.001],
-    [115.970, 38.969], [115.993, 38.969],
-  ]
-  beaconPoints.forEach(([lon, lat], i) => {
-    roadEntities.push(currentViewer.entities.add({
-      id: `road-beacon-${i}`,
-      position: Cesium.Cartesian3.fromDegrees(lon, lat, 2),
-      ellipse: {
-        semiMajorAxis: 12,
-        semiMinorAxis: 12,
-        height: 1,
-        material: Cesium.Color.fromCssColorString('#21e6ff').withAlpha(0.20),
-        outline: true,
-        outlineColor: Cesium.Color.fromCssColorString('#21e6ff').withAlpha(0.78),
-        outlineWidth: 1,
-      },
-    }))
-  })
-
-  requestSceneRender(currentViewer)
-}
-
-function clearRoadVisualLayer(currentViewer: Cesium.Viewer): void {
-  roadEntities.forEach((e) => currentViewer.entities.remove(e))
-  roadEntities = []
-}
-
 async function initViewer() {
   const ionToken = import.meta.env.VITE_CESIUM_ION_TOKEN?.trim()
   const tiandituToken = import.meta.env.VITE_TIANDITU_TOKEN?.trim()
@@ -239,7 +150,6 @@ async function initViewer() {
 
   if (ionToken) Cesium.Ion.defaultAccessToken = ionToken
 
-  // 没有天地图 token 时，用离线底图或 Bing 初始化
   let baseLayer: Cesium.ImageryLayer | false = false
   if (!tiandituToken) {
     if (!ionToken) {
@@ -267,20 +177,14 @@ async function initViewer() {
     shadows: false,
     shouldAnimate: false,
     useBrowserRecommendedResolution: true,
-    // 有天地图时传 false，让 imageryLayers 完全由我们管理
     baseLayer: tiandituToken ? false : baseLayer,
     ...(ionToken ? { terrain: Cesium.Terrain.fromWorldTerrain() } : {}),
   })
 
   optimizeCesiumViewer(viewer)
-
-  if (tiandituToken) {
-    // 天地图通过 addImageryProvider 叠加，避免 baseLayer 同步初始化问题
-    addTiandituLayers(viewer, tiandituToken)
-  }
+  if (tiandituToken) addTiandituLayers(viewer, tiandituToken)
 
   viewer.scene.globe.depthTestAgainstTerrain = Boolean(ionToken)
-  addRoadVisualLayer(viewer)
 
   try {
     await loadLocalBuildings(viewer)
@@ -308,7 +212,6 @@ onMounted(() => { void initViewer() })
 
 onUnmounted(() => {
   mapView.unregisterCesium()
-  if (viewer) clearRoadVisualLayer(viewer)
   viewer?.destroy()
   viewer = null
 })
