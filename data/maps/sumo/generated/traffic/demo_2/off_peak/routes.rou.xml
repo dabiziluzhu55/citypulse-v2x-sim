@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <routes>
-  <vType id="demo_2_official_passenger" vClass="passenger" accel="2.6" decel="4.5" sigma="0.5" length="5" minGap="2.5" maxSpeed="13.9" />
+  <vType id="demo_2_official_passenger" vClass="passenger" emissionClass="HBEFA3/PC_G_EU4" accel="2.6" decel="4.5" sigma="0.5" length="5" width="1.8" minGap="2.5" maxSpeed="13.9" />
   <flow id="demo_2_off_peak_00_west_left" type="demo_2_official_passenger" begin="0" end="900" number="25" departLane="best" departSpeed="max">
     <route edges="-51425 -56736" />
   </flow>
