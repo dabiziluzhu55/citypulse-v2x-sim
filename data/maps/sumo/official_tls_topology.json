@@ -193,6 +193,42 @@
           ]
         }
       }
+    },
+    "demo_5": {
+      "right_turn_policy": "permissive_always",
+      "u_turn_policy": "blocked",
+      "approaches": {
+        "east": {
+          "incoming_edges": ["-50182"]
+        },
+        "west": {
+          "incoming_edges": ["-56392"]
+        },
+        "south": {
+          "incoming_edges": ["-57586"]
+        }
+      },
+      "direction_mapping": {
+        "s": "through",
+        "l": "left",
+        "t": "blocked",
+        "r": "right"
+      },
+      "phases": [
+        {
+          "official_phase_no": 1,
+          "movement": "through",
+          "approaches": ["east", "west"],
+          "permissive": [
+            {"movement": "left", "approaches": ["east"]}
+          ]
+        },
+        {
+          "official_phase_no": 2,
+          "movement": "left",
+          "approaches": ["south"]
+        }
+      ]
     }
   }
 }

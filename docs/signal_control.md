@@ -47,7 +47,7 @@
 ## 构建
 
 ```bash
-python -m simulation.sumo.build_tls --intersections demo_2 demo_4
+python -m simulation.sumo.build_tls --intersections demo_2 demo_4 demo_5
 ```
 
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。

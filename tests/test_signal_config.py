@@ -30,6 +30,7 @@ class SignalConfigurationTests(unittest.TestCase):
                     "demo_1": {"junction_id": "4427"},
                     "demo_2": {"junction_id": "317"},
                     "demo_4": {"junction_id": "3935"},
+                    "demo_5": {"junction_id": "3807"},
                 }
             ),
             encoding="utf-8",
@@ -130,6 +131,74 @@ class SignalConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(demo_4.topology.u_turn_policy, "with_left")
         self.assertEqual(demo_4.topology.direction_mapping["t"], "uturn")
+
+        demo_5 = self.load().intersections["demo_5"]
+        self.assertEqual(demo_5.junction_ids, ("3807",))
+        self.assertEqual(
+            demo_5.topology.approaches,
+            {
+                "east": ("-50182",),
+                "west": ("-56392",),
+                "south": ("-57586",),
+            },
+        )
+        self.assertEqual(
+            {key: value.cycle_duration for key, value in demo_5.programs.items()},
+            {
+                "demo_5_morning_peak": 77,
+                "demo_5_off_peak": 77,
+                "demo_5_evening_peak": 77,
+            },
+        )
+        for program in demo_5.programs.values():
+            self.assertEqual([phase.number for phase in program.phases], [1, 2])
+            self.assertEqual([phase.green for phase in program.phases], [34, 37])
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+
+    def test_demo_5_templates_cover_all_t_junction_movements(self):
+        config = self.load().intersections["demo_5"]
+        definitions = (
+            ("east", "l", "left"),
+            ("east", "s", "through"),
+            ("west", "s", "through"),
+            ("west", "r", "right"),
+            ("south", "l", "left"),
+            ("south", "r", "right"),
+        )
+        connections = [
+            ControlledConnection(
+                intersection_id="demo_5",
+                junction_id="3807",
+                tls_id="3807",
+                link_index=index,
+                approach=approach,
+                movement=movement,
+                from_edge=config.topology.approaches[approach][0],
+                from_lane=0,
+                to_edge=f"out_{approach}_{movement}",
+                to_lane=0,
+                direction=direction,
+                via=f":3807_{index}_0",
+                request_index=index,
+            )
+            for index, (approach, direction, movement) in enumerate(definitions)
+        ]
+        state_length = len(connections)
+        templates = _build_templates(
+            config,
+            connections,
+            {"3807": state_length},
+            {"3807": {index: "0" * state_length for index in range(state_length)}},
+        )
+        phase_one = templates[1]["3807"]["green"]
+        phase_two = templates[2]["3807"]["green"]
+        self.assertEqual(phase_one[0], "g")
+        self.assertEqual(phase_one[1], "G")
+        self.assertEqual(phase_one[2], "G")
+        self.assertEqual(phase_two[4], "G")
+        self.assertEqual(phase_one[3], "g")
+        self.assertEqual(phase_one[5], "g")
 
     def test_demo_4_program_templates_support_protected_and_permissive_groups(self):
         config = self.load().intersections["demo_4"]

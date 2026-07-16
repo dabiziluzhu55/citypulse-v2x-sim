@@ -97,6 +97,28 @@ class TrafficDemandTests(unittest.TestCase):
             )
         )
 
+        demo_5 = load_traffic_demands(DEMANDS).intersections["demo_5"]
+        self.assertEqual(
+            {name: period.totals["all"] for name, period in demo_5.periods.items()},
+            {"morning_peak": 2438, "off_peak": 1988, "evening_peak": 4038},
+        )
+        self.assertEqual(
+            demo_5.periods["morning_peak"].totals,
+            {"east": 736, "west": 890, "south": 812, "all": 2438},
+        )
+        self.assertEqual(
+            demo_5.periods["off_peak"].totals,
+            {"east": 636, "west": 690, "south": 662, "all": 1988},
+        )
+        self.assertEqual(
+            demo_5.periods["evening_peak"].totals,
+            {"east": 1136, "west": 1490, "south": 1412, "all": 4038},
+        )
+        self.assertEqual(set(demo_5.approaches), {"east", "west", "south"})
+        self.assertTrue(
+            all(len(period.intervals) == 8 for period in demo_5.periods.values())
+        )
+
     def test_declared_total_mismatch_is_rejected(self):
         raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
         raw["intersections"]["demo_2"]["periods"][0]["expected_totals"]["all"] = 1
@@ -133,6 +155,35 @@ class TrafficDemandTests(unittest.TestCase):
             ),
             ("-57229", "-50675"),
         )
+
+    def test_demo_5_official_movements_select_the_expected_t_junction_routes(self):
+        demand = load_traffic_demands(DEMANDS).intersections["demo_5"]
+        manifest = {
+            "connections": [
+                {"approach": "east", "movement": "left", "from_edge": "-50182", "to_edge": "-50820"},
+                {"approach": "east", "movement": "through", "from_edge": "-50182", "to_edge": "-50172"},
+                {"approach": "west", "movement": "through", "from_edge": "-56392", "to_edge": "-56402"},
+                {"approach": "west", "movement": "right", "from_edge": "-56392", "to_edge": "-50820"},
+                {"approach": "south", "movement": "left", "from_edge": "-57586", "to_edge": "-50172"},
+                {"approach": "south", "movement": "right", "from_edge": "-57586", "to_edge": "-56402"},
+            ]
+        }
+        expected = {
+            ("east", "left"): ("-50182", "-50820"),
+            ("east", "through"): ("-50182", "-50172"),
+            ("west", "through"): ("-56392", "-56402"),
+            ("west", "right"): ("-56392", "-50820"),
+            ("south", "left"): ("-57586", "-50172"),
+            ("south", "right"): ("-57586", "-56402"),
+        }
+        actual = {
+            (approach_name, movement): _movement_route(
+                "demo_5", manifest, approach, movement
+            )
+            for approach_name, approach in demand.approaches.items()
+            for movement in approach.movements
+        }
+        self.assertEqual(actual, expected)
 
     def test_generated_flows_have_exact_counts_and_routes(self):
         with tempfile.TemporaryDirectory() as directory:
