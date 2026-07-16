@@ -10,7 +10,7 @@ const handlers = new Set<RunMessageHandler>()
 const connectionListeners = new Set<(connected: boolean) => void>()
 
 function buildRunWsUrl(runId: string): string {
-  const configuredUrl = import.meta.env.VITE_TRAFFIC_WS_URL
+  const configuredUrl = import.meta.env.VITE_TRAFFIC_WS_URL?.trim()
   if (configuredUrl) {
     return configuredUrl.replace('{run_id}', encodeURIComponent(runId))
   }

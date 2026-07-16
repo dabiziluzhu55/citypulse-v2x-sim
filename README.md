@@ -12,7 +12,7 @@
 ```powershell
 cd backend
 python -m pip install -r requirements.txt
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8001
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ## 启动前端
@@ -23,7 +23,7 @@ npm install
 npm run dev
 ```
 
-前端默认地址为 `http://127.0.0.1:5173`，开发代理连接 `http://127.0.0.1:8001`。
+前端默认地址为 `http://127.0.0.1:5173`，开发代理连接 `http://127.0.0.1:8000`。Swagger 位于 `http://127.0.0.1:8000/docs`。
 
 ## 构建检查
 
