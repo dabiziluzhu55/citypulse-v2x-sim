@@ -45,6 +45,16 @@ SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转
 15 秒东进口直行延长段，平峰只有相位 1-3。由于 junction 1204 缺失官方西进口，东西直行
 以及东右转/西左转分别复用两条物理连接；该限制详见 `traffic_demand.md`。
 
+`demo_16` 三个时段均使用 `77s` 周期：东西直行受保护放行、东西左转让行放行后，切换为
+南北直行受保护放行、南北左转让行放行；四个右转始终使用让行绿。`demo_17` 三个时段均使用
+`96s` 周期：相位 1 放行东进口左转，东进口右转始终让行放行；相位 2 放行南北直行，并让行
+放行北进口左转。两个路口中不属于官方方案的 `t` 连接均保持红灯。
+
+`demo_18` 三个时段均使用 `80s` 周期，每个相位为 `37s` 绿灯加 `3s` 黄灯；`demo_19`
+三个时段均使用 `76s` 周期，每个相位为 `35s` 绿灯加 `3s` 黄灯。两处路口都先放行东北、
+西南进口，再放行西北、东南进口；同向直行使用受保护绿、左转使用让行绿，四个右转始终
+让行放行，基础路网中不属于官方方案的 `t` 连接保持红灯。
+
 当官方要求同相位放行、但 SUMO foe 矩阵判定主放行轨迹彼此冲突时，可把该相位的
 `priority` 设置为 `permissive`。相位仍按官方周期同时显示绿灯，但使用 `g` 让车辆
 按冲突矩阵避让，而不是生成互相冲突的受保护绿 `G`。
@@ -65,7 +75,7 @@ SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转
 
 ```bash
 python -m simulation.sumo.build_tls \
-  --intersections demo_2 demo_4 demo_5 demo_6 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15
+  --intersections demo_2 demo_4 demo_5 demo_6 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19
 ```
 
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。
@@ -75,6 +85,15 @@ python -m simulation.sumo.build_tls \
 `linkIndex` 和冲突矩阵，不再重复传给 `netconvert --tls.set`；只有 `priority` 等尚未
 信号化的路口才交给 `netconvert`。传给旧版 SUMO 前还会在临时副本中移除空
 `<param>`，基础路网文件本身不会被修改。
+
+其中 `demo_16` 对应 junction `3279`，基础类型为 `priority`，构建时需要由
+`netconvert --tls.set 3279` 信号化；`demo_17` 对应 junction `3702`，基础类型已经是
+`traffic_light`，构建器会直接保留其现有 `linkIndex` 和 foe 矩阵，不把它再次传给
+`netconvert`。这也避免了旧版 SUMO 对已信号化路口重复转换时的不稳定行为。
+
+`demo_18` 的 junction `4409` 和 `demo_19` 的 junction `891` 在基础路网中也已经是
+`traffic_light`，构建器直接复用其现有 `linkIndex` 与 foe 矩阵，不会把它们加入
+`netconvert --tls.set` 参数。
 
 | 生成路径 | 用途 |
 |---|---|

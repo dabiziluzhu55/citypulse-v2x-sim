@@ -256,6 +256,26 @@ class TrafficDemandTests(unittest.TestCase):
                 "off_peak": 2750,
                 "evening_peak": 3786,
             },
+            "demo_16": {
+                "morning_peak": 4992,
+                "off_peak": 4664,
+                "evening_peak": 4792,
+            },
+            "demo_17": {
+                "morning_peak": 2939,
+                "off_peak": 2012,
+                "evening_peak": 3912,
+            },
+            "demo_18": {
+                "morning_peak": 4953,
+                "off_peak": 5474,
+                "evening_peak": 6598,
+            },
+            "demo_19": {
+                "morning_peak": 3313,
+                "off_peak": 2278,
+                "evening_peak": 4873,
+            },
         }
         configuration = load_traffic_demands(DEMANDS)
         for intersection_id, totals in expected.items():
@@ -280,6 +300,71 @@ class TrafficDemandTests(unittest.TestCase):
         self.assertEqual(
             configuration.intersections["demo_10"].periods["evening_peak"].totals,
             {"east": 1007, "west": 1418, "south": 1287, "all": 3712},
+        )
+        demo_16 = configuration.intersections["demo_16"]
+        self.assertEqual(
+            demo_16.periods["morning_peak"].totals,
+            {"east": 1539, "west": 1302, "north": 1154, "south": 997, "all": 4992},
+        )
+        self.assertEqual(
+            demo_16.periods["off_peak"].totals,
+            {"east": 1168, "west": 1102, "north": 924, "south": 1470, "all": 4664},
+        )
+        self.assertEqual(
+            demo_16.periods["evening_peak"].totals,
+            {"east": 1398, "west": 1224, "north": 955, "south": 1215, "all": 4792},
+        )
+        self.assertEqual(
+            demo_16.periods["off_peak"].intervals[-1].volumes["south"]["left"],
+            551,
+        )
+        demo_17 = configuration.intersections["demo_17"]
+        self.assertEqual(
+            demo_17.periods["morning_peak"].totals,
+            {"east": 1044, "north": 893, "south": 1002, "all": 2939},
+        )
+        self.assertEqual(
+            demo_17.periods["off_peak"].totals,
+            {"east": 632, "north": 736, "south": 644, "all": 2012},
+        )
+        self.assertEqual(
+            demo_17.periods["evening_peak"].totals,
+            {"east": 1358, "north": 1194, "south": 1360, "all": 3912},
+        )
+        demo_18 = configuration.intersections["demo_18"]
+        self.assertEqual(
+            demo_18.periods["morning_peak"].totals,
+            {"southwest": 1566, "southeast": 988, "northwest": 1024, "northeast": 1375, "all": 4953},
+        )
+        self.assertEqual(
+            demo_18.periods["off_peak"].totals,
+            {"southwest": 1382, "southeast": 1254, "northwest": 1170, "northeast": 1668, "all": 5474},
+        )
+        self.assertEqual(
+            demo_18.periods["evening_peak"].totals,
+            {"southwest": 1825, "southeast": 1573, "northwest": 1185, "northeast": 2015, "all": 6598},
+        )
+        demo_19 = configuration.intersections["demo_19"]
+        self.assertEqual(
+            demo_19.periods["morning_peak"].totals,
+            {"southwest": 854, "southeast": 762, "northwest": 631, "northeast": 1066, "all": 3313},
+        )
+        self.assertEqual(
+            demo_19.periods["off_peak"].totals,
+            {"southwest": 410, "southeast": 566, "northwest": 384, "northeast": 918, "all": 2278},
+        )
+        self.assertEqual(
+            demo_19.periods["evening_peak"].totals,
+            {"southwest": 1098, "southeast": 1125, "northwest": 1253, "northeast": 1397, "all": 4873},
+        )
+        northeast_evening = demo_19.periods["evening_peak"]
+        self.assertEqual(
+            sum(
+                interval.volumes["northeast"][movement]
+                for interval in northeast_evening.intervals
+                for movement in ("left", "through", "right")
+            ),
+            1397,
         )
 
     def test_shared_sumo_approaches_require_explicit_opt_in(self):
@@ -502,6 +587,108 @@ class TrafficDemandTests(unittest.TestCase):
                     intersection_id, manifest, approach, movement
                 )
                 for official_approach, approach in demand.approaches.items()
+                for movement in approach.movements
+            }
+            self.assertEqual(actual, expected)
+
+    def test_demo_16_and_17_official_movements_select_expected_routes(self):
+        expected_by_intersection = {
+            "demo_16": {
+                ("east", "left"): ("-55547", "-57803"),
+                ("east", "through"): ("-55547", "-55548"),
+                ("east", "right"): ("-55547", "-50942"),
+                ("west", "left"): ("-50930", "-50942"),
+                ("west", "through"): ("-50930", "-49533"),
+                ("west", "right"): ("-50930", "-57803"),
+                ("north", "left"): ("-57802", "-49533"),
+                ("north", "through"): ("-57802", "-57803"),
+                ("north", "right"): ("-57802", "-55548"),
+                ("south", "left"): ("-50943", "-55548"),
+                ("south", "through"): ("-50943", "-50942"),
+                ("south", "right"): ("-50943", "-49533"),
+            },
+            "demo_17": {
+                ("east", "left"): ("-56184", "-57321"),
+                ("east", "right"): ("-56184", "-57330"),
+                ("north", "left"): ("-57320", "-50050"),
+                ("north", "through"): ("-57320", "-57321"),
+                ("south", "through"): ("-57329", "-57330"),
+                ("south", "right"): ("-57329", "-50050"),
+            },
+        }
+        configuration = load_traffic_demands(DEMANDS)
+        for intersection_id, expected in expected_by_intersection.items():
+            demand = configuration.intersections[intersection_id]
+            manifest = {
+                "connections": [
+                    {
+                        "approach": approach,
+                        "movement": movement,
+                        "from_edge": route[0],
+                        "to_edge": route[1],
+                    }
+                    for (approach, movement), route in expected.items()
+                ]
+            }
+            actual = {
+                (approach_name, movement): _movement_route(
+                    intersection_id, manifest, approach, movement
+                )
+                for approach_name, approach in demand.approaches.items()
+                for movement in approach.movements
+            }
+            self.assertEqual(actual, expected)
+
+    def test_demo_18_and_19_official_movements_select_expected_routes(self):
+        expected_by_intersection = {
+            "demo_18": {
+                ("northeast", "left"): ("-56830", "-56009"),
+                ("northeast", "through"): ("-56830", "-56831"),
+                ("northeast", "right"): ("-56830", "-57005"),
+                ("southwest", "left"): ("-57077", "-57005"),
+                ("southwest", "through"): ("-57077", "-57058"),
+                ("southwest", "right"): ("-57077", "-56009"),
+                ("northwest", "left"): ("-56004", "-57058"),
+                ("northwest", "through"): ("-56004", "-56009"),
+                ("northwest", "right"): ("-56004", "-56831"),
+                ("southeast", "left"): ("-57004", "-56831"),
+                ("southeast", "through"): ("-57004", "-57005"),
+                ("southeast", "right"): ("-57004", "-57058"),
+            },
+            "demo_19": {
+                ("northeast", "left"): ("-55837", "-52216"),
+                ("northeast", "through"): ("-55837", "-55838"),
+                ("northeast", "right"): ("-55837", "-46537"),
+                ("southwest", "left"): ("-57395", "-46537"),
+                ("southwest", "through"): ("-57395", "-57396"),
+                ("southwest", "right"): ("-57395", "-52216"),
+                ("northwest", "left"): ("-52215", "-57396"),
+                ("northwest", "through"): ("-52215", "-52216"),
+                ("northwest", "right"): ("-52215", "-55838"),
+                ("southeast", "left"): ("-46538", "-55838"),
+                ("southeast", "through"): ("-46538", "-46537"),
+                ("southeast", "right"): ("-46538", "-57396"),
+            },
+        }
+        configuration = load_traffic_demands(DEMANDS)
+        for intersection_id, expected in expected_by_intersection.items():
+            demand = configuration.intersections[intersection_id]
+            manifest = {
+                "connections": [
+                    {
+                        "approach": approach,
+                        "movement": movement,
+                        "from_edge": route[0],
+                        "to_edge": route[1],
+                    }
+                    for (approach, movement), route in expected.items()
+                ]
+            }
+            actual = {
+                (approach_name, movement): _movement_route(
+                    intersection_id, manifest, approach, movement
+                )
+                for approach_name, approach in demand.approaches.items()
                 for movement in approach.movements
             }
             self.assertEqual(actual, expected)

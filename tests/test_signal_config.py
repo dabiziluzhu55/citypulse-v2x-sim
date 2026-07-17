@@ -36,6 +36,10 @@ class SignalConfigurationTests(unittest.TestCase):
                     "demo_12": {"junction_id": "182"},
                     "demo_14": {"junction_id": "882"},
                     "demo_15": {"junction_id": "1117"},
+                    "demo_16": {"junction_id": "3279"},
+                    "demo_17": {"junction_id": "3702"},
+                    "demo_18": {"junction_id": "4409"},
+                    "demo_19": {"junction_id": "891"},
                     "demo_10": {"junction_id": "4162"},
                     "demo_13": {"junction_id": "1204"},
                 }
@@ -288,6 +292,90 @@ class SignalConfigurationTests(unittest.TestCase):
             self.assertEqual([phase.green for phase in program.phases], [50, 59])
             self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
             self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+
+        demo_16 = self.load().intersections["demo_16"]
+        self.assertEqual(demo_16.junction_ids, ("3279",))
+        self.assertEqual(
+            demo_16.topology.approaches,
+            {
+                "east": ("-55547",),
+                "west": ("-50930",),
+                "north": ("-57802",),
+                "south": ("-50943",),
+            },
+        )
+        for program in demo_16.programs.values():
+            self.assertEqual(program.cycle_duration, 77)
+            self.assertEqual([phase.number for phase in program.phases], [1, 2])
+            self.assertEqual([phase.green for phase in program.phases], [34, 37])
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+        self.assertEqual(demo_16.topology.u_turn_policy, "blocked")
+        self.assertEqual(
+            demo_16.topology.movement_for_direction("-50930", "t"), "blocked"
+        )
+
+        demo_17 = self.load().intersections["demo_17"]
+        self.assertEqual(demo_17.junction_ids, ("3702",))
+        self.assertEqual(
+            demo_17.topology.approaches,
+            {
+                "east": ("-56184",),
+                "north": ("-57320",),
+                "south": ("-57329",),
+            },
+        )
+        for program in demo_17.programs.values():
+            self.assertEqual(program.cycle_duration, 96)
+            self.assertEqual([phase.number for phase in program.phases], [1, 2])
+            self.assertEqual([phase.green for phase in program.phases], [58, 32])
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+        self.assertEqual(
+            demo_17.topology.movement_for_direction("-57320", "t"), "blocked"
+        )
+
+        demo_18 = self.load().intersections["demo_18"]
+        self.assertEqual(demo_18.junction_ids, ("4409",))
+        self.assertEqual(
+            demo_18.topology.approaches,
+            {
+                "northeast": ("-56830",),
+                "southwest": ("-57077",),
+                "northwest": ("-56004",),
+                "southeast": ("-57004",),
+            },
+        )
+        for program in demo_18.programs.values():
+            self.assertEqual(program.cycle_duration, 80)
+            self.assertEqual([phase.number for phase in program.phases], [1, 2])
+            self.assertEqual([phase.green for phase in program.phases], [37, 37])
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+        self.assertEqual(
+            demo_18.topology.movement_for_direction("-56830", "t"), "blocked"
+        )
+
+        demo_19 = self.load().intersections["demo_19"]
+        self.assertEqual(demo_19.junction_ids, ("891",))
+        self.assertEqual(
+            demo_19.topology.approaches,
+            {
+                "northeast": ("-55837",),
+                "southwest": ("-57395",),
+                "northwest": ("-52215",),
+                "southeast": ("-46538",),
+            },
+        )
+        for program in demo_19.programs.values():
+            self.assertEqual(program.cycle_duration, 76)
+            self.assertEqual([phase.number for phase in program.phases], [1, 2])
+            self.assertEqual([phase.green for phase in program.phases], [35, 35])
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+        self.assertEqual(
+            demo_19.topology.movement_for_direction("-57395", "t"), "blocked"
+        )
 
         demo_10 = self.load().intersections["demo_10"]
         self.assertEqual(demo_10.junction_ids, ("4162",))
@@ -642,6 +730,331 @@ class SignalConfigurationTests(unittest.TestCase):
             )
             self.assertTrue(
                 all(phase["1117"]["green"][index] == "r" for index in (4, 12))
+            )
+
+    def test_demo_16_and_17_templates_follow_real_foe_matrices(self):
+        demo_16 = self.load().intersections["demo_16"]
+        definitions_16 = (
+            (0, "south", "-50943", "r"),
+            (1, "south", "-50943", "s"),
+            (2, "south", "-50943", "l"),
+            (3, "west", "-50930", "r"),
+            (4, "west", "-50930", "s"),
+            (5, "west", "-50930", "l"),
+            (6, "west", "-50930", "t"),
+            (7, "north", "-57802", "r"),
+            (8, "north", "-57802", "s"),
+            (9, "north", "-57802", "l"),
+            (10, "east", "-55547", "r"),
+            (11, "east", "-55547", "s"),
+            (12, "east", "-55547", "l"),
+        )
+        connections_16 = [
+            ControlledConnection(
+                intersection_id="demo_16",
+                junction_id="3279",
+                tls_id="3279",
+                link_index=request_index,
+                approach=approach,
+                movement=demo_16.topology.movement_for_direction(
+                    from_edge, direction
+                ),
+                from_edge=from_edge,
+                from_lane=0,
+                to_edge=f"out_{request_index}",
+                to_lane=0,
+                direction=direction,
+                via=f":3279_{request_index}_0",
+                request_index=request_index,
+            )
+            for request_index, approach, from_edge, direction in definitions_16
+        ]
+        foes_16 = {
+            0: "0001000010000",
+            1: "1111000110000",
+            2: "1100111110000",
+            3: "1000100000000",
+            4: "1001100000111",
+            5: "1111100000110",
+            6: "0100010000100",
+            7: "0100001000100",
+            8: "1100000111100",
+            9: "1100000110011",
+            10: "0000000100010",
+            11: "0001111100110",
+            12: "0001100111110",
+        }
+        templates_16 = _build_templates(
+            demo_16, connections_16, {"3279": 13}, {"3279": foes_16}
+        )
+        self.assertTrue(
+            all(templates_16[1]["3279"]["green"][index] == "G" for index in (4, 11))
+        )
+        self.assertTrue(
+            all(templates_16[1]["3279"]["green"][index] == "g" for index in (5, 12))
+        )
+        self.assertTrue(
+            all(templates_16[2]["3279"]["green"][index] == "G" for index in (1, 8))
+        )
+        self.assertTrue(
+            all(templates_16[2]["3279"]["green"][index] == "g" for index in (2, 9))
+        )
+        for phase in templates_16.values():
+            self.assertTrue(
+                all(phase["3279"]["green"][index] == "g" for index in (0, 3, 7, 10))
+            )
+            self.assertEqual(phase["3279"]["green"][6], "r")
+
+        demo_17 = self.load().intersections["demo_17"]
+        definitions_17 = (
+            (8, 1, "east", "-56184", "r"),
+            (9, 0, "east", "-56184", "l"),
+            (4, 4, "north", "-57320", "s"),
+            (5, 5, "north", "-57320", "s"),
+            (6, 3, "north", "-57320", "l"),
+            (7, 2, "north", "-57320", "t"),
+            (0, 9, "south", "-57329", "r"),
+            (1, 7, "south", "-57329", "s"),
+            (2, 8, "south", "-57329", "s"),
+            (3, 6, "south", "-57329", "t"),
+        )
+        connections_17 = [
+            ControlledConnection(
+                intersection_id="demo_17",
+                junction_id="3702",
+                tls_id="3702",
+                link_index=link_index,
+                approach=approach,
+                movement=demo_17.topology.movement_for_direction(
+                    from_edge, direction
+                ),
+                from_edge=from_edge,
+                from_lane=0,
+                to_edge=f"out_{request_index}",
+                to_lane=0,
+                direction=direction,
+                via=f":3702_{request_index}_0",
+                request_index=request_index,
+            )
+            for request_index, link_index, approach, from_edge, direction in definitions_17
+        ]
+        foes_17 = {
+            0: "0001000000",
+            1: "1111000000",
+            2: "1111000000",
+            3: "1000110000",
+            4: "1000001000",
+            5: "1000001000",
+            6: "1000000111",
+            7: "0000000110",
+            8: "0000000110",
+            9: "0001111110",
+        }
+        templates_17 = _build_templates(
+            demo_17, connections_17, {"3702": 10}, {"3702": foes_17}
+        )
+        self.assertEqual(templates_17[1]["3702"]["green"][0], "G")
+        self.assertTrue(
+            all(templates_17[2]["3702"]["green"][index] == "G" for index in (4, 5, 7, 8))
+        )
+        self.assertEqual(templates_17[2]["3702"]["green"][3], "g")
+        for phase in templates_17.values():
+            self.assertTrue(
+                all(phase["3702"]["green"][index] == "g" for index in (1, 9))
+            )
+            self.assertTrue(
+                all(phase["3702"]["green"][index] == "r" for index in (2, 6))
+            )
+
+    def test_demo_18_and_19_templates_follow_real_foe_matrices(self):
+        def build(config, intersection_id, junction_id, definitions, foes):
+            connections = [
+                ControlledConnection(
+                    intersection_id=intersection_id,
+                    junction_id=junction_id,
+                    tls_id=junction_id,
+                    link_index=link_index,
+                    approach=approach,
+                    movement=config.topology.movement_for_direction(
+                        from_edge, direction
+                    ),
+                    from_edge=from_edge,
+                    from_lane=0,
+                    to_edge=f"out_{request_index}",
+                    to_lane=0,
+                    direction=direction,
+                    via=f":{junction_id}_{request_index}_0",
+                    request_index=request_index,
+                )
+                for request_index, link_index, approach, from_edge, direction in definitions
+            ]
+            return _build_templates(
+                config,
+                connections,
+                {junction_id: len(foes)},
+                {junction_id: foes},
+            )
+
+        demo_18 = self.load().intersections["demo_18"]
+        definitions_18 = (
+            (0, 21, "southeast", "-57004", "r"),
+            (1, 19, "southeast", "-57004", "s"),
+            (2, 20, "southeast", "-57004", "s"),
+            (3, 18, "southeast", "-57004", "l"),
+            (4, 17, "southeast", "-57004", "t"),
+            (5, 16, "southwest", "-57077", "r"),
+            (6, 14, "southwest", "-57077", "s"),
+            (7, 15, "southwest", "-57077", "s"),
+            (8, 13, "southwest", "-57077", "l"),
+            (9, 12, "southwest", "-57077", "t"),
+            (10, 11, "northwest", "-56004", "r"),
+            (11, 9, "northwest", "-56004", "s"),
+            (12, 10, "northwest", "-56004", "s"),
+            (13, 8, "northwest", "-56004", "l"),
+            (14, 7, "northwest", "-56004", "t"),
+            (15, 6, "northeast", "-56830", "r"),
+            (16, 2, "northeast", "-56830", "s"),
+            (17, 3, "northeast", "-56830", "s"),
+            (18, 4, "northeast", "-56830", "s"),
+            (19, 5, "northeast", "-56830", "s"),
+            (20, 1, "northeast", "-56830", "l"),
+            (21, 0, "northeast", "-56830", "t"),
+        )
+        foes_18 = {
+            0: "0000000000000011000000",
+            1: "0111111110000111000000",
+            2: "0111111110000111000000",
+            3: "0111110001101111000000",
+            4: "0100000001100000000000",
+            5: "0000000001100000000000",
+            6: "1100000011100000001111",
+            7: "1100000011100000001111",
+            8: "0011110111100000001110",
+            9: "0011110000000000001000",
+            10: "0011110000000000000000",
+            11: "0111110000000111111000",
+            12: "0111110000000111111000",
+            13: "1111110000000111000110",
+            14: "0000000000000100000110",
+            15: "0000000000000000000110",
+            16: "0000000011111100001110",
+            17: "0000000011111100001110",
+            18: "0000000011111100001110",
+            19: "0000000011111100001110",
+            20: "0000000011100011011110",
+            21: "0000000010000011000000",
+        }
+        templates_18 = build(
+            demo_18, "demo_18", "4409", definitions_18, foes_18
+        )
+        self.assertTrue(
+            all(
+                templates_18[1]["4409"]["green"][index] == "G"
+                for index in (2, 3, 4, 5, 14, 15)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_18[1]["4409"]["green"][index] == "g"
+                for index in (1, 13)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_18[2]["4409"]["green"][index] == "G"
+                for index in (9, 10, 19, 20)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_18[2]["4409"]["green"][index] == "g"
+                for index in (8, 18)
+            )
+        )
+        for phase in templates_18.values():
+            self.assertTrue(
+                all(
+                    phase["4409"]["green"][index] == "g"
+                    for index in (6, 11, 16, 21)
+                )
+            )
+            self.assertTrue(
+                all(
+                    phase["4409"]["green"][index] == "r"
+                    for index in (0, 7, 12, 17)
+                )
+            )
+
+        demo_19 = self.load().intersections["demo_19"]
+        definitions_19 = (
+            (0, 13, "southeast", "-46538", "r"),
+            (1, 12, "southeast", "-46538", "s"),
+            (2, 11, "southeast", "-46538", "l"),
+            (3, 10, "southwest", "-57395", "r"),
+            (4, 9, "southwest", "-57395", "s"),
+            (5, 8, "southwest", "-57395", "l"),
+            (6, 7, "southwest", "-57395", "t"),
+            (7, 6, "northwest", "-52215", "r"),
+            (8, 5, "northwest", "-52215", "s"),
+            (9, 4, "northwest", "-52215", "l"),
+            (10, 3, "northeast", "-55837", "r"),
+            (11, 2, "northeast", "-55837", "s"),
+            (12, 1, "northeast", "-55837", "l"),
+            (13, 0, "northeast", "-55837", "t"),
+        )
+        foes_19 = {
+            0: "10001000010000",
+            1: "01111000110000",
+            2: "01101111110000",
+            3: "01000100000000",
+            4: "11001100000111",
+            5: "00111100000110",
+            6: "00100010000100",
+            7: "00100001000100",
+            8: "01100000111100",
+            9: "11100000110111",
+            10: "00000000100010",
+            11: "00001111100110",
+            12: "00001100011110",
+            13: "00001000010001",
+        }
+        templates_19 = build(demo_19, "demo_19", "891", definitions_19, foes_19)
+        self.assertTrue(
+            all(
+                templates_19[1]["891"]["green"][index] == "G"
+                for index in (2, 9)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_19[1]["891"]["green"][index] == "g"
+                for index in (1, 8)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_19[2]["891"]["green"][index] == "G"
+                for index in (5, 12)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_19[2]["891"]["green"][index] == "g"
+                for index in (4, 11)
+            )
+        )
+        for phase in templates_19.values():
+            self.assertTrue(
+                all(
+                    phase["891"]["green"][index] == "g"
+                    for index in (3, 6, 10, 13)
+                )
+            )
+            self.assertTrue(
+                all(
+                    phase["891"]["green"][index] == "r"
+                    for index in (0, 7)
+                )
             )
 
     def test_demo_10_and_13_templates_follow_real_foe_matrices(self):
