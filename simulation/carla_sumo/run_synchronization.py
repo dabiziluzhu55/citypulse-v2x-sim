@@ -233,7 +233,10 @@ if __name__ == "__main__":
         "maps",
         "sumo",
         "generated",
-        "official_traffic_demo_2_morning_peak.sumocfg",
+        "traffic",
+        "demo_2",
+        "morning_peak",
+        "simulation.sumocfg",
     )
 
     argparser = argparse.ArgumentParser(description=__doc__)

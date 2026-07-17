@@ -30,8 +30,11 @@ Thumbs.db
 *.log
 outputs/
 
-# Generated SUMO signal artifacts
-data/maps/sumo/generated/
+# Rebuildable SUMO artifacts
+data/maps/sumo/generated/manifests/
+data/maps/sumo/generated/network/
+data/maps/sumo/generated/reports/
+data/maps/sumo/generated/signals/
 *.bak
 
 # Frontend UI capture artifacts

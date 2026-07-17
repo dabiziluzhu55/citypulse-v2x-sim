@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Tuple
 
@@ -54,6 +54,8 @@ class PhaseMovement:
     phase_number: int
     movement: str
     approaches: Tuple[str, ...]
+    priority: str = "protected"
+    protected: Tuple[MovementGroup, ...] = ()
     permissive: Tuple[MovementGroup, ...] = ()
 
 
@@ -61,9 +63,13 @@ class PhaseMovement:
 class IntersectionTopology:
     approaches: Mapping[str, Tuple[str, ...]]
     direction_mapping: Mapping[str, str]
+    approach_direction_mapping: Mapping[str, Mapping[str, str]]
     right_turn_policy: str
     u_turn_policy: str
     phases: Tuple[PhaseMovement, ...]
+    program_phases: Mapping[str, Tuple[PhaseMovement, ...]] = field(
+        default_factory=dict
+    )
 
     @property
     def incoming_edges(self) -> Tuple[str, ...]:
@@ -84,6 +90,22 @@ class IntersectionTopology:
                 f"Incoming edge {edge_id!r} belongs to {len(matches)} approaches."
             )
         return matches[0]
+
+    def movement_for_direction(self, edge_id: str, direction: str) -> str | None:
+        approach = self.approach_for_edge(edge_id)
+        return self.approach_direction_mapping.get(approach, {}).get(
+            direction, self.direction_mapping.get(direction)
+        )
+
+    def phases_for(self, program_id: str) -> Tuple[PhaseMovement, ...]:
+        if self.program_phases:
+            try:
+                return self.program_phases[program_id]
+            except KeyError as exc:
+                raise SignalConfigurationError(
+                    f"No phase topology is configured for program {program_id!r}."
+                ) from exc
+        return self.phases
 
 
 @dataclass(frozen=True)
@@ -181,6 +203,75 @@ def _parse_program(intersection_id: str, raw: Mapping[str, Any]) -> SignalProgra
     )
 
 
+def _parse_phase_movements(
+    intersection_id: str,
+    raw_phases: Iterable[Mapping[str, Any]],
+    approaches: Mapping[str, Tuple[str, ...]],
+    context: str,
+) -> Tuple[PhaseMovement, ...]:
+    phases = tuple(
+        PhaseMovement(
+            phase_number=int(item["official_phase_no"]),
+            movement=str(item["movement"]),
+            approaches=tuple(str(value) for value in item["approaches"]),
+            priority=str(item.get("priority", "protected")),
+            protected=tuple(
+                MovementGroup(
+                    movement=str(group["movement"]),
+                    approaches=tuple(str(value) for value in group["approaches"]),
+                )
+                for group in item.get("protected", [])
+            ),
+            permissive=tuple(
+                MovementGroup(
+                    movement=str(group["movement"]),
+                    approaches=tuple(str(value) for value in group["approaches"]),
+                )
+                for group in item.get("permissive", [])
+            ),
+        )
+        for item in raw_phases
+    )
+    if not phases or len({item.phase_number for item in phases}) != len(phases):
+        raise SignalConfigurationError(
+            f"{intersection_id}/{context}: phase topology is empty or duplicated."
+        )
+    for item in phases:
+        if item.priority not in {"protected", "permissive"}:
+            raise SignalConfigurationError(
+                f"{intersection_id}/{context}/phase {item.phase_number}: "
+                f"invalid priority {item.priority!r}."
+            )
+        if item.movement not in {"through", "left"}:
+            raise SignalConfigurationError(
+                f"{intersection_id}/{context}/phase {item.phase_number}: "
+                "invalid movement."
+            )
+        unknown = set(item.approaches) - set(approaches)
+        if unknown:
+            raise SignalConfigurationError(
+                f"{intersection_id}/{context}/phase {item.phase_number}: "
+                f"unknown approaches {unknown}."
+            )
+        for priority, groups in (
+            ("protected", item.protected),
+            ("permissive", item.permissive),
+        ):
+            for group in groups:
+                if group.movement not in {"through", "left"}:
+                    raise SignalConfigurationError(
+                        f"{intersection_id}/{context}/phase {item.phase_number}: "
+                        f"invalid {priority} movement {group.movement!r}."
+                    )
+                unknown = set(group.approaches) - set(approaches)
+                if unknown:
+                    raise SignalConfigurationError(
+                        f"{intersection_id}/{context}/phase {item.phase_number}: "
+                        f"unknown {priority} approaches {unknown}."
+                    )
+    return phases
+
+
 def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> IntersectionTopology:
     approaches = {
         str(name): tuple(str(edge) for edge in item.get("incoming_edges", []))
@@ -195,49 +286,59 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
         str(key): str(value)
         for key, value in raw.get("direction_mapping", {}).items()
     }
-    if set(direction_mapping.values()) - {"through", "left", "right", "blocked"}:
+    if set(direction_mapping.values()) - {
+        "through",
+        "left",
+        "right",
+        "uturn",
+        "blocked",
+    }:
         raise SignalConfigurationError(f"{intersection_id}: unsupported movement mapping.")
-    phases = []
-    for item in raw.get("phases", []):
-        phases.append(
-            PhaseMovement(
-                phase_number=int(item["official_phase_no"]),
-                movement=str(item["movement"]),
-                approaches=tuple(str(value) for value in item["approaches"]),
-                permissive=tuple(
-                    MovementGroup(
-                        movement=str(group["movement"]),
-                        approaches=tuple(str(value) for value in group["approaches"]),
-                    )
-                    for group in item.get("permissive", [])
-                ),
-            )
+    approach_direction_mapping = {
+        str(approach): {
+            str(direction): str(movement)
+            for direction, movement in mappings.items()
+        }
+        for approach, mappings in raw.get("approach_direction_mapping", {}).items()
+    }
+    unknown_approaches = set(approach_direction_mapping) - set(approaches)
+    if unknown_approaches:
+        raise SignalConfigurationError(
+            f"{intersection_id}: direction overrides use unknown approaches "
+            f"{sorted(unknown_approaches)}."
         )
-    phases = tuple(phases)
-    if not phases or len({item.phase_number for item in phases}) != len(phases):
-        raise SignalConfigurationError(f"{intersection_id}: phase topology is invalid.")
-    for item in phases:
-        if item.movement not in {"through", "left"}:
-            raise SignalConfigurationError(
-                f"{intersection_id}/phase {item.phase_number}: invalid movement."
-            )
-        unknown = set(item.approaches) - set(approaches)
-        if unknown:
-            raise SignalConfigurationError(
-                f"{intersection_id}/phase {item.phase_number}: unknown approaches {unknown}."
-            )
-        for group in item.permissive:
-            if group.movement not in {"through", "left"}:
-                raise SignalConfigurationError(
-                    f"{intersection_id}/phase {item.phase_number}: "
-                    f"invalid permissive movement {group.movement!r}."
-                )
-            unknown = set(group.approaches) - set(approaches)
-            if unknown:
-                raise SignalConfigurationError(
-                    f"{intersection_id}/phase {item.phase_number}: "
-                    f"unknown permissive approaches {unknown}."
-                )
+    override_movements = {
+        movement
+        for mappings in approach_direction_mapping.values()
+        for movement in mappings.values()
+    }
+    if override_movements - {"through", "left", "right", "uturn", "blocked"}:
+        raise SignalConfigurationError(
+            f"{intersection_id}: unsupported approach movement mapping."
+        )
+    raw_programs = raw.get("programs", {})
+    if raw.get("phases") and raw_programs:
+        raise SignalConfigurationError(
+            f"{intersection_id}: use either shared phases or program-specific phases."
+        )
+    phases = (
+        _parse_phase_movements(
+            intersection_id, raw.get("phases", []), approaches, "shared"
+        )
+        if raw.get("phases")
+        else ()
+    )
+    program_phases = {
+        str(program_id): _parse_phase_movements(
+            intersection_id,
+            program_raw.get("phases", []),
+            approaches,
+            str(program_id),
+        )
+        for program_id, program_raw in raw_programs.items()
+    }
+    if not phases and not program_phases:
+        raise SignalConfigurationError(f"{intersection_id}: no phase topology configured.")
     right_policy = str(raw.get("right_turn_policy", ""))
     if right_policy != "permissive_always":
         raise SignalConfigurationError(
@@ -248,18 +349,24 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
         raise SignalConfigurationError(
             f"{intersection_id}: u_turn_policy must be with_left or blocked."
         )
-    expected_u_turn_movement = "left" if u_turn_policy == "with_left" else "blocked"
-    if direction_mapping.get("t") != expected_u_turn_movement:
+    configured_u_turn_movement = direction_mapping.get("t")
+    valid_u_turn_movements = (
+        {"left", "uturn"} if u_turn_policy == "with_left" else {"blocked"}
+    )
+    if configured_u_turn_movement not in valid_u_turn_movements:
         raise SignalConfigurationError(
             f"{intersection_id}: direction 't' must map to "
-            f"{expected_u_turn_movement!r} for u_turn_policy={u_turn_policy!r}."
+            f"one of {sorted(valid_u_turn_movements)} for "
+            f"u_turn_policy={u_turn_policy!r}."
         )
     return IntersectionTopology(
         approaches=approaches,
         direction_mapping=direction_mapping,
+        approach_direction_mapping=approach_direction_mapping,
         right_turn_policy=right_policy,
         u_turn_policy=u_turn_policy,
         phases=phases,
+        program_phases=program_phases,
     )
 
 
@@ -297,18 +404,34 @@ def load_signal_configuration(
         if not programs:
             raise SignalConfigurationError(f"{intersection_id}: no programs configured.")
         parsed_topology = _parse_topology(intersection_id, topology_entries[intersection_id])
-        official_phases = {phase.number for phase in next(iter(programs.values())).phases}
-        topology_phases = {phase.phase_number for phase in parsed_topology.phases}
-        if official_phases != topology_phases:
+        if parsed_topology.program_phases and set(parsed_topology.program_phases) != set(
+            programs
+        ):
             raise SignalConfigurationError(
-                f"{intersection_id}: official phases {official_phases} do not match "
-                f"topology phases {topology_phases}."
+                f"{intersection_id}: program topology keys "
+                f"{sorted(parsed_topology.program_phases)} do not match programs "
+                f"{sorted(programs)}."
             )
+        shared_official_phases = None
         for program in programs.values():
-            if {phase.number for phase in program.phases} != official_phases:
+            official_phases = {phase.number for phase in program.phases}
+            topology_phases = {
+                phase.phase_number
+                for phase in parsed_topology.phases_for(program.program_id)
+            }
+            if official_phases != topology_phases:
                 raise SignalConfigurationError(
-                    f"{intersection_id}/{program.program_id}: phase set differs."
+                    f"{intersection_id}/{program.program_id}: official phases "
+                    f"{official_phases} do not match topology phases {topology_phases}."
                 )
+            if not parsed_topology.program_phases:
+                if shared_official_phases is None:
+                    shared_official_phases = official_phases
+                elif official_phases != shared_official_phases:
+                    raise SignalConfigurationError(
+                        f"{intersection_id}/{program.program_id}: phase set differs "
+                        "from the shared topology."
+                    )
         result[intersection_id] = IntersectionConfiguration(
             intersection_id=intersection_id,
             junction_ids=_junction_ids(mapping[intersection_id], intersection_id),

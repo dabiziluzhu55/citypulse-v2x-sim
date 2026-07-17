@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Mapping, Tuple
 
 
-PROTOCOL_VERSION = "1.0"
+PROTOCOL_VERSION = "2.0"
 
 
 @dataclass(frozen=True)
@@ -62,6 +62,33 @@ class SimulationMetadata:
     decision_interval: float
     minimum_green: float
     intersections: Mapping[str, IntersectionMetadata]
+    vehicle_types: Mapping[str, "VehicleTypeMetadata"] = field(default_factory=dict)
+    vehicle_control: "VehicleControlMetadata | None" = None
+
+
+@dataclass(frozen=True)
+class VehicleTypeMetadata:
+    type_id: str
+    profile_id: str
+    vehicle_class: str
+    powertrain: str
+    emission_class: str
+    accel_mps2: float
+    decel_mps2: float
+    length_m: float
+    width_m: float
+    min_gap_m: float
+    max_speed_mps: float
+    fuel_density_mg_per_ml: float
+    hard_braking_threshold_mps2: float
+
+
+@dataclass(frozen=True)
+class VehicleControlMetadata:
+    supported_actions: Tuple[str, ...]
+    action_lease_seconds: float
+    speed_unit: str = "m/s"
+    lane_change_scope: str = "current_edge"
 
 
 @dataclass(frozen=True)
@@ -88,6 +115,91 @@ class TrafficObservation:
     departed_vehicles: int
     arrived_vehicles: int
     min_expected_vehicles: int
+    fuel_consumed_mg: float = 0.0
+    fuel_consumed_ml: float = 0.0
+    hard_braking_events: int = 0
+
+
+@dataclass(frozen=True)
+class VehiclePositionObservation:
+    x_m: float
+    y_m: float
+
+
+@dataclass(frozen=True)
+class VehicleMotionObservation:
+    speed_mps: float
+    acceleration_mps2: float
+    angle_deg: float
+    allowed_speed_mps: float
+
+
+@dataclass(frozen=True)
+class VehicleLocationObservation:
+    road_id: str
+    lane_id: str
+    lane_index: int
+    lane_position_m: float
+    route_id: str
+    route_index: int
+    route_edges: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class VehicleTrafficObservation:
+    waiting_time_s: float
+    accumulated_waiting_time_s: float
+    time_loss_s: float
+    distance_m: float
+
+
+@dataclass(frozen=True)
+class NextSignalObservation:
+    intersection_id: str
+    tls_id: str
+    distance_m: float
+    state: str
+
+
+@dataclass(frozen=True)
+class VehicleEnergyObservation:
+    fuel_rate_mg_s: float
+    fuel_since_last_decision_mg: float
+    fuel_total_mg: float
+    fuel_total_ml: float
+
+
+@dataclass(frozen=True)
+class VehicleDrivingEventsObservation:
+    hard_braking_since_last_decision: int
+    hard_braking_total: int
+
+
+@dataclass(frozen=True)
+class VehicleObservation:
+    type_id: str
+    position: VehiclePositionObservation
+    motion: VehicleMotionObservation
+    location: VehicleLocationObservation
+    traffic: VehicleTrafficObservation
+    next_signal: NextSignalObservation | None
+    energy: VehicleEnergyObservation
+    driving_events: VehicleDrivingEventsObservation
+
+
+@dataclass(frozen=True)
+class PreviousVehicleActionResult:
+    requested: Mapping[str, object]
+    actual_speed_mps: float | None
+    actual_lane_index: int | None
+    speed_status: str | None
+    lane_change_status: str | None
+
+
+@dataclass(frozen=True)
+class PreviousActionResults:
+    step_id: int | None
+    vehicles: Mapping[str, PreviousVehicleActionResult] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -98,3 +210,19 @@ class SimulationObservation:
     simulation_time: float
     intersections: Mapping[str, IntersectionObservation]
     traffic: TrafficObservation
+    vehicles: Mapping[str, VehicleObservation] = field(default_factory=dict)
+    previous_action_results: PreviousActionResults = field(
+        default_factory=lambda: PreviousActionResults(step_id=None)
+    )
+
+
+@dataclass(frozen=True)
+class AlgorithmDecision:
+    signal_actions: Mapping[str, object]
+    vehicle_actions: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class VehicleAction:
+    target_speed_mps: float | None = None
+    target_lane_index: int | None = None

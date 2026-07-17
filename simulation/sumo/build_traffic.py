@@ -5,24 +5,31 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import re
+import shutil
 import xml.etree.ElementTree as ET
+from dataclasses import asdict
 from pathlib import Path
 from typing import Mapping, Sequence, Tuple
 
+from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 from .traffic import (
     ApproachDemandMapping,
     DemandPeriod,
+    RouteSplit,
     TrafficDemandError,
     load_traffic_demands,
 )
+from .vehicle_profiles import VehicleProfileError, load_vehicle_profiles
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SUMO_DIR = PROJECT_ROOT / "data" / "maps" / "sumo"
 DEFAULT_DEMANDS = SUMO_DIR / "official_traffic_demands.json"
-DEFAULT_OUTPUT_DIR = SUMO_DIR / "generated"
-DEFAULT_MANIFEST = DEFAULT_OUTPUT_DIR / "tls_manifest.json"
+DEFAULT_VEHICLE_PROFILES = SUMO_DIR / "vehicle_profiles.json"
+DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
+DEFAULT_MANIFEST = GeneratedArtifactLayout(DEFAULT_OUTPUT_DIR).tls_manifest
 
 
 def _safe_id(value: str) -> str:
@@ -69,38 +76,99 @@ def _movement_route(
     return route_pairs[0]
 
 
+def _movement_routes(
+    intersection_id: str,
+    intersection_manifest: Mapping[str, object],
+    approach: ApproachDemandMapping,
+    official_movement: str,
+    splits: Sequence[RouteSplit],
+) -> Tuple[Tuple[Tuple[str, str], int], ...]:
+    if not splits:
+        return (
+            (
+                _movement_route(
+                    intersection_id,
+                    intersection_manifest,
+                    approach,
+                    official_movement,
+                ),
+                1,
+            ),
+        )
+
+    sumo_movement = approach.movements[official_movement]
+    route_pairs = sorted(
+        {
+            (str(item["from_edge"]), str(item["to_edge"]))
+            for item in intersection_manifest.get("connections", [])
+            if item.get("approach") == approach.sumo_approach
+            and item.get("movement") == sumo_movement
+        }
+    )
+    routes_by_target = {
+        to_edge: (from_edge, to_edge) for from_edge, to_edge in route_pairs
+    }
+    configured_targets = {item.to_edge for item in splits}
+    if (
+        len(routes_by_target) != len(route_pairs)
+        or set(routes_by_target) != configured_targets
+    ):
+        raise TrafficDemandError(
+            f"{intersection_id}/{approach.official_name}/{official_movement}: "
+            f"configured split targets {sorted(configured_targets)} do not match "
+            f"SUMO routes {route_pairs}."
+        )
+    return tuple(
+        (routes_by_target[item.to_edge], item.weight)
+        for item in sorted(splits, key=lambda value: value.to_edge)
+    )
+
+
+def _allocate_route_counts(
+    count: int,
+    weighted_routes: Sequence[Tuple[Tuple[str, str], int]],
+) -> Tuple[int, ...]:
+    total_weight = sum(weight for _, weight in weighted_routes)
+    allocated = [count * weight // total_weight for _, weight in weighted_routes]
+    remainders = [count * weight % total_weight for _, weight in weighted_routes]
+    order = sorted(
+        range(len(weighted_routes)),
+        key=lambda index: (-remainders[index], weighted_routes[index][0]),
+    )
+    for index in order[: count - sum(allocated)]:
+        allocated[index] += 1
+    return tuple(allocated)
+
+
 def _write_routes(
     path: Path,
     intersection_id: str,
     intersection_manifest: Mapping[str, object],
     demand,
     period: DemandPeriod,
+    vehicle_profile,
 ) -> Tuple[int, list[Mapping[str, object]]]:
     root = ET.Element("routes")
-    vehicle_type_id = f"{_safe_id(intersection_id)}_official_passenger"
-    ET.SubElement(
-        root,
-        "vType",
-        {
-            "id": vehicle_type_id,
-            "vClass": demand.vehicle_type,
-            "accel": "2.6",
-            "decel": "4.5",
-            "sigma": "0.5",
-            "length": "5",
-            "minGap": "2.5",
-            "maxSpeed": "13.9",
-        },
+    vehicle_type_id = (
+        f"{_safe_id(intersection_id)}_official_{_safe_id(demand.vehicle_type)}"
     )
+    ET.SubElement(root, "vType", vehicle_profile.sumo_attributes(vehicle_type_id))
     routes = {
-        (official_approach, official_movement): _movement_route(
+        (official_approach, official_movement): _movement_routes(
             intersection_id,
             intersection_manifest,
             approach,
             official_movement,
+            period.route_splits.get(official_approach, {}).get(
+                official_movement, ()
+            ),
         )
         for official_approach, approach in demand.approaches.items()
         for official_movement in approach.movements
+        if any(
+            interval.volumes[official_approach][official_movement] > 0
+            for interval in period.intervals
+        )
     }
     flow_count = 0
     flow_records = []
@@ -112,36 +180,50 @@ def _write_routes(
                 count = interval.volumes[official_approach][official_movement]
                 if count == 0:
                     continue
-                flow_id = _safe_id(
-                    f"{intersection_id}_{period.period_id}_{interval_index:02d}_"
-                    f"{official_approach}_{official_movement}"
-                )
-                flow = ET.SubElement(
-                    root,
-                    "flow",
-                    {
-                        "id": flow_id,
-                        "type": vehicle_type_id,
-                        "begin": str(begin),
-                        "end": str(end),
-                        "number": str(count),
-                        "departLane": "best",
-                        "departSpeed": "max",
-                    },
-                )
-                from_edge, to_edge = routes[(official_approach, official_movement)]
-                ET.SubElement(flow, "route", {"edges": f"{from_edge} {to_edge}"})
-                flow_records.append(
-                    {
-                        "flow_id": flow_id,
-                        "official_approach": official_approach,
-                        "official_movement": official_movement,
-                        "begin": begin,
-                        "end": end,
-                        "number": count,
-                    }
-                )
-                flow_count += 1
+                weighted_routes = routes[(official_approach, official_movement)]
+                route_counts = _allocate_route_counts(count, weighted_routes)
+                for route_index, (((from_edge, to_edge), _), route_count) in enumerate(
+                    zip(weighted_routes, route_counts)
+                ):
+                    if route_count == 0:
+                        continue
+                    suffix = (
+                        f"_route{route_index:02d}"
+                        if len(weighted_routes) > 1
+                        else ""
+                    )
+                    flow_id = _safe_id(
+                        f"{intersection_id}_{period.period_id}_{interval_index:02d}_"
+                        f"{official_approach}_{official_movement}{suffix}"
+                    )
+                    flow = ET.SubElement(
+                        root,
+                        "flow",
+                        {
+                            "id": flow_id,
+                            "type": vehicle_type_id,
+                            "begin": str(begin),
+                            "end": str(end),
+                            "number": str(route_count),
+                            "departLane": "best",
+                            "departSpeed": "max",
+                        },
+                    )
+                    ET.SubElement(flow, "route", {"edges": f"{from_edge} {to_edge}"})
+                    flow_records.append(
+                        {
+                            "flow_id": flow_id,
+                            "official_approach": official_approach,
+                            "official_movement": official_movement,
+                            "route_index": route_index,
+                            "from_edge": from_edge,
+                            "to_edge": to_edge,
+                            "begin": begin,
+                            "end": end,
+                            "number": route_count,
+                        }
+                    )
+                    flow_count += 1
     ET.indent(root, space="  ")
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
     return flow_count, flow_records
@@ -173,6 +255,7 @@ def _write_program_additional(
 
 def _write_sumocfg(
     path: Path,
+    network_path: Path,
     route_filename: str,
     additional_filename: str,
     period: DemandPeriod,
@@ -181,7 +264,8 @@ def _write_sumocfg(
     simulation_end = period.duration + drain_seconds
     root = ET.Element("configuration")
     input_node = ET.SubElement(root, "input")
-    ET.SubElement(input_node, "net-file", {"value": "TotalMap_20.signals.net.xml"})
+    relative_network = os.path.relpath(network_path, path.parent).replace(os.sep, "/")
+    ET.SubElement(input_node, "net-file", {"value": relative_network})
     ET.SubElement(input_node, "route-files", {"value": route_filename})
     ET.SubElement(input_node, "additional-files", {"value": additional_filename})
     time_node = ET.SubElement(root, "time")
@@ -198,10 +282,20 @@ def _write_sumocfg(
 def build_traffic_scenarios(
     tls_manifest: Mapping[str, object],
     demand_path: Path = DEFAULT_DEMANDS,
+    vehicle_profile_path: Path = DEFAULT_VEHICLE_PROFILES,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     intersection_ids: Sequence[str] | None = None,
 ) -> Mapping[str, object]:
     configuration = load_traffic_demands(demand_path)
+    profiles = load_vehicle_profiles(vehicle_profile_path)
+    referenced_profiles = {
+        demand.vehicle_type for demand in configuration.intersections.values()
+    }
+    missing_profiles = referenced_profiles - set(profiles)
+    if missing_profiles:
+        raise VehicleProfileError(
+            f"Traffic demand references unknown vehicle profiles: {sorted(missing_profiles)}"
+        )
     manifest_intersections = tls_manifest.get("intersections", {})
     requested = (
         tuple(intersection_ids)
@@ -220,11 +314,21 @@ def build_traffic_scenarios(
                 "Requested intersections are absent from the TLS manifest: "
                 f"{sorted(missing_from_manifest)}"
             )
-    output_dir.mkdir(parents=True, exist_ok=True)
+    layout = GeneratedArtifactLayout(output_dir)
+    layout.create_base_directories()
+    if (output_dir / "traffic").exists():
+        shutil.rmtree(output_dir / "traffic")
+        (output_dir / "traffic").mkdir(parents=True)
     result = {
         "schema_version": 2,
         "source": str(demand_path.resolve()),
+        "vehicle_profile_source": str(vehicle_profile_path.resolve()),
+        "vehicle_profile_schema_version": 1,
         "unit": configuration.unit,
+        "vehicle_profiles": {
+            profile_id: asdict(profiles[profile_id])
+            for profile_id in sorted(referenced_profiles)
+        },
         "scenarios": {},
     }
     for intersection_id in requested:
@@ -240,23 +344,29 @@ def build_traffic_scenarios(
                     f"{period.program_id!r} is absent from the TLS manifest."
                 )
             scenario_id = f"{intersection_id}_{period.period_id}"
-            route_path = output_dir / f"official_traffic_{scenario_id}.rou.xml"
-            sumocfg_path = output_dir / f"official_traffic_{scenario_id}.sumocfg"
-            additional_path = output_dir / f"official_tls_{scenario_id}.add.xml"
+            scenario_dir = layout.traffic_scenario_dir(
+                intersection_id, period.period_id
+            )
+            scenario_dir.mkdir(parents=True, exist_ok=True)
+            route_path = scenario_dir / "routes.rou.xml"
+            sumocfg_path = scenario_dir / "simulation.sumocfg"
+            additional_path = scenario_dir / "signals.add.xml"
             flow_count, flow_records = _write_routes(
                 route_path,
                 intersection_id,
                 intersection_manifest,
                 demand,
                 period,
+                profiles[demand.vehicle_type],
             )
             _write_program_additional(
-                output_dir / "official_tls.add.xml",
+                layout.signal_programs_file,
                 additional_path,
                 period.program_id,
             )
             simulation_end = _write_sumocfg(
                 sumocfg_path,
+                layout.network_file,
                 route_path.name,
                 additional_path.name,
                 period,
@@ -270,12 +380,17 @@ def build_traffic_scenarios(
                     "start": _clock(period.start),
                     "end": _clock(period.end),
                 },
-                "route_file": route_path.name,
-                "additional_file": additional_path.name,
-                "sumocfg": sumocfg_path.name,
+                "route_file": layout.relative(route_path),
+                "additional_file": layout.relative(additional_path),
+                "sumocfg": layout.relative(sumocfg_path),
                 "demand_duration": period.duration,
                 "simulation_end": simulation_end,
                 "flow_count": flow_count,
+                "vehicle_profile_id": demand.vehicle_type,
+                "sumo_vehicle_type_id": (
+                    f"{_safe_id(intersection_id)}_official_"
+                    f"{_safe_id(demand.vehicle_type)}"
+                ),
                 "flows": flow_records,
                 "origins": {
                     official_name: {
@@ -296,7 +411,7 @@ def build_traffic_scenarios(
                     name: value for name, value in period.totals.items() if name != "all"
                 },
             }
-    manifest_path = output_dir / "traffic_manifest.json"
+    manifest_path = layout.traffic_manifest
     manifest_path.write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -308,6 +423,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--demand", type=Path, default=DEFAULT_DEMANDS)
+    parser.add_argument(
+        "--vehicle-profiles", type=Path, default=DEFAULT_VEHICLE_PROFILES
+    )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--intersections", nargs="+", default=None)
     return parser.parse_args()
@@ -319,10 +437,11 @@ def main() -> None:
         result = build_traffic_scenarios(
             _load_manifest(args.manifest),
             demand_path=args.demand,
+            vehicle_profile_path=args.vehicle_profiles,
             output_dir=args.output_dir,
             intersection_ids=args.intersections,
         )
-    except TrafficDemandError as exc:
+    except (TrafficDemandError, VehicleProfileError) as exc:
         raise SystemExit(f"Traffic build failed: {exc}") from exc
     print("Built official traffic scenarios: " + ", ".join(result["scenarios"]))
 

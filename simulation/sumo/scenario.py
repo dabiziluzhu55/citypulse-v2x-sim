@@ -10,9 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
+from .vehicle_profiles import VehicleProfile, VehicleProfileError, parse_vehicle_profiles
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_GENERATED_DIR = PROJECT_ROOT / "data" / "maps" / "sumo" / "generated"
 DEFAULT_SESSION_ROOT = PROJECT_ROOT / "outputs" / "sessions"
 
 
@@ -33,6 +34,8 @@ class CompiledScenario:
     duration_seconds: float
     planned_vehicle_count: int
     selected_origins: Mapping[str, tuple[str, ...]]
+    vehicle_type_profiles: Mapping[str, str]
+    vehicle_profiles: Mapping[str, VehicleProfile]
 
 
 @dataclass
@@ -134,18 +137,32 @@ def compile_session_scenario(
     if step_length <= 0:
         raise ScenarioCompilationError("step_length must be positive.")
 
-    traffic_manifest = _load_json(
-        generated_dir / "traffic_manifest.json", "traffic manifest"
-    )
+    layout = GeneratedArtifactLayout(generated_dir)
+    traffic_manifest = _load_json(layout.traffic_manifest, "traffic manifest")
     if int(traffic_manifest.get("schema_version", 0)) != 2:
         raise ScenarioCompilationError(
             "traffic_manifest.json must use schema_version 2; rebuild official TLS."
         )
     scenarios = traffic_manifest.get("scenarios", {})
+    try:
+        vehicle_profiles = parse_vehicle_profiles(
+            {
+                "schema_version": traffic_manifest.get(
+                    "vehicle_profile_schema_version", 0
+                ),
+                "profiles": traffic_manifest.get("vehicle_profiles", {}),
+            }
+        )
+    except VehicleProfileError as exc:
+        raise ScenarioCompilationError(
+            "Traffic manifest has invalid vehicle profiles; rebuild official TLS and "
+            f"traffic artifacts: {exc}"
+        ) from exc
     selected = []
     maximum_duration = None
     official_start = None
     normalized_origins = {}
+    vehicle_type_profiles = {}
     for intersection_id in intersection_ids:
         scenario_id = f"{intersection_id}_{period}"
         if scenario_id not in scenarios:
@@ -173,6 +190,16 @@ def compile_session_scenario(
                 f"{intersection_id} has unknown origins: {sorted(unknown)}"
             )
         normalized_origins[intersection_id] = selected_origin_names
+        if not scenario.get("sumo_vehicle_type_id") or not scenario.get(
+            "vehicle_profile_id"
+        ):
+            raise ScenarioCompilationError(
+                f"Traffic scenario {scenario_id!r} has no vehicle profile metadata; "
+                "rebuild official TLS and traffic artifacts."
+            )
+        vehicle_type_profiles[str(scenario["sumo_vehicle_type_id"])] = str(
+            scenario["vehicle_profile_id"]
+        )
         selected.append((intersection_id, scenario))
 
     actual_duration = maximum_duration if duration_seconds is None else duration_seconds
@@ -180,7 +207,7 @@ def compile_session_scenario(
         raise ScenarioCompilationError(
             f"duration_seconds exceeds the remaining period ({maximum_duration:g}s)."
         )
-    net_path = generated_dir / "TotalMap_20.signals.net.xml"
+    net_path = layout.network_file
     if not net_path.is_file():
         raise ScenarioCompilationError(f"Generated signal network is missing: {net_path}")
     window_end = window_start_seconds + actual_duration
@@ -304,6 +331,7 @@ def compile_session_scenario(
         "flow_multiplier": flow_multiplier,
         "planned_vehicle_count": planned_count,
         "origins": {key: list(value) for key, value in normalized_origins.items()},
+        "vehicle_type_profiles": vehicle_type_profiles,
     }
     (session_dir / "session_manifest.json").write_text(
         json.dumps(session_manifest, ensure_ascii=False, indent=2) + "\n",
@@ -321,4 +349,6 @@ def compile_session_scenario(
         duration_seconds=float(actual_duration),
         planned_vehicle_count=planned_count,
         selected_origins=normalized_origins,
+        vehicle_type_profiles=vehicle_type_profiles,
+        vehicle_profiles=vehicle_profiles,
     )

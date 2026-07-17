@@ -3,7 +3,12 @@ from pathlib import Path
 
 from simulation.sumo.config import load_signal_configuration
 from simulation.sumo.controller import SafePhaseController
-from simulation.sumo.run import _build_metadata, _observe, _select_programs
+from simulation.sumo.run import (
+    _build_metadata,
+    _observe,
+    _select_program_manifests,
+    _select_programs,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -114,6 +119,24 @@ class AlgorithmMetadataTests(unittest.TestCase):
         programs = _select_programs(configs, "", "morning_peak")
         self.assertEqual(programs["demo_1"].program_id, "demo_1_morning_peak")
         self.assertEqual(programs["demo_2"].program_id, "demo_2_morning_peak")
+
+    def test_program_specific_manifest_view_matches_selected_period(self):
+        configs = self.load_configuration().select(["demo_4"])
+        programs = _select_programs(configs, "", "off_peak")
+        selected = _select_program_manifests(
+            {
+                "demo_4": {
+                    "connections": [],
+                    "programs": {
+                        "demo_4_morning_peak": {"phase_order": [1, 2, 3, 4]},
+                        "demo_4_off_peak": {"phase_order": [1, 2, 3]},
+                    },
+                }
+            },
+            programs,
+        )
+        self.assertEqual(selected["demo_4"]["phase_order"], [1, 2, 3])
+        self.assertEqual(selected["demo_4"]["connections"], [])
 
     def test_metadata_contains_upstream_downstream_and_phase_connections(self):
         configuration = self.load_configuration()

@@ -32,6 +32,12 @@ class DemandInterval:
 
 
 @dataclass(frozen=True)
+class RouteSplit:
+    to_edge: str
+    weight: int
+
+
+@dataclass(frozen=True)
 class DemandPeriod:
     period_id: str
     label: str
@@ -40,6 +46,7 @@ class DemandPeriod:
     end: int
     intervals: Tuple[DemandInterval, ...]
     totals: Mapping[str, int]
+    route_splits: Mapping[str, Mapping[str, Tuple[RouteSplit, ...]]]
 
     @property
     def duration(self) -> int:
@@ -113,7 +120,10 @@ def _parse_intersection(
         )
     if not approaches or any(not item.sumo_approach for item in approaches.values()):
         raise TrafficDemandError(f"{intersection_id}: approach mapping is incomplete.")
-    if len({item.sumo_approach for item in approaches.values()}) != len(approaches):
+    shared_sumo_approaches = (
+        len({item.sumo_approach for item in approaches.values()}) != len(approaches)
+    )
+    if shared_sumo_approaches and raw.get("allow_shared_sumo_approaches") is not True:
         raise TrafficDemandError(f"{intersection_id}: SUMO approaches must be unique.")
 
     periods = {}
@@ -189,6 +199,48 @@ def _parse_intersection(
         program_id = str(raw_period.get("program_id", ""))
         if not program_id:
             raise TrafficDemandError(f"{intersection_id}/{period_id}: no program_id.")
+        route_splits = {}
+        for approach_name, raw_movements in raw_period.get("route_splits", {}).items():
+            if approach_name not in approaches:
+                raise TrafficDemandError(
+                    f"{intersection_id}/{period_id}: route split uses unknown "
+                    f"approach {approach_name!r}."
+                )
+            movement_splits = {}
+            for movement, raw_splits in raw_movements.items():
+                if movement not in approaches[approach_name].movements:
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}: route split "
+                        f"uses unknown movement {movement!r}."
+                    )
+                splits = tuple(
+                    RouteSplit(
+                        to_edge=str(item.get("to_edge", "")),
+                        weight=_volume(
+                            item.get("weight"),
+                            f"{intersection_id}/{period_id}/{approach_name}/"
+                            f"{movement}/route split {index}",
+                        ),
+                    )
+                    for index, item in enumerate(raw_splits)
+                )
+                if len(splits) < 2:
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "a route split needs at least two targets."
+                    )
+                if any(not item.to_edge or item.weight == 0 for item in splits):
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "route split targets and weights must be non-empty and positive."
+                    )
+                if len({item.to_edge for item in splits}) != len(splits):
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "route split targets must be unique."
+                    )
+                movement_splits[str(movement)] = splits
+            route_splits[str(approach_name)] = movement_splits
         periods[period_id] = DemandPeriod(
             period_id=period_id,
             label=str(raw_period.get("label", period_id)),
@@ -197,6 +249,7 @@ def _parse_intersection(
             end=end,
             intervals=tuple(intervals),
             totals=computed_totals,
+            route_splits=route_splits,
         )
     if not periods:
         raise TrafficDemandError(f"{intersection_id}: no demand periods.")

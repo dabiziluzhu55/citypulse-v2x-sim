@@ -1,8 +1,4 @@
-"""Build a derived SUMO network and official signal programs.
-
-The canonical TotalMap_20.net.xml is read-only. All generated files are placed
-under data/maps/sumo/generated.
-"""
+"""Build a derived SUMO network and official signal programs."""
 
 from __future__ import annotations
 
@@ -20,12 +16,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, MutableMapping, Sequence, Tuple
 
+from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 from .config import (
     IntersectionConfiguration,
+    PhaseMovement,
     SignalConfigurationError,
     load_signal_configuration,
 )
 from .traffic import TrafficDemandError
+from .vehicle_profiles import VehicleProfileError
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -34,7 +33,7 @@ DEFAULT_MAPPING = SUMO_DIR / "TotalMap_20.intersections.json"
 DEFAULT_PLANS = SUMO_DIR / "official_tls_plans.json"
 DEFAULT_TOPOLOGY = SUMO_DIR / "official_tls_topology.json"
 DEFAULT_BASE_NET = SUMO_DIR / "TotalMap_20.net.xml"
-DEFAULT_OUTPUT_DIR = SUMO_DIR / "generated"
+DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
 
 
 @dataclass(frozen=True)
@@ -99,22 +98,60 @@ def _run_netconvert(
     source_net: Path,
     target_net: Path,
     junction_ids: Sequence[str],
-) -> None:
+) -> Tuple[bool, int]:
     target_net.parent.mkdir(parents=True, exist_ok=True)
-    command = [
-        netconvert,
-        "--sumo-net-file",
-        str(source_net),
-        "--tls.set",
-        ",".join(junction_ids),
-        "--tls.default-type",
-        "static",
-        "--offset.disable-normalization",
-        "true",
-        "--output-file",
-        str(target_net),
+    junction_types = _read_junction_types(source_net, junction_ids)
+    junctions_to_signal = [
+        junction_id
+        for junction_id in junction_ids
+        if junction_types[junction_id] != "traffic_light"
     ]
-    subprocess.run(command, check=True)
+    if not junctions_to_signal:
+        shutil.copy2(source_net, target_net)
+        return False, 0
+
+    sanitized_source = target_net.with_name(
+        f".{target_net.name}.netconvert-input.net.xml"
+    )
+    shutil.copy2(source_net, sanitized_source)
+    try:
+        removed_empty_params = _remove_empty_params(sanitized_source)
+        command = [
+            netconvert,
+            "--sumo-net-file",
+            str(sanitized_source),
+            "--tls.set",
+            ",".join(junctions_to_signal),
+            "--tls.default-type",
+            "static",
+            "--offset.disable-normalization",
+            "true",
+            "--output-file",
+            str(target_net),
+        ]
+        subprocess.run(command, check=True)
+    finally:
+        sanitized_source.unlink(missing_ok=True)
+    return True, removed_empty_params
+
+
+def _read_junction_types(
+    net_path: Path, junction_ids: Sequence[str]
+) -> Mapping[str, str]:
+    requested = set(junction_ids)
+    result = {}
+    for _, elem in ET.iterparse(net_path, events=("end",)):
+        if elem.tag == "junction":
+            junction_id = elem.get("id", "")
+            if junction_id in requested:
+                result[junction_id] = elem.get("type", "")
+        elem.clear()
+    missing = requested - set(result)
+    if missing:
+        raise SignalConfigurationError(
+            f"Mapped junctions are missing from source network: {sorted(missing)}"
+        )
+    return result
 
 
 def _remove_empty_params(net_path: Path) -> int:
@@ -233,7 +270,7 @@ def _inspect_generated_network(
                 f"{config.intersection_id}: connection from {raw['from']} is not TLS controlled."
             )
         direction = raw.get("dir", "")
-        movement = config.topology.direction_mapping.get(direction)
+        movement = config.topology.movement_for_direction(raw["from"], direction)
         if movement is None:
             raise SignalConfigurationError(
                 f"{config.intersection_id}: unsupported SUMO direction {direction!r} "
@@ -319,11 +356,26 @@ def _validate_protected_movements(
                 )
 
 
+def _movement_matches(
+    config: IntersectionConfiguration,
+    connection: ControlledConnection,
+    requested_movement: str,
+) -> bool:
+    if connection.movement == requested_movement:
+        return True
+    return (
+        config.topology.u_turn_policy == "with_left"
+        and requested_movement == "left"
+        and connection.movement == "uturn"
+    )
+
+
 def _build_templates(
     config: IntersectionConfiguration,
     connections: Sequence[ControlledConnection],
     state_lengths: Mapping[str, int],
     request_foes: Mapping[str, Mapping[int, str]],
+    phase_mappings: Sequence[PhaseMovement] | None = None,
 ) -> Mapping[int, Mapping[str, Mapping[str, str]]]:
     own_connections = [
         item for item in connections if item.intersection_id == config.intersection_id
@@ -331,31 +383,49 @@ def _build_templates(
     tls_ids = sorted({item.tls_id for item in own_connections})
     templates = {}
     served_connections = set()
-    for phase_mapping in config.topology.phases:
-        protected = [
+    if phase_mappings is None:
+        phase_mappings = config.topology.phases
+    for phase_mapping in phase_mappings:
+        primary = [
             item
             for item in own_connections
             if item.approach in phase_mapping.approaches
-            and item.movement == phase_mapping.movement
+            and _movement_matches(config, item, phase_mapping.movement)
         ]
-        if not protected:
+        if not primary:
             raise SignalConfigurationError(
                 f"{config.intersection_id}/phase {phase_mapping.phase_number}: "
-                "no protected connections matched."
+                "no primary connections matched."
             )
+        protected = list(primary) if phase_mapping.priority == "protected" else []
+        permissive = list(primary) if phase_mapping.priority == "permissive" else []
+        for group in phase_mapping.protected:
+            matches = [
+                item
+                for item in own_connections
+                if item.approach in group.approaches
+                and _movement_matches(config, item, group.movement)
+            ]
+            if not matches:
+                raise SignalConfigurationError(
+                    f"{config.intersection_id}/phase {phase_mapping.phase_number}: "
+                    f"no protected {group.movement} connections matched for "
+                    f"{group.approaches}."
+                )
+            protected.extend(matches)
+        protected = list(dict.fromkeys(protected))
         _validate_protected_movements(
             protected,
             request_foes,
             config.intersection_id,
             phase_mapping.phase_number,
         )
-        permissive = []
         for group in phase_mapping.permissive:
             matches = [
                 item
                 for item in own_connections
                 if item.approach in group.approaches
-                and item.movement == group.movement
+                and _movement_matches(config, item, group.movement)
             ]
             if not matches:
                 raise SignalConfigurationError(
@@ -418,14 +488,19 @@ def _append_phase(parent: ET.Element, duration: float, state: str, name: str) ->
 def _write_additional(
     path: Path,
     selected: Sequence[IntersectionConfiguration],
-    templates_by_intersection: Mapping[str, Mapping[int, Mapping[str, Mapping[str, str]]]],
+    templates_by_intersection: Mapping[
+        str,
+        Mapping[str, Mapping[int, Mapping[str, Mapping[str, str]]]],
+    ],
 ) -> None:
     root = ET.Element("additional")
     seen = set()
     for config in selected:
-        templates = templates_by_intersection[config.intersection_id]
-        tls_ids = sorted({tls for value in templates.values() for tls in value})
         for program in config.programs.values():
+            templates = templates_by_intersection[config.intersection_id][
+                program.program_id
+            ]
+            tls_ids = sorted({tls for value in templates.values() for tls in value})
             for tls_id in tls_ids:
                 key = (tls_id, program.program_id)
                 if key in seen:
@@ -469,69 +544,6 @@ def _write_connection_report(path: Path, connections: Sequence[ControlledConnect
             writer.writerow(row)
 
 
-def _write_validation_routes(path: Path, connections: Sequence[ControlledConnection]) -> None:
-    root = ET.Element("routes")
-    ET.SubElement(
-        root,
-        "vType",
-        {
-            "id": "validation_car",
-            "vClass": "passenger",
-            "accel": "2.6",
-            "decel": "4.5",
-            "length": "5.0",
-            "maxSpeed": "13.9",
-        },
-    )
-    candidates = {}
-    for connection in sorted(
-        connections,
-        key=lambda item: (item.direction == "t", item.from_lane, item.to_lane),
-    ):
-        if connection.movement == "blocked":
-            continue
-        key = (connection.intersection_id, connection.approach, connection.movement)
-        candidates.setdefault(key, connection)
-    for index, (key, connection) in enumerate(sorted(candidates.items())):
-        intersection_id, approach, movement = key
-        flow = ET.SubElement(
-            root,
-            "flow",
-            {
-                "id": f"{intersection_id}_{approach}_{movement}",
-                "type": "validation_car",
-                "begin": f"{index * 1.5:g}",
-                "end": "200",
-                "period": "30",
-                "departLane": str(connection.from_lane),
-                "departSpeed": "max",
-            },
-        )
-        ET.SubElement(
-            flow,
-            "route",
-            {"edges": f"{connection.from_edge} {connection.to_edge}"},
-        )
-    ET.indent(root, space="  ")
-    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
-
-
-def _write_sumocfg(path: Path) -> None:
-    root = ET.Element("configuration")
-    input_node = ET.SubElement(root, "input")
-    ET.SubElement(input_node, "net-file", {"value": "TotalMap_20.signals.net.xml"})
-    ET.SubElement(input_node, "route-files", {"value": "official_tls_validation.rou.xml"})
-    ET.SubElement(input_node, "additional-files", {"value": "official_tls.add.xml"})
-    time_node = ET.SubElement(root, "time")
-    ET.SubElement(time_node, "begin", {"value": "0"})
-    ET.SubElement(time_node, "end", {"value": "200"})
-    ET.SubElement(time_node, "step-length", {"value": "0.05"})
-    processing = ET.SubElement(root, "processing")
-    ET.SubElement(processing, "time-to-teleport", {"value": "-1"})
-    ET.indent(root, space="  ")
-    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
-
-
 def build(
     intersection_ids: Sequence[str],
     mapping_path: Path = DEFAULT_MAPPING,
@@ -545,10 +557,13 @@ def build(
     junction_ids = sorted({item for config in selected for item in config.junction_ids})
     netconvert = _binary("netconvert")
     sumo = _binary("sumo")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    target_net = output_dir / "TotalMap_20.signals.net.xml"
-    _run_netconvert(netconvert, source_net, target_net, junction_ids)
-    removed_empty_params = _remove_empty_params(target_net)
+    layout = GeneratedArtifactLayout(output_dir)
+    layout.reset()
+    target_net = layout.network_file
+    netconvert_applied, removed_empty_params = _run_netconvert(
+        netconvert, source_net, target_net, junction_ids
+    )
+    removed_empty_params += _remove_empty_params(target_net)
     if removed_empty_params:
         print(
             f"Removed {removed_empty_params} empty SUMO <param> elements "
@@ -556,24 +571,35 @@ def build(
         )
     connections, state_lengths, request_foes = _inspect_generated_network(target_net, selected)
     templates = {
-        config.intersection_id: _build_templates(
-            config, connections, state_lengths, request_foes
-        )
+        config.intersection_id: {
+            program.program_id: _build_templates(
+                config,
+                connections,
+                state_lengths,
+                request_foes,
+                config.topology.phases_for(program.program_id),
+            )
+            for program in config.programs.values()
+        }
         for config in selected
     }
-    additional_path = output_dir / "official_tls.add.xml"
+    additional_path = layout.signal_programs_file
     _write_additional(additional_path, selected, templates)
-    _write_connection_report(output_dir / "official_tls_connections.csv", connections)
-    _write_validation_routes(output_dir / "official_tls_validation.rou.xml", connections)
-    _write_sumocfg(output_dir / "official_tls.sumocfg")
+    _write_connection_report(layout.connections_report, connections)
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source_net": str(source_net.resolve()),
         "source_net_sha256": _sha256(source_net),
         "netconvert_version": _version(netconvert),
         "sumo_version": _version(sumo),
+        "netconvert_applied": netconvert_applied,
         "removed_empty_params": removed_empty_params,
+        "artifacts": {
+            "network_file": layout.relative(layout.network_file),
+            "signal_programs_file": layout.relative(layout.signal_programs_file),
+            "connections_report": layout.relative(layout.connections_report),
+        },
         "intersections": {},
     }
     for config in selected:
@@ -581,12 +607,25 @@ def build(
             item for item in connections if item.intersection_id == config.intersection_id
         ]
         intersection_templates = templates[config.intersection_id]
+        program_views = {}
+        for program in config.programs.values():
+            phase_movements = config.topology.phases_for(program.program_id)
+            program_templates = intersection_templates[program.program_id]
+            program_views[program.program_id] = {
+                "phase_order": [item.phase_number for item in phase_movements],
+                "phase_movements": [asdict(item) for item in phase_movements],
+                "templates": {
+                    str(phase_number): value
+                    for phase_number, value in program_templates.items()
+                },
+            }
+        default_program_view = program_views[next(iter(config.programs))]
         manifest["intersections"][config.intersection_id] = {
             "junction_ids": list(config.junction_ids),
             "tls_ids": sorted({item.tls_id for item in own_connections}),
             "program_ids": list(config.programs),
-            "phase_order": [item.phase_number for item in config.topology.phases],
-            "phase_movements": [asdict(item) for item in config.topology.phases],
+            "phase_order": default_program_view["phase_order"],
+            "phase_movements": default_program_view["phase_movements"],
             "incoming_lanes": {
                 approach: sorted(
                     {
@@ -597,13 +636,11 @@ def build(
                 )
                 for approach in config.topology.approaches
             },
-            "templates": {
-                str(phase_number): value
-                for phase_number, value in intersection_templates.items()
-            },
+            "templates": default_program_view["templates"],
+            "programs": program_views,
             "connections": [asdict(item) for item in own_connections],
         }
-    manifest_path = output_dir / "tls_manifest.json"
+    manifest_path = layout.tls_manifest
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -642,6 +679,7 @@ def main() -> None:
     except (
         SignalConfigurationError,
         TrafficDemandError,
+        VehicleProfileError,
         RuntimeError,
         subprocess.CalledProcessError,
     ) as exc:

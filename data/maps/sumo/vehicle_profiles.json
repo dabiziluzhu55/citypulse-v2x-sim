@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "passenger": {
+      "v_class": "passenger",
+      "powertrain": "gasoline",
+      "emission_class": "HBEFA3/PC_G_EU4",
+      "accel_mps2": 2.6,
+      "decel_mps2": 4.5,
+      "length_m": 5.0,
+      "width_m": 1.8,
+      "min_gap_m": 2.5,
+      "max_speed_mps": 13.9,
+      "sigma": 0.5,
+      "fuel_density_mg_per_ml": 745.0,
+      "hard_braking_threshold_mps2": -3.0
+    }
+  }
+}
