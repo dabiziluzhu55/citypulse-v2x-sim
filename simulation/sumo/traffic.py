@@ -120,7 +120,10 @@ def _parse_intersection(
         )
     if not approaches or any(not item.sumo_approach for item in approaches.values()):
         raise TrafficDemandError(f"{intersection_id}: approach mapping is incomplete.")
-    if len({item.sumo_approach for item in approaches.values()}) != len(approaches):
+    shared_sumo_approaches = (
+        len({item.sumo_approach for item in approaches.values()}) != len(approaches)
+    )
+    if shared_sumo_approaches and raw.get("allow_shared_sumo_approaches") is not True:
         raise TrafficDemandError(f"{intersection_id}: SUMO approaches must be unique.")
 
     periods = {}
