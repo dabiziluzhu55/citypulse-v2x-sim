@@ -157,16 +157,17 @@
 
 | 官方进口/转向 | SUMO approach/movement | 路网 incoming edge |
 |---|---|---|
-| 西进口左转 | `southeast_branch/left` | `-51425` |
-| 西进口右转 | `southeast_branch/right` | `-51425` |
-| 北进口直行 | `northeast_main/through` | `-56734` |
-| 北进口右转 | `northeast_main/left` | `-56734` |
-| 南进口左转 | `southwest_main/right` | `-57228` |
-| 南进口直行 | `southwest_main/through` | `-57228` |
+| 西进口左转 | `west/left` | `-51425` |
+| 西进口右转 | `west/right` | `-51425` |
+| 北进口直行 | `north/through` | `-57228` |
+| 北进口右转 | `north/right` | `-57228` |
+| 南进口左转 | `south/left` | `-56734` |
+| 南进口直行 | `south/through` | `-56734` |
 
-这里的反向 `left/right` 是 SUMO 路网几何与官方进口命名口径不同导致的，不能将
-官方字符串直接当作 SUMO direction。构建器通过 `tls_manifest.json` 中实际连接反查
-`from_edge -> to_edge`；找不到或找到多条不同路线时立即终止。
+`demo_2` 的官方方位已按现场核对结果直接对应 SUMO 进口与转向。构建器通过
+`tls_manifest.json` 中实际连接反查 `from_edge -> to_edge`；找不到或找到多条不同路线时
+立即终止。基础路网中两条 `dir="t"` 连接不属于官方需求，TLS 构建时会通过 netconvert
+连接删除文件移除，避免生成路网和信号程序重新出现掉头箭头及无效信号槽位。
 
 `demo_4` 的官方方位与 SUMO 转向一致，四个 incoming edge 为：
 

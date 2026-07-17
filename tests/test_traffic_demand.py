@@ -21,12 +21,12 @@ DEMANDS = ROOT / "data" / "maps" / "sumo" / "official_traffic_demands.json"
 def demo_2_manifest():
     connections = []
     for approach, movement, from_edge, to_edge, direction in (
-        ("southeast_branch", "left", "branch_in", "northeast_out", "l"),
-        ("southeast_branch", "right", "branch_in", "southwest_out", "r"),
-        ("northeast_main", "through", "northeast_in", "southwest_out", "s"),
-        ("northeast_main", "left", "northeast_in", "branch_out", "l"),
-        ("southwest_main", "right", "southwest_in", "branch_out", "r"),
-        ("southwest_main", "through", "southwest_in", "northeast_out", "s"),
+        ("west", "left", "west_in", "south_out", "l"),
+        ("west", "right", "west_in", "north_out", "r"),
+        ("north", "through", "north_in", "north_out", "s"),
+        ("north", "right", "north_in", "west_out", "r"),
+        ("south", "left", "south_in", "west_out", "l"),
+        ("south", "through", "south_in", "south_out", "s"),
     ):
         connections.append(
             {
@@ -109,11 +109,11 @@ class TrafficDemandTests(unittest.TestCase):
         )
         self.assertEqual(
             demand.approaches["north"].movements["right"],
-            "left",
+            "right",
         )
         self.assertEqual(
             demand.approaches["south"].movements["left"],
-            "right",
+            "left",
         )
 
         demo_4 = load_traffic_demands(DEMANDS).intersections["demo_4"]
@@ -761,13 +761,13 @@ class TrafficDemandTests(unittest.TestCase):
             self.assertEqual(len(south_left), 8)
             self.assertTrue(
                 all(
-                    flow.find("route").get("edges") == "northeast_in branch_out"
+                    flow.find("route").get("edges") == "north_in west_out"
                     for flow in north_right
                 )
             )
             self.assertTrue(
                 all(
-                    flow.find("route").get("edges") == "southwest_in branch_out"
+                    flow.find("route").get("edges") == "south_in west_out"
                     for flow in south_left
                 )
             )

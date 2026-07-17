@@ -2,11 +2,13 @@ import json
 import shutil
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
 from simulation.sumo.build_tls import (
     ControlledConnection,
+    _blocked_turnaround_deletions,
     _build_templates,
     _read_junction_types,
     _remove_empty_params,
@@ -79,15 +81,15 @@ class SignalConfigurationTests(unittest.TestCase):
         demo_2 = self.load().intersections["demo_2"]
         self.assertEqual(demo_2.junction_ids, ("317",))
         self.assertEqual(
-            demo_2.topology.approaches["northeast_main"],
-            ("-56734",),
-        )
-        self.assertEqual(
-            demo_2.topology.approaches["southwest_main"],
+            demo_2.topology.approaches["north"],
             ("-57228",),
         )
         self.assertEqual(
-            demo_2.topology.approaches["southeast_branch"],
+            demo_2.topology.approaches["south"],
+            ("-56734",),
+        )
+        self.assertEqual(
+            demo_2.topology.approaches["west"],
             ("-51425",),
         )
         self.assertEqual(
@@ -1387,19 +1389,17 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertTrue(all(phase_one["yellow"][value] == "y" for value in protected))
         self.assertTrue(all(phase_one["clearance"][value] == "r" for value in protected))
 
-    def test_demo_2_templates_cover_normal_movements_and_block_uturns(self):
+    def test_demo_2_templates_cover_only_official_movements(self):
         config = self.load().intersections["demo_2"]
         definitions = (
-            ("northeast_main", "s", "through"),
-            ("northeast_main", "s", "through"),
-            ("northeast_main", "l", "left"),
-            ("northeast_main", "t", "blocked"),
-            ("southeast_branch", "r", "right"),
-            ("southeast_branch", "l", "left"),
-            ("southwest_main", "r", "right"),
-            ("southwest_main", "s", "through"),
-            ("southwest_main", "s", "through"),
-            ("southwest_main", "t", "blocked"),
+            ("south", "s", "through"),
+            ("south", "s", "through"),
+            ("south", "l", "left"),
+            ("west", "r", "right"),
+            ("west", "l", "left"),
+            ("north", "r", "right"),
+            ("north", "s", "through"),
+            ("north", "s", "through"),
         )
         connections = []
         for index, (approach, direction, movement) in enumerate(definitions):
@@ -1441,19 +1441,17 @@ class SignalConfigurationTests(unittest.TestCase):
         )
         phase_one = templates[1]["317"]
         phase_two = templates[2]["317"]
-        northeast_left = 2
-        branch_left = 5
-        blocked_uturns = (3, 9)
-        self.assertEqual(phase_one["green"][northeast_left], "g")
-        self.assertEqual(phase_one["yellow"][northeast_left], "y")
-        self.assertEqual(phase_two["green"][branch_left], "G")
-        self.assertEqual(phase_two["yellow"][branch_left], "y")
-        for phase in templates.values():
-            for tls_states in phase.values():
-                for stage in ("green", "yellow", "clearance"):
-                    self.assertTrue(
-                        all(tls_states[stage][index] == "r" for index in blocked_uturns)
-                    )
+        south_left = 2
+        west_left = 4
+        self.assertEqual(phase_one["green"][south_left], "g")
+        self.assertEqual(phase_one["yellow"][south_left], "y")
+        self.assertEqual(phase_two["green"][west_left], "G")
+        self.assertEqual(phase_two["yellow"][west_left], "y")
+        self.assertEqual(phase_one["green"], "GGggrgGG")
+        self.assertEqual(phase_one["yellow"], "yyygrgyy")
+        self.assertEqual(phase_two["green"], "rrrgGgrr")
+        self.assertEqual(phase_two["yellow"], "rrrgygrr")
+        self.assertTrue(all(item.direction != "t" for item in connections))
 
     def test_empty_sumo_params_are_removed_without_touching_nonempty_values(self):
         net_path = Path(self.temp_directory.name) / "test.net.xml"
@@ -1512,6 +1510,10 @@ class SignalConfigurationTests(unittest.TestCase):
     def test_netconvert_only_receives_unsignalized_junctions_and_clean_input(self):
         source = self.write_source_network()
         target = Path(self.temp_directory.name) / "generated" / "target.net.xml"
+        blocked_turnarounds = (
+            ("-56734", "-57229"),
+            ("-57228", "-56736"),
+        )
 
         def fake_run(command, check):
             self.assertTrue(check)
@@ -1520,13 +1522,24 @@ class SignalConfigurationTests(unittest.TestCase):
             input_index = command.index("--sumo-net-file") + 1
             sanitized_source = Path(command[input_index])
             self.assertNotIn('value=""', sanitized_source.read_text(encoding="utf-8"))
+            connection_index = command.index("--connection-files") + 1
+            connection_file = Path(command[connection_index])
+            deletions = {
+                (item.get("from"), item.get("to"))
+                for item in ET.parse(connection_file).getroot().findall("delete")
+            }
+            self.assertEqual(deletions, set(blocked_turnarounds))
             shutil.copy2(sanitized_source, target)
 
         with patch(
             "simulation.sumo.build_tls.subprocess.run", side_effect=fake_run
         ) as run:
             applied, removed = _run_netconvert(
-                "netconvert", source, target, ["317", "3935"]
+                "netconvert",
+                source,
+                target,
+                ["317", "3935"],
+                blocked_turnarounds,
             )
         self.assertEqual(run.call_count, 1)
         self.assertTrue(applied)
@@ -1535,6 +1548,32 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(
             list(target.parent.glob("*.netconvert-input.net.xml")),
             [],
+        )
+        self.assertEqual(list(target.parent.glob("*.con.xml")), [])
+
+    def test_only_blocked_turnarounds_are_deleted(self):
+        source = Path(self.temp_directory.name) / "connections.net.xml"
+        source.write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<net>
+  <connection from="-56734" to="-56736" dir="s"/>
+  <connection from="-56734" to="-57229" dir="t"/>
+  <connection from="-57228" to="-56736" dir="t"/>
+  <connection from="-57229" to="-56733" dir="t"/>
+</net>
+""",
+            encoding="utf-8",
+        )
+        configuration = self.load()
+        self.assertEqual(
+            _blocked_turnaround_deletions(
+                source,
+                [
+                    configuration.intersections["demo_2"],
+                    configuration.intersections["demo_4"],
+                ],
+            ),
+            (("-56734", "-57229"), ("-57228", "-56736")),
         )
 
 

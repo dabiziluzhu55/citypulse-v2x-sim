@@ -10,7 +10,7 @@
       "approaches": {
         "west": {
           "label": "西进口",
-          "sumo_approach": "southeast_branch",
+          "sumo_approach": "west",
           "movements": {
             "left": "left",
             "right": "right"
@@ -18,17 +18,17 @@
         },
         "north": {
           "label": "北进口",
-          "sumo_approach": "northeast_main",
+          "sumo_approach": "north",
           "movements": {
             "through": "through",
-            "right": "left"
+            "right": "right"
           }
         },
         "south": {
           "label": "南进口",
-          "sumo_approach": "southwest_main",
+          "sumo_approach": "south",
           "movements": {
-            "left": "right",
+            "left": "left",
             "through": "through"
           }
         }
