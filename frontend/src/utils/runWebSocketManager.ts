@@ -1,23 +1,25 @@
-type RunMessageHandler = (payload: Record<string, unknown>) => void
+import type { SimulationWsMessage } from '../types/simulation'
+
+type MessageHandler = (message: SimulationWsMessage) => void
 
 let socket: WebSocket | null = null
-let currentRunId = ''
+let currentSessionId = ''
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 const MAX_RECONNECT_DELAY_MS = 30_000
 let shouldReconnect = false
-const handlers = new Set<RunMessageHandler>()
+const handlers = new Set<MessageHandler>()
 const connectionListeners = new Set<(connected: boolean) => void>()
 
-function buildRunWsUrl(runId: string): string {
+function buildStreamUrl(sessionId: string): string {
   const configuredUrl = import.meta.env.VITE_TRAFFIC_WS_URL?.trim()
   if (configuredUrl) {
-    return configuredUrl.replace('{run_id}', encodeURIComponent(runId))
+    return configuredUrl.replace('{session_id}', encodeURIComponent(sessionId))
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.host
-  return `${protocol}//${host}/api/v1/ws/runs/${encodeURIComponent(runId)}`
+  return `${protocol}//${host}/api/v1/simulations/${encodeURIComponent(sessionId)}/stream`
 }
 
 function notifyConnection(connected: boolean) {
@@ -45,7 +47,7 @@ function closeSocket() {
 }
 
 function scheduleReconnect() {
-  if (!shouldReconnect || !currentRunId) {
+  if (!shouldReconnect || !currentSessionId) {
     return
   }
 
@@ -53,30 +55,38 @@ function scheduleReconnect() {
   reconnectAttempts += 1
   const delay = Math.min(3_000 * 2 ** (reconnectAttempts - 1), MAX_RECONNECT_DELAY_MS)
   reconnectTimer = setTimeout(() => {
-    connectRunWebSocket(currentRunId)
+    connectSimulationStream(currentSessionId)
   }, delay)
 }
 
-export function connectRunWebSocket(runId: string) {
-  if (!runId) {
+function isSimulationMessage(payload: unknown): payload is SimulationWsMessage {
+  if (!payload || typeof payload !== 'object') {
+    return false
+  }
+  const type = (payload as { type?: unknown }).type
+  return type === 'snapshot' || type === 'heartbeat'
+}
+
+export function connectSimulationStream(sessionId: string) {
+  if (!sessionId) {
     shouldReconnect = false
     clearReconnectTimer()
     closeSocket()
-    currentRunId = ''
+    currentSessionId = ''
     notifyConnection(false)
     return
   }
 
-  if (runId === currentRunId && socket && socket.readyState === WebSocket.OPEN) {
+  if (sessionId === currentSessionId && socket && socket.readyState === WebSocket.OPEN) {
     return
   }
 
   shouldReconnect = true
-  currentRunId = runId
+  currentSessionId = sessionId
   closeSocket()
 
   try {
-    socket = new WebSocket(buildRunWsUrl(runId))
+    socket = new WebSocket(buildStreamUrl(sessionId))
   } catch {
     notifyConnection(false)
     scheduleReconnect()
@@ -90,7 +100,10 @@ export function connectRunWebSocket(runId: string) {
 
   socket.onmessage = (event) => {
     try {
-      const payload = JSON.parse(String(event.data)) as Record<string, unknown>
+      const payload = JSON.parse(String(event.data)) as unknown
+      if (!isSimulationMessage(payload)) {
+        return
+      }
       for (const handler of handlers) {
         handler(payload)
       }
@@ -109,14 +122,14 @@ export function connectRunWebSocket(runId: string) {
   }
 }
 
-export function registerRunWebSocketHandler(handler: RunMessageHandler): () => void {
+export function registerSimulationStreamHandler(handler: MessageHandler): () => void {
   handlers.add(handler)
   return () => {
     handlers.delete(handler)
   }
 }
 
-export function registerRunWebSocketConnectionListener(
+export function registerSimulationStreamConnectionListener(
   listener: (connected: boolean) => void,
 ): () => void {
   connectionListeners.add(listener)
@@ -126,6 +139,6 @@ export function registerRunWebSocketConnectionListener(
   }
 }
 
-export function getCurrentRunWebSocketId(): string {
-  return currentRunId
+export function getCurrentStreamSessionId(): string {
+  return currentSessionId
 }

@@ -7,6 +7,12 @@ export interface ScenarioLocationMeta {
 }
 
 export const SCENARIO_LOCATION_META: Record<string, ScenarioLocationMeta> = {
+  demo_2: {
+    template_id: 'demo_2',
+    areaTag: '官方路口',
+    highlight: 'demo_2 单路口',
+    accent: 'cyan',
+  },
   xiongan20: {
     template_id: 'xiongan20',
     areaTag: '启动区',

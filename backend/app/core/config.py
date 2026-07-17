@@ -66,12 +66,27 @@ class Settings(BaseSettings):
 
     def resolved_sumo_home(self) -> Path | None:
         import os
+        import site
 
         raw = self.sumo_home or os.environ.get("SUMO_HOME")
-        if not raw:
-            return None
-        path = Path(raw).expanduser()
-        return path if path.is_dir() else None
+        if raw:
+            path = Path(raw).expanduser()
+            if path.is_dir():
+                return path
+
+        candidates = [Path(root) / "sumo" for root in site.getsitepackages()]
+        user_site = site.getusersitepackages()
+        if user_site:
+            candidates.append(Path(user_site) / "sumo")
+        return next(
+            (
+                path
+                for path in candidates
+                if (path / "tools" / "sumolib").is_dir()
+                and (path / "bin" / ("sumo.exe" if os.name == "nt" else "sumo")).is_file()
+            ),
+            None,
+        )
 
     def missing_generated_files(self) -> list[str]:
         missing: list[str] = []

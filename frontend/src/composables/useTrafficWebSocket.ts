@@ -1,21 +1,14 @@
 import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
-import type { TrafficStateWsMessage } from '../types/traffic'
+import type { SimulationSnapshot } from '../types/simulation'
 import {
-  connectRunWebSocket,
-  registerRunWebSocketConnectionListener,
-  registerRunWebSocketHandler,
+  connectSimulationStream,
+  registerSimulationStreamConnectionListener,
+  registerSimulationStreamHandler,
 } from '../utils/runWebSocketManager'
 
-function parseTrafficMessage(payload: Record<string, unknown>): TrafficStateWsMessage | null {
-  if (payload.type !== 'traffic_state' || !payload.data || typeof payload.data !== 'object') {
-    return null
-  }
-  return payload as unknown as TrafficStateWsMessage
-}
-
-export function useTrafficWebSocket(
-  runId: Ref<string>,
-  onUpdate: (message: TrafficStateWsMessage) => void,
+export function useSimulationStream(
+  sessionId: Ref<string>,
+  onSnapshot: (snapshot: SimulationSnapshot) => void,
 ) {
   const connected = ref(false)
   const error = ref<string | null>(null)
@@ -27,21 +20,21 @@ export function useTrafficWebSocket(
     unregisterHandler?.()
     unregisterConnection?.()
 
-    if (!runId.value) {
+    if (!sessionId.value) {
       connected.value = false
+      connectSimulationStream('')
       return
     }
 
-    connectRunWebSocket(runId.value)
+    connectSimulationStream(sessionId.value)
 
-    unregisterHandler = registerRunWebSocketHandler((payload) => {
-      const message = parseTrafficMessage(payload)
-      if (message) {
-        onUpdate(message)
+    unregisterHandler = registerSimulationStreamHandler((message) => {
+      if (message.type === 'snapshot') {
+        onSnapshot(message.data)
       }
     })
 
-    unregisterConnection = registerRunWebSocketConnectionListener((isConnected) => {
+    unregisterConnection = registerSimulationStreamConnectionListener((isConnected) => {
       connected.value = isConnected
       if (isConnected) {
         error.value = null
@@ -56,7 +49,7 @@ export function useTrafficWebSocket(
     unregisterConnection?.()
   })
 
-  watch(runId, setup)
+  watch(sessionId, setup)
 
   return {
     connected,

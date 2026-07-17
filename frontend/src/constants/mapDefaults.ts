@@ -310,6 +310,11 @@ export interface TemplateMapViewport {
 
 /** 各场景模板视野对齐 3D Tiles 真实位置 */
 export const TEMPLATE_MAP_REGISTRY: Record<string, TemplateMapViewport> = {
+  demo_2: {
+    center: [116.126756, 38.99115],
+    zoom: 17,
+    bounds: [116.1198, 38.9858, 116.1337, 38.9965],
+  },
   xiongan20: {
     center: [115.981, 38.985],
     zoom: 15,

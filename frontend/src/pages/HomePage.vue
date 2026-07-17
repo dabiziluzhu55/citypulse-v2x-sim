@@ -1,28 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed } from 'vue'
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
 import { useOptionalAppMapView } from '../composables/useAppMapView'
-import { useRunOverview } from '../composables/useRunOverview'
-import { useRunStatusPolling } from '../composables/useRunStatusPolling'
-import { useSimulationRun } from '../composables/useSimulationRun'
-import { useTrafficState } from '../composables/useTrafficState'
-import { useCollaborationState } from '../composables/useCollaborationState'
-import { useAlgorithmControl } from '../composables/useAlgorithmControl'
-import { useEventsAndPrediction } from '../composables/useEventsAndPrediction'
-import { useMetricsDisplay } from '../composables/useMetricsDisplay'
+import { useSimulationStore } from '../composables/useSimulationStore'
+import { useSnapshotMetrics } from '../composables/useSnapshotMetrics'
+import { useHealth } from '../composables/useHealth'
 import { CESIUM_CAMERA_PRESETS } from '../constants/mapDefaults'
 import type { CesiumCameraPresetId, MapDimension } from '../types/map'
-import type { ControlCommand } from '../types/simulation'
-
-const route = useRoute()
-const router = useRouter()
-
-const initialScenarioId = computed(() => {
-  const value = route.query.scenario_id
-  return typeof value === 'string' ? value : ''
-})
+import type { StartSimulationRequest } from '../types/simulation'
 
 const mapView = useOptionalAppMapView()
 const mapDimension = computed(() => mapView?.dimension.value ?? '2d')
@@ -37,108 +23,29 @@ function setCameraPreset(next: CesiumCameraPresetId) {
   mapView?.setCameraPreset(next)
 }
 
-const selectedTemplateId = ref('')
-
-function handleTemplateIdChange(templateId: string) {
-  selectedTemplateId.value = templateId
-}
-
-watch(
-  initialScenarioId,
-  (scenarioId) => {
-    if (!mapView || !scenarioId) {
-      return
-    }
-    mapView.flyToScenario(scenarioId)
-  },
-  { immediate: true },
-)
-
 const {
-  runId,
+  sessionId,
+  snapshot,
+  state,
   starting,
   controlling,
   startError,
   controlError,
+  wsConnected,
   launchRun,
-  sendControl,
-} = useSimulationRun()
+  stopRun,
+} = useSimulationStore()
 
-const { overview } = useRunOverview(runId)
-const {
-  status: runStatus,
-  refresh: refreshStatus,
-} = useRunStatusPolling(runId)
+const { ready: healthReady, statusLabel: healthLabel } = useHealth()
 
-const { refresh: refreshTraffic } = useTrafficState(runId)
+const { timeseries, logEntries } = useSnapshotMetrics(sessionId, snapshot)
 
-const {
-  collaborationState,
-  logEntries,
-  loading: collaborationLoading,
-  error: collaborationError,
-  wsConnected: collaborationWsConnected,
-  refresh: refreshCollaboration,
-} = useCollaborationState(runId)
-
-const { selectedAlgorithmId } = useAlgorithmControl(runId, overview, collaborationState)
-
-const { refreshAll: refreshEventsAndPrediction } = useEventsAndPrediction(runId)
-
-const experimentId = computed(() => {
-  const queryValue = route.query.experiment_id
-  if (typeof queryValue === 'string' && queryValue.trim()) {
-    return queryValue.trim()
-  }
-  return overview.value?.scenario_id ?? import.meta.env.VITE_DEFAULT_EXPERIMENT_ID ?? ''
-})
-
-const currentAlgorithmId = computed(() => overview.value?.algorithm ?? selectedAlgorithmId.value)
-
-const {
-  timeseries,
-  timeseriesLoading,
-  timeseriesError,
-  refreshAll: refreshMetrics,
-} = useMetricsDisplay(runId, experimentId, currentAlgorithmId)
-
-const controlStatus = computed(() => runStatus.value?.status ?? null)
-
-async function handleStartFromScenario(scenarioId: string) {
-  const result = await launchRun({
-    scenario_id: scenarioId,
-    algorithm: selectedAlgorithmId.value || 'fixed_time',
-    cloud_edge_enabled: true,
-    realtime: true,
-    step_length: 1.0,
-  })
-  if (result) {
-    refreshStatus()
-    refreshTraffic()
-    refreshCollaboration()
-    refreshEventsAndPrediction()
-    refreshMetrics()
-  }
+async function handleStart(payload: StartSimulationRequest) {
+  await launchRun(payload)
 }
 
-function handleScenarioGenerated(scenarioId: string) {
-  void router.replace({
-    query: {
-      ...route.query,
-      scenario_id: scenarioId,
-    },
-  })
-}
-
-async function handleControl(command: ControlCommand) {
-  const result = await sendControl(command)
-  if (result) {
-    refreshStatus()
-    refreshTraffic()
-    refreshCollaboration()
-    refreshEventsAndPrediction()
-    refreshMetrics()
-  }
+async function handleStop() {
+  await stopRun()
 }
 </script>
 
@@ -183,20 +90,17 @@ async function handleControl(command: ControlCommand) {
 
     <div class="dashboard-column left">
       <LeftSidebarPanel
-        :run-id="runId"
-        :status="controlStatus"
-        :run-status="runStatus"
+        :session-id="sessionId"
+        :state="state"
+        :snapshot="snapshot"
         :starting="starting"
         :controlling="controlling"
         :start-error="startError"
         :control-error="controlError"
-        :initial-scenario-id="initialScenarioId"
-        :selected-template-id="selectedTemplateId"
-        v-model:selected-algorithm-id="selectedAlgorithmId"
-        @generate="handleScenarioGenerated"
-        @start="handleStartFromScenario"
-        @control="handleControl"
-        @update:template-id="handleTemplateIdChange"
+        :health-ready="healthReady"
+        :health-label="healthLabel"
+        @start="handleStart"
+        @stop="handleStop"
       />
     </div>
 
@@ -204,15 +108,14 @@ async function handleControl(command: ControlCommand) {
 
     <div class="dashboard-column right">
       <RightSidebarPanel
-        :run-id="runId"
+        :run-id="sessionId"
         :log-entries="logEntries"
-        :collaboration-loading="collaborationLoading"
-        :collaboration-error="collaborationError"
-        :ws-connected="collaborationWsConnected"
+        :collaboration-loading="false"
+        :collaboration-error="null"
+        :ws-connected="wsConnected"
         :timeseries="timeseries"
-        :timeseries-loading="timeseriesLoading"
-        :timeseries-error="timeseriesError"
-        @refresh="refreshMetrics"
+        :timeseries-loading="false"
+        :timeseries-error="null"
       />
     </div>
   </section>

@@ -1,10 +1,10 @@
 export type NetworkSource = 'osm_import' | 'prebuilt_sumo' | 'manual_netedit'
 
-export type TrafficFlowMode = 'flat' | 'morning_peak' | 'evening_peak' | 'event_dispersal'
+export type TrafficFlowMode = 'flat' | 'morning_peak' | 'evening_peak'
 
 export type TrafficLightPlan = 'fixed_time' | 'default_sumo' | 'custom'
 
-export type DisturbanceType = 'lane_closure' | 'accident' | 'event_dispersal' | 'speed_limit'
+export type DisturbanceType = 'lane_closure' | 'accident' | 'speed_limit'
 
 export interface ScenarioTemplate {
   template_id: string
@@ -52,43 +52,35 @@ export interface TrafficLightConfig {
 }
 
 export interface LaneClosureDisturbance {
-  type: 'lane_closure'
-  edge_id: string
-  lane_id: string
-  start_time: number
-  duration: number
-}
-
-export interface AccidentDisturbance {
-  type: 'accident'
-  vehicle_id?: string
-  random_vehicle: boolean
-  edge_id: string
-  start_time: number
-  duration: number
-}
-
-export interface EventDispersalDisturbance {
-  type: 'event_dispersal'
-  origin: string
-  destination: string
-  surge_flow: number
-  start_time: number
+  event_type: 'lane_closure'
+  event_id: string
+  start_seconds: number
+  end_seconds: number
+  lane_ids: string[]
 }
 
 export interface SpeedLimitDisturbance {
-  type: 'speed_limit'
-  edge_id: string
-  speed_limit: number
-  start_time: number
-  duration: number
+  event_type: 'speed_limit'
+  event_id: string
+  start_seconds: number
+  end_seconds: number
+  lane_ids: string[]
+  max_speed: number
+}
+
+export interface AccidentDisturbance {
+  event_type: 'accident'
+  event_id: string
+  start_seconds: number
+  end_seconds: number
+  lane_id: string
+  position_ratio: number
 }
 
 export type DisturbanceEvent =
   | LaneClosureDisturbance
-  | AccidentDisturbance
-  | EventDispersalDisturbance
   | SpeedLimitDisturbance
+  | AccidentDisturbance
 
 export interface CreateScenarioRequest {
   name: string

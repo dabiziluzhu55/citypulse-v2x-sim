@@ -3,6 +3,15 @@ import type { ScenarioTemplate } from '../types/scenario'
 /** 后端未就绪时的本地场景模板（与 Mock 规格 / citypulse 原型一致） */
 export const FALLBACK_SCENARIO_TEMPLATES: ScenarioTemplate[] = [
   {
+    template_id: 'demo_2',
+    name: 'demo_2 单路口官方信号场景',
+    intersection_count: 1,
+    description: '基于官方信号配时与真实交通需求的 SUMO 单路口联调场景。',
+    map_center: [116.126756, 38.99115],
+    map_bounds: [116.1198, 38.9858, 116.1337, 38.9965],
+    default_zoom: 17,
+  },
+  {
     template_id: 'xiongan20',
     name: '雄安窄路密网20路口',
     intersection_count: 20,

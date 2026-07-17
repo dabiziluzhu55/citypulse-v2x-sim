@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import {
   DISTURBANCE_CHOICE_OPTIONS,
   DURATION_OPTIONS,
@@ -7,14 +7,9 @@ import {
   OD_PRESET_OPTIONS,
   TRAFFIC_FLOW_MODE_OPTIONS,
 } from '../../constants/scenarioOptions'
-import {
-  LEFT_SIDEBAR_ALGORITHM_OPTIONS,
-  resolveSidebarAlgorithmApplyId,
-  toSidebarAlgorithmValue,
-} from '../../constants/leftSidebarOptions'
+import { resolveControlModeLabel } from '../../constants/simulationOptions'
 import { useCompactScenarioConfig } from '../../composables/useCompactScenarioConfig'
-import { useScenarioTemplates } from '../../composables/useScenarioTemplates'
-import { resolveLocationMeta } from '../../constants/scenarioLocationMeta'
+import { useCatalog } from '../../composables/useCatalog'
 import LeftSidebarFrameSvg from './LeftSidebarFrameSvg.vue'
 import LeftSidebarBottomChrome from './LeftSidebarBottomChrome.vue'
 import LeftSidebarSectionHeader from './LeftSidebarSectionHeader.vue'
@@ -28,56 +23,43 @@ import {
   LEFT_SIDEBAR_DESIGN_HEIGHT,
   LEFT_SIDEBAR_DESIGN_WIDTH,
 } from '../../constants/leftSidebarLayout'
-import type { ControlCommand, RunLifecycleStatus, RunStatus } from '../../types/simulation'
+import type {
+  SimulationSnapshot,
+  SimulationState,
+  StartSimulationRequest,
+} from '../../types/simulation'
 
 const props = defineProps<{
-  runId: string
-  status: RunLifecycleStatus | null
-  runStatus: RunStatus | null
+  sessionId: string
+  state: SimulationState | null
+  snapshot: SimulationSnapshot | null
   starting: boolean
   controlling: boolean
   startError: string | null
   controlError: string | null
-  initialScenarioId?: string
-  selectedTemplateId?: string
-  selectedAlgorithmId: string
+  healthReady: boolean
+  healthLabel: string
 }>()
 
 const emit = defineEmits<{
-  generate: [scenarioId: string]
-  start: [scenarioId: string]
-  control: [command: ControlCommand]
-  'update:scenarioId': [value: string]
-  'update:templateId': [value: string]
-  'update:selectedAlgorithmId': [value: string]
+  start: [payload: StartSimulationRequest]
+  stop: []
 }>()
 
-const { templates, loading: templatesLoading, error: templatesError } = useScenarioTemplates()
-const initialScenarioIdRef = computed(() => props.initialScenarioId ?? '')
-
 const {
-  config,
-  scenarioId,
-  generating,
-  generateError,
-  generateScenario,
-} = useCompactScenarioConfig(templates, initialScenarioIdRef)
+  intersection,
+  periods,
+  controlModes,
+  error: catalogError,
+} = useCatalog()
 
-const selectedAlgorithm = ref(toSidebarAlgorithmValue(props.selectedAlgorithmId))
+const { config, configNote, buildPayload } = useCompactScenarioConfig(intersection, periods)
 
-watch(
-  () => props.selectedAlgorithmId,
-  (algorithmId) => {
-    selectedAlgorithm.value = toSidebarAlgorithmValue(algorithmId)
-  },
+const controlModeOptions = computed(() =>
+  controlModes.value.map((mode) => ({ value: mode, label: resolveControlModeLabel(mode) })),
 )
 
-watch(selectedAlgorithm, (value) => {
-  emit('update:selectedAlgorithmId', resolveSidebarAlgorithmApplyId(value))
-})
-
 const scenarioFields = computed(() => [
-  { key: 'template_id', label: '场景模式', type: 'template' as const },
   { key: 'flow_mode', label: '交通流模式', type: 'flow_mode' as const },
   { key: 'od_preset_id', label: '起始点OD', type: 'od' as const },
   { key: 'disturbance', label: '扰动事件', type: 'disturbance' as const },
@@ -85,67 +67,28 @@ const scenarioFields = computed(() => [
   { key: 'duration', label: '仿真时长', type: 'duration' as const },
 ])
 
-const canPause = computed(() => props.status === 'running')
-const canStop = computed(
-  () =>
-    props.status === 'running' ||
-    props.status === 'paused' ||
-    props.status === 'starting',
+const isRunning = computed(
+  () => props.state === 'RUNNING' || props.state === 'STARTING' || props.state === 'STOPPING',
+)
+const canStop = computed(() => isRunning.value)
+const canStart = computed(
+  () => props.healthReady && !props.starting && !isRunning.value,
 )
 
 const progressPercent = computed(() => {
-  if (!props.runStatus || !config.value.duration) {
-    return 0
+  const progress = props.snapshot?.progress
+  if (typeof progress === 'number') {
+    return Math.min(100, progress * 100)
   }
-  return Math.min(100, (props.runStatus.sim_time / config.value.duration) * 100)
+  return 0
 })
 
 function handleStop() {
-  emit('control', 'stop')
+  emit('stop')
 }
 
-function handlePause() {
-  emit('control', 'pause')
-}
-
-async function handleStart() {
-  if (!scenarioId.value.trim()) {
-    const result = await generateScenario()
-    if (!result) {
-      return
-    }
-  }
-
-  emit('update:scenarioId', scenarioId.value)
-  emit('start', scenarioId.value.trim())
-}
-
-watch(
-  () => props.selectedTemplateId,
-  (templateId) => {
-    if (templateId && templateId !== config.value.template_id) {
-      config.value.template_id = templateId
-    }
-  },
-)
-
-watch(
-  () => config.value.template_id,
-  (templateId) => {
-    if (templateId) {
-      emit('update:templateId', templateId)
-    }
-  },
-  { immediate: true },
-)
-
-function templateLabel(templateId: string) {
-  const template = templates.value.find((item) => item.template_id === templateId)
-  if (!template) {
-    return '选择场景模式'
-  }
-  const meta = resolveLocationMeta(template.template_id)
-  return `${meta.areaTag} · ${template.name}`
+function handleStart() {
+  emit('start', buildPayload())
 }
 </script>
 
@@ -189,18 +132,21 @@ function templateLabel(templateId: string) {
 
       <!-- 表单区 -->
       <div class="left-sidebar__fields">
-        <div v-if="templatesError || generateError || startError || controlError" class="left-sidebar__alerts">
+        <div
+          v-if="catalogError || startError || controlError || !healthReady"
+          class="left-sidebar__alerts"
+        >
           <el-alert
-            v-if="templatesError"
-            :title="templatesError"
+            v-if="!healthReady"
+            :title="healthLabel"
             type="warning"
             show-icon
             :closable="false"
           />
           <el-alert
-            v-if="generateError"
-            :title="generateError"
-            type="error"
+            v-if="catalogError"
+            :title="catalogError"
+            type="warning"
             show-icon
             :closable="false"
           />
@@ -229,23 +175,7 @@ function templateLabel(templateId: string) {
           <span class="left-sidebar__field-label">{{ field.label }}</span>
 
           <el-select
-            v-if="field.type === 'template'"
-            v-model="config.template_id"
-            :loading="templatesLoading"
-            :placeholder="templateLabel(config.template_id)"
-            class="left-sidebar__select"
-            popper-class="left-sidebar-select-popper"
-          >
-            <el-option
-              v-for="template in templates"
-              :key="template.template_id"
-              :label="templateLabel(template.template_id)"
-              :value="template.template_id"
-            />
-          </el-select>
-
-          <el-select
-            v-else-if="field.type === 'flow_mode'"
+            v-if="field.type === 'flow_mode'"
             v-model="config.flow_mode"
             class="left-sidebar__select"
             popper-class="left-sidebar-select-popper"
@@ -316,19 +246,24 @@ function templateLabel(templateId: string) {
         </label>
       </div>
 
+      <!-- 当前配置摘要 -->
+      <div class="left-sidebar__config-summary">
+        <p class="left-sidebar__config-summary-text">{{ configNote }}</p>
+      </div>
+
       <LeftSidebarSectionHeader title="管控算法选择" variant="algorithm" />
 
-      <!-- 算法单选 -->
+      <!-- 控制模式单选（来自 catalog control_modes） -->
       <div class="left-sidebar__algorithm-list" role="radiogroup" aria-label="管控算法选择">
         <label
-          v-for="(option, index) in LEFT_SIDEBAR_ALGORITHM_OPTIONS"
+          v-for="(option, index) in controlModeOptions"
           :key="option.value"
           class="left-sidebar__algorithm-item"
-          :class="[`left-sidebar__algorithm-item--${index + 1}`, { 'is-selected': selectedAlgorithm === option.value }]"
+          :class="[`left-sidebar__algorithm-item--${index + 1}`, { 'is-selected': config.control_mode === option.value }]"
         >
           <span class="left-sidebar__algorithm-label">{{ option.label }}</span>
           <input
-            v-model="selectedAlgorithm"
+            v-model="config.control_mode"
             class="left-sidebar__algorithm-input"
             type="radio"
             name="sidebar-algorithm"
@@ -365,21 +300,21 @@ function templateLabel(templateId: string) {
         <button
           type="button"
           class="left-sidebar__control-btn left-sidebar__control-btn--1"
-          :disabled="starting || generating"
+          :disabled="!canStart"
           @click="handleStart"
         >
           <span class="left-sidebar__control-btn-bg" aria-hidden="true" />
           <span class="left-sidebar__control-btn-border" aria-hidden="true" />
           <span class="left-sidebar__control-btn-text">
-            {{ starting || generating ? '启动中...' : '开始仿真' }}
+            {{ starting ? '启动中...' : '开始仿真' }}
           </span>
         </button>
 
         <button
           type="button"
           class="left-sidebar__control-btn left-sidebar__control-btn--2"
-          :disabled="!runId || !canPause || controlling"
-          @click="handlePause"
+          disabled
+          title="真实后端暂不支持暂停"
         >
           <span class="left-sidebar__control-btn-bg" aria-hidden="true" />
           <span class="left-sidebar__control-btn-border" aria-hidden="true" />
@@ -389,7 +324,7 @@ function templateLabel(templateId: string) {
         <button
           type="button"
           class="left-sidebar__control-btn left-sidebar__control-btn--3"
-          :disabled="!runId || !canStop || controlling"
+          :disabled="!sessionId || !canStop || controlling"
           @click="handleStop"
         >
           <span class="left-sidebar__control-btn-bg" aria-hidden="true" />
@@ -553,6 +488,31 @@ function templateLabel(templateId: string) {
 }
 
 /* ── 算法列表（红框区域 2） ── */
+.left-sidebar__config-summary {
+  position: absolute;
+  z-index: 2;
+  left: calc(12 / var(--ls-w) * 100%);
+  top: calc(368 / var(--ls-h) * 100%);
+  width: calc(393 / var(--ls-w) * 100%);
+  padding: 10px 14px;
+  border-radius: 5px;
+  border: 1px solid rgba(33, 230, 255, 0.18);
+  background: linear-gradient(
+    135deg,
+    rgba(2, 16, 40, 0.72) 0%,
+    rgba(10, 35, 65, 0.58) 100%
+  );
+  pointer-events: auto;
+}
+
+.left-sidebar__config-summary-text {
+  margin: 0;
+  color: rgba(182, 223, 255, 0.92);
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: 0.2px;
+}
+
 .left-sidebar__algorithm-list {
   position: absolute;
   z-index: 2;

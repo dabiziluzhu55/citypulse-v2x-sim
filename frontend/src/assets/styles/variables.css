@@ -56,3 +56,87 @@ body {
   background: var(--cp-bg-primary);
   color: var(--cp-text-primary);
 }
+
+.el-select {
+  --el-select-input-focus-border-color: rgba(82, 194, 250, 0.82);
+  --el-select-border-color-hover: rgba(82, 194, 250, 0.68);
+}
+
+.el-select .el-select__wrapper {
+  background: linear-gradient(90deg, rgba(4, 53, 99, 0.96), rgba(3, 32, 61, 0.96));
+  border: 1px solid rgba(82, 194, 250, 0.3);
+  box-shadow: inset 0 0 12px rgba(33, 230, 255, 0.05);
+}
+
+.el-select .el-select__wrapper:hover,
+.el-select .el-select__wrapper.is-focused {
+  border-color: rgba(82, 194, 250, 0.72);
+  box-shadow:
+    0 0 10px rgba(33, 230, 255, 0.14),
+    inset 0 0 12px rgba(33, 230, 255, 0.08);
+}
+
+.el-select .el-select__selected-item,
+.el-select .el-select__placeholder,
+.el-select .el-select__input,
+.el-select .el-select__caret {
+  color: var(--cp-text-primary);
+}
+
+.el-select .el-select__placeholder.is-transparent {
+  color: var(--cp-text-muted);
+}
+
+.el-select.is-disabled .el-select__wrapper {
+  background: rgba(4, 18, 35, 0.88);
+  border-color: rgba(82, 194, 250, 0.12);
+}
+
+.el-select__popper.el-popper,
+.el-select__popper.el-popper.is-light {
+  --el-bg-color-overlay: #061426;
+  --el-border-color-light: rgba(82, 194, 250, 0.3);
+  border: 1px solid rgba(82, 194, 250, 0.3);
+  background: rgba(6, 20, 38, 0.98);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.58), 0 0 18px rgba(33, 230, 255, 0.1);
+}
+
+.el-select__popper.el-popper .el-popper__arrow::before {
+  border-color: rgba(82, 194, 250, 0.3);
+  background: #061426;
+}
+
+.el-select__popper .el-select-dropdown,
+.el-select__popper .el-select-dropdown__wrap,
+.el-select__popper .el-scrollbar__view {
+  background: transparent;
+}
+
+.el-select__popper .el-select-dropdown__item {
+  color: rgba(224, 240, 255, 0.82);
+  background: transparent;
+}
+
+.el-select__popper .el-select-dropdown__item:hover,
+.el-select__popper .el-select-dropdown__item.is-hovering {
+  color: #ffffff;
+  background: rgba(33, 230, 255, 0.1);
+}
+
+.el-select__popper .el-select-dropdown__item.is-selected {
+  color: var(--ls-accent-cyan);
+  background: linear-gradient(90deg, rgba(59, 93, 212, 0.3), rgba(33, 230, 255, 0.1));
+}
+
+.el-select__popper .el-select-dropdown__item.is-disabled {
+  color: rgba(224, 240, 255, 0.3);
+  background: transparent;
+}
+
+.el-select__popper .el-select-dropdown__empty {
+  color: var(--cp-text-muted);
+}
+
+.el-select__popper .el-scrollbar__thumb {
+  background: rgba(82, 194, 250, 0.32);
+}

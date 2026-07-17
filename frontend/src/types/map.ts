@@ -49,3 +49,37 @@ export interface AppMapView {
 }
 
 export const appMapViewKey: InjectionKey<AppMapView> = Symbol('appMapView')
+
+export interface MapGeoJsonCenter {
+  longitude: number
+  latitude: number
+}
+
+export interface MapGeoJsonBounds {
+  west: number
+  south: number
+  east: number
+  north: number
+}
+
+export interface MapGeoJsonResponse {
+  intersection_id: string
+  center: MapGeoJsonCenter
+  radius_m: number
+  bounds: MapGeoJsonBounds
+  geojson: GeoJsonFeatureCollection
+}
+
+export interface GeoJsonFeatureCollection {
+  type: 'FeatureCollection'
+  features: GeoJsonFeature[]
+}
+
+export interface GeoJsonFeature {
+  type: 'Feature'
+  properties: Record<string, unknown>
+  geometry: {
+    type: string
+    coordinates: unknown
+  }
+}

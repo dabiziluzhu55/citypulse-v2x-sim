@@ -41,7 +41,6 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         '/api': createApiProxy(backendTarget),
-        '/3dtiles': createApiProxy(backendTarget),
       },
     },
   }

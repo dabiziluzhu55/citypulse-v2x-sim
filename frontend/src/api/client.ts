@@ -58,8 +58,16 @@ async function request<T>(
       throw new Error(detail)
     }
 
+    if (response.status === 204 || response.headers.get('Content-Length') === '0') {
+      return {
+        data: undefined as T,
+        status: response.status,
+      }
+    }
+
+    const text = await response.text()
     return {
-      data: await response.json() as T,
+      data: (text ? JSON.parse(text) : undefined) as T,
       status: response.status,
     }
   } catch (cause) {
@@ -84,5 +92,8 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify(payload),
     }, config)
+  },
+  delete<T>(path: string, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
+    return request<T>(path, { method: 'DELETE' }, config)
   },
 }

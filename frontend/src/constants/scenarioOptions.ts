@@ -15,7 +15,6 @@ export const TRAFFIC_FLOW_MODE_OPTIONS: SelectOption<TrafficFlowMode>[] = [
   { label: '平峰', value: 'flat' },
   { label: '早高峰', value: 'morning_peak' },
   { label: '晚高峰', value: 'evening_peak' },
-  { label: '活动散场', value: 'event_dispersal' },
 ]
 
 export const FLOW_SCALE_OPTIONS = [0.8, 1.0, 1.2, 1.5] as const
@@ -77,9 +76,8 @@ export const TRAFFIC_LIGHT_PLAN_OPTIONS: SelectOption<TrafficLightPlan>[] = [
 
 export const DISTURBANCE_TYPE_OPTIONS: SelectOption<DisturbanceType>[] = [
   { label: '施工占道', value: 'lane_closure' },
-  { label: '事故停车', value: 'accident' },
-  { label: '活动散场', value: 'event_dispersal' },
   { label: '道路限速', value: 'speed_limit' },
+  { label: '交通事故', value: 'accident' },
 ]
 
 export const DISTURBANCE_CHOICE_OPTIONS: SelectOption<DisturbanceType | 'none'>[] = [

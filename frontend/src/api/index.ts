@@ -1,13 +1,11 @@
 export { apiClient } from './client'
-export { fetchRunOverview } from './overview'
-export { fetchScenarioTemplates, createScenario } from './scenario'
-export { startRun, controlRun, fetchRunStatus } from './simulation'
-export { fetchTrafficState } from './traffic'
-export { fetchCollaborationState } from './collaboration'
-export { fetchAlgorithms, switchRunAlgorithm } from './algorithm'
-export { fetchRunEvents, fetchRunPrediction } from './events'
+export { fetchHealth } from './health'
+export { fetchCatalog } from './catalog'
+export { fetchMapGeoJson } from './maps'
 export {
-  fetchRealtimeMetrics,
-  fetchExperimentComparison,
-  fetchMetricsTimeseries,
-} from './metrics'
+  startSimulation,
+  fetchSimulationStatus,
+  stopSimulation,
+  addSimulationEvent,
+  cancelSimulationEvent,
+} from './simulation'
