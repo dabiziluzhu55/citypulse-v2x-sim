@@ -181,8 +181,8 @@ class SignalConfigurationTests(unittest.TestCase):
             ],
             ["through", "through", "through"],
         )
-        self.assertEqual(demo_4.topology.u_turn_policy, "with_left")
-        self.assertEqual(demo_4.topology.direction_mapping["t"], "uturn")
+        self.assertEqual(demo_4.topology.u_turn_policy, "blocked")
+        self.assertEqual(demo_4.topology.direction_mapping["t"], "blocked")
 
         demo_5 = self.load().intersections["demo_5"]
         self.assertEqual(demo_5.junction_ids, ("3807",))
@@ -1297,7 +1297,7 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(phase_one[3], "g")
         self.assertEqual(phase_one[5], "g")
 
-    def test_demo_4_program_templates_support_protected_and_permissive_groups(self):
+    def test_demo_4_program_templates_support_groups_and_block_uturns(self):
         config = self.load().intersections["demo_4"]
         connections = []
         index = 0
@@ -1333,10 +1333,10 @@ class SignalConfigurationTests(unittest.TestCase):
                     tls_id="3935",
                     link_index=index,
                     approach=approach,
-                    movement="uturn",
+                    movement="blocked",
                     from_edge=config.topology.approaches[approach][0],
                     from_lane=0,
-                    to_edge=f"out_{approach}_uturn",
+                    to_edge=f"out_{approach}_blocked_uturn",
                     to_lane=0,
                     direction="t",
                     via=f":3935_{index}_0",
@@ -1360,8 +1360,13 @@ class SignalConfigurationTests(unittest.TestCase):
         south_uturn = 13
         self.assertEqual(morning[3]["3935"]["green"][west_through], "G")
         self.assertEqual(morning[3]["3935"]["green"][west_left], "G")
-        self.assertEqual(morning[2]["3935"]["green"][north_uturn], "G")
-        self.assertEqual(morning[2]["3935"]["green"][south_uturn], "G")
+        self.assertTrue(
+            all(
+                phase["3935"]["green"][index] == "r"
+                for phase in morning.values()
+                for index in (north_uturn, south_uturn)
+            )
+        )
 
         off_peak = _build_templates(
             config,
@@ -1378,8 +1383,13 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(off_peak[1]["3935"]["green"][south_through], "G")
         self.assertEqual(off_peak[1]["3935"]["green"][north_left], "g")
         self.assertEqual(off_peak[1]["3935"]["green"][south_left], "g")
-        self.assertEqual(off_peak[1]["3935"]["green"][north_uturn], "g")
-        self.assertEqual(off_peak[1]["3935"]["green"][south_uturn], "g")
+        self.assertTrue(
+            all(
+                phase["3935"]["green"][index] == "r"
+                for phase in off_peak.values()
+                for index in (north_uturn, south_uturn)
+            )
+        )
 
     def test_demo_1_templates_follow_corrected_directions_and_real_foes(self):
         config = self.load().intersections["demo_1"]
@@ -1710,6 +1720,7 @@ class SignalConfigurationTests(unittest.TestCase):
             """<?xml version="1.0" encoding="UTF-8"?>
 <net>
   <connection from="-56384" to="-57218" dir="t"/>
+  <connection from="-56732" to="-57230" dir="t"/>
   <connection from="-56734" to="-56736" dir="s"/>
   <connection from="-56734" to="-57229" dir="t"/>
   <connection from="-56907" to="-56915" dir="t"/>
@@ -1732,10 +1743,12 @@ class SignalConfigurationTests(unittest.TestCase):
             ),
             (
                 ("-56384", "-57218"),
+                ("-56732", "-57230"),
                 ("-56734", "-57229"),
                 ("-56907", "-56915"),
                 ("-57217", "-56371"),
                 ("-57228", "-56736"),
+                ("-57229", "-56733"),
             ),
         )
 

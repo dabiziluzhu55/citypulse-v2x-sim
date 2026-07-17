@@ -122,7 +122,7 @@
     },
     "demo_4": {
       "right_turn_policy": "permissive_always",
-      "u_turn_policy": "with_left",
+      "u_turn_policy": "blocked",
       "approaches": {
         "east": {
           "incoming_edges": ["-57186"]
@@ -140,7 +140,7 @@
       "direction_mapping": {
         "s": "through",
         "l": "left",
-        "t": "uturn",
+        "t": "blocked",
         "r": "right"
       },
       "programs": {
