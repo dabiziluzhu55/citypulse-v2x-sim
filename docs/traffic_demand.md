@@ -4,7 +4,7 @@
 
 赛方表格按 15 分钟给出进口转向交通量，单位为 PCU。源数据保存在
 `data/maps/sumo/official_traffic_demands.json`，生成文件保存在
-`data/maps/sumo/generated/`。当前已录入需求的 `demo_1`、`demo_2`、`demo_4`、`demo_5`、`demo_6`、`demo_9`、
+`data/maps/sumo/generated/`。当前已录入需求的 `demo_1`、`demo_2`、`demo_3`、`demo_4`、`demo_5`、`demo_6`、`demo_9`、
 `demo_10`、`demo_12`、`demo_13`、`demo_14`、`demo_15`、`demo_16`、`demo_17`、`demo_18`、`demo_19`
 使用小客车，
 `1 vehicle = 1 PCU`，
@@ -30,6 +30,14 @@
 | 早高峰 | 07:00-09:00 | 816 | 903 | 1042 | 2761 |
 | 平峰 | 14:30-16:30 | 474 | 545 | 483 | 1502 |
 | 晚高峰 | 17:30-19:30 | 693 | 847 | 759 | 2299 |
+
+`demo_3` 三个时段逐格复算后的校验总量为：
+
+| 时段 | 官方时间 | 东进口 | 西进口 | 北进口 | 南进口 | 合计 |
+|---|---:|---:|---:|---:|---:|---:|
+| 早高峰 | 07:00-09:00 | 818 | 907 | 718 | 691 | 3134 |
+| 平峰 | 14:30-16:30 | 326 | 360 | 296 | 275 | 1257 |
+| 晚高峰 | 17:30-19:30 | 731 | 815 | 651 | 627 | 2824 |
 
 `demo_4` 三个时段的校验总量为：
 
@@ -189,6 +197,18 @@
 立即终止。基础路网中两条 `dir="t"` 连接不属于官方需求，TLS 构建时会通过 netconvert
 连接删除文件移除，避免生成路网和信号程序重新出现掉头箭头及无效信号槽位。
 
+`demo_3` 的四个 incoming edge 均支持左转、直行和右转：
+
+| 官方进口 | incoming edge |
+|---|---|
+| 东进口 | `-57582` |
+| 西进口 | `-50816` |
+| 北进口 | `-46791` |
+| 南进口 | `-52565` |
+
+基础 junction `citypulse_demo_3` 的 12 条连接全部为 `r/s/l`，没有掉头连接。官方需求
+只生成这 12 个普通转向的 15 分钟流量，不展示或分配任何 `uturn` 车流。
+
 `demo_4` 的官方方位与 SUMO 转向一致，四个 incoming edge 为：
 
 | 官方进口 | SUMO approach | incoming edge |
@@ -301,7 +321,7 @@
 
 ```bash
 python -m simulation.sumo.build_tls \
-  --intersections demo_1 demo_2 demo_4 demo_5 demo_6 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19
+  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19
 ```
 
 该命令一次生成公共信号路网以及三个真实交通场景：

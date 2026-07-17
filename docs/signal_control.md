@@ -49,6 +49,12 @@ SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转
 南 `-56384`。junction 4427 的南北左转轨迹经 NetEdit 调整后不再互为 foe，四个官方相位
 均使用受保护绿；官方需求不包含掉头，因此 `t` 连接在派生路网构建时删除。
 
+`demo_3` 按现场方位使用东 `-57582`、西 `-50816`、北 `-46791`、南 `-52565`。
+三个时段均为 `108s` 周期：东西左转直行 `55s` 绿灯加 `3s` 黄灯，南北左转直行
+`47s` 绿灯加 `3s` 黄灯。junction `citypulse_demo_3` 的对向直行与左转存在 foe 冲突，
+因此直行使用受保护绿、同相位左转使用让行绿，右转始终让行放行。该 junction 只有
+12 条 `r/s/l` 连接，没有 `t` 掉头连接；拓扑仍显式使用 `u_turn_policy: blocked`。
+
 `demo_16` 三个时段均使用 `77s` 周期：东西直行受保护放行、东西左转让行放行后，切换为
 南北直行受保护放行、南北左转让行放行；四个右转始终使用让行绿。`demo_17` 三个时段均使用
 `96s` 周期：相位 1 放行东进口左转，东进口右转始终让行放行；相位 2 放行南北直行，并让行
@@ -79,7 +85,7 @@ SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转
 
 ```bash
 python -m simulation.sumo.build_tls \
-  --intersections demo_1 demo_2 demo_4 demo_5 demo_6 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19
+  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19
 ```
 
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。

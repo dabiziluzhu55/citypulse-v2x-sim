@@ -31,6 +31,7 @@ class SignalConfigurationTests(unittest.TestCase):
                 {
                     "demo_1": {"junction_id": "4427"},
                     "demo_2": {"junction_id": "317"},
+                    "demo_3": {"junction_id": "citypulse_demo_3"},
                     "demo_4": {"junction_id": "3935"},
                     "demo_5": {"junction_id": "3807"},
                     "demo_6": {"junction_id": "3936"},
@@ -118,6 +119,28 @@ class SignalConfigurationTests(unittest.TestCase):
         )
         for program in demo_2.programs.values():
             self.assertEqual([phase.number for phase in program.phases], [1, 2])
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+
+        demo_3 = self.load().intersections["demo_3"]
+        self.assertEqual(demo_3.junction_ids, ("citypulse_demo_3",))
+        self.assertEqual(
+            demo_3.topology.approaches,
+            {
+                "east": ("-57582",),
+                "west": ("-50816",),
+                "north": ("-46791",),
+                "south": ("-52565",),
+            },
+        )
+        self.assertEqual(demo_3.topology.u_turn_policy, "blocked")
+        self.assertEqual(
+            demo_3.topology.movement_for_direction("-57582", "t"), "blocked"
+        )
+        for program in demo_3.programs.values():
+            self.assertEqual(program.cycle_duration, 108)
+            self.assertEqual([phase.number for phase in program.phases], [1, 2])
+            self.assertEqual([phase.green for phase in program.phases], [55, 47])
             self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
             self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
 
@@ -1511,6 +1534,76 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(phase_one["yellow"], "yyygrgyy")
         self.assertEqual(phase_two["green"], "rrrgGgrr")
         self.assertEqual(phase_two["yellow"], "rrrgygrr")
+        self.assertTrue(all(item.direction != "t" for item in connections))
+
+    def test_demo_3_templates_protect_through_and_yield_left_turns(self):
+        config = self.load().intersections["demo_3"]
+        definitions = (
+            ("south", "r", "right"),
+            ("south", "s", "through"),
+            ("south", "l", "left"),
+            ("west", "r", "right"),
+            ("west", "s", "through"),
+            ("west", "l", "left"),
+            ("north", "r", "right"),
+            ("north", "s", "through"),
+            ("north", "l", "left"),
+            ("east", "r", "right"),
+            ("east", "s", "through"),
+            ("east", "l", "left"),
+        )
+        connections = [
+            ControlledConnection(
+                intersection_id="demo_3",
+                junction_id="citypulse_demo_3",
+                tls_id="citypulse_demo_3",
+                link_index=index,
+                approach=approach,
+                movement=movement,
+                from_edge=config.topology.approaches[approach][0],
+                from_lane=0,
+                to_edge=f"out_{approach}_{movement}",
+                to_lane=0,
+                direction=direction,
+                via=f":citypulse_demo_3_{index}_0",
+                request_index=index,
+            )
+            for index, (approach, direction, movement) in enumerate(definitions)
+        ]
+        foes = {
+            0: "000100010000",
+            1: "111100110000",
+            2: "110011110000",
+            3: "100010000000",
+            4: "100110000111",
+            5: "111110000110",
+            6: "010000000100",
+            7: "110000111100",
+            8: "110000110011",
+            9: "000000100010",
+            10: "000111100110",
+            11: "000110111110",
+        }
+        templates = _build_templates(
+            config,
+            connections,
+            {"citypulse_demo_3": len(connections)},
+            {"citypulse_demo_3": foes},
+        )
+        phase_one = templates[1]["citypulse_demo_3"]["green"]
+        phase_two = templates[2]["citypulse_demo_3"]["green"]
+        phase_one_yellow = templates[1]["citypulse_demo_3"]["yellow"]
+        phase_two_yellow = templates[2]["citypulse_demo_3"]["yellow"]
+        self.assertTrue(all(phase_one[index] == "G" for index in (4, 10)))
+        self.assertTrue(all(phase_one[index] == "g" for index in (5, 11)))
+        self.assertTrue(all(phase_two[index] == "G" for index in (1, 7)))
+        self.assertTrue(all(phase_two[index] == "g" for index in (2, 8)))
+        for state in (phase_one, phase_two):
+            self.assertTrue(all(state[index] == "g" for index in (0, 3, 6, 9)))
+        self.assertEqual(phase_one, "grrgGggrrgGg")
+        self.assertEqual(phase_two, "gGggrrgGggrr")
+        self.assertEqual(phase_one_yellow, "grrgyygrrgyy")
+        self.assertEqual(phase_two_yellow, "gyygrrgyygrr")
         self.assertTrue(all(item.direction != "t" for item in connections))
 
     def test_empty_sumo_params_are_removed_without_touching_nonempty_values(self):

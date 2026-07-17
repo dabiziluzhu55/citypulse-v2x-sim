@@ -86,6 +86,40 @@
         }
       ]
     },
+    "demo_3": {
+      "right_turn_policy": "permissive_always",
+      "u_turn_policy": "blocked",
+      "approaches": {
+        "east": {"incoming_edges": ["-57582"]},
+        "west": {"incoming_edges": ["-50816"]},
+        "north": {"incoming_edges": ["-46791"]},
+        "south": {"incoming_edges": ["-52565"]}
+      },
+      "direction_mapping": {
+        "s": "through",
+        "l": "left",
+        "r": "right",
+        "t": "blocked"
+      },
+      "phases": [
+        {
+          "official_phase_no": 1,
+          "movement": "through",
+          "approaches": ["east", "west"],
+          "permissive": [
+            {"movement": "left", "approaches": ["east", "west"]}
+          ]
+        },
+        {
+          "official_phase_no": 2,
+          "movement": "through",
+          "approaches": ["north", "south"],
+          "permissive": [
+            {"movement": "left", "approaches": ["north", "south"]}
+          ]
+        }
+      ]
+    },
     "demo_4": {
       "right_turn_policy": "permissive_always",
       "u_turn_policy": "with_left",
