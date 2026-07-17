@@ -19,6 +19,16 @@ def test_start_simulation_request_valid() -> None:
     assert request.gui is False
 
 
+def test_start_simulation_accepts_max_pressure() -> None:
+    request = StartSimulationRequest(
+        intersection_ids=["demo_2"],
+        period="morning_peak",
+        duration_seconds=600,
+        control_mode="max_pressure",
+    )
+    assert request.control_mode == "max_pressure"
+
+
 def test_flow_multiplier_out_of_range() -> None:
     with pytest.raises(ValidationError):
         StartSimulationRequest(
@@ -40,8 +50,8 @@ def test_reject_non_demo_2_intersection() -> None:
         )
 
 
-@pytest.mark.parametrize("control_mode", ["algorithm", "max_pressure", "ippo"])
-def test_reject_non_fixed_control_mode(control_mode: str) -> None:
+@pytest.mark.parametrize("control_mode", ["algorithm", "ippo", "unknown"])
+def test_reject_unsupported_control_mode(control_mode: str) -> None:
     with pytest.raises(ValidationError):
         StartSimulationRequest(
             intersection_ids=["demo_2"],

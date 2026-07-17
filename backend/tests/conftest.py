@@ -2,32 +2,24 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Mapping
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.controllers.runtime import AlgorithmRuntimeStore
 from backend.app.main import create_app
-from backend.app.schemas.catalog import (
-    CatalogResponse,
-    FlowMultiplierRangeSchema,
-    IntersectionSchema,
-    LaneSchema,
-    OriginSchema,
-)
 from backend.app.services.map_service import MapService
 from backend.app.services.simulation_service import SimulationService
 from backend.app.services.snapshot_serializer import SnapshotSerializer
+from backend.app.simulation.control import SimulationControlService
 from simulation.sumo.session import (
     IntersectionCapability,
     LaneCapability,
     OriginCapability,
-    SessionMetrics,
     SimulationCatalog,
-    SimulationSnapshot,
-    VehicleRuntimeSnapshot,
 )
 
 
@@ -102,7 +94,35 @@ def simulation_service(mock_manager: MagicMock, serializer: SnapshotSerializer) 
 
 
 @pytest.fixture
-def client(mock_manager: MagicMock, simulation_service: SimulationService) -> TestClient:
+def algorithm_store() -> AlgorithmRuntimeStore:
+    return AlgorithmRuntimeStore()
+
+
+@pytest.fixture
+def simulation_control_service(
+    mock_manager: MagicMock,
+    serializer: SnapshotSerializer,
+    simulation_service: SimulationService,
+    algorithm_store: AlgorithmRuntimeStore,
+) -> SimulationControlService:
+    from backend.app.core.config import get_settings
+
+    return SimulationControlService(
+        manager=mock_manager,
+        serializer=serializer,
+        settings=get_settings(),
+        algorithm_store=algorithm_store,
+        legacy_service=simulation_service,
+    )
+
+
+@pytest.fixture
+def client(
+    mock_manager: MagicMock,
+    simulation_service: SimulationService,
+    simulation_control_service: SimulationControlService,
+    algorithm_store: AlgorithmRuntimeStore,
+) -> TestClient:
     app = create_app()
     map_service = MagicMock(spec=MapService)
     map_service.xy_to_lonlat.return_value = (116.1267, 38.9911)
@@ -113,6 +133,8 @@ def client(mock_manager: MagicMock, simulation_service: SimulationService) -> Te
         app.state.missing_files = []
         app.state.simulation_manager = mock_manager
         app.state.simulation_service = simulation_service
+        app.state.simulation_control_service = simulation_control_service
+        app.state.algorithm_store = algorithm_store
         app.state.map_service = map_service
         yield test_client
 

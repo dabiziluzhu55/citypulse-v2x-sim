@@ -9,7 +9,7 @@ def test_catalog_returns_demo_2(client: TestClient) -> None:
     payload = response.json()
     assert len(payload["intersections"]) == 1
     assert payload["intersections"][0]["intersection_id"] == "demo_2"
-    assert payload["control_modes"] == ["fixed"]
+    assert payload["control_modes"] == ["fixed", "max_pressure"]
     assert payload["flow_multiplier"]["min"] == 0.1
     assert payload["flow_multiplier"]["max"] == 5.0
 

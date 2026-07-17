@@ -46,7 +46,12 @@ class SimulationService:
         from .map_service import MapService
 
         catalog = self._manager.catalog()
-        return MapService.serialize_catalog(catalog, self._settings.mvp_intersection_ids)
+        # catalog 对前端展示全部可选管控模式；v1 启动接口仍自行校验仅 fixed
+        return MapService.serialize_catalog(
+            catalog,
+            self._settings.mvp_intersection_ids,
+            control_modes=list(self._settings.mvp_control_modes),
+        )
 
     def start(self, request: StartSimulationRequest) -> tuple[str, SimulationSnapshot]:
         self._validate_request_against_catalog(request)

@@ -42,7 +42,13 @@ class Settings(BaseSettings):
     default_snapshot_interval_seconds: float = 0.2
 
     mvp_intersection_ids: tuple[str, ...] = ("demo_2",)
-    mvp_control_modes: tuple[str, ...] = ("fixed",)
+    # 对外统一 control_mode；算法实现差异在 controllers 层
+    mvp_control_modes: tuple[str, ...] = ("fixed", "max_pressure")
+
+    # SUMO worker 回调本进程内部算法协议端点时使用
+    algorithm_base_url: str = "http://127.0.0.1:8000"
+    algorithm_timeout: float = 2.0
+    decision_interval: float = 5.0
 
     cesium_ion_token: str | None = None
     tianditu_token: str | None = None

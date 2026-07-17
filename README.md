@@ -1,6 +1,6 @@
 # CityPulse V2X Simulation
 
-城市交通与车路云协同仿真可视化项目，包含 Vue 3 仪表盘前端、FastAPI Mock 后端和 SUMO 仿真内核。
+城市交通与车路云协同仿真可视化项目，包含 Vue 3 仪表盘前端、FastAPI 仿真后端和 SUMO 仿真内核。
 
 ## 环境要求
 
@@ -14,7 +14,7 @@
 |------|------|
 | `simulation/` | 仿真基础设施：SUMO、CARLA、联合同步、地图工具 |
 | `algorithms/` | 算法组协作边界；正式算法由算法组独立维护 |
-| `backend/` | FastAPI 后端（仿真后端 + Mock 后端） |
+| `backend/` | FastAPI 仿真后端（包装 SimulationManager） |
 | `frontend/` | Vue 3 仪表盘前端 |
 | `data/maps/` | 示例地图数据 |
 | `configs/` | 全局配置 |
@@ -25,13 +25,14 @@
 强化学习通过 HTTP/JSON 协议 2.0 接收路口、单车及油耗状态，并返回官方目标相位、
 单车目标速度和换道请求。
 
-## 启动 Mock 后端（前端联调）
+## 启动仿真后端
 
 ```bash
-cd backend
-python -m pip install -r requirements.txt
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+pip install -r backend/requirements.txt
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
+
+详细说明见 [backend/README.md](backend/README.md)。Swagger：`http://127.0.0.1:8000/docs`。
 
 ## 启动前端
 
@@ -41,7 +42,7 @@ npm install
 npm run dev
 ```
 
-前端默认地址为 `http://127.0.0.1:5173`，开发代理连接 `http://127.0.0.1:8000`。Swagger 位于 `http://127.0.0.1:8000/docs`。
+前端默认地址为 `http://127.0.0.1:5173`，开发代理连接 `http://127.0.0.1:8000`。
 
 ## 构建检查
 
@@ -50,7 +51,6 @@ cd frontend
 npm run build
 ```
 
-雄安新区本地 3D Tiles 可通过环境变量 `XIONGAN_3DTILES_DIR` 指定；未配置时后端仍可正常提供其他 Mock API。
 
 ## SUMO 官方信号仿真
 
