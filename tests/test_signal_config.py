@@ -316,6 +316,13 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(
             demo_14.topology.movement_for_direction("-46786", "s"), "blocked"
         )
+        phase_one = demo_14.topology.phases[0]
+        self.assertEqual(phase_one.approaches, ("north",))
+        self.assertEqual(phase_one.priority, "protected")
+        self.assertEqual(
+            [(group.movement, group.approaches) for group in phase_one.permissive],
+            [("left", ("east",))],
+        )
 
         demo_15 = self.load().intersections["demo_15"]
         self.assertEqual(demo_15.junction_ids, ("1117",))
@@ -657,15 +664,19 @@ class SignalConfigurationTests(unittest.TestCase):
             "882",
             (
                 (0, "south", "-46529", "r"),
+                (1, "south", "-46529", "r"),
                 (2, "south", "-46529", "s"),
                 (3, "south", "-46529", "l"),
                 (4, "west", "-52559", "r"),
+                (5, "west", "-52559", "r"),
                 (6, "west", "-52559", "s"),
                 (7, "west", "-52559", "l"),
                 (8, "north", "-52202", "r"),
+                (9, "north", "-52202", "r"),
                 (10, "north", "-52202", "s"),
                 (11, "north", "-52202", "l"),
                 (12, "east", "-46786", "r"),
+                (13, "east", "-46786", "r"),
                 (14, "east", "-46786", "s"),
                 (15, "east", "-46786", "l"),
             ),
@@ -692,9 +703,10 @@ class SignalConfigurationTests(unittest.TestCase):
             demo_14, connections, {"882": 16}, {"882": foes}
         )
         self.assertEqual(templates[1]["882"]["green"][10], "G")
-        self.assertTrue(
-            all(templates[1]["882"]["green"][index] == "g" for index in (11, 15))
-        )
+        self.assertEqual(templates[1]["882"]["green"][11], "G")
+        self.assertEqual(templates[1]["882"]["green"][15], "g")
+        self.assertEqual(templates[1]["882"]["green"], "ggrrrrrrrrGGggrg")
+        self.assertEqual(templates[1]["882"]["yellow"], "ggrrrrrrrryyggry")
         self.assertEqual(templates[2]["882"]["green"][2], "G")
         for phase in templates.values():
             self.assertTrue(

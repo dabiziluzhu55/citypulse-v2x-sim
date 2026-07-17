@@ -394,10 +394,12 @@
         {
           "official_phase_no": 1,
           "movement": "left",
-          "approaches": ["east", "north"],
-          "priority": "permissive",
+          "approaches": ["north"],
           "protected": [
             {"movement": "through", "approaches": ["north"]}
+          ],
+          "permissive": [
+            {"movement": "left", "approaches": ["east"]}
           ]
         },
         {"official_phase_no": 2, "movement": "through", "approaches": ["south"]}
