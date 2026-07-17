@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='utf-8'?>
+<routes>
+  <vType id="validation_car" vClass="passenger" accel="2.6" decel="4.5" length="5.0" maxSpeed="13.9" />
+  <flow id="demo_2_northeast_main_left" type="validation_car" begin="0" end="200" period="30" departLane="1" departSpeed="max">
+    <route edges="-56734 -45801" />
+  </flow>
+  <flow id="demo_2_northeast_main_through" type="validation_car" begin="1.5" end="200" period="30" departLane="0" departSpeed="max">
+    <route edges="-56734 -56736" />
+  </flow>
+  <flow id="demo_2_southeast_branch_left" type="validation_car" begin="3" end="200" period="30" departLane="1" departSpeed="max">
+    <route edges="-51425 -56736" />
+  </flow>
+  <flow id="demo_2_southeast_branch_right" type="validation_car" begin="4.5" end="200" period="30" departLane="0" departSpeed="max">
+    <route edges="-51425 -57229" />
+  </flow>
+  <flow id="demo_2_southwest_main_right" type="validation_car" begin="6" end="200" period="30" departLane="0" departSpeed="max">
+    <route edges="-57228 -45801" />
+  </flow>
+  <flow id="demo_2_southwest_main_through" type="validation_car" begin="7.5" end="200" period="30" departLane="0" departSpeed="max">
+    <route edges="-57228 -57229" />
+  </flow>
+</routes>

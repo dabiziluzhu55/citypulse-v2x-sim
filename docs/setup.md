@@ -1,6 +1,6 @@
 # CityPulse V2X Sim 单机启动说明
 
-本文说明如何在一台 Windows 电脑上同时运行前端、FastAPI 后端和 SUMO 仿真。命令默认在仓库根目录执行。
+如何在一台本地电脑上同时运行前端、FastAPI 后端和 SUMO 仿真。命令默认在仓库根目录执行。
 
 ## 1. 环境要求
 
@@ -97,22 +97,29 @@ data\maps\sumo\generated\TotalMap_20.signals.net.xml
 
 ## 4. 配置地图 Token
 
-复制前端环境模板：
+地图 Token 统一保存在 **`backend/.env`**，不再写入 `frontend/.env`。
+
+复制后端环境模板：
 
 ```powershell
-Copy-Item frontend\.env.example frontend\.env
+Copy-Item backend\.env.example backend\.env
 ```
 
-编辑 `frontend/.env`：
+编辑 `backend/.env`：
+
+```env
+CESIUM_ION_TOKEN=你的_Cesium_Ion_Token
+TIANDITU_TOKEN=你的天地图_Token
+```
+
+前端通过 `GET /api/v1/config/map` 获取 Cesium Ion Token；天地图瓦片经 `GET /api/v1/tiles/tianditu/{layer}/wmts` 由后端代理，Key 不会出现在浏览器 Network 中。
+
+前端 `.env` 只需保留代理与 API 路径：
 
 ```env
 VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:8000
 VITE_API_BASE_URL=/api/v1
 VITE_TRAFFIC_WS_URL=
-
-VITE_CESIUM_ION_TOKEN=你的_Cesium_Ion_Token
-VITE_TIANDITU_TOKEN=你的天地图_Token
-
 VITE_XIONGAN_3DTILES_URL=/3dtiles/xiongan/tileset.json
 ```
 
@@ -131,7 +138,7 @@ VITE_XIONGAN_3DTILES_URL=/3dtiles/xiongan/tileset.json
 1. 注册 Cesium Ion 账号。
 2. 创建 Access Token。
 3. 确保 Token 可访问全球影像、World Terrain 和 OSM Buildings。
-4. 将 Token 仅写入 `frontend/.env`。
+4. 将 Token 仅写入 `backend/.env`。
 
 ### 4.2 天地图 Token
 
@@ -147,7 +154,11 @@ VITE_XIONGAN_3DTILES_URL=/3dtiles/xiongan/tileset.json
 ```text
 http://127.0.0.1:5173
 http://localhost:5173
+http://127.0.0.1:8000
+http://localhost:8000
 ```
+
+生产环境请将云服务器域名加入白名单。浏览器实际请求经后端代理，Referer 为后端地址。
 
 共享 Token 容易触发 HTTP 429。发生限流时，前端会按以下顺序降级：
 
@@ -157,10 +168,10 @@ http://localhost:5173
 
 ### 4.3 Token 安全
 
-- 不要将真实 Token 写入 `src/constants/tokens.ts`。
-- 不要提交 `frontend/.env`；根目录 `.gitignore` 已忽略 `.env`。
+- 不要将真实 Token 写入源码或提交到 Git。
+- `backend/.env` 与 `frontend/.env` 已被 `.gitignore` 忽略。
 - `.env.example` 只保留变量名，不包含真实凭据。
-- 修改 `frontend/.env` 后必须重启 Vite。
+- 修改 `backend/.env` 后重启后端；前端无需重新 build。
 
 ## 5. 安装前端依赖
 

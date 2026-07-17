@@ -33,12 +33,22 @@ function createApiProxy(target: string): ProxyOptions {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const backendTarget = env.VITE_BACKEND_PROXY_TARGET?.trim() || 'http://127.0.0.1:8000'
+  const usePolling = env.VITE_DEV_USE_POLLING === '1'
 
   return {
     plugins: [vue(), cesium()],
     server: {
       host: '127.0.0.1',
       port: 5173,
+      watch: {
+        ignored: [
+          '**/node_modules/**',
+          '**/.git/**',
+          '**/public/3dtiles/**',
+          '**/dist/**',
+        ],
+        ...(usePolling ? { usePolling: true, interval: 1000 } : {}),
+      },
       proxy: {
         '/api': createApiProxy(backendTarget),
       },

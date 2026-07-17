@@ -7,7 +7,8 @@ import {
   XIONGAN_3DTILES_CALIBRATION,
   resolveCesiumCameraPreset,
 } from '../../constants/mapDefaults'
-import { CESIUM_ION_TOKEN, TIANDITU_TOKEN, XIONGAN_3DTILES_URL } from '../../constants/tokens'
+import { fetchMapConfig } from '../../api/mapConfig'
+import type { MapRuntimeConfig } from '../../types/mapConfig'
 import { useAppMapView } from '../../composables/useAppMapView'
 
 const mapView = useAppMapView()
@@ -162,8 +163,11 @@ async function assertLocalTilesetAvailable(tilesetUrl: string): Promise<void> {
   }
 }
 
-async function loadLocalBuildings(currentViewer: Cesium.Viewer): Promise<void> {
-  const tilesetUrl = XIONGAN_3DTILES_URL
+async function loadLocalBuildings(
+  currentViewer: Cesium.Viewer,
+  tilesetUrl: string,
+  ionToken: string,
+): Promise<void> {
   await assertLocalTilesetAvailable(tilesetUrl)
   const tileset = await Cesium.Cesium3DTileset.fromUrl(tilesetUrl, {
     maximumScreenSpaceError: DEFAULT_TILESET_SSE,
@@ -184,7 +188,7 @@ async function loadLocalBuildings(currentViewer: Cesium.Viewer): Promise<void> {
       tilesetDisabled = true
       if (localTileset === tileset) localTileset = null
       currentViewer.scene.primitives.remove(tileset)
-      if (CESIUM_ION_TOKEN) {
+      if (ionToken) {
         void loadOsmBuildings(currentViewer).catch((cause) => {
           console.warn('[CesiumMap] OSM Buildings fallback failed; imagery remains available.', cause)
         })
@@ -213,7 +217,11 @@ async function loadOsmBuildings(currentViewer: Cesium.Viewer): Promise<void> {
   requestSceneRender(currentViewer)
 }
 
-function addTiandituLayers(currentViewer: Cesium.Viewer, token: string): void {
+function addTiandituLayers(
+  currentViewer: Cesium.Viewer,
+  proxyBaseUrl: string,
+  ionToken: string,
+): void {
   let totalErrors = 0
   let fallbackStarted = false
   let imgLayer: Cesium.ImageryLayer | null = null
@@ -225,7 +233,7 @@ function addTiandituLayers(currentViewer: Cesium.Viewer, token: string): void {
 
     let fallbackLayer: Cesium.ImageryLayer
     try {
-      fallbackLayer = await createCesiumIonBaseLayer()
+      fallbackLayer = await createCesiumIonBaseLayer(ionToken)
       console.warn('[CesiumMap] Tianditu unavailable; switched to Cesium Ion imagery.')
     } catch (ionCause) {
       console.warn('[CesiumMap] Cesium Ion imagery unavailable; using offline basemap.', ionCause)
@@ -244,12 +252,11 @@ function addTiandituLayers(currentViewer: Cesium.Viewer, token: string): void {
 
   const makeProvider = (layer: 'img' | 'cia') => {
     const provider = new Cesium.WebMapTileServiceImageryProvider({
-      url: `https://t{s}.tianditu.gov.cn/${layer}_w/wmts?tk=${encodeURIComponent(token)}`,
+      url: `${proxyBaseUrl}/${layer}/wmts`,
       layer,
       style: 'default',
       format: 'tiles',
       tileMatrixSetID: 'w',
-      subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'],
       minimumLevel: 0,
       maximumLevel: 18,
     })
@@ -284,8 +291,9 @@ function addTiandituLayers(currentViewer: Cesium.Viewer, token: string): void {
   requestSceneRender(currentViewer)
 }
 
-async function createCesiumIonBaseLayer(): Promise<Cesium.ImageryLayer> {
-  if (!CESIUM_ION_TOKEN) throw new Error('Cesium Ion token is empty')
+async function createCesiumIonBaseLayer(ionToken: string): Promise<Cesium.ImageryLayer> {
+  if (!ionToken) throw new Error('Cesium Ion token is empty')
+  Cesium.Ion.defaultAccessToken = ionToken
   const provider = await Cesium.createWorldImageryAsync()
   return new Cesium.ImageryLayer(provider)
 }
@@ -298,17 +306,28 @@ async function createOfflineBaseLayer(): Promise<Cesium.ImageryLayer> {
 }
 
 async function initViewer() {
-  const ionToken = CESIUM_ION_TOKEN
-  const tiandituToken = TIANDITU_TOKEN
   if (!containerRef.value) return
+
+  let mapConfig: MapRuntimeConfig
+  try {
+    mapConfig = await fetchMapConfig()
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : '未知错误'
+    error.value = `无法加载地图配置，请确认后端已启动：${message}`
+    loading.value = false
+    return
+  }
+
+  const ionToken = mapConfig.cesiumIonToken
+  const tiandituEnabled = mapConfig.tiandituEnabled
 
   if (ionToken) Cesium.Ion.defaultAccessToken = ionToken
 
   let baseLayer: Cesium.ImageryLayer | false = false
-  if (!tiandituToken) {
+  if (!tiandituEnabled) {
     try {
       baseLayer = ionToken
-        ? await createCesiumIonBaseLayer()
+        ? await createCesiumIonBaseLayer(ionToken)
         : await createOfflineBaseLayer()
     } catch (cause) {
       console.warn('[CesiumMap] Online imagery unavailable; using offline basemap.', cause)
@@ -334,7 +353,7 @@ async function initViewer() {
     shadows: false,
     shouldAnimate: false,
     useBrowserRecommendedResolution: true,
-    baseLayer: tiandituToken ? false : baseLayer,
+    baseLayer: tiandituEnabled ? false : baseLayer,
     ...(ionToken ? { terrain: Cesium.Terrain.fromWorldTerrain() } : {}),
   })
 
@@ -344,12 +363,14 @@ async function initViewer() {
   viewer.camera.moveStart.addEventListener(handleCameraMoveStart)
   viewer.camera.moveEnd.addEventListener(handleCameraMoveEnd)
   applyCruiseRenderingProfile(viewer)
-  if (tiandituToken) addTiandituLayers(viewer, tiandituToken)
+  if (tiandituEnabled) {
+    addTiandituLayers(viewer, mapConfig.tiandituProxyBaseUrl, ionToken)
+  }
 
   viewer.scene.globe.depthTestAgainstTerrain = Boolean(ionToken)
 
   try {
-    await loadLocalBuildings(viewer)
+    await loadLocalBuildings(viewer, mapConfig.xiongan3dTilesUrl, ionToken)
   } catch (localCause) {
     const msg = localCause instanceof Error ? localCause.message : '未知错误'
     if (!ionToken) {

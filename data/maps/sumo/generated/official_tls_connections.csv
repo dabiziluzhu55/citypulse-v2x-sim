@@ -1,0 +1,11 @@
+﻿intersection_id,junction_id,tls_id,link_index,approach,movement,from_edge,from_lane,to_edge,to_lane,direction,via,request_index,lane_id
+demo_2,317,317,0,northeast_main,through,-56734,0,-56736,0,s,:317_0_0,0,-56734_0
+demo_2,317,317,1,northeast_main,through,-56734,1,-56736,1,s,:317_0_1,0,-56734_1
+demo_2,317,317,2,northeast_main,left,-56734,1,-45801,1,l,:317_2_0,2,-56734_1
+demo_2,317,317,3,northeast_main,blocked,-56734,1,-57229,1,t,:317_3_0,3,-56734_1
+demo_2,317,317,4,southeast_branch,right,-51425,0,-57229,0,r,:317_4_0,4,-51425_0
+demo_2,317,317,5,southeast_branch,left,-51425,1,-56736,1,l,:317_5_0,5,-51425_1
+demo_2,317,317,6,southwest_main,right,-57228,0,-45801,0,r,:317_6_0,6,-57228_0
+demo_2,317,317,7,southwest_main,through,-57228,0,-57229,0,s,:317_7_0,7,-57228_0
+demo_2,317,317,8,southwest_main,through,-57228,1,-57229,1,s,:317_7_1,7,-57228_1
+demo_2,317,317,9,southwest_main,blocked,-57228,1,-56736,1,t,:317_9_0,9,-57228_1

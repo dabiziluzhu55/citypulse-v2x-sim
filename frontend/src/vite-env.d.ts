@@ -10,10 +10,9 @@ interface ImportMetaEnv {
   readonly VITE_BACKEND_PROXY_TARGET?: string
   readonly VITE_API_BASE_URL?: string
   readonly VITE_TRAFFIC_WS_URL?: string
+  readonly VITE_DEV_USE_POLLING?: string
   readonly VITE_DEFAULT_RUN_ID?: string
   readonly VITE_DEFAULT_EXPERIMENT_ID?: string
-  readonly VITE_CESIUM_ION_TOKEN?: string
-  readonly VITE_TIANDITU_TOKEN?: string
   readonly VITE_XIONGAN_3DTILES_URL?: string
 }
 

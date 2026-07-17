@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     mvp_intersection_ids: tuple[str, ...] = ("demo_2",)
     mvp_control_modes: tuple[str, ...] = ("fixed",)
 
+    cesium_ion_token: str | None = None
+    tianditu_token: str | None = None
+
     @property
     def project_root(self) -> Path:
         return resolve_project_root()

@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<configuration>
+  <input>
+    <net-file value="TotalMap_20.signals.net.xml" />
+    <route-files value="official_traffic_demo_2_morning_peak.rou.xml" />
+    <additional-files value="official_tls_demo_2_morning_peak.add.xml" />
+  </input>
+  <time>
+    <begin value="0" />
+    <end value="7500" />
+    <step-length value="0.05" />
+  </time>
+  <processing>
+    <time-to-teleport value="-1" />
+  </processing>
+</configuration>
