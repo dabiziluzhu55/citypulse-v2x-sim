@@ -4,7 +4,7 @@
 
 赛方表格按 15 分钟给出进口转向交通量，单位为 PCU。源数据保存在
 `data/maps/sumo/official_traffic_demands.json`，生成文件保存在
-`data/maps/sumo/generated/`。当前已录入需求的 `demo_2`、`demo_4`、`demo_5`、`demo_6`、`demo_9`、
+`data/maps/sumo/generated/`。当前已录入需求的 `demo_1`、`demo_2`、`demo_4`、`demo_5`、`demo_6`、`demo_9`、
 `demo_10`、`demo_12`、`demo_13`、`demo_14`、`demo_15`、`demo_16`、`demo_17`、`demo_18`、`demo_19`
 使用小客车，
 `1 vehicle = 1 PCU`，
@@ -14,6 +14,14 @@
 `vehicle_type: "passenger"` 引用同名画像；默认使用汽油小客车和
 `HBEFA3/PC_G_EU4`，生成的 `<vType>` 会携带 `emissionClass`，供运行期通过 TraCI
 采集瞬时油耗。后续增加车型时应新增画像并引用其 ID，不要在生成器中硬编码参数。
+
+`demo_1` 三个时段的校验总量为：
+
+| 时段 | 官方时间 | 东进口 | 西进口 | 北进口 | 南进口 | 合计 |
+|---|---:|---:|---:|---:|---:|---:|
+| 早高峰 | 07:00-09:00 | 1127 | 894 | 923 | 1054 | 3998 |
+| 平峰 | 14:30-16:30 | 549 | 693 | 645 | 638 | 2525 |
+| 晚高峰 | 17:30-19:30 | 1019 | 1354 | 1278 | 941 | 4592 |
 
 `demo_2` 三个时段的校验总量为：
 
@@ -155,6 +163,18 @@
 
 官方表格名称和 SUMO 根据道路几何计算的 `l/r` 不完全一致，必须通过配置显式映射：
 
+`demo_1` 的四个 incoming edge 与现场方位为：
+
+| 官方进口 | incoming edge | 左转出口 | 直行出口 | 右转出口 |
+|---|---|---|---|---|
+| 东进口 | `-56907` | `-57218` | `manual_demo1_missing_arm` | `-56371` |
+| 西进口 | `-manual_demo1_missing_arm` | `-56371` | `-56915` | `-57218` |
+| 北进口 | `-57217` | `-56915` | `-57218` | `manual_demo1_missing_arm` |
+| 南进口 | `-56384` | `manual_demo1_missing_arm` | `-56371` | `-56915` |
+
+官方需求只有左转、直行和右转，没有掉头。`demo_1` 将 SUMO `t` 映射为 `blocked`，构建派生
+路网时删除三条基础掉头连接；车流生成器只为表格中的十二种进口转向生成 flow。
+
 | 官方进口/转向 | SUMO approach/movement | 路网 incoming edge |
 |---|---|---|
 | 西进口左转 | `west/left` | `-51425` |
@@ -281,7 +301,7 @@
 
 ```bash
 python -m simulation.sumo.build_tls \
-  --intersections demo_2 demo_4 demo_5 demo_6 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19
+  --intersections demo_1 demo_2 demo_4 demo_5 demo_6 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19
 ```
 
 该命令一次生成公共信号路网以及三个真实交通场景：
