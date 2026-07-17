@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<additional>
+  <tlLogic id="4409" type="static" programID="demo_18_morning_peak" offset="0">
+    <phase duration="37" state="gGGGGgrrrggGGgrrrg" name="p1_green" />
+    <phase duration="3" state="yyyyygrrrgyyygrrrg" name="p1_yellow" />
+    <phase duration="37" state="rrrrrggGGgrrrggGGg" name="p2_green" />
+    <phase duration="3" state="rrrrrgyyygrrrgyyyg" name="p2_yellow" />
+  </tlLogic>
+</additional>
