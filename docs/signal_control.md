@@ -34,6 +34,10 @@
 SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转路线，其他没有官方分流依据的
 大角度 `L/R` 连接保持阻断。
 
+`right_turn_policy: permissive_always` 表示右转在所有相位使用让行绿；
+`right_turn_policy: phase_controlled` 表示右转必须显式写入对应相位的 `protected` 或
+`permissive` 组，其他相位保持红灯。后者用于官方配时明确把右转划入特定相位的路口。
+
 `demo_4` 的官方需求不包含掉头。其 `u_turn_policy` 设置为 `blocked`，SUMO `t` 方向不继承
 左转灯色，并在派生路网构建时删除；左转流量只使用普通 `l/left` 连接。
 
@@ -41,8 +45,9 @@ SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转
 `180s`，周期单元格写成 `178s`。构建配置以每个相位的绿灯、黄灯和全红原始值为准。其南北
 左转轨迹被 junction 182 的 foe 矩阵判定为冲突，因此相位 4 使用让行绿 `g`。`demo_14` 的
 “东、北放行”相位把北直行和北左转设为受保护绿、东左转设为让行绿，并阻断官方表中为空的动作。
-junction 882 的 `response` 矩阵要求东左转 `linkIndex 15` 让行于北左转 `linkIndex 11`；
+junction 892 的冲突矩阵要求东左转 `linkIndex 5` 让行于北直行和北左转 `linkIndex 2/3`；
 如果两者都使用 `g`，SUMO 会因双向互让形成无优先级闭环而拒绝该 program。
+`demo_14` 使用 `phase_controlled`：东右转只在相位 1 放行，南右转只在相位 2 放行。
 `demo_15` 的南北和东西直行使用受保护绿，同相位左转使用让行绿。
 
 `demo_10` 的东西直行使用受保护绿；东、南左转被 junction 4162 的 foe 矩阵判定为冲突，
@@ -59,6 +64,12 @@ junction 882 的 `response` 矩阵要求东左转 `linkIndex 15` 让行于北左
 `47s` 绿灯加 `3s` 黄灯。junction `citypulse_demo_3` 的对向直行与左转存在 foe 冲突，
 因此直行使用受保护绿、同相位左转使用让行绿，右转始终让行放行。该 junction 只有
 12 条 `r/s/l` 连接，没有 `t` 掉头连接；拓扑仍显式使用 `u_turn_policy: blocked`。
+
+`demo_7` 对应 junction `610`，使用东 `-51953`、西 `-46217`、南 `-51871` 三个进口。
+早高峰两个相位为 `47+3s` 和 `42+3s`，平峰为 `36+3s` 和 `41+3s`，晚高峰为
+`45+3s` 和 `39+3s`。相位 1 放行西直行、西左转、南直行和南右转；由于西左转与
+南进口轨迹互为 foe，西左转使用让行绿，其余使用受保护绿。相位 2 仅放行东左转和东右转。
+该路口使用 `phase_controlled`，两个右转不会跨相位常绿。
 
 `demo_16` 三个时段均使用 `77s` 周期：东西直行受保护放行、东西左转让行放行后，切换为
 南北直行受保护放行、南北左转让行放行；四个右转始终使用让行绿。`demo_17` 三个时段均使用
@@ -90,7 +101,7 @@ junction 882 的 `response` 矩阵要求东左转 `linkIndex 15` 让行于北左
 
 ```bash
 python -m simulation.sumo.build_tls \
-  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19
+  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19
 ```
 
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。

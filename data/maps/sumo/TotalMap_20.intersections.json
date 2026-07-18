@@ -61,13 +61,13 @@
     "source_osm_node_ids": []
   },
   "demo_7": {
-    "junction_id": "607",
-    "lon": 116.175968,
-    "lat": 39.038123,
-    "match_distance_m": 0.2,
+    "junction_id": "610",
+    "lon": 116.174302,
+    "lat": 39.039673,
+    "match_distance_m": 0.61,
     "xodr_junction_name": "",
-    "junction_lon": 116.17596962192026,
-    "junction_lat": 39.0381230333033,
+    "junction_lon": 116.17430704926626,
+    "junction_lat": 39.03966919207537,
     "source_osm_node_ids": []
   },
   "demo_8": {
@@ -173,13 +173,13 @@
     "source_osm_node_ids": []
   },
   "demo_14": {
-    "junction_id": "882",
-    "lon": 115.919711,
-    "lat": 39.04986,
-    "match_distance_m": 1.27,
+    "junction_id": "892",
+    "lon": 115.917907,
+    "lat": 39.049875,
+    "match_distance_m": 0.13,
     "xodr_junction_name": "",
-    "junction_lon": 115.91972126772518,
-    "junction_lat": 39.049858304645085,
+    "junction_lon": 115.91790843094962,
+    "junction_lat": 39.0498748522034,
     "source_osm_node_ids": []
   },
   "demo_15": {

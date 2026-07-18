@@ -487,7 +487,10 @@ def _build_templates(
         yellow = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         clearance = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         for connection in own_connections:
-            if connection.movement == "right":
+            if (
+                connection.movement == "right"
+                and config.topology.right_turn_policy == "permissive_always"
+            ):
                 _set_state_char(green, connection, "g")
                 _set_state_char(yellow, connection, "g")
                 _set_state_char(clearance, connection, "g")
