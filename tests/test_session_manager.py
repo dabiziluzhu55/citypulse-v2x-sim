@@ -13,6 +13,7 @@ from simulation.sumo.session import (
     _playback_delay_seconds,
     load_catalog,
 )
+from simulation.sumo.scenario import ScenarioCompilationError
 from test_session_scenario import write_fixture
 
 
@@ -84,6 +85,52 @@ class FakeSimulationManager(SimulationManager):
 
 
 class SessionManagerTests(unittest.TestCase):
+    def test_algorithm_transport_and_ai_observer_config_combinations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manager = SimulationManager(
+                generated_dir=complete_generated_fixture(root),
+                session_root=root / "sessions",
+            )
+            base = SimulationConfig(
+                intersection_ids=("demo_2",),
+                duration_seconds=60,
+            )
+            valid = (
+                base,
+                replace(base, ai_observer_module="algorithms.ai_observer_example"),
+                replace(
+                    base,
+                    control_mode="algorithm",
+                    algorithm_transport="http",
+                    algorithm_endpoint="http://127.0.0.1:8001",
+                ),
+                replace(
+                    base,
+                    control_mode="algorithm",
+                    algorithm_transport="local",
+                    algorithm_module="algorithms.local_policy_example",
+                    ai_observer_module="algorithms.ai_observer_example",
+                ),
+            )
+            for config in valid:
+                manager._validate_config(config)
+
+            invalid = (
+                replace(base, algorithm_transport="pipe"),
+                replace(base, control_mode="algorithm"),
+                replace(
+                    base,
+                    control_mode="algorithm",
+                    algorithm_transport="local",
+                ),
+                replace(base, ai_frame_interval_seconds=0.01),
+                replace(base, ai_observer_shutdown_timeout=0.0),
+            )
+            for config in invalid:
+                with self.assertRaises(ScenarioCompilationError):
+                    manager._validate_config(config)
+
     def test_playback_speed_scales_wall_clock_delay(self):
         self.assertAlmostEqual(_playback_delay_seconds(0.05, 1.0, 0.01), 0.04)
         self.assertAlmostEqual(_playback_delay_seconds(0.05, 2.0, 0.01), 0.015)

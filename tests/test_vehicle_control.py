@@ -178,11 +178,14 @@ class VehicleTelemetryTests(unittest.TestCase):
         controller.apply(3, actions, 5.0)
         self.assertEqual(self.traci.vehicle.speed_commands[-1], ("car.0", 8.0))
         self.assertEqual(self.traci.vehicle.lane_commands[-1], ("car.0", 1, 5.0))
+        self.assertEqual(controller.speed_control_summary("edge_0"), (1, 8.0, 8.0))
+        self.assertEqual(controller.speed_control_summary("edge_1"), (0, None, None))
         result = controller.previous_results().vehicles["car.0"]
         self.assertEqual(result.lane_change_status, "not_completed")
 
         self.traci.vehicle.states["car.0"]["lane_index"] = 1
         self.tracker.tick(2.0)
+        self.assertEqual(controller.speed_control_summary("edge_1"), (1, 8.0, 8.0))
         self.assertEqual(
             controller.previous_results().vehicles["car.0"].lane_change_status,
             "completed",

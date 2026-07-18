@@ -57,7 +57,12 @@ session_id = manager.start(
 | `duration_seconds` | 大于 0 且不能超过该高峰剩余时间；`None` 表示运行到时段末尾 |
 | `flow_multiplier` | 启动前固定的全局倍率，范围 `0.1-5.0` |
 | `control_mode` | `fixed` 或 `algorithm` |
-| `algorithm_endpoint` | algorithm 模式必填，协议见 `algorithm_interface.md` |
+| `algorithm_transport` | `http`（默认）或 `local`；仅 algorithm 模式使用 |
+| `algorithm_endpoint` | HTTP algorithm 模式必填，协议见 `algorithm_interface.md` |
+| `algorithm_module` | local algorithm 模式必填，例如 `algorithms.local_policy_example` |
+| `ai_observer_module` | 可选的本地 AI 观察模块；可与 fixed、HTTP 或 local 控制并用 |
+| `ai_frame_interval_seconds` | AI 帧仿真时间间隔，默认 0.1 秒且不得小于 `step_length` |
+| `ai_observer_shutdown_timeout` | 结束时排空 AI 帧并调用 finish 的超时，默认 5 秒 |
 | `start_paused` | `True` 时 SUMO 加载完成后停在 `elapsed=0`，等待 `resume()` |
 | `playback_speed` | 初始播放倍速，只允许 `1、1.25、1.5、2、3、5`；`None` 表示不限速 |
 | `realtime` | 兼容参数；`playback_speed=None` 时，`True` 表示按 `1×` 播放 |

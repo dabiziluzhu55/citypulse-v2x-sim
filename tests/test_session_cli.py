@@ -2,12 +2,36 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from simulation.sumo.events import AccidentEvent, LaneClosureEvent, SpeedLimitEvent
-from simulation.sumo.run import _load_events, _parse_origins
+from simulation.sumo.run import _load_events, _parse_origins, parse_args
 
 
 class SessionCliTests(unittest.TestCase):
+    def test_local_transport_and_ai_observer_arguments(self):
+        with patch(
+            "sys.argv",
+            [
+                "run.py",
+                "--mode",
+                "algorithm",
+                "--algorithm-transport",
+                "local",
+                "--algorithm-module",
+                "algorithms.local_policy_example",
+                "--ai-observer-module",
+                "algorithms.ai_observer_example",
+                "--ai-frame-interval",
+                "0.05",
+            ],
+        ):
+            args = parse_args()
+        self.assertEqual(args.algorithm_transport, "local")
+        self.assertEqual(args.algorithm_module, "algorithms.local_policy_example")
+        self.assertEqual(args.ai_observer_module, "algorithms.ai_observer_example")
+        self.assertEqual(args.ai_frame_interval, 0.05)
+
     def test_repeated_origins_are_grouped_by_intersection(self):
         self.assertEqual(
             _parse_origins(["demo_2:west", "demo_2:north", "demo_3:south"]),
