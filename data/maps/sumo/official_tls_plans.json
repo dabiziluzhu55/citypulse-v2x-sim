@@ -520,35 +520,27 @@
           "program_id": "demo_13_morning_peak",
           "period_type": "早高峰",
           "time_range": {"start": "07:00:00", "end": "09:00:00"},
-          "cycle_duration": 152,
+          "cycle_duration": 75,
           "phases": [
-            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 55, "yellow": 3, "all_red": 2, "total": 60},
-            {"official_phase_no": 2, "official_phase_name": "北进口左转", "green": 37, "yellow": 3, "all_red": 2, "total": 42},
-            {"official_phase_no": 3, "official_phase_name": "西进口左转", "green": 30, "yellow": 3, "all_red": 2, "total": 35},
-            {"official_phase_no": 4, "official_phase_name": "东进口直行", "green": 15, "yellow": 0, "all_red": 0, "total": 15}
+            {"official_phase_no": 1, "official_phase_name": "东进口直行", "green": 70, "yellow": 3, "all_red": 2, "total": 75}
           ]
         },
         {
           "program_id": "demo_13_off_peak",
           "period_type": "平峰",
           "time_range": {"start": "14:30:00", "end": "16:30:00"},
-          "cycle_duration": 147,
+          "cycle_duration": 70,
           "phases": [
-            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 65, "yellow": 3, "all_red": 2, "total": 70},
-            {"official_phase_no": 2, "official_phase_name": "北进口左转", "green": 37, "yellow": 3, "all_red": 2, "total": 42},
-            {"official_phase_no": 3, "official_phase_name": "西进口左转", "green": 30, "yellow": 3, "all_red": 2, "total": 35}
+            {"official_phase_no": 1, "official_phase_name": "东进口直行", "green": 65, "yellow": 3, "all_red": 2, "total": 70}
           ]
         },
         {
           "program_id": "demo_13_evening_peak",
           "period_type": "晚高峰",
           "time_range": {"start": "17:30:00", "end": "19:30:00"},
-          "cycle_duration": 152,
+          "cycle_duration": 75,
           "phases": [
-            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 55, "yellow": 3, "all_red": 2, "total": 60},
-            {"official_phase_no": 2, "official_phase_name": "北进口左转", "green": 37, "yellow": 3, "all_red": 2, "total": 42},
-            {"official_phase_no": 3, "official_phase_name": "西进口左转", "green": 30, "yellow": 3, "all_red": 2, "total": 35},
-            {"official_phase_no": 4, "official_phase_name": "东进口直行", "green": 15, "yellow": 0, "all_red": 0, "total": 15}
+            {"official_phase_no": 1, "official_phase_name": "东进口直行", "green": 70, "yellow": 3, "all_red": 2, "total": 75}
           ]
         }
       ]

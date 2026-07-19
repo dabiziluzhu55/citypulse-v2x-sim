@@ -609,9 +609,9 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(
             {key: value.cycle_duration for key, value in demo_13.programs.items()},
             {
-                "demo_13_morning_peak": 152,
-                "demo_13_off_peak": 147,
-                "demo_13_evening_peak": 152,
+                "demo_13_morning_peak": 75,
+                "demo_13_off_peak": 70,
+                "demo_13_evening_peak": 75,
             },
         )
         self.assertEqual(
@@ -620,16 +620,27 @@ class SignalConfigurationTests(unittest.TestCase):
                 for key, value in demo_13.programs.items()
             },
             {
-                "demo_13_morning_peak": [1, 2, 3, 4],
-                "demo_13_off_peak": [1, 2, 3],
-                "demo_13_evening_peak": [1, 2, 3, 4],
+                "demo_13_morning_peak": [1],
+                "demo_13_off_peak": [1],
+                "demo_13_evening_peak": [1],
             },
         )
         self.assertEqual(
-            demo_13.topology.movement_for_direction("-56457", "r"), "left"
+            {
+                key: [phase.green for phase in value.phases]
+                for key, value in demo_13.programs.items()
+            },
+            {
+                "demo_13_morning_peak": [70],
+                "demo_13_off_peak": [65],
+                "demo_13_evening_peak": [70],
+            },
         )
         self.assertEqual(
-            demo_13.topology.movement_for_direction("-46884", "t"), "uturn"
+            demo_13.topology.movement_for_direction("-56457", "r"), "right"
+        )
+        self.assertEqual(
+            demo_13.topology.movement_for_direction("-46884", "t"), "blocked"
         )
 
     def test_demo_9_templates_follow_five_arm_topology_and_real_foes(self):
@@ -1610,13 +1621,9 @@ class SignalConfigurationTests(unittest.TestCase):
             {"1204": foes},
             demo_13.topology.phases_for("demo_13_off_peak"),
         )
-        self.assertEqual(morning[1]["1204"]["green"][3], "G")
-        self.assertEqual(morning[2]["1204"]["green"][1], "G")
-        self.assertEqual(morning[3]["1204"]["green"][2], "G")
-        self.assertEqual(morning[4]["1204"]["green"][3], "G")
-        self.assertEqual(set(off_peak), {1, 2, 3})
-        for phase in morning.values():
-            self.assertEqual(phase["1204"]["green"][0], "g")
+        self.assertEqual(set(morning), {1})
+        self.assertEqual(set(off_peak), {1})
+        self.assertEqual(morning[1]["1204"]["green"][:4], "grgG")
 
     def test_demo_6_templates_cover_all_four_way_movements(self):
         config = self.load().intersections["demo_6"]
