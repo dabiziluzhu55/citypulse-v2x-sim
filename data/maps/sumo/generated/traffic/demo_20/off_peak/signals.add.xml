@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8'?>
+<additional>
+  <tlLogic id="3637" type="static" programID="demo_20_off_peak" offset="0">
+    <phase duration="33" state="gGGGGgrrrggGGgrrg" name="p1_green" />
+    <phase duration="3" state="yyyyygrrrgyyygrrg" name="p1_yellow" />
+    <phase duration="6" state="grrrrgrrrggrrgrrg" name="p2_green" />
+    <phase duration="3" state="yrrrrgrrrgyrrgrrg" name="p2_yellow" />
+    <phase duration="33" state="rrrrrggGGgrrrggGg" name="p3_green" />
+    <phase duration="3" state="rrrrrgyyygrrrgyyg" name="p3_yellow" />
+    <phase duration="6" state="rrrrrggrrgrrrggrg" name="p4_green" />
+    <phase duration="3" state="rrrrrgyrrgrrrgyrg" name="p4_yellow" />
+  </tlLogic>
+</additional>
