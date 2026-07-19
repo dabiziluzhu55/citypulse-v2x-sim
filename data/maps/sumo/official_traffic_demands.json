@@ -517,6 +517,63 @@
         }
       ]
     },
+    "demo_8": {
+      "vehicle_type": "passenger",
+      "pcu_per_vehicle": 1.0,
+      "approaches": {
+        "east": {"label": "东进口", "sumo_approach": "east", "movements": {"left": "left", "through": "through", "right": "right"}},
+        "west": {"label": "西进口", "sumo_approach": "west", "movements": {"left": "left", "through": "through", "right": "right"}},
+        "north": {"label": "北进口", "sumo_approach": "north", "movements": {"left": "left", "through": "through", "right": "right"}},
+        "south": {"label": "南进口", "sumo_approach": "south", "movements": {"left": "left", "through": "through", "right": "right"}}
+      },
+      "periods": [
+        {
+          "period_id": "morning_peak", "label": "早高峰", "program_id": "demo_8_morning_peak",
+          "time_range": {"start": "07:00:00", "end": "09:00:00"},
+          "expected_totals": {"east": 1229, "west": 1296, "north": 1330, "south": 1235, "all": 5090},
+          "intervals": [
+            {"start": "07:00:00", "end": "07:15:00", "volumes": {"east": {"left": 32, "through": 98, "right": 25}, "west": {"left": 26, "through": 110, "right": 22}, "north": {"left": 29, "through": 120, "right": 34}, "south": {"left": 27, "through": 104, "right": 23}}},
+            {"start": "07:15:00", "end": "07:30:00", "volumes": {"east": {"left": 35, "through": 87, "right": 24}, "west": {"left": 33, "through": 106, "right": 20}, "north": {"left": 44, "through": 111, "right": 24}, "south": {"left": 31, "through": 96, "right": 14}}},
+            {"start": "07:30:00", "end": "07:45:00", "volumes": {"east": {"left": 37, "through": 96, "right": 23}, "west": {"left": 27, "through": 104, "right": 25}, "north": {"left": 27, "through": 76, "right": 27}, "south": {"left": 40, "through": 85, "right": 19}}},
+            {"start": "07:45:00", "end": "08:00:00", "volumes": {"east": {"left": 34, "through": 105, "right": 22}, "west": {"left": 40, "through": 104, "right": 30}, "north": {"left": 30, "through": 158, "right": 15}, "south": {"left": 32, "through": 121, "right": 22}}},
+            {"start": "08:00:00", "end": "08:15:00", "volumes": {"east": {"left": 36, "through": 99, "right": 22}, "west": {"left": 32, "through": 105, "right": 19}, "north": {"left": 30, "through": 137, "right": 26}, "south": {"left": 21, "through": 110, "right": 31}}},
+            {"start": "08:15:00", "end": "08:30:00", "volumes": {"east": {"left": 35, "through": 95, "right": 24}, "west": {"left": 35, "through": 103, "right": 19}, "north": {"left": 31, "through": 74, "right": 23}, "south": {"left": 35, "through": 93, "right": 29}}},
+            {"start": "08:30:00", "end": "08:45:00", "volumes": {"east": {"left": 29, "through": 98, "right": 22}, "west": {"left": 18, "through": 103, "right": 25}, "north": {"left": 36, "through": 108, "right": 21}, "south": {"left": 31, "through": 101, "right": 21}}},
+            {"start": "08:45:00", "end": "09:00:00", "volumes": {"east": {"left": 34, "through": 93, "right": 24}, "west": {"left": 49, "through": 106, "right": 35}, "north": {"left": 10, "through": 112, "right": 27}, "south": {"left": 28, "through": 99, "right": 22}}}
+          ]
+        },
+        {
+          "period_id": "off_peak", "label": "平峰", "program_id": "demo_8_off_peak",
+          "time_range": {"start": "14:30:00", "end": "16:30:00"},
+          "expected_totals": {"east": 878, "west": 926, "north": 950, "south": 882, "all": 3636},
+          "intervals": [
+            {"start": "14:30:00", "end": "14:45:00", "volumes": {"east": {"left": 27, "through": 45, "right": 40}, "west": {"left": 25, "through": 72, "right": 8}, "north": {"left": 22, "through": 73, "right": 20}, "south": {"left": 21, "through": 85, "right": 14}}},
+            {"start": "14:45:00", "end": "15:00:00", "volumes": {"east": {"left": 29, "through": 54, "right": 48}, "west": {"left": 20, "through": 55, "right": 16}, "north": {"left": 15, "through": 56, "right": 17}, "south": {"left": 18, "through": 72, "right": 18}}},
+            {"start": "15:00:00", "end": "15:15:00", "volumes": {"east": {"left": 16, "through": 39, "right": 44}, "west": {"left": 22, "through": 91, "right": 23}, "north": {"left": 20, "through": 89, "right": 15}, "south": {"left": 20, "through": 68, "right": 16}}},
+            {"start": "15:15:00", "end": "15:30:00", "volumes": {"east": {"left": 24, "through": 44, "right": 42}, "west": {"left": 23, "through": 48, "right": 21}, "north": {"left": 18, "through": 81, "right": 16}, "south": {"left": 17, "through": 59, "right": 15}}},
+            {"start": "15:30:00", "end": "15:45:00", "volumes": {"east": {"left": 20, "through": 52, "right": 57}, "west": {"left": 17, "through": 79, "right": 14}, "north": {"left": 19, "through": 92, "right": 18}, "south": {"left": 19, "through": 63, "right": 12}}},
+            {"start": "15:45:00", "end": "16:00:00", "volumes": {"east": {"left": 37, "through": 50, "right": 42}, "west": {"left": 21, "through": 66, "right": 19}, "north": {"left": 24, "through": 67, "right": 22}, "south": {"left": 22, "through": 76, "right": 20}}},
+            {"start": "16:00:00", "end": "16:15:00", "volumes": {"east": {"left": 5, "through": 36, "right": 46}, "west": {"left": 20, "through": 124, "right": 10}, "north": {"left": 16, "through": 115, "right": 14}, "south": {"left": 29, "through": 81, "right": 18}}},
+            {"start": "16:15:00", "end": "16:30:00", "volumes": {"east": {"left": 15, "through": 44, "right": 22}, "west": {"left": 18, "through": 88, "right": 26}, "north": {"left": 27, "through": 75, "right": 19}, "south": {"left": 23, "through": 77, "right": 19}}}
+          ]
+        },
+        {
+          "period_id": "evening_peak", "label": "晚高峰", "program_id": "demo_8_evening_peak",
+          "time_range": {"start": "17:30:00", "end": "19:30:00"},
+          "expected_totals": {"east": 1317, "west": 1389, "north": 1425, "south": 1323, "all": 5454},
+          "intervals": [
+            {"start": "17:30:00", "end": "17:45:00", "volumes": {"east": {"left": 42, "through": 102, "right": 25}, "west": {"left": 32, "through": 112, "right": 26}, "north": {"left": 35, "through": 121, "right": 30}, "south": {"left": 33, "through": 105, "right": 23}}},
+            {"start": "17:45:00", "end": "18:00:00", "volumes": {"east": {"left": 38, "through": 96, "right": 22}, "west": {"left": 41, "through": 98, "right": 28}, "north": {"left": 28, "through": 108, "right": 25}, "south": {"left": 29, "through": 98, "right": 18}}},
+            {"start": "18:00:00", "end": "18:15:00", "volumes": {"east": {"left": 29, "through": 115, "right": 28}, "west": {"left": 27, "through": 105, "right": 22}, "north": {"left": 42, "through": 115, "right": 22}, "south": {"left": 36, "through": 112, "right": 25}}},
+            {"start": "18:15:00", "end": "18:30:00", "volumes": {"east": {"left": 45, "through": 88, "right": 20}, "west": {"left": 38, "through": 120, "right": 25}, "north": {"left": 30, "through": 132, "right": 28}, "south": {"left": 27, "through": 108, "right": 21}}},
+            {"start": "18:30:00", "end": "18:45:00", "volumes": {"east": {"left": 31, "through": 107, "right": 26}, "west": {"left": 35, "through": 96, "right": 27}, "north": {"left": 26, "through": 103, "right": 21}, "south": {"left": 31, "through": 95, "right": 27}}},
+            {"start": "18:45:00", "end": "19:00:00", "volumes": {"east": {"left": 36, "through": 92, "right": 24}, "west": {"left": 40, "through": 118, "right": 24}, "north": {"left": 33, "through": 118, "right": 27}, "south": {"left": 28, "through": 110, "right": 20}}},
+            {"start": "19:00:00", "end": "19:15:00", "volumes": {"east": {"left": 27, "through": 110, "right": 21}, "west": {"left": 31, "through": 101, "right": 30}, "north": {"left": 29, "through": 126, "right": 24}, "south": {"left": 35, "through": 121, "right": 29}}},
+            {"start": "19:15:00", "end": "19:30:00", "volumes": {"east": {"left": 56, "through": 108, "right": 29}, "west": {"left": 49, "through": 137, "right": 27}, "north": {"left": 45, "through": 126, "right": 31}, "south": {"left": 45, "through": 115, "right": 32}}}
+          ]
+        }
+      ]
+    },
     "demo_9": {
       "vehicle_type": "passenger",
       "pcu_per_vehicle": 1.0,
@@ -589,6 +646,63 @@
             {"start": "18:45:00", "end": "19:00:00", "volumes": {"east": {"left": 20, "through": 9, "right": 43}, "west": {"left": 27, "through": 9, "right": 36}, "north": {"left": 36, "through": 49, "right": 10}, "south": {"left": 29, "through": 43, "right": 31}, "northeast": {"left": 31, "through": 0, "right": 34}}},
             {"start": "19:00:00", "end": "19:15:00", "volumes": {"east": {"left": 21, "through": 9, "right": 46}, "west": {"left": 25, "through": 8, "right": 32}, "north": {"left": 36, "through": 50, "right": 10}, "south": {"left": 27, "through": 40, "right": 29}, "northeast": {"left": 30, "through": 0, "right": 33}}},
             {"start": "19:15:00", "end": "19:30:00", "volumes": {"east": {"left": 18, "through": 8, "right": 38}, "west": {"left": 25, "through": 8, "right": 32}, "north": {"left": 33, "through": 46, "right": 9}, "south": {"left": 27, "through": 41, "right": 29}, "northeast": {"left": 26, "through": 0, "right": 29}}}
+          ]
+        }
+      ]
+    },
+    "demo_11": {
+      "vehicle_type": "passenger",
+      "pcu_per_vehicle": 1.0,
+      "approaches": {
+        "east": {"label": "东进口", "sumo_approach": "east", "movements": {"left": "left", "through": "through", "right": "right"}},
+        "west": {"label": "西进口", "sumo_approach": "west", "movements": {"left": "left", "through": "through", "right": "right"}},
+        "north": {"label": "北进口", "sumo_approach": "north", "movements": {"left": "left", "through": "through", "right": "right"}},
+        "south": {"label": "南进口", "sumo_approach": "south", "movements": {"left": "left", "through": "through", "right": "right"}}
+      },
+      "periods": [
+        {
+          "period_id": "morning_peak", "label": "早高峰", "program_id": "demo_11_morning_peak",
+          "time_range": {"start": "07:00:00", "end": "09:00:00"},
+          "expected_totals": {"east": 1587, "west": 1689, "north": 1215, "south": 1471, "all": 5962},
+          "intervals": [
+            {"start": "07:00:00", "end": "07:15:00", "volumes": {"east": {"left": 60, "through": 80, "right": 59}, "west": {"left": 72, "through": 99, "right": 71}, "north": {"left": 45, "through": 65, "right": 42}, "south": {"left": 55, "through": 75, "right": 50}}},
+            {"start": "07:15:00", "end": "07:30:00", "volumes": {"east": {"left": 58, "through": 79, "right": 61}, "west": {"left": 58, "through": 81, "right": 49}, "north": {"left": 52, "through": 62, "right": 44}, "south": {"left": 60, "through": 72, "right": 54}}},
+            {"start": "07:30:00", "end": "07:45:00", "volumes": {"east": {"left": 62, "through": 81, "right": 58}, "west": {"left": 68, "through": 89, "right": 63}, "north": {"left": 48, "through": 68, "right": 46}, "south": {"left": 52, "through": 78, "right": 53}}},
+            {"start": "07:45:00", "end": "08:00:00", "volumes": {"east": {"left": 57, "through": 78, "right": 60}, "west": {"left": 50, "through": 76, "right": 57}, "north": {"left": 43, "through": 60, "right": 41}, "south": {"left": 58, "through": 70, "right": 51}}},
+            {"start": "08:00:00", "end": "08:15:00", "volumes": {"east": {"left": 61, "through": 80, "right": 62}, "west": {"left": 74, "through": 94, "right": 69}, "north": {"left": 47, "through": 64, "right": 45}, "south": {"left": 53, "through": 73, "right": 55}}},
+            {"start": "08:15:00", "end": "08:30:00", "volumes": {"east": {"left": 59, "through": 79, "right": 57}, "west": {"left": 60, "through": 83, "right": 48}, "north": {"left": 46, "through": 61, "right": 43}, "south": {"left": 56, "through": 76, "right": 52}}},
+            {"start": "08:30:00", "end": "08:45:00", "volumes": {"east": {"left": 60, "through": 80, "right": 60}, "west": {"left": 55, "through": 78, "right": 66}, "north": {"left": 44, "through": 63, "right": 47}, "south": {"left": 54, "through": 74, "right": 56}}},
+            {"start": "08:45:00", "end": "09:00:00", "volumes": {"east": {"left": 59, "through": 78, "right": 59}, "west": {"left": 73, "through": 89, "right": 67}, "north": {"left": 40, "through": 52, "right": 47}, "south": {"left": 53, "through": 85, "right": 56}}}
+          ]
+        },
+        {
+          "period_id": "off_peak", "label": "平峰", "program_id": "demo_11_off_peak",
+          "time_range": {"start": "14:30:00", "end": "16:30:00"},
+          "expected_totals": {"east": 1459, "west": 1464, "north": 1126, "south": 1126, "all": 5175},
+          "intervals": [
+            {"start": "14:30:00", "end": "14:45:00", "volumes": {"east": {"left": 44, "through": 95, "right": 42}, "west": {"left": 50, "through": 84, "right": 44}, "north": {"left": 38, "through": 68, "right": 33}, "south": {"left": 42, "through": 63, "right": 32}}},
+            {"start": "14:45:00", "end": "15:00:00", "volumes": {"east": {"left": 52, "through": 88, "right": 48}, "west": {"left": 55, "through": 86, "right": 47}, "north": {"left": 42, "through": 66, "right": 35}, "south": {"left": 46, "through": 65, "right": 34}}},
+            {"start": "15:00:00", "end": "15:15:00", "volumes": {"east": {"left": 47, "through": 92, "right": 43}, "west": {"left": 51, "through": 82, "right": 45}, "north": {"left": 39, "through": 70, "right": 34}, "south": {"left": 43, "through": 64, "right": 33}}},
+            {"start": "15:15:00", "end": "15:30:00", "volumes": {"east": {"left": 46, "through": 90, "right": 47}, "west": {"left": 53, "through": 88, "right": 46}, "north": {"left": 40, "through": 67, "right": 36}, "south": {"left": 45, "through": 62, "right": 31}}},
+            {"start": "15:30:00", "end": "15:45:00", "volumes": {"east": {"left": 48, "through": 94, "right": 44}, "west": {"left": 52, "through": 85, "right": 48}, "north": {"left": 37, "through": 69, "right": 32}, "south": {"left": 44, "through": 66, "right": 35}}},
+            {"start": "15:45:00", "end": "16:00:00", "volumes": {"east": {"left": 45, "through": 86, "right": 40}, "west": {"left": 49, "through": 83, "right": 43}, "north": {"left": 41, "through": 65, "right": 35}, "south": {"left": 41, "through": 61, "right": 32}}},
+            {"start": "16:00:00", "end": "16:15:00", "volumes": {"east": {"left": 50, "through": 93, "right": 42}, "west": {"left": 54, "through": 87, "right": 46}, "north": {"left": 38, "through": 68, "right": 36}, "south": {"left": 47, "through": 65, "right": 34}}},
+            {"start": "16:15:00", "end": "16:30:00", "volumes": {"east": {"left": 48, "through": 92, "right": 43}, "west": {"left": 56, "through": 85, "right": 45}, "north": {"left": 35, "through": 67, "right": 35}, "south": {"left": 42, "through": 64, "right": 35}}}
+          ]
+        },
+        {
+          "period_id": "evening_peak", "label": "晚高峰", "program_id": "demo_11_evening_peak",
+          "time_range": {"start": "17:30:00", "end": "19:30:00"},
+          "expected_totals": {"east": 1920, "west": 2021, "north": 1804, "south": 1136, "all": 6881},
+          "intervals": [
+            {"start": "17:30:00", "end": "17:45:00", "volumes": {"east": {"left": 65, "through": 95, "right": 75}, "west": {"left": 70, "through": 102, "right": 75}, "north": {"left": 62, "through": 90, "right": 64}, "south": {"left": 40, "through": 55, "right": 43}}},
+            {"start": "17:45:00", "end": "18:00:00", "volumes": {"east": {"left": 72, "through": 102, "right": 68}, "west": {"left": 76, "through": 108, "right": 69}, "north": {"left": 68, "through": 95, "right": 66}, "south": {"left": 44, "through": 58, "right": 41}}},
+            {"start": "18:00:00", "end": "18:15:00", "volumes": {"east": {"left": 68, "through": 98, "right": 72}, "west": {"left": 72, "through": 105, "right": 73}, "north": {"left": 65, "through": 92, "right": 70}, "south": {"left": 41, "through": 56, "right": 45}}},
+            {"start": "18:15:00", "end": "18:30:00", "volumes": {"east": {"left": 70, "through": 105, "right": 65}, "west": {"left": 75, "through": 110, "right": 77}, "north": {"left": 70, "through": 88, "right": 62}, "south": {"left": 43, "through": 60, "right": 40}}},
+            {"start": "18:30:00", "end": "18:45:00", "volumes": {"east": {"left": 75, "through": 92, "right": 70}, "west": {"left": 68, "through": 100, "right": 71}, "north": {"left": 60, "through": 96, "right": 68}, "south": {"left": 45, "through": 54, "right": 42}}},
+            {"start": "18:45:00", "end": "19:00:00", "volumes": {"east": {"left": 60, "through": 100, "right": 74}, "west": {"left": 64, "through": 107, "right": 74}, "north": {"left": 67, "through": 94, "right": 65}, "south": {"left": 39, "through": 59, "right": 44}}},
+            {"start": "19:00:00", "end": "19:15:00", "volumes": {"east": {"left": 74, "through": 108, "right": 60}, "west": {"left": 78, "through": 109, "right": 70}, "north": {"left": 69, "through": 89, "right": 67}, "south": {"left": 44, "through": 57, "right": 39}}},
+            {"start": "19:15:00", "end": "19:30:00", "volumes": {"east": {"left": 76, "through": 100, "right": 76}, "west": {"left": 77, "through": 110, "right": 81}, "north": {"left": 69, "through": 100, "right": 68}, "south": {"left": 44, "through": 57, "right": 46}}}
           ]
         }
       ]
@@ -1099,6 +1213,63 @@
             {"start": "18:45:00", "end": "19:00:00", "volumes": {"southwest": {"left": 122, "through": 27, "right": 10}, "southeast": {"left": 35, "through": 109, "right": 12}, "northwest": {"left": 58, "through": 80, "right": 28}, "northeast": {"left": 22, "through": 98, "right": 80}}},
             {"start": "19:00:00", "end": "19:15:00", "volumes": {"southwest": {"left": 88, "through": 23, "right": 17}, "southeast": {"left": 30, "through": 89, "right": 11}, "northwest": {"left": 66, "through": 75, "right": 21}, "northeast": {"left": 6, "through": 73, "right": 76}}},
             {"start": "19:15:00", "end": "19:30:00", "volumes": {"southwest": {"left": 91, "through": 37, "right": 9}, "southeast": {"left": 43, "through": 75, "right": 18}, "northwest": {"left": 41, "through": 98, "right": 30}, "northeast": {"left": 12, "through": 70, "right": 96}}}
+          ]
+        }
+      ]
+    },
+    "demo_20": {
+      "vehicle_type": "passenger",
+      "pcu_per_vehicle": 1.0,
+      "approaches": {
+        "east": {"label": "东进口（图二东北口）", "sumo_approach": "east", "movements": {"left": "left", "through": "through", "right": "right"}},
+        "west": {"label": "西进口（图二西南口）", "sumo_approach": "west", "movements": {"left": "left", "through": "through", "right": "right"}},
+        "north": {"label": "北进口（图二西北口）", "sumo_approach": "north", "movements": {"left": "left", "through": "through", "right": "right"}},
+        "south": {"label": "南进口（图二东南口）", "sumo_approach": "south", "movements": {"left": "left", "through": "through", "right": "right"}}
+      },
+      "periods": [
+        {
+          "period_id": "morning_peak", "label": "早高峰", "program_id": "demo_20_morning_peak",
+          "time_range": {"start": "07:00:00", "end": "09:00:00"},
+          "expected_totals": {"east": 479, "west": 353, "north": 705, "south": 1096, "all": 2633},
+          "intervals": [
+            {"start": "07:00:00", "end": "07:15:00", "volumes": {"east": {"left": 17, "through": 34, "right": 17}, "west": {"left": 12, "through": 25, "right": 12}, "north": {"left": 24, "through": 49, "right": 24}, "south": {"left": 36, "through": 73, "right": 36}}},
+            {"start": "07:15:00", "end": "07:30:00", "volumes": {"east": {"left": 13, "through": 27, "right": 13}, "west": {"left": 10, "through": 22, "right": 10}, "north": {"left": 22, "through": 44, "right": 22}, "south": {"left": 35, "through": 70, "right": 35}}},
+            {"start": "07:30:00", "end": "07:45:00", "volumes": {"east": {"left": 18, "through": 35, "right": 18}, "west": {"left": 12, "through": 22, "right": 12}, "north": {"left": 23, "through": 46, "right": 23}, "south": {"left": 35, "through": 70, "right": 35}}},
+            {"start": "07:45:00", "end": "08:00:00", "volumes": {"east": {"left": 15, "through": 31, "right": 15}, "west": {"left": 13, "through": 25, "right": 13}, "north": {"left": 24, "through": 47, "right": 24}, "south": {"left": 37, "through": 75, "right": 37}}},
+            {"start": "08:00:00", "end": "08:15:00", "volumes": {"east": {"left": 16, "through": 32, "right": 16}, "west": {"left": 12, "through": 23, "right": 12}, "north": {"left": 23, "through": 45, "right": 23}, "south": {"left": 35, "through": 70, "right": 35}}},
+            {"start": "08:15:00", "end": "08:30:00", "volumes": {"east": {"left": 12, "through": 26, "right": 12}, "west": {"left": 10, "through": 18, "right": 10}, "north": {"left": 20, "through": 42, "right": 20}, "south": {"left": 32, "through": 65, "right": 32}}},
+            {"start": "08:30:00", "end": "08:45:00", "volumes": {"east": {"left": 15, "through": 31, "right": 15}, "west": {"left": 10, "through": 19, "right": 10}, "north": {"left": 20, "through": 39, "right": 20}, "south": {"left": 31, "through": 62, "right": 31}}},
+            {"start": "08:45:00", "end": "09:00:00", "volumes": {"east": {"left": 13, "through": 25, "right": 13}, "west": {"left": 10, "through": 21, "right": 10}, "north": {"left": 20, "through": 41, "right": 20}, "south": {"left": 32, "through": 65, "right": 32}}}
+          ]
+        },
+        {
+          "period_id": "off_peak", "label": "平峰", "program_id": "demo_20_off_peak",
+          "time_range": {"start": "14:30:00", "end": "16:30:00"},
+          "expected_totals": {"east": 186, "west": 140, "north": 277, "south": 438, "all": 1041},
+          "intervals": [
+            {"start": "14:30:00", "end": "14:45:00", "volumes": {"east": {"left": 8, "through": 9, "right": 8}, "west": {"left": 5, "through": 8, "right": 5}, "north": {"left": 11, "through": 15, "right": 11}, "south": {"left": 17, "through": 24, "right": 17}}},
+            {"start": "14:45:00", "end": "15:00:00", "volumes": {"east": {"left": 7, "through": 8, "right": 7}, "west": {"left": 5, "through": 7, "right": 5}, "north": {"left": 10, "through": 14, "right": 10}, "south": {"left": 16, "through": 22, "right": 16}}},
+            {"start": "15:00:00", "end": "15:15:00", "volumes": {"east": {"left": 8, "through": 10, "right": 8}, "west": {"left": 6, "through": 7, "right": 6}, "north": {"left": 10, "through": 14, "right": 10}, "south": {"left": 16, "through": 22, "right": 16}}},
+            {"start": "15:15:00", "end": "15:30:00", "volumes": {"east": {"left": 7, "through": 10, "right": 7}, "west": {"left": 6, "through": 8, "right": 6}, "north": {"left": 12, "through": 16, "right": 12}, "south": {"left": 19, "through": 24, "right": 19}}},
+            {"start": "15:30:00", "end": "15:45:00", "volumes": {"east": {"left": 8, "through": 10, "right": 8}, "west": {"left": 5, "through": 8, "right": 5}, "north": {"left": 11, "through": 14, "right": 11}, "south": {"left": 17, "through": 22, "right": 17}}},
+            {"start": "15:45:00", "end": "16:00:00", "volumes": {"east": {"left": 6, "through": 7, "right": 6}, "west": {"left": 4, "through": 6, "right": 4}, "north": {"left": 10, "through": 12, "right": 10}, "south": {"left": 16, "through": 20, "right": 16}}},
+            {"start": "16:00:00", "end": "16:15:00", "volumes": {"east": {"left": 7, "through": 10, "right": 7}, "west": {"left": 5, "through": 6, "right": 5}, "north": {"left": 10, "through": 13, "right": 10}, "south": {"left": 15, "through": 20, "right": 15}}},
+            {"start": "16:15:00", "end": "16:30:00", "volumes": {"east": {"left": 6, "through": 8, "right": 6}, "west": {"left": 5, "through": 8, "right": 5}, "north": {"left": 9, "through": 13, "right": 9}, "south": {"left": 16, "through": 20, "right": 16}}}
+          ]
+        },
+        {
+          "period_id": "evening_peak", "label": "晚高峰", "program_id": "demo_20_evening_peak",
+          "time_range": {"start": "17:30:00", "end": "19:30:00"},
+          "expected_totals": {"east": 434, "west": 308, "north": 628, "south": 991, "all": 2361},
+          "intervals": [
+            {"start": "17:30:00", "end": "17:45:00", "volumes": {"east": {"left": 17, "through": 28, "right": 16}, "west": {"left": 11, "through": 19, "right": 11}, "north": {"left": 24, "through": 37, "right": 23}, "south": {"left": 37, "through": 59, "right": 36}}},
+            {"start": "17:45:00", "end": "18:00:00", "volumes": {"east": {"left": 14, "through": 22, "right": 14}, "west": {"left": 10, "through": 17, "right": 10}, "north": {"left": 22, "through": 35, "right": 21}, "south": {"left": 35, "through": 56, "right": 34}}},
+            {"start": "18:00:00", "end": "18:15:00", "volumes": {"east": {"left": 18, "through": 29, "right": 18}, "west": {"left": 11, "through": 17, "right": 10}, "north": {"left": 22, "through": 36, "right": 22}, "south": {"left": 35, "through": 57, "right": 34}}},
+            {"start": "18:15:00", "end": "18:30:00", "volumes": {"east": {"left": 15, "through": 23, "right": 14}, "west": {"left": 13, "through": 21, "right": 12}, "north": {"left": 24, "through": 39, "right": 23}, "south": {"left": 38, "through": 61, "right": 36}}},
+            {"start": "18:30:00", "end": "18:45:00", "volumes": {"east": {"left": 16, "through": 26, "right": 16}, "west": {"left": 11, "through": 18, "right": 11}, "north": {"left": 24, "through": 37, "right": 23}, "south": {"left": 35, "through": 56, "right": 34}}},
+            {"start": "18:45:00", "end": "19:00:00", "volumes": {"east": {"left": 13, "through": 21, "right": 13}, "west": {"left": 10, "through": 15, "right": 9}, "north": {"left": 20, "through": 33, "right": 19}, "south": {"left": 33, "through": 53, "right": 32}}},
+            {"start": "19:00:00", "end": "19:15:00", "volumes": {"east": {"left": 15, "through": 25, "right": 15}, "west": {"left": 10, "through": 16, "right": 9}, "north": {"left": 20, "through": 33, "right": 19}, "south": {"left": 32, "through": 51, "right": 31}}},
+            {"start": "19:15:00", "end": "19:30:00", "volumes": {"east": {"left": 13, "through": 21, "right": 12}, "west": {"left": 10, "through": 17, "right": 10}, "north": {"left": 20, "through": 33, "right": 19}, "south": {"left": 32, "through": 53, "right": 31}}}
           ]
         }
       ]
