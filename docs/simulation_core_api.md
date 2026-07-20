@@ -18,11 +18,11 @@ lane。前端应从 catalog 生成选项，不要硬编码 `demo_2`、`west` 或
 运行前必须先执行：
 
 ```bash
-python -m simulation.sumo.build_tls --intersections demo_2
+python -m simulation.sumo.build_tls
 ```
 
-该命令在 `generated/manifests/` 下生成 schema v2 的信号与车流 manifest。旧生成物会被
-内核拒绝，重新构建即可。
+该命令默认构建 20 路口联合场景，在 `generated/manifests/` 下生成 schema v2 的信号
+manifest 和 schema v3 的全局车流 manifest。旧车流生成物会被内核拒绝，重新构建即可。
 
 ## 启动会话
 
@@ -50,14 +50,19 @@ session_id = manager.start(
 
 | 字段 | 规则 |
 |---|---|
-| `intersection_ids` | 非空、唯一，且必须出现在 catalog 中 |
+| `intersection_ids` | 非空、唯一且必须出现在 catalog 中；只决定控制和快照范围，不裁剪全局车流 |
 | `period` | `morning_peak`、`off_peak`、`evening_peak` |
-| `origins` | `intersection_id -> 官方进口列表`；省略某路口表示全部进口 |
+| `origins` | 调试过滤：按路线首个受控路口/进口过滤；省略的路口不裁剪其来源车流 |
 | `window_start_seconds` | 相对该高峰开始的偏移，必须大于等于 0 |
 | `duration_seconds` | 大于 0 且不能超过该高峰剩余时间；`None` 表示运行到时段末尾 |
 | `flow_multiplier` | 启动前固定的全局倍率，范围 `0.1-5.0` |
 | `control_mode` | `fixed` 或 `algorithm` |
-| `algorithm_endpoint` | algorithm 模式必填，协议见 `algorithm_interface.md` |
+| `algorithm_transport` | `http`（默认）或 `local`；仅 algorithm 模式使用 |
+| `algorithm_endpoint` | HTTP algorithm 模式必填，协议见 `algorithm_interface.md` |
+| `algorithm_module` | local algorithm 模式必填，例如 `algorithms.local_policy_example` |
+| `ai_observer_module` | 可选的本地 AI 观察模块；可与 fixed、HTTP 或 local 控制并用 |
+| `ai_frame_interval_seconds` | AI 帧仿真时间间隔，默认 0.1 秒且不得小于 `step_length` |
+| `ai_observer_shutdown_timeout` | 结束时排空 AI 帧并调用 finish 的超时，默认 5 秒 |
 | `start_paused` | `True` 时 SUMO 加载完成后停在 `elapsed=0`，等待 `resume()` |
 | `playback_speed` | 初始播放倍速，只允许 `1、1.25、1.5、2、3、5`；`None` 表示不限速 |
 | `realtime` | 兼容参数；`playback_speed=None` 时，`True` 表示按 `1×` 播放 |
@@ -65,6 +70,8 @@ session_id = manager.start(
 
 时间窗口会被平移为本轮 `elapsed_seconds=0`。例如早高峰偏移 1800 秒对应官方
 `07:30:00`。车辆数按窗口重叠比例和倍率确定，并使用确定性最大余数法取整。
+只有完整时段、倍率 `1.0` 且无进口过滤时，session manifest 的
+`official_complete_demand` 才为 `true`。
 
 ## 开始、暂停与倍速
 
@@ -192,6 +199,14 @@ final_snapshot = manager.wait(session_id, timeout=30)
 `outputs/sessions/<session_id>/`。
 
 ## CLI
+
+不传 `--intersection` 时默认控制全局场景中的全部路口：
+
+```bash
+python -m simulation.sumo.run --mode fixed --gui --period morning_peak
+```
+
+以下命令只控制和展示 `demo_2`，但仍加载完整全局车流：
 
 ```bash
 python -m simulation.sumo.run --mode fixed --gui \

@@ -77,6 +77,40 @@
         }
       ]
     },
+    "demo_3": {
+      "programs": [
+        {
+          "program_id": "demo_3_morning_peak",
+          "period_type": "早高峰",
+          "time_range": {"start": "07:00:00", "end": "09:00:00"},
+          "cycle_duration": 108,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东西左转直行", "green": 55, "yellow": 3, "all_red": 0, "total": 58},
+            {"official_phase_no": 2, "official_phase_name": "南北左转直行", "green": 47, "yellow": 3, "all_red": 0, "total": 50}
+          ]
+        },
+        {
+          "program_id": "demo_3_off_peak",
+          "period_type": "平峰",
+          "time_range": {"start": "14:30:00", "end": "16:30:00"},
+          "cycle_duration": 108,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东西左转直行", "green": 55, "yellow": 3, "all_red": 0, "total": 58},
+            {"official_phase_no": 2, "official_phase_name": "南北左转直行", "green": 47, "yellow": 3, "all_red": 0, "total": 50}
+          ]
+        },
+        {
+          "program_id": "demo_3_evening_peak",
+          "period_type": "晚高峰",
+          "time_range": {"start": "17:30:00", "end": "19:30:00"},
+          "cycle_duration": 108,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东西左转直行", "green": 55, "yellow": 3, "all_red": 0, "total": 58},
+            {"official_phase_no": 2, "official_phase_name": "南北左转直行", "green": 47, "yellow": 3, "all_red": 0, "total": 50}
+          ]
+        }
+      ]
+    },
     "demo_4": {
       "programs": [
         {
@@ -187,6 +221,80 @@
         }
       ]
     },
+    "demo_7": {
+      "programs": [
+        {
+          "program_id": "demo_7_morning_peak",
+          "period_type": "早高峰",
+          "time_range": {"start": "07:00:00", "end": "09:00:00"},
+          "cycle_duration": 95,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "西向直左、南向直右", "green": 47, "yellow": 3, "all_red": 0, "total": 50},
+            {"official_phase_no": 2, "official_phase_name": "东向左右转", "green": 42, "yellow": 3, "all_red": 0, "total": 45}
+          ]
+        },
+        {
+          "program_id": "demo_7_off_peak",
+          "period_type": "平峰",
+          "time_range": {"start": "14:30:00", "end": "16:30:00"},
+          "cycle_duration": 83,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "西向直左、南向直右", "green": 36, "yellow": 3, "all_red": 0, "total": 39},
+            {"official_phase_no": 2, "official_phase_name": "东向左右转", "green": 41, "yellow": 3, "all_red": 0, "total": 44}
+          ]
+        },
+        {
+          "program_id": "demo_7_evening_peak",
+          "period_type": "晚高峰",
+          "time_range": {"start": "17:30:00", "end": "19:30:00"},
+          "cycle_duration": 90,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "西向直左、南向直右", "green": 45, "yellow": 3, "all_red": 0, "total": 48},
+            {"official_phase_no": 2, "official_phase_name": "东向左右转", "green": 39, "yellow": 3, "all_red": 0, "total": 42}
+          ]
+        }
+      ]
+    },
+    "demo_8": {
+      "programs": [
+        {
+          "program_id": "demo_8_morning_peak",
+          "period_type": "早高峰",
+          "time_range": {"start": "07:00:00", "end": "09:00:00"},
+          "cycle_duration": 110,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 32, "yellow": 3, "all_red": 2, "total": 37},
+            {"official_phase_no": 2, "official_phase_name": "东西向左转", "green": 18, "yellow": 3, "all_red": 2, "total": 23},
+            {"official_phase_no": 3, "official_phase_name": "南北向直行", "green": 28, "yellow": 3, "all_red": 2, "total": 33},
+            {"official_phase_no": 4, "official_phase_name": "南北向左转", "green": 12, "yellow": 3, "all_red": 2, "total": 17}
+          ]
+        },
+        {
+          "program_id": "demo_8_off_peak",
+          "period_type": "平峰",
+          "time_range": {"start": "14:30:00", "end": "16:30:00"},
+          "cycle_duration": 90,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 25, "yellow": 3, "all_red": 2, "total": 30},
+            {"official_phase_no": 2, "official_phase_name": "东西向左转", "green": 15, "yellow": 3, "all_red": 2, "total": 20},
+            {"official_phase_no": 3, "official_phase_name": "南北向直行", "green": 20, "yellow": 3, "all_red": 2, "total": 25},
+            {"official_phase_no": 4, "official_phase_name": "南北向左转", "green": 10, "yellow": 3, "all_red": 2, "total": 15}
+          ]
+        },
+        {
+          "program_id": "demo_8_evening_peak",
+          "period_type": "晚高峰",
+          "time_range": {"start": "17:30:00", "end": "19:30:00"},
+          "cycle_duration": 120,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 35, "yellow": 3, "all_red": 2, "total": 40},
+            {"official_phase_no": 2, "official_phase_name": "东西向左转", "green": 20, "yellow": 3, "all_red": 2, "total": 25},
+            {"official_phase_no": 3, "official_phase_name": "南北向直行", "green": 30, "yellow": 3, "all_red": 2, "total": 35},
+            {"official_phase_no": 4, "official_phase_name": "南北向左转", "green": 15, "yellow": 3, "all_red": 2, "total": 20}
+          ]
+        }
+      ]
+    },
     "demo_9": {
       "programs": [
         {
@@ -220,6 +328,46 @@
             {"official_phase_no": 1, "official_phase_name": "南北左转直行", "green": 56, "yellow": 3, "all_red": 0, "total": 59},
             {"official_phase_no": 2, "official_phase_name": "东西左转直行", "green": 48, "yellow": 3, "all_red": 0, "total": 51},
             {"official_phase_no": 3, "official_phase_name": "东北左转右转", "green": 32, "yellow": 3, "all_red": 0, "total": 35}
+          ]
+        }
+      ]
+    },
+    "demo_11": {
+      "programs": [
+        {
+          "program_id": "demo_11_morning_peak",
+          "period_type": "早高峰",
+          "time_range": {"start": "07:00:00", "end": "09:00:00"},
+          "cycle_duration": 170,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 50, "yellow": 3, "all_red": 2, "total": 55},
+            {"official_phase_no": 2, "official_phase_name": "东西向左转", "green": 23, "yellow": 3, "all_red": 2, "total": 28},
+            {"official_phase_no": 3, "official_phase_name": "南北向直行", "green": 52, "yellow": 3, "all_red": 2, "total": 57},
+            {"official_phase_no": 4, "official_phase_name": "南北向左转", "green": 25, "yellow": 3, "all_red": 2, "total": 30}
+          ]
+        },
+        {
+          "program_id": "demo_11_off_peak",
+          "period_type": "平峰",
+          "time_range": {"start": "14:30:00", "end": "16:30:00"},
+          "cycle_duration": 130,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 40, "yellow": 3, "all_red": 2, "total": 45},
+            {"official_phase_no": 2, "official_phase_name": "东西向左转", "green": 20, "yellow": 3, "all_red": 2, "total": 25},
+            {"official_phase_no": 3, "official_phase_name": "南北向直行", "green": 30, "yellow": 3, "all_red": 2, "total": 35},
+            {"official_phase_no": 4, "official_phase_name": "南北向左转", "green": 20, "yellow": 3, "all_red": 2, "total": 25}
+          ]
+        },
+        {
+          "program_id": "demo_11_evening_peak",
+          "period_type": "晚高峰",
+          "time_range": {"start": "17:30:00", "end": "19:30:00"},
+          "cycle_duration": 176,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 50, "yellow": 3, "all_red": 2, "total": 55},
+            {"official_phase_no": 2, "official_phase_name": "东西向左转", "green": 26, "yellow": 3, "all_red": 2, "total": 31},
+            {"official_phase_no": 3, "official_phase_name": "南北向直行", "green": 52, "yellow": 3, "all_red": 2, "total": 57},
+            {"official_phase_no": 4, "official_phase_name": "南北向左转", "green": 28, "yellow": 3, "all_red": 2, "total": 33}
           ]
         }
       ]
@@ -372,35 +520,27 @@
           "program_id": "demo_13_morning_peak",
           "period_type": "早高峰",
           "time_range": {"start": "07:00:00", "end": "09:00:00"},
-          "cycle_duration": 152,
+          "cycle_duration": 75,
           "phases": [
-            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 55, "yellow": 3, "all_red": 2, "total": 60},
-            {"official_phase_no": 2, "official_phase_name": "北进口左转", "green": 37, "yellow": 3, "all_red": 2, "total": 42},
-            {"official_phase_no": 3, "official_phase_name": "西进口左转", "green": 30, "yellow": 3, "all_red": 2, "total": 35},
-            {"official_phase_no": 4, "official_phase_name": "东进口直行", "green": 15, "yellow": 0, "all_red": 0, "total": 15}
+            {"official_phase_no": 1, "official_phase_name": "东进口直行", "green": 70, "yellow": 3, "all_red": 2, "total": 75}
           ]
         },
         {
           "program_id": "demo_13_off_peak",
           "period_type": "平峰",
           "time_range": {"start": "14:30:00", "end": "16:30:00"},
-          "cycle_duration": 147,
+          "cycle_duration": 70,
           "phases": [
-            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 65, "yellow": 3, "all_red": 2, "total": 70},
-            {"official_phase_no": 2, "official_phase_name": "北进口左转", "green": 37, "yellow": 3, "all_red": 2, "total": 42},
-            {"official_phase_no": 3, "official_phase_name": "西进口左转", "green": 30, "yellow": 3, "all_red": 2, "total": 35}
+            {"official_phase_no": 1, "official_phase_name": "东进口直行", "green": 65, "yellow": 3, "all_red": 2, "total": 70}
           ]
         },
         {
           "program_id": "demo_13_evening_peak",
           "period_type": "晚高峰",
           "time_range": {"start": "17:30:00", "end": "19:30:00"},
-          "cycle_duration": 152,
+          "cycle_duration": 75,
           "phases": [
-            {"official_phase_no": 1, "official_phase_name": "东西向直行", "green": 55, "yellow": 3, "all_red": 2, "total": 60},
-            {"official_phase_no": 2, "official_phase_name": "北进口左转", "green": 37, "yellow": 3, "all_red": 2, "total": 42},
-            {"official_phase_no": 3, "official_phase_name": "西进口左转", "green": 30, "yellow": 3, "all_red": 2, "total": 35},
-            {"official_phase_no": 4, "official_phase_name": "东进口直行", "green": 15, "yellow": 0, "all_red": 0, "total": 15}
+            {"official_phase_no": 1, "official_phase_name": "东进口直行", "green": 70, "yellow": 3, "all_red": 2, "total": 75}
           ]
         }
       ]
@@ -537,6 +677,46 @@
           "phases": [
             {"official_phase_no": 1, "official_phase_name": "东北、西南放行", "green": 35, "yellow": 3, "all_red": 0, "total": 38},
             {"official_phase_no": 2, "official_phase_name": "西北、东南放行", "green": 35, "yellow": 3, "all_red": 0, "total": 38}
+          ]
+        }
+      ]
+    },
+    "demo_20": {
+      "programs": [
+        {
+          "program_id": "demo_20_morning_peak",
+          "period_type": "早高峰",
+          "time_range": {"start": "07:00:00", "end": "09:00:00"},
+          "cycle_duration": 120,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东北、西南左转直行（东、西进口）", "green": 45, "yellow": 3, "all_red": 0, "total": 48},
+            {"official_phase_no": 2, "official_phase_name": "东北、西南左转（东、西进口）", "green": 9, "yellow": 3, "all_red": 0, "total": 12},
+            {"official_phase_no": 3, "official_phase_name": "西北、东南左转直行（北、南进口）", "green": 45, "yellow": 3, "all_red": 0, "total": 48},
+            {"official_phase_no": 4, "official_phase_name": "西北、东南左转（北、南进口）", "green": 9, "yellow": 3, "all_red": 0, "total": 12}
+          ]
+        },
+        {
+          "program_id": "demo_20_off_peak",
+          "period_type": "平峰",
+          "time_range": {"start": "14:30:00", "end": "16:30:00"},
+          "cycle_duration": 90,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东北、西南左转直行（东、西进口）", "green": 33, "yellow": 3, "all_red": 0, "total": 36},
+            {"official_phase_no": 2, "official_phase_name": "东北、西南左转（东、西进口）", "green": 6, "yellow": 3, "all_red": 0, "total": 9},
+            {"official_phase_no": 3, "official_phase_name": "西北、东南左转直行（北、南进口）", "green": 33, "yellow": 3, "all_red": 0, "total": 36},
+            {"official_phase_no": 4, "official_phase_name": "西北、东南左转（北、南进口）", "green": 6, "yellow": 3, "all_red": 0, "total": 9}
+          ]
+        },
+        {
+          "program_id": "demo_20_evening_peak",
+          "period_type": "晚高峰",
+          "time_range": {"start": "17:30:00", "end": "19:30:00"},
+          "cycle_duration": 110,
+          "phases": [
+            {"official_phase_no": 1, "official_phase_name": "东北、西南左转直行（东、西进口）", "green": 41, "yellow": 3, "all_red": 0, "total": 44},
+            {"official_phase_no": 2, "official_phase_name": "东北、西南左转（东、西进口）", "green": 8, "yellow": 3, "all_red": 0, "total": 11},
+            {"official_phase_no": 3, "official_phase_name": "西北、东南左转直行（北、南进口）", "green": 41, "yellow": 3, "all_red": 0, "total": 44},
+            {"official_phase_no": 4, "official_phase_name": "西北、东南左转（北、南进口）", "green": 8, "yellow": 3, "all_red": 0, "total": 11}
           ]
         }
       ]

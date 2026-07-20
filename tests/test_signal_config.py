@@ -2,11 +2,13 @@ import json
 import shutil
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
 from simulation.sumo.build_tls import (
     ControlledConnection,
+    _blocked_turnaround_deletions,
     _build_templates,
     _read_junction_types,
     _remove_empty_params,
@@ -29,17 +31,22 @@ class SignalConfigurationTests(unittest.TestCase):
                 {
                     "demo_1": {"junction_id": "4427"},
                     "demo_2": {"junction_id": "317"},
+                    "demo_3": {"junction_id": "citypulse_demo_3"},
                     "demo_4": {"junction_id": "3935"},
                     "demo_5": {"junction_id": "3807"},
                     "demo_6": {"junction_id": "3936"},
+                    "demo_7": {"junction_id": "610"},
+                    "demo_8": {"junction_id": "4393"},
                     "demo_9": {"junction_id": "3864"},
+                    "demo_11": {"junction_id": "4306"},
                     "demo_12": {"junction_id": "182"},
-                    "demo_14": {"junction_id": "882"},
+                    "demo_14": {"junction_id": "892"},
                     "demo_15": {"junction_id": "1117"},
                     "demo_16": {"junction_id": "3279"},
                     "demo_17": {"junction_id": "3702"},
                     "demo_18": {"junction_id": "4409"},
                     "demo_19": {"junction_id": "891"},
+                    "demo_20": {"junction_id": "3637"},
                     "demo_10": {"junction_id": "4162"},
                     "demo_13": {"junction_id": "1204"},
                 }
@@ -56,12 +63,16 @@ class SignalConfigurationTests(unittest.TestCase):
     def test_official_cycles_and_mapping(self):
         config = self.load().intersections["demo_1"]
         self.assertEqual(config.junction_ids, ("4427",))
-        self.assertEqual(config.topology.approaches["east"], ("-56384",))
-        self.assertEqual(config.topology.approaches["west"], ("-57217",))
-        self.assertEqual(config.topology.approaches["north"], ("-56907",))
+        self.assertEqual(config.topology.approaches["east"], ("-56907",))
         self.assertEqual(
-            config.topology.approaches["south"],
+            config.topology.approaches["west"],
             ("-manual_demo1_missing_arm",),
+        )
+        self.assertEqual(config.topology.approaches["north"], ("-57217",))
+        self.assertEqual(config.topology.approaches["south"], ("-56384",))
+        self.assertEqual(config.topology.u_turn_policy, "blocked")
+        self.assertEqual(
+            config.topology.movement_for_direction("-57217", "t"), "blocked"
         )
         self.assertEqual(
             {key: value.cycle_duration for key, value in config.programs.items()},
@@ -75,19 +86,31 @@ class SignalConfigurationTests(unittest.TestCase):
             self.assertEqual([phase.number for phase in program.phases], [1, 2, 3, 4])
             self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
             self.assertTrue(all(phase.clearance == 2 for phase in program.phases))
+        self.assertEqual(
+            [phase.green for phase in config.programs["demo_1_morning_peak"].phases],
+            [38, 32, 32, 38],
+        )
+        self.assertEqual(
+            [phase.green for phase in config.programs["demo_1_off_peak"].phases],
+            [27, 33, 33, 27],
+        )
+        self.assertEqual(
+            [phase.green for phase in config.programs["demo_1_evening_peak"].phases],
+            [37, 34, 37, 32],
+        )
 
         demo_2 = self.load().intersections["demo_2"]
         self.assertEqual(demo_2.junction_ids, ("317",))
         self.assertEqual(
-            demo_2.topology.approaches["northeast_main"],
-            ("-56734",),
-        )
-        self.assertEqual(
-            demo_2.topology.approaches["southwest_main"],
+            demo_2.topology.approaches["north"],
             ("-57228",),
         )
         self.assertEqual(
-            demo_2.topology.approaches["southeast_branch"],
+            demo_2.topology.approaches["south"],
+            ("-56734",),
+        )
+        self.assertEqual(
+            demo_2.topology.approaches["west"],
             ("-51425",),
         )
         self.assertEqual(
@@ -100,6 +123,28 @@ class SignalConfigurationTests(unittest.TestCase):
         )
         for program in demo_2.programs.values():
             self.assertEqual([phase.number for phase in program.phases], [1, 2])
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+
+        demo_3 = self.load().intersections["demo_3"]
+        self.assertEqual(demo_3.junction_ids, ("citypulse_demo_3",))
+        self.assertEqual(
+            demo_3.topology.approaches,
+            {
+                "east": ("-57582",),
+                "west": ("-50816",),
+                "north": ("-46791",),
+                "south": ("-52565",),
+            },
+        )
+        self.assertEqual(demo_3.topology.u_turn_policy, "blocked")
+        self.assertEqual(
+            demo_3.topology.movement_for_direction("-57582", "t"), "blocked"
+        )
+        for program in demo_3.programs.values():
+            self.assertEqual(program.cycle_duration, 108)
+            self.assertEqual([phase.number for phase in program.phases], [1, 2])
+            self.assertEqual([phase.green for phase in program.phases], [55, 47])
             self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
             self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
 
@@ -140,8 +185,8 @@ class SignalConfigurationTests(unittest.TestCase):
             ],
             ["through", "through", "through"],
         )
-        self.assertEqual(demo_4.topology.u_turn_policy, "with_left")
-        self.assertEqual(demo_4.topology.direction_mapping["t"], "uturn")
+        self.assertEqual(demo_4.topology.u_turn_policy, "blocked")
+        self.assertEqual(demo_4.topology.direction_mapping["t"], "blocked")
 
         demo_5 = self.load().intersections["demo_5"]
         self.assertEqual(demo_5.junction_ids, ("3807",))
@@ -193,6 +238,86 @@ class SignalConfigurationTests(unittest.TestCase):
             self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
         self.assertEqual(demo_6.topology.phases[1].priority, "permissive")
 
+        demo_7 = self.load().intersections["demo_7"]
+        self.assertEqual(demo_7.junction_ids, ("610",))
+        self.assertEqual(
+            demo_7.topology.approaches,
+            {
+                "east": ("-51953",),
+                "west": ("-46217",),
+                "south": ("-51871",),
+            },
+        )
+        self.assertEqual(demo_7.topology.right_turn_policy, "phase_controlled")
+        self.assertEqual(
+            {key: value.cycle_duration for key, value in demo_7.programs.items()},
+            {
+                "demo_7_morning_peak": 95,
+                "demo_7_off_peak": 83,
+                "demo_7_evening_peak": 90,
+            },
+        )
+        self.assertEqual(
+            {
+                key: [phase.green for phase in value.phases]
+                for key, value in demo_7.programs.items()
+            },
+            {
+                "demo_7_morning_peak": [47, 42],
+                "demo_7_off_peak": [36, 41],
+                "demo_7_evening_peak": [45, 39],
+            },
+        )
+        for program in demo_7.programs.values():
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+        self.assertEqual(
+            demo_7.topology.movement_for_direction("-51953", "s"), "blocked"
+        )
+        self.assertEqual(
+            demo_7.topology.movement_for_direction("-46217", "r"), "blocked"
+        )
+        self.assertEqual(
+            demo_7.topology.movement_for_direction("-51871", "l"), "blocked"
+        )
+
+        demo_8 = self.load().intersections["demo_8"]
+        self.assertEqual(demo_8.junction_ids, ("4393",))
+        self.assertEqual(
+            demo_8.topology.approaches,
+            {
+                "east": ("-54807",),
+                "west": ("-57234",),
+                "north": ("-57112",),
+                "south": ("-57109",),
+            },
+        )
+        self.assertEqual(
+            {key: value.cycle_duration for key, value in demo_8.programs.items()},
+            {
+                "demo_8_morning_peak": 110,
+                "demo_8_off_peak": 90,
+                "demo_8_evening_peak": 120,
+            },
+        )
+        self.assertEqual(
+            {
+                key: [phase.green for phase in value.phases]
+                for key, value in demo_8.programs.items()
+            },
+            {
+                "demo_8_morning_peak": [32, 18, 28, 12],
+                "demo_8_off_peak": [25, 15, 20, 10],
+                "demo_8_evening_peak": [35, 20, 30, 15],
+            },
+        )
+        for program in demo_8.programs.values():
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 2 for phase in program.phases))
+        self.assertEqual(
+            demo_8.topology.movement_for_direction("-54807", "t"), "blocked"
+        )
+
         demo_9 = self.load().intersections["demo_9"]
         self.assertEqual(demo_9.junction_ids, ("3864",))
         self.assertEqual(
@@ -220,6 +345,40 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(
             demo_9.topology.movement_for_direction("-50241", "s"), "blocked"
         )
+
+        demo_11 = self.load().intersections["demo_11"]
+        self.assertEqual(demo_11.junction_ids, ("4306",))
+        self.assertEqual(
+            demo_11.topology.approaches,
+            {
+                "east": ("-57303",),
+                "west": ("-51264",),
+                "north": ("-57053",),
+                "south": ("-56346",),
+            },
+        )
+        self.assertEqual(
+            {key: value.cycle_duration for key, value in demo_11.programs.items()},
+            {
+                "demo_11_morning_peak": 170,
+                "demo_11_off_peak": 130,
+                "demo_11_evening_peak": 176,
+            },
+        )
+        self.assertEqual(
+            {
+                key: [phase.green for phase in value.phases]
+                for key, value in demo_11.programs.items()
+            },
+            {
+                "demo_11_morning_peak": [50, 23, 52, 25],
+                "demo_11_off_peak": [40, 20, 30, 20],
+                "demo_11_evening_peak": [50, 26, 52, 28],
+            },
+        )
+        for program in demo_11.programs.values():
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 2 for phase in program.phases))
 
         demo_12 = self.load().intersections["demo_12"]
         self.assertEqual(demo_12.junction_ids, ("182",))
@@ -254,26 +413,33 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(demo_12.topology.phases[3].priority, "permissive")
 
         demo_14 = self.load().intersections["demo_14"]
-        self.assertEqual(demo_14.junction_ids, ("882",))
+        self.assertEqual(demo_14.junction_ids, ("892",))
         self.assertEqual(
             demo_14.topology.approaches,
             {
-                "east": ("-46786",),
-                "west": ("-52559",),
-                "north": ("-52202",),
-                "south": ("-46529",),
+                "east": ("-46785",),
+                "north": ("-52216",),
+                "south": ("-46539",),
             },
         )
+        self.assertEqual(demo_14.topology.right_turn_policy, "phase_controlled")
         for program in demo_14.programs.values():
             self.assertEqual(program.cycle_duration, 75)
             self.assertEqual([phase.green for phase in program.phases], [22, 47])
             self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
             self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
         self.assertEqual(
-            demo_14.topology.movement_for_direction("-52559", "s"), "blocked"
+            demo_14.topology.movement_for_direction("-46785", "s"), "blocked"
         )
         self.assertEqual(
-            demo_14.topology.movement_for_direction("-46786", "s"), "blocked"
+            demo_14.topology.movement_for_direction("-46539", "l"), "blocked"
+        )
+        phase_one = demo_14.topology.phases[0]
+        self.assertEqual(phase_one.approaches, ("north",))
+        self.assertEqual(phase_one.priority, "protected")
+        self.assertEqual(
+            [(group.movement, group.approaches) for group in phase_one.permissive],
+            [("left", ("east",))],
         )
 
         demo_15 = self.load().intersections["demo_15"]
@@ -377,6 +543,43 @@ class SignalConfigurationTests(unittest.TestCase):
             demo_19.topology.movement_for_direction("-57395", "t"), "blocked"
         )
 
+        demo_20 = self.load().intersections["demo_20"]
+        self.assertEqual(demo_20.junction_ids, ("3637",))
+        self.assertEqual(
+            demo_20.topology.approaches,
+            {
+                "east": ("-56836",),
+                "west": ("-57067",),
+                "north": ("-49964",),
+                "south": ("-57333",),
+            },
+        )
+        self.assertEqual(
+            {key: value.cycle_duration for key, value in demo_20.programs.items()},
+            {
+                "demo_20_morning_peak": 120,
+                "demo_20_off_peak": 90,
+                "demo_20_evening_peak": 110,
+            },
+        )
+        self.assertEqual(
+            {
+                key: [phase.green for phase in value.phases]
+                for key, value in demo_20.programs.items()
+            },
+            {
+                "demo_20_morning_peak": [45, 9, 45, 9],
+                "demo_20_off_peak": [33, 6, 33, 6],
+                "demo_20_evening_peak": [41, 8, 41, 8],
+            },
+        )
+        for program in demo_20.programs.values():
+            self.assertTrue(all(phase.yellow == 3 for phase in program.phases))
+            self.assertTrue(all(phase.clearance == 0 for phase in program.phases))
+        self.assertEqual(
+            demo_20.topology.movement_for_direction("-56836", "t"), "blocked"
+        )
+
         demo_10 = self.load().intersections["demo_10"]
         self.assertEqual(demo_10.junction_ids, ("4162",))
         self.assertEqual(
@@ -406,9 +609,9 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(
             {key: value.cycle_duration for key, value in demo_13.programs.items()},
             {
-                "demo_13_morning_peak": 152,
-                "demo_13_off_peak": 147,
-                "demo_13_evening_peak": 152,
+                "demo_13_morning_peak": 75,
+                "demo_13_off_peak": 70,
+                "demo_13_evening_peak": 75,
             },
         )
         self.assertEqual(
@@ -417,16 +620,27 @@ class SignalConfigurationTests(unittest.TestCase):
                 for key, value in demo_13.programs.items()
             },
             {
-                "demo_13_morning_peak": [1, 2, 3, 4],
-                "demo_13_off_peak": [1, 2, 3],
-                "demo_13_evening_peak": [1, 2, 3, 4],
+                "demo_13_morning_peak": [1],
+                "demo_13_off_peak": [1],
+                "demo_13_evening_peak": [1],
             },
         )
         self.assertEqual(
-            demo_13.topology.movement_for_direction("-56457", "r"), "left"
+            {
+                key: [phase.green for phase in value.phases]
+                for key, value in demo_13.programs.items()
+            },
+            {
+                "demo_13_morning_peak": [70],
+                "demo_13_off_peak": [65],
+                "demo_13_evening_peak": [70],
+            },
         )
         self.assertEqual(
-            demo_13.topology.movement_for_direction("-46884", "t"), "uturn"
+            demo_13.topology.movement_for_direction("-56457", "r"), "right"
+        )
+        self.assertEqual(
+            demo_13.topology.movement_for_direction("-46884", "t"), "blocked"
         )
 
     def test_demo_9_templates_follow_five_arm_topology_and_real_foes(self):
@@ -521,7 +735,153 @@ class SignalConfigurationTests(unittest.TestCase):
                 self.assertTrue(all(state[index] == "g" for index in right_turns))
                 self.assertTrue(all(state[index] == "r" for index in blocked))
 
-    def test_demo_12_14_15_templates_follow_real_foe_matrices(self):
+    def test_demo_8_and_11_templates_follow_real_foe_matrices(self):
+        def make_connections(config, intersection_id, junction_id, tls_id, definitions):
+            return [
+                ControlledConnection(
+                    intersection_id=intersection_id,
+                    junction_id=junction_id,
+                    tls_id=tls_id,
+                    link_index=link_index,
+                    approach=approach,
+                    movement=config.topology.movement_for_direction(
+                        from_edge, direction
+                    ),
+                    from_edge=from_edge,
+                    from_lane=0,
+                    to_edge=f"out_{link_index}",
+                    to_lane=0,
+                    direction=direction,
+                    via=f":{junction_id}_{request_index}_0",
+                    request_index=request_index,
+                )
+                for link_index, request_index, approach, from_edge, direction in definitions
+            ]
+
+        demo_8 = self.load().intersections["demo_8"]
+        connections = make_connections(
+            demo_8,
+            "demo_8",
+            "4393",
+            "J1",
+            (
+                (0, 0, "south", "-57109", "r"),
+                (1, 1, "south", "-57109", "s"),
+                (2, 1, "south", "-57109", "s"),
+                (3, 3, "south", "-57109", "l"),
+                (4, 4, "west", "-57234", "r"),
+                (5, 5, "west", "-57234", "s"),
+                (6, 5, "west", "-57234", "s"),
+                (7, 7, "west", "-57234", "l"),
+                (8, 8, "north", "-57112", "r"),
+                (9, 9, "north", "-57112", "s"),
+                (10, 9, "north", "-57112", "s"),
+                (11, 11, "north", "-57112", "l"),
+                (12, 12, "east", "-54807", "r"),
+                (13, 13, "east", "-54807", "s"),
+                (14, 13, "east", "-54807", "s"),
+                (15, 15, "east", "-54807", "l"),
+                (16, 16, "east", "-54807", "t"),
+            ),
+        )
+        foes = {
+            0: "00000000001100000",
+            1: "01111100011100000",
+            2: "01111100011100000",
+            3: "01110011011100000",
+            4: "00000011000000000",
+            5: "11000111000001111",
+            6: "11000111000001111",
+            7: "00110111000001110",
+            8: "00110000000000000",
+            9: "01110000011111000",
+            10: "01110000011111000",
+            11: "11110000011100110",
+            12: "00000000000000110",
+            13: "00000111110001110",
+            14: "00000111110001110",
+            15: "00000111001101110",
+            16: "00000100001100000",
+        }
+        templates = _build_templates(
+            demo_8, connections, {"J1": 17}, {"4393": foes}
+        )
+        expected_green = {
+            1: (5, 6, 13, 14),
+            2: (7, 15),
+            3: (1, 2, 9, 10),
+            4: (3, 11),
+        }
+        for phase_number, protected in expected_green.items():
+            state = templates[phase_number]["J1"]["green"]
+            self.assertTrue(all(state[index] == "G" for index in protected))
+        for phase in templates.values():
+            for stage in ("green", "yellow", "clearance"):
+                state = phase["J1"][stage]
+                self.assertTrue(all(state[index] == "g" for index in (0, 4, 8, 12)))
+                self.assertEqual(state[16], "r")
+
+        demo_11 = self.load().intersections["demo_11"]
+        connections = make_connections(
+            demo_11,
+            "demo_11",
+            "4306",
+            "4306",
+            (
+                (0, 0, "south", "-56346", "r"),
+                (1, 1, "south", "-56346", "s"),
+                (2, 2, "south", "-56346", "l"),
+                (3, 3, "west", "-51264", "r"),
+                (4, 4, "west", "-51264", "s"),
+                (5, 4, "west", "-51264", "s"),
+                (6, 4, "west", "-51264", "s"),
+                (7, 7, "west", "-51264", "l"),
+                (8, 8, "north", "-57053", "r"),
+                (9, 9, "north", "-57053", "s"),
+                (10, 10, "north", "-57053", "l"),
+                (11, 11, "east", "-57303", "r"),
+                (12, 12, "east", "-57303", "s"),
+                (13, 12, "east", "-57303", "s"),
+                (14, 12, "east", "-57303", "s"),
+                (15, 15, "east", "-57303", "l"),
+            ),
+        )
+        foes = {
+            0: "0000000001110000",
+            1: "1111110011110000",
+            2: "1111001011110000",
+            3: "0000000000000000",
+            4: "1000011000000111",
+            5: "1000011000000111",
+            6: "1000011000000111",
+            7: "0111111000000110",
+            8: "0111000000000000",
+            9: "1111000011110100",
+            10: "1111000011110010",
+            11: "0000000010000010",
+            12: "0000011110000110",
+            13: "0000011110000110",
+            14: "0000011110000110",
+            15: "0000011001110110",
+        }
+        templates = _build_templates(
+            demo_11, connections, {"4306": 16}, {"4306": foes}
+        )
+        expected_green = {
+            1: (4, 5, 6, 12, 13, 14),
+            2: (7, 15),
+            3: (1, 9),
+            4: (2, 10),
+        }
+        for phase_number, protected in expected_green.items():
+            state = templates[phase_number]["4306"]["green"]
+            self.assertTrue(all(state[index] == "G" for index in protected))
+        for phase in templates.values():
+            for stage in ("green", "yellow", "clearance"):
+                state = phase["4306"][stage]
+                self.assertTrue(all(state[index] == "g" for index in (0, 3, 8, 11)))
+
+    def test_demo_7_12_14_15_templates_follow_real_foe_matrices(self):
         def connections_for(config, intersection_id, junction_id, definitions):
             return [
                 ControlledConnection(
@@ -543,6 +903,37 @@ class SignalConfigurationTests(unittest.TestCase):
                 )
                 for request_index, approach, from_edge, direction in definitions
             ]
+
+        demo_7 = self.load().intersections["demo_7"]
+        connections = connections_for(
+            demo_7,
+            "demo_7",
+            "610",
+            (
+                (0, "west", "-46217", "s"),
+                (1, "west", "-46217", "l"),
+                (2, "east", "-51953", "r"),
+                (3, "east", "-51953", "l"),
+                (4, "south", "-51871", "r"),
+                (5, "south", "-51871", "s"),
+            ),
+        )
+        foes = {
+            0: "001000",
+            1: "111000",
+            2: "100000",
+            3: "100011",
+            4: "000010",
+            5: "001110",
+        }
+        templates = _build_templates(
+            demo_7, connections, {"610": 6}, {"610": foes}
+        )
+        self.assertEqual(templates[1]["610"]["green"], "GgrrGG")
+        self.assertEqual(templates[1]["610"]["yellow"], "yyrryy")
+        self.assertEqual(templates[1]["610"]["clearance"], "rrrrrr")
+        self.assertEqual(templates[2]["610"]["green"], "rrGGrr")
+        self.assertEqual(templates[2]["610"]["yellow"], "rryyrr")
 
         demo_12 = self.load().intersections["demo_12"]
         connections = connections_for(
@@ -613,58 +1004,32 @@ class SignalConfigurationTests(unittest.TestCase):
         connections = connections_for(
             demo_14,
             "demo_14",
-            "882",
+            "892",
             (
-                (0, "south", "-46529", "r"),
-                (2, "south", "-46529", "s"),
-                (3, "south", "-46529", "l"),
-                (4, "west", "-52559", "r"),
-                (6, "west", "-52559", "s"),
-                (7, "west", "-52559", "l"),
-                (8, "north", "-52202", "r"),
-                (10, "north", "-52202", "s"),
-                (11, "north", "-52202", "l"),
-                (12, "east", "-46786", "r"),
-                (14, "east", "-46786", "s"),
-                (15, "east", "-46786", "l"),
+                (0, "south", "-46539", "r"),
+                (1, "south", "-46539", "s"),
+                (2, "north", "-52216", "s"),
+                (3, "north", "-52216", "l"),
+                (4, "east", "-46785", "r"),
+                (5, "east", "-46785", "l"),
             ),
         )
         foes = {
-            0: "0000000000000000",
-            1: "0000100001000000",
-            2: "1110100011000000",
-            3: "1100111011000000",
-            4: "0000000000000000",
-            5: "1000010000000000",
-            6: "1000110000001110",
-            7: "1110110000001100",
-            8: "0000000000000000",
-            9: "0100000000001000",
-            10: "1100000011101000",
-            11: "1100000011001110",
-            12: "0000000000000000",
-            13: "0000000010000100",
-            14: "0000111010001100",
-            15: "0000110011101100",
+            0: "001000",
+            1: "111000",
+            2: "100000",
+            3: "100011",
+            4: "000010",
+            5: "001110",
         }
         templates = _build_templates(
-            demo_14, connections, {"882": 16}, {"882": foes}
+            demo_14, connections, {"892": 6}, {"892": foes}
         )
-        self.assertEqual(templates[1]["882"]["green"][10], "G")
-        self.assertTrue(
-            all(templates[1]["882"]["green"][index] == "g" for index in (11, 15))
-        )
-        self.assertEqual(templates[2]["882"]["green"][2], "G")
-        for phase in templates.values():
-            self.assertTrue(
-                all(phase["882"]["green"][index] == "g" for index in (0, 12))
-            )
-            self.assertTrue(
-                all(
-                    phase["882"]["green"][index] == "r"
-                    for index in (3, 4, 6, 7, 8, 14)
-                )
-            )
+        self.assertEqual(templates[1]["892"]["green"], "rrGGGg")
+        self.assertEqual(templates[1]["892"]["yellow"], "rryyyy")
+        self.assertEqual(templates[1]["892"]["clearance"], "rrrrrr")
+        self.assertEqual(templates[2]["892"]["green"], "GGrrrr")
+        self.assertEqual(templates[2]["892"]["yellow"], "yyrrrr")
 
         demo_15 = self.load().intersections["demo_15"]
         connections = connections_for(
@@ -866,7 +1231,7 @@ class SignalConfigurationTests(unittest.TestCase):
                 all(phase["3702"]["green"][index] == "r" for index in (2, 6))
             )
 
-    def test_demo_18_and_19_templates_follow_real_foe_matrices(self):
+    def test_demo_18_19_and_20_templates_follow_real_foe_matrices(self):
         def build(config, intersection_id, junction_id, definitions, foes):
             connections = [
                 ControlledConnection(
@@ -1057,6 +1422,104 @@ class SignalConfigurationTests(unittest.TestCase):
                 )
             )
 
+        demo_20 = self.load().intersections["demo_20"]
+        definitions_20 = (
+            (9, 10, "north", "-49964", "r"),
+            (10, 9, "north", "-49964", "s"),
+            (10, 8, "north", "-49964", "s"),
+            (12, 7, "north", "-49964", "l"),
+            (13, 6, "east", "-56836", "r"),
+            (14, 2, "east", "-56836", "s"),
+            (14, 3, "east", "-56836", "s"),
+            (14, 4, "east", "-56836", "s"),
+            (14, 5, "east", "-56836", "s"),
+            (18, 1, "east", "-56836", "l"),
+            (19, 0, "east", "-56836", "t"),
+            (4, 15, "west", "-57067", "r"),
+            (5, 13, "west", "-57067", "s"),
+            (5, 14, "west", "-57067", "s"),
+            (7, 12, "west", "-57067", "l"),
+            (8, 11, "west", "-57067", "t"),
+            (0, 19, "south", "-57333", "r"),
+            (1, 18, "south", "-57333", "s"),
+            (2, 17, "south", "-57333", "l"),
+            (3, 16, "south", "-57333", "t"),
+        )
+        foes_20 = {
+            0: "00000000000001100000",
+            1: "01111111000011100000",
+            2: "01111100110111100000",
+            3: "01000000110000000000",
+            4: "00000000110000000000",
+            5: "11000001110000000111",
+            6: "11000001110000000111",
+            7: "01111111110000000110",
+            8: "00111100000000000100",
+            9: "00111100000000000000",
+            10: "01111100000011111100",
+            11: "01111100000011111100",
+            12: "11111100000011100010",
+            13: "00000000000010000010",
+            14: "00000001111110000110",
+            15: "00000001111110000110",
+            16: "00000001111110000110",
+            17: "00000001111110000110",
+            18: "00000001110011101110",
+            19: "00000001000001100000",
+        }
+        templates_20 = build(
+            demo_20, "demo_20", "3637", definitions_20, foes_20
+        )
+        self.assertTrue(
+            all(
+                templates_20[1]["3637"]["green"][index] == "G"
+                for index in (2, 3, 4, 5, 13, 14)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_20[1]["3637"]["green"][index] == "g"
+                for index in (1, 12)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_20[2]["3637"]["green"][index] == "g"
+                for index in (1, 12)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_20[3]["3637"]["green"][index] == "G"
+                for index in (8, 9, 18)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_20[3]["3637"]["green"][index] == "g"
+                for index in (7, 17)
+            )
+        )
+        self.assertTrue(
+            all(
+                templates_20[4]["3637"]["green"][index] == "g"
+                for index in (7, 17)
+            )
+        )
+        for phase in templates_20.values():
+            self.assertTrue(
+                all(
+                    phase["3637"]["green"][index] == "g"
+                    for index in (6, 10, 15, 19)
+                )
+            )
+            self.assertTrue(
+                all(
+                    phase["3637"]["green"][index] == "r"
+                    for index in (0, 11, 16)
+                )
+            )
+
     def test_demo_10_and_13_templates_follow_real_foe_matrices(self):
         demo_10 = self.load().intersections["demo_10"]
         definitions = (
@@ -1158,13 +1621,9 @@ class SignalConfigurationTests(unittest.TestCase):
             {"1204": foes},
             demo_13.topology.phases_for("demo_13_off_peak"),
         )
-        self.assertEqual(morning[1]["1204"]["green"][3], "G")
-        self.assertEqual(morning[2]["1204"]["green"][1], "G")
-        self.assertEqual(morning[3]["1204"]["green"][2], "G")
-        self.assertEqual(morning[4]["1204"]["green"][3], "G")
-        self.assertEqual(set(off_peak), {1, 2, 3})
-        for phase in morning.values():
-            self.assertEqual(phase["1204"]["green"][0], "g")
+        self.assertEqual(set(morning), {1})
+        self.assertEqual(set(off_peak), {1})
+        self.assertEqual(morning[1]["1204"]["green"][:4], "grgG")
 
     def test_demo_6_templates_cover_all_four_way_movements(self):
         config = self.load().intersections["demo_6"]
@@ -1256,7 +1715,7 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(phase_one[3], "g")
         self.assertEqual(phase_one[5], "g")
 
-    def test_demo_4_program_templates_support_protected_and_permissive_groups(self):
+    def test_demo_4_program_templates_support_groups_and_block_uturns(self):
         config = self.load().intersections["demo_4"]
         connections = []
         index = 0
@@ -1292,10 +1751,10 @@ class SignalConfigurationTests(unittest.TestCase):
                     tls_id="3935",
                     link_index=index,
                     approach=approach,
-                    movement="uturn",
+                    movement="blocked",
                     from_edge=config.topology.approaches[approach][0],
                     from_lane=0,
-                    to_edge=f"out_{approach}_uturn",
+                    to_edge=f"out_{approach}_blocked_uturn",
                     to_lane=0,
                     direction="t",
                     via=f":3935_{index}_0",
@@ -1319,8 +1778,13 @@ class SignalConfigurationTests(unittest.TestCase):
         south_uturn = 13
         self.assertEqual(morning[3]["3935"]["green"][west_through], "G")
         self.assertEqual(morning[3]["3935"]["green"][west_left], "G")
-        self.assertEqual(morning[2]["3935"]["green"][north_uturn], "G")
-        self.assertEqual(morning[2]["3935"]["green"][south_uturn], "G")
+        self.assertTrue(
+            all(
+                phase["3935"]["green"][index] == "r"
+                for phase in morning.values()
+                for index in (north_uturn, south_uturn)
+            )
+        )
 
         off_peak = _build_templates(
             config,
@@ -1337,69 +1801,116 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(off_peak[1]["3935"]["green"][south_through], "G")
         self.assertEqual(off_peak[1]["3935"]["green"][north_left], "g")
         self.assertEqual(off_peak[1]["3935"]["green"][south_left], "g")
-        self.assertEqual(off_peak[1]["3935"]["green"][north_uturn], "g")
-        self.assertEqual(off_peak[1]["3935"]["green"][south_uturn], "g")
+        self.assertTrue(
+            all(
+                phase["3935"]["green"][index] == "r"
+                for phase in off_peak.values()
+                for index in (north_uturn, south_uturn)
+            )
+        )
 
-    def test_templates_keep_right_turns_permissive(self):
+    def test_demo_1_templates_follow_corrected_directions_and_real_foes(self):
         config = self.load().intersections["demo_1"]
-        connections = []
-        index = 0
-        for approach in ("east", "west", "north", "south"):
-            from_edge = config.topology.approaches[approach][0]
-            for direction, movement in (("s", "through"), ("l", "left"), ("r", "right")):
-                connections.append(
-                    ControlledConnection(
-                        intersection_id="demo_1",
-                        junction_id="4427",
-                        tls_id="4427",
-                        link_index=index,
-                        approach=approach,
-                        movement=movement,
-                        from_edge=from_edge,
-                        from_lane=0,
-                        to_edge=f"out_{approach}_{movement}",
-                        to_lane=0,
-                        direction=direction,
-                        via=f":4427_{index}_0",
-                        request_index=index,
-                    )
-                )
-                index += 1
+        definitions = (
+            (0, "south", "-56384", "r"),
+            (1, "south", "-56384", "s"),
+            (2, "south", "-56384", "s"),
+            (3, "south", "-56384", "l"),
+            (5, "west", "-manual_demo1_missing_arm", "r"),
+            (6, "west", "-manual_demo1_missing_arm", "s"),
+            (7, "west", "-manual_demo1_missing_arm", "l"),
+            (8, "north", "-57217", "r"),
+            (9, "north", "-57217", "s"),
+            (10, "north", "-57217", "s"),
+            (11, "north", "-57217", "l"),
+            (13, "east", "-56907", "r"),
+            (14, "east", "-56907", "s"),
+            (15, "east", "-56907", "l"),
+        )
+        connections = [
+            ControlledConnection(
+                intersection_id="demo_1",
+                junction_id="4427",
+                tls_id="4427",
+                link_index=link_index,
+                approach=approach,
+                movement=config.topology.movement_for_direction(from_edge, direction),
+                from_edge=from_edge,
+                from_lane=0,
+                to_edge=f"out_{request_index}",
+                to_lane=0,
+                direction=direction,
+                via=f":4427_{request_index}_0",
+                request_index=request_index,
+            )
+            for link_index, (request_index, approach, from_edge, direction) in enumerate(
+                definitions
+            )
+        ]
+        foes = {
+            0: "10000100001000000",
+            1: "01111100011000000",
+            2: "01111100011000000",
+            3: "01100011111000000",
+            4: "01000011000000000",
+            5: "00000011000000000",
+            6: "11000111000001111",
+            7: "00101111000001110",
+            8: "00100000000001000",
+            9: "01100000011111000",
+            10: "01100000011111000",
+            11: "11100000011000111",
+            12: "00000000010000110",
+            13: "00000000000000110",
+            14: "00000111110001110",
+            15: "00000111001011110",
+            16: "00000100001000001",
+        }
         templates = _build_templates(
             config,
             connections,
             {"4427": len(connections)},
-            {"4427": {value: "0" * len(connections) for value in range(len(connections))}},
+            {"4427": foes},
         )
-        right_indices = [item.link_index for item in connections if item.movement == "right"]
+        self.assertEqual(set(templates), {1, 2, 3, 4})
         for phase_templates in templates.values():
-            for stage in ("green", "yellow", "clearance"):
-                state = phase_templates["4427"][stage]
-                self.assertEqual(len(state), len(connections))
-                self.assertTrue(all(state[value] == "g" for value in right_indices))
-        phase_one = templates[1]["4427"]
-        protected = [
-            item.link_index
-            for item in connections
-            if item.approach in {"east", "west"} and item.movement == "through"
-        ]
-        self.assertTrue(all(phase_one["green"][value] == "G" for value in protected))
-        self.assertTrue(all(phase_one["yellow"][value] == "y" for value in protected))
-        self.assertTrue(all(phase_one["clearance"][value] == "r" for value in protected))
+            state = phase_templates["4427"]["green"]
+            right_indices = [
+                item.link_index for item in connections if item.movement == "right"
+            ]
+            self.assertTrue(all(state[value] == "g" for value in right_indices))
+        for phase_number, approaches in (
+            (1, {"east", "west"}),
+            (2, {"east", "west"}),
+            (3, {"north", "south"}),
+            (4, {"north", "south"}),
+        ):
+            expected_movement = "through" if phase_number in {1, 3} else "left"
+            protected = [
+                item.link_index
+                for item in connections
+                if item.approach in approaches
+                and item.movement == expected_movement
+            ]
+            self.assertTrue(
+                all(
+                    templates[phase_number]["4427"]["green"][value] == "G"
+                    for value in protected
+                )
+            )
+        self.assertTrue(all(item.direction != "t" for item in connections))
 
-    def test_demo_2_templates_cover_normal_movements_and_block_uturns(self):
+    def test_demo_2_templates_cover_only_official_movements(self):
         config = self.load().intersections["demo_2"]
         definitions = (
-            ("northeast_main", "s", "through"),
-            ("northeast_main", "s", "through"),
-            ("northeast_main", "l", "left"),
-            ("northeast_main", "t", "blocked"),
-            ("southeast_branch", "r", "right"),
-            ("southeast_branch", "l", "left"),
-            ("southwest_main", "r", "right"),
-            ("southwest_main", "s", "through"),
-            ("southwest_main", "s", "through"),
-            ("southwest_main", "t", "blocked"),
+            ("south", "s", "through"),
+            ("south", "s", "through"),
+            ("south", "l", "left"),
+            ("west", "r", "right"),
+            ("west", "l", "left"),
+            ("north", "r", "right"),
+            ("north", "s", "through"),
+            ("north", "s", "through"),
         )
         connections = []
         for index, (approach, direction, movement) in enumerate(definitions):
@@ -1441,19 +1952,87 @@ class SignalConfigurationTests(unittest.TestCase):
         )
         phase_one = templates[1]["317"]
         phase_two = templates[2]["317"]
-        northeast_left = 2
-        branch_left = 5
-        blocked_uturns = (3, 9)
-        self.assertEqual(phase_one["green"][northeast_left], "g")
-        self.assertEqual(phase_one["yellow"][northeast_left], "y")
-        self.assertEqual(phase_two["green"][branch_left], "G")
-        self.assertEqual(phase_two["yellow"][branch_left], "y")
-        for phase in templates.values():
-            for tls_states in phase.values():
-                for stage in ("green", "yellow", "clearance"):
-                    self.assertTrue(
-                        all(tls_states[stage][index] == "r" for index in blocked_uturns)
-                    )
+        south_left = 2
+        west_left = 4
+        self.assertEqual(phase_one["green"][south_left], "g")
+        self.assertEqual(phase_one["yellow"][south_left], "y")
+        self.assertEqual(phase_two["green"][west_left], "G")
+        self.assertEqual(phase_two["yellow"][west_left], "y")
+        self.assertEqual(phase_one["green"], "GGggrgGG")
+        self.assertEqual(phase_one["yellow"], "yyygrgyy")
+        self.assertEqual(phase_two["green"], "rrrgGgrr")
+        self.assertEqual(phase_two["yellow"], "rrrgygrr")
+        self.assertTrue(all(item.direction != "t" for item in connections))
+
+    def test_demo_3_templates_protect_through_and_yield_left_turns(self):
+        config = self.load().intersections["demo_3"]
+        definitions = (
+            ("south", "r", "right"),
+            ("south", "s", "through"),
+            ("south", "l", "left"),
+            ("west", "r", "right"),
+            ("west", "s", "through"),
+            ("west", "l", "left"),
+            ("north", "r", "right"),
+            ("north", "s", "through"),
+            ("north", "l", "left"),
+            ("east", "r", "right"),
+            ("east", "s", "through"),
+            ("east", "l", "left"),
+        )
+        connections = [
+            ControlledConnection(
+                intersection_id="demo_3",
+                junction_id="citypulse_demo_3",
+                tls_id="citypulse_demo_3",
+                link_index=index,
+                approach=approach,
+                movement=movement,
+                from_edge=config.topology.approaches[approach][0],
+                from_lane=0,
+                to_edge=f"out_{approach}_{movement}",
+                to_lane=0,
+                direction=direction,
+                via=f":citypulse_demo_3_{index}_0",
+                request_index=index,
+            )
+            for index, (approach, direction, movement) in enumerate(definitions)
+        ]
+        foes = {
+            0: "000100010000",
+            1: "111100110000",
+            2: "110011110000",
+            3: "100010000000",
+            4: "100110000111",
+            5: "111110000110",
+            6: "010000000100",
+            7: "110000111100",
+            8: "110000110011",
+            9: "000000100010",
+            10: "000111100110",
+            11: "000110111110",
+        }
+        templates = _build_templates(
+            config,
+            connections,
+            {"citypulse_demo_3": len(connections)},
+            {"citypulse_demo_3": foes},
+        )
+        phase_one = templates[1]["citypulse_demo_3"]["green"]
+        phase_two = templates[2]["citypulse_demo_3"]["green"]
+        phase_one_yellow = templates[1]["citypulse_demo_3"]["yellow"]
+        phase_two_yellow = templates[2]["citypulse_demo_3"]["yellow"]
+        self.assertTrue(all(phase_one[index] == "G" for index in (4, 10)))
+        self.assertTrue(all(phase_one[index] == "g" for index in (5, 11)))
+        self.assertTrue(all(phase_two[index] == "G" for index in (1, 7)))
+        self.assertTrue(all(phase_two[index] == "g" for index in (2, 8)))
+        for state in (phase_one, phase_two):
+            self.assertTrue(all(state[index] == "g" for index in (0, 3, 6, 9)))
+        self.assertEqual(phase_one, "grrgGggrrgGg")
+        self.assertEqual(phase_two, "gGggrrgGggrr")
+        self.assertEqual(phase_one_yellow, "grrgyygrrgyy")
+        self.assertEqual(phase_two_yellow, "gyygrrgyygrr")
+        self.assertTrue(all(item.direction != "t" for item in connections))
 
     def test_empty_sumo_params_are_removed_without_touching_nonempty_values(self):
         net_path = Path(self.temp_directory.name) / "test.net.xml"
@@ -1512,6 +2091,10 @@ class SignalConfigurationTests(unittest.TestCase):
     def test_netconvert_only_receives_unsignalized_junctions_and_clean_input(self):
         source = self.write_source_network()
         target = Path(self.temp_directory.name) / "generated" / "target.net.xml"
+        blocked_turnarounds = (
+            ("-56734", "-57229"),
+            ("-57228", "-56736"),
+        )
 
         def fake_run(command, check):
             self.assertTrue(check)
@@ -1520,13 +2103,24 @@ class SignalConfigurationTests(unittest.TestCase):
             input_index = command.index("--sumo-net-file") + 1
             sanitized_source = Path(command[input_index])
             self.assertNotIn('value=""', sanitized_source.read_text(encoding="utf-8"))
+            connection_index = command.index("--connection-files") + 1
+            connection_file = Path(command[connection_index])
+            deletions = {
+                (item.get("from"), item.get("to"))
+                for item in ET.parse(connection_file).getroot().findall("delete")
+            }
+            self.assertEqual(deletions, set(blocked_turnarounds))
             shutil.copy2(sanitized_source, target)
 
         with patch(
             "simulation.sumo.build_tls.subprocess.run", side_effect=fake_run
         ) as run:
             applied, removed = _run_netconvert(
-                "netconvert", source, target, ["317", "3935"]
+                "netconvert",
+                source,
+                target,
+                ["317", "3935"],
+                blocked_turnarounds,
             )
         self.assertEqual(run.call_count, 1)
         self.assertTrue(applied)
@@ -1535,6 +2129,45 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(
             list(target.parent.glob("*.netconvert-input.net.xml")),
             [],
+        )
+        self.assertEqual(list(target.parent.glob("*.con.xml")), [])
+
+    def test_only_blocked_turnarounds_are_deleted(self):
+        source = Path(self.temp_directory.name) / "connections.net.xml"
+        source.write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<net>
+  <connection from="-56384" to="-57218" dir="t"/>
+  <connection from="-56732" to="-57230" dir="t"/>
+  <connection from="-56734" to="-56736" dir="s"/>
+  <connection from="-56734" to="-57229" dir="t"/>
+  <connection from="-56907" to="-56915" dir="t"/>
+  <connection from="-57217" to="-56371" dir="t"/>
+  <connection from="-57228" to="-56736" dir="t"/>
+  <connection from="-57229" to="-56733" dir="t"/>
+</net>
+""",
+            encoding="utf-8",
+        )
+        configuration = self.load()
+        self.assertEqual(
+            _blocked_turnaround_deletions(
+                source,
+                [
+                    configuration.intersections["demo_1"],
+                    configuration.intersections["demo_2"],
+                    configuration.intersections["demo_4"],
+                ],
+            ),
+            (
+                ("-56384", "-57218"),
+                ("-56732", "-57230"),
+                ("-56734", "-57229"),
+                ("-56907", "-56915"),
+                ("-57217", "-56371"),
+                ("-57228", "-56736"),
+                ("-57229", "-56733"),
+            ),
         )
 
 

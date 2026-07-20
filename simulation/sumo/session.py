@@ -25,6 +25,8 @@ from .events import (
     SpeedLimitEvent,
 )
 from .external_policy import HttpAlgorithmClient
+from .local_policy import LocalAlgorithmClient
+from .ai_observer import LocalAIObserver, SimulationTimeFrameClock
 from .policy import PROTOCOL_VERSION
 from .scenario import (
     DEFAULT_GENERATED_DIR,
@@ -83,7 +85,9 @@ class SimulationConfig:
     duration_seconds: float | None = None
     flow_multiplier: float = 1.0
     control_mode: str = "fixed"
+    algorithm_transport: str = "http"
     algorithm_endpoint: str = ""
+    algorithm_module: str = ""
     algorithm_timeout: float = 2.0
     decision_interval: float = 5.0
     minimum_green: float = 5.0
@@ -94,6 +98,9 @@ class SimulationConfig:
     playback_speed: float | None = None
     start_paused: bool = False
     snapshot_interval_seconds: float = 0.5
+    ai_observer_module: str = ""
+    ai_frame_interval_seconds: float = 0.1
+    ai_observer_shutdown_timeout: float = 5.0
     initial_events: tuple[DisturbanceEvent, ...] = ()
 
 
@@ -279,16 +286,17 @@ def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatal
     layout = GeneratedArtifactLayout(generated_dir)
     traffic = _read_json(layout.traffic_manifest)
     tls = _read_json(layout.tls_manifest)
-    if int(traffic.get("schema_version", 0)) != 2:
-        raise SessionError("Rebuild traffic artifacts to obtain manifest schema_version 2.")
+    if int(traffic.get("schema_version", 0)) != 3:
+        raise SessionError(
+            "Rebuild global traffic artifacts to obtain manifest schema_version 3."
+        )
     if int(tls.get("schema_version", 0)) != 2:
         raise SessionError("Rebuild signal artifacts to obtain manifest schema_version 2.")
     mapping_path = generated_dir.parent / "TotalMap_20.intersections.json"
     mapping = _read_json(mapping_path)
     scenarios = traffic.get("scenarios", {})
-    by_intersection = {}
-    for scenario in scenarios.values():
-        by_intersection.setdefault(str(scenario["intersection_id"]), []).append(scenario)
+    built_intersections = tuple(str(value) for value in traffic.get("intersection_ids", ()))
+    by_intersection = {intersection_id: list(scenarios.values()) for intersection_id in built_intersections}
     required_lanes = set()
     for intersection_id in by_intersection:
         for connection in tls["intersections"][intersection_id]["connections"]:
@@ -302,7 +310,7 @@ def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatal
         tls_item = tls["intersections"].get(intersection_id)
         if tls_item is None:
             continue
-        origin_data = own_scenarios[0].get("origins", {})
+        origin_data = traffic.get("origins", {}).get(intersection_id, {})
         origins = tuple(
             OriginCapability(
                 origin_id=name,
@@ -485,12 +493,33 @@ class SimulationManager:
             raise ScenarioCompilationError(f"Unknown intersections: {sorted(unknown)}")
         if config.control_mode not in {"fixed", "algorithm"}:
             raise ScenarioCompilationError("control_mode must be fixed or algorithm.")
-        if config.control_mode == "algorithm" and not config.algorithm_endpoint:
-            raise ScenarioCompilationError("algorithm_endpoint is required.")
+        if config.algorithm_transport not in {"http", "local"}:
+            raise ScenarioCompilationError(
+                "algorithm_transport must be http or local."
+            )
+        if config.control_mode == "algorithm":
+            if config.algorithm_transport == "http" and not config.algorithm_endpoint:
+                raise ScenarioCompilationError(
+                    "algorithm_endpoint is required for HTTP algorithm transport."
+                )
+            if config.algorithm_transport == "local" and not config.algorithm_module:
+                raise ScenarioCompilationError(
+                    "algorithm_module is required for local algorithm transport."
+                )
         if config.seed < 0 or config.snapshot_interval_seconds <= 0:
             raise ScenarioCompilationError("seed and snapshot interval are invalid.")
+        if config.step_length <= 0:
+            raise ScenarioCompilationError("step_length must be positive.")
         if config.decision_interval <= 0 or config.minimum_green < 0:
             raise ScenarioCompilationError("Algorithm timing values are invalid.")
+        if config.ai_frame_interval_seconds + 1e-9 < config.step_length:
+            raise ScenarioCompilationError(
+                "ai_frame_interval_seconds cannot be smaller than step_length."
+            )
+        if config.ai_observer_shutdown_timeout <= 0:
+            raise ScenarioCompilationError(
+                "ai_observer_shutdown_timeout must be positive."
+            )
         if config.playback_speed is not None:
             try:
                 _normalize_playback_speed(config.playback_speed)
@@ -595,6 +624,8 @@ class SimulationManager:
         scenario = record.scenario
         traci = None
         client = None
+        client_initialized = False
+        ai_observer = None
         scheduler = None
         controllers = {}
         fixed_tracker = None
@@ -669,21 +700,6 @@ class SimulationManager:
                     programs,
                     minimum_green=config.minimum_green,
                 )
-                metadata = _build_metadata(
-                    traci,
-                    selected_manifest,
-                    programs,
-                    config.period,
-                    config.seed,
-                    decision_interval=config.decision_interval,
-                    minimum_green=config.minimum_green,
-                    episode_id=record.session_id,
-                    vehicle_types=vehicle_types,
-                )
-                client = HttpAlgorithmClient(
-                    config.algorithm_endpoint, config.algorithm_timeout
-                )
-                client.initialize(metadata)
                 vehicle_action_controller = VehicleActionController(
                     traci, vehicle_tracker
                 )
@@ -691,6 +707,30 @@ class SimulationManager:
                     _apply_controller_state(
                         traci, selected_manifest[intersection_id], controller
                     )
+
+            metadata = _build_metadata(
+                traci,
+                selected_manifest,
+                programs,
+                config.period,
+                config.seed,
+                decision_interval=config.decision_interval,
+                minimum_green=config.minimum_green,
+                episode_id=record.session_id,
+                vehicle_types=vehicle_types,
+            )
+            if config.control_mode == "algorithm":
+                if config.algorithm_transport == "local":
+                    client = LocalAlgorithmClient(config.algorithm_module)
+                else:
+                    client = HttpAlgorithmClient(
+                        config.algorithm_endpoint, config.algorithm_timeout
+                    )
+                client.initialize(metadata)
+                client_initialized = True
+            if config.ai_observer_module:
+                ai_observer = LocalAIObserver(config.ai_observer_module)
+                ai_observer.initialize(metadata)
 
             self._publish(
                 record,
@@ -705,6 +745,11 @@ class SimulationManager:
             next_snapshot = 0.0
             departed_since_decision = 0
             arrived_since_decision = 0
+            ai_frame_clock = SimulationTimeFrameClock(
+                config.ai_frame_interval_seconds
+            )
+            departed_since_ai_frame = 0
+            arrived_since_ai_frame = 0
             while (
                 traci.simulation.getMinExpectedNumber() > 0
                 and traci.simulation.getTime() < scenario.duration_seconds
@@ -720,6 +765,8 @@ class SimulationManager:
                 if stop_requested:
                     stop_requested = True
                     break
+                if ai_observer is not None:
+                    ai_observer.check_error()
                 if record.paused:
                     continue
                 loop_started = time.perf_counter()
@@ -735,6 +782,8 @@ class SimulationManager:
                 total_arrived += arrived
                 departed_since_decision += departed
                 arrived_since_decision += arrived
+                departed_since_ai_frame += departed
+                arrived_since_ai_frame += arrived
 
                 if config.control_mode == "algorithm":
                     for intersection_id, controller in controllers.items():
@@ -754,6 +803,7 @@ class SimulationManager:
                             departed_since_decision,
                             arrived_since_decision,
                             vehicle_tracker=vehicle_tracker,
+                            vehicle_action_controller=vehicle_action_controller,
                             previous_action_results=(
                                 vehicle_action_controller.previous_results()
                             ),
@@ -782,6 +832,35 @@ class SimulationManager:
                         decision_step += 1
                         while next_decision <= elapsed + 1e-9:
                             next_decision += config.decision_interval
+
+                ai_frame_id = (
+                    ai_frame_clock.poll(elapsed)
+                    if ai_observer is not None
+                    else None
+                )
+                if ai_observer is not None and ai_frame_id is not None:
+                    from .run import _observe_ai_frame
+
+                    frame = _observe_ai_frame(
+                        traci,
+                        elapsed,
+                        ai_frame_id,
+                        metadata,
+                        controllers,
+                        fixed_tracker=fixed_tracker,
+                        vehicle_tracker=vehicle_tracker,
+                        vehicle_action_controller=vehicle_action_controller,
+                        departed_vehicles=departed_since_ai_frame,
+                        arrived_vehicles=arrived_since_ai_frame,
+                        previous_action_results=(
+                            vehicle_action_controller.previous_results()
+                            if vehicle_action_controller is not None
+                            else None
+                        ),
+                    )
+                    ai_observer.publish(frame)
+                    departed_since_ai_frame = 0
+                    arrived_since_ai_frame = 0
 
                 if elapsed + 1e-9 >= next_snapshot:
                     sequence += 1
@@ -829,6 +908,29 @@ class SimulationManager:
             )
             self._publish(record, last_snapshot)
             finish_reason = "stopped" if stop_requested else "completed"
+
+            if ai_observer is not None:
+                from .run import _observe_ai_frame
+
+                ai_observer.publish(
+                    _observe_ai_frame(
+                        traci,
+                        final_elapsed,
+                        ai_frame_clock.reserve(),
+                        metadata,
+                        controllers,
+                        fixed_tracker=fixed_tracker,
+                        vehicle_tracker=vehicle_tracker,
+                        vehicle_action_controller=vehicle_action_controller,
+                        departed_vehicles=departed_since_ai_frame,
+                        arrived_vehicles=arrived_since_ai_frame,
+                        previous_action_results=(
+                            vehicle_action_controller.previous_results()
+                            if vehicle_action_controller is not None
+                            else None
+                        ),
+                    )
+                )
         except BaseException as exc:
             finish_reason = "error"
             last_snapshot = replace(
@@ -841,28 +943,35 @@ class SimulationManager:
             if scheduler is not None:
                 scheduler.close()
                 last_snapshot = replace(last_snapshot, events=scheduler.snapshots())
+            finish_payload = {
+                "protocol_version": PROTOCOL_VERSION,
+                "episode_id": record.session_id,
+                "reason": finish_reason,
+                "simulation_time": last_snapshot.elapsed_seconds,
+                "departed_vehicles": total_departed,
+                "arrived_vehicles": total_arrived,
+                "fuel_consumed_mg": last_snapshot.metrics.fuel_consumed_mg,
+                "fuel_consumed_ml": last_snapshot.metrics.fuel_consumed_ml,
+                "hard_braking_events": last_snapshot.metrics.hard_braking_events,
+            }
+            cleanup_error = None
+            if ai_observer is not None:
+                try:
+                    ai_observer.close(
+                        finish_payload,
+                        config.ai_observer_shutdown_timeout,
+                    )
+                except BaseException as exc:
+                    cleanup_error = exc
+            if client is not None and client_initialized:
+                try:
+                    client.finish(finish_payload)
+                except BaseException as exc:
+                    if isinstance(client, LocalAlgorithmClient) and cleanup_error is None:
+                        cleanup_error = exc
             if vehicle_action_controller is not None:
                 try:
                     vehicle_action_controller.release()
-                except Exception:
-                    pass
-            if client is not None:
-                try:
-                    client.finish(
-                        {
-                            "protocol_version": PROTOCOL_VERSION,
-                            "episode_id": record.session_id,
-                            "reason": finish_reason,
-                            "simulation_time": last_snapshot.elapsed_seconds,
-                            "departed_vehicles": total_departed,
-                            "arrived_vehicles": total_arrived,
-                            "fuel_consumed_mg": last_snapshot.metrics.fuel_consumed_mg,
-                            "fuel_consumed_ml": last_snapshot.metrics.fuel_consumed_ml,
-                            "hard_braking_events": (
-                                last_snapshot.metrics.hard_braking_events
-                            ),
-                        }
-                    )
                 except Exception:
                     pass
             if traci is not None:
@@ -870,7 +979,15 @@ class SimulationManager:
                     traci.close()
                 except Exception:
                     pass
-            if finish_reason != "error":
+            if cleanup_error is not None:
+                finish_reason = "error"
+                last_snapshot = replace(
+                    last_snapshot,
+                    state="FAILED",
+                    error=str(cleanup_error),
+                )
+                self._publish(record, last_snapshot)
+            elif finish_reason != "error":
                 terminal = "STOPPED" if stop_requested else "COMPLETED"
                 self._publish(record, replace(last_snapshot, state=terminal))
             self._fail_pending_commands(record)

@@ -17,6 +17,12 @@ class LaneMetadata:
     role: str
     length: float
     max_speed: float
+    intersection_id: str = ""
+    approach_id: str | None = None
+    movements: Tuple[str, ...] = ()
+    length_m: float = 0.0
+    speed_limit_mps: float = 0.0
+    downstream_lane_ids: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -27,6 +33,8 @@ class RoadConnectionMetadata:
     from_lane: str
     to_lane: str
     direction: str
+    tls_id: str = ""
+    link_index: int = -1
 
 
 @dataclass(frozen=True)
@@ -92,12 +100,29 @@ class VehicleControlMetadata:
 
 
 @dataclass(frozen=True)
+class LaneConnectionSignalObservation:
+    connection_id: str
+    movement: str
+    downstream_lane_id: str
+    signal_state: str
+
+
+@dataclass(frozen=True)
 class LaneObservation:
     vehicle_count: int
     halting_count: int
     mean_speed: float
     waiting_time: float
     occupancy: float
+    lane_has_green: bool | None = None
+    signal_state: str | None = None
+    queue_length_m: float = 0.0
+    queue_length_is_estimate: bool = True
+    current_allowed_speed_mps: float = 0.0
+    controlled_vehicle_count: int = 0
+    min_target_speed_mps: float | None = None
+    mean_target_speed_mps: float | None = None
+    connection_signal_states: Tuple[LaneConnectionSignalObservation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -207,6 +232,20 @@ class SimulationObservation:
     protocol_version: str
     episode_id: str
     step_id: int
+    simulation_time: float
+    intersections: Mapping[str, IntersectionObservation]
+    traffic: TrafficObservation
+    vehicles: Mapping[str, VehicleObservation] = field(default_factory=dict)
+    previous_action_results: PreviousActionResults = field(
+        default_factory=lambda: PreviousActionResults(step_id=None)
+    )
+
+
+@dataclass(frozen=True)
+class AIFrameObservation:
+    protocol_version: str
+    episode_id: str
+    frame_id: int
     simulation_time: float
     intersections: Mapping[str, IntersectionObservation]
     traffic: TrafficObservation

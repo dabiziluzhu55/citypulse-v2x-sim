@@ -15,10 +15,12 @@ from typing import Dict, Sequence
 from .config import SignalConfigurationError, SignalProgram
 from .controller import SafePhaseController, SignalStage, TransitionTiming
 from .policy import (
+    AIFrameObservation,
     PROTOCOL_VERSION,
     IntersectionMetadata,
     IntersectionObservation,
     LaneMetadata,
+    LaneConnectionSignalObservation,
     LaneObservation,
     PhaseMetadata,
     PreviousActionResults,
@@ -201,6 +203,8 @@ def _build_metadata(
                     from_lane=from_lane,
                     to_lane=to_lane,
                     direction=str(raw["direction"]),
+                    tls_id=str(raw["tls_id"]),
+                    link_index=int(raw["link_index"]),
                 )
             )
         lanes = {}
@@ -212,13 +216,46 @@ def _build_metadata(
             else:
                 role = "outgoing"
             edge_id, lane_index = lane_definitions[lane_id]
+            lane_connections = [
+                connection
+                for connection in connections
+                if connection.from_lane == lane_id
+            ]
+            approaches = sorted({item.approach for item in lane_connections})
+            if len(approaches) > 1:
+                raise ValueError(
+                    f"Lane {lane_id} belongs to multiple approaches: {approaches}"
+                )
+            movements = tuple(
+                sorted(
+                    {item.movement for item in lane_connections},
+                    key=lambda value: (
+                        {"through": 0, "left": 1, "right": 2, "uturn": 3}.get(
+                            value, 99
+                        ),
+                        value,
+                    ),
+                )
+            )
+            length = float(traci.lane.getLength(lane_id))
+            speed_limit = float(traci.lane.getMaxSpeed(lane_id))
             lanes[lane_id] = LaneMetadata(
                 lane_id=lane_id,
                 edge_id=edge_id,
                 lane_index=lane_index,
                 role=role,
-                length=float(traci.lane.getLength(lane_id)),
-                max_speed=float(traci.lane.getMaxSpeed(lane_id)),
+                length=length,
+                max_speed=speed_limit,
+                intersection_id=intersection_id,
+                approach_id=(
+                    f"{intersection_id}_{approaches[0]}_in" if approaches else None
+                ),
+                movements=movements,
+                length_m=length,
+                speed_limit_mps=speed_limit,
+                downstream_lane_ids=tuple(
+                    sorted({item.to_lane for item in lane_connections})
+                ),
             )
 
         program = programs[intersection_id]
@@ -302,6 +339,147 @@ def _apply_controller_state(traci, intersection_manifest, controller) -> None:
         traci.trafficlight.setRedYellowGreenState(tls_id, state)
 
 
+def _estimate_queue_length(
+    lane_metadata: LaneMetadata,
+    *,
+    halting_count: int,
+    occupancy: float,
+    vehicle_tracker,
+) -> float:
+    if halting_count <= 0:
+        return 0.0
+    samples = (
+        vehicle_tracker.lane_vehicle_samples(lane_metadata.lane_id)
+        if vehicle_tracker
+        else ()
+    )
+    stopped = [item for item in samples if item[1] <= 0.1]
+    spatial_extent = 0.0
+    if stopped:
+        queue_tail = min(max(0.0, position - length) for position, _, length, _ in stopped)
+        spatial_extent = lane_metadata.length_m - queue_tail
+        average_space = sum(length + gap for _, _, length, gap in stopped) / len(stopped)
+    else:
+        average_space = (
+            vehicle_tracker.default_vehicle_space() if vehicle_tracker else 7.5
+        )
+    count_extent = halting_count * average_space
+    occupancy_extent = lane_metadata.length_m * max(0.0, occupancy) / 100.0
+    return min(
+        lane_metadata.length_m,
+        max(0.0, spatial_extent, count_extent, occupancy_extent),
+    )
+
+
+def _lane_signal_details(traci, intersection_metadata, lane_id: str):
+    lane_connections = [
+        item
+        for item in intersection_metadata.connections
+        if item.from_lane == lane_id
+    ]
+    if not lane_connections:
+        return None, None, ()
+    tls_states = {
+        tls_id: str(traci.trafficlight.getRedYellowGreenState(tls_id))
+        for tls_id in {item.tls_id for item in lane_connections}
+    }
+    details = []
+    for item in lane_connections:
+        state = tls_states[item.tls_id]
+        if item.link_index < 0 or item.link_index >= len(state):
+            raise ValueError(
+                f"TLS {item.tls_id} state has no link index {item.link_index}."
+            )
+        details.append(
+            LaneConnectionSignalObservation(
+                connection_id=item.connection_id,
+                movement=item.movement,
+                downstream_lane_id=item.to_lane,
+                signal_state=state[item.link_index],
+            )
+        )
+    states = {item.signal_state for item in details}
+    summary = next(iter(states)) if len(states) == 1 else "mixed"
+    return any(item.signal_state in {"G", "g"} for item in details), summary, tuple(details)
+
+
+def _build_intersection_observations(
+    traci,
+    simulation_time: float,
+    metadata: SimulationMetadata,
+    controllers: Mapping[str, SafePhaseController],
+    *,
+    fixed_tracker=None,
+    vehicle_tracker=None,
+    vehicle_action_controller=None,
+):
+    observations = {}
+    for intersection_id, intersection_metadata in metadata.intersections.items():
+        lanes = {}
+        for lane_id, lane_metadata in intersection_metadata.lanes.items():
+            vehicle_count = int(traci.lane.getLastStepVehicleNumber(lane_id))
+            halting_count = int(traci.lane.getLastStepHaltingNumber(lane_id))
+            occupancy = float(traci.lane.getLastStepOccupancy(lane_id))
+            lane_has_green, signal_state, signal_details = _lane_signal_details(
+                traci, intersection_metadata, lane_id
+            )
+            allowed = tuple(traci.lane.getAllowed(lane_id))
+            disallowed = tuple(traci.lane.getDisallowed(lane_id))
+            current_speed = float(traci.lane.getMaxSpeed(lane_id))
+            if (allowed and "passenger" not in allowed) or "passenger" in disallowed:
+                current_speed = 0.0
+            controlled_count, minimum_target, mean_target = (
+                vehicle_action_controller.speed_control_summary(lane_id)
+                if vehicle_action_controller
+                else (0, None, None)
+            )
+            lanes[lane_id] = LaneObservation(
+                vehicle_count=vehicle_count,
+                halting_count=halting_count,
+                mean_speed=(
+                    float(traci.lane.getLastStepMeanSpeed(lane_id))
+                    if vehicle_count
+                    else 0.0
+                ),
+                waiting_time=float(traci.lane.getWaitingTime(lane_id)),
+                occupancy=occupancy,
+                lane_has_green=lane_has_green,
+                signal_state=signal_state,
+                queue_length_m=_estimate_queue_length(
+                    lane_metadata,
+                    halting_count=halting_count,
+                    occupancy=occupancy,
+                    vehicle_tracker=vehicle_tracker,
+                ),
+                queue_length_is_estimate=True,
+                current_allowed_speed_mps=current_speed,
+                controlled_vehicle_count=controlled_count,
+                min_target_speed_mps=minimum_target,
+                mean_target_speed_mps=mean_target,
+                connection_signal_states=signal_details,
+            )
+        if intersection_id in controllers:
+            controller = controllers[intersection_id]
+            signal = (
+                controller.current_phase,
+                controller.pending_phase,
+                controller.stage.value,
+                controller.stage_elapsed(simulation_time),
+            )
+        elif fixed_tracker is not None:
+            signal = fixed_tracker.state(intersection_id, simulation_time)
+        else:
+            raise ValueError(f"No signal state provider for {intersection_id}.")
+        observations[intersection_id] = IntersectionObservation(
+            current_phase=signal[0],
+            pending_phase=signal[1],
+            stage=signal[2],
+            stage_elapsed=signal[3],
+            lanes=lanes,
+        )
+    return observations
+
+
 def _observe(
     traci,
     simulation_time: float,
@@ -311,32 +489,17 @@ def _observe(
     departed_vehicles: int,
     arrived_vehicles: int,
     vehicle_tracker=None,
+    vehicle_action_controller=None,
     previous_action_results: PreviousActionResults | None = None,
 ) -> SimulationObservation:
-    observations = {}
-    for intersection_id, intersection_metadata in metadata.intersections.items():
-        controller = controllers[intersection_id]
-        lanes = {}
-        for lane_id in intersection_metadata.lanes:
-            vehicle_count = int(traci.lane.getLastStepVehicleNumber(lane_id))
-            lanes[lane_id] = LaneObservation(
-                vehicle_count=vehicle_count,
-                halting_count=int(traci.lane.getLastStepHaltingNumber(lane_id)),
-                mean_speed=(
-                    float(traci.lane.getLastStepMeanSpeed(lane_id))
-                    if vehicle_count
-                    else 0.0
-                ),
-                waiting_time=float(traci.lane.getWaitingTime(lane_id)),
-                occupancy=float(traci.lane.getLastStepOccupancy(lane_id)),
-            )
-        observations[intersection_id] = IntersectionObservation(
-            current_phase=controller.current_phase,
-            pending_phase=controller.pending_phase,
-            stage=controller.stage.value,
-            stage_elapsed=controller.stage_elapsed(simulation_time),
-            lanes=lanes,
-        )
+    observations = _build_intersection_observations(
+        traci,
+        simulation_time,
+        metadata,
+        controllers,
+        vehicle_tracker=vehicle_tracker,
+        vehicle_action_controller=vehicle_action_controller,
+    )
     vehicle_observations = (
         vehicle_tracker.observations(reset_interval=True) if vehicle_tracker else {}
     )
@@ -363,6 +526,59 @@ def _observe(
             hard_braking_events=braking,
         ),
         vehicles=vehicle_observations,
+        previous_action_results=(
+            previous_action_results or PreviousActionResults(step_id=None)
+        ),
+    )
+
+
+def _observe_ai_frame(
+    traci,
+    simulation_time: float,
+    frame_id: int,
+    metadata: SimulationMetadata,
+    controllers: Mapping[str, SafePhaseController],
+    *,
+    fixed_tracker=None,
+    vehicle_tracker=None,
+    vehicle_action_controller=None,
+    departed_vehicles: int = 0,
+    arrived_vehicles: int = 0,
+    previous_action_results: PreviousActionResults | None = None,
+) -> AIFrameObservation:
+    intersections = _build_intersection_observations(
+        traci,
+        simulation_time,
+        metadata,
+        controllers,
+        fixed_tracker=fixed_tracker,
+        vehicle_tracker=vehicle_tracker,
+        vehicle_action_controller=vehicle_action_controller,
+    )
+    vehicles = (
+        vehicle_tracker.observations(reset_interval=False) if vehicle_tracker else {}
+    )
+    fuel_mg, fuel_ml, braking = (
+        vehicle_tracker.totals() if vehicle_tracker else (0.0, 0.0, 0)
+    )
+    return AIFrameObservation(
+        protocol_version=PROTOCOL_VERSION,
+        episode_id=metadata.episode_id,
+        frame_id=frame_id,
+        simulation_time=simulation_time,
+        intersections=intersections,
+        vehicles=vehicles,
+        traffic=TrafficObservation(
+            active_vehicles=(
+                len(vehicles) if vehicle_tracker else int(traci.vehicle.getIDCount())
+            ),
+            departed_vehicles=departed_vehicles,
+            arrived_vehicles=arrived_vehicles,
+            min_expected_vehicles=int(traci.simulation.getMinExpectedNumber()),
+            fuel_consumed_mg=fuel_mg,
+            fuel_consumed_ml=fuel_ml,
+            hard_braking_events=braking,
+        ),
         previous_action_results=(
             previous_action_results or PreviousActionResults(step_id=None)
         ),
@@ -460,15 +676,18 @@ def run(args: argparse.Namespace) -> None:
 
     manager = SimulationManager()
     duration = args.duration if args.duration is not None else args.end
+    intersection_ids = tuple(args.intersection or manager.catalog().intersections)
     config = SimulationConfig(
-        intersection_ids=tuple(args.intersection),
+        intersection_ids=intersection_ids,
         period=args.period,
         origins=_parse_origins(args.origin),
         window_start_seconds=args.window_start,
         duration_seconds=duration,
         flow_multiplier=args.flow_multiplier,
         control_mode=args.mode,
+        algorithm_transport=args.algorithm_transport,
         algorithm_endpoint=args.algorithm_endpoint,
+        algorithm_module=args.algorithm_module,
         algorithm_timeout=args.algorithm_timeout,
         decision_interval=args.decision_interval,
         minimum_green=args.minimum_green,
@@ -478,6 +697,9 @@ def run(args: argparse.Namespace) -> None:
         realtime=args.realtime,
         playback_speed=args.playback_speed,
         snapshot_interval_seconds=args.snapshot_interval,
+        ai_observer_module=args.ai_observer_module,
+        ai_frame_interval_seconds=args.ai_frame_interval,
+        ai_observer_shutdown_timeout=args.ai_observer_shutdown_timeout,
         initial_events=_load_events(args.event_file),
     )
     session_id = manager.start(config)
@@ -506,7 +728,12 @@ def run(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("fixed", "algorithm"), default="fixed")
-    parser.add_argument("--intersection", nargs="+", default=["demo_2"])
+    parser.add_argument(
+        "--intersection",
+        nargs="+",
+        default=None,
+        help="Controlled intersections; default uses every intersection in the global scenario.",
+    )
     parser.add_argument(
         "--period",
         choices=("morning_peak", "off_peak", "evening_peak"),
@@ -523,7 +750,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--flow-multiplier", type=float, default=1.0)
     parser.add_argument("--event-file", type=Path, default=None)
     parser.add_argument("--algorithm-endpoint", default="")
+    parser.add_argument(
+        "--algorithm-transport",
+        choices=("http", "local"),
+        default="http",
+    )
+    parser.add_argument("--algorithm-module", default="")
     parser.add_argument("--algorithm-timeout", type=float, default=2.0)
+    parser.add_argument("--ai-observer-module", default="")
+    parser.add_argument("--ai-frame-interval", type=float, default=0.1)
+    parser.add_argument("--ai-observer-shutdown-timeout", type=float, default=5.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--decision-interval", type=float, default=5.0)
     parser.add_argument("--minimum-green", type=float, default=5.0)
@@ -554,6 +790,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("minimum green cannot be negative.")
     if args.algorithm_timeout <= 0:
         parser.error("algorithm timeout must be positive.")
+    if args.ai_frame_interval + 1e-9 < args.step_length:
+        parser.error("AI frame interval cannot be smaller than the SUMO step length.")
+    if args.ai_observer_shutdown_timeout <= 0:
+        parser.error("AI observer shutdown timeout must be positive.")
     if args.seed < 0:
         parser.error("seed must be non-negative.")
     if args.duration is not None and args.end is not None:

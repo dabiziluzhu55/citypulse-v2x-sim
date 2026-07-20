@@ -34,16 +34,52 @@
 SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转路线，其他没有官方分流依据的
 大角度 `L/R` 连接保持阻断。
 
+`right_turn_policy: permissive_always` 表示右转在所有相位使用让行绿；
+`right_turn_policy: phase_controlled` 表示右转必须显式写入对应相位的 `protected` 或
+`permissive` 组，其他相位保持红灯。后者用于官方配时明确把右转划入特定相位的路口。
+
+`demo_4` 的官方需求不包含掉头。其 `u_turn_policy` 设置为 `blocked`，SUMO `t` 方向不继承
+左转灯色，并在派生路网构建时删除；左转流量只使用普通 `l/left` 连接。
+
 `demo_12` 的平峰相位原始数据之和为 `215s`，但截图周期单元格写成 `195s`；晚高峰相位之和为
 `180s`，周期单元格写成 `178s`。构建配置以每个相位的绿灯、黄灯和全红原始值为准。其南北
 左转轨迹被 junction 182 的 foe 矩阵判定为冲突，因此相位 4 使用让行绿 `g`。`demo_14` 的
-“东、北放行”相位把北直行设为受保护绿、东/北左转设为让行绿，并阻断官方表中为空的动作。
+“东、北放行”相位把北直行和北左转设为受保护绿、东左转设为让行绿，并阻断官方表中为空的动作。
+junction 892 的冲突矩阵要求东左转 `linkIndex 5` 让行于北直行和北左转 `linkIndex 2/3`；
+如果两者都使用 `g`，SUMO 会因双向互让形成无优先级闭环而拒绝该 program。
+`demo_14` 使用 `phase_controlled`：东右转只在相位 1 放行，南右转只在相位 2 放行。
 `demo_15` 的南北和东西直行使用受保护绿，同相位左转使用让行绿。
 
 `demo_10` 的东西直行使用受保护绿；东、南左转被 junction 4162 的 foe 矩阵判定为冲突，
-因此相位 2 使用让行绿。`demo_13` 采用 program-specific topology：早晚高峰有相位 4 的
-15 秒东进口直行延长段，平峰只有相位 1-3。由于 junction 1204 缺失官方西进口，东西直行
-以及东右转/西左转分别复用两条物理连接；该限制详见 `traffic_demand.md`。
+因此相位 2 使用让行绿。`demo_13` 按赛方最新要求只保留东、北两个进口，删除西进口及北进口
+左转。早晚高峰原相位 1 和相位 4 的东直行时间合并为一个 75 秒相位，平峰保留一个 70 秒
+东直行相位；东、北右转始终让行放行，北进口在 junction 1204 上的 `t/uturn` 连接显式阻断。
+
+`demo_1` 按现场方位使用东 `-56907`、西 `-manual_demo1_missing_arm`、北 `-57217`、
+南 `-56384`。junction 4427 的南北左转轨迹经 NetEdit 调整后不再互为 foe，四个官方相位
+均使用受保护绿；官方需求不包含掉头，因此 `t` 连接在派生路网构建时删除。
+
+`demo_3` 按现场方位使用东 `-57582`、西 `-50816`、北 `-46791`、南 `-52565`。
+三个时段均为 `108s` 周期：东西左转直行 `55s` 绿灯加 `3s` 黄灯，南北左转直行
+`47s` 绿灯加 `3s` 黄灯。junction `citypulse_demo_3` 的对向直行与左转存在 foe 冲突，
+因此直行使用受保护绿、同相位左转使用让行绿，右转始终让行放行。该 junction 只有
+12 条 `r/s/l` 连接，没有 `t` 掉头连接；拓扑仍显式使用 `u_turn_policy: blocked`。
+
+`demo_7` 对应 junction `610`，使用东 `-51953`、西 `-46217`、南 `-51871` 三个进口。
+早高峰两个相位为 `47+3s` 和 `42+3s`，平峰为 `36+3s` 和 `41+3s`，晚高峰为
+`45+3s` 和 `39+3s`。相位 1 放行西直行、西左转、南直行和南右转；由于西左转与
+南进口轨迹互为 foe，西左转使用让行绿，其余使用受保护绿。相位 2 仅放行东左转和东右转。
+该路口使用 `phase_controlled`，两个右转不会跨相位常绿。
+
+`demo_8` 对应 junction `4393`，复用基础路网中现有的 TLS `J1`。早高峰、平峰、晚高峰
+周期分别为 `110s`、`90s`、`120s`；四个相位依次为东西直行、东西左转、南北直行、
+南北左转。东进口额外存在的 `t` 掉头连接不属于官方方案，始终保持红灯；四个右转使用
+全周期让行绿。
+
+`demo_11` 对应 junction `4306`，构建时由 `netconvert` 从 priority junction 转为交通灯。
+三个时段周期分别为 `170s`、`130s`、`176s`，相位顺序同样为东西直行、东西左转、
+南北直行、南北左转。东西进口包含多条直行车道，构建器会让同进口的所有直行
+`linkIndex` 使用相同灯色；四个右转使用全周期让行绿。
 
 `demo_16` 三个时段均使用 `77s` 周期：东西直行受保护放行、东西左转让行放行后，切换为
 南北直行受保护放行、南北左转让行放行；四个右转始终使用让行绿。`demo_17` 三个时段均使用
@@ -54,6 +90,12 @@ SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转
 三个时段均使用 `76s` 周期，每个相位为 `35s` 绿灯加 `3s` 黄灯。两处路口都先放行东北、
 西南进口，再放行西北、东南进口；同向直行使用受保护绿、左转使用让行绿，四个右转始终
 让行放行，基础路网中不属于官方方案的 `t` 连接保持红灯。
+
+`demo_20` 对应现有交通灯 junction/TLS `3637`。配时表的东北、西南、西北、东南依次映射为
+项目中的东、西、北、南进口；三个时段周期分别为 `120s`、`90s`、`110s`。相位 1/3
+分别以受保护绿放行东西/南北直行，并以让行绿同时放行同方向左转；相位 2/4 是左转延长相位。
+由于 junction foe 矩阵判定两组对向左转均存在冲突，左转延长相位也使用让行绿。四个右转
+全周期让行放行，东、西、南进口的三条 `t` 掉头连接始终保持红灯。
 
 当官方要求同相位放行、但 SUMO foe 矩阵判定主放行轨迹彼此冲突时，可把该相位的
 `priority` 设置为 `permissive`。相位仍按官方周期同时显示绿灯，但使用 `g` 让车辆
@@ -75,7 +117,7 @@ SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转
 
 ```bash
 python -m simulation.sumo.build_tls \
-  --intersections demo_2 demo_4 demo_5 demo_6 demo_9 demo_10 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19
+  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
 ```
 
 `data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。
@@ -100,11 +142,13 @@ python -m simulation.sumo.build_tls \
 | `network/TotalMap_20.signals.net.xml` | 加入目标 TLS 的公共派生路网 |
 | `signals/official_tls.add.xml` | 所有官方 SUMO signal programs |
 | `manifests/tls_manifest.json` | runner 使用的相位、连接、lane 和灯色桥接数据 |
-| `manifests/traffic_manifest.json` | 场景路径、官方时间和 PCU 合计 |
+| `manifests/traffic_manifest.json` | schema v3 全局场景、路线覆盖、官方时间与审核摘要 |
 | `reports/official_tls_connections.csv` | 人工核对 connection、movement 和 linkIndex |
-| `traffic/demo_N/PERIOD/routes.rou.xml` | 该路口、该时段的真实 15 分钟车流 |
-| `traffic/demo_N/PERIOD/signals.add.xml` | 只包含该时段 program 的信号文件 |
-| `traffic/demo_N/PERIOD/simulation.sumocfg` | 可直接运行的独立场景 |
+| `traffic/global/candidates.rou.xml` | 单转向兜底与跨路口候选路线池 |
+| `traffic/global/PERIOD/routes.rou.xml` | 联合满足已构建路口约束的真实 15 分钟车流 |
+| `traffic/global/PERIOD/signals.add.xml` | 所有已构建路口在该时段的 program |
+| `traffic/global/PERIOD/simulation.sumocfg` | 可直接运行的全局独立场景 |
+| `reports/traffic/PERIOD.*.json` | 路线分配零误差报告与 SUMO 实际过车审核 |
 
 生成目录根层只保留上述分类目录。旧的转向验证车流、验证用 `sumocfg` 和 debug POI
 工具已经删除；路线正确性由配置校验、连接报告、单元测试和真实场景 GUI 检查共同保证。

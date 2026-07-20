@@ -242,7 +242,7 @@ def _parse_phase_movements(
                 f"{intersection_id}/{context}/phase {item.phase_number}: "
                 f"invalid priority {item.priority!r}."
             )
-        if item.movement not in {"through", "left"}:
+        if item.movement not in {"through", "left", "right"}:
             raise SignalConfigurationError(
                 f"{intersection_id}/{context}/phase {item.phase_number}: "
                 "invalid movement."
@@ -258,7 +258,7 @@ def _parse_phase_movements(
             ("permissive", item.permissive),
         ):
             for group in groups:
-                if group.movement not in {"through", "left"}:
+                if group.movement not in {"through", "left", "right"}:
                     raise SignalConfigurationError(
                         f"{intersection_id}/{context}/phase {item.phase_number}: "
                         f"invalid {priority} movement {group.movement!r}."
@@ -340,9 +340,10 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
     if not phases and not program_phases:
         raise SignalConfigurationError(f"{intersection_id}: no phase topology configured.")
     right_policy = str(raw.get("right_turn_policy", ""))
-    if right_policy != "permissive_always":
+    if right_policy not in {"permissive_always", "phase_controlled"}:
         raise SignalConfigurationError(
-            f"{intersection_id}: only permissive_always is implemented for right turns."
+            f"{intersection_id}: right_turn_policy must be "
+            "permissive_always or phase_controlled."
         )
     u_turn_policy = str(raw.get("u_turn_policy", ""))
     if u_turn_policy not in {"with_left", "blocked"}:

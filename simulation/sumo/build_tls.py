@@ -98,6 +98,7 @@ def _run_netconvert(
     source_net: Path,
     target_net: Path,
     junction_ids: Sequence[str],
+    blocked_turnarounds: Sequence[Tuple[str, str]] = (),
 ) -> Tuple[bool, int]:
     target_net.parent.mkdir(parents=True, exist_ok=True)
     junction_types = _read_junction_types(source_net, junction_ids)
@@ -106,12 +107,15 @@ def _run_netconvert(
         for junction_id in junction_ids
         if junction_types[junction_id] != "traffic_light"
     ]
-    if not junctions_to_signal:
+    if not junctions_to_signal and not blocked_turnarounds:
         shutil.copy2(source_net, target_net)
         return False, 0
 
     sanitized_source = target_net.with_name(
         f".{target_net.name}.netconvert-input.net.xml"
+    )
+    connection_deletions = target_net.with_name(
+        f".{target_net.name}.blocked-turnarounds.con.xml"
     )
     shutil.copy2(source_net, sanitized_source)
     try:
@@ -120,19 +124,64 @@ def _run_netconvert(
             netconvert,
             "--sumo-net-file",
             str(sanitized_source),
-            "--tls.set",
-            ",".join(junctions_to_signal),
-            "--tls.default-type",
-            "static",
-            "--offset.disable-normalization",
-            "true",
-            "--output-file",
-            str(target_net),
         ]
+        if junctions_to_signal:
+            command.extend(
+                [
+                    "--tls.set",
+                    ",".join(junctions_to_signal),
+                    "--tls.default-type",
+                    "static",
+                ]
+            )
+        if blocked_turnarounds:
+            root = ET.Element("connections")
+            for from_edge, to_edge in blocked_turnarounds:
+                ET.SubElement(root, "delete", {"from": from_edge, "to": to_edge})
+            ET.indent(root, space="  ")
+            ET.ElementTree(root).write(
+                connection_deletions, encoding="utf-8", xml_declaration=True
+            )
+            command.extend(["--connection-files", str(connection_deletions)])
+        command.extend(
+            [
+                "--offset.disable-normalization",
+                "true",
+                "--output-file",
+                str(target_net),
+            ]
+        )
         subprocess.run(command, check=True)
     finally:
         sanitized_source.unlink(missing_ok=True)
+        connection_deletions.unlink(missing_ok=True)
     return True, removed_empty_params
+
+
+def _blocked_turnaround_deletions(
+    net_path: Path,
+    selected: Sequence[IntersectionConfiguration],
+) -> Tuple[Tuple[str, str], ...]:
+    edge_owner = {
+        edge_id: config
+        for config in selected
+        for edge_id in config.topology.incoming_edges
+    }
+    deletions = set()
+    for _, elem in ET.iterparse(net_path, events=("end",)):
+        if elem.tag == "connection":
+            from_edge = elem.get("from", "")
+            config = edge_owner.get(from_edge)
+            direction = elem.get("dir", "")
+            if (
+                config is not None
+                and direction == "t"
+                and config.topology.movement_for_direction(from_edge, direction)
+                == "blocked"
+            ):
+                deletions.add((from_edge, elem.get("to", "")))
+        elem.clear()
+    return tuple(sorted(deletions))
 
 
 def _read_junction_types(
@@ -438,7 +487,10 @@ def _build_templates(
         yellow = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         clearance = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         for connection in own_connections:
-            if connection.movement == "right":
+            if (
+                connection.movement == "right"
+                and config.topology.right_turn_policy == "permissive_always"
+            ):
                 _set_state_char(green, connection, "g")
                 _set_state_char(yellow, connection, "g")
                 _set_state_char(clearance, connection, "g")
@@ -545,23 +597,30 @@ def _write_connection_report(path: Path, connections: Sequence[ControlledConnect
 
 
 def build(
-    intersection_ids: Sequence[str],
+    intersection_ids: Sequence[str] | None,
     mapping_path: Path = DEFAULT_MAPPING,
     plans_path: Path = DEFAULT_PLANS,
     topology_path: Path = DEFAULT_TOPOLOGY,
     source_net: Path = DEFAULT_BASE_NET,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
+    skip_traffic_audit: bool = False,
 ) -> Mapping[str, object]:
     configuration = load_signal_configuration(mapping_path, plans_path, topology_path)
-    selected = configuration.select(intersection_ids)
+    requested = tuple(intersection_ids or configuration.intersections)
+    selected = configuration.select(requested)
     junction_ids = sorted({item for config in selected for item in config.junction_ids})
     netconvert = _binary("netconvert")
     sumo = _binary("sumo")
     layout = GeneratedArtifactLayout(output_dir)
     layout.reset()
     target_net = layout.network_file
+    blocked_turnarounds = _blocked_turnaround_deletions(source_net, selected)
     netconvert_applied, removed_empty_params = _run_netconvert(
-        netconvert, source_net, target_net, junction_ids
+        netconvert,
+        source_net,
+        target_net,
+        junction_ids,
+        blocked_turnarounds,
     )
     removed_empty_params += _remove_empty_params(target_net)
     if removed_empty_params:
@@ -570,6 +629,19 @@ def build(
             f"from {target_net}."
         )
     connections, state_lengths, request_foes = _inspect_generated_network(target_net, selected)
+    retained_blocked_turnarounds = [
+        item
+        for item in connections
+        if item.direction == "t" and item.movement == "blocked"
+    ]
+    if retained_blocked_turnarounds:
+        details = ", ".join(
+            f"{item.from_edge}->{item.to_edge}"
+            for item in retained_blocked_turnarounds
+        )
+        raise SignalConfigurationError(
+            f"netconvert retained blocked turnaround connections: {details}."
+        )
     templates = {
         config.intersection_id: {
             program.program_id: _build_templates(
@@ -594,6 +666,10 @@ def build(
         "netconvert_version": _version(netconvert),
         "sumo_version": _version(sumo),
         "netconvert_applied": netconvert_applied,
+        "removed_blocked_turnarounds": [
+            {"from_edge": from_edge, "to_edge": to_edge}
+            for from_edge, to_edge in blocked_turnarounds
+        ],
         "removed_empty_params": removed_empty_params,
         "artifacts": {
             "network_file": layout.relative(layout.network_file),
@@ -650,18 +726,31 @@ def build(
     build_traffic_scenarios(
         manifest,
         output_dir=output_dir,
+        intersection_ids=requested,
+        sumo_binary=sumo,
+        skip_audit=skip_traffic_audit,
     )
     return manifest
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--intersections", nargs="+", default=["demo_2"])
+    parser.add_argument(
+        "--intersections",
+        nargs="+",
+        default=None,
+        help="Official intersections to couple; default builds all configured intersections.",
+    )
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING)
     parser.add_argument("--plans", type=Path, default=DEFAULT_PLANS)
     parser.add_argument("--topology", type=Path, default=DEFAULT_TOPOLOGY)
     parser.add_argument("--source-net", type=Path, default=DEFAULT_BASE_NET)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--skip-traffic-audit",
+        action="store_true",
+        help="Skip the post-build SUMO passage-time audit (development only).",
+    )
     return parser.parse_args()
 
 
@@ -675,6 +764,7 @@ def main() -> None:
             topology_path=args.topology,
             source_net=args.source_net,
             output_dir=args.output_dir,
+            skip_traffic_audit=args.skip_traffic_audit,
         )
     except (
         SignalConfigurationError,

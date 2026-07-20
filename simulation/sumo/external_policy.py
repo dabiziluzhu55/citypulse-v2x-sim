@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from typing import Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .policy import AlgorithmDecision, PROTOCOL_VERSION
+from .policy_transport import (
+    to_protocol_payload,
+    validate_initialize_response,
+    validate_step_response,
+)
 
 
 class HttpAlgorithmClient:
@@ -47,47 +50,21 @@ class HttpAlgorithmClient:
             raise RuntimeError(f"Algorithm service {path} returned invalid JSON.") from exc
 
     def initialize(self, metadata) -> None:
-        response = self._post("/initialize", asdict(metadata))
-        if not isinstance(response, dict):
-            raise TypeError("Algorithm /initialize response must be a JSON object.")
-        self._validate_echo(response, metadata.episode_id, "/initialize")
-        if response.get("ready") is not True:
-            raise RuntimeError("Algorithm /initialize must explicitly return ready=true.")
+        response = self._post("/initialize", to_protocol_payload(metadata))
+        validate_initialize_response(
+            response,
+            episode_id=metadata.episode_id,
+            source="Algorithm HTTP /initialize",
+        )
 
-    def decide(self, observation) -> AlgorithmDecision:
-        response = self._post("/step", asdict(observation))
-        if not isinstance(response, dict):
-            raise TypeError("Algorithm /step response must be a JSON object.")
-        self._validate_echo(response, observation.episode_id, "/step")
-        if response.get("step_id") != observation.step_id:
-            raise ValueError(
-                "Algorithm /step must echo the request step_id; "
-                f"expected {observation.step_id}, got {response.get('step_id')!r}."
-            )
-        actions = response.get("actions")
-        if not isinstance(actions, dict):
-            raise TypeError("Algorithm /step response needs an actions object.")
-        if set(actions) != {"signals", "vehicles"}:
-            raise ValueError(
-                "Algorithm actions must contain exactly signals and vehicles objects."
-            )
-        if not isinstance(actions["signals"], dict) or not isinstance(
-            actions["vehicles"], dict
-        ):
-            raise TypeError("Algorithm signal and vehicle actions must be objects.")
-        return AlgorithmDecision(
-            signal_actions=actions["signals"],
-            vehicle_actions=actions["vehicles"],
+    def decide(self, observation):
+        response = self._post("/step", to_protocol_payload(observation))
+        return validate_step_response(
+            response,
+            episode_id=observation.episode_id,
+            step_id=observation.step_id,
+            source="Algorithm HTTP /step",
         )
 
     def finish(self, payload: Mapping[str, object]) -> None:
         self._post("/finish", dict(payload))
-
-    @staticmethod
-    def _validate_echo(response: Mapping[str, object], episode_id: str, path: str) -> None:
-        if response.get("protocol_version") != PROTOCOL_VERSION:
-            raise ValueError(
-                f"Algorithm {path} must use protocol_version {PROTOCOL_VERSION}."
-            )
-        if response.get("episode_id") != episode_id:
-            raise ValueError(f"Algorithm {path} must echo the request episode_id.")

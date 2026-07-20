@@ -37,6 +37,17 @@ class FakeLaneDomain:
     def getLastStepOccupancy(self, lane_id):
         return 0.0 if "out" in lane_id else 20.0
 
+    def getAllowed(self, lane_id):
+        return ()
+
+    def getDisallowed(self, lane_id):
+        return ("passenger",) if lane_id == "branch_in_0" else ()
+
+
+class FakeTrafficLightDomain:
+    def getRedYellowGreenState(self, tls_id):
+        return "Gry"
+
 
 class FakeVehicleDomain:
     def getIDCount(self):
@@ -50,6 +61,7 @@ class FakeSimulationDomain:
 
 class FakeTraci:
     lane = FakeLaneDomain()
+    trafficlight = FakeTrafficLightDomain()
     vehicle = FakeVehicleDomain()
     simulation = FakeSimulationDomain()
 
@@ -73,7 +85,7 @@ def manifest():
             "approach": "northeast_main",
             "movement": "left",
             "from_edge": "north_in",
-            "from_lane": 1,
+            "from_lane": 0,
             "to_edge": "branch_out",
             "to_lane": 0,
             "direction": "l",
@@ -156,7 +168,7 @@ class AlgorithmMetadataTests(unittest.TestCase):
         self.assertEqual(metadata.seed, 42)
         self.assertEqual(
             intersection.incoming_lanes,
-            ("branch_in_0", "north_in_0", "north_in_1"),
+            ("branch_in_0", "north_in_0"),
         )
         self.assertEqual(
             intersection.outgoing_lanes,
@@ -177,6 +189,20 @@ class AlgorithmMetadataTests(unittest.TestCase):
         self.assertTrue(
             all(lane.length == 100.0 for lane in intersection.lanes.values())
         )
+        north_lane = intersection.lanes["north_in_0"]
+        self.assertEqual(north_lane.intersection_id, "demo_2")
+        self.assertEqual(north_lane.approach_id, "demo_2_northeast_main_in")
+        self.assertEqual(north_lane.movements, ("through", "left"))
+        self.assertEqual(north_lane.length_m, north_lane.length)
+        self.assertEqual(north_lane.speed_limit_mps, north_lane.max_speed)
+        self.assertEqual(
+            north_lane.downstream_lane_ids,
+            ("branch_out_0", "south_out_0"),
+        )
+        outgoing = intersection.lanes["south_out_0"]
+        self.assertIsNone(outgoing.approach_id)
+        self.assertEqual(outgoing.movements, ())
+        self.assertEqual(outgoing.downstream_lane_ids, ())
 
         controller = SafePhaseController(
             (1, 2),
@@ -195,7 +221,27 @@ class AlgorithmMetadataTests(unittest.TestCase):
         self.assertIsNone(state.pending_phase)
         self.assertEqual(set(state.lanes), set(intersection.lanes))
         self.assertEqual(state.lanes["north_in_0"].halting_count, 2)
+        self.assertTrue(state.lanes["north_in_0"].lane_has_green)
+        self.assertEqual(state.lanes["north_in_0"].signal_state, "mixed")
+        self.assertEqual(
+            {
+                item.movement: item.signal_state
+                for item in state.lanes["north_in_0"].connection_signal_states
+            },
+            {"through": "G", "left": "r"},
+        )
+        self.assertEqual(
+            {
+                item.movement
+                for item in state.lanes["north_in_0"].connection_signal_states
+            },
+            {"through", "left"},
+        )
+        self.assertGreater(state.lanes["north_in_0"].queue_length_m, 0.0)
+        self.assertEqual(state.lanes["north_in_0"].current_allowed_speed_mps, 13.9)
+        self.assertEqual(state.lanes["branch_in_0"].current_allowed_speed_mps, 0.0)
         self.assertEqual(state.lanes["south_out_0"].mean_speed, 0.0)
+        self.assertIsNone(state.lanes["south_out_0"].signal_state)
         self.assertEqual(observation.traffic.departed_vehicles, 4)
         self.assertEqual(observation.traffic.arrived_vehicles, 2)
 

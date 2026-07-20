@@ -35,6 +35,7 @@ data/maps/sumo/generated/manifests/
 data/maps/sumo/generated/network/
 data/maps/sumo/generated/reports/
 data/maps/sumo/generated/signals/
+data/maps/sumo/generated/traffic/
 *.bak
 
 # Frontend UI capture artifacts

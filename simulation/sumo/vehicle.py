@@ -281,6 +281,33 @@ class VehicleTelemetryTracker:
             braking += tracked.hard_braking_total
         return fuel_mg, fuel_ml, braking
 
+    def lane_vehicle_samples(
+        self, lane_id: str
+    ) -> tuple[tuple[float, float, float, float], ...]:
+        """Return lane position, speed, vehicle length and minimum gap from cache."""
+        result = []
+        for tracked in self._tracked.values():
+            values = tracked.values
+            if not values or str(values["lane_id"]) != lane_id:
+                continue
+            metadata = self.vehicle_types[tracked.type_id]
+            result.append(
+                (
+                    float(values["lane_position"]),
+                    float(values["speed"]),
+                    metadata.length_m,
+                    metadata.min_gap_m,
+                )
+            )
+        return tuple(result)
+
+    def default_vehicle_space(self) -> float:
+        if not self.vehicle_types:
+            return 7.5
+        return sum(
+            item.length_m + item.min_gap_m for item in self.vehicle_types.values()
+        ) / len(self.vehicle_types)
+
 
 class VehicleActionController:
     """Validate and apply one-decision-period speed and lane-change leases."""
@@ -422,3 +449,17 @@ class VehicleActionController:
 
     def current_action(self, vehicle_id: str) -> VehicleAction | None:
         return self._leases.get(vehicle_id)
+
+    def speed_control_summary(
+        self, lane_id: str
+    ) -> tuple[int, float | None, float | None]:
+        targets = []
+        for vehicle_id, action in self._leases.items():
+            if action.target_speed_mps is None or not self.telemetry.contains(vehicle_id):
+                continue
+            road_id, lane_index = self.telemetry.location(vehicle_id)
+            if f"{road_id}_{lane_index}" == lane_id:
+                targets.append(action.target_speed_mps)
+        if not targets:
+            return 0, None, None
+        return len(targets), min(targets), sum(targets) / len(targets)
