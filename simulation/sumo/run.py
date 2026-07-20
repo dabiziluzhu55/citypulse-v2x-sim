@@ -676,8 +676,9 @@ def run(args: argparse.Namespace) -> None:
 
     manager = SimulationManager()
     duration = args.duration if args.duration is not None else args.end
+    intersection_ids = tuple(args.intersection or manager.catalog().intersections)
     config = SimulationConfig(
-        intersection_ids=tuple(args.intersection),
+        intersection_ids=intersection_ids,
         period=args.period,
         origins=_parse_origins(args.origin),
         window_start_seconds=args.window_start,
@@ -727,7 +728,12 @@ def run(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("fixed", "algorithm"), default="fixed")
-    parser.add_argument("--intersection", nargs="+", default=["demo_2"])
+    parser.add_argument(
+        "--intersection",
+        nargs="+",
+        default=None,
+        help="Controlled intersections; default uses every intersection in the global scenario.",
+    )
     parser.add_argument(
         "--period",
         choices=("morning_peak", "off_peak", "evening_peak"),

@@ -142,11 +142,13 @@ python -m simulation.sumo.build_tls \
 | `network/TotalMap_20.signals.net.xml` | 加入目标 TLS 的公共派生路网 |
 | `signals/official_tls.add.xml` | 所有官方 SUMO signal programs |
 | `manifests/tls_manifest.json` | runner 使用的相位、连接、lane 和灯色桥接数据 |
-| `manifests/traffic_manifest.json` | 场景路径、官方时间和 PCU 合计 |
+| `manifests/traffic_manifest.json` | schema v3 全局场景、路线覆盖、官方时间与审核摘要 |
 | `reports/official_tls_connections.csv` | 人工核对 connection、movement 和 linkIndex |
-| `traffic/demo_N/PERIOD/routes.rou.xml` | 该路口、该时段的真实 15 分钟车流 |
-| `traffic/demo_N/PERIOD/signals.add.xml` | 只包含该时段 program 的信号文件 |
-| `traffic/demo_N/PERIOD/simulation.sumocfg` | 可直接运行的独立场景 |
+| `traffic/global/candidates.rou.xml` | 单转向兜底与跨路口候选路线池 |
+| `traffic/global/PERIOD/routes.rou.xml` | 联合满足已构建路口约束的真实 15 分钟车流 |
+| `traffic/global/PERIOD/signals.add.xml` | 所有已构建路口在该时段的 program |
+| `traffic/global/PERIOD/simulation.sumocfg` | 可直接运行的全局独立场景 |
+| `reports/traffic/PERIOD.*.json` | 路线分配零误差报告与 SUMO 实际过车审核 |
 
 生成目录根层只保留上述分类目录。旧的转向验证车流、验证用 `sumocfg` 和 debug POI
 工具已经删除；路线正确性由配置校验、连接报告、单元测试和真实场景 GUI 检查共同保证。

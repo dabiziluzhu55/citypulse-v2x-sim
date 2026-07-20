@@ -31,6 +31,7 @@ class SessionCliTests(unittest.TestCase):
         self.assertEqual(args.algorithm_module, "algorithms.local_policy_example")
         self.assertEqual(args.ai_observer_module, "algorithms.ai_observer_example")
         self.assertEqual(args.ai_frame_interval, 0.05)
+        self.assertIsNone(args.intersection)
 
     def test_repeated_origins_are_grouped_by_intersection(self):
         self.assertEqual(

@@ -37,8 +37,20 @@ class GeneratedArtifactLayout:
     def connections_report(self) -> Path:
         return self.root / "reports" / "official_tls_connections.csv"
 
-    def traffic_scenario_dir(self, intersection_id: str, period_id: str) -> Path:
-        return self.root / "traffic" / intersection_id / period_id
+    @property
+    def traffic_global_dir(self) -> Path:
+        return self.root / "traffic" / "global"
+
+    @property
+    def traffic_candidates_file(self) -> Path:
+        return self.traffic_global_dir / "candidates.rou.xml"
+
+    @property
+    def traffic_reports_dir(self) -> Path:
+        return self.root / "reports" / "traffic"
+
+    def traffic_scenario_dir(self, period_id: str) -> Path:
+        return self.traffic_global_dir / period_id
 
     def relative(self, path: Path) -> str:
         return path.relative_to(self.root).as_posix()
@@ -50,6 +62,7 @@ class GeneratedArtifactLayout:
             self.tls_manifest.parent,
             self.connections_report.parent,
             self.root / "traffic",
+            self.traffic_reports_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
 

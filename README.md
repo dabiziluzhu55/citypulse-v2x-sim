@@ -28,13 +28,15 @@ SUMO+CARLA联合仿真与交通协同管控平台。
 ```bash
 export SUMO_HOME=/path/to/sumo
 cd /home/kemove/devdata1/zrl/citypulse-v2x-sim
-python -m simulation.sumo.build_tls --intersections demo_2
+python -m simulation.sumo.build_tls
 python -m simulation.sumo.run --gui --realtime --mode fixed \
-  --intersection demo_2 --period morning_peak
+  --period morning_peak
 ```
 
-构建命令还会按赛方 15 分钟数据生成 `demo_2` 的早高峰、平峰和晚高峰真实车流。
-数据口径、总量校验和场景切换见 [docs/traffic_demand.md](docs/traffic_demand.md)。
+构建命令默认将 20 个指定路口联合起来，生成早高峰、平峰和晚高峰三套全局车流。
+同一辆车可连续经过多个指定路口，并同时计入这些路口的官方流量约束。构建阶段还会运行
+SUMO 复核实际过车总量；数据口径、误差报告和场景切换见
+[docs/traffic_demand.md](docs/traffic_demand.md)。
 
 后端可调用的会话、时间窗口、进口筛选、交通倍率和扰动事件接口见
 [docs/simulation_core_api.md](docs/simulation_core_api.md)。

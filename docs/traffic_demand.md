@@ -8,7 +8,8 @@
 `demo_10`、`demo_11`、`demo_12`、`demo_13`、`demo_14`、`demo_15`、`demo_16`、`demo_17`、`demo_18`、`demo_19`、`demo_20`
 使用小客车，
 `1 vehicle = 1 PCU`，
-因此生成车辆数与表格 PCU 数严格相等。
+因此每条路线的车辆数可直接由 PCU 约束确定。全局生成器会复用经过多个指定路口的车辆，
+所以全局实际车辆数通常小于 20 个路口官方总量的简单相加；同一辆车会在经过的每个路口计数。
 
 车型动力和排放参数独立保存在 `data/maps/sumo/vehicle_profiles.json`。需求文件中的
 `vehicle_type: "passenger"` 引用同名画像；默认使用汽油小客车和
@@ -390,9 +391,12 @@
 服务器上设置 `SUMO_HOME` 后执行：
 
 ```bash
-python -m simulation.sumo.build_tls \
-  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
+python -m simulation.sumo.build_tls
 ```
+
+不传 `--intersections` 时默认构建全部 20 个路口。开发期间可以显式传入较小子集，例如
+`--intersections demo_1 demo_2`；子集仍生成三套联合场景，而不是逐路口场景。构建器要求
+`SUMO_HOME` 下存在 `duarouter`、`sumo` 和 `tools/routeSampler.py`，Python 环境还需安装 NumPy。
 
 该命令一次生成公共信号路网以及三个真实交通场景：
 
@@ -403,34 +407,38 @@ generated/
   manifests/tls_manifest.json
   manifests/traffic_manifest.json
   reports/official_tls_connections.csv
-  traffic/demo_2/morning_peak/
+  reports/traffic/morning_peak.assignment.json
+  reports/traffic/morning_peak.sumo_audit.json
+  traffic/global/candidates.rou.xml
+  traffic/global/morning_peak/
+    official_turn_counts.xml
     routes.rou.xml
     signals.add.xml
     simulation.sumocfg
-  traffic/demo_2/off_peak/
-    routes.rou.xml
-    signals.add.xml
-    simulation.sumocfg
-  traffic/demo_2/evening_peak/
-    routes.rou.xml
-    signals.add.xml
-    simulation.sumocfg
+  traffic/global/off_peak/...
+  traffic/global/evening_peak/...
 ```
 
-每个场景使用独立的 `signals.add.xml`，其中只保留与车流时段对应的
-program，保证直接用 `sumo-gui` 打开时不会误选其他时段配时。
+候选池包含每个物理转向的兜底路线和由 `duarouter` 计算的跨路口路线。每个 15 分钟区间
+使用零流量约束和 `routeSampler` 固定种子采样，路线分配必须逐物理转向严格等于官方计数。
+每个场景的 `signals.add.xml` 同时包含所有已构建路口在该时段的 program。
 
 每个场景把本时段起点归一化为仿真 `t=0`，保留 `traffic_manifest.json` 中的官方
-起止时间。这样早高峰只运行 7200 秒需求期，不需要从午夜空跑到 07:00。配置另留
-300 秒用于最后一批车辆驶离路口。
+起止时间。这样早高峰只从 `t=0` 运行 7200 秒需求期，不需要从午夜空跑到 07:00。
+直接场景另留最多 3600 秒让跨路口车辆排空。
+
+默认构建会用 `vehroute-output.exit-times` 复核车辆实际通过时刻。路线分配的 15 分钟计数
+必须零误差；实际仿真的每路口周期总量误差不得超过 5%。转向和 15 分钟桶的实际误差、
+GEH、未完成车辆与排空时间写入 `reports/traffic/*.sumo_audit.json`。只有无 SUMO 的开发测试
+才应使用 `--skip-traffic-audit`，此时 manifest 会明确记录 `audit_status: skipped`。
 
 直接检查 GUI：
 
 ```bash
-sumo-gui -c data/maps/sumo/generated/traffic/demo_2/morning_peak/simulation.sumocfg
+sumo-gui -c data/maps/sumo/generated/traffic/global/morning_peak/simulation.sumocfg
 ```
 
-固定配时 runner（默认就是 `demo_2` 早高峰）：
+固定配时 runner 默认控制并展示全局场景中的全部路口：
 
 ```bash
 python -m simulation.sumo.run --gui --realtime --mode fixed
@@ -442,6 +450,10 @@ python -m simulation.sumo.run --gui --realtime --mode fixed
 python -m simulation.sumo.run --gui --mode fixed \
   --intersection demo_4 --period off_peak
 ```
+
+显式 `--intersection` 只限制控制器、算法输入和快照范围，底层仍加载完整全局车流；其他路口
+继续执行官方固定配时。`--origin demo_4:east` 按路线首个受控进口做调试过滤，使用过滤、
+非完整时间窗口或非 `1.0` 倍率的会话会标记为非官方完整需求。
 
 ## 扩展其他路口
 

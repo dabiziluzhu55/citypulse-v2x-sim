@@ -286,16 +286,17 @@ def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatal
     layout = GeneratedArtifactLayout(generated_dir)
     traffic = _read_json(layout.traffic_manifest)
     tls = _read_json(layout.tls_manifest)
-    if int(traffic.get("schema_version", 0)) != 2:
-        raise SessionError("Rebuild traffic artifacts to obtain manifest schema_version 2.")
+    if int(traffic.get("schema_version", 0)) != 3:
+        raise SessionError(
+            "Rebuild global traffic artifacts to obtain manifest schema_version 3."
+        )
     if int(tls.get("schema_version", 0)) != 2:
         raise SessionError("Rebuild signal artifacts to obtain manifest schema_version 2.")
     mapping_path = generated_dir.parent / "TotalMap_20.intersections.json"
     mapping = _read_json(mapping_path)
     scenarios = traffic.get("scenarios", {})
-    by_intersection = {}
-    for scenario in scenarios.values():
-        by_intersection.setdefault(str(scenario["intersection_id"]), []).append(scenario)
+    built_intersections = tuple(str(value) for value in traffic.get("intersection_ids", ()))
+    by_intersection = {intersection_id: list(scenarios.values()) for intersection_id in built_intersections}
     required_lanes = set()
     for intersection_id in by_intersection:
         for connection in tls["intersections"][intersection_id]["connections"]:
@@ -309,7 +310,7 @@ def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatal
         tls_item = tls["intersections"].get(intersection_id)
         if tls_item is None:
             continue
-        origin_data = own_scenarios[0].get("origins", {})
+        origin_data = traffic.get("origins", {}).get(intersection_id, {})
         origins = tuple(
             OriginCapability(
                 origin_id=name,

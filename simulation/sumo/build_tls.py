@@ -597,15 +597,17 @@ def _write_connection_report(path: Path, connections: Sequence[ControlledConnect
 
 
 def build(
-    intersection_ids: Sequence[str],
+    intersection_ids: Sequence[str] | None,
     mapping_path: Path = DEFAULT_MAPPING,
     plans_path: Path = DEFAULT_PLANS,
     topology_path: Path = DEFAULT_TOPOLOGY,
     source_net: Path = DEFAULT_BASE_NET,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
+    skip_traffic_audit: bool = False,
 ) -> Mapping[str, object]:
     configuration = load_signal_configuration(mapping_path, plans_path, topology_path)
-    selected = configuration.select(intersection_ids)
+    requested = tuple(intersection_ids or configuration.intersections)
+    selected = configuration.select(requested)
     junction_ids = sorted({item for config in selected for item in config.junction_ids})
     netconvert = _binary("netconvert")
     sumo = _binary("sumo")
@@ -724,18 +726,31 @@ def build(
     build_traffic_scenarios(
         manifest,
         output_dir=output_dir,
+        intersection_ids=requested,
+        sumo_binary=sumo,
+        skip_audit=skip_traffic_audit,
     )
     return manifest
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--intersections", nargs="+", default=["demo_2"])
+    parser.add_argument(
+        "--intersections",
+        nargs="+",
+        default=None,
+        help="Official intersections to couple; default builds all configured intersections.",
+    )
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING)
     parser.add_argument("--plans", type=Path, default=DEFAULT_PLANS)
     parser.add_argument("--topology", type=Path, default=DEFAULT_TOPOLOGY)
     parser.add_argument("--source-net", type=Path, default=DEFAULT_BASE_NET)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--skip-traffic-audit",
+        action="store_true",
+        help="Skip the post-build SUMO passage-time audit (development only).",
+    )
     return parser.parse_args()
 
 
@@ -749,6 +764,7 @@ def main() -> None:
             topology_path=args.topology,
             source_net=args.source_net,
             output_dir=args.output_dir,
+            skip_traffic_audit=args.skip_traffic_audit,
         )
     except (
         SignalConfigurationError,

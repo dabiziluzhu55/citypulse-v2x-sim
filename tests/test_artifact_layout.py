@@ -19,10 +19,14 @@ class GeneratedArtifactLayoutTests(unittest.TestCase):
         )
         self.assertEqual(
             layout.relative(
-                layout.traffic_scenario_dir("demo_20", "evening_peak")
+                layout.traffic_scenario_dir("evening_peak")
                 / "simulation.sumocfg"
             ),
-            "traffic/demo_20/evening_peak/simulation.sumocfg",
+            "traffic/global/evening_peak/simulation.sumocfg",
+        )
+        self.assertEqual(
+            layout.relative(layout.traffic_candidates_file),
+            "traffic/global/candidates.rou.xml",
         )
 
     def test_reset_removes_legacy_and_stale_output(self):

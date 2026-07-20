@@ -27,8 +27,8 @@ python simulation/carla_sumo/run_synchronization.py [--sumo-gui]
 ```
 
 默认配置：
-`data/maps/sumo/generated/traffic/demo_2/morning_peak/simulation.sumocfg`，运行前必须先
-构建官方信号和车流。
+`data/maps/sumo/generated/traffic/global/morning_peak/simulation.sumocfg`，运行前必须先
+构建 20 路口官方信号和全局车流。
 
 ## 纯 SUMO 管控
 
