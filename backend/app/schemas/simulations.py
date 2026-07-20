@@ -1,4 +1,4 @@
-"""仿真请求与响应Schema：统一对外契约，通过 control_mode 区分管控策略。"""
+"""仿真请求与响应 Schema：control_mode 从管控模式注册表校验。"""
 
 from __future__ import annotations
 
@@ -6,10 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from ..controllers.registry import CONTROL_MODE_REGISTRY
 from .events import EventRequest
-
-# 对外支持的管控模式；内核侧 fixed / algorithm 的映射由仿真控制层完成
-SUPPORTED_CONTROL_MODES = frozenset({"fixed", "max_pressure"})
 
 
 class StartSimulationRequest(BaseModel):
@@ -37,9 +35,9 @@ class StartSimulationRequest(BaseModel):
     @field_validator("control_mode")
     @classmethod
     def validate_control_mode(cls, value: str) -> str:
-        if value not in SUPPORTED_CONTROL_MODES:
+        if value not in CONTROL_MODE_REGISTRY:
             raise ValueError(
-                f"control_mode must be one of {sorted(SUPPORTED_CONTROL_MODES)}."
+                f"control_mode must be one of {sorted(CONTROL_MODE_REGISTRY)}."
             )
         return value
 
@@ -74,7 +72,7 @@ class SimulationStatusResponse(BaseModel):
 
 
 class MetricsResponse(BaseModel):
-    """统一评估指标响应；算法差异体现在 algorithm 字段，不拆多套接口。"""
+    """统一评估指标响应；算法字段仅标识 control_mode，不拆多套接口。"""
 
     episode_id: str
     algorithm: str

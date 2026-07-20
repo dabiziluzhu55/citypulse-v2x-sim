@@ -42,10 +42,10 @@ class Settings(BaseSettings):
     default_snapshot_interval_seconds: float = 0.2
 
     mvp_intersection_ids: tuple[str, ...] = ("demo_2",)
-    # 对外统一 control_mode；算法实现差异在 controllers 层
-    mvp_control_modes: tuple[str, ...] = ("fixed", "max_pressure")
 
-    # SUMO worker 回调本进程内部算法协议端点时使用
+    # 启用模式白名单（逗号分隔）；必须是 registry 子集。空字符串表示启用注册表全部模式。
+    enabled_control_modes_csv: str = ""
+
     algorithm_base_url: str = "http://127.0.0.1:8000"
     algorithm_timeout: float = 2.0
     decision_interval: float = 5.0
@@ -72,6 +72,15 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.frontend_origins.split(",") if origin.strip()]
+
+    def enabled_control_modes(self) -> tuple[str, ...]:
+        from ..controllers.registry import list_control_modes, validate_enabled_modes
+
+        raw = self.enabled_control_modes_csv.strip()
+        if not raw:
+            return tuple(list_control_modes())
+        modes = [item.strip() for item in raw.split(",") if item.strip()]
+        return validate_enabled_modes(modes)
 
     def resolved_sumo_home(self) -> Path | None:
         import os
@@ -108,4 +117,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    # 启动时校验白名单合法性
+    settings.enabled_control_modes()
+    return settings

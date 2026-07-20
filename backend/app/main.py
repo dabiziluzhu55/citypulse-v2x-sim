@@ -1,4 +1,4 @@
-"""FastAPI应用启动入口"""
+"""FastAPI 应用启动入口"""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ from .controllers.runtime import AlgorithmRuntimeStore
 from .core.config import get_settings
 from .core.exceptions import register_exception_handlers
 from .core.sumo_env import configure_sumo_home
+from .metrics.session_hub import SessionMetricsHub
 from .services.map_service import MapService
 from .services.simulation_service import SimulationService
 from .services.snapshot_serializer import SnapshotSerializer
-from .simulation.control import SimulationControlService
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting %s", settings.app_name)
     logger.info("Project root: %s", settings.project_root)
     logger.info("Generated directory: %s", settings.generated_dir)
+    logger.info("Enabled control modes: %s", list(settings.enabled_control_modes()))
 
     sumo_home = configure_sumo_home(settings)
     missing_files = settings.missing_generated_files()
@@ -49,23 +50,23 @@ async def lifespan(app: FastAPI):
     )
     map_service = MapService(settings, manager)
     serializer = SnapshotSerializer(map_service)
-    simulation_service = SimulationService(manager, serializer, settings)
     algorithm_store = AlgorithmRuntimeStore()
-    simulation_control_service = SimulationControlService(
+    metrics_hub = SessionMetricsHub()
+    simulation_service = SimulationService(
         manager=manager,
         serializer=serializer,
         settings=settings,
         algorithm_store=algorithm_store,
-        legacy_service=simulation_service,
+        metrics_hub=metrics_hub,
     )
 
     app.state.settings = settings
     app.state.simulation_manager = manager
     app.state.map_service = map_service
     app.state.snapshot_serializer = serializer
-    app.state.simulation_service = simulation_service
     app.state.algorithm_store = algorithm_store
-    app.state.simulation_control_service = simulation_control_service
+    app.state.metrics_hub = metrics_hub
+    app.state.simulation_service = simulation_service
     app.state.sumo_home_configured = sumo_home is not None
     app.state.artifacts_ready = len(missing_files) == 0
     app.state.missing_files = missing_files
@@ -74,7 +75,7 @@ async def lifespan(app: FastAPI):
     logger.info("SimulationManager initialized.")
     yield
 
-    simulation_control_service.shutdown_active_session()
+    simulation_service.shutdown_active_session()
     logger.info("Backend shutdown complete.")
 
 

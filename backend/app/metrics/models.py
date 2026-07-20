@@ -1,4 +1,4 @@
-"""指标数据模型：定义评估结果结构与前端可用的序列化格式"""
+"""指标数据模型：交通运行指标与对外序列化格式。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 
 @dataclass
 class EvalResult:
-    """单次仿真（或当前滚动窗口）的评估指标。"""
+    """单次仿真（或当前滚动窗口）的评估指标"""
 
     algorithm: str = ""
 
@@ -36,7 +36,7 @@ class EvalResult:
         }
 
     def to_frontend_metrics(self) -> dict[str, Any]:
-        """映射为前端时序图更易展示的字段名"""
+        """映射为 MetricsResponse / evaluation 兼容字段名。"""
         return {
             "algorithm": self.algorithm,
             "avg_waiting_time": round(self.avg_waiting_time_s, 2),

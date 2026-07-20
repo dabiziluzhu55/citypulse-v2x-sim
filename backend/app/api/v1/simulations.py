@@ -1,4 +1,4 @@
-"""仿真生命周期接口与WebSocket实时推送：统一对外入口，委托仿真控制层。"""
+"""仿真生命周期接口与 WebSocket 实时推送：委托统一 SimulationService。"""
 
 from __future__ import annotations
 
@@ -17,9 +17,8 @@ from ...schemas.simulations import (
     StartSimulationResponse,
     StopSimulationResponse,
 )
-from ...services.simulation_service import TERMINAL_STATES
-from ...simulation.control import SimulationControlService
-from ..deps import get_simulation_control_service
+from ...services.simulation_service import TERMINAL_STATES, SimulationService
+from ..deps import get_simulation_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -32,7 +31,7 @@ logger = logging.getLogger(__name__)
 )
 def start_simulation(
     request_body: StartSimulationRequest,
-    service: SimulationControlService = Depends(get_simulation_control_service),
+    service: SimulationService = Depends(get_simulation_service),
 ) -> StartSimulationResponse:
     session_id, snapshot = service.start(request_body)
     return StartSimulationResponse(
@@ -47,7 +46,7 @@ def start_simulation(
 @router.get("/simulations/{session_id}", response_model=SimulationStatusResponse)
 def get_simulation_status(
     session_id: str,
-    service: SimulationControlService = Depends(get_simulation_control_service),
+    service: SimulationService = Depends(get_simulation_service),
 ) -> SimulationStatusResponse:
     return SimulationStatusResponse(**service.snapshot(session_id))
 
@@ -55,7 +54,7 @@ def get_simulation_status(
 @router.get("/simulations/{session_id}/metrics", response_model=MetricsResponse)
 def get_simulation_metrics(
     session_id: str,
-    service: SimulationControlService = Depends(get_simulation_control_service),
+    service: SimulationService = Depends(get_simulation_service),
 ) -> MetricsResponse:
     return MetricsResponse(**service.get_metrics(session_id))
 
@@ -63,7 +62,7 @@ def get_simulation_metrics(
 @router.post("/simulations/{session_id}/stop", response_model=StopSimulationResponse)
 def stop_simulation(
     session_id: str,
-    service: SimulationControlService = Depends(get_simulation_control_service),
+    service: SimulationService = Depends(get_simulation_service),
 ) -> StopSimulationResponse:
     snapshot = service.stop(session_id)
     return StopSimulationResponse(session_id=session_id, state=snapshot.state)
@@ -77,7 +76,7 @@ def stop_simulation(
 def add_simulation_event(
     session_id: str,
     request_body: EventRequest,
-    service: SimulationControlService = Depends(get_simulation_control_service),
+    service: SimulationService = Depends(get_simulation_service),
 ) -> EventCreatedResponse:
     event_id = service.add_event(session_id, request_body)
     return EventCreatedResponse(event_id=event_id)
@@ -87,7 +86,7 @@ def add_simulation_event(
 def cancel_simulation_event(
     session_id: str,
     event_id: str,
-    service: SimulationControlService = Depends(get_simulation_control_service),
+    service: SimulationService = Depends(get_simulation_service),
 ) -> Response:
     service.cancel_event(session_id, event_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -101,7 +100,7 @@ async def simulation_stream(websocket: WebSocket, session_id: str) -> None:
         await websocket.close(code=1011)
         return
 
-    service: SimulationControlService = app.state.simulation_control_service
+    service: SimulationService = app.state.simulation_service
     subscription = service.subscribe(session_id)
     logger.info("WebSocket connected for session %s", session_id)
 
