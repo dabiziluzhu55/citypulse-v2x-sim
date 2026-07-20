@@ -32,9 +32,23 @@ export interface ExperimentComparisonResponse {
 
 export interface MetricsTimeseriesPoint {
   time: number
+  algorithm?: string
   avg_waiting_time: number
+  avg_travel_time?: number
   avg_queue_length: number
   throughput: number
+  fuel_consumption?: number
+}
+
+export type MetricSeriesSource = 'backend' | 'derived_mock' | 'estimated_mock'
+
+export interface AlgorithmMetricSeries {
+  id: string
+  shortLabel: string
+  label: string
+  color: string
+  source: MetricSeriesSource
+  values: number[]
 }
 
 export interface MetricsTimeseriesResponse {

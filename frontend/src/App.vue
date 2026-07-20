@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import AppBackgroundMap from './components/visualization/AppBackgroundMap.vue'
-import CesiumMap from './components/visualization/CesiumMap.vue'
+import BaiduThreeMap from './components/visualization/BaiduThreeMap.vue'
 import AppMapGradientMask from './components/visualization/AppMapGradientMask.vue'
 import DashboardChrome from './components/dashboard/chrome/DashboardChrome.vue'
 import { provideAppMapView } from './composables/useAppMapView'
 
+const route = useRoute()
 const mapView = provideAppMapView()
 const mapDimension = computed(() => mapView.dimension.value)
+const isStandaloneRoute = computed(() => route.meta.standalone === true)
 </script>
 
 <template>
-  <div class="app-shell app-shell--dashboard">
+  <router-view v-if="isStandaloneRoute" />
+  <div v-else class="app-shell app-shell--dashboard">
     <AppBackgroundMap v-if="mapDimension === '2d'" />
-    <CesiumMap v-else />
+    <BaiduThreeMap v-else />
     <AppMapGradientMask />
 
     <DashboardChrome />
@@ -27,11 +31,8 @@ const mapDimension = computed(() => mapView.dimension.value)
     <div class="app-map-attribution">
       <template v-if="mapDimension === '3d'">
         Data attribution ©
-        <a href="https://cesium.com/" target="_blank" rel="noopener noreferrer">Cesium</a>
-        ,
-        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
-          OpenStreetMap
-        </a>
+        <a href="https://lbsyun.baidu.com/" target="_blank" rel="noopener noreferrer">百度地图</a>
+        ，雄安新区 3D Tiles
       </template>
       <template v-else>
         ©

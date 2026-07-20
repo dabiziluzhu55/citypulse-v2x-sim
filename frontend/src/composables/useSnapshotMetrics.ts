@@ -34,17 +34,16 @@ export function useSnapshotMetrics(
       return
     }
 
-    const metrics = next.metrics
-    if (metrics) {
-      const avgWaiting =
-        metrics.active_vehicles > 0
-          ? metrics.total_waiting_time / metrics.active_vehicles
-          : 0
+    const evaluation = next.evaluation ?? next.metrics.evaluation
+    if (evaluation) {
       const point = {
         time: next.elapsed_seconds,
-        avg_waiting_time: Number(avgWaiting.toFixed(2)),
-        avg_queue_length: metrics.halting_vehicles,
-        throughput: metrics.arrived_vehicles,
+        algorithm: evaluation.algorithm,
+        avg_waiting_time: evaluation.avg_waiting_time,
+        avg_travel_time: evaluation.avg_travel_time,
+        avg_queue_length: evaluation.avg_queue_length,
+        throughput: evaluation.throughput,
+        fuel_consumption: evaluation.fuel_consumption,
       }
       const series = [...timeseries.value.series, point]
       timeseries.value = {

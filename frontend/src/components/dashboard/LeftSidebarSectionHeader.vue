@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import {
   LEFT_SIDEBAR_CONTENT_HEIGHT,
   LEFT_SIDEBAR_CONTENT_WIDTH,
@@ -11,7 +11,8 @@ const props = defineProps<{
   variant: 'scenario' | 'algorithm'
 }>()
 
-const uid = computed(() => props.variant)
+const instanceId = useId().replace(/:/g, '')
+const uid = computed(() => `${props.variant}-${instanceId}`)
 const layout = computed(() => LEFT_SIDEBAR_SECTION_HEADERS[props.variant])
 const isScenario = computed(() => props.variant === 'scenario')
 </script>

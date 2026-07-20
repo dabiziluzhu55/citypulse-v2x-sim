@@ -1,5 +1,9 @@
 import type { CesiumCameraPreset, CesiumCameraPresetId } from '../types/map'
 import type { ScenarioTemplate } from '../types/scenario'
+import {
+  DEMO_2_SOURCE_CENTER,
+  XIONGAN_SCENE_ANCHOR,
+} from '../mapv/sceneCoordinates'
 
 /**
  * 3D Tiles 真实中心（从 tileset.json transform 反算）：
@@ -10,7 +14,7 @@ import type { ScenarioTemplate } from '../types/scenario'
  */
 
 /** 地图默认中心对齐 3D Tiles 真实中心（WGS84: [lon, lat]） */
-export const DEFAULT_MAP_CENTER: [number, number] = [115.981, 38.985]
+export const DEFAULT_MAP_CENTER: [number, number] = DEMO_2_SOURCE_CENTER
 
 export const DEFAULT_MAP_ZOOM = 14
 
@@ -311,9 +315,9 @@ export interface TemplateMapViewport {
 /** 各场景模板视野对齐 3D Tiles 真实位置 */
 export const TEMPLATE_MAP_REGISTRY: Record<string, TemplateMapViewport> = {
   demo_2: {
-    center: [116.126756, 38.99115],
+    center: XIONGAN_SCENE_ANCHOR,
     zoom: 17,
-    bounds: [116.1198, 38.9858, 116.1337, 38.9965],
+    bounds: [115.947, 38.9805, 115.962, 38.9925],
   },
   xiongan20: {
     center: [115.981, 38.985],

@@ -76,7 +76,9 @@
 }
 
 .dashboard-column.center {
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 clamp(12px, 2vw, 36px) 22px;
   pointer-events: none;
 }
 
@@ -188,5 +190,16 @@
   .dashboard-column.center .metrics-panel-wrap {
     margin-top: 0;
     margin-bottom: 0;
+  }
+}
+
+@media (min-width: 1321px) and (max-width: 1680px) {
+  :root {
+    --dashboard-left-width: 470px;
+    --dashboard-right-width: 500px;
+  }
+
+  .dashboard-column.center {
+    padding-inline: 10px;
   }
 }

@@ -7,7 +7,7 @@ import Point from 'ol/geom/Point'
 import VectorLayer from 'ol/layer/Vector'
 import VectorSource from 'ol/source/Vector'
 import GeoJSON from 'ol/format/GeoJSON'
-import { Circle as CircleStyle, Fill, Stroke, Style } from 'ol/style'
+import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style } from 'ol/style'
 import { defaults as defaultControls, Attribution } from 'ol/control'
 import { defaults as defaultInteractions } from 'ol/interaction'
 import { fromLonLat } from 'ol/proj'
@@ -17,7 +17,7 @@ import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from '../../constants/mapDefault
 import { bindMapInstance, useAppMapView } from '../../composables/useAppMapView'
 import { useSimulationMap } from '../../composables/useSimulationMap'
 import { useSimulationStore } from '../../composables/useSimulationStore'
-import { resolveVehicleColor } from '../../constants/trafficVisualization'
+import { TrafficModelRegistry } from '../../cesium/traffic/TrafficModelRegistry'
 
 const mapEl = ref<HTMLElement | null>(null)
 const mapView = useAppMapView()
@@ -30,6 +30,13 @@ let resizeObserver: ResizeObserver | null = null
 const networkSource = new VectorSource()
 const vehicleSource = new VectorSource()
 const geoJsonFormat = new GeoJSON()
+const modelRegistry = new TrafficModelRegistry()
+
+const VEHICLE_RADIUS: Record<string, number> = {
+  passenger: 6,
+  truck: 8,
+  bus: 9,
+}
 
 const networkLayer = new VectorLayer({
   source: networkSource,
@@ -55,9 +62,15 @@ const vehicleLayer = new VectorLayer({
   source: vehicleSource,
   style: (feature) => {
     const color = String(feature.get('color') ?? '#21e6ff')
+    const vtype = String(feature.get('vtype') ?? 'passenger')
+    const rotation = Number(feature.get('rotation') ?? 0)
+    const radius = VEHICLE_RADIUS[vtype] ?? 6
     return new Style({
-      image: new CircleStyle({
-        radius: 4,
+      image: new RegularShape({
+        points: 3,
+        radius,
+        radius2: radius * 0.45,
+        rotation,
         fill: new Fill({ color }),
         stroke: new Stroke({ color: 'rgba(4, 18, 31, 0.9)', width: 1 }),
       }),
@@ -90,10 +103,15 @@ function renderVehicles() {
     if (vehicle.longitude == null || vehicle.latitude == null) {
       continue
     }
+    const definition = modelRegistry.resolve(vehicle.vehicle_id, vehicle.lane_id)
     const feature = new Feature({
       geometry: new Point(fromLonLat([vehicle.longitude, vehicle.latitude])),
     })
-    feature.set('color', resolveVehicleColor(0, vehicle.speed))
+    feature.set('color', definition.color)
+    feature.set('vtype', definition.type)
+    // SUMO angle：正北为 0、顺时针为正（度）；三角形默认顶点朝上（北），
+    // OpenLayers rotation 为弧度、顺时针为正，可直接换算。
+    feature.set('rotation', (vehicle.angle * Math.PI) / 180)
     features.push(feature)
   }
   vehicleSource.addFeatures(features)

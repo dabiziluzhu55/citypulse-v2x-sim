@@ -29,6 +29,17 @@ export interface MapViewport {
   bounds?: [number, number, number, number]
 }
 
+export interface ThreeMapController {
+  flyTo: (target: [number, number, number], options: {
+    heading: number
+    pitch: number
+    range: number
+    duration: number
+    complete: () => void
+  }) => void
+  setViewport: (points: Array<[number, number, number]>, options: { range: number }) => void
+}
+
 export interface AppMapView {
   mode: { value: AppMapMode }
   dimension: { value: MapDimension }
@@ -39,6 +50,8 @@ export interface AppMapView {
   setCameraPreset: (next: CesiumCameraPresetId) => void
   registerMap: (map: Map) => void
   unregisterMap: () => void
+  registerThreeMap: (map: ThreeMapController) => void
+  unregisterThreeMap: () => void
   registerCesium: (viewer: Viewer) => void
   unregisterCesium: () => void
   flyTo: (center: [number, number], zoom: number, anchorId?: string) => void
@@ -72,6 +85,7 @@ export interface MapGeoJsonResponse {
 
 export interface GeoJsonFeatureCollection {
   type: 'FeatureCollection'
+  metadata?: Record<string, unknown>
   features: GeoJsonFeature[]
 }
 

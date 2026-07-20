@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
+from pathlib import Path
 from typing import Any
 
 from simulation.sumo.session import SimulationCatalog, SimulationManager
@@ -21,7 +23,7 @@ class MapService:
         self._settings = settings
         self._manager = manager
         self._net = None
-        self._cache: dict[tuple[str, float], MapGeoJsonResponse] = {}
+        self._cache: dict[tuple[str, float, int | None], MapGeoJsonResponse] = {}
 
     def xy_to_lonlat(self, x: float, y: float) -> tuple[float | None, float | None]:
         try:
@@ -32,7 +34,9 @@ class MapService:
             return None, None
 
     def get_geojson(self, intersection_id: str, radius_m: float) -> MapGeoJsonResponse:
-        cache_key = (intersection_id, float(radius_m))
+        artifact_path = self._generated_geojson_path(intersection_id)
+        artifact_mtime_ns = artifact_path.stat().st_mtime_ns if artifact_path.is_file() else None
+        cache_key = (intersection_id, float(radius_m), artifact_mtime_ns)
         cached = self._cache.get(cache_key)
         if cached is not None:
             logger.info(
@@ -59,7 +63,28 @@ class MapService:
 
         center_lon = float(intersection.longitude)
         center_lat = float(intersection.latitude)
+        generated = self._load_generated_geojson(
+            artifact_path,
+            intersection_id=intersection_id,
+            center_lon=center_lon,
+            center_lat=center_lat,
+            radius_m=radius_m,
+        )
+        if generated is not None:
+            self._cache = {cache_key: generated}
+            return generated
         net = self._load_net()
+        generated = self._load_generated_geojson(
+            artifact_path,
+            intersection_id=intersection_id,
+            center_lon=center_lon,
+            center_lat=center_lat,
+            radius_m=radius_m,
+        )
+        if generated is not None:
+            self._cache = {cache_key: generated}
+            return generated
+
         center_x, center_y = net.convertLonLat2XY(center_lon, center_lat)
 
         features: list[dict[str, Any]] = []
@@ -128,8 +153,89 @@ class MapService:
             bounds=bounds,
             geojson={"type": "FeatureCollection", "features": features},
         )
-        self._cache[cache_key] = response
+        self._cache = {cache_key: response}
         return response
+
+    def _generated_geojson_path(self, intersection_id: str) -> Path:
+        return self._settings.generated_dir / "geojson" / f"{intersection_id}.roads.wgs84.geojson"
+
+    def _load_generated_geojson(
+        self,
+        path: Path,
+        *,
+        intersection_id: str,
+        center_lon: float,
+        center_lat: float,
+        radius_m: float,
+    ) -> MapGeoJsonResponse | None:
+        if not path.is_file():
+            return None
+        try:
+            collection = json.loads(path.read_text(encoding="utf-8"))
+            metadata = collection.get("metadata", {})
+            if metadata.get("intersection_id") != intersection_id:
+                raise ValueError("intersection metadata does not match")
+            if metadata.get("output_crs") != "WGS84":
+                raise ValueError("generated GeoJSON must use WGS84")
+            if not math.isclose(float(metadata.get("radius_m")), float(radius_m), abs_tol=1e-6):
+                logger.info("Generated GeoJSON radius mismatch; using runtime conversion")
+                return None
+
+            features = collection.get("features")
+            if collection.get("type") != "FeatureCollection" or not isinstance(features, list):
+                raise ValueError("invalid FeatureCollection")
+
+            bounds = BoundsSchema(west=center_lon, south=center_lat, east=center_lon, north=center_lat)
+            validated_features: list[dict[str, Any]] = []
+            for feature in features:
+                geometry = feature.get("geometry", {})
+                coordinates = geometry.get("coordinates")
+                if geometry.get("type") != "LineString" or not isinstance(coordinates, list) or len(coordinates) < 2:
+                    raise ValueError("generated road must be a LineString with at least two points")
+                for coordinate in coordinates:
+                    if not isinstance(coordinate, list) or len(coordinate) < 2:
+                        raise ValueError("invalid road coordinate")
+                    lon, lat = float(coordinate[0]), float(coordinate[1])
+                    if not math.isfinite(lon) or not math.isfinite(lat):
+                        raise ValueError("non-finite road coordinate")
+                    if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+                        raise ValueError("road coordinate outside WGS84 bounds")
+                    bounds.west = min(bounds.west, lon)
+                    bounds.south = min(bounds.south, lat)
+                    bounds.east = max(bounds.east, lon)
+                    bounds.north = max(bounds.north, lat)
+                validated_features.append(feature)
+
+            validated_features.append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "feature_type": "intersection",
+                        "intersection_id": intersection_id,
+                        "data_source": "generated",
+                        "data_version": path.stat().st_mtime_ns,
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [round(center_lon, 7), round(center_lat, 7)],
+                    },
+                }
+            )
+            logger.info("Using generated WGS84 road network: %s", path)
+            return MapGeoJsonResponse(
+                intersection_id=intersection_id,
+                center=CenterSchema(longitude=round(center_lon, 7), latitude=round(center_lat, 7)),
+                radius_m=float(radius_m),
+                bounds=bounds,
+                geojson={
+                    "type": "FeatureCollection",
+                    "metadata": {**metadata, "data_source": "generated"},
+                    "features": validated_features,
+                },
+            )
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            logger.warning("Ignoring invalid generated GeoJSON %s: %s", path, exc)
+            return None
 
     def _load_net(self):
         if self._net is None:
@@ -154,11 +260,7 @@ class MapService:
         return False
 
     @staticmethod
-    def serialize_catalog(
-        catalog: SimulationCatalog,
-        allowed_intersections: tuple[str, ...],
-        control_modes: list[str] | None = None,
-    ):
+    def serialize_catalog(catalog: SimulationCatalog, allowed_intersections: tuple[str, ...]):
         from ..schemas.catalog import (
             CatalogResponse,
             FlowMultiplierRangeSchema,
@@ -205,7 +307,7 @@ class MapService:
         return CatalogResponse(
             intersections=intersections,
             event_types=list(catalog.event_types),
-            control_modes=list(control_modes) if control_modes is not None else ["fixed"],
+            control_modes=["fixed"],
             flow_multiplier=FlowMultiplierRangeSchema(
                 min=catalog.flow_multiplier_min,
                 max=catalog.flow_multiplier_max,

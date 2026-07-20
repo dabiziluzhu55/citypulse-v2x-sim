@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
+import CenterCommunicationPanel from '../components/dashboard/CenterCommunicationPanel.vue'
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
+import { useDashboardOverlay } from '../composables/useDashboardOverlay'
 import { useOptionalAppMapView } from '../composables/useAppMapView'
 import { useSimulationStore } from '../composables/useSimulationStore'
 import { useSnapshotMetrics } from '../composables/useSnapshotMetrics'
@@ -39,6 +41,22 @@ const {
 const { ready: healthReady, statusLabel: healthLabel } = useHealth()
 
 const { timeseries, logEntries } = useSnapshotMetrics(sessionId, snapshot)
+const { communicationPanelOpen, closeCommunicationPanel } = useDashboardOverlay()
+
+function handleOverlayKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && communicationPanelOpen.value) {
+    closeCommunicationPanel()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleOverlayKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleOverlayKeydown)
+  closeCommunicationPanel()
+})
 
 async function handleStart(payload: StartSimulationRequest) {
   await launchRun(payload)
@@ -104,7 +122,34 @@ async function handleStop() {
       />
     </div>
 
-    <div class="dashboard-column center" aria-hidden="true" />
+    <div class="dashboard-column center" />
+
+    <Transition name="communication-overlay">
+      <div
+        v-if="communicationPanelOpen"
+        id="center-communication-dialog"
+        class="communication-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="车路云通信记录"
+      >
+        <button
+          type="button"
+          class="communication-overlay__backdrop"
+          aria-label="关闭车路云通信记录"
+          @click="closeCommunicationPanel"
+        />
+        <div class="communication-overlay__panel">
+          <CenterCommunicationPanel
+            :log-entries="logEntries"
+            :loading="false"
+            :error="null"
+            :connected="wsConnected"
+            @close="closeCommunicationPanel"
+          />
+        </div>
+      </div>
+    </Transition>
 
     <div class="dashboard-column right">
       <RightSidebarPanel
@@ -122,6 +167,68 @@ async function handleStop() {
 </template>
 
 <style scoped>
+.communication-overlay {
+  position: fixed;
+  inset: var(--dashboard-top-offset) 0 var(--dashboard-bottom-offset);
+  z-index: 9;
+  display: grid;
+  place-items: end center;
+  padding: 24px max(calc(var(--dashboard-right-width) + 36px), 24px) 42px
+    max(calc(var(--dashboard-left-width) + 36px), 24px);
+  pointer-events: none;
+}
+
+.communication-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: radial-gradient(circle at 50% 72%, rgba(8, 35, 68, 0.2), transparent 42%);
+  cursor: default;
+  pointer-events: auto;
+}
+
+.communication-overlay__panel {
+  position: relative;
+  z-index: 1;
+  width: min(760px, 100%);
+  pointer-events: auto;
+}
+
+.communication-overlay__panel::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -28px;
+  width: 170px;
+  height: 28px;
+  background: linear-gradient(180deg, rgba(33, 230, 255, 0.2), transparent);
+  clip-path: polygon(37% 0, 63% 0, 100% 100%, 0 100%);
+  transform: translateX(-50%);
+  opacity: 0.66;
+  pointer-events: none;
+}
+
+.communication-overlay-enter-active,
+.communication-overlay-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.communication-overlay-enter-active .communication-overlay__panel,
+.communication-overlay-leave-active .communication-overlay__panel {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.communication-overlay-enter-from,
+.communication-overlay-leave-to {
+  opacity: 0;
+}
+
+.communication-overlay-enter-from .communication-overlay__panel,
+.communication-overlay-leave-to .communication-overlay__panel {
+  opacity: 0;
+  transform: translateY(18px) scale(0.97);
+}
+
 .map-view-controls {
   position: fixed;
   top: calc(var(--dashboard-top-offset) + 10px);
@@ -188,6 +295,23 @@ async function handleStop() {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 1320px) {
+  .communication-overlay {
+    inset: var(--dashboard-top-offset) 0 80px;
+    padding: 20px;
+    place-items: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .communication-overlay-enter-active,
+  .communication-overlay-leave-active,
+  .communication-overlay-enter-active .communication-overlay__panel,
+  .communication-overlay-leave-active .communication-overlay__panel {
+    transition: none;
   }
 }
 

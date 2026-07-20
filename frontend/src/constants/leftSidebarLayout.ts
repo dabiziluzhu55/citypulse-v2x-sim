@@ -1,86 +1,65 @@
-/** 左侧数据面板布局常量 */
-import { CHROME_SIDEBAR_CENTER_EXPAND } from './dashboardChromeLayout'
+/** 左侧数据面板统一布局常量（参考稿 439×870） */
+export const LEFT_SIDEBAR_DESIGN_WIDTH = 439
+export const LEFT_SIDEBAR_DESIGN_HEIGHT = 870
+export const LEFT_SIDEBAR_CONTENT_WIDTH = LEFT_SIDEBAR_DESIGN_WIDTH
+export const LEFT_SIDEBAR_CONTENT_HEIGHT = LEFT_SIDEBAR_DESIGN_HEIGHT
 
-/** 原稿外壳宽度（扩展前，用于固定左侧与边框的锚点） */
-export const LEFT_SIDEBAR_DESIGN_WIDTH_BASE = 520
-export const LEFT_SIDEBAR_DESIGN_WIDTH = LEFT_SIDEBAR_DESIGN_WIDTH_BASE + CHROME_SIDEBAR_CENTER_EXPAND
-export const LEFT_SIDEBAR_DESIGN_HEIGHT = 990
-
-/** 内容逻辑画布（原 左侧数据.svg 坐标系） */
-export const LEFT_SIDEBAR_CONTENT_WIDTH = 417
-export const LEFT_SIDEBAR_CONTENT_HEIGHT = 870
-
-/** 内容等比放大，需配合外壳扩展与裁剪区 */
-export const LEFT_SIDEBAR_CONTENT_SCALE = 1.11
-
-/** 裁剪区：贴近外壳内腔，仅保留描边安全距离 */
-export const LEFT_SIDEBAR_CLIP_INSET_TOP = 8
-export const LEFT_SIDEBAR_CLIP_INSET_LEFT = 13
-export const LEFT_SIDEBAR_CLIP_INSET_RIGHT = 2
-export const LEFT_SIDEBAR_CLIP_INSET_BOTTOM = 10
-
-/** 区块标题栏（相对 417×870 内容画布） */
 export const LEFT_SIDEBAR_SECTION_HEADERS = {
   scenario: {
-    left: 12,
+    left: 28,
     top: 36,
-    width: 393,
+    width: 368,
     height: 45,
     viewBox: '0 0 368 45',
   },
   algorithm: {
-    left: 12,
-    top: 441,
-    width: 393,
+    left: 33,
+    top: 405,
+    width: 354.151,
     height: 40,
     viewBox: '0 0 354.151 40',
   },
 } as const
 
-/** 外壳 SVG 相对内容画布的等比缩放 */
-export const LEFT_SIDEBAR_SHELL_SCALE_X =
-  LEFT_SIDEBAR_DESIGN_WIDTH / LEFT_SIDEBAR_CONTENT_WIDTH
-export const LEFT_SIDEBAR_SHELL_SCALE_Y =
-  LEFT_SIDEBAR_DESIGN_HEIGHT / LEFT_SIDEBAR_CONTENT_HEIGHT
+export const LEFT_SIDEBAR_SHELL_SCALE_X = 1
+export const LEFT_SIDEBAR_SHELL_SCALE_Y = 1
 
-/** 外壳装饰（417×870 原稿坐标） */
+export const LEFT_SIDEBAR_REFERENCE_LAYOUT = {
+  fields: [
+    { key: 'scenario', left: 28, top: 91, width: 155, height: 66 },
+    { key: 'disturbance', left: 202, top: 91, width: 155, height: 66 },
+    { key: 'flow', left: 28, top: 172, width: 155, height: 66 },
+    { key: 'time', left: 202, top: 172, width: 155, height: 66 },
+  ],
+  summary: { left: 32, top: 252, width: 330, height: 51 },
+  fileActions: { left: 28, top: 312, width: 334, height: 42, gap: 12 },
+  algorithmItems: { left: 35, top: 463, width: 328, height: 34, gap: 11 },
+  speedBadge: { left: 315, top: 663, width: 68, height: 34 },
+  speedMenu: { left: 315, bottom: 212, width: 68, optionHeight: 30 },
+} as const
+
 export const LEFT_SIDEBAR_SHELL = {
-  innerScreen: { x: 7.58182, y: 4, width: 408.47, height: 825, rx: 12 },
-  progressRail: { y: 760, x1: 12, x2: 405, fillEnd: 310, height: 4 },
+  innerScreen: { x: 10.5818, y: 51, width: 381.934, height: 426.754, rx: 26 },
+  progressRail: { y: 680, x1: 25, x2: 288, fillEnd: 288, height: 3 },
   buttonSlots: [
-    { id: 'left', strokePath: 'M5 787.902L8.5 782.328H132V792.919M132 811.736V822H5.5V811.736' },
-    { id: 'center', strokePath: 'M145 787.902L148.5 782.328H272V792.919M272 811.736V822H145.5V811.736' },
-    { id: 'right', strokePath: 'M285 787.902L288.5 782.328H412V792.919M412 811.736V822H285.5V811.736' },
+    { id: 'left', strokePath: 'M21 708.574L24.459 703H136.539V713.591M136.539 732.408V742.672H21.461V732.408' },
+    { id: 'center', strokePath: 'M153 708.574L156.459 703H268.539V713.591M268.539 732.408V742.672H153.461V732.408' },
+    { id: 'right', strokePath: 'M287 708.574L290.459 703H402.539V713.591M402.539 732.408V742.672H287.461V732.408' },
   ],
 } as const
 
-const lsInner = LEFT_SIDEBAR_SHELL.innerScreen
-
-/**
- * 内容画布在裁剪区内的位置：
- * 横向按扩展后的内腔居中，纵向抵消原稿顶部留白，使首个标题贴近上边框。
- */
-export const LEFT_SIDEBAR_CONTENT_OFFSET = {
-  x:
-    (lsInner.x + lsInner.width / 2) * LEFT_SIDEBAR_SHELL_SCALE_X -
-    (LEFT_SIDEBAR_CONTENT_WIDTH * LEFT_SIDEBAR_CONTENT_SCALE) / 2 -
-    LEFT_SIDEBAR_CLIP_INSET_LEFT,
-  y: -14,
-} as const
-
-/** 底部控制区（417×870 内容坐标，与按钮 HTML 对齐） */
 export const LEFT_SIDEBAR_BOTTOM_CHROME = {
   progressRail: LEFT_SIDEBAR_SHELL.progressRail,
   buttonSlots: LEFT_SIDEBAR_SHELL.buttonSlots,
   controls: {
-    left: 5,
-    top: 782,
-    width: 407,
+    left: 21,
+    top: 703,
+    width: 382,
     height: 40,
     slots: [
-      { left: 5, width: 127 },
-      { left: 145, width: 127 },
-      { left: 285, width: 127 },
+      { left: 21, width: 116 },
+      { left: 153, width: 116 },
+      { left: 287, width: 116 },
     ],
   },
 } as const

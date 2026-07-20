@@ -17,6 +17,26 @@ export const TRAFFIC_FLOW_MODE_OPTIONS: SelectOption<TrafficFlowMode>[] = [
   { label: '晚高峰', value: 'evening_peak' },
 ]
 
+export const SCENARIO_MODE_OPTIONS = [
+  {
+    label: '雄安20路口路网',
+    value: 'xiongan_20',
+    backendIntersectionId: 'demo_2',
+    source: 'compatibility_preset',
+  },
+] as const
+
+export type ScenarioModeId = (typeof SCENARIO_MODE_OPTIONS)[number]['value']
+
+export const SIMULATION_TIME_OPTIONS = [
+  { label: '7:00-7:15', value: 'morning_15', flowMode: 'morning_peak', windowStartSeconds: 0, durationSeconds: 900 },
+  { label: '7:15-7:30', value: 'morning_30', flowMode: 'morning_peak', windowStartSeconds: 900, durationSeconds: 900 },
+  { label: '17:00-17:15', value: 'evening_15', flowMode: 'evening_peak', windowStartSeconds: 0, durationSeconds: 900 },
+  { label: '平峰15分钟', value: 'off_peak_15', flowMode: 'flat', windowStartSeconds: 0, durationSeconds: 900 },
+] as const
+
+export type SimulationTimePresetId = (typeof SIMULATION_TIME_OPTIONS)[number]['value']
+
 export const FLOW_SCALE_OPTIONS = [0.8, 1.0, 1.2, 1.5] as const
 
 export const DURATION_OPTIONS = [

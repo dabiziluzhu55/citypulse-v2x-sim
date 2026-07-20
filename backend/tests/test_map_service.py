@@ -51,6 +51,11 @@ def test_geojson_format(monkeypatch) -> None:
     manager.catalog.return_value = build_demo_catalog()
     service = MapService(settings, manager)
     monkeypatch.setattr(service, "_load_net", lambda: FakeNet())
+    monkeypatch.setattr(
+        service,
+        "_generated_geojson_path",
+        lambda _intersection_id: settings.generated_dir / "missing.geojson",
+    )
 
     response = service.get_geojson("demo_2", 600.0)
     assert isinstance(response, MapGeoJsonResponse)
@@ -73,3 +78,25 @@ def test_geojson_format(monkeypatch) -> None:
 
     cached = service.get_geojson("demo_2", 600.0)
     assert cached is response
+
+
+def test_generated_geojson_does_not_load_sumo(monkeypatch) -> None:
+    from backend.app.core.config import get_settings
+
+    settings = get_settings()
+    manager = MagicMock()
+    manager.catalog.return_value = build_demo_catalog()
+    service = MapService(settings, manager)
+    load_net = MagicMock(side_effect=AssertionError("SUMO must not load for generated GeoJSON"))
+    monkeypatch.setattr(service, "_load_net", load_net)
+
+    response = service.get_geojson("demo_2", 600.0)
+    lines = [
+        feature
+        for feature in response.geojson["features"]
+        if feature["geometry"]["type"] == "LineString"
+    ]
+
+    assert response.geojson["metadata"]["data_source"] == "generated"
+    assert len(lines) == 15
+    load_net.assert_not_called()

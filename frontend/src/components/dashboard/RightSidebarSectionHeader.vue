@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import {
   RIGHT_SIDEBAR_CONTENT_HEIGHT,
   RIGHT_SIDEBAR_CONTENT_WIDTH,
@@ -11,7 +11,8 @@ const props = defineProps<{
   variant: 'communication' | 'metrics'
 }>()
 
-const uid = computed(() => props.variant)
+const instanceId = useId().replace(/:/g, '')
+const uid = computed(() => `${props.variant}-${instanceId}`)
 const layout = computed(() => RIGHT_SIDEBAR_SECTION_HEADERS[props.variant])
 </script>
 
@@ -209,6 +210,7 @@ const layout = computed(() => RIGHT_SIDEBAR_SECTION_HEADERS[props.variant])
   height: 100%;
   display: flex;
   align-items: center;
+  font-size: 21px;
   font-weight: 700;
   letter-spacing: 1px;
   color: #ffffff;
