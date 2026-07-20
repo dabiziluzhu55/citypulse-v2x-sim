@@ -1147,7 +1147,7 @@ class TrafficDemandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "sample.xml"
             path.write_text(
-                '<routes><flow id="f" begin="0.03" end="900.00" number="7">'
+                '<routes><flow id="f" begin="0" end="881.25" number="7">'
                 '<route edges="a_in a_out road b_in b_out"/></flow></routes>',
                 encoding="utf-8",
             )
@@ -1172,6 +1172,25 @@ class TrafficDemandTests(unittest.TestCase):
                     "global_car",
                     profile,
                 )
+            path.write_text(
+                '<routes><flow id="legacy" begin="899.17" end="900.17" number="1">'
+                '<route edges="a_in a_out road b_in b_out"/></flow></routes>',
+                encoding="utf-8",
+            )
+            legacy = _sample_result(
+                path,
+                44,
+                "morning_peak",
+                (IntervalTargets(0, 900, {"a": 1, "b": 1}),),
+                movements,
+                "global_car",
+                profile,
+            )
+            legacy_flow = legacy.route_root.find("flow")
+            self.assertEqual(
+                (legacy_flow.get("begin"), legacy_flow.get("end")),
+                ("0", "900"),
+            )
 
     def test_global_builder_writes_three_schema_v3_scenarios(self):
         def fake_candidate_builder(path, network, movements, binary):

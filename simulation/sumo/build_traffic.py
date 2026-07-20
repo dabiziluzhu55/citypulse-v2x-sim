@@ -565,7 +565,9 @@ def _sample_result(
             key
             for key in target_keys
             if key[0] - 1e-6 <= sampled_begin < key[1]
-            and abs(sampled_end - key[1]) <= 0.05
+            # Older routeSampler versions extend a one-vehicle flow by up to
+            # one second beyond the count interval to keep its duration positive.
+            and sampled_begin < sampled_end <= key[1] + 1.01
         ]
         if len(matching_intervals) != 1 or number <= 0:
             raise TrafficDemandError(
