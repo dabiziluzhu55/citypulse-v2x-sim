@@ -12,6 +12,8 @@ from simulation.sumo.build_traffic import (
     _allocate_route_counts,
     _audit_vehroute_output,
     _movement_route,
+    _period_targets,
+    _physical_movements,
     _route_coverage,
     _sample_result,
     _write_candidate_trips,
@@ -1111,6 +1113,30 @@ class TrafficDemandTests(unittest.TestCase):
         self.assertEqual(tuple(item.movement_id for item in coverage), ("a", "b"))
         self.assertIsNone(_route_coverage(("a_in", "bad_out"), by_pair))
         self.assertIsNone(_route_coverage(("a_in", "a_out", "a_in", "a_out"), by_pair))
+
+    def test_all_zero_unmapped_movement_is_not_a_physical_constraint(self):
+        demands = load_traffic_demands(DEMANDS)
+        manifest = demo_9_manifest()
+        manifest_intersections = manifest["intersections"]
+        movements = _physical_movements(
+            ["demo_9"], manifest_intersections, demands
+        )
+        self.assertNotIn(
+            ("northeast", "through"),
+            {
+                (item.official_approach, item.official_movement)
+                for item in movements
+            },
+        )
+        period, targets = _period_targets(
+            "morning_peak",
+            ["demo_9"],
+            manifest_intersections,
+            demands,
+            movements,
+        )
+        self.assertEqual(period.period_id, "morning_peak")
+        self.assertEqual(len(targets), 8)
 
     def test_sample_result_counts_one_vehicle_at_multiple_intersections(self):
         movements = (

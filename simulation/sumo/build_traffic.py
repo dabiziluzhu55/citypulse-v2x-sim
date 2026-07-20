@@ -179,6 +179,14 @@ def _allocate_route_counts(
     return tuple(allocated)
 
 
+def _movement_has_demand(demand, official_approach: str, official_movement: str) -> bool:
+    return any(
+        interval.volumes[official_approach][official_movement] > 0
+        for period in demand.periods.values()
+        for interval in period.intervals
+    )
+
+
 def _find_binary(name: str) -> str:
     executable = f"{name}.exe" if os.name == "nt" else name
     candidates = []
@@ -232,6 +240,10 @@ def _physical_movements(
         intersection_manifest = manifest_intersections[intersection_id]
         for official_approach, approach in demand.approaches.items():
             for official_movement in approach.movements:
+                if not _movement_has_demand(
+                    demand, official_approach, official_movement
+                ):
+                    continue
                 route_pairs = set()
                 for period in demand.periods.values():
                     weighted = _movement_routes(
@@ -311,6 +323,12 @@ def _period_targets(
                 f"{intersection_id}/{period_id} does not share the global time grid."
             )
         intersection_manifest = manifest_intersections[intersection_id]
+        active_movements = {
+            (official_approach, official_movement)
+            for official_approach, approach in demand.approaches.items()
+            for official_movement in approach.movements
+            if _movement_has_demand(demand, official_approach, official_movement)
+        }
         for index, (interval, reference_interval) in enumerate(
             zip(period.intervals, reference.intervals)
         ):
@@ -320,6 +338,8 @@ def _period_targets(
                 )
             for official_approach, approach in demand.approaches.items():
                 for official_movement in approach.movements:
+                    if (official_approach, official_movement) not in active_movements:
+                        continue
                     count = interval.volumes[official_approach][official_movement]
                     weighted = _movement_routes(
                         intersection_id,
