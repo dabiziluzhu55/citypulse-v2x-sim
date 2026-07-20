@@ -1,7 +1,6 @@
-"""Max Pressure 信号控制算法：根据上下游停车数选择压力最大的相位
-
-相位压力 = Σ (上游车道.halting_count − 下游车道.halting_count)
-实现口径对齐 algorithms/max_pressure/controller.py，供后端管控算法层内嵌使用
+"""
+Max Pressure信号控制算法：根据上下游停车数选择压力最大的相位
+相位压力=Σ(上游车道.halting_count−下游车道.halting_count)
 """
 
 from __future__ import annotations
@@ -13,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 class MaxPressureController:
-    """无状态决策控制器：构造时缓存拓扑，每次 compute_actions 仅依赖本步观测。"""
 
     def __init__(self, metadata: dict[str, Any]) -> None:
         self._metadata = metadata
