@@ -1,17 +1,17 @@
 <?xml version='1.0' encoding='utf-8'?>
 <additional>
   <tlLogic id="4306" type="static" programID="demo_11_morning_peak" offset="0">
-    <phase duration="50" state="grrgGGGrgrrgGGGr" name="p1_green" />
-    <phase duration="3" state="grrgyyyrgrrgyyyr" name="p1_yellow" />
-    <phase duration="2" state="grrgrrrrgrrgrrrr" name="p1_clearance" />
-    <phase duration="23" state="grrgrrrGgrrgrrrG" name="p2_green" />
-    <phase duration="3" state="grrgrrrygrrgrrry" name="p2_yellow" />
-    <phase duration="2" state="grrgrrrrgrrgrrrr" name="p2_clearance" />
-    <phase duration="52" state="gGrgrrrrgGrgrrrr" name="p3_green" />
-    <phase duration="3" state="gyrgrrrrgyrgrrrr" name="p3_yellow" />
-    <phase duration="2" state="grrgrrrrgrrgrrrr" name="p3_clearance" />
-    <phase duration="25" state="grGgrrrrgrGgrrrr" name="p4_green" />
-    <phase duration="3" state="grygrrrrgrygrrrr" name="p4_yellow" />
-    <phase duration="2" state="grrgrrrrgrrgrrrr" name="p4_clearance" />
+    <phase duration="50" state="ggrgrrrrggGGGrrgggrrrrrggGGGrr" name="p1_green" />
+    <phase duration="3" state="ggrgrrrrggyyyrrgggrrrrrggyyyrr" name="p1_yellow" />
+    <phase duration="2" state="ggrgrrrrggrrrrrgggrrrrrggrrrrr" name="p1_clearance" />
+    <phase duration="23" state="ggrgrrrrggrrrGGgggrrrrrggrrrGG" name="p2_green" />
+    <phase duration="3" state="ggrgrrrrggrrryygggrrrrrggrrryy" name="p2_yellow" />
+    <phase duration="2" state="ggrgrrrrggrrrrrgggrrrrrggrrrrr" name="p2_clearance" />
+    <phase duration="52" state="ggGgGrrrggrrrrrgggGGrrrggrrrrr" name="p3_green" />
+    <phase duration="3" state="ggygyrrrggrrrrrgggyyrrrggrrrrr" name="p3_yellow" />
+    <phase duration="2" state="ggrgrrrrggrrrrrgggrrrrrggrrrrr" name="p3_clearance" />
+    <phase duration="25" state="ggrgrGGGggrrrrrgggrrGGGggrrrrr" name="p4_green" />
+    <phase duration="3" state="ggrgryyyggrrrrrgggrryyyggrrrrr" name="p4_yellow" />
+    <phase duration="2" state="ggrgrrrrggrrrrrgggrrrrrggrrrrr" name="p4_clearance" />
   </tlLogic>
 </additional>
