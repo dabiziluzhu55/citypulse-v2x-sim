@@ -1,0 +1,15 @@
+{
+  "source_crs": "wgs84",
+  "coordinate_system": "LOCAL_BD09_WEB_MERCATOR_METERS",
+  "origin_bd09": [
+    115.96742068199084,
+    38.993047079320164
+  ],
+  "origin_web_mercator": [
+    12909434.218928564,
+    4720675.675280593
+  ],
+  "source_tile_count": 977,
+  "output_tile_count": 977,
+  "vertex_count": 5072230
+}

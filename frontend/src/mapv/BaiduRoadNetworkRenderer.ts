@@ -15,6 +15,7 @@ import {
   ROAD_SURFACE_CSS,
 } from '../constants/cesiumTrafficVisualization'
 import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates'
+import type { RoadCoordinateProjector } from './roadGeometry'
 
 const ROAD_SURFACE_HEIGHT_METERS = 0.25
 const ROAD_EDGE_HEIGHT_METERS = 0.35
@@ -35,8 +36,12 @@ function resolveRoadWidthMeters(properties: Record<string, unknown>): number {
   return Math.min(ROAD_MAX_WIDTH_METERS, Math.max(ROAD_MIN_WIDTH_METERS, laneCount * ROAD_LANE_WIDTH_METERS))
 }
 
-function projectCoordinate(coordinate: number[], height: number): number[] {
-  const projected = projectSimulationCoordinateToBaiduMap(coordinate)
+function projectCoordinate(
+  coordinate: number[],
+  height: number,
+  projector: RoadCoordinateProjector,
+): number[] {
+  const projected = projector(coordinate)
   return [projected[0], projected[1], Number(projected[2] ?? 0) + height]
 }
 
@@ -49,10 +54,18 @@ function asLineString(coordinates: unknown): number[][] | null {
   return line.length >= 2 ? line : null
 }
 
-function createLineFeature(coordinates: number[][], properties: Record<string, unknown>, height: number): RoadFeature {
+function createLineFeature(
+  coordinates: number[][],
+  properties: Record<string, unknown>,
+  height: number,
+  projector: RoadCoordinateProjector,
+): RoadFeature {
   return {
     type: 'Feature',
-    geometry: { type: 'LineString', coordinates: coordinates.map((coordinate) => projectCoordinate(coordinate, height)) },
+    geometry: {
+      type: 'LineString',
+      coordinates: coordinates.map((coordinate) => projectCoordinate(coordinate, height, projector)),
+    },
     properties,
   }
 }
@@ -63,10 +76,15 @@ export class BaiduRoadNetworkRenderer {
   private readonly edge: mapvthree.Polyline
   private readonly centerline: mapvthree.Polyline
   private readonly junctions: mapvthree.Circle
+  private readonly projector: RoadCoordinateProjector
   private currentKey: string | null = null
 
-  constructor(engine: mapvthree.Engine) {
+  constructor(
+    engine: mapvthree.Engine,
+    projector: RoadCoordinateProjector = projectSimulationCoordinateToBaiduMap,
+  ) {
     this.engine = engine
+    this.projector = projector
     this.edge = engine.add(new mapvthree.Polyline({
       flat: true,
       color: ROAD_EDGE_GLOW_CSS,
@@ -132,10 +150,10 @@ export class BaiduRoadNetworkRenderer {
     const addLine = (coordinates: number[][]) => {
       const width = Math.round(resolveRoadWidthMeters(properties) * 2) / 2
       const bucket = surfaceBuckets.get(width) ?? []
-      bucket.push(createLineFeature(coordinates, properties, ROAD_SURFACE_HEIGHT_METERS))
+      bucket.push(createLineFeature(coordinates, properties, ROAD_SURFACE_HEIGHT_METERS, this.projector))
       surfaceBuckets.set(width, bucket)
-      edgeLines.push(createLineFeature(coordinates, properties, ROAD_EDGE_HEIGHT_METERS))
-      centerLines.push(createLineFeature(coordinates, properties, ROAD_CENTERLINE_HEIGHT_METERS))
+      edgeLines.push(createLineFeature(coordinates, properties, ROAD_EDGE_HEIGHT_METERS, this.projector))
+      centerLines.push(createLineFeature(coordinates, properties, ROAD_CENTERLINE_HEIGHT_METERS, this.projector))
     }
 
     if (geometry.type === 'LineString') {
@@ -155,7 +173,14 @@ export class BaiduRoadNetworkRenderer {
       if (typeof longitude === 'number' && typeof latitude === 'number') {
         junctions.push({
           type: 'Feature',
-          geometry: { type: 'Point', coordinates: projectCoordinate([longitude, latitude], ROAD_CENTERLINE_HEIGHT_METERS) },
+          geometry: {
+            type: 'Point',
+            coordinates: projectCoordinate(
+              [longitude, latitude],
+              ROAD_CENTERLINE_HEIGHT_METERS,
+              this.projector,
+            ),
+          },
           properties,
         })
       }

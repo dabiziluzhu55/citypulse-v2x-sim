@@ -8,6 +8,7 @@ declare module '@baidumap/mapv-three' {
       getRange: () => number
       getHeading: () => number
       getPitch: () => number
+      projectArrayCoordinate: (coordinate: readonly number[]) => number[]
     }
     controller: {
       enabled: boolean
@@ -26,11 +27,14 @@ declare module '@baidumap/mapv-three' {
     constructor(options?: Record<string, unknown>)
     lineWidth: number
     dataSource: GeoJSONDataSource | null
+    position: { z: number }
   }
 
   export class Polygon {
     constructor(options?: Record<string, unknown>)
     dataSource: GeoJSONDataSource | null
+    perPositionHeight: boolean
+    renderOrder: number
   }
 
   export class Circle {
@@ -59,6 +63,13 @@ declare module '@baidumap/mapv-three' {
 
   export class Default3DTiles {
     constructor(options: Record<string, unknown>)
+    visible: boolean
+    position: {
+      x: number
+      y: number
+      z: number
+      set: (x: number, y: number, z: number) => void
+    }
     releaseCameraViewport: () => void
     transformFromEcefToPlane: (longitude: number, latitude: number, height?: number) => void
     getBounds: () => {

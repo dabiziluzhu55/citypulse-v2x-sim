@@ -1,6 +1,7 @@
 const X_PI = Math.PI * 3000.0 / 180.0
 const GCJ_A = 6378245.0
 const GCJ_EE = 0.00669342162296594323
+const WEB_MERCATOR_HALF_WORLD = 20_037_508.342789244
 
 export const XIONGAN_TILESET_ROOT_CENTER: [number, number] = [
   115.95498986829843,
@@ -53,6 +54,16 @@ export function wgs84ToBd09(longitude: number, latitude: number): [number, numbe
   return gcj02ToBd09(...wgs84ToGcj02(longitude, latitude))
 }
 
+export function projectBd09ToWebMercator(
+  coordinate: readonly [number, number],
+): [number, number] {
+  const [longitude, latitude] = coordinate
+  return [
+    longitude * WEB_MERCATOR_HALF_WORLD / 180,
+    Math.log(Math.tan((90 + latitude) * Math.PI / 360)) * WEB_MERCATOR_HALF_WORLD / Math.PI,
+  ]
+}
+
 export function projectSimulationCoordinateToXiongan(
   coordinate: readonly number[],
 ): [number, number, number?] {
@@ -80,6 +91,12 @@ export function projectSimulationCoordinateToBaiduXiongan(
   return [bdLon, bdLat, height]
 }
 
+export function resolveSimulationCoordinateProjector(mode: string | undefined) {
+  return mode === 'xiongan-demo'
+    ? projectSimulationCoordinateToBaiduXiongan
+    : projectSimulationCoordinateToBaiduMap
+}
+
 export const XIONGAN_SCENE_ANCHOR_BD09: [number, number] = wgs84ToBd09(
   XIONGAN_SCENE_ANCHOR[0],
   XIONGAN_SCENE_ANCHOR[1],
@@ -89,3 +106,24 @@ export const DEMO_2_SOURCE_CENTER_BD09: [number, number] = wgs84ToBd09(
   DEMO_2_SOURCE_CENTER[0],
   DEMO_2_SOURCE_CENTER[1],
 )
+
+export function placeBaiduCameraTarget(
+  target: readonly [number, number, number],
+  mode: string | undefined,
+): [number, number, number] {
+  if (mode !== 'xiongan-demo') return [...target]
+  const distanceToSource = Math.hypot(
+    target[0] - DEMO_2_SOURCE_CENTER_BD09[0],
+    target[1] - DEMO_2_SOURCE_CENTER_BD09[1],
+  )
+  const distanceToScene = Math.hypot(
+    target[0] - XIONGAN_SCENE_ANCHOR_BD09[0],
+    target[1] - XIONGAN_SCENE_ANCHOR_BD09[1],
+  )
+  if (distanceToScene <= distanceToSource) return [...target]
+  return [
+    XIONGAN_SCENE_ANCHOR_BD09[0] + target[0] - DEMO_2_SOURCE_CENTER_BD09[0],
+    XIONGAN_SCENE_ANCHOR_BD09[1] + target[1] - DEMO_2_SOURCE_CENTER_BD09[1],
+    target[2],
+  ]
+}

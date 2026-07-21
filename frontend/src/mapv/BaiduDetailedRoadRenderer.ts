@@ -1,42 +1,78 @@
 import * as mapvthree from '@baidumap/mapv-three'
 import type { MapGeoJsonResponse } from '../types/map'
-import { buildDetailedRoadData, type DetailedRoadData } from './roadGeometry'
+import {
+  buildDetailedRoadData,
+  type DetailedRoadData,
+  type RoadCoordinateProjector,
+} from './roadGeometry'
+import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates'
 
-const EMPTY_COLLECTION = { type: 'FeatureCollection', features: [] }
+type RoadLayerKey = keyof DetailedRoadData
 
 export class BaiduDetailedRoadRenderer {
   private readonly engine: mapvthree.Engine
-  private readonly surface: mapvthree.Polygon
-  private readonly boundary: mapvthree.Polyline
-  private readonly divider: mapvthree.Polyline
+  private readonly shoulder: mapvthree.Polygon
+  private readonly mainSurface: mapvthree.Polygon
+  private readonly secondarySurface: mapvthree.Polygon
+  private readonly junctionSurface: mapvthree.Polygon
+  private readonly outerBoundary: mapvthree.Polyline
+  private readonly median: mapvthree.Polyline
+  private readonly laneDivider: mapvthree.Polyline
+  private readonly stopLine: mapvthree.Polygon
+  private readonly crosswalk: mapvthree.Polygon
+  private readonly projector: RoadCoordinateProjector
   private currentKey: string | null = null
 
-  constructor(engine: mapvthree.Engine) {
+  constructor(
+    engine: mapvthree.Engine,
+    projector: RoadCoordinateProjector = projectSimulationCoordinateToBaiduMap,
+  ) {
     this.engine = engine
-    this.surface = engine.add(new mapvthree.Polygon({
-      color: '#1c2b3a',
-      opacity: 0.9,
-      perPositionHeight: true,
-      zOffset: 0.08,
-      renderOrder: -10,
-    }))
-    this.boundary = engine.add(new mapvthree.Polyline({
+    this.projector = projector
+    this.shoulder = this.addPolygon('#27334a', 0.98, 10)
+    this.mainSurface = this.addPolygon('#53627e', 0.98, 11)
+    this.secondarySurface = this.addPolygon('#3c4962', 0.98, 11)
+    this.junctionSurface = this.addPolygon('#53627e', 0.98, 12)
+    this.outerBoundary = engine.add(new mapvthree.Polyline({
       flat: true,
-      color: '#9db1bf',
-      lineWidth: 0.16,
-      opacity: 0.62,
-      height: 0.28,
+      color: '#f4f7fb',
+      lineWidth: 2,
+      opacity: 0.92,
+      height: 0.2,
     }))
-    this.divider = engine.add(new mapvthree.Polyline({
+    this.median = engine.add(new mapvthree.Polyline({
       flat: true,
-      color: '#d9e6e8',
-      lineWidth: 0.13,
+      color: '#f4c44d',
+      lineWidth: 2,
+      opacity: 0.98,
+      height: 0.22,
+    }))
+    this.laneDivider = engine.add(new mapvthree.Polyline({
+      flat: true,
+      color: '#f4f7fb',
+      lineWidth: 1.5,
       dashed: true,
-      dashArray: 9,
-      dashRatio: 0.42,
-      opacity: 0.74,
-      height: 0.34,
+      dashArray: 8,
+      dashRatio: 0.45,
+      opacity: 0.92,
+      height: 0.24,
     }))
+    this.outerBoundary.position.z = 1
+    this.median.position.z = 1.02
+    this.laneDivider.position.z = 1.04
+    this.stopLine = this.addPolygon('#f5f7fb', 0.98, 18)
+    this.crosswalk = this.addPolygon('#f5f7fb', 0.96, 19)
+  }
+
+  private addPolygon(color: string, opacity: number, renderOrder: number): mapvthree.Polygon {
+    const polygon = this.engine.add(new mapvthree.Polygon({
+      color,
+      opacity,
+      zOffset: 1,
+    }))
+    polygon.perPositionHeight = true
+    polygon.renderOrder = renderOrder
+    return polygon
   }
 
   render(response: MapGeoJsonResponse | null): void {
@@ -48,36 +84,60 @@ export class BaiduDetailedRoadRenderer {
     const dataVersion = String(metadata.generated_at ?? metadata.data_version ?? metadata.vertex_count ?? '')
     const nextKey = `${response.intersection_id}:${response.radius_m}:${dataVersion}`
     if (nextKey === this.currentKey) return
-    this.currentKey = nextKey
 
-    const data = buildDetailedRoadData(response)
-    this.surface.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({
-      type: 'FeatureCollection',
-      features: data.surfaces,
-    })
-    this.boundary.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON(this.asCollection(data, 'boundaries'))
-    this.divider.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON(this.asCollection(data, 'dividers'))
+    const data = buildDetailedRoadData(response, this.projector)
+    const sources = {
+      shoulders: this.source(data, 'shoulders'),
+      mainSurfaces: this.source(data, 'mainSurfaces'),
+      secondarySurfaces: this.source(data, 'secondarySurfaces'),
+      junctionSurfaces: this.source(data, 'junctionSurfaces'),
+      outerBoundaries: this.source(data, 'outerBoundaries'),
+      medians: this.source(data, 'medians'),
+      laneDividers: this.source(data, 'laneDividers'),
+      stopLines: this.source(data, 'stopLines'),
+      crosswalkStripes: this.source(data, 'crosswalkStripes'),
+    }
+
+    this.shoulder.dataSource = sources.shoulders
+    this.mainSurface.dataSource = sources.mainSurfaces
+    this.secondarySurface.dataSource = sources.secondarySurfaces
+    this.junctionSurface.dataSource = sources.junctionSurfaces
+    this.outerBoundary.dataSource = sources.outerBoundaries
+    this.median.dataSource = sources.medians
+    this.laneDivider.dataSource = sources.laneDividers
+    this.stopLine.dataSource = sources.stopLines
+    this.crosswalk.dataSource = sources.crosswalkStripes
+    this.currentKey = nextKey
     this.engine.requestRender()
   }
 
-  private asCollection(data: DetailedRoadData, key: 'boundaries' | 'dividers'): object {
-    return { type: 'FeatureCollection', features: data[key] }
+  private source(data: DetailedRoadData, key: RoadLayerKey): mapvthree.GeoJSONDataSource | null {
+    if (data[key].length === 0) return null
+    return mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: data[key] })
   }
 
   clear(): void {
     this.currentKey = null
-    this.surface.dataSource?.clear()
-    this.boundary.dataSource?.clear()
-    this.divider.dataSource?.clear()
+    for (const layer of this.layers()) layer.dataSource?.clear()
     this.engine.requestRender()
   }
 
   destroy(): void {
     this.clear()
-    this.engine.remove(this.surface)
-    this.engine.remove(this.boundary)
-    this.engine.remove(this.divider)
+    for (const layer of this.layers()) this.engine.remove(layer)
+  }
+
+  private layers(): Array<mapvthree.Polygon | mapvthree.Polyline> {
+    return [
+      this.shoulder,
+      this.mainSurface,
+      this.secondarySurface,
+      this.junctionSurface,
+      this.outerBoundary,
+      this.median,
+      this.laneDivider,
+      this.stopLine,
+      this.crosswalk,
+    ]
   }
 }
-
-export { EMPTY_COLLECTION }

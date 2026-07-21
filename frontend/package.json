@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate:road-tileset": "node scripts/generate-road-tileset.mjs",
+    "generate:building-tileset": "node scripts/reproject-building-tileset.mjs",
+    "test:roads": "node --test scripts/road-geometry.test.mjs scripts/road-tileset.test.mjs",
+    "test:buildings": "node --test scripts/building-tileset.test.mjs"
   },
   "dependencies": {
     "@baidumap/mapv-three": "^1.6.4-beta.5",

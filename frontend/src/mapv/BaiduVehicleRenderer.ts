@@ -1,16 +1,22 @@
 import * as mapvthree from '@baidumap/mapv-three'
 import type { TrafficVehicleView } from '../types/traffic'
 import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates'
+import type { RoadCoordinateProjector } from './roadGeometry'
 
 const MAX_TWIN_UPDATES_PER_SECOND = 10
 
 export class BaiduVehicleRenderer {
   private readonly engine: mapvthree.Engine
   private readonly twin: mapvthree.Twin
+  private readonly projector: RoadCoordinateProjector
   private lastUpdateAt = 0
 
-  constructor(engine: mapvthree.Engine) {
+  constructor(
+    engine: mapvthree.Engine,
+    projector: RoadCoordinateProjector = projectSimulationCoordinateToBaiduMap,
+  ) {
     this.engine = engine
+    this.projector = projector
     this.twin = engine.add(new mapvthree.Twin({
       delay: 800,
       modelConfig: {
@@ -29,7 +35,7 @@ export class BaiduVehicleRenderer {
     this.lastUpdateAt = time
     this.twin.push(vehicles.flatMap((vehicle) => {
       if (vehicle.longitude == null || vehicle.latitude == null) return []
-      const [lng, lat] = projectSimulationCoordinateToBaiduMap([
+      const [lng, lat] = this.projector([
         vehicle.longitude,
         vehicle.latitude,
       ])

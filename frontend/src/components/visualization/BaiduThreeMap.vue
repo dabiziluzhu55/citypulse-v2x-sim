@@ -7,8 +7,20 @@ import { useSimulationStore } from '../../composables/useSimulationStore'
 import { BaiduDetailedRoadRenderer } from '../../mapv/BaiduDetailedRoadRenderer'
 import { BaiduRoadNetworkRenderer } from '../../mapv/BaiduRoadNetworkRenderer'
 import { BaiduVehicleRenderer } from '../../mapv/BaiduVehicleRenderer'
+import { BAIDU_DARK_BASE_STYLE } from '../../mapv/baiduDarkStyle'
 import { DEFAULT_CESIUM_CAMERA_HEIGHT } from '../../constants/mapDefaults'
-import { DEMO_2_SOURCE_CENTER_BD09 } from '../../mapv/sceneCoordinates'
+import {
+  DEMO_2_SOURCE_CENTER_BD09,
+  placeBaiduCameraTarget,
+  resolveSimulationCoordinateProjector,
+  XIONGAN_SCENE_ANCHOR_BD09,
+} from '../../mapv/sceneCoordinates'
+import {
+  roadTilesetManifestIsValid,
+  roadTilesetMatchesResponse,
+  type StaticRoadTilesetManifest,
+} from '../../mapv/staticRoadTileset'
+import type { MapGeoJsonResponse } from '../../types/map'
 
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -23,28 +35,43 @@ const tilesMessage = ref('正在加载百度地图 3D 建筑…')
 const interacting = ref(false)
 
 let engine: mapvthree.Engine | null = null
-let tileset: mapvthree.Default3DTiles | null = null
+let buildingTileset: mapvthree.Default3DTiles | null = null
+let roadTileset: mapvthree.Default3DTiles | null = null
+let roadTilesetManifest: StaticRoadTilesetManifest | null = null
+let roadTilesReady = false
 let roadRenderer: BaiduRoadNetworkRenderer | BaiduDetailedRoadRenderer | null = null
 let vehicleRenderer: BaiduVehicleRenderer | null = null
 let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
 
 const tilesetUrl =
-  import.meta.env.VITE_XIONGAN_3DTILES_URL?.trim() || '/3dtiles/xiongan/tileset.json'
+  import.meta.env.VITE_XIONGAN_3DTILES_URL?.trim()
+  || '/3dtiles/xiongan-webmercator/tileset.json'
 const enableLocalTileset = import.meta.env.VITE_ENABLE_XIONGAN_3DTILES === 'true'
+const enableStaticRoadTileset = import.meta.env.VITE_ENABLE_STATIC_ROAD_3DTILES !== 'false'
+const roadTilesetUrl =
+  import.meta.env.VITE_STATIC_ROAD_3DTILES_URL?.trim() || '/3dtiles/roads/demo_2/tileset.json'
+const scenePlacement = import.meta.env.VITE_3D_SCENE_PLACEMENT?.trim()
+  || 'actual'
+const coordinateProjector = resolveSimulationCoordinateProjector(scenePlacement)
+const sceneCenter = scenePlacement === 'xiongan-demo'
+  ? XIONGAN_SCENE_ANCHOR_BD09
+  : DEMO_2_SOURCE_CENTER_BD09
 const baiduAk = import.meta.env.VITE_BAIDU_MAP_AK?.trim() || ''
-const showBaiduBuildings = import.meta.env.VITE_BAIDU_BUILDINGS !== 'false'
+const showBaiduBuildings = !enableLocalTileset && import.meta.env.VITE_BAIDU_BUILDINGS !== 'false'
+const showBaiduRoads = import.meta.env.VITE_BAIDU_ROADS === 'true'
 const roadRendererMode = import.meta.env.VITE_BAIDU_ROAD_RENDERER?.trim() || 'detailed'
 
 function createBaiduProvider(): mapvthree.BaiduVectorTileProvider {
   return new mapvthree.BaiduVectorTileProvider({
     ak: baiduAk,
+    styleJson: BAIDU_DARK_BASE_STYLE,
     displayOptions: {
       base: true,
-      link: true,
+      link: showBaiduRoads,
       building: showBaiduBuildings,
       poi: false,
-      flat: !showBaiduBuildings,
+      flat: true,
     },
     placeholderColor: '#0d1b2a',
   })
@@ -57,7 +84,8 @@ function enableCameraInteraction(): void {
   engine.controller.enableZoom = true
   engine.controller.enablePan = true
   engine.controller.enableTilt = true
-  tileset?.releaseCameraViewport()
+  buildingTileset?.releaseCameraViewport()
+  roadTileset?.releaseCameraViewport()
 }
 
 function markInteracting(): void {
@@ -71,12 +99,37 @@ function markInteracting(): void {
 }
 
 function updateTilesStatus(): void {
-  if (!tileset) return
-  const statistics = tileset.statistics
-  const ready = statistics.numberOfTilesWithContentReady
-  const pending = statistics.numberOfPendingRequests + statistics.numberOfTilesProcessing
-  const loaded = statistics.numberOfLoadedTilesTotal
-  const total = statistics.numberOfTilesTotal
+  const activeTilesets = [buildingTileset, roadTileset].filter(
+    (value): value is mapvthree.Default3DTiles => value !== null,
+  )
+  if (activeTilesets.length === 0) return
+  const ready = activeTilesets.reduce(
+    (sum, value) => sum + value.statistics.numberOfTilesWithContentReady,
+    0,
+  )
+  const pending = activeTilesets.reduce(
+    (sum, value) => sum
+      + value.statistics.numberOfPendingRequests
+      + value.statistics.numberOfTilesProcessing,
+    0,
+  )
+  const loaded = activeTilesets.reduce(
+    (sum, value) => sum + value.statistics.numberOfLoadedTilesTotal,
+    0,
+  )
+  const total = activeTilesets.reduce(
+    (sum, value) => sum + value.statistics.numberOfTilesTotal,
+    0,
+  )
+  const nextRoadTilesReady = Boolean(
+    roadTileset
+    && (roadTileset.statistics.numberOfTilesWithContentReady > 0
+      || roadTileset.statistics.numberOfLoadedTilesTotal > 0),
+  )
+  if (nextRoadTilesReady !== roadTilesReady) {
+    roadTilesReady = nextRoadTilesReady
+    syncRoadRendering(geojson.value)
+  }
 
   if (ready > 0 || loaded > 0) {
     tilesStatus.value = 'ready'
@@ -85,6 +138,44 @@ function updateTilesStatus(): void {
   }
   tilesStatus.value = 'loading'
   tilesMessage.value = `3D Tiles 加载中 · 请求 ${pending}`
+}
+
+function syncRoadRendering(response: MapGeoJsonResponse | null): void {
+  const staticRoadMatches = response
+    ? Boolean(
+      roadTilesetManifest
+      && roadTilesetMatchesResponse(roadTilesetManifest, response, scenePlacement),
+    )
+    : Boolean(
+      roadTilesetManifest
+      && roadTilesetManifestIsValid(roadTilesetManifest, scenePlacement),
+    )
+  if (roadTileset) roadTileset.visible = staticRoadMatches
+  if (response && roadTileset && staticRoadMatches && roadTilesReady) {
+    roadRenderer?.clear()
+    return
+  }
+  roadRenderer?.render(response)
+}
+
+async function addStaticRoadTileset(): Promise<void> {
+  if (!engine || !enableStaticRoadTileset) return
+  const manifestUrl = new URL(
+    './manifest.json',
+    new URL(roadTilesetUrl, window.location.href),
+  )
+  const response = await fetch(manifestUrl)
+  if (!response.ok) throw new Error(`道路 3D Tiles manifest 加载失败 (${response.status})`)
+  roadTilesetManifest = await response.json() as StaticRoadTilesetManifest
+  roadTileset = engine.add(new mapvthree.Default3DTiles({
+    url: roadTilesetUrl,
+    errorTarget: 8,
+    forceUnlit: true,
+    dynamicScreenSpaceError: false,
+    foveatedScreenSpaceError: false,
+    cacheBytes: 32 * 1024 * 1024,
+  })) as mapvthree.Default3DTiles
+  roadTileset.releaseCameraViewport()
 }
 
 function bindContainerInteraction(container: HTMLElement): void {
@@ -111,7 +202,7 @@ async function initMap(): Promise<void> {
   engine = new mapvthree.Engine(container, {
     map: {
       projection: mapvthree.PROJECTION_WEB_MERCATOR,
-      center: DEMO_2_SOURCE_CENTER_BD09,
+      center: sceneCenter,
       pitch: 55,
       range: DEFAULT_CESIUM_CAMERA_HEIGHT,
       provider: createBaiduProvider(),
@@ -125,7 +216,7 @@ async function initMap(): Promise<void> {
   bindContainerInteraction(container)
 
   if (enableLocalTileset) {
-    tileset = engine.add(new mapvthree.Default3DTiles({
+    buildingTileset = engine.add(new mapvthree.Default3DTiles({
       url: tilesetUrl,
       errorTarget: 24,
       forceUnlit: true,
@@ -133,9 +224,8 @@ async function initMap(): Promise<void> {
       foveatedScreenSpaceError: true,
       cacheBytes: 384 * 1024 * 1024,
     })) as mapvthree.Default3DTiles
-    tileset.releaseCameraViewport()
+    buildingTileset.releaseCameraViewport()
     tilesMessage.value = '3D Tiles 已加入场景，正在加载可见建筑…'
-    tilesStatusTimer = setInterval(updateTilesStatus, 500)
   } else {
     tilesStatus.value = 'ready'
     tilesMessage.value = showBaiduBuildings
@@ -143,10 +233,19 @@ async function initMap(): Promise<void> {
       : '本地 3D Tiles 暂停加载 · 百度建筑已关闭'
   }
 
+  await addStaticRoadTileset().catch((cause: unknown) => {
+    roadTilesetManifest = null
+    roadTileset = null
+    console.warn(cause instanceof Error ? cause.message : cause)
+  })
+  if (buildingTileset || roadTileset) {
+    tilesStatusTimer = setInterval(updateTilesStatus, 500)
+  }
+
   roadRenderer = roadRendererMode === 'basic'
-    ? new BaiduRoadNetworkRenderer(engine)
-    : new BaiduDetailedRoadRenderer(engine)
-  vehicleRenderer = new BaiduVehicleRenderer(engine)
+    ? new BaiduRoadNetworkRenderer(engine, coordinateProjector)
+    : new BaiduDetailedRoadRenderer(engine, coordinateProjector)
+  vehicleRenderer = new BaiduVehicleRenderer(engine, coordinateProjector)
   watch(
     trafficView,
     (value) => vehicleRenderer?.update(value?.vehicles ?? []),
@@ -154,16 +253,23 @@ async function initMap(): Promise<void> {
   )
   watch(
     geojson,
-    (value) => roadRenderer?.render(value),
+    syncRoadRendering,
     { immediate: true },
   )
 
   bindThreeMapInstance(mapView, {
     flyTo: (target, options) => {
-      if (!interacting.value) engine?.map.flyTo(target, options)
+      if (!interacting.value) {
+        engine?.map.flyTo(placeBaiduCameraTarget(target, scenePlacement), options)
+      }
     },
     setViewport: (points, options) => {
-      if (!interacting.value) engine?.map.setViewport(points, options)
+      if (!interacting.value) {
+        engine?.map.setViewport(
+          points.map((point) => placeBaiduCameraTarget(point, scenePlacement)),
+          options,
+        )
+      }
     },
   })
   engine.requestRender()
@@ -189,8 +295,12 @@ onUnmounted(() => {
   roadRenderer = null
   vehicleRenderer?.destroy()
   vehicleRenderer = null
-  if (tileset && engine) engine.remove(tileset)
-  tileset = null
+  if (buildingTileset && engine) engine.remove(buildingTileset)
+  if (roadTileset && engine) engine.remove(roadTileset)
+  buildingTileset = null
+  roadTileset = null
+  roadTilesetManifest = null
+  roadTilesReady = false
   engine?.dispose()
   engine = null
 })

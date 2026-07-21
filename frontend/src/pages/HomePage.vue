@@ -316,6 +316,10 @@ async function handleStop() {
 }
 
 @media (max-width: 1100px) {
+  .dashboard-page {
+    top: calc(var(--dashboard-top-offset) + 116px);
+  }
+
   .map-view-controls {
     flex-direction: column;
     top: calc(var(--dashboard-top-offset) + 6px);

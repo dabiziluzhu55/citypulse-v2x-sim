@@ -1,0 +1,18 @@
+{
+  "intersection_id": "demo_2",
+  "placement_mode": "actual",
+  "placement_bd09": [
+    116.13940618416696,
+    38.9982516155745
+  ],
+  "radius_m": 600,
+  "source_generated_at": "2026-07-20T12:59:13.603106+00:00",
+  "source_vertex_count": 490,
+  "feature_count": 15,
+  "source_sha256": "88dde48d39e83d3fa13b4ea1b6105a43b724558acf96fff51139baa92f267f95",
+  "coordinate_system": "LOCAL_BD09_WEB_MERCATOR_METERS",
+  "origin_wgs84": [
+    116.126756,
+    38.99115
+  ]
+}
