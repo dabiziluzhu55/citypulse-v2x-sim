@@ -71,18 +71,13 @@
         {
           "official_phase_no": 1,
           "movement": "through",
-          "approaches": ["north", "south"],
-          "permissive": [
-            {
-              "movement": "left",
-              "approaches": ["south"]
-            }
-          ]
+          "approaches": ["north", "south"]
         },
         {
           "official_phase_no": 2,
           "movement": "left",
-          "approaches": ["west"]
+          "approaches": ["west", "south"],
+          "priority": "permissive"
         }
       ]
     },

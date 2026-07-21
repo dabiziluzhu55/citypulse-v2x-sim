@@ -1954,14 +1954,16 @@ class SignalConfigurationTests(unittest.TestCase):
         phase_two = templates[2]["317"]
         south_left = 2
         west_left = 4
-        self.assertEqual(phase_one["green"][south_left], "g")
-        self.assertEqual(phase_one["yellow"][south_left], "y")
-        self.assertEqual(phase_two["green"][west_left], "G")
+        self.assertEqual(phase_one["green"][south_left], "r")
+        self.assertEqual(phase_one["yellow"][south_left], "r")
+        self.assertEqual(phase_two["green"][south_left], "g")
+        self.assertEqual(phase_two["yellow"][south_left], "y")
+        self.assertEqual(phase_two["green"][west_left], "g")
         self.assertEqual(phase_two["yellow"][west_left], "y")
-        self.assertEqual(phase_one["green"], "GGggrgGG")
-        self.assertEqual(phase_one["yellow"], "yyygrgyy")
-        self.assertEqual(phase_two["green"], "rrrgGgrr")
-        self.assertEqual(phase_two["yellow"], "rrrgygrr")
+        self.assertEqual(phase_one["green"], "GGrgrgGG")
+        self.assertEqual(phase_one["yellow"], "yyrgrgyy")
+        self.assertEqual(phase_two["green"], "rrggggrr")
+        self.assertEqual(phase_two["yellow"], "rrygygrr")
         self.assertTrue(all(item.direction != "t" for item in connections))
 
     def test_demo_3_templates_protect_through_and_yield_left_turns(self):
