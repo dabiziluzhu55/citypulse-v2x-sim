@@ -38,6 +38,12 @@ class RouteSplit:
 
 
 @dataclass(frozen=True)
+class RoutePath:
+    edges: Tuple[str, ...]
+    weight: int
+
+
+@dataclass(frozen=True)
 class DemandPeriod:
     period_id: str
     label: str
@@ -47,6 +53,7 @@ class DemandPeriod:
     intervals: Tuple[DemandInterval, ...]
     totals: Mapping[str, int]
     route_splits: Mapping[str, Mapping[str, Tuple[RouteSplit, ...]]]
+    route_overrides: Mapping[str, Mapping[str, Tuple[RoutePath, ...]]]
 
     @property
     def duration(self) -> int:
@@ -241,6 +248,58 @@ def _parse_intersection(
                     )
                 movement_splits[str(movement)] = splits
             route_splits[str(approach_name)] = movement_splits
+        route_overrides = {}
+        for approach_name, raw_movements in raw_period.get(
+            "route_overrides", {}
+        ).items():
+            if approach_name not in approaches:
+                raise TrafficDemandError(
+                    f"{intersection_id}/{period_id}: route override uses unknown "
+                    f"approach {approach_name!r}."
+                )
+            movement_routes = {}
+            for movement, raw_routes in raw_movements.items():
+                if movement not in approaches[approach_name].movements:
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}: route "
+                        f"override uses unknown movement {movement!r}."
+                    )
+                if (
+                    approach_name in route_splits
+                    and movement in route_splits[approach_name]
+                ):
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "use either route_splits or route_overrides, not both."
+                    )
+                routes = tuple(
+                    RoutePath(
+                        edges=tuple(str(edge) for edge in item.get("edges", ())),
+                        weight=_volume(
+                            item.get("weight", 1),
+                            f"{intersection_id}/{period_id}/{approach_name}/"
+                            f"{movement}/route override {index}",
+                        ),
+                    )
+                    for index, item in enumerate(raw_routes)
+                )
+                if not routes:
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "a route override needs at least one route."
+                    )
+                if any(len(item.edges) < 2 or item.weight == 0 for item in routes):
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "route override edges need at least two edges and positive weights."
+                    )
+                if len({item.edges for item in routes}) != len(routes):
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "route override paths must be unique."
+                    )
+                movement_routes[str(movement)] = routes
+            route_overrides[str(approach_name)] = movement_routes
         periods[period_id] = DemandPeriod(
             period_id=period_id,
             label=str(raw_period.get("label", period_id)),
@@ -250,6 +309,7 @@ def _parse_intersection(
             intervals=tuple(intervals),
             totals=computed_totals,
             route_splits=route_splits,
+            route_overrides=route_overrides,
         )
     if not periods:
         raise TrafficDemandError(f"{intersection_id}: no demand periods.")

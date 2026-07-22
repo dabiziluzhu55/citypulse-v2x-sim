@@ -131,6 +131,43 @@ def demo_3_manifest():
     }
 
 
+def demo_4_manifest():
+    routes = (
+        ("east", "left", "-57186", "-57230"),
+        ("east", "through", "-57186", "-56613"),
+        ("west", "left", "-50333", "-56733"),
+        ("west", "through", "-50333", "-50675"),
+        ("north", "left", "-57229", "-50675"),
+        ("north", "through", "-57229", "-57230"),
+        ("north", "right", "-57229", "-56613"),
+        ("south", "left", "-56732", "-56613"),
+        ("south", "through", "-56732", "-56733"),
+        ("south", "right", "-56732", "-50675"),
+    )
+    return {
+        "intersections": {
+            "demo_4": {
+                "program_ids": [
+                    "demo_4_morning_peak",
+                    "demo_4_off_peak",
+                    "demo_4_evening_peak",
+                ],
+                "connections": [
+                    {
+                        "approach": approach,
+                        "movement": movement,
+                        "from_edge": from_edge,
+                        "from_lane": 0,
+                        "to_edge": to_edge,
+                        "to_lane": 0,
+                    }
+                    for approach, movement, from_edge, to_edge in routes
+                ],
+            }
+        }
+    }
+
+
 def demo_9_manifest():
     routes = (
         ("east", "left", "-56619", "-56715"),
@@ -1302,6 +1339,55 @@ class TrafficDemandTests(unittest.TestCase):
             flows = ET.parse(route_path).getroot().findall("flow")
             self.assertEqual(len(flows), 96)
             self.assertEqual(sum(int(flow.get("number")) for flow in flows), 3134)
+
+    def test_demo_4_generated_flows_use_service_road_route_overrides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            layout = GeneratedArtifactLayout(output)
+            layout.create_base_directories()
+            layout.network_file.write_text("<net/>", encoding="utf-8")
+            layout.signal_programs_file.write_text(
+                """<additional>
+  <tlLogic id="3935" programID="demo_4_morning_peak"/>
+  <tlLogic id="3935" programID="demo_4_off_peak"/>
+  <tlLogic id="3935" programID="demo_4_evening_peak"/>
+</additional>
+""",
+                encoding="utf-8",
+            )
+            result = build_traffic_scenarios(
+                demo_4_manifest(),
+                demand_path=DEMANDS,
+                output_dir=output,
+                intersection_ids=["demo_4"],
+            )
+            morning = result["scenarios"]["demo_4_morning_peak"]
+            self.assertEqual(morning["total_pcu"], 3413)
+            self.assertEqual(morning["flow_count"], 96)
+            first_interval_rights = {
+                flow["official_approach"]: flow
+                for flow in morning["flows"]
+                if flow["begin"] == 0 and flow["official_movement"] == "right"
+            }
+            self.assertEqual(
+                first_interval_rights["east"]["route_edges"],
+                ["-52650", "-57184", "-56735"],
+            )
+            self.assertEqual(
+                first_interval_rights["west"]["route_edges"],
+                ["-50336", "-57185", "-57232"],
+            )
+            route_path = (
+                layout.traffic_scenario_dir("demo_4", "morning_peak")
+                / "routes.rou.xml"
+            )
+            xml_routes = {
+                flow.get("id"): flow.find("route").get("edges")
+                for flow in ET.parse(route_path).getroot().findall("flow")
+                if flow.get("id", "").endswith("_right")
+            }
+            self.assertIn("-52650 -57184 -56735", set(xml_routes.values()))
+            self.assertIn("-50336 -57185 -57232", set(xml_routes.values()))
 
     def test_demo_9_generated_flows_preserve_cells_and_split_routes(self):
         with tempfile.TemporaryDirectory() as directory:

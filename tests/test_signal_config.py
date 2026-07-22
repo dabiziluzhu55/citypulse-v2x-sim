@@ -1667,7 +1667,8 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertTrue(all(phase_one[index] == "G" for index in (1, 4)))
         self.assertTrue(all(phase_one[index] == "g" for index in (0, 3)))
         self.assertTrue(all(phase_two[index] == "g" for index in (6, 9)))
-        self.assertTrue(all(phase_three[index] == "G" for index in (7, 10)))
+        self.assertEqual(phase_three[7], "G")
+        self.assertEqual(phase_three[10], "g")
         for phase in (phase_one, phase_two, phase_three):
             self.assertTrue(all(phase[index] == "g" for index in (2, 5, 8, 11)))
 
@@ -1797,7 +1798,7 @@ class SignalConfigurationTests(unittest.TestCase):
         north_left = 8
         south_through = 10
         south_left = 11
-        self.assertEqual(off_peak[1]["3935"]["green"][north_through], "G")
+        self.assertEqual(off_peak[1]["3935"]["green"][north_through], "g")
         self.assertEqual(off_peak[1]["3935"]["green"][south_through], "G")
         self.assertEqual(off_peak[1]["3935"]["green"][north_left], "g")
         self.assertEqual(off_peak[1]["3935"]["green"][south_left], "g")
@@ -1880,7 +1881,7 @@ class SignalConfigurationTests(unittest.TestCase):
             ]
             self.assertTrue(all(state[value] == "g" for value in right_indices))
         for phase_number, approaches in (
-            (1, {"east", "west"}),
+            (1, {"west"}),
             (2, {"east", "west"}),
             (3, {"north", "south"}),
             (4, {"north", "south"}),
@@ -1898,6 +1899,14 @@ class SignalConfigurationTests(unittest.TestCase):
                     for value in protected
                 )
             )
+        east_through = [
+            item.link_index
+            for item in connections
+            if item.approach == "east" and item.movement == "through"
+        ]
+        self.assertTrue(
+            all(templates[1]["4427"]["green"][value] == "g" for value in east_through)
+        )
         self.assertTrue(all(item.direction != "t" for item in connections))
 
     def test_demo_2_templates_cover_only_official_movements(self):

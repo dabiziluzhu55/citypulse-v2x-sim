@@ -17,6 +17,7 @@ from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 from .traffic import (
     ApproachDemandMapping,
     DemandPeriod,
+    RoutePath,
     RouteSplit,
     TrafficDemandError,
     load_traffic_demands,
@@ -82,7 +83,11 @@ def _movement_routes(
     approach: ApproachDemandMapping,
     official_movement: str,
     splits: Sequence[RouteSplit],
-) -> Tuple[Tuple[Tuple[str, str], int], ...]:
+    overrides: Sequence[RoutePath] = (),
+) -> Tuple[Tuple[Tuple[str, ...], int], ...]:
+    if overrides:
+        return tuple((item.edges, item.weight) for item in overrides)
+
     if not splits:
         return (
             (
@@ -126,7 +131,7 @@ def _movement_routes(
 
 def _allocate_route_counts(
     count: int,
-    weighted_routes: Sequence[Tuple[Tuple[str, str], int]],
+    weighted_routes: Sequence[Tuple[Tuple[str, ...], int]],
 ) -> Tuple[int, ...]:
     total_weight = sum(weight for _, weight in weighted_routes)
     allocated = [count * weight // total_weight for _, weight in weighted_routes]
@@ -162,6 +167,9 @@ def _write_routes(
             period.route_splits.get(official_approach, {}).get(
                 official_movement, ()
             ),
+            period.route_overrides.get(official_approach, {}).get(
+                official_movement, ()
+            ),
         )
         for official_approach, approach in demand.approaches.items()
         for official_movement in approach.movements
@@ -182,11 +190,13 @@ def _write_routes(
                     continue
                 weighted_routes = routes[(official_approach, official_movement)]
                 route_counts = _allocate_route_counts(count, weighted_routes)
-                for route_index, (((from_edge, to_edge), _), route_count) in enumerate(
+                for route_index, ((route_edges, _), route_count) in enumerate(
                     zip(weighted_routes, route_counts)
                 ):
                     if route_count == 0:
                         continue
+                    from_edge = route_edges[0]
+                    to_edge = route_edges[-1]
                     suffix = (
                         f"_route{route_index:02d}"
                         if len(weighted_routes) > 1
@@ -209,7 +219,7 @@ def _write_routes(
                             "departSpeed": "max",
                         },
                     )
-                    ET.SubElement(flow, "route", {"edges": f"{from_edge} {to_edge}"})
+                    ET.SubElement(flow, "route", {"edges": " ".join(route_edges)})
                     flow_records.append(
                         {
                             "flow_id": flow_id,
@@ -218,6 +228,7 @@ def _write_routes(
                             "route_index": route_index,
                             "from_edge": from_edge,
                             "to_edge": to_edge,
+                            "route_edges": list(route_edges),
                             "begin": begin,
                             "end": end,
                             "number": route_count,
