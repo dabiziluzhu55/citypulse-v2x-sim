@@ -99,13 +99,16 @@ def _run_netconvert(
     target_net: Path,
     junction_ids: Sequence[str],
     blocked_turnarounds: Sequence[Tuple[str, str]] = (),
+    refresh_junction_ids: Sequence[str] = (),
 ) -> Tuple[bool, int]:
     target_net.parent.mkdir(parents=True, exist_ok=True)
     junction_types = _read_junction_types(source_net, junction_ids)
+    refresh_junctions = set(refresh_junction_ids) & set(junction_ids)
     junctions_to_signal = [
         junction_id
         for junction_id in junction_ids
         if junction_types[junction_id] != "traffic_light"
+        or junction_id in refresh_junctions
     ]
     if not junctions_to_signal and not blocked_turnarounds:
         shutil.copy2(source_net, target_net)
@@ -120,6 +123,7 @@ def _run_netconvert(
     shutil.copy2(source_net, sanitized_source)
     try:
         removed_empty_params = _remove_empty_params(sanitized_source)
+        _reset_tls_control_attrs(sanitized_source, refresh_junctions)
         command = [
             netconvert,
             "--sumo-net-file",
@@ -156,6 +160,73 @@ def _run_netconvert(
         sanitized_source.unlink(missing_ok=True)
         connection_deletions.unlink(missing_ok=True)
     return True, removed_empty_params
+
+
+def _junction_id_from_via(via: str, junction_ids: Iterable[str]) -> str | None:
+    for junction_id in sorted(junction_ids, key=len, reverse=True):
+        if re.match(rf"^:{re.escape(junction_id)}_\d+_", via):
+            return junction_id
+    return None
+
+
+def _reset_tls_control_attrs(net_path: Path, junction_ids: Iterable[str]) -> int:
+    refresh_junctions = tuple(junction_ids)
+    if not refresh_junctions:
+        return 0
+    tree = ET.parse(net_path)
+    root = tree.getroot()
+    removed = 0
+    for elem in root.iter("connection"):
+        if _junction_id_from_via(elem.get("via", ""), refresh_junctions) is None:
+            continue
+        for attribute in ("tl", "linkIndex", "linkIndex2", "uncontrolled", "state"):
+            if attribute in elem.attrib:
+                del elem.attrib[attribute]
+                removed += 1
+    if not removed:
+        return 0
+
+    temporary_path = net_path.with_name(f"{net_path.name}.tls-refresh.tmp")
+    try:
+        tree.write(temporary_path, encoding="utf-8", xml_declaration=True)
+        temporary_path.replace(net_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+    return removed
+
+
+def _junctions_requiring_tls_refresh(
+    net_path: Path,
+    selected: Sequence[IntersectionConfiguration],
+) -> Tuple[str, ...]:
+    edge_owner = {
+        edge_id: config
+        for config in selected
+        for edge_id in config.topology.incoming_edges
+    }
+    junction_ids = sorted({junction for config in selected for junction in config.junction_ids})
+    junction_types = _read_junction_types(net_path, junction_ids)
+    refresh = set()
+    for _, elem in ET.iterparse(net_path, events=("end",)):
+        if elem.tag == "connection":
+            config = edge_owner.get(elem.get("from", ""))
+            if config is not None:
+                junction_id = _junction_id_from_via(
+                    elem.get("via", ""), config.junction_ids
+                )
+                if (
+                    junction_id is not None
+                    and junction_types.get(junction_id) == "traffic_light"
+                    and (
+                        elem.get("uncontrolled") == "1"
+                        or elem.get("tl") is None
+                        or elem.get("linkIndex") is None
+                    )
+                ):
+                    refresh.add(junction_id)
+        elem.clear()
+    return tuple(sorted(refresh))
 
 
 def _blocked_turnaround_deletions(
@@ -613,12 +684,14 @@ def build(
     layout.reset()
     target_net = layout.network_file
     blocked_turnarounds = _blocked_turnaround_deletions(source_net, selected)
+    refresh_junctions = _junctions_requiring_tls_refresh(source_net, selected)
     netconvert_applied, removed_empty_params = _run_netconvert(
         netconvert,
         source_net,
         target_net,
         junction_ids,
         blocked_turnarounds,
+        refresh_junctions,
     )
     removed_empty_params += _remove_empty_params(target_net)
     if removed_empty_params:
@@ -664,6 +737,7 @@ def build(
         "netconvert_version": _version(netconvert),
         "sumo_version": _version(sumo),
         "netconvert_applied": netconvert_applied,
+        "refreshed_tls_junctions": list(refresh_junctions),
         "removed_blocked_turnarounds": [
             {"from_edge": from_edge, "to_edge": to_edge}
             for from_edge, to_edge in blocked_turnarounds

@@ -10,6 +10,7 @@ from simulation.sumo.build_tls import (
     ControlledConnection,
     _blocked_turnaround_deletions,
     _build_templates,
+    _junctions_requiring_tls_refresh,
     _read_junction_types,
     _remove_empty_params,
     _run_netconvert,
@@ -521,6 +522,9 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(
             demo_18.topology.movement_for_direction("-56830", "t"), "blocked"
         )
+        self.assertEqual(
+            demo_18.topology.movement_for_direction("-57077", "L"), "left"
+        )
 
         demo_19 = self.load().intersections["demo_19"]
         self.assertEqual(demo_19.junction_ids, ("891",))
@@ -868,14 +872,23 @@ class SignalConfigurationTests(unittest.TestCase):
             demo_11, connections, {"4306": 16}, {"4306": foes}
         )
         expected_green = {
-            1: (4, 5, 6, 12, 13, 14),
-            2: (7, 15),
-            3: (1, 9),
-            4: (2, 10),
+            1: (4, 5, 6),
+            2: (7,),
+            3: (1,),
+            4: (2,),
         }
         for phase_number, protected in expected_green.items():
             state = templates[phase_number]["4306"]["green"]
             self.assertTrue(all(state[index] == "G" for index in protected))
+        expected_permissive = {
+            1: (12, 13, 14),
+            2: (15,),
+            3: (9,),
+            4: (10,),
+        }
+        for phase_number, permissive in expected_permissive.items():
+            state = templates[phase_number]["4306"]["green"]
+            self.assertTrue(all(state[index] == "g" for index in permissive))
         for phase in templates.values():
             for stage in ("green", "yellow", "clearance"):
                 state = phase["4306"][stage]
@@ -980,14 +993,17 @@ class SignalConfigurationTests(unittest.TestCase):
         templates = _build_templates(
             demo_12, connections, {"182": 18}, {"182": foes}
         )
+        self.assertEqual(templates[1]["182"]["green"][6], "G")
         self.assertTrue(
-            all(templates[1]["182"]["green"][index] == "G" for index in (6, 15))
+            all(templates[1]["182"]["green"][index] == "g" for index in (15,))
         )
+        self.assertEqual(templates[2]["182"]["green"][8], "G")
         self.assertTrue(
-            all(templates[2]["182"]["green"][index] == "G" for index in (8, 17))
+            all(templates[2]["182"]["green"][index] == "g" for index in (17,))
         )
+        self.assertEqual(templates[3]["182"]["green"][1], "G")
         self.assertTrue(
-            all(templates[3]["182"]["green"][index] == "G" for index in (1, 10))
+            all(templates[3]["182"]["green"][index] == "g" for index in (10,))
         )
         self.assertTrue(
             all(templates[4]["182"]["green"][index] == "g" for index in (3, 12))
@@ -2098,6 +2114,49 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertFalse(applied)
         self.assertEqual(removed, 0)
         self.assertEqual(target.read_bytes(), source.read_bytes())
+
+    def test_uncontrolled_existing_tls_is_refreshed_by_netconvert(self):
+        source = Path(self.temp_directory.name) / "uncontrolled.net.xml"
+        source.write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<net>
+  <junction id="4409" type="traffic_light"/>
+  <connection from="-56004" to="-56009" fromLane="1" toLane="0" uncontrolled="1" via=":4409_20_0" dir="s" state="m"/>
+</net>
+""",
+            encoding="utf-8",
+        )
+        target = Path(self.temp_directory.name) / "generated" / "target.net.xml"
+        selected = [self.load().intersections["demo_18"]]
+        self.assertEqual(
+            _junctions_requiring_tls_refresh(source, selected), ("4409",)
+        )
+
+        def fake_run(command, check):
+            self.assertTrue(check)
+            tls_index = command.index("--tls.set") + 1
+            self.assertEqual(command[tls_index], "4409")
+            input_index = command.index("--sumo-net-file") + 1
+            sanitized_source = Path(command[input_index])
+            content = sanitized_source.read_text(encoding="utf-8")
+            self.assertNotIn('uncontrolled="1"', content)
+            self.assertNotIn('state="m"', content)
+            shutil.copy2(sanitized_source, target)
+
+        with patch(
+            "simulation.sumo.build_tls.subprocess.run", side_effect=fake_run
+        ) as run:
+            applied, removed = _run_netconvert(
+                "netconvert",
+                source,
+                target,
+                ["4409"],
+                refresh_junction_ids=["4409"],
+            )
+        self.assertEqual(run.call_count, 1)
+        self.assertTrue(applied)
+        self.assertEqual(removed, 0)
+        self.assertTrue(target.is_file())
 
     def test_netconvert_only_receives_unsignalized_junctions_and_clean_input(self):
         source = self.write_source_network()

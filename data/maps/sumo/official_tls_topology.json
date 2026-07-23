@@ -155,7 +155,10 @@
             {
               "official_phase_no": 2,
               "movement": "left",
-              "approaches": ["north", "south"]
+              "approaches": ["south"],
+              "permissive": [
+                {"movement": "left", "approaches": ["north"]}
+              ]
             },
             {
               "official_phase_no": 3,
@@ -209,7 +212,10 @@
             {
               "official_phase_no": 1,
               "movement": "through",
-              "approaches": ["east", "west"]
+              "approaches": ["west"],
+              "permissive": [
+                {"movement": "through", "approaches": ["east"]}
+              ]
             },
             {
               "official_phase_no": 2,
@@ -230,7 +236,10 @@
             {
               "official_phase_no": 4,
               "movement": "left",
-              "approaches": ["north", "south"]
+              "approaches": ["south"],
+              "permissive": [
+                {"movement": "left", "approaches": ["north"]}
+              ]
             }
           ]
         }
@@ -437,10 +446,38 @@
         "t": "blocked"
       },
       "phases": [
-        {"official_phase_no": 1, "movement": "through", "approaches": ["east", "west"]},
-        {"official_phase_no": 2, "movement": "left", "approaches": ["east", "west"]},
-        {"official_phase_no": 3, "movement": "through", "approaches": ["north", "south"]},
-        {"official_phase_no": 4, "movement": "left", "approaches": ["north", "south"]}
+        {
+          "official_phase_no": 1,
+          "movement": "through",
+          "approaches": ["west"],
+          "permissive": [
+            {"movement": "through", "approaches": ["east"]}
+          ]
+        },
+        {
+          "official_phase_no": 2,
+          "movement": "left",
+          "approaches": ["west"],
+          "permissive": [
+            {"movement": "left", "approaches": ["east"]}
+          ]
+        },
+        {
+          "official_phase_no": 3,
+          "movement": "through",
+          "approaches": ["south"],
+          "permissive": [
+            {"movement": "through", "approaches": ["north"]}
+          ]
+        },
+        {
+          "official_phase_no": 4,
+          "movement": "left",
+          "approaches": ["south"],
+          "permissive": [
+            {"movement": "left", "approaches": ["north"]}
+          ]
+        }
       ]
     },
     "demo_12": {
@@ -459,9 +496,30 @@
         "t": "blocked"
       },
       "phases": [
-        {"official_phase_no": 1, "movement": "through", "approaches": ["east", "west"]},
-        {"official_phase_no": 2, "movement": "left", "approaches": ["east", "west"]},
-        {"official_phase_no": 3, "movement": "through", "approaches": ["north", "south"]},
+        {
+          "official_phase_no": 1,
+          "movement": "through",
+          "approaches": ["west"],
+          "permissive": [
+            {"movement": "through", "approaches": ["east"]}
+          ]
+        },
+        {
+          "official_phase_no": 2,
+          "movement": "left",
+          "approaches": ["west"],
+          "permissive": [
+            {"movement": "left", "approaches": ["east"]}
+          ]
+        },
+        {
+          "official_phase_no": 3,
+          "movement": "through",
+          "approaches": ["south"],
+          "permissive": [
+            {"movement": "through", "approaches": ["north"]}
+          ]
+        },
         {"official_phase_no": 4, "movement": "left", "approaches": ["north", "south"], "priority": "permissive"}
       ]
     },
@@ -649,6 +707,7 @@
       "direction_mapping": {
         "s": "through",
         "l": "left",
+        "L": "left",
         "r": "right",
         "t": "blocked"
       },
