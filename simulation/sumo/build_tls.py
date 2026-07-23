@@ -229,6 +229,65 @@ def _junctions_requiring_tls_refresh(
     return tuple(sorted(refresh))
 
 
+def _repair_uncontrolled_tls_connections(
+    net_path: Path,
+    selected: Sequence[IntersectionConfiguration],
+) -> int:
+    edge_owner = {
+        edge_id: config
+        for config in selected
+        for edge_id in config.topology.incoming_edges
+    }
+    if not edge_owner:
+        return 0
+    tree = ET.parse(net_path)
+    root = tree.getroot()
+    max_link_index: Dict[str, int] = {}
+    for elem in root.iter("connection"):
+        tls_id = elem.get("tl")
+        link_index = elem.get("linkIndex")
+        if tls_id is None or link_index is None:
+            continue
+        max_link_index[tls_id] = max(max_link_index.get(tls_id, -1), int(link_index))
+
+    next_link_index = {key: value + 1 for key, value in max_link_index.items()}
+    repaired = 0
+    for elem in root.iter("connection"):
+        config = edge_owner.get(elem.get("from", ""))
+        if config is None:
+            continue
+        junction_id = _junction_id_from_via(elem.get("via", ""), config.junction_ids)
+        if junction_id is None:
+            continue
+        needs_repair = (
+            elem.get("uncontrolled") == "1"
+            or elem.get("tl") is None
+            or elem.get("linkIndex") is None
+        )
+        if not needs_repair:
+            continue
+        elem.set("tl", junction_id)
+        if elem.get("linkIndex") is None:
+            link_index = next_link_index.get(junction_id, 0)
+            elem.set("linkIndex", str(link_index))
+            next_link_index[junction_id] = link_index + 1
+        elem.attrib.pop("uncontrolled", None)
+        if elem.get("state") not in {"o", "O"}:
+            elem.set("state", "o")
+        repaired += 1
+    if not repaired:
+        return 0
+
+    temporary_path = net_path.with_name(f"{net_path.name}.tls-repair.tmp")
+    try:
+        tree.write(temporary_path, encoding="utf-8", xml_declaration=True)
+        temporary_path.replace(net_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+    return repaired
+
+
 def _blocked_turnaround_deletions(
     net_path: Path,
     selected: Sequence[IntersectionConfiguration],
@@ -452,6 +511,66 @@ def _is_foe(foes: str, other_request_index: int) -> bool:
     return 0 <= bit_index < len(foes) and foes[bit_index] == "1"
 
 
+def _connections_conflict(
+    first: ControlledConnection,
+    second: ControlledConnection,
+    request_foes: Mapping[str, Mapping[int, str]],
+) -> bool:
+    if first.junction_id != second.junction_id:
+        return False
+    if first.request_index == second.request_index:
+        return False
+    matrix = request_foes.get(first.junction_id, {})
+    first_foes = matrix.get(first.request_index, "")
+    second_foes = matrix.get(second.request_index, "")
+    return _is_foe(first_foes, second.request_index) or _is_foe(
+        second_foes, first.request_index
+    )
+
+
+def _can_demote_internal_conflict(
+    first: ControlledConnection,
+    second: ControlledConnection,
+) -> bool:
+    return (
+        first.junction_id == second.junction_id
+        and first.approach == second.approach
+        and first.movement == second.movement
+        and first.from_edge == second.from_edge
+    )
+
+
+def _split_protected_movements(
+    protected: Sequence[ControlledConnection],
+    request_foes: Mapping[str, Mapping[int, str]],
+    intersection_id: str,
+    phase_number: int,
+) -> Tuple[List[ControlledConnection], List[ControlledConnection]]:
+    kept: List[ControlledConnection] = []
+    demoted: List[ControlledConnection] = []
+    for connection in protected:
+        conflicting = next(
+            (
+                existing
+                for existing in kept
+                if _connections_conflict(existing, connection, request_foes)
+            ),
+            None,
+        )
+        if conflicting is None:
+            kept.append(connection)
+            continue
+        if _can_demote_internal_conflict(conflicting, connection):
+            demoted.append(connection)
+            continue
+        raise SignalConfigurationError(
+            f"{intersection_id}/phase {phase_number}: protected connections "
+            f"{conflicting.via} and {connection.via} conflict according to the "
+            "SUMO foe matrix."
+        )
+    return kept, demoted
+
+
 def _validate_protected_movements(
     protected: Sequence[ControlledConnection],
     request_foes: Mapping[str, Mapping[int, str]],
@@ -460,16 +579,7 @@ def _validate_protected_movements(
 ) -> None:
     for position, first in enumerate(protected):
         for second in protected[position + 1 :]:
-            if first.junction_id != second.junction_id:
-                continue
-            if first.request_index == second.request_index:
-                continue
-            matrix = request_foes.get(first.junction_id, {})
-            first_foes = matrix.get(first.request_index, "")
-            second_foes = matrix.get(second.request_index, "")
-            if _is_foe(first_foes, second.request_index) or _is_foe(
-                second_foes, first.request_index
-            ):
+            if _connections_conflict(first, second, request_foes):
                 raise SignalConfigurationError(
                     f"{intersection_id}/phase {phase_number}: protected connections "
                     f"{first.via} and {second.via} conflict according to the SUMO foe matrix."
@@ -534,6 +644,13 @@ def _build_templates(
                 )
             protected.extend(matches)
         protected = list(dict.fromkeys(protected))
+        protected, demoted = _split_protected_movements(
+            protected,
+            request_foes,
+            config.intersection_id,
+            phase_mapping.phase_number,
+        )
+        permissive.extend(demoted)
         _validate_protected_movements(
             protected,
             request_foes,
@@ -554,6 +671,9 @@ def _build_templates(
                     f"{group.approaches}."
                 )
             permissive.extend(matches)
+        permissive = [
+            item for item in dict.fromkeys(permissive) if item not in protected
+        ]
         green = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         yellow = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         clearance = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
@@ -699,7 +819,12 @@ def build(
             f"Removed {removed_empty_params} empty SUMO <param> elements "
             f"from {target_net}."
         )
-    connections, state_lengths, request_foes = _inspect_generated_network(target_net, selected)
+    repaired_tls_connections = _repair_uncontrolled_tls_connections(
+        target_net, selected
+    )
+    connections, state_lengths, request_foes = _inspect_generated_network(
+        target_net, selected
+    )
     retained_blocked_turnarounds = [
         item
         for item in connections
@@ -738,6 +863,7 @@ def build(
         "sumo_version": _version(sumo),
         "netconvert_applied": netconvert_applied,
         "refreshed_tls_junctions": list(refresh_junctions),
+        "repaired_tls_connections": repaired_tls_connections,
         "removed_blocked_turnarounds": [
             {"from_edge": from_edge, "to_edge": to_edge}
             for from_edge, to_edge in blocked_turnarounds

@@ -13,9 +13,14 @@ from simulation.sumo.build_tls import (
     _junctions_requiring_tls_refresh,
     _read_junction_types,
     _remove_empty_params,
+    _repair_uncontrolled_tls_connections,
     _run_netconvert,
 )
-from simulation.sumo.config import load_signal_configuration
+from simulation.sumo.config import (
+    PhaseMovement,
+    SignalConfigurationError,
+    load_signal_configuration,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1826,6 +1831,96 @@ class SignalConfigurationTests(unittest.TestCase):
             )
         )
 
+    def test_same_movement_protected_conflict_is_demoted_to_permissive(self):
+        config = self.load().intersections["demo_4"]
+        connections = [
+            ControlledConnection(
+                intersection_id="demo_4",
+                junction_id="3935",
+                tls_id="3935",
+                link_index=1,
+                approach="south",
+                movement="through",
+                from_edge="-56732",
+                from_lane=0,
+                to_edge="-56733",
+                to_lane=0,
+                direction="s",
+                via=":3935_1_0",
+                request_index=1,
+            ),
+            ControlledConnection(
+                intersection_id="demo_4",
+                junction_id="3935",
+                tls_id="3935",
+                link_index=4,
+                approach="south",
+                movement="through",
+                from_edge="-56732",
+                from_lane=1,
+                to_edge="-56733",
+                to_lane=0,
+                direction="s",
+                via=":3935_4_0",
+                request_index=4,
+            ),
+        ]
+        templates = _build_templates(
+            config,
+            connections,
+            {"3935": 5},
+            {"3935": {1: "10000", 4: "00000"}},
+            (PhaseMovement(1, "through", ("south",)),),
+        )
+        self.assertEqual(templates[1]["3935"]["green"][1], "G")
+        self.assertEqual(templates[1]["3935"]["green"][4], "g")
+
+    def test_cross_movement_protected_conflict_still_fails(self):
+        config = self.load().intersections["demo_4"]
+        connections = [
+            ControlledConnection(
+                intersection_id="demo_4",
+                junction_id="3935",
+                tls_id="3935",
+                link_index=1,
+                approach="south",
+                movement="through",
+                from_edge="-56732",
+                from_lane=0,
+                to_edge="-56733",
+                to_lane=0,
+                direction="s",
+                via=":3935_1_0",
+                request_index=1,
+            ),
+            ControlledConnection(
+                intersection_id="demo_4",
+                junction_id="3935",
+                tls_id="3935",
+                link_index=4,
+                approach="north",
+                movement="through",
+                from_edge="-57229",
+                from_lane=0,
+                to_edge="-57230",
+                to_lane=0,
+                direction="s",
+                via=":3935_4_0",
+                request_index=4,
+            ),
+        ]
+        with self.assertRaisesRegex(
+            SignalConfigurationError,
+            "conflict according to the SUMO foe matrix",
+        ):
+            _build_templates(
+                config,
+                connections,
+                {"3935": 5},
+                {"3935": {1: "10000", 4: "00000"}},
+                (PhaseMovement(1, "through", ("north", "south")),),
+            )
+
     def test_demo_1_templates_follow_corrected_directions_and_real_foes(self):
         config = self.load().intersections["demo_1"]
         definitions = (
@@ -2157,6 +2252,33 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertTrue(applied)
         self.assertEqual(removed, 0)
         self.assertTrue(target.is_file())
+
+    def test_uncontrolled_tls_connections_are_repaired_after_netconvert(self):
+        source = Path(self.temp_directory.name) / "uncontrolled-output.net.xml"
+        source.write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<net>
+  <junction id="4409" type="traffic_light"/>
+  <connection from="-56004" to="-56009" fromLane="1" toLane="0" uncontrolled="1" via=":4409_20_0" dir="s" state="m"/>
+  <connection from="-56004" to="-56009" fromLane="2" toLane="1" uncontrolled="1" via=":4409_20_1" dir="s" state="m"/>
+  <connection from="-57004" to="-57005" fromLane="0" toLane="0" via=":4409_1_0" tl="4409" linkIndex="5" dir="s" state="o"/>
+</net>
+""",
+            encoding="utf-8",
+        )
+        selected = [self.load().intersections["demo_18"]]
+        self.assertEqual(_repair_uncontrolled_tls_connections(source, selected), 2)
+        connections = [
+            item
+            for item in ET.parse(source).getroot().findall("connection")
+            if item.get("from") == "-56004"
+        ]
+        self.assertEqual(
+            [(item.get("tl"), item.get("linkIndex")) for item in connections],
+            [("4409", "6"), ("4409", "7")],
+        )
+        self.assertTrue(all(item.get("uncontrolled") is None for item in connections))
+        self.assertTrue(all(item.get("state") == "o" for item in connections))
 
     def test_netconvert_only_receives_unsignalized_junctions_and_clean_input(self):
         source = self.write_source_network()
