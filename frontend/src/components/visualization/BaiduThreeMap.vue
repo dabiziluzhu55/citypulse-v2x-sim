@@ -1,14 +1,24 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import * as mapvthree from '@baidumap/mapv-three'
+import { Color } from 'three'
 import { bindThreeMapInstance, useAppMapView } from '../../composables/useAppMapView'
 import { useSimulationMap } from '../../composables/useSimulationMap'
 import { useSimulationStore } from '../../composables/useSimulationStore'
 import { BaiduDetailedRoadRenderer } from '../../mapv/BaiduDetailedRoadRenderer'
 import { BaiduRoadNetworkRenderer } from '../../mapv/BaiduRoadNetworkRenderer'
 import { BaiduVehicleRenderer } from '../../mapv/BaiduVehicleRenderer'
+import { ShowcaseGeoJsonLayers } from '../../mapv/showcaseLayers/ShowcaseGeoJsonLayers'
+import { ShowcaseModelLayers } from '../../mapv/showcaseLayers/ShowcaseModelLayers'
+import { RoadsideFacilityRenderer } from '../../mapv/showcaseLayers/RoadsideFacilityRenderer'
+import { VegetationRenderer } from '../../mapv/showcaseLayers/VegetationRenderer'
+import { parseSceneFacilityManifest } from '../../mapv/showcaseLayers/sceneFacilities'
 import { BAIDU_DARK_BASE_STYLE } from '../../mapv/baiduDarkStyle'
-import { DEFAULT_CESIUM_CAMERA_HEIGHT } from '../../constants/mapDefaults'
+import {
+  BAIDU_3D_MAX_RANGE,
+  BAIDU_3D_MIN_RANGE,
+  DEFAULT_CESIUM_CAMERA_HEIGHT,
+} from '../../constants/mapDefaults'
 import {
   DEMO_2_SOURCE_CENTER_BD09,
   placeBaiduCameraTarget,
@@ -35,14 +45,21 @@ const tilesMessage = ref('正在加载百度地图 3D 建筑…')
 const interacting = ref(false)
 
 let engine: mapvthree.Engine | null = null
+let sky: mapvthree.DefaultSky | null = null
 let buildingTileset: mapvthree.Default3DTiles | null = null
 let roadTileset: mapvthree.Default3DTiles | null = null
 let roadTilesetManifest: StaticRoadTilesetManifest | null = null
 let roadTilesReady = false
 let roadRenderer: BaiduRoadNetworkRenderer | BaiduDetailedRoadRenderer | null = null
 let vehicleRenderer: BaiduVehicleRenderer | null = null
+let showcaseGeoJsonLayers: ShowcaseGeoJsonLayers | null = null
+let showcaseModelLayers: ShowcaseModelLayers | null = null
+let roadsideFacilityRenderer: RoadsideFacilityRenderer | null = null
+let vegetationRenderer: VegetationRenderer | null = null
+let showcaseLandmarkPromise: Promise<void> | null = null
 let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
+let vegetationLoadTimer: ReturnType<typeof setTimeout> | null = null
 
 const tilesetUrl =
   import.meta.env.VITE_XIONGAN_3DTILES_URL?.trim()
@@ -61,6 +78,16 @@ const baiduAk = import.meta.env.VITE_BAIDU_MAP_AK?.trim() || ''
 const showBaiduBuildings = !enableLocalTileset && import.meta.env.VITE_BAIDU_BUILDINGS !== 'false'
 const showBaiduRoads = import.meta.env.VITE_BAIDU_ROADS === 'true'
 const roadRendererMode = import.meta.env.VITE_BAIDU_ROAD_RENDERER?.trim() || 'detailed'
+const enableShowcaseLayers = import.meta.env.VITE_ENABLE_SHOWCASE_LAYERS === 'true'
+const enableRoadsideFacilities = import.meta.env.VITE_ENABLE_ROADSIDE_FACILITIES === 'true'
+const roadsideFacilitiesUrl = import.meta.env.VITE_SCENE_FACILITIES_URL?.trim()
+  || '/showcase-data/demo_2.facilities.json'
+const showcaseLandmarkUrl = import.meta.env.VITE_SHOWCASE_LANDMARK_MODEL_URL?.trim() || ''
+const enableVegetation = import.meta.env.VITE_ENABLE_VEGETATION === 'true'
+const vegetationManifestUrl = import.meta.env.VITE_VEGETATION_MANIFEST_URL?.trim()
+  || '/showcase-data/demo_2.vegetation.json'
+const vegetationModelUrl = import.meta.env.VITE_VEGETATION_MODEL_URL?.trim()
+  || '/assets/plants/low-poly-plants.glb'
 
 function createBaiduProvider(): mapvthree.BaiduVectorTileProvider {
   return new mapvthree.BaiduVectorTileProvider({
@@ -158,6 +185,54 @@ function syncRoadRendering(response: MapGeoJsonResponse | null): void {
   roadRenderer?.render(response)
 }
 
+function syncMapRendering(response: MapGeoJsonResponse | null): void {
+  syncRoadRendering(response)
+  showcaseModelLayers?.render(response)
+  if (engine && response?.bounds) {
+    const latitudePadding = 300 / 110_900
+    const longitudePadding = latitudePadding / Math.cos(response.center.latitude * Math.PI / 180)
+    const southwest = coordinateProjector([
+      response.bounds.west - longitudePadding,
+      response.bounds.south - latitudePadding,
+    ])
+    const northeast = coordinateProjector([
+      response.bounds.east + longitudePadding,
+      response.bounds.north + latitudePadding,
+    ])
+    engine.map.setBounds([
+      [southwest[0], southwest[1]],
+      [northeast[0], northeast[1]],
+    ])
+  }
+  if (!response || !showcaseModelLayers || !showcaseLandmarkUrl || showcaseLandmarkPromise) return
+  showcaseLandmarkPromise = showcaseModelLayers.loadLandmark({
+    url: showcaseLandmarkUrl,
+    position: [response.center.longitude, response.center.latitude, 0],
+  }).catch((cause: unknown) => {
+    console.warn('[showcase-layers] landmark layer disabled', cause)
+  })
+}
+
+async function loadRoadsideFacilities(): Promise<void> {
+  const response = await fetch(roadsideFacilitiesUrl)
+  if (!response.ok) throw new Error(`Roadside facilities returned HTTP ${response.status}`)
+  const manifest = parseSceneFacilityManifest(await response.json())
+  if (!roadsideFacilityRenderer) return
+  roadsideFacilityRenderer.render(manifest)
+  roadsideFacilityRenderer.updateSignals(trafficView.value?.intersections ?? null)
+}
+
+function scheduleVegetationLoad(): void {
+  if (!engine || !enableVegetation) return
+  vegetationRenderer = new VegetationRenderer(engine, coordinateProjector)
+  vegetationLoadTimer = setTimeout(() => {
+    vegetationLoadTimer = null
+    void vegetationRenderer?.load(vegetationManifestUrl, vegetationModelUrl).catch((cause: unknown) => {
+      console.warn('[vegetation] layer disabled', cause)
+    })
+  }, 450)
+}
+
 async function addStaticRoadTileset(): Promise<void> {
   if (!engine || !enableStaticRoadTileset) return
   const manifestUrl = new URL(
@@ -203,8 +278,10 @@ async function initMap(): Promise<void> {
     map: {
       projection: mapvthree.PROJECTION_WEB_MERCATOR,
       center: sceneCenter,
-      pitch: 55,
+      pitch: 58,
+      heading: 30,
       range: DEFAULT_CESIUM_CAMERA_HEIGHT,
+      is3DControl: true,
       provider: createBaiduProvider(),
     },
     rendering: {
@@ -212,6 +289,12 @@ async function initMap(): Promise<void> {
       enableAnimationLoop: true,
     },
   })
+  engine.map.setMinRange(BAIDU_3D_MIN_RANGE)
+  engine.map.setMaxRange(BAIDU_3D_MAX_RANGE)
+  sky = engine.add(new mapvthree.DefaultSky())
+  sky.color = new Color('#152535')
+  sky.highColor = new Color('#07111d')
+  sky.skyLightIntensity = 0.78
   enableCameraInteraction()
   bindContainerInteraction(container)
 
@@ -219,7 +302,7 @@ async function initMap(): Promise<void> {
     buildingTileset = engine.add(new mapvthree.Default3DTiles({
       url: tilesetUrl,
       errorTarget: 24,
-      forceUnlit: true,
+      forceUnlit: false,
       dynamicScreenSpaceError: true,
       foveatedScreenSpaceError: true,
       cacheBytes: 384 * 1024 * 1024,
@@ -246,14 +329,35 @@ async function initMap(): Promise<void> {
     ? new BaiduRoadNetworkRenderer(engine, coordinateProjector)
     : new BaiduDetailedRoadRenderer(engine, coordinateProjector)
   vehicleRenderer = new BaiduVehicleRenderer(engine, coordinateProjector)
+  if (enableShowcaseLayers) {
+    showcaseGeoJsonLayers = new ShowcaseGeoJsonLayers(engine, coordinateProjector)
+    showcaseModelLayers = new ShowcaseModelLayers(engine, coordinateProjector)
+    void showcaseGeoJsonLayers.load({
+      water: import.meta.env.VITE_SHOWCASE_WATER_GEOJSON_URL?.trim(),
+      green: import.meta.env.VITE_SHOWCASE_GREEN_GEOJSON_URL?.trim(),
+      urban: import.meta.env.VITE_SHOWCASE_URBAN_GEOJSON_URL?.trim(),
+      buildings: import.meta.env.VITE_SHOWCASE_BUILDINGS_GEOJSON_URL?.trim(),
+      labels: import.meta.env.VITE_SHOWCASE_LABEL_GEOJSON_URL?.trim(),
+    })
+  }
+  if (enableRoadsideFacilities) {
+    roadsideFacilityRenderer = new RoadsideFacilityRenderer(engine, coordinateProjector)
+    void loadRoadsideFacilities().catch((cause: unknown) => {
+      console.warn('[roadside-facilities] layer disabled', cause)
+    })
+  }
+  scheduleVegetationLoad()
   watch(
     trafficView,
-    (value) => vehicleRenderer?.update(value?.vehicles ?? []),
+    (value) => {
+      vehicleRenderer?.update(value?.vehicles ?? [])
+      roadsideFacilityRenderer?.updateSignals(value?.intersections ?? null)
+    },
     { immediate: true },
   )
   watch(
     geojson,
-    syncRoadRendering,
+    syncMapRendering,
     { immediate: true },
   )
 
@@ -289,12 +393,25 @@ onUnmounted(() => {
   unbindContainerInteraction(containerRef.value)
   if (tilesStatusTimer) clearInterval(tilesStatusTimer)
   if (interactionEndTimer) clearTimeout(interactionEndTimer)
+  if (vegetationLoadTimer) clearTimeout(vegetationLoadTimer)
   tilesStatusTimer = null
   interactionEndTimer = null
+  vegetationLoadTimer = null
   roadRenderer?.destroy()
   roadRenderer = null
   vehicleRenderer?.destroy()
   vehicleRenderer = null
+  showcaseGeoJsonLayers?.destroy()
+  showcaseGeoJsonLayers = null
+  showcaseModelLayers?.destroy()
+  showcaseModelLayers = null
+  roadsideFacilityRenderer?.destroy()
+  roadsideFacilityRenderer = null
+  vegetationRenderer?.destroy()
+  vegetationRenderer = null
+  showcaseLandmarkPromise = null
+  if (sky && engine) engine.remove(sky)
+  sky = null
   if (buildingTileset && engine) engine.remove(buildingTileset)
   if (roadTileset && engine) engine.remove(roadTileset)
   buildingTileset = null

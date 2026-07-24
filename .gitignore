@@ -42,3 +42,8 @@ data/maps/sumo/generated/traffic/
 current-ui*.png
 historical-ui-contact-sheet.jpg
 assets/preview/
+
+# Local browser and verification artifacts
+.playwright-cli/
+_sid.txt
+output/

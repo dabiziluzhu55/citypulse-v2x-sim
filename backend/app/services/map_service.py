@@ -260,7 +260,11 @@ class MapService:
         return False
 
     @staticmethod
-    def serialize_catalog(catalog: SimulationCatalog, allowed_intersections: tuple[str, ...]):
+    def serialize_catalog(
+        catalog: SimulationCatalog,
+        allowed_intersections: tuple[str, ...],
+        control_modes: list[str] | None = None,
+    ):
         from ..schemas.catalog import (
             CatalogResponse,
             FlowMultiplierRangeSchema,
@@ -307,7 +311,7 @@ class MapService:
         return CatalogResponse(
             intersections=intersections,
             event_types=list(catalog.event_types),
-            control_modes=["fixed"],
+            control_modes=control_modes or ["fixed"],
             flow_multiplier=FlowMultiplierRangeSchema(
                 min=catalog.flow_multiplier_min,
                 max=catalog.flow_multiplier_max,

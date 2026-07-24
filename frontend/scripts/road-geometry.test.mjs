@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import { buildDetailedRoadData } from '../src/mapv/roadGeometry.ts'
+import * as mapDefaults from '../src/constants/mapDefaults.ts'
 import {
   projectSimulationCoordinateToBaiduMap,
   projectSimulationCoordinateToBaiduXiongan,
@@ -91,6 +92,18 @@ test('real SUMO GeoJSON produces lanes, paired medians, and junction markings', 
   ])
 })
 
+test('junction surfaces follow approach boundaries instead of circular patches', () => {
+  const data = buildDetailedRoadData(response(realGeoJson.features, realGeoJson.metadata))
+
+  assert.ok(data.junctionSurfaces.length > 0)
+  for (const surface of data.junctionSurfaces) {
+    const ring = surface.geometry.coordinates[0]
+    assert.notEqual(ring.length, 25, 'a junction must not use the old 24-segment circle')
+    assert.ok(ring.length >= 4 && ring.length <= 13)
+    assert.equal(surface.properties.geometry_kind, 'approach-boundary-hull')
+  }
+})
+
 test('road geometry is deterministic when backend feature order changes', () => {
   const original = buildDetailedRoadData(response(realGeoJson.features, realGeoJson.metadata))
   const reversed = buildDetailedRoadData(response([...realGeoJson.features].reverse(), realGeoJson.metadata))
@@ -133,4 +146,13 @@ test('camera targets are translated once in Xiongan demo mode', () => {
     placeBaiduCameraTarget([...DEMO_2_SOURCE_CENTER_BD09, 0], 'actual'),
     [...DEMO_2_SOURCE_CENTER_BD09, 0],
   )
+})
+
+test('3D camera presets stay inside the focused desktop scene', () => {
+  assert.equal(mapDefaults.DEFAULT_CESIUM_CAMERA_HEIGHT, 1100)
+  assert.equal(mapDefaults.BAIDU_3D_MIN_RANGE, 100)
+  assert.equal(mapDefaults.BAIDU_3D_MAX_RANGE, 1400)
+  assert.ok(mapDefaults.CESIUM_CAMERA_PRESETS.every((preset) => preset.height <= 1400))
+  assert.ok(mapDefaults.resolveCesiumCameraPreset('road-cruise').pitchDegrees <= -60)
+  assert.ok(mapDefaults.resolveCesiumCameraPreset('intersection').pitchDegrees <= -55)
 })

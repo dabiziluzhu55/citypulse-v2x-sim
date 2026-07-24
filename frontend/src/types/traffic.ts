@@ -10,6 +10,7 @@ export interface TrafficIntersectionView {
   intersection_id: string
   name: string
   current_phase: number
+  stage: string
   phase_name: string
   stage_elapsed: number
   queue_length: number

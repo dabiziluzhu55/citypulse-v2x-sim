@@ -4,6 +4,9 @@ declare module '@baidumap/mapv-three' {
     map: {
       flyTo: (target: unknown, options: unknown) => void
       setViewport: (points: unknown, options: unknown) => void
+      setBounds: (bounds: number[][]) => void
+      setMaxRange: (range: number) => void
+      setMinRange: (range: number) => void
       getCenter: () => number[]
       getRange: () => number
       getHeading: () => number
@@ -19,6 +22,8 @@ declare module '@baidumap/mapv-three' {
     }
     add<T>(object: T): T
     remove(object: unknown): void
+    addBeforeRenderObject(object: unknown): void
+    removeBeforeRenderObject(object: unknown): void
     requestRender(): void
     dispose(): void
   }
@@ -33,8 +38,12 @@ declare module '@baidumap/mapv-three' {
   export class Polygon {
     constructor(options?: Record<string, unknown>)
     dataSource: GeoJSONDataSource | null
+    material: unknown
+    position: { z: number }
     perPositionHeight: boolean
     renderOrder: number
+    extrude: boolean
+    extrudeValue: number
   }
 
   export class Circle {
@@ -44,7 +53,33 @@ declare module '@baidumap/mapv-three' {
 
   export class GeoJSONDataSource {
     static fromGeoJSON(data: object | object[]): GeoJSONDataSource
+    defineAttribute(
+      name: string,
+      value?: string | ((properties: Record<string, unknown>) => unknown),
+    ): GeoJSONDataSource
     clear(): void
+  }
+
+  export class Text {
+    constructor(options?: Record<string, unknown>)
+    dataSource: GeoJSONDataSource | null
+    renderOrder: number
+  }
+
+  export class EffectModelPoint {
+    constructor(options?: Record<string, unknown>)
+    dataSource: GeoJSONDataSource | null
+    model: import('three').Object3D | null
+    position: { z: number }
+  }
+
+  export class WaterMaterial {
+    constructor(options?: Record<string, unknown>)
+    waterColor: import('three').Color
+    sunColor: import('three').Color
+    reflectionColor: import('three').Color
+    timeScaleFactor: number
+    dispose(): void
   }
 
   export class Twin {
@@ -87,6 +122,12 @@ declare module '@baidumap/mapv-three' {
 
   export class BaiduVectorTileProvider {
     constructor(options: Record<string, unknown>)
+  }
+
+  export class DefaultSky {
+    color: import('three').Color
+    highColor: import('three').Color
+    skyLightIntensity: number
   }
 
   export class BaiduMapConfig {

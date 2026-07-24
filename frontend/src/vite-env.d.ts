@@ -15,6 +15,15 @@ interface ImportMetaEnv {
   readonly VITE_DEFAULT_EXPERIMENT_ID?: string
   readonly VITE_XIONGAN_3DTILES_URL?: string
   readonly VITE_ENABLE_XIONGAN_3DTILES?: string
+  readonly VITE_ENABLE_SHOWCASE_LAYERS?: string
+  readonly VITE_SHOWCASE_WATER_GEOJSON_URL?: string
+  readonly VITE_SHOWCASE_GREEN_GEOJSON_URL?: string
+  readonly VITE_SHOWCASE_URBAN_GEOJSON_URL?: string
+  readonly VITE_SHOWCASE_BUILDINGS_GEOJSON_URL?: string
+  readonly VITE_SHOWCASE_LABEL_GEOJSON_URL?: string
+  readonly VITE_SHOWCASE_LANDMARK_MODEL_URL?: string
+  readonly VITE_ENABLE_ROADSIDE_FACILITIES?: string
+  readonly VITE_SCENE_FACILITIES_URL?: string
   readonly VITE_TIANDITU_TOKEN?: string
   readonly VITE_BAIDU_MAP_AK?: string
   readonly VITE_AMAP_MAP_KEY?: string

@@ -220,20 +220,6 @@ function rectangleFeature(
   return polygonFeature([...ring, ring[0]], origin, height, properties, projector)
 }
 
-function circleFeature(
-  center: LocalPoint,
-  radius: number,
-  origin: Coordinate,
-  properties: Record<string, unknown>,
-  projector: RoadCoordinateProjector,
-): RoadSurfaceFeature {
-  const ring = Array.from({ length: 24 }, (_, index) => {
-    const angle = index / 24 * Math.PI * 2
-    return [center[0] + Math.cos(angle) * radius, center[1] + Math.sin(angle) * radius] as LocalPoint
-  })
-  return polygonFeature([...ring, ring[0]], origin, 0.15, properties, projector)
-}
-
 function normalizeRoads(response: MapGeoJsonResponse, origin: Coordinate): NormalizedRoad[] {
   return (response.geojson?.features ?? [])
     .filter((feature) => feature.geometry?.type === 'LineString')
@@ -374,6 +360,27 @@ function uniqueApproaches(group: RoadEndpoint[]): RoadEndpoint[] {
   return approaches
 }
 
+function convexHull(points: LocalPoint[]): LocalPoint[] {
+  const unique = [...new Map(points.map((point) => [
+    `${point[0].toFixed(6)}:${point[1].toFixed(6)}`,
+    point,
+  ])).values()].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  if (unique.length <= 2) return unique
+  const cross = (origin: LocalPoint, a: LocalPoint, b: LocalPoint): number => (
+    (a[0] - origin[0]) * (b[1] - origin[1])
+    - (a[1] - origin[1]) * (b[0] - origin[0])
+  )
+  const half = (values: LocalPoint[]): LocalPoint[] => {
+    const result: LocalPoint[] = []
+    for (const point of values) {
+      while (result.length >= 2 && cross(result.at(-2)!, result.at(-1)!, point) <= 0) result.pop()
+      result.push(point)
+    }
+    return result
+  }
+  return [...half(unique).slice(0, -1), ...half([...unique].reverse()).slice(0, -1)]
+}
+
 function addJunctionGeometry(
   roads: NormalizedRoad[],
   origin: Coordinate,
@@ -384,17 +391,22 @@ function addJunctionGeometry(
   for (const [junctionIndex, group] of clusters.entries()) {
     const approaches = uniqueApproaches(group)
     if (approaches.length < 3) continue
-    const center = group.reduce<LocalPoint>(
-      (sum, endpoint) => add(sum, endpoint.point),
-      [0, 0],
-    ).map((value) => value / group.length) as LocalPoint
-    const radius = Math.max(
-      ...group.map((endpoint) => distance(center, endpoint.point) + endpoint.road.width / 2),
-    ) + 1.5
-    data.junctionSurfaces.push(circleFeature(center, radius, origin, {
+    const boundaryPoints = approaches.flatMap((approach) => {
+      const across: LocalPoint = [-approach.outward[1], approach.outward[0]]
+      const overlap = add(approach.point, scale(approach.outward, 1.2))
+      const halfWidth = approach.road.width / 2 + 0.6
+      return [
+        add(overlap, scale(across, halfWidth)),
+        add(overlap, scale(across, -halfWidth)),
+      ]
+    })
+    const hull = convexHull(boundaryPoints)
+    if (hull.length < 3) continue
+    data.junctionSurfaces.push(polygonFeature([...hull, hull[0]], origin, 0.15, {
       generated_layer: 'junction-surface',
       junction_index: junctionIndex,
       source: 'sumo',
+      geometry_kind: 'approach-boundary-hull',
     }, projector))
 
     for (const approach of approaches) {

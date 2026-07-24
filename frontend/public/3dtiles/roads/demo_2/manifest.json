@@ -6,10 +6,10 @@
     38.9982516155745
   ],
   "radius_m": 600,
-  "source_generated_at": "2026-07-20T12:59:13.603106+00:00",
+  "source_generated_at": "2026-07-24T07:57:25.124034+00:00",
   "source_vertex_count": 490,
   "feature_count": 15,
-  "source_sha256": "88dde48d39e83d3fa13b4ea1b6105a43b724558acf96fff51139baa92f267f95",
+  "source_sha256": "6e4cee9075358e50c9a3374ba0425324b139a19cf947b96faf08bd2b9350ba6b",
   "coordinate_system": "LOCAL_BD09_WEB_MERCATOR_METERS",
   "origin_wgs84": [
     116.126756,
