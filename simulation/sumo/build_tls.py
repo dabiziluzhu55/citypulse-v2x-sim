@@ -130,6 +130,8 @@ def _run_netconvert(
             netconvert,
             "--sumo-net-file",
             str(sanitized_source),
+            "--tls.ignore-internal-junction-jam",
+            "true",
         ]
         if junctions_to_signal:
             command.extend(

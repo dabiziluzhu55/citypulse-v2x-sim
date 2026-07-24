@@ -83,6 +83,12 @@ junction `4393`，在所有相位使用让行绿。
 南北直行、南北左转。东西进口包含多条直行车道，构建器会让同进口的所有直行
 `linkIndex` 使用相同灯色；四个右转使用全周期让行绿。
 
+`demo_9` 和 `demo_11` 的部分让行右转与同相位让行主流向在 SUMO 内部连接上形成
+mutual conflict。官方程序是在路网生成后通过 additional file 加载的，因此 `netconvert`
+默认无法提前看到这些相位组合。构建公共派生路网时统一启用
+`--tls.ignore-internal-junction-jam true`，允许加载这类后置程序；实际通行优先级仍由
+大写 `G`、让行绿 `g` 和 junction foe 矩阵决定，不修改任何官方相位或配时。
+
 `demo_16` 三个时段均使用 `77s` 周期：东西直行受保护放行、东西左转让行放行后，切换为
 南北直行受保护放行、南北左转让行放行；四个右转始终使用让行绿。`demo_17` 三个时段均使用
 `96s` 周期：相位 1 放行东进口左转，东进口右转始终让行放行；相位 2 放行南北直行，并让行
@@ -144,6 +150,9 @@ python -m simulation.sumo.build_tls \
 `netconvert --tls.set 3279` 信号化；`demo_17` 对应 junction `3702`，基础类型已经是
 `traffic_light`，构建器会直接保留其现有 `linkIndex` 和 foe 矩阵，不把它再次传给
 `netconvert`。这也避免了旧版 SUMO 对已信号化路口重复转换时的不稳定行为。
+
+只要本次构建需要执行 `netconvert`，命令都会带上
+`--tls.ignore-internal-junction-jam true`，确保派生网络可以接受后续加载的官方让行相位。
 
 `demo_18` 的 junction `4409` 和 `demo_19` 的 junction `891` 在基础路网中已经是
 `traffic_light`。最新路网的 `demo_18` 含未受 TLS 控制的进口 connection，构建器会检测后

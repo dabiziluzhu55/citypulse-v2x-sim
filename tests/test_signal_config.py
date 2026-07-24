@@ -2232,6 +2232,8 @@ class SignalConfigurationTests(unittest.TestCase):
 
         def fake_run(command, check):
             self.assertTrue(check)
+            jam_option_index = command.index("--tls.ignore-internal-junction-jam")
+            self.assertEqual(command[jam_option_index + 1], "true")
             tls_index = command.index("--tls.set") + 1
             self.assertEqual(command[tls_index], "4409")
             input_index = command.index("--sumo-net-file") + 1
@@ -2299,6 +2301,8 @@ class SignalConfigurationTests(unittest.TestCase):
 
         def fake_run(command, check):
             self.assertTrue(check)
+            jam_option_index = command.index("--tls.ignore-internal-junction-jam")
+            self.assertEqual(command[jam_option_index + 1], "true")
             tls_index = command.index("--tls.set") + 1
             self.assertEqual(command[tls_index], "317")
             input_index = command.index("--sumo-net-file") + 1
