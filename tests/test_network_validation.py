@@ -292,6 +292,51 @@ class SyntheticNetworkCompatibilityTests(unittest.TestCase):
             source_net=self.network,
         )
 
+    def inspect_generated_network(self, *, include_tls_logic=True, state="G"):
+        logic = (
+            '<tlLogic id="J" type="static" programID="default" offset="0">'
+            f'<phase duration="10" state="{state}"/>'
+            "</tlLogic>"
+            if include_tls_logic
+            else ""
+        )
+        self.network.write_text(
+            "<net>"
+            f"{logic}"
+            '<junction id="J" type="traffic_light">'
+            '<request index="0" response="0" foes="0" cont="0"/>'
+            "</junction>"
+            '<connection from="in" to="out" fromLane="0" toLane="0" '
+            'via=":J_0_0" tl="J" linkIndex="0" dir="s" state="O"/>'
+            "</net>",
+            encoding="utf-8",
+        )
+        configuration = load_signal_configuration(
+            self.mapping, self.plans, self.topology
+        )
+        return _inspect_generated_network(
+            self.network, (configuration.intersections["demo_x"],)
+        )
+
+    def test_generated_network_requires_an_internal_tls_logic(self):
+        with self.assertRaisesRegex(
+            SignalConfigurationError,
+            "references TLS without an internal tlLogic.*J",
+        ):
+            self.inspect_generated_network(include_tls_logic=False)
+
+    def test_generated_network_rejects_tls_state_length_mismatch(self):
+        with self.assertRaisesRegex(
+            SignalConfigurationError,
+            "tlLogic state lengths inconsistent with linkIndex",
+        ):
+            self.inspect_generated_network(state="GG")
+
+    def test_generated_network_accepts_matching_tls_logic(self):
+        connections, state_lengths, _ = self.inspect_generated_network()
+        self.assertEqual([item.tls_id for item in connections], ["J"])
+        self.assertEqual(state_lengths["J"], 1)
+
     def test_route_override_rejects_a_missing_edge_with_context(self):
         self.write_demands(
             route_overrides={

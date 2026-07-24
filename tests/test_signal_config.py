@@ -2215,6 +2215,9 @@ class SignalConfigurationTests(unittest.TestCase):
         source.write_text(
             """<?xml version="1.0" encoding="UTF-8"?>
 <net>
+  <tlLogic id="4409" type="static" programID="stale" offset="0">
+    <phase duration="30" state="G"/>
+  </tlLogic>
   <junction id="4409" type="traffic_light"/>
   <connection from="-56004" to="-56009" fromLane="1" toLane="0" uncontrolled="1" via=":4409_20_0" dir="s" state="m"/>
 </net>
@@ -2236,6 +2239,12 @@ class SignalConfigurationTests(unittest.TestCase):
             content = sanitized_source.read_text(encoding="utf-8")
             self.assertNotIn('uncontrolled="1"', content)
             self.assertNotIn('state="m"', content)
+            sanitized_root = ET.parse(sanitized_source).getroot()
+            self.assertEqual(
+                sanitized_root.find("junction[@id='4409']").get("type"),
+                "priority",
+            )
+            self.assertIsNone(sanitized_root.find("tlLogic[@id='4409']"))
             shutil.copy2(sanitized_source, target)
 
         with patch(

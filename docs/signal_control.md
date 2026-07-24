@@ -147,7 +147,11 @@ python -m simulation.sumo.build_tls \
 
 `demo_18` 的 junction `4409` 和 `demo_19` 的 junction `891` 在基础路网中已经是
 `traffic_light`。最新路网的 `demo_18` 含未受 TLS 控制的进口 connection，构建器会检测后
-刷新 junction `4409`；`demo_19` 则直接复用现有 `linkIndex` 与 foe 矩阵。
+刷新 junction `4409`：它只在传给 `netconvert` 的临时副本中被降为 `priority`，旧的
+TLS 属性和 `tlLogic` 会被移除，再由 `--tls.set 4409` 完整重建。基础路网中的 junction
+类型不会改变，不要使用 NetEdit 手工修改 `TotalMap_20.net.xml`。`demo_19` 则直接复用
+现有 `linkIndex` 与 foe 矩阵。构建器还会确认派生网络中每个受控 TLS 都有内置
+`tlLogic`，并检查其状态长度与实际 `linkIndex` 一致，防止无效产物进入 manifest。
 
 | 生成路径 | 用途 |
 |---|---|

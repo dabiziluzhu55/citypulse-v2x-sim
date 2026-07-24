@@ -175,17 +175,29 @@ def _reset_tls_control_attrs(net_path: Path, junction_ids: Iterable[str]) -> int
     refresh_junctions = tuple(junction_ids)
     if not refresh_junctions:
         return 0
+    refresh_set = set(refresh_junctions)
     tree = ET.parse(net_path)
     root = tree.getroot()
-    removed = 0
+    changes = 0
+    # Force --tls.set to rebuild incomplete pre-existing traffic lights.
+    for junction in root.iter("junction"):
+        if junction.get("id") not in refresh_set:
+            continue
+        if junction.get("type") != "priority":
+            junction.set("type", "priority")
+            changes += 1
+    for logic in list(root.findall("tlLogic")):
+        if logic.get("id") in refresh_set:
+            root.remove(logic)
+            changes += 1
     for elem in root.iter("connection"):
         if _junction_id_from_via(elem.get("via", ""), refresh_junctions) is None:
             continue
         for attribute in ("tl", "linkIndex", "linkIndex2", "uncontrolled", "state"):
             if attribute in elem.attrib:
                 del elem.attrib[attribute]
-                removed += 1
-    if not removed:
+                changes += 1
+    if not changes:
         return 0
 
     temporary_path = net_path.with_name(f"{net_path.name}.tls-refresh.tmp")
@@ -195,7 +207,7 @@ def _reset_tls_control_attrs(net_path: Path, junction_ids: Iterable[str]) -> int
     finally:
         if temporary_path.exists():
             temporary_path.unlink()
-    return removed
+    return changes
 
 
 def _junctions_requiring_tls_refresh(
@@ -397,6 +409,7 @@ def _inspect_generated_network(
             junction_owner[junction_id] = config
 
     found_junction_types = {}
+    tls_logic_state_lengths: Dict[str, set[int]] = {}
     request_foes: Dict[str, Dict[int, str]] = {}
     max_link_index: Dict[str, int] = {}
     raw_connections = []
@@ -412,8 +425,16 @@ def _inspect_generated_network(
                 }
             elem.clear()
             continue
+        if elem.tag == "tlLogic":
+            tls_id = elem.get("id", "")
+            if tls_id:
+                tls_logic_state_lengths.setdefault(tls_id, set()).update(
+                    len(phase.get("state", "")) for phase in elem.findall("phase")
+                )
+            elem.clear()
+            continue
         if elem.tag != "connection":
-            if elem.tag in {"edge", "tlLogic"}:
+            if elem.tag == "edge":
                 elem.clear()
             continue
 
@@ -480,6 +501,27 @@ def _inspect_generated_network(
 
     if not connections:
         raise SignalConfigurationError("No official controlled connections were found.")
+    controlled_tls_ids = {item.tls_id for item in connections}
+    missing_tls_logics = controlled_tls_ids - set(tls_logic_state_lengths)
+    if missing_tls_logics:
+        raise SignalConfigurationError(
+            "Generated network references TLS without an internal tlLogic: "
+            f"{sorted(missing_tls_logics)}. Rebuild these junctions with netconvert."
+        )
+    invalid_state_lengths = {}
+    for tls_id in sorted(controlled_tls_ids):
+        expected_length = max_link_index[tls_id] + 1
+        actual_lengths = tls_logic_state_lengths[tls_id]
+        if actual_lengths != {expected_length}:
+            invalid_state_lengths[tls_id] = {
+                "expected": expected_length,
+                "actual": sorted(actual_lengths),
+            }
+    if invalid_state_lengths:
+        raise SignalConfigurationError(
+            "Generated network has tlLogic state lengths inconsistent with linkIndex: "
+            f"{invalid_state_lengths}"
+        )
     for config in selected:
         present_edges = {
             item.from_edge
