@@ -8,6 +8,7 @@ from simulation.sumo.artifacts import GeneratedArtifactLayout
 from simulation.sumo.build_traffic import (
     _allocate_route_counts,
     _movement_route,
+    _movement_routes,
     build_traffic_scenarios,
 )
 from simulation.sumo.scenario import compile_session_scenario
@@ -151,6 +152,43 @@ def demo_4_manifest():
                     "demo_4_morning_peak",
                     "demo_4_off_peak",
                     "demo_4_evening_peak",
+                ],
+                "connections": [
+                    {
+                        "approach": approach,
+                        "movement": movement,
+                        "from_edge": from_edge,
+                        "from_lane": 0,
+                        "to_edge": to_edge,
+                        "to_lane": 0,
+                    }
+                    for approach, movement, from_edge, to_edge in routes
+                ],
+            }
+        }
+    }
+
+
+def demo_8_manifest():
+    routes = (
+        ("east", "left", "-54807", "-57113"),
+        ("east", "through", "-54807", "-54810"),
+        ("west", "left", "-57234", "-57125"),
+        ("west", "through", "-57234", "-57236"),
+        ("west", "right", "-57234", "-57113"),
+        ("north", "left", "-57112", "-57236"),
+        ("north", "through", "-57112", "-57113"),
+        ("north", "right", "-57112", "-54810"),
+        ("south", "left", "-57109", "-54810"),
+        ("south", "through", "-57109", "-57125"),
+    )
+    return {
+        "intersections": {
+            "demo_8": {
+                "program_ids": [
+                    "demo_8_morning_peak",
+                    "demo_8_off_peak",
+                    "demo_8_evening_peak",
                 ],
                 "connections": [
                     {
@@ -846,7 +884,6 @@ class TrafficDemandTests(unittest.TestCase):
             "demo_8": {
                 ("east", "left"): ("-54807", "-57113"),
                 ("east", "through"): ("-54807", "-54810"),
-                ("east", "right"): ("-54807", "-57125"),
                 ("west", "left"): ("-57234", "-57125"),
                 ("west", "through"): ("-57234", "-57236"),
                 ("west", "right"): ("-57234", "-57113"),
@@ -855,7 +892,6 @@ class TrafficDemandTests(unittest.TestCase):
                 ("north", "right"): ("-57112", "-54810"),
                 ("south", "left"): ("-57109", "-54810"),
                 ("south", "through"): ("-57109", "-57125"),
-                ("south", "right"): ("-57109", "-57236"),
             },
             "demo_11": {
                 ("east", "left"): ("-57303", "-51252"),
@@ -888,12 +924,36 @@ class TrafficDemandTests(unittest.TestCase):
             }
             actual = {
                 (approach_name, movement): _movement_route(
-                    intersection_id, manifest, approach, movement
+                    intersection_id,
+                    manifest,
+                    demand.approaches[approach_name],
+                    movement,
                 )
-                for approach_name, approach in demand.approaches.items()
-                for movement in approach.movements
+                for approach_name, movement in expected
             }
             self.assertEqual(actual, expected)
+
+        demo_8 = configuration.intersections["demo_8"]
+        manifest = demo_8_manifest()["intersections"]["demo_8"]
+        expected_bypasses = {
+            ("east", "right"): ("-54807.1099", "E14", "-57125.103"),
+            ("south", "right"): ("-57109.1195", "E15", "-57236.80"),
+        }
+        for period in demo_8.periods.values():
+            for (approach_name, movement), route in expected_bypasses.items():
+                self.assertEqual(
+                    _movement_routes(
+                        "demo_8",
+                        manifest,
+                        demo_8.approaches[approach_name],
+                        movement,
+                        period.route_splits.get(approach_name, {}).get(movement, ()),
+                        period.route_overrides.get(approach_name, {}).get(
+                            movement, ()
+                        ),
+                    ),
+                    ((route, 1),),
+                )
 
     def test_demo_12_14_15_official_movements_select_expected_routes(self):
         expected_by_intersection = {
@@ -1388,6 +1448,83 @@ class TrafficDemandTests(unittest.TestCase):
             }
             self.assertIn("-52650 -57184 -56735", set(xml_routes.values()))
             self.assertIn("-50336 -57185 -57232", set(xml_routes.values()))
+
+    def test_demo_8_generated_flows_use_channelized_right_turn_bypasses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            layout = GeneratedArtifactLayout(output)
+            layout.create_base_directories()
+            layout.network_file.write_text("<net/>", encoding="utf-8")
+            layout.signal_programs_file.write_text(
+                """<additional>
+  <tlLogic id="J1" programID="demo_8_morning_peak"/>
+  <tlLogic id="J1" programID="demo_8_off_peak"/>
+  <tlLogic id="J1" programID="demo_8_evening_peak"/>
+</additional>
+""",
+                encoding="utf-8",
+            )
+            manifest = demo_8_manifest()
+            result = build_traffic_scenarios(
+                manifest,
+                demand_path=DEMANDS,
+                output_dir=output,
+                intersection_ids=["demo_8"],
+            )
+
+            expected_totals = {
+                "demo_8_morning_peak": 5090,
+                "demo_8_off_peak": 3636,
+                "demo_8_evening_peak": 5454,
+            }
+            direct_routes = {
+                (item["approach"], item["movement"]): (
+                    item["from_edge"],
+                    item["to_edge"],
+                )
+                for item in manifest["intersections"]["demo_8"]["connections"]
+            }
+            bypasses = {
+                ("east", "right"): ["-54807.1099", "E14", "-57125.103"],
+                ("south", "right"): ["-57109.1195", "E15", "-57236.80"],
+            }
+            self.assertEqual(set(result["scenarios"]), set(expected_totals))
+            for scenario_id, scenario in result["scenarios"].items():
+                self.assertEqual(scenario["total_pcu"], expected_totals[scenario_id])
+                self.assertEqual(scenario["flow_count"], 96)
+                self.assertEqual(
+                    sum(item["number"] for item in scenario["flows"]),
+                    expected_totals[scenario_id],
+                )
+                for flow in scenario["flows"]:
+                    key = (
+                        flow["official_approach"],
+                        flow["official_movement"],
+                    )
+                    if key in bypasses:
+                        self.assertEqual(flow["route_edges"], bypasses[key])
+                    else:
+                        self.assertEqual(
+                            tuple(flow["route_edges"]), direct_routes[key]
+                        )
+
+                route_path = output / scenario["route_file"]
+                xml_routes = {
+                    flow.get("id"): flow.find("route").get("edges")
+                    for flow in ET.parse(route_path).getroot().findall("flow")
+                }
+                self.assertTrue(
+                    any(
+                        route == "-54807.1099 E14 -57125.103"
+                        for route in xml_routes.values()
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        route == "-57109.1195 E15 -57236.80"
+                        for route in xml_routes.values()
+                    )
+                )
 
     def test_demo_9_generated_flows_preserve_cells_and_split_routes(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,9 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<additional>
-  <tlLogic id="citypulse_demo_3" type="static" programID="demo_3_morning_peak" offset="0">
-    <phase duration="55" state="gggrrrgGgGGggggrrrgGgGGg" name="p1_green" />
-    <phase duration="3" state="gggrrrgygyyygggrrrgygyyy" name="p1_yellow" />
-    <phase duration="47" state="gggGgggrgrrrgggGgggrgrrr" name="p2_green" />
-    <phase duration="3" state="gggyyygrgrrrgggyyygrgrrr" name="p2_yellow" />
-  </tlLogic>
-</additional>

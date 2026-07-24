@@ -73,8 +73,10 @@ junction 892 的冲突矩阵要求东左转 `linkIndex 5` 让行于北直行和�
 
 `demo_8` 对应 junction `4393`，复用基础路网中现有的 TLS `J1`。早高峰、平峰、晚高峰
 周期分别为 `110s`、`90s`、`120s`；四个相位依次为东西直行、东西左转、南北直行、
-南北左转。东进口额外存在的 `t` 掉头连接不属于官方方案，始终保持红灯；四个右转使用
-全周期让行绿。
+南北左转。最新路网把东进口和南进口右转改为中心冲突区上游的渠化绕行：东右转使用
+`-54807.1099 -> E14 -> -57125.103`，南右转使用
+`-57109.1195 -> E15 -> -57236.80`，两者不受 `J1` 控制。西、北进口右转仍经过
+junction `4393`，在所有相位使用让行绿。
 
 `demo_11` 对应 junction `4306`，构建时由 `netconvert` 从 priority junction 转为交通灯。
 三个时段周期分别为 `170s`、`130s`、`176s`，相位顺序同样为东西直行、东西左转、
@@ -115,12 +117,22 @@ junction 892 的冲突矩阵要求东左转 `linkIndex 5` 让行于北直行和�
 
 ## 构建
 
+无 SUMO 的开发机可以先执行只读预检；该命令不会查找 `sumo/netconvert`，也不会清理或
+生成任何文件：
+
+```bash
+python -m simulation.sumo.build_tls --validate-only \
+  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
+```
+
+在已安装 SUMO 的服务器执行正式全量构建：
+
 ```bash
 python -m simulation.sumo.build_tls \
   --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
 ```
 
-`data/maps/sumo/generated/` 是可删除、可重建且不提交 Git 的目录，不要手工修改。
+`data/maps/sumo/generated/` 整体由 Git 忽略，是可删除、可重建且不提交的目录，不要手工修改。
 完整构建会先清空该目录，防止旧路口和旧版平铺文件残留。
 
 构建器会先检查基础路网中的 junction 类型。已经是 `traffic_light` 的路口会保留原有
@@ -133,9 +145,9 @@ python -m simulation.sumo.build_tls \
 `traffic_light`，构建器会直接保留其现有 `linkIndex` 和 foe 矩阵，不把它再次传给
 `netconvert`。这也避免了旧版 SUMO 对已信号化路口重复转换时的不稳定行为。
 
-`demo_18` 的 junction `4409` 和 `demo_19` 的 junction `891` 在基础路网中也已经是
-`traffic_light`，构建器直接复用其现有 `linkIndex` 与 foe 矩阵，不会把它们加入
-`netconvert --tls.set` 参数。
+`demo_18` 的 junction `4409` 和 `demo_19` 的 junction `891` 在基础路网中已经是
+`traffic_light`。最新路网的 `demo_18` 含未受 TLS 控制的进口 connection，构建器会检测后
+刷新 junction `4409`；`demo_19` 则直接复用现有 `linkIndex` 与 foe 矩阵。
 
 | 生成路径 | 用途 |
 |---|---|
@@ -150,6 +162,8 @@ python -m simulation.sumo.build_tls \
 
 生成目录根层只保留上述分类目录。旧的转向验证车流、验证用 `sumocfg` 和 debug POI
 工具已经删除；路线正确性由配置校验、连接报告、单元测试和真实场景 GUI 检查共同保证。
+全量构建完成后，`tls_manifest.json` 应包含 20 个路口，`traffic_manifest.json` 应包含
+20 个路口各 3 个时段、共 60 个场景；manifest 的 `source_net_sha256` 必须对应当前基础路网。
 
 真实车流的数据口径和场景命令见 [traffic_demand.md](traffic_demand.md)。
 

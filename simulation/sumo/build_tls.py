@@ -23,7 +23,8 @@ from .config import (
     SignalConfigurationError,
     load_signal_configuration,
 )
-from .traffic import TrafficDemandError
+from .network_validation import validate_source_compatibility
+from .traffic import TrafficDemandError, load_traffic_demands
 from .vehicle_profiles import VehicleProfileError
 
 
@@ -32,6 +33,7 @@ SUMO_DIR = PROJECT_ROOT / "data" / "maps" / "sumo"
 DEFAULT_MAPPING = SUMO_DIR / "TotalMap_20.intersections.json"
 DEFAULT_PLANS = SUMO_DIR / "official_tls_plans.json"
 DEFAULT_TOPOLOGY = SUMO_DIR / "official_tls_topology.json"
+DEFAULT_DEMANDS = SUMO_DIR / "official_traffic_demands.json"
 DEFAULT_BASE_NET = SUMO_DIR / "TotalMap_20.net.xml"
 DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
 
@@ -787,6 +789,20 @@ def _write_connection_report(path: Path, connections: Sequence[ControlledConnect
             writer.writerow(row)
 
 
+def validate(
+    intersection_ids: Sequence[str],
+    mapping_path: Path = DEFAULT_MAPPING,
+    plans_path: Path = DEFAULT_PLANS,
+    topology_path: Path = DEFAULT_TOPOLOGY,
+    demand_path: Path = DEFAULT_DEMANDS,
+    source_net: Path = DEFAULT_BASE_NET,
+) -> Mapping[str, int]:
+    configuration = load_signal_configuration(mapping_path, plans_path, topology_path)
+    selected = configuration.select(intersection_ids)
+    demands = load_traffic_demands(demand_path)
+    return validate_source_compatibility(source_net, selected, demands)
+
+
 def build(
     intersection_ids: Sequence[str],
     mapping_path: Path = DEFAULT_MAPPING,
@@ -794,9 +810,12 @@ def build(
     topology_path: Path = DEFAULT_TOPOLOGY,
     source_net: Path = DEFAULT_BASE_NET,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
+    demand_path: Path = DEFAULT_DEMANDS,
 ) -> Mapping[str, object]:
     configuration = load_signal_configuration(mapping_path, plans_path, topology_path)
     selected = configuration.select(intersection_ids)
+    demands = load_traffic_demands(demand_path)
+    validate_source_compatibility(source_net, selected, demands)
     junction_ids = sorted({item for config in selected for item in config.junction_ids})
     netconvert = _binary("netconvert")
     sumo = _binary("sumo")
@@ -923,7 +942,9 @@ def build(
 
     build_traffic_scenarios(
         manifest,
+        demand_path=demand_path,
         output_dir=output_dir,
+        intersection_ids=[item.intersection_id for item in selected],
     )
     return manifest
 
@@ -934,19 +955,45 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING)
     parser.add_argument("--plans", type=Path, default=DEFAULT_PLANS)
     parser.add_argument("--topology", type=Path, default=DEFAULT_TOPOLOGY)
+    parser.add_argument("--demand", type=Path, default=DEFAULT_DEMANDS)
     parser.add_argument("--source-net", type=Path, default=DEFAULT_BASE_NET)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help=(
+            "Validate source configurations without requiring SUMO or writing "
+            "artifacts."
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     try:
+        if args.validate_only:
+            report = validate(
+                intersection_ids=args.intersections,
+                mapping_path=args.mapping,
+                plans_path=args.plans,
+                topology_path=args.topology,
+                demand_path=args.demand,
+                source_net=args.source_net,
+            )
+            print(
+                "Validated source network compatibility for "
+                f"{report['intersections']} intersections, "
+                f"{report['periods']} periods, and "
+                f"{report['nonzero_movements']} non-zero movements."
+            )
+            return
         manifest = build(
             intersection_ids=args.intersections,
             mapping_path=args.mapping,
             plans_path=args.plans,
             topology_path=args.topology,
+            demand_path=args.demand,
             source_net=args.source_net,
             output_dir=args.output_dir,
         )

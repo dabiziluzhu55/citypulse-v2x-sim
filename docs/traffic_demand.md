@@ -287,12 +287,23 @@
 | 西进口 | `-46217` | 左转、直行 |
 | 南进口 | `-51871` | 直行、右转 |
 
-`demo_8` 和 `demo_11` 的四个进口均支持左转、直行和右转：
+`demo_8` 和 `demo_11` 的中心信号进口为：
 
 | 路口 | 东进口 | 西进口 | 北进口 | 南进口 |
 |---|---|---|---|---|
 | `demo_8` | `-54807` | `-57234` | `-57112` | `-57109` |
 | `demo_11` | `-57303` | `-51264` | `-57053` | `-56346` |
+
+`demo_11` 的十二种转向都在中心 junction 内完成。最新 `demo_8` 路网中，东、南进口的
+右转已从中心 junction 移到上游渠化道路，需求文件通过显式路径保留官方右转流量：
+
+| 官方车流 | SUMO 物理路线 | 信号控制 |
+|---|---|---|
+| 东进口右转 | `-54807.1099 -> E14 -> -57125.103` | 不进入 `J1` 冲突区 |
+| 南进口右转 | `-57109.1195 -> E15 -> -57236.80` | 不进入 `J1` 冲突区 |
+
+东、南进口的左转和直行仍分别从 `-54807`、`-57109` 进入 junction `4393`；西、北
+右转仍在中心路口使用让行绿。三个时段的原始 15 分钟流量和总量没有因路线调整而改变。
 
 `demo_9` 的五个 incoming edge 为：
 
@@ -387,14 +398,23 @@
 
 ## 构建与运行
 
-服务器上设置 `SUMO_HOME` 后执行：
+没有 SUMO 的开发环境先执行全量只读预检：
+
+```bash
+python -m simulation.sumo.build_tls --validate-only \
+  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
+```
+
+预检会核对 junction、incoming edge、非零官方转向、分流目标和显式路径中的每一对相邻
+edge，不调用 `sumo/netconvert`，不写文件，也不会清空已有生成物。服务器上设置
+`SUMO_HOME` 后执行正式构建：
 
 ```bash
 python -m simulation.sumo.build_tls \
   --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
 ```
 
-该命令一次生成公共信号路网以及三个真实交通场景：
+该命令一次生成公共信号路网，以及 20 个路口各 3 个时段、共 60 个真实交通场景：
 
 ```text
 generated/
@@ -419,6 +439,8 @@ generated/
 
 每个场景使用独立的 `signals.add.xml`，其中只保留与车流时段对应的
 program，保证直接用 `sumo-gui` 打开时不会误选其他时段配时。
+整个 `data/maps/sumo/generated/` 目录由 Git 忽略，所有文件都必须由构建器生成，禁止
+手工修改或提交其中的 XML 和 manifest。
 
 每个场景把本时段起点归一化为仿真 `t=0`，保留 `traffic_manifest.json` 中的官方
 起止时间。这样早高峰只运行 7200 秒需求期，不需要从午夜空跑到 07:00。配置另留
@@ -429,6 +451,10 @@ program，保证直接用 `sumo-gui` 打开时不会误选其他时段配时。
 ```bash
 sumo-gui -c data/maps/sumo/generated/traffic/demo_2/morning_peak/simulation.sumocfg
 ```
+
+部署验收时应先对 60 个 `simulation.sumocfg` 做无界面启动检查，再重点打开
+`demo_8/morning_peak`：东、南右转车辆应分别走 `E14`、`E15` 且不等待 `J1`，其余方向
+按官方四相位运行。
 
 固定配时 runner（默认就是 `demo_2` 早高峰）：
 

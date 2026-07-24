@@ -543,6 +543,10 @@
           "period_id": "morning_peak", "label": "早高峰", "program_id": "demo_8_morning_peak",
           "time_range": {"start": "07:00:00", "end": "09:00:00"},
           "expected_totals": {"east": 1229, "west": 1296, "north": 1330, "south": 1235, "all": 5090},
+          "route_overrides": {
+            "east": {"right": [{"edges": ["-54807.1099", "E14", "-57125.103"], "weight": 1}]},
+            "south": {"right": [{"edges": ["-57109.1195", "E15", "-57236.80"], "weight": 1}]}
+          },
           "intervals": [
             {"start": "07:00:00", "end": "07:15:00", "volumes": {"east": {"left": 32, "through": 98, "right": 25}, "west": {"left": 26, "through": 110, "right": 22}, "north": {"left": 29, "through": 120, "right": 34}, "south": {"left": 27, "through": 104, "right": 23}}},
             {"start": "07:15:00", "end": "07:30:00", "volumes": {"east": {"left": 35, "through": 87, "right": 24}, "west": {"left": 33, "through": 106, "right": 20}, "north": {"left": 44, "through": 111, "right": 24}, "south": {"left": 31, "through": 96, "right": 14}}},
@@ -558,6 +562,10 @@
           "period_id": "off_peak", "label": "平峰", "program_id": "demo_8_off_peak",
           "time_range": {"start": "14:30:00", "end": "16:30:00"},
           "expected_totals": {"east": 878, "west": 926, "north": 950, "south": 882, "all": 3636},
+          "route_overrides": {
+            "east": {"right": [{"edges": ["-54807.1099", "E14", "-57125.103"], "weight": 1}]},
+            "south": {"right": [{"edges": ["-57109.1195", "E15", "-57236.80"], "weight": 1}]}
+          },
           "intervals": [
             {"start": "14:30:00", "end": "14:45:00", "volumes": {"east": {"left": 27, "through": 45, "right": 40}, "west": {"left": 25, "through": 72, "right": 8}, "north": {"left": 22, "through": 73, "right": 20}, "south": {"left": 21, "through": 85, "right": 14}}},
             {"start": "14:45:00", "end": "15:00:00", "volumes": {"east": {"left": 29, "through": 54, "right": 48}, "west": {"left": 20, "through": 55, "right": 16}, "north": {"left": 15, "through": 56, "right": 17}, "south": {"left": 18, "through": 72, "right": 18}}},
@@ -573,6 +581,10 @@
           "period_id": "evening_peak", "label": "晚高峰", "program_id": "demo_8_evening_peak",
           "time_range": {"start": "17:30:00", "end": "19:30:00"},
           "expected_totals": {"east": 1317, "west": 1389, "north": 1425, "south": 1323, "all": 5454},
+          "route_overrides": {
+            "east": {"right": [{"edges": ["-54807.1099", "E14", "-57125.103"], "weight": 1}]},
+            "south": {"right": [{"edges": ["-57109.1195", "E15", "-57236.80"], "weight": 1}]}
+          },
           "intervals": [
             {"start": "17:30:00", "end": "17:45:00", "volumes": {"east": {"left": 42, "through": 102, "right": 25}, "west": {"left": 32, "through": 112, "right": 26}, "north": {"left": 35, "through": 121, "right": 30}, "south": {"left": 33, "through": 105, "right": 23}}},
             {"start": "17:45:00", "end": "18:00:00", "volumes": {"east": {"left": 38, "through": 96, "right": 22}, "west": {"left": 41, "through": 98, "right": 28}, "north": {"left": 28, "through": 108, "right": 25}, "south": {"left": 29, "through": 98, "right": 18}}},
