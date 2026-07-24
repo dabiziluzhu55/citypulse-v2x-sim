@@ -2,14 +2,30 @@ import * as mapvthree from '@baidumap/mapv-three'
 import type { TrafficVehicleView } from '../types/traffic'
 import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates'
 import type { RoadCoordinateProjector } from './roadGeometry'
+import {
+  resolveVehicleRenderRadius,
+  selectVisibleVehicles,
+} from './vehicleVisibility'
+import { createVehicleTwinSample } from './vehicleTwinSample'
 
-const MAX_TWIN_UPDATES_PER_SECOND = 10
+const MAX_TWIN_UPDATES_PER_SECOND = 4
+const TWIN_INTERPOLATION_DELAY_MS = 350
+const INITIAL_SAMPLE_LEAD_MS = 250
+
+export interface VehicleRenderStats {
+  inputCount: number
+  visibleCount: number
+  radiusMeters: number
+}
 
 export class BaiduVehicleRenderer {
   private readonly engine: mapvthree.Engine
   private readonly twin: mapvthree.Twin
   private readonly projector: RoadCoordinateProjector
   private lastUpdateAt = 0
+  private lastVehicles: TrafficVehicleView[] = []
+  private visibleCount = 0
+  private primed = false
 
   constructor(
     engine: mapvthree.Engine,
@@ -18,7 +34,7 @@ export class BaiduVehicleRenderer {
     this.engine = engine
     this.projector = projector
     this.twin = engine.add(new mapvthree.Twin({
-      delay: 800,
+      delay: TWIN_INTERPOLATION_DELAY_MS,
       modelConfig: {
         3: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.CAR,
         6: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.BUS,
@@ -29,26 +45,49 @@ export class BaiduVehicleRenderer {
     }))
   }
 
-  update(vehicles: TrafficVehicleView[]): void {
+  update(vehicles: TrafficVehicleView[], force = false): VehicleRenderStats {
+    this.lastVehicles = vehicles
     const time = Date.now()
-    if (time - this.lastUpdateAt < 1000 / MAX_TWIN_UPDATES_PER_SECOND) return
+    const cameraRange = this.engine.map.getRange()
+    const radiusMeters = resolveVehicleRenderRadius(cameraRange)
+    if (!force && time - this.lastUpdateAt < 1000 / MAX_TWIN_UPDATES_PER_SECOND) {
+      return { inputCount: vehicles.length, visibleCount: this.visibleCount, radiusMeters }
+    }
     this.lastUpdateAt = time
-    this.twin.push(vehicles.flatMap((vehicle) => {
-      if (vehicle.longitude == null || vehicle.latitude == null) return []
-      const [lng, lat] = this.projector([
-        vehicle.longitude,
-        vehicle.latitude,
-      ])
-      return [{
-        id: vehicle.vehicle_id,
-        lng,
-        lat,
-        dir: vehicle.angle * Math.PI / 180,
+    const visible = selectVisibleVehicles(
+      vehicles,
+      this.projector,
+      this.engine.map.getCenter(),
+      cameraRange,
+    )
+    this.visibleCount = visible.length
+    if (visible.length === 0) {
+      if (this.primed) this.clear()
+      return { inputCount: vehicles.length, visibleCount: 0, radiusMeters }
+    }
+    const samples = visible.map(({ vehicle, longitude, latitude }) => (
+      createVehicleTwinSample(
+        vehicle,
+        longitude,
+        latitude,
         time,
-        modelType: this.resolveModelType(vehicle.lane_id),
-      }]
-    }))
+        this.resolveModelType(vehicle.lane_id),
+      )
+    ))
+    if (!this.primed) {
+      this.twin.push(samples.map((sample) => ({
+        ...sample,
+        time: time - INITIAL_SAMPLE_LEAD_MS,
+      })))
+      this.primed = true
+    }
+    this.twin.push(samples)
     this.engine.requestRender()
+    return { inputCount: vehicles.length, visibleCount: visible.length, radiusMeters }
+  }
+
+  refreshViewport(): VehicleRenderStats {
+    return this.update(this.lastVehicles, true)
   }
 
   private resolveModelType(laneId: string): number {
@@ -58,6 +97,8 @@ export class BaiduVehicleRenderer {
 
   clear(): void {
     this.lastUpdateAt = 0
+    this.visibleCount = 0
+    this.primed = false
     this.twin.reset()
   }
 

@@ -36,7 +36,7 @@ import type { MapGeoJsonResponse } from '../../types/map'
 const containerRef = ref<HTMLElement | null>(null)
 const mapView = useAppMapView()
 const { geojson } = useSimulationMap()
-const { trafficView } = useSimulationStore()
+const { snapshot, trafficView } = useSimulationStore()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -60,10 +60,11 @@ let showcaseLandmarkPromise: Promise<void> | null = null
 let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
 let vegetationLoadTimer: ReturnType<typeof setTimeout> | null = null
+let buildingLoadTimer: ReturnType<typeof setTimeout> | null = null
 
 const tilesetUrl =
   import.meta.env.VITE_XIONGAN_3DTILES_URL?.trim()
-  || '/3dtiles/xiongan-webmercator/tileset.json'
+  || '/3dtiles/xiongan-webmercator-demo_2/tileset.json'
 const enableLocalTileset = import.meta.env.VITE_ENABLE_XIONGAN_3DTILES === 'true'
 const enableStaticRoadTileset = import.meta.env.VITE_ENABLE_STATIC_ROAD_3DTILES !== 'false'
 const roadTilesetUrl =
@@ -76,9 +77,10 @@ const sceneCenter = scenePlacement === 'xiongan-demo'
   : DEMO_2_SOURCE_CENTER_BD09
 const baiduAk = import.meta.env.VITE_BAIDU_MAP_AK?.trim() || ''
 const showBaiduBuildings = !enableLocalTileset && import.meta.env.VITE_BAIDU_BUILDINGS !== 'false'
-const showBaiduRoads = import.meta.env.VITE_BAIDU_ROADS === 'true'
+const showBaiduRoads = !enableStaticRoadTileset && import.meta.env.VITE_BAIDU_ROADS === 'true'
 const roadRendererMode = import.meta.env.VITE_BAIDU_ROAD_RENDERER?.trim() || 'detailed'
 const enableShowcaseLayers = import.meta.env.VITE_ENABLE_SHOWCASE_LAYERS === 'true'
+const enableJunctionMarkers = import.meta.env.VITE_ENABLE_JUNCTION_MARKERS === 'true'
 const enableRoadsideFacilities = import.meta.env.VITE_ENABLE_ROADSIDE_FACILITIES === 'true'
 const roadsideFacilitiesUrl = import.meta.env.VITE_SCENE_FACILITIES_URL?.trim()
   || '/showcase-data/demo_2.facilities.json'
@@ -88,6 +90,10 @@ const vegetationManifestUrl = import.meta.env.VITE_VEGETATION_MANIFEST_URL?.trim
   || '/showcase-data/demo_2.vegetation.json'
 const vegetationModelUrl = import.meta.env.VITE_VEGETATION_MODEL_URL?.trim()
   || '/assets/plants/low-poly-plants.glb'
+
+const BUILDING_IDLE_ERROR_TARGET = 24
+const BUILDING_MOVING_ERROR_TARGET = 96
+const ACTIVE_FRAME_TIME_MS = 33
 
 function createBaiduProvider(): mapvthree.BaiduVectorTileProvider {
   return new mapvthree.BaiduVectorTileProvider({
@@ -116,13 +122,31 @@ function enableCameraInteraction(): void {
 }
 
 function markInteracting(): void {
+  if (!interacting.value) {
+    buildingTileset && (buildingTileset.errorTarget = BUILDING_MOVING_ERROR_TARGET)
+    vegetationRenderer?.setInteractionActive(true)
+  }
   interacting.value = true
   enableCameraInteraction()
   if (interactionEndTimer) clearTimeout(interactionEndTimer)
   interactionEndTimer = setTimeout(() => {
     interacting.value = false
+    if (buildingTileset) buildingTileset.errorTarget = BUILDING_IDLE_ERROR_TARGET
+    vegetationRenderer?.setInteractionActive(false)
+    vehicleRenderer?.refreshViewport()
+    engine?.requestRender()
     interactionEndTimer = null
-  }, 220)
+  }, 300)
+}
+
+function syncAnimationLoop(): void {
+  if (!engine) return
+  const state = snapshot.value?.state
+  const active = state === 'STARTING' || state === 'RUNNING' || state === 'STOPPING'
+  if (engine.rendering.enableAnimationLoop !== active) {
+    engine.rendering.enableAnimationLoop = active
+    engine.requestRender()
+  }
 }
 
 function updateTilesStatus(): void {
@@ -187,7 +211,7 @@ function syncRoadRendering(response: MapGeoJsonResponse | null): void {
 
 function syncMapRendering(response: MapGeoJsonResponse | null): void {
   syncRoadRendering(response)
-  showcaseModelLayers?.render(response)
+  showcaseModelLayers?.render(enableJunctionMarkers ? response : null)
   if (engine && response?.bounds) {
     const latitudePadding = 300 / 110_900
     const longitudePadding = latitudePadding / Math.cos(response.center.latitude * Math.PI / 180)
@@ -225,12 +249,39 @@ async function loadRoadsideFacilities(): Promise<void> {
 function scheduleVegetationLoad(): void {
   if (!engine || !enableVegetation) return
   vegetationRenderer = new VegetationRenderer(engine, coordinateProjector)
+  vegetationRenderer.setInteractionActive(interacting.value)
   vegetationLoadTimer = setTimeout(() => {
     vegetationLoadTimer = null
     void vegetationRenderer?.load(vegetationManifestUrl, vegetationModelUrl).catch((cause: unknown) => {
       console.warn('[vegetation] layer disabled', cause)
     })
   }, 450)
+}
+
+function scheduleBuildingTilesetLoad(): void {
+  if (!engine || !enableLocalTileset || buildingTileset || buildingLoadTimer) return
+  tilesStatus.value = 'loading'
+  buildingLoadTimer = setTimeout(() => {
+    buildingLoadTimer = null
+    if (!engine) return
+    buildingTileset = engine.add(new mapvthree.Default3DTiles({
+      url: tilesetUrl,
+      errorTarget: interacting.value
+        ? BUILDING_MOVING_ERROR_TARGET
+        : BUILDING_IDLE_ERROR_TARGET,
+      forceUnlit: false,
+      dynamicScreenSpaceError: true,
+      foveatedScreenSpaceError: true,
+      foveatedConeSize: 0.22,
+      foveatedMinimumScreenSpaceErrorRelaxation: 1.2,
+      progressiveResolutionHeightFraction: 0.35,
+      cullRequestsWhileMoving: true,
+      cullRequestsWhileMovingMultiplier: 120,
+      cacheBytes: 192 * 1024 * 1024,
+    })) as mapvthree.Default3DTiles
+    buildingTileset.releaseCameraViewport()
+    engine.requestRender()
+  }, 650)
 }
 
 async function addStaticRoadTileset(): Promise<void> {
@@ -248,6 +299,8 @@ async function addStaticRoadTileset(): Promise<void> {
     forceUnlit: true,
     dynamicScreenSpaceError: false,
     foveatedScreenSpaceError: false,
+    cullRequestsWhileMoving: true,
+    cullRequestsWhileMovingMultiplier: 120,
     cacheBytes: 32 * 1024 * 1024,
   })) as mapvthree.Default3DTiles
   roadTileset.releaseCameraViewport()
@@ -286,7 +339,8 @@ async function initMap(): Promise<void> {
     },
     rendering: {
       sky: null,
-      enableAnimationLoop: true,
+      enableAnimationLoop: false,
+      animationLoopFrameTime: ACTIVE_FRAME_TIME_MS,
     },
   })
   engine.map.setMinRange(BAIDU_3D_MIN_RANGE)
@@ -299,15 +353,6 @@ async function initMap(): Promise<void> {
   bindContainerInteraction(container)
 
   if (enableLocalTileset) {
-    buildingTileset = engine.add(new mapvthree.Default3DTiles({
-      url: tilesetUrl,
-      errorTarget: 24,
-      forceUnlit: false,
-      dynamicScreenSpaceError: true,
-      foveatedScreenSpaceError: true,
-      cacheBytes: 384 * 1024 * 1024,
-    })) as mapvthree.Default3DTiles
-    buildingTileset.releaseCameraViewport()
     tilesMessage.value = '3D Tiles 已加入场景，正在加载可见建筑…'
   } else {
     tilesStatus.value = 'ready'
@@ -321,7 +366,7 @@ async function initMap(): Promise<void> {
     roadTileset = null
     console.warn(cause instanceof Error ? cause.message : cause)
   })
-  if (buildingTileset || roadTileset) {
+  if (enableLocalTileset || roadTileset) {
     tilesStatusTimer = setInterval(updateTilesStatus, 500)
   }
 
@@ -346,6 +391,7 @@ async function initMap(): Promise<void> {
       console.warn('[roadside-facilities] layer disabled', cause)
     })
   }
+  scheduleBuildingTilesetLoad()
   scheduleVegetationLoad()
   watch(
     trafficView,
@@ -355,6 +401,7 @@ async function initMap(): Promise<void> {
     },
     { immediate: true },
   )
+  watch(snapshot, syncAnimationLoop, { immediate: true })
   watch(
     geojson,
     syncMapRendering,
@@ -394,9 +441,11 @@ onUnmounted(() => {
   if (tilesStatusTimer) clearInterval(tilesStatusTimer)
   if (interactionEndTimer) clearTimeout(interactionEndTimer)
   if (vegetationLoadTimer) clearTimeout(vegetationLoadTimer)
+  if (buildingLoadTimer) clearTimeout(buildingLoadTimer)
   tilesStatusTimer = null
   interactionEndTimer = null
   vegetationLoadTimer = null
+  buildingLoadTimer = null
   roadRenderer?.destroy()
   roadRenderer = null
   vehicleRenderer?.destroy()

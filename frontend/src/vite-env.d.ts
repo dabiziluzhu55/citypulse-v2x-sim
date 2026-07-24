@@ -16,6 +16,7 @@ interface ImportMetaEnv {
   readonly VITE_XIONGAN_3DTILES_URL?: string
   readonly VITE_ENABLE_XIONGAN_3DTILES?: string
   readonly VITE_ENABLE_SHOWCASE_LAYERS?: string
+  readonly VITE_ENABLE_JUNCTION_MARKERS?: string
   readonly VITE_SHOWCASE_WATER_GEOJSON_URL?: string
   readonly VITE_SHOWCASE_GREEN_GEOJSON_URL?: string
   readonly VITE_SHOWCASE_URBAN_GEOJSON_URL?: string

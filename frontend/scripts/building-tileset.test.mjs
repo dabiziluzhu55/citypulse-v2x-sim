@@ -7,6 +7,7 @@ import {
   parseGlb,
   reprojectGlb,
 } from './reproject-building-tileset.mjs'
+import { sliceGlbToBounds } from './focus-building-tileset.mjs'
 
 const tileset = JSON.parse(readFileSync(
   new URL('../public/3dtiles/xiongan/tileset.json', import.meta.url),
@@ -50,4 +51,24 @@ test('GLB reprojection updates positions and bounds without changing mesh contra
   ])
   assert.deepEqual(result.bounds.min, afterPosition.min)
   assert.deepEqual(result.bounds.max, afterPosition.max)
+})
+
+test('focused GLB slicing keeps materials while reducing cross-city geometry', () => {
+  const source = parseGlb(sampleGlb)
+  const position = source.json.accessors[1]
+  const middleX = (position.min[0] + position.max[0]) / 2
+  const result = sliceGlbToBounds(sampleGlb, {
+    west: position.min[0] - 1,
+    east: middleX,
+    south: position.min[1] - 1,
+    north: position.max[1] + 1,
+  })
+
+  assert.ok(result)
+  const focused = parseGlb(result.glb)
+  assert.ok(focused.json.accessors[0].count > 0)
+  assert.ok(focused.json.accessors[0].count < source.json.accessors[0].count)
+  assert.equal(focused.json.materials.length, source.json.materials.length)
+  assert.equal(focused.json.images[0].mimeType, source.json.images[0].mimeType)
+  assert.ok(result.bounds.max[0] >= position.min[0])
 })

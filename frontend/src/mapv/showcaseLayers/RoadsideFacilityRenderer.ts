@@ -8,6 +8,7 @@ import {
   InstancedMesh,
   Material,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
   Shape,
@@ -267,11 +268,19 @@ export class RoadsideFacilityRenderer {
     geometry.userData.contourCount = 1
     const mesh = new InstancedMesh(
       geometry,
-      new MeshStandardMaterial({ color: '#f2f7fb', emissive: '#50606b', emissiveIntensity: 0.28, side: 2 }),
+      new MeshBasicMaterial({
+        color: '#f2f7fb',
+        side: 2,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      }),
       arrows.length,
     )
     mesh.name = `road-arrow-${key}`
-    arrows.forEach((arrow, index) => mesh.setMatrixAt(index, this.matrix(arrow, 0.27)))
+    mesh.renderOrder = 24
+    arrows.forEach((arrow, index) => mesh.setMatrixAt(index, this.matrix(arrow, 0.34)))
     return mesh
   }
 

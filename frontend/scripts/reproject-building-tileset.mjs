@@ -93,7 +93,7 @@ export function parseGlb(input) {
   }
 }
 
-function encodeGlb(json, binary) {
+export function encodeGlb(json, binary) {
   const jsonData = Buffer.from(JSON.stringify(json))
   const jsonPadding = (4 - jsonData.length % 4) % 4
   const paddedJson = Buffer.concat([jsonData, Buffer.alloc(jsonPadding, 0x20)])

@@ -30,7 +30,7 @@ export class ShowcaseModelLayers {
       animationRotate: false,
       height: 0.8,
       keepSize: false,
-      size: 8,
+      size: 2.5,
     }))
   }
 

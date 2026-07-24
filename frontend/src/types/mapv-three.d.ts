@@ -20,6 +20,10 @@ declare module '@baidumap/mapv-three' {
       enablePan: boolean
       enableTilt: boolean
     }
+    rendering: {
+      enableAnimationLoop: boolean
+      animationLoopFrameTime: number
+    }
     add<T>(object: T): T
     remove(object: unknown): void
     addBeforeRenderObject(object: unknown): void
@@ -106,6 +110,8 @@ declare module '@baidumap/mapv-three' {
       set: (x: number, y: number, z: number) => void
     }
     releaseCameraViewport: () => void
+    errorTarget: number
+    cullRequestsWhileMoving: boolean
     transformFromEcefToPlane: (longitude: number, latitude: number, height?: number) => void
     getBounds: () => {
       min: { x: number; y: number; z: number }

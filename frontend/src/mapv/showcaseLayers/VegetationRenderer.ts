@@ -52,6 +52,7 @@ export class VegetationRenderer {
   private sourceScene: Object3D | null = null
   private cells: VegetationCell[] = []
   private destroyed = false
+  private interactionActive = false
   private visibilityTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(engine: Engine, projector: RoadCoordinateProjector) {
@@ -80,6 +81,12 @@ export class VegetationRenderer {
   destroy(): void {
     this.destroyed = true
     this.clear()
+  }
+
+  setInteractionActive(active: boolean): void {
+    if (this.interactionActive === active) return
+    this.interactionActive = active
+    this.syncVisibility()
   }
 
   private build(manifest: SceneVegetationManifest, source: Object3D): void {
@@ -200,7 +207,8 @@ export class VegetationRenderer {
     const visibleRadius = Math.max(420, cameraRange * 1.35)
     let changed = false
     for (const cell of this.cells) {
-      const nextCellVisible = distanceMeters(center, cell.center) <= visibleRadius
+      const nextCellVisible = !this.interactionActive
+        && distanceMeters(center, cell.center) <= visibleRadius
       if (cell.group.visible !== nextCellVisible) {
         cell.group.visible = nextCellVisible
         changed = true
