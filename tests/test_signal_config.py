@@ -744,6 +744,64 @@ class SignalConfigurationTests(unittest.TestCase):
                 self.assertTrue(all(state[index] == "g" for index in right_turns))
                 self.assertTrue(all(state[index] == "r" for index in blocked))
 
+    def test_demo_9_same_edge_mutual_right_turn_uses_stop_permissive_state(self):
+        config = self.load().intersections["demo_9"]
+
+        def connection(request_index, from_edge, to_edge, direction):
+            return ControlledConnection(
+                intersection_id="demo_9",
+                junction_id="3864",
+                tls_id="3864",
+                link_index=request_index,
+                approach=config.topology.approach_for_edge(from_edge),
+                movement=config.topology.movement_for_direction(
+                    from_edge, direction
+                ),
+                from_edge=from_edge,
+                from_lane=0,
+                to_edge=to_edge,
+                to_lane=0,
+                direction=direction,
+                via=f":3864_{request_index}_0",
+                request_index=request_index,
+            )
+
+        connections = (
+            connection(12, "-50339", "-50338", "s"),
+            connection(13, "-50339", "-56370", "l"),
+            connection(43, "-56619", "-56620", "s"),
+            connection(44, "-56619", "-56715", "l"),
+            connection(45, "-56619", "-56496", "r"),
+            connection(46, "-56619", "-56370", "R"),
+        )
+
+        def foes_with(other_index):
+            bits = ["0"] * 47
+            bits[46 - other_index] = "1"
+            return "".join(bits)
+
+        templates = _build_templates(
+            config,
+            connections,
+            {"3864": 47},
+            {"3864": {44: foes_with(46), 46: foes_with(44)}},
+            (config.topology.phases[1],),
+        )
+        phase = templates[2]["3864"]
+        self.assertEqual(phase["green"][44], "g")
+        self.assertTrue(
+            all(
+                phase[stage][45] == "g"
+                for stage in ("green", "yellow", "clearance")
+            )
+        )
+        self.assertTrue(
+            all(
+                phase[stage][46] == "s"
+                for stage in ("green", "yellow", "clearance")
+            )
+        )
+
     def test_demo_8_and_11_templates_follow_real_foe_matrices(self):
         def make_connections(config, intersection_id, junction_id, tls_id, definitions):
             return [

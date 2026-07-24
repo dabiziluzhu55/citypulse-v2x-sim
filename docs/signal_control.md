@@ -34,9 +34,11 @@
 SUMO `dir` 解释；例如 `demo_9` 只把东进口的 `R` 作为第二条右转路线，其他没有官方分流依据的
 大角度 `L/R` 连接保持阻断。
 
-`right_turn_policy: permissive_always` 表示右转在所有相位使用让行绿；
+`right_turn_policy: permissive_always` 表示右转通常在所有相位使用让行绿；
 `right_turn_policy: phase_controlled` 表示右转必须显式写入对应相位的 `protected` 或
 `permissive` 组，其他相位保持红灯。后者用于官方配时明确把右转划入特定相位的路口。
+若同一进口上的右转与另一个让行 movement 被 SUMO foe 矩阵判定为 mutual `g/g`，该右转
+会使用状态 `s`（停车后让行）代替 `g`，避免两条内部连接互相等待；其他右转仍使用 `g`。
 
 `demo_4` 的官方需求不包含掉头。其 `u_turn_policy` 设置为 `blocked`，SUMO `t` 方向不继承
 左转灯色，并在派生路网构建时删除；左转流量只使用普通 `l/left` 连接。
@@ -87,7 +89,9 @@ junction `4393`，在所有相位使用让行绿。
 mutual conflict。官方程序是在路网生成后通过 additional file 加载的，因此 `netconvert`
 默认无法提前看到这些相位组合。构建公共派生路网时统一启用
 `--tls.ignore-internal-junction-jam true`，允许加载这类后置程序；实际通行优先级仍由
-大写 `G`、让行绿 `g` 和 junction foe 矩阵决定，不修改任何官方相位或配时。
+大写 `G`、让行绿 `g`、停车后让行 `s` 和 junction foe 矩阵决定，不修改任何官方相位或
+配时。`demo_9` 东进口 `-56619` 的左转 link `44` 与第二条右转 link `46` 属于同进口的
+mutual `g/g`，因此 link `46` 使用 `s`；普通右转 link `45` 仍使用 `g`。
 
 `demo_16` 三个时段均使用 `77s` 周期：东西直行受保护放行、东西左转让行放行后，切换为
 南北直行受保护放行、南北左转让行放行；四个右转始终使用让行绿。`demo_17` 三个时段均使用
