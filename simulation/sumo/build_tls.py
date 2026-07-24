@@ -574,13 +574,13 @@ def _connections_conflict(
     )
 
 
-def _same_edge_stop_permissive_right_turns(
+def _same_edge_conflicting_right_turns(
     connections: Sequence[ControlledConnection],
     green: Mapping[str, Sequence[str]],
     request_foes: Mapping[str, Mapping[int, str]],
     intersection_id: str,
 ) -> set[Tuple[str, int]]:
-    """Use SUMO's stop-permissive state for otherwise mutual g/g right turns."""
+    """Find right turns that form an unsupported mutual g/g on one incoming edge."""
     result: set[Tuple[str, int]] = set()
     for position, first in enumerate(connections):
         for second in connections[position + 1 :]:
@@ -605,7 +605,7 @@ def _same_edge_stop_permissive_right_turns(
         if shared_movements != {"right"}:
             raise SignalConfigurationError(
                 f"{intersection_id}: TLS {tls_id} linkIndex {link_index} needs "
-                "stop-permissive right-turn control but is shared by movements "
+                "phase-specific right-turn blocking but is shared by movements "
                 f"{sorted(shared_movements)}."
             )
     return result
@@ -696,9 +696,10 @@ def _build_templates(
     tls_ids = sorted({item.tls_id for item in own_connections})
     templates = {}
     served_connections = set()
-    stop_permissive_right_turns: set[Tuple[str, int]] = set()
     if phase_mappings is None:
         phase_mappings = config.topology.phases
+    phase_mappings = tuple(phase_mappings)
+    blocked_right_turns_by_phase: Dict[int, set[Tuple[str, int]]] = {}
     for phase_mapping in phase_mappings:
         primary = [
             item
@@ -778,8 +779,8 @@ def _build_templates(
             _set_state_char(green, connection, "G")
             _set_state_char(yellow, connection, "y")
             served_connections.add(connection)
-        stop_permissive_right_turns.update(
-            _same_edge_stop_permissive_right_turns(
+        blocked_right_turns_by_phase[phase_mapping.phase_number] = (
+            _same_edge_conflicting_right_turns(
                 own_connections,
                 green,
                 request_foes,
@@ -794,13 +795,22 @@ def _build_templates(
             }
             for tls_id in tls_ids
         }
-    for tls_id, link_index in stop_permissive_right_turns:
-        for phase in templates.values():
-            for stage in ("green", "yellow", "clearance"):
-                state = list(phase[tls_id][stage])
-                if state[link_index] == "g":
-                    state[link_index] = "s"
-                    phase[tls_id][stage] = "".join(state)
+    all_blocked_right_turns = set().union(*blocked_right_turns_by_phase.values())
+    phase_order = [item.phase_number for item in phase_mappings]
+    for position, phase_number in enumerate(phase_order):
+        next_phase_number = phase_order[(position + 1) % len(phase_order)]
+        current_blocked = blocked_right_turns_by_phase[phase_number]
+        next_blocked = blocked_right_turns_by_phase[next_phase_number]
+        for tls_id, link_index in all_blocked_right_turns:
+            replacements = {}
+            if (tls_id, link_index) in current_blocked:
+                replacements = {"green": "r", "yellow": "r", "clearance": "r"}
+            elif (tls_id, link_index) in next_blocked:
+                replacements = {"yellow": "y", "clearance": "r"}
+            for stage, value in replacements.items():
+                state = list(templates[phase_number][tls_id][stage])
+                state[link_index] = value
+                templates[phase_number][tls_id][stage] = "".join(state)
     unserved = [
         connection
         for connection in own_connections

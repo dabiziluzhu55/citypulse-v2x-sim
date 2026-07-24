@@ -744,7 +744,7 @@ class SignalConfigurationTests(unittest.TestCase):
                 self.assertTrue(all(state[index] == "g" for index in right_turns))
                 self.assertTrue(all(state[index] == "r" for index in blocked))
 
-    def test_demo_9_same_edge_mutual_right_turn_uses_stop_permissive_state(self):
+    def test_demo_9_same_edge_mutual_right_turn_is_blocked_only_in_conflict_phase(self):
         config = self.load().intersections["demo_9"]
 
         def connection(request_index, from_edge, to_edge, direction):
@@ -767,8 +767,13 @@ class SignalConfigurationTests(unittest.TestCase):
             )
 
         connections = (
+            connection(2, "-56369", "-56370", "s"),
+            connection(4, "-56369", "-56620", "l"),
             connection(12, "-50339", "-50338", "s"),
             connection(13, "-50339", "-56370", "l"),
+            connection(22, "-57214", "-56715", "s"),
+            connection(23, "-57214", "-50338", "l"),
+            connection(40, "-50241", "-50338", "l"),
             connection(43, "-56619", "-56620", "s"),
             connection(44, "-56619", "-56715", "l"),
             connection(45, "-56619", "-56496", "r"),
@@ -785,19 +790,29 @@ class SignalConfigurationTests(unittest.TestCase):
             connections,
             {"3864": 47},
             {"3864": {44: foes_with(46), 46: foes_with(44)}},
-            (config.topology.phases[1],),
         )
-        phase = templates[2]["3864"]
-        self.assertEqual(phase["green"][44], "g")
+        phase_one = templates[1]["3864"]
+        phase_two = templates[2]["3864"]
+        phase_three = templates[3]["3864"]
+        self.assertEqual(phase_two["green"][44], "g")
         self.assertTrue(
             all(
-                phase[stage][45] == "g"
+                phase_two[stage][45] == "g"
                 for stage in ("green", "yellow", "clearance")
             )
         )
         self.assertTrue(
             all(
-                phase[stage][46] == "s"
+                phase_two[stage][46] == "r"
+                for stage in ("green", "yellow", "clearance")
+            )
+        )
+        self.assertEqual(phase_one["green"][46], "g")
+        self.assertEqual(phase_one["yellow"][46], "y")
+        self.assertEqual(phase_one["clearance"][46], "r")
+        self.assertTrue(
+            all(
+                phase_three[stage][46] == "g"
                 for stage in ("green", "yellow", "clearance")
             )
         )
