@@ -42,11 +42,11 @@ DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
 DEFAULT_MANIFEST = GeneratedArtifactLayout(DEFAULT_OUTPUT_DIR).tls_manifest
 ROUTE_SAMPLER_SEEDS = (42, 43, 44, 45, 46)
 MINIMIZE_VEHICLES = 0.1
+ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY = "routeSamplerSupportsNoSampling"
 ROUTE_SAMPLER_REQUIRED_OPTIONS = (
     "--interval",
     "--write-flows",
     "--optimize",
-    "--no-sampling",
     "--minimize-vehicles",
     "--mismatch-output",
     "--seed",
@@ -146,7 +146,7 @@ def _sumo_tool(name: str) -> str:
     )
 
 
-def _validate_route_sampler(path: str) -> None:
+def _validate_route_sampler(path: str) -> bool:
     try:
         source = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
@@ -161,6 +161,7 @@ def _validate_route_sampler(path: str) -> None:
             f"SUMO routeSampler at {path} does not support required options: {missing}. "
             "Install a current SUMO release and point SUMO_HOME to it."
         )
+    return "--no-sampling" in source
 
 
 def _toolchain(overrides: Mapping[str, str] | None) -> Mapping[str, str]:
@@ -168,7 +169,9 @@ def _toolchain(overrides: Mapping[str, str] | None) -> Mapping[str, str]:
         missing = {"duarouter", "sumo", "routeSampler"} - set(overrides)
         if missing:
             raise TrafficDemandError(f"Tool overrides are missing: {sorted(missing)}")
-        return dict(overrides)
+        result = dict(overrides)
+        result.setdefault(ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY, "true")
+        return result
     try:
         import numpy  # noqa: F401
         import scipy.optimize  # noqa: F401
@@ -181,7 +184,16 @@ def _toolchain(overrides: Mapping[str, str] | None) -> Mapping[str, str]:
         "sumo": _binary("sumo"),
         "routeSampler": _sumo_tool("routeSampler.py"),
     }
-    _validate_route_sampler(tools["routeSampler"])
+    supports_no_sampling = _validate_route_sampler(tools["routeSampler"])
+    tools[ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY] = str(
+        supports_no_sampling
+    ).lower()
+    if not supports_no_sampling:
+        print(
+            "SUMO routeSampler does not support --no-sampling; continuing with "
+            "--optimize full. The installed legacy version may perform a seeded "
+            "pre-sampling pass before full optimization."
+        )
     return tools
 
 
@@ -758,6 +770,9 @@ def _run_route_sampler(
     seed: int,
 ) -> Tuple[SampledFlow, ...]:
     type_id = f"official_{_safe_id(profile_id)}"
+    optimization_options = ["--optimize", "full"]
+    if tools.get(ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY, "true") == "true":
+        optimization_options.append("--no-sampling")
     _run_command(
         [
             sys.executable,
@@ -778,9 +793,7 @@ def _run_route_sampler(
             str(interval_seconds),
             "--write-flows",
             "number",
-            "--optimize",
-            "full",
-            "--no-sampling",
+            *optimization_options,
             "--minimize-vehicles",
             str(MINIMIZE_VEHICLES),
             "--seed",

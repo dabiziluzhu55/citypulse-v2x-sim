@@ -9,6 +9,7 @@ from pathlib import Path
 from simulation.sumo.artifacts import GeneratedArtifactLayout
 from simulation.sumo.build_traffic import (
     _allocate_vehicle_mix,
+    _validate_route_sampler,
     build_traffic_scenarios,
 )
 from simulation.sumo.traffic import load_traffic_demands
@@ -286,6 +287,64 @@ def _write_tls_fixture(root: Path, intersection_ids, *, include_zero_movement=Fa
 
 
 class GlobalTrafficTests(unittest.TestCase):
+    def test_legacy_route_sampler_without_no_sampling_is_supported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "routeSampler.py"
+            script.write_text(
+                "\n".join(
+                    (
+                        "--interval",
+                        "--write-flows",
+                        "--optimize",
+                        "--minimize-vehicles",
+                        "--mismatch-output",
+                        "--seed",
+                        "--attributes",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            self.assertFalse(_validate_route_sampler(str(script)))
+
+    def test_legacy_route_sampler_command_omits_no_sampling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            generated, manifest_intersections = _write_tls_fixture(
+                root, ("demo_a", "demo_b")
+            )
+            demand_path = root / "demands.json"
+            _write_demand(demand_path)
+            fake = FakeSumoToolchain()
+            build_traffic_scenarios(
+                {"intersections": manifest_intersections},
+                demand_path=demand_path,
+                vehicle_profile_path=PROFILES,
+                output_dir=generated,
+                command_runner=fake,
+                tool_paths={
+                    "duarouter": "fake-duarouter",
+                    "sumo": "fake-sumo",
+                    "routeSampler": "fake-routeSampler.py",
+                    "routeSamplerSupportsNoSampling": "false",
+                },
+            )
+
+            sampler_commands = [
+                command
+                for command in fake.commands
+                if len(command) > 1 and command[1] == "fake-routeSampler.py"
+            ]
+            self.assertTrue(sampler_commands)
+            self.assertTrue(
+                all("--no-sampling" not in command for command in sampler_commands)
+            )
+            self.assertTrue(
+                all(
+                    command[command.index("--optimize") + 1] == "full"
+                    for command in sampler_commands
+                )
+            )
+
     def test_vehicle_mix_must_sum_to_one(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "demands.json"
