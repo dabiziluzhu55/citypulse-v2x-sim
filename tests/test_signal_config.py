@@ -10,11 +10,13 @@ from simulation.sumo.build_tls import (
     ControlledConnection,
     _blocked_turnaround_deletions,
     _build_templates,
+    _inspect_generated_network,
     _junctions_requiring_tls_refresh,
     _read_junction_types,
     _remove_empty_params,
     _repair_uncontrolled_tls_connections,
     _run_netconvert,
+    _same_edge_conflicting_right_turns,
 )
 from simulation.sumo.config import (
     PhaseMovement,
@@ -26,6 +28,7 @@ from simulation.sumo.config import (
 ROOT = Path(__file__).resolve().parents[1]
 PLANS = ROOT / "data" / "maps" / "sumo" / "official_tls_plans.json"
 TOPOLOGY = ROOT / "data" / "maps" / "sumo" / "official_tls_topology.json"
+NETWORK = ROOT / "data" / "maps" / "sumo" / "TotalMap_20.net.xml"
 
 
 class SignalConfigurationTests(unittest.TestCase):
@@ -251,6 +254,86 @@ class SignalConfigurationTests(unittest.TestCase):
                                         for stage in ("green", "yellow", "clearance")
                                     )
                                 )
+
+    def test_same_edge_conflict_only_blocks_auxiliary_uppercase_right_turns(self):
+        def connection(index, movement, direction):
+            return ControlledConnection(
+                intersection_id="fixture",
+                junction_id="junction",
+                tls_id="tls",
+                link_index=index,
+                approach="east",
+                movement=movement,
+                from_edge="incoming",
+                from_lane=index,
+                to_edge=f"out_{index}",
+                to_lane=0,
+                direction=direction,
+                via=f":junction_{index}_0",
+                request_index=index,
+            )
+
+        def foes_with(*request_indices):
+            bits = ["0"] * 3
+            for request_index in request_indices:
+                bits[2 - request_index] = "1"
+            return "".join(bits)
+
+        connections = (
+            connection(0, "right", "r"),
+            connection(1, "right", "R"),
+            connection(2, "left", "l"),
+        )
+        self.assertEqual(
+            _same_edge_conflicting_right_turns(
+                connections,
+                {"tls": "ggg"},
+                {
+                    "junction": {
+                        0: foes_with(1, 2),
+                        1: foes_with(0, 2),
+                        2: foes_with(0, 1),
+                    }
+                },
+                "fixture",
+            ),
+            {("tls", 1)},
+        )
+
+    def test_demo_4_real_multi_lane_right_turns_remain_always_permissive(self):
+        config = self.load().intersections["demo_4"]
+        connections, state_lengths, request_foes = _inspect_generated_network(
+            NETWORK,
+            [config],
+        )
+        right_turns = [item for item in connections if item.movement == "right"]
+        self.assertTrue(right_turns)
+
+        for program in config.programs.values():
+            templates = _build_templates(
+                config,
+                connections,
+                state_lengths,
+                request_foes,
+                config.topology.phases_for(program.program_id),
+            )
+            for phase_number, phase in templates.items():
+                for right_turn in right_turns:
+                    with self.subTest(
+                        program=program.program_id,
+                        phase=phase_number,
+                        approach=right_turn.approach,
+                        link_index=right_turn.link_index,
+                    ):
+                        self.assertTrue(
+                            all(
+                                phase[right_turn.tls_id][stage][
+                                    right_turn.link_index
+                                ]
+                                == "g"
+                                for stage in ("green", "yellow", "clearance")
+                            )
+                        )
 
     def test_official_cycles_and_mapping(self):
         config = self.load().intersections["demo_1"]

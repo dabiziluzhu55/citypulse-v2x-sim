@@ -580,7 +580,7 @@ def _same_edge_conflicting_right_turns(
     request_foes: Mapping[str, Mapping[int, str]],
     intersection_id: str,
 ) -> set[Tuple[str, int]]:
-    """Find right turns that form an unsupported mutual g/g on one incoming edge."""
+    """Find auxiliary right turns that form an unsupported same-edge mutual g/g."""
     result: set[Tuple[str, int]] = set()
     for position, first in enumerate(connections):
         for second in connections[position + 1 :]:
@@ -592,8 +592,10 @@ def _same_edge_conflicting_right_turns(
                 or not _connections_conflict(first, second, request_foes)
             ):
                 continue
+            if first.movement == "right" and second.movement == "right":
+                continue
             for connection in (first, second):
-                if connection.movement == "right":
+                if connection.movement == "right" and connection.direction == "R":
                     result.add((connection.tls_id, connection.link_index))
 
     for tls_id, link_index in result:
