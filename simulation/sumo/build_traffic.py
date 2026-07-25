@@ -651,6 +651,37 @@ def _u_turn_edge_pairs(network_path: Path) -> set[Tuple[str, str]]:
     }
 
 
+def _network_edge_lengths(network_path: Path) -> Mapping[str, float]:
+    try:
+        root = ET.parse(network_path).getroot()
+    except (FileNotFoundError, ET.ParseError) as exc:
+        raise TrafficDemandError(
+            f"Cannot inspect generated SUMO network: {network_path}"
+        ) from exc
+
+    lengths = {}
+    for edge in root.findall("edge"):
+        edge_id = edge.get("id")
+        if (
+            not edge_id
+            or edge_id.startswith(":")
+            or edge.get("function") == "internal"
+        ):
+            continue
+        lane_lengths = []
+        for lane in edge.findall("lane"):
+            try:
+                length = float(str(lane.get("length", "")))
+            except ValueError:
+                continue
+            if math.isfinite(length) and length > 0:
+                lane_lengths.append(length)
+        if lane_lengths:
+            # Keep the midpoint valid even when parallel lanes have unequal lengths.
+            lengths[str(edge_id)] = min(lane_lengths)
+    return lengths
+
+
 def _read_candidate_routes(
     path: Path,
     u_turn_pairs: set[Tuple[str, str]] | None = None,
@@ -1129,12 +1160,25 @@ def _write_routes(
     path: Path,
     profiles: Mapping[str, VehicleProfile],
     flows: Sequence[SampledFlow],
+    edge_lengths: Mapping[str, float],
 ) -> None:
     root = ET.Element("routes")
     for profile_id in sorted(profiles):
         type_id = f"official_{_safe_id(profile_id)}"
         ET.SubElement(root, "vType", profiles[profile_id].sumo_attributes(type_id))
     for flow in sorted(flows, key=lambda item: (item.begin, item.flow_id)):
+        if not flow.edges:
+            raise TrafficDemandError(
+                f"Sampled flow {flow.flow_id!r} has no route edges."
+            )
+        final_edge = flow.edges[-1]
+        final_edge_length = edge_lengths.get(final_edge)
+        if final_edge_length is None:
+            raise TrafficDemandError(
+                f"Cannot place sampled flow {flow.flow_id!r} at the midpoint of "
+                f"final edge {final_edge!r}: the generated SUMO network has no "
+                "positive lane length for that edge."
+            )
         node = ET.SubElement(
             root,
             "flow",
@@ -1146,6 +1190,7 @@ def _write_routes(
                 "number": str(flow.number),
                 "departLane": "best",
                 "departSpeed": "max",
+                "arrivalPos": _format_number(final_edge_length * 0.5),
             },
         )
         ET.SubElement(node, "route", {"edges": " ".join(flow.edges)})
@@ -1273,6 +1318,7 @@ def build_traffic_scenarios(
             "Generated TLS artifacts are missing: "
             f"{[str(path) for path in missing_artifacts]}. Run build_tls first."
         )
+    edge_lengths = _network_edge_lengths(layout.network_file)
     tools = _toolchain(tool_paths)
     compiled = _compile_global_demand(
         requested, manifest_intersections, configuration
@@ -1434,7 +1480,7 @@ def build_traffic_scenarios(
         route_path = scenario_dir / "routes.rou.xml"
         additional_path = scenario_dir / "signals.add.xml"
         sumocfg_path = scenario_dir / "simulation.sumocfg"
-        _write_routes(route_path, profiles, selected["flows"])
+        _write_routes(route_path, profiles, selected["flows"], edge_lengths)
         _write_program_additional(
             layout.signal_programs_file,
             additional_path,
@@ -1478,6 +1524,10 @@ def build_traffic_scenarios(
             "demand_duration": period.duration,
             "simulation_end": simulation_end,
             "selected_seed": selected["seed"],
+            "arrival_position": {
+                "strategy": "final_edge_midpoint",
+                "fraction": 0.5,
+            },
             "target_observation_pcu": selected["report"]["target_observation_pcu"],
             "sampled_vehicle_count": selected["report"]["sampled_vehicle_count"],
             "multi_intersection_vehicle_count": selected["report"][

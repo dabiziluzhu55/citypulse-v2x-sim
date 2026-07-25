@@ -20,10 +20,10 @@ def write_fixture(root: Path):
     route_file.write_text(
         """<routes>
   <vType id="demo_car" vClass="passenger"/>
-  <flow id="flow_west_0" type="demo_car" begin="0" end="900" number="10"><route edges="in out"/></flow>
-  <flow id="flow_north_0" type="demo_car" begin="0" end="900" number="20"><route edges="in2 out2"/></flow>
-  <flow id="flow_west_1" type="demo_car" begin="900" end="1800" number="10"><route edges="in out"/></flow>
-  <flow id="flow_north_1" type="demo_car" begin="900" end="1800" number="20"><route edges="in2 out2"/></flow>
+  <flow id="flow_west_0" type="demo_car" begin="0" end="900" number="10" arrivalPos="50"><route edges="in out"/></flow>
+  <flow id="flow_north_0" type="demo_car" begin="0" end="900" number="20" arrivalPos="50"><route edges="in2 out2"/></flow>
+  <flow id="flow_west_1" type="demo_car" begin="900" end="1800" number="10" arrivalPos="50"><route edges="in out"/></flow>
+  <flow id="flow_north_1" type="demo_car" begin="900" end="1800" number="20" arrivalPos="50"><route edges="in2 out2"/></flow>
 </routes>""",
         encoding="utf-8",
     )
@@ -148,6 +148,7 @@ class SessionScenarioTests(unittest.TestCase):
                 [(flow.get("begin"), flow.get("end")) for flow in flows],
                 [("0", "450"), ("0", "450"), ("450", "900"), ("450", "900")],
             )
+            self.assertTrue(all(flow.get("arrivalPos") == "50" for flow in flows))
             self.assertEqual(compiled.planned_vehicle_count, 45)
             self.assertEqual(compiled.official_start_seconds, 7 * 3600)
             self.assertEqual(compiled.vehicle_type_profiles, {"demo_car": "passenger"})

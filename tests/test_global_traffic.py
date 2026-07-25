@@ -250,7 +250,26 @@ def _write_tls_fixture(root: Path, intersection_ids, *, include_zero_movement=Fa
     generated = root / "generated"
     layout = GeneratedArtifactLayout(generated)
     layout.create_base_directories()
-    layout.network_file.write_text("<net/>", encoding="utf-8")
+    network = ET.Element("net")
+    for index, _intersection_id in enumerate(intersection_ids):
+        edge_ids = (f"in_{index}", f"via_{index}", f"out_{index}")
+        if include_zero_movement:
+            edge_ids += (
+                f"zero_in_{index}",
+                f"zero_out_{index}",
+                f"zero_in_alt_{index}",
+                f"zero_out_alt_{index}",
+            )
+        for edge_id in edge_ids:
+            edge = ET.SubElement(network, "edge", {"id": edge_id})
+            ET.SubElement(
+                edge,
+                "lane",
+                {"id": f"{edge_id}_0", "index": "0", "length": "100"},
+            )
+    ET.ElementTree(network).write(
+        layout.network_file, encoding="utf-8", xml_declaration=True
+    )
     programs = ET.Element("additional")
     manifest_intersections = {}
     for index, intersection_id in enumerate(intersection_ids):
@@ -445,8 +464,19 @@ class GlobalTrafficTests(unittest.TestCase):
             self.assertEqual(scenario["target_observation_pcu"], 20)
             self.assertGreater(scenario["multi_intersection_vehicle_count"], 0)
             self.assertEqual(scenario["selected_seed"], 42)
+            self.assertEqual(
+                scenario["arrival_position"],
+                {"strategy": "final_edge_midpoint", "fraction": 0.5},
+            )
             route_root = ET.parse(generated / scenario["route_file"]).getroot()
             self.assertEqual(len(route_root.findall("vType")), 3)
+            self.assertTrue(route_root.findall("flow"))
+            self.assertTrue(
+                all(
+                    flow.get("arrivalPos") == "50"
+                    for flow in route_root.findall("flow")
+                )
+            )
             self.assertTrue(
                 any(
                     flow.find("route").get("edges") == "in_0 out_0 in_1 out_1"
