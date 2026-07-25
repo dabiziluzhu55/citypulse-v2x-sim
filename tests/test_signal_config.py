@@ -66,6 +66,192 @@ class SignalConfigurationTests(unittest.TestCase):
     def load(self):
         return load_signal_configuration(self.mapping, PLANS, TOPOLOGY)
 
+    def write_topology(self, topology):
+        path = Path(self.temp_directory.name) / "topology.json"
+        path.write_text(json.dumps(topology), encoding="utf-8")
+        return path
+
+    def test_right_turn_policy_is_resolved_per_approach(self):
+        configuration = self.load()
+        expected = {
+            "demo_5": ("south",),
+            "demo_7": ("east", "south"),
+            "demo_9": ("northeast",),
+            "demo_14": ("east", "south"),
+            "demo_17": ("east",),
+        }
+        for intersection_id, config in configuration.intersections.items():
+            controlled = expected.get(intersection_id, ())
+            with self.subTest(intersection_id=intersection_id):
+                self.assertEqual(
+                    config.topology.phase_controlled_right_turn_approaches,
+                    controlled,
+                )
+                for approach in config.topology.approaches:
+                    self.assertEqual(
+                        config.topology.right_turn_is_always_permissive(approach),
+                        approach not in controlled,
+                    )
+
+        topology = json.loads(TOPOLOGY.read_text(encoding="utf-8"))
+        legacy = topology["intersections"]["demo_5"]
+        legacy["right_turn_policy"] = "phase_controlled"
+        legacy.pop("phase_controlled_right_turn_approaches")
+        legacy_config = load_signal_configuration(
+            self.mapping,
+            PLANS,
+            self.write_topology(topology),
+        ).intersections["demo_5"]
+        self.assertTrue(
+            all(
+                not legacy_config.topology.right_turn_is_always_permissive(approach)
+                for approach in legacy_config.topology.approaches
+            )
+        )
+
+    def test_phase_controlled_right_turn_approaches_are_validated(self):
+        cases = (
+            (["missing"], "unknown approaches"),
+            (["south", "south"], "are duplicated"),
+            ([""], "cannot be empty"),
+            ("south", "must be a list"),
+        )
+        for value, message in cases:
+            topology = json.loads(TOPOLOGY.read_text(encoding="utf-8"))
+            topology["intersections"]["demo_5"][
+                "phase_controlled_right_turn_approaches"
+            ] = value
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(SignalConfigurationError, message):
+                    load_signal_configuration(
+                        self.mapping,
+                        PLANS,
+                        self.write_topology(topology),
+                    )
+
+        topology = json.loads(TOPOLOGY.read_text(encoding="utf-8"))
+        topology["intersections"]["demo_5"][
+            "right_turn_policy"
+        ] = "phase_controlled"
+        with self.assertRaisesRegex(SignalConfigurationError, "cannot be combined"):
+            load_signal_configuration(
+                self.mapping,
+                PLANS,
+                self.write_topology(topology),
+            )
+
+    def test_all_right_turn_templates_follow_the_configured_approach_policy(self):
+        for config in self.load().intersections.values():
+            for program in config.programs.values():
+                phase_mappings = config.topology.phases_for(program.program_id)
+                movement_pairs = {
+                    (approach, "right")
+                    for approach in config.topology.approaches
+                }
+                for phase in phase_mappings:
+                    movement_pairs.update(
+                        (approach, phase.movement)
+                        for approach in phase.approaches
+                    )
+                    for group in (*phase.protected, *phase.permissive):
+                        movement_pairs.update(
+                            (approach, group.movement)
+                            for approach in group.approaches
+                        )
+
+                tls_id = config.junction_ids[0]
+                ordered_pairs = sorted(movement_pairs)
+                connections = [
+                    ControlledConnection(
+                        intersection_id=config.intersection_id,
+                        junction_id=tls_id,
+                        tls_id=tls_id,
+                        link_index=index,
+                        approach=approach,
+                        movement=movement,
+                        from_edge=config.topology.approaches[approach][0],
+                        from_lane=0,
+                        to_edge=f"out_{approach}_{movement}",
+                        to_lane=0,
+                        direction={
+                            "through": "s",
+                            "left": "l",
+                            "right": "r",
+                        }[movement],
+                        via=f":{tls_id}_{index}_0",
+                        request_index=index,
+                    )
+                    for index, (approach, movement) in enumerate(ordered_pairs)
+                ]
+                state_length = len(connections)
+                templates = _build_templates(
+                    config,
+                    connections,
+                    {tls_id: state_length},
+                    {
+                        tls_id: {
+                            index: "0" * state_length
+                            for index in range(state_length)
+                        }
+                    },
+                    phase_mappings,
+                )
+
+                for index, (approach, movement) in enumerate(ordered_pairs):
+                    if movement != "right":
+                        continue
+                    controlled = not config.topology.right_turn_is_always_permissive(
+                        approach
+                    )
+                    for phase in phase_mappings:
+                        states = templates[phase.phase_number][tls_id]
+                        explicitly_protected = any(
+                            group.movement == "right"
+                            and approach in group.approaches
+                            for group in phase.protected
+                        ) or (
+                            phase.movement == "right"
+                            and approach in phase.approaches
+                            and phase.priority == "protected"
+                        )
+                        explicitly_permissive = any(
+                            group.movement == "right"
+                            and approach in group.approaches
+                            for group in phase.permissive
+                        ) or (
+                            phase.movement == "right"
+                            and approach in phase.approaches
+                            and phase.priority == "permissive"
+                        )
+                        with self.subTest(
+                            intersection=config.intersection_id,
+                            program=program.program_id,
+                            phase=phase.phase_number,
+                            approach=approach,
+                        ):
+                            if not controlled:
+                                self.assertTrue(
+                                    all(
+                                        states[stage][index] == "g"
+                                        for stage in ("green", "yellow", "clearance")
+                                    )
+                                )
+                            elif explicitly_protected:
+                                self.assertEqual(states["green"][index], "G")
+                                self.assertEqual(states["yellow"][index], "y")
+                                self.assertEqual(states["clearance"][index], "r")
+                            elif explicitly_permissive:
+                                self.assertEqual(states["green"][index], "g")
+                                self.assertEqual(states["yellow"][index], "y")
+                                self.assertEqual(states["clearance"][index], "r")
+                            else:
+                                self.assertTrue(
+                                    all(
+                                        states[stage][index] == "r"
+                                        for stage in ("green", "yellow", "clearance")
+                                    )
+                                )
+
     def test_official_cycles_and_mapping(self):
         config = self.load().intersections["demo_1"]
         self.assertEqual(config.junction_ids, ("4427",))
@@ -212,6 +398,10 @@ class SignalConfigurationTests(unittest.TestCase):
                 "demo_5_evening_peak": 77,
             },
         )
+        self.assertEqual(
+            demo_5.topology.phase_controlled_right_turn_approaches,
+            ("south",),
+        )
         for program in demo_5.programs.values():
             self.assertEqual([phase.number for phase in program.phases], [1, 2])
             self.assertEqual([phase.green for phase in program.phases], [34, 37])
@@ -254,7 +444,11 @@ class SignalConfigurationTests(unittest.TestCase):
                 "south": ("-51871",),
             },
         )
-        self.assertEqual(demo_7.topology.right_turn_policy, "phase_controlled")
+        self.assertEqual(demo_7.topology.right_turn_policy, "permissive_always")
+        self.assertEqual(
+            demo_7.topology.phase_controlled_right_turn_approaches,
+            ("east", "south"),
+        )
         self.assertEqual(
             {key: value.cycle_duration for key, value in demo_7.programs.items()},
             {
@@ -326,6 +520,10 @@ class SignalConfigurationTests(unittest.TestCase):
 
         demo_9 = self.load().intersections["demo_9"]
         self.assertEqual(demo_9.junction_ids, ("3864",))
+        self.assertEqual(
+            demo_9.topology.phase_controlled_right_turn_approaches,
+            ("northeast",),
+        )
         self.assertEqual(
             demo_9.topology.approaches,
             {
@@ -428,7 +626,11 @@ class SignalConfigurationTests(unittest.TestCase):
                 "south": ("-46539",),
             },
         )
-        self.assertEqual(demo_14.topology.right_turn_policy, "phase_controlled")
+        self.assertEqual(demo_14.topology.right_turn_policy, "permissive_always")
+        self.assertEqual(
+            demo_14.topology.phase_controlled_right_turn_approaches,
+            ("east", "south"),
+        )
         for program in demo_14.programs.values():
             self.assertEqual(program.cycle_duration, 75)
             self.assertEqual([phase.green for phase in program.phases], [22, 47])
@@ -489,6 +691,10 @@ class SignalConfigurationTests(unittest.TestCase):
 
         demo_17 = self.load().intersections["demo_17"]
         self.assertEqual(demo_17.junction_ids, ("3702",))
+        self.assertEqual(
+            demo_17.topology.phase_controlled_right_turn_approaches,
+            ("east",),
+        )
         self.assertEqual(
             demo_17.topology.approaches,
             {
@@ -736,13 +942,28 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertTrue(all(phase_two[index] == "G" for index in (7, 22)))
         self.assertTrue(all(phase_two[index] == "g" for index in (9, 23)))
         self.assertEqual(phase_three[19], "G")
-        right_turns = (0, 6, 10, 16, 20, 21)
+        always_permissive_right_turns = (0, 6, 10, 20, 21)
         blocked = (1, 5, 8, 15, 17, 18)
         for phase in templates.values():
             for stage in ("green", "yellow", "clearance"):
                 state = phase["3864"][stage]
-                self.assertTrue(all(state[index] == "g" for index in right_turns))
+                self.assertTrue(
+                    all(
+                        state[index] == "g"
+                        for index in always_permissive_right_turns
+                    )
+                )
                 self.assertTrue(all(state[index] == "r" for index in blocked))
+        for phase_number in (1, 2):
+            self.assertTrue(
+                all(
+                    templates[phase_number]["3864"][stage][16] == "r"
+                    for stage in ("green", "yellow", "clearance")
+                )
+            )
+        self.assertEqual(phase_three[16], "G")
+        self.assertEqual(templates[3]["3864"]["yellow"][16], "y")
+        self.assertEqual(templates[3]["3864"]["clearance"][16], "r")
 
     def test_demo_9_same_edge_mutual_right_turn_is_blocked_only_in_conflict_phase(self):
         config = self.load().intersections["demo_9"]
@@ -774,6 +995,7 @@ class SignalConfigurationTests(unittest.TestCase):
             connection(22, "-57214", "-56715", "s"),
             connection(23, "-57214", "-50338", "l"),
             connection(40, "-50241", "-50338", "l"),
+            connection(41, "-50241", "-56370", "r"),
             connection(43, "-56619", "-56620", "s"),
             connection(44, "-56619", "-56715", "l"),
             connection(45, "-56619", "-56496", "r"),
@@ -794,6 +1016,15 @@ class SignalConfigurationTests(unittest.TestCase):
         phase_one = templates[1]["3864"]
         phase_two = templates[2]["3864"]
         phase_three = templates[3]["3864"]
+        self.assertTrue(
+            all(
+                phase_one[stage][41] == "r" and phase_two[stage][41] == "r"
+                for stage in ("green", "yellow", "clearance")
+            )
+        )
+        self.assertEqual(phase_three["green"][41], "G")
+        self.assertEqual(phase_three["yellow"][41], "y")
+        self.assertEqual(phase_three["clearance"][41], "r")
         self.assertEqual(phase_two["green"][44], "g")
         self.assertTrue(
             all(
@@ -1025,6 +1256,7 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(templates[1]["610"]["clearance"], "rrrrrr")
         self.assertEqual(templates[2]["610"]["green"], "rrGGrr")
         self.assertEqual(templates[2]["610"]["yellow"], "rryyrr")
+        self.assertEqual(templates[2]["610"]["clearance"], "rrrrrr")
 
         demo_12 = self.load().intersections["demo_12"]
         connections = connections_for(
@@ -1124,6 +1356,7 @@ class SignalConfigurationTests(unittest.TestCase):
         self.assertEqual(templates[1]["892"]["clearance"], "rrrrrr")
         self.assertEqual(templates[2]["892"]["green"], "GGrrrr")
         self.assertEqual(templates[2]["892"]["yellow"], "yyrrrr")
+        self.assertEqual(templates[2]["892"]["clearance"], "rrrrrr")
 
         demo_15 = self.load().intersections["demo_15"]
         connections = connections_for(
@@ -1313,13 +1546,21 @@ class SignalConfigurationTests(unittest.TestCase):
             demo_17, connections_17, {"3702": 10}, {"3702": foes_17}
         )
         self.assertEqual(templates_17[1]["3702"]["green"][0], "G")
+        self.assertEqual(templates_17[1]["3702"]["green"][1], "G")
+        self.assertEqual(templates_17[1]["3702"]["yellow"][1], "y")
+        self.assertEqual(templates_17[1]["3702"]["clearance"][1], "r")
         self.assertTrue(
             all(templates_17[2]["3702"]["green"][index] == "G" for index in (4, 5, 7, 8))
         )
         self.assertEqual(templates_17[2]["3702"]["green"][3], "g")
+        for stage in ("green", "yellow", "clearance"):
+            self.assertEqual(templates_17[2]["3702"][stage][1], "r")
         for phase in templates_17.values():
             self.assertTrue(
-                all(phase["3702"]["green"][index] == "g" for index in (1, 9))
+                all(
+                    phase["3702"][stage][9] == "g"
+                    for stage in ("green", "yellow", "clearance")
+                )
             )
             self.assertTrue(
                 all(phase["3702"]["green"][index] == "r" for index in (2, 6))
@@ -1803,12 +2044,12 @@ class SignalConfigurationTests(unittest.TestCase):
         )
         phase_one = templates[1]["3807"]["green"]
         phase_two = templates[2]["3807"]["green"]
-        self.assertEqual(phase_one[0], "g")
-        self.assertEqual(phase_one[1], "G")
-        self.assertEqual(phase_one[2], "G")
-        self.assertEqual(phase_two[4], "G")
-        self.assertEqual(phase_one[3], "g")
-        self.assertEqual(phase_one[5], "g")
+        self.assertEqual(phase_one, "gGGgrr")
+        self.assertEqual(templates[1]["3807"]["yellow"], "yyygrr")
+        self.assertEqual(templates[1]["3807"]["clearance"], "rrrgrr")
+        self.assertEqual(phase_two, "rrrgGG")
+        self.assertEqual(templates[2]["3807"]["yellow"], "rrrgyy")
+        self.assertEqual(templates[2]["3807"]["clearance"], "rrrgrr")
 
     def test_demo_4_program_templates_support_groups_and_block_uturns(self):
         config = self.load().intersections["demo_4"]

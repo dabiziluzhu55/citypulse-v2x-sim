@@ -765,7 +765,9 @@ def _build_templates(
         for connection in own_connections:
             if (
                 connection.movement == "right"
-                and config.topology.right_turn_policy == "permissive_always"
+                and config.topology.right_turn_is_always_permissive(
+                    connection.approach
+                )
             ):
                 _set_state_char(green, connection, "g")
                 _set_state_char(yellow, connection, "g")
