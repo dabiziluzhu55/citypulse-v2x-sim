@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
 <additional>
   <tlLogic id="4427" type="static" programID="demo_1_off_peak" offset="0">
-    <phase duration="27" state="ggrrrrrrgGGGrgrrrrggrggr" name="p1_green" />
-    <phase duration="3" state="ggrrrrrrgyyyrgrrrrgyryyr" name="p1_yellow" />
-    <phase duration="2" state="ggrrrrrrgrrrrgrrrrgrrrrr" name="p1_clearance" />
+    <phase duration="27" state="ggrrrrrrgGGGrgrrrrgggggr" name="p1_green" />
+    <phase duration="3" state="ggrrrrrrgyyyrgrrrrgygyyr" name="p1_yellow" />
+    <phase duration="2" state="ggrrrrrrgrrrrgrrrrgrgrrr" name="p1_clearance" />
     <phase duration="33" state="ggrrrrrrgrrrGgrrrrgrgrrG" name="p2_green" />
     <phase duration="3" state="ggrrrrrrgrrrygrrrrgrgrry" name="p2_yellow" />
     <phase duration="2" state="ggrrrrrrgrrrrgrrrrgrgrrr" name="p2_clearance" />
@@ -11,45 +11,45 @@
     <phase duration="3" state="ggyyyyyrgrrrrgyyyrgrgrrr" name="p3_yellow" />
     <phase duration="2" state="ggrrrrrrgrrrrgrrrrgrgrrr" name="p3_clearance" />
     <phase duration="27" state="ggrrrrrGgrrrrgrrrGgrgrrr" name="p4_green" />
-    <phase duration="3" state="ggrrrrrygrrrrgrrrygryrrr" name="p4_yellow" />
-    <phase duration="2" state="ggrrrrrrgrrrrgrrrrgrrrrr" name="p4_clearance" />
+    <phase duration="3" state="ggrrrrrygrrrrgrrrygrgrrr" name="p4_yellow" />
+    <phase duration="2" state="ggrrrrrrgrrrrgrrrrgrgrrr" name="p4_clearance" />
   </tlLogic>
   <tlLogic id="317" type="static" programID="demo_2_off_peak" offset="0">
-    <phase duration="37" state="GGGrrggrrrGrrrGG" name="p1_green" />
-    <phase duration="3" state="yyyrrggrrryrrryy" name="p1_yellow" />
-    <phase duration="37" state="rrrggggggrrrrrrr" name="p2_green" />
-    <phase duration="3" state="rrryyggyyrrrrrrr" name="p2_yellow" />
+    <phase duration="37" state="GGGrrggrrrgGgGG" name="p1_green" />
+    <phase duration="3" state="yyyrrggrrrgygyy" name="p1_yellow" />
+    <phase duration="37" state="rrrggggggggrgrr" name="p2_green" />
+    <phase duration="3" state="rrryyggyyygrgrr" name="p2_yellow" />
   </tlLogic>
   <tlLogic id="citypulse_demo_3" type="static" programID="demo_3_off_peak" offset="0">
-    <phase duration="55" state="gggrrrrGrGGggggrrrrGrGGg" name="p1_green" />
-    <phase duration="3" state="gggrrrryryyygggrrrryryyy" name="p1_yellow" />
-    <phase duration="47" state="gggGggrrrrrrgggGggrrrrrr" name="p2_green" />
-    <phase duration="3" state="gggyyyrrrrrrgggyyyrrrrrr" name="p2_yellow" />
+    <phase duration="55" state="gggrrrgGgGGggggrrrgGgGGg" name="p1_green" />
+    <phase duration="3" state="gggrrrgygyyygggrrrgygyyy" name="p1_yellow" />
+    <phase duration="47" state="gggGgggrgrrrgggGgggrgrrr" name="p2_green" />
+    <phase duration="3" state="gggyyygrgrrrgggyyygrgrrr" name="p2_yellow" />
   </tlLogic>
   <tlLogic id="3935" type="static" programID="demo_4_off_peak" offset="0">
-    <phase duration="57" state="rGrrggggrrrrrgrrggggrrrr" name="p1_green" />
-    <phase duration="3" state="ryrryyyyrrrrryrryyyyrrrr" name="p1_yellow" />
-    <phase duration="2" state="rrrrrrrrrrrrrrrrrrrrrrrr" name="p1_clearance" />
-    <phase duration="34" state="rrrrrrrrGGGGrrrrrrrrrrrr" name="p2_green" />
-    <phase duration="3" state="rrrrrrrryyyyrrrrrrrrrrrr" name="p2_yellow" />
-    <phase duration="2" state="rrrrrrrrrrrrrrrrrrrrrrrr" name="p2_clearance" />
-    <phase duration="34" state="rrrrrrrrrrrrrrrrrrrrGGGG" name="p3_green" />
-    <phase duration="3" state="rrrrrrrrrrrrrrrrrrrryyyy" name="p3_yellow" />
-    <phase duration="2" state="rrrrrrrrrrrrrrrrrrrrrrrr" name="p3_clearance" />
+    <phase duration="57" state="gGggggggrrrrggggggggrrrr" name="p1_green" />
+    <phase duration="3" state="gyggyyyyrrrrgyggyyyyrrrr" name="p1_yellow" />
+    <phase duration="2" state="grggrrrrrrrrgrggrrrrrrrr" name="p1_clearance" />
+    <phase duration="34" state="grggrrrrGGGGgrggrrrrrrrr" name="p2_green" />
+    <phase duration="3" state="grggrrrryyyygrggrrrrrrrr" name="p2_yellow" />
+    <phase duration="2" state="grggrrrrrrrrgrggrrrrrrrr" name="p2_clearance" />
+    <phase duration="34" state="grggrrrrrrrrgrggrrrrGGGG" name="p3_green" />
+    <phase duration="3" state="grggrrrrrrrrgrggrrrryyyy" name="p3_yellow" />
+    <phase duration="2" state="grggrrrrrrrrgrggrrrrrrrr" name="p3_clearance" />
   </tlLogic>
   <tlLogic id="3807" type="static" programID="demo_5_off_peak" offset="0">
-    <phase duration="34" state="grggrrgGgGGGgGGg" name="p1_green" />
-    <phase duration="3" state="grggrrgygyyyyyyy" name="p1_yellow" />
-    <phase duration="37" state="gGggGGgrgrrrrrrr" name="p2_green" />
-    <phase duration="3" state="gyggyygrgrrrrrrr" name="p2_yellow" />
+    <phase duration="34" state="rrrrrgGgGGGGGg" name="p1_green" />
+    <phase duration="3" state="rrrrrgygyyyyyy" name="p1_yellow" />
+    <phase duration="37" state="GGGGGgrgrrrrrr" name="p2_green" />
+    <phase duration="3" state="yyyyygrgrrrrrr" name="p2_yellow" />
   </tlLogic>
   <tlLogic id="3936" type="static" programID="demo_6_off_peak" offset="0">
-    <phase duration="57" state="rrrrrrrrgggGGggrggrrrrggGGGgg" name="p1_green" />
-    <phase duration="3" state="rrrrrrrrgggyyygrggrrrrggyyyyy" name="p1_yellow" />
-    <phase duration="26" state="rrgrrrrggggrrrgrggrrggggrrrrr" name="p2_green" />
-    <phase duration="3" state="rryrrrrygggrrrgrggrryyggrrrrr" name="p2_yellow" />
-    <phase duration="45" state="rgrrrggrgggrrrgGggGGrrggrrrrr" name="p3_green" />
-    <phase duration="3" state="ryrrryyrgggrrrgyggyyrrggrrrrr" name="p3_yellow" />
+    <phase duration="57" state="grggrrrgggGGggrggrrrrggGGGgg" name="p1_green" />
+    <phase duration="3" state="grggrrrgggyyygrggrrrrggyyyyy" name="p1_yellow" />
+    <phase duration="26" state="grggrrggggrrrgrggrrggggrrrrr" name="p2_green" />
+    <phase duration="3" state="grggrrygggrrrgrggrryyggrrrrr" name="p2_yellow" />
+    <phase duration="45" state="ggggggrgggrrrgGggGGrrggrrrrr" name="p3_green" />
+    <phase duration="3" state="gyggyyrgggrrrgyggyyrrggrrrrr" name="p3_yellow" />
   </tlLogic>
   <tlLogic id="610" type="static" programID="demo_7_off_peak" offset="0">
     <phase duration="36" state="GgrrGG" name="p1_green" />
@@ -58,54 +58,54 @@
     <phase duration="3" state="rryyrr" name="p2_yellow" />
   </tlLogic>
   <tlLogic id="J1" type="static" programID="demo_8_off_peak" offset="0">
-    <phase duration="25" state="rrrrrrrgggggGGGrrrgrgrrrrGGGr" name="p1_green" />
-    <phase duration="3" state="rrrrrrrgggggyyyrrrgrgrrrryyyr" name="p1_yellow" />
-    <phase duration="2" state="rrrrrrrgggggrrrrrrgrgrrrrrrrr" name="p1_clearance" />
-    <phase duration="15" state="rrrrrrrgggggrrrGGGgrgrrrrrrrG" name="p2_green" />
-    <phase duration="3" state="rrrrrrrgggggrrryyygrgrrrrrrry" name="p2_yellow" />
-    <phase duration="2" state="rrrrrrrgggggrrrrrrgrgrrrrrrrr" name="p2_clearance" />
-    <phase duration="20" state="GGGGrrrgggggrrrrrrgGgGGGrrrrr" name="p3_green" />
-    <phase duration="3" state="yyyyrrrgggggrrrrrrgygyyyrrrrr" name="p3_yellow" />
-    <phase duration="2" state="rrrrrrrgggggrrrrrrgrgrrrrrrrr" name="p3_clearance" />
-    <phase duration="10" state="rrrrGGGgggggrrrrrrgrgrrrGrrrr" name="p4_green" />
-    <phase duration="3" state="rrrryyygggggrrrrrrgrgrrryrrrr" name="p4_yellow" />
-    <phase duration="2" state="rrrrrrrgggggrrrrrrgrgrrrrrrrr" name="p4_clearance" />
+    <phase duration="25" state="rrrrrrrgggggGGGrrrggrrrrrGGGr" name="p1_green" />
+    <phase duration="3" state="rrrrrrrgggggyyyrrrggrrrrryyyr" name="p1_yellow" />
+    <phase duration="2" state="rrrrrrrgggggrrrrrrggrrrrrrrrr" name="p1_clearance" />
+    <phase duration="15" state="rrrrrrrgggggrrrGGGggrrrrrrrrG" name="p2_green" />
+    <phase duration="3" state="rrrrrrrgggggrrryyyggrrrrrrrry" name="p2_yellow" />
+    <phase duration="2" state="rrrrrrrgggggrrrrrrggrrrrrrrrr" name="p2_clearance" />
+    <phase duration="20" state="GGGGrrrgggggrrrrrrggGGGGrrrrr" name="p3_green" />
+    <phase duration="3" state="yyyyrrrgggggrrrrrrggyyyyrrrrr" name="p3_yellow" />
+    <phase duration="2" state="rrrrrrrgggggrrrrrrggrrrrrrrrr" name="p3_clearance" />
+    <phase duration="10" state="rrrrGGGgggggrrrrrrggrrrrGrrrr" name="p4_green" />
+    <phase duration="3" state="rrrryyygggggrrrrrrggrrrryrrrr" name="p4_yellow" />
+    <phase duration="2" state="rrrrrrrgggggrrrrrrggrrrrrrrrr" name="p4_clearance" />
   </tlLogic>
   <tlLogic id="3864" type="static" programID="demo_9_off_peak" offset="0">
-    <phase duration="56" state="grGgrrrGGgggrrggrrrrrgGgrrGGggggggrrrrrrrrrrrrgrgrrr" name="p1_green" />
-    <phase duration="3" state="gryyrrryyyygrryyrrrrrgyyrryyyyygggrrrrrrrrrrrryryrrr" name="p1_yellow" />
-    <phase duration="48" state="grrrggrrrrrgGgrrGGrgggrrggrrrrrgggrrrrrrrrrGgrrGrGgg" name="p2_green" />
-    <phase duration="3" state="grrrggrrrrrgyyrryyryygrrggrrrrrgggrrrrrrrrryyrryryyy" name="p2_yellow" />
-    <phase duration="32" state="grrrggrrrrrgrrggrrrrrgrrggrrrrrgggrrrrrrGGrrrrgrgrrr" name="p3_green" />
-    <phase duration="3" state="grrryyrrrrrgrrggrrrrrgrryyrrrrrgggrrrrrryyrrrrgrgrrr" name="p3_yellow" />
+    <phase duration="56" state="grggrGGgggrggrrrrrgGggGGgggrrrrrrrrrrrgrggrrrr" name="p1_green" />
+    <phase duration="3" state="grggryyyygrggrrrrrgyggyyyyyrrrrrrrrrrrgrggrrrr" name="p1_yellow" />
+    <phase duration="48" state="grggrrrrrgGggGGrgggrggrrrrrrrrrrrrrrrrgGggGGgg" name="p2_green" />
+    <phase duration="3" state="grggrrrrrgyggyyryygrggrrrrrrrrrrrrrrrrgyggyyyy" name="p2_yellow" />
+    <phase duration="32" state="grggrrrrrgrggrrrrrgrggrrrrrGGGrrrrrrGGgrggrrrr" name="p3_green" />
+    <phase duration="3" state="grggrrrrrgrggrrrrrgrggrrrrryyyrrrrrryygrggrrrr" name="p3_yellow" />
   </tlLogic>
   <tlLogic id="4306" type="static" programID="demo_11_off_peak" offset="0">
-    <phase duration="40" state="grrggrgrrrrgGrggGGGrrgrrgggrrrrrgggggrr" name="p1_green" />
-    <phase duration="3" state="grrggrgrrrrgyrggyyyrrgrrgggrrrrrgggyyrr" name="p1_yellow" />
-    <phase duration="2" state="grrggrgrrrrgrrggrrrrrgrrgggrrrrrgggrrrr" name="p1_clearance" />
-    <phase duration="20" state="grrggrgrrrrgrGggrrrGGgrrgggrrrrrgggrrgg" name="p2_green" />
-    <phase duration="3" state="grrggrgrrrrgryggrrryygrryyyrrrrrgggrryy" name="p2_yellow" />
-    <phase duration="2" state="grrggrgrrrrgrrggrrrrrgrrrrrrrrrrgggrrrr" name="p2_clearance" />
-    <phase duration="30" state="gGrggGgGrrrgrrggrrrrrggrrrrggrrrgggrrrr" name="p3_green" />
-    <phase duration="3" state="gyrggygyrrrgrrggrrrrrgyrrrryyrrrgggrrrr" name="p3_yellow" />
-    <phase duration="2" state="grrggrgrrrrgrrggrrrrrgrrrrrrrrrrgggrrrr" name="p3_clearance" />
-    <phase duration="20" state="grGggrgrGGGgrrggrrrrrgrgrrrrrggggggrrrr" name="p4_green" />
-    <phase duration="3" state="gryggrgryyygrrggrrrrrgryrrrrryyygggrrrr" name="p4_yellow" />
-    <phase duration="2" state="grrggrgrrrrgrrggrrrrrgrrrrrrrrrrgggrrrr" name="p4_clearance" />
+    <phase duration="40" state="grggrgrrrrgGggGGGrrgrgggrrrrrgggggrr" name="p1_green" />
+    <phase duration="3" state="grggrgrrrrgyggyyyrrgrgggrrrrrgggyyrr" name="p1_yellow" />
+    <phase duration="2" state="grggrgrrrrgrggrrrrrgrgggrrrrrgggrrrr" name="p1_clearance" />
+    <phase duration="20" state="grggrgrrrrgrggrrrGGgrgggrrrrrgggrrgg" name="p2_green" />
+    <phase duration="3" state="grggrgrrrrgrggrrryygrgggrrrrrgggrryy" name="p2_yellow" />
+    <phase duration="2" state="grggrgrrrrgrggrrrrrgrgggrrrrrgggrrrr" name="p2_clearance" />
+    <phase duration="30" state="gGggGgGrrrgrggrrrrrgggggggrrrgggrrrr" name="p3_green" />
+    <phase duration="3" state="gyggygyrrrgrggrrrrrgygggyyrrrgggrrrr" name="p3_yellow" />
+    <phase duration="2" state="grggrgrrrrgrggrrrrrgrgggrrrrrgggrrrr" name="p3_clearance" />
+    <phase duration="20" state="grggrgrGGGgrggrrrrrgrgggrrggggggrrrr" name="p4_green" />
+    <phase duration="3" state="grggrgryyygrggrrrrrgrgggrryyygggrrrr" name="p4_yellow" />
+    <phase duration="2" state="grggrgrrrrgrggrrrrrgrgggrrrrrgggrrrr" name="p4_clearance" />
   </tlLogic>
   <tlLogic id="182" type="static" programID="demo_12_off_peak" offset="0">
-    <phase duration="65" state="gggrrrrgggGGrrrrrrrrrrrrggrrggrrr" name="p1_green" />
-    <phase duration="3" state="gggrrrrgggyyrrrrrrrrrrrrgyrryyrrr" name="p1_yellow" />
-    <phase duration="2" state="gggrrrrgggrrrrrrrrrrrrrrgrrrrrrrr" name="p1_clearance" />
-    <phase duration="35" state="gggrrrrgggrrGGrrrrrrrrrrgrggrrggg" name="p2_green" />
-    <phase duration="3" state="gggrrrrgggrryyrrrrrrrrrrgrggrryyy" name="p2_yellow" />
-    <phase duration="2" state="gggrrrrgggrrrrrrrrrrrrrrgrggrrrrr" name="p2_clearance" />
-    <phase duration="60" state="gggGGrrgggrrrrrgrrrgggrrgrggrrrrr" name="p3_green" />
-    <phase duration="3" state="gggyyrrgggrrrrryrrryyyrrgrggrrrrr" name="p3_yellow" />
-    <phase duration="2" state="gggrrrrgggrrrrrrrrrrrrrrgrggrrrrr" name="p3_clearance" />
-    <phase duration="35" state="gggrrgggggrrrrrrgrrrrrgggrggrrrrr" name="p4_green" />
-    <phase duration="3" state="gggrryygggrrrrrryrrrrryygryyrrrrr" name="p4_yellow" />
-    <phase duration="2" state="gggrrrrgggrrrrrrrrrrrrrrgrrrrrrrr" name="p4_clearance" />
+    <phase duration="65" state="gggrrrrgggGGrrgrggrrrrrggggggrrr" name="p1_green" />
+    <phase duration="3" state="gggrrrrgggyyrrgrggrrrrrgyggyyrrr" name="p1_yellow" />
+    <phase duration="2" state="gggrrrrgggrrrrgrggrrrrrgrggrrrrr" name="p1_clearance" />
+    <phase duration="35" state="gggrrrrgggrrGGgrggrrrrrgrggrrggg" name="p2_green" />
+    <phase duration="3" state="gggrrrrgggrryygrggrrrrrgrggrryyy" name="p2_yellow" />
+    <phase duration="2" state="gggrrrrgggrrrrgrggrrrrrgrggrrrrr" name="p2_clearance" />
+    <phase duration="60" state="gggGGrrgggrrrrgggggggrrgrggrrrrr" name="p3_green" />
+    <phase duration="3" state="gggyyrrgggrrrrgyggyyyrrgrggrrrrr" name="p3_yellow" />
+    <phase duration="2" state="gggrrrrgggrrrrgrggrrrrrgrggrrrrr" name="p3_clearance" />
+    <phase duration="35" state="gggrrgggggrrrrgrggrrrgggrggrrrrr" name="p4_green" />
+    <phase duration="3" state="gggrryygggrrrrgrggrrryygrggrrrrr" name="p4_yellow" />
+    <phase duration="2" state="gggrrrrgggrrrrgrggrrrrrgrggrrrrr" name="p4_clearance" />
   </tlLogic>
   <tlLogic id="892" type="static" programID="demo_14_off_peak" offset="0">
     <phase duration="22" state="rrrGGGGGg" name="p1_green" />
@@ -128,42 +128,42 @@
     <phase duration="2" state="grgrrr" name="p2_clearance" />
   </tlLogic>
   <tlLogic id="1204" type="static" programID="demo_13_off_peak" offset="0">
-    <phase duration="65" state="gggrGrrGGG" name="p1_green" />
-    <phase duration="3" state="gggryrryyy" name="p1_yellow" />
-    <phase duration="2" state="gggrrrrrrr" name="p1_clearance" />
+    <phase duration="65" state="ggggGggGGG" name="p1_green" />
+    <phase duration="3" state="ggggyggyyy" name="p1_yellow" />
+    <phase duration="2" state="ggggrggrrr" name="p1_clearance" />
   </tlLogic>
   <tlLogic id="3279" type="static" programID="demo_16_off_peak" offset="0">
-    <phase duration="34" state="rrrrrrgGgrgggrgrrggGGg" name="p1_green" />
-    <phase duration="3" state="rrrrrrgyyryygrgrrggyyy" name="p1_yellow" />
-    <phase duration="37" state="rGgrGggrrgrrgGgGgggrrr" name="p2_green" />
-    <phase duration="3" state="ryyryygrryrrgygyyggrrr" name="p2_yellow" />
+    <phase duration="34" state="grgrrgGggggrgrrggGGg" name="p1_green" />
+    <phase duration="3" state="grgrrgygyygrgrrggyyy" name="p1_yellow" />
+    <phase duration="37" state="gGgGggrgrrgGgGgggrrr" name="p2_green" />
+    <phase duration="3" state="gygyygrgrrgygyyggrrr" name="p2_yellow" />
   </tlLogic>
   <tlLogic id="3702" type="static" programID="demo_17_off_peak" offset="0">
-    <phase duration="58" state="ggrrrrrgG" name="p1_green" />
-    <phase duration="3" state="ggrrrrrgy" name="p1_yellow" />
-    <phase duration="32" state="ggGGGGggr" name="p2_green" />
-    <phase duration="3" state="ggyyyyygr" name="p2_yellow" />
+    <phase duration="58" state="ggrrrrrGG" name="p1_green" />
+    <phase duration="3" state="ggrrrrryy" name="p1_yellow" />
+    <phase duration="32" state="ggGGGGgrr" name="p2_green" />
+    <phase duration="3" state="ggyyyyyrr" name="p2_yellow" />
   </tlLogic>
   <tlLogic id="4409" type="static" programID="demo_18_off_peak" offset="0">
-    <phase duration="37" state="grrrrrrrrggGGGggggggrrrrrrgggGGGggg" name="p1_green" />
-    <phase duration="3" state="grrrrrrrrggyyyyyygggrrrrrrgggyyyyyy" name="p1_yellow" />
-    <phase duration="37" state="gGGGgrrrrggrrrrrrgggGGGggggggrrrrrr" name="p2_green" />
-    <phase duration="3" state="gyyyyrrrrggrrrrrrgggyyyyyygggrrrrrr" name="p2_yellow" />
+    <phase duration="37" state="grrrrrrrggGGGggggggrrrrrrgggGGGggg" name="p1_green" />
+    <phase duration="3" state="grrrrrrrggyyyyyygggrrrrrrgggyyyyyy" name="p1_yellow" />
+    <phase duration="37" state="gGGGgrrrggrrrrrrgggGGGggggggrrrrrr" name="p2_green" />
+    <phase duration="3" state="gyyyyrrrggrrrrrrgggyyyyyygggrrrrrr" name="p2_yellow" />
   </tlLogic>
   <tlLogic id="891" type="static" programID="demo_19_off_peak" offset="0">
-    <phase duration="35" state="rrrrrrrggGGgrrrrrrrggGGg" name="p1_green" />
-    <phase duration="3" state="rrrrrrrggyyyrrrrrrrggyyy" name="p1_yellow" />
-    <phase duration="35" state="rGrrGggggrrrrGrrGggggrrr" name="p2_green" />
-    <phase duration="3" state="ryrryyyggrrrryrryyyggrrr" name="p2_yellow" />
+    <phase duration="35" state="grggrrrggGGggrggrrrggGGg" name="p1_green" />
+    <phase duration="3" state="grggrrrggyyygrggrrrggyyy" name="p1_yellow" />
+    <phase duration="35" state="gGggGggggrrrgGggGggggrrr" name="p2_green" />
+    <phase duration="3" state="gyggyyyggrrrgyggyyyggrrr" name="p2_yellow" />
   </tlLogic>
   <tlLogic id="3637" type="static" programID="demo_20_off_peak" offset="0">
-    <phase duration="33" state="grrgGGGggrrgGGGg" name="p1_green" />
-    <phase duration="3" state="grrgyyyygrrgyyyy" name="p1_yellow" />
-    <phase duration="6" state="grrgrrrggrrgrrrg" name="p2_green" />
-    <phase duration="3" state="grrgrrrygrrgrrry" name="p2_yellow" />
-    <phase duration="33" state="gGggrrrrgGggrrrr" name="p3_green" />
-    <phase duration="3" state="gyygrrrrgyygrrrr" name="p3_yellow" />
-    <phase duration="6" state="grggrrrrgrggrrrr" name="p4_green" />
-    <phase duration="3" state="grygrrrrgrygrrrr" name="p4_yellow" />
+    <phase duration="33" state="grrrgGGGggrrgGGGg" name="p1_green" />
+    <phase duration="3" state="grrrgyyyygrrgyyyy" name="p1_yellow" />
+    <phase duration="6" state="grrrgrrrggrrgrrrg" name="p2_green" />
+    <phase duration="3" state="grrrgrrrygrrgrrry" name="p2_yellow" />
+    <phase duration="33" state="gGGggrrrrgGggrrrr" name="p3_green" />
+    <phase duration="3" state="gyyygrrrrgyygrrrr" name="p3_yellow" />
+    <phase duration="6" state="grrggrrrrgrggrrrr" name="p4_green" />
+    <phase duration="3" state="grrygrrrrgrygrrrr" name="p4_yellow" />
   </tlLogic>
 </additional>
