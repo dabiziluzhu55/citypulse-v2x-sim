@@ -8,7 +8,9 @@ from pathlib import Path
 
 from simulation.sumo.artifacts import GeneratedArtifactLayout
 from simulation.sumo.build_traffic import (
+    CountLocation,
     _allocate_vehicle_mix,
+    _inspect_route_network,
     _validate_route_sampler,
     build_traffic_scenarios,
 )
@@ -50,6 +52,23 @@ class FakeSumoToolchain:
             )
         elif len(command) > 1 and command[1] == "fake-routeSampler.py":
             counts_root = ET.parse(_arg(command, "--turn-files")).getroot()
+            candidate_root = ET.parse(_arg(command, "--route-files")).getroot()
+            candidate_routes = [
+                tuple(str(route.get("edges", "")).split())
+                for route in candidate_root.findall("vehicle/route")
+            ]
+
+            def candidate_for(path):
+                matches = []
+                for candidate in candidate_routes:
+                    width = len(path)
+                    if any(
+                        candidate[index : index + width] == tuple(path)
+                        for index in range(len(candidate) - width + 1)
+                    ):
+                        matches.append(candidate)
+                return min(matches, key=lambda item: (len(item), item), default=tuple(path))
+
             attributes = command[command.index("--attributes") + 1]
             type_id = re.search(r'type="([^"]+)"', attributes).group(1)
             prefix = command[command.index("--prefix") + 1]
@@ -78,7 +97,11 @@ class FakeSumoToolchain:
                             "number": str(shared),
                         },
                     )
-                    ET.SubElement(flow, "route", {"edges": " ".join(combined)})
+                    ET.SubElement(
+                        flow,
+                        "route",
+                        {"edges": " ".join(candidate_for(combined))},
+                    )
                     positive[0][1] -= shared
                     positive[1][1] -= shared
                     flow_index += 1
@@ -96,7 +119,11 @@ class FakeSumoToolchain:
                             "number": str(count),
                         },
                     )
-                    ET.SubElement(flow, "route", {"edges": " ".join(edges)})
+                    ET.SubElement(
+                        flow,
+                        "route",
+                        {"edges": " ".join(candidate_for(edges))},
+                    )
                     flow_index += 1
             ET.ElementTree(output).write(
                 _arg(command, "--output-file"), encoding="utf-8", xml_declaration=True
@@ -246,11 +273,35 @@ def _write_demand(
     )
 
 
-def _write_tls_fixture(root: Path, intersection_ids, *, include_zero_movement=False):
+def _write_tls_fixture(
+    root: Path,
+    intersection_ids,
+    *,
+    include_zero_movement=False,
+    segmented_endpoints=False,
+):
     generated = root / "generated"
     layout = GeneratedArtifactLayout(generated)
     layout.create_base_directories()
     network = ET.Element("net")
+    def add_edge(edge_id, *, lane_count=1, length=100, from_node=None, to_node=None):
+        attributes = {"id": edge_id}
+        if from_node is not None:
+            attributes["from"] = from_node
+        if to_node is not None:
+            attributes["to"] = to_node
+        edge = ET.SubElement(network, "edge", attributes)
+        for lane_index in range(lane_count):
+            ET.SubElement(
+                edge,
+                "lane",
+                {
+                    "id": f"{edge_id}_{lane_index}",
+                    "index": str(lane_index),
+                    "length": str(length),
+                },
+            )
+
     for index, _intersection_id in enumerate(intersection_ids):
         edge_ids = (f"in_{index}", f"via_{index}", f"out_{index}")
         if include_zero_movement:
@@ -260,13 +311,47 @@ def _write_tls_fixture(root: Path, intersection_ids, *, include_zero_movement=Fa
                 f"zero_in_alt_{index}",
                 f"zero_out_alt_{index}",
             )
-        for edge_id in edge_ids:
-            edge = ET.SubElement(network, "edge", {"id": edge_id})
-            ET.SubElement(
-                edge,
-                "lane",
-                {"id": f"{edge_id}_0", "index": "0", "length": "100"},
+        if segmented_endpoints:
+            add_edge(
+                f"far_in_{index}",
+                length=200,
+                from_node=f"source_{index}",
+                to_node=f"split_in_{index}",
             )
+            add_edge(
+                f"in_{index}",
+                lane_count=2,
+                from_node=f"split_in_{index}",
+                to_node=f"junction_{index}",
+            )
+            add_edge(f"via_{index}")
+            add_edge(
+                f"out_{index}",
+                lane_count=2,
+                from_node=f"junction_{index}",
+                to_node=f"split_out_{index}",
+            )
+            add_edge(
+                f"far_out_{index}",
+                length=300,
+                from_node=f"split_out_{index}",
+                to_node=f"sink_{index}",
+            )
+            ET.SubElement(
+                network,
+                "connection",
+                {"from": f"far_in_{index}", "to": f"in_{index}", "dir": "s"},
+            )
+            ET.SubElement(
+                network,
+                "connection",
+                {"from": f"out_{index}", "to": f"far_out_{index}", "dir": "s"},
+            )
+            for edge_id in edge_ids[3:]:
+                add_edge(edge_id)
+        else:
+            for edge_id in edge_ids:
+                add_edge(edge_id)
     ET.ElementTree(network).write(
         layout.network_file, encoding="utf-8", xml_declaration=True
     )
@@ -311,6 +396,7 @@ def _write_tls_fixture(root: Path, intersection_ids, *, include_zero_movement=Fa
                 ]
             )
         manifest_intersections[intersection_id] = {
+            "junction_ids": [f"junction_{index}"],
             "program_ids": [program_id],
             "connections": connections,
         }
@@ -321,6 +407,26 @@ def _write_tls_fixture(root: Path, intersection_ids, *, include_zero_movement=Fa
 
 
 class GlobalTrafficTests(unittest.TestCase):
+    def test_real_network_detects_lane_expansion_endpoint_segments(self):
+        metadata = _inspect_route_network(
+            ROOT / "data" / "maps" / "sumo" / "TotalMap_20.net.xml",
+            (
+                CountLocation("demo_1", "north", "through", ("-57217", "-56915")),
+                CountLocation("demo_8", "east", "left", ("-54807", "-57113")),
+                CountLocation(
+                    "demo_3", "east", "left", ("-57582", "-46791.1195")
+                ),
+            ),
+            ("4427", "4393", "citypulse_demo_3"),
+        )
+
+        self.assertEqual(metadata.upstream_extensions["-57217"], "-57217.363")
+        self.assertEqual(metadata.upstream_extensions["-54807"], "-54807.1099")
+        self.assertEqual(metadata.downstream_extensions["-56915"], "-56916")
+        self.assertEqual(metadata.downstream_extensions["-57113"], "-57113.97")
+        self.assertNotIn("-57582", metadata.upstream_extensions)
+        self.assertNotIn("-46791.1195", metadata.downstream_extensions)
+
     def test_legacy_route_sampler_without_no_sampling_is_supported(self):
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "routeSampler.py"
@@ -352,7 +458,7 @@ class GlobalTrafficTests(unittest.TestCase):
             demand_path = root / "demands.json"
             _write_demand(demand_path)
             fake = LegacyFlowWindowSumoToolchain()
-            build_traffic_scenarios(
+            result = build_traffic_scenarios(
                 {"intersections": manifest_intersections},
                 demand_path=demand_path,
                 vehicle_profile_path=PROFILES,
@@ -379,6 +485,24 @@ class GlobalTrafficTests(unittest.TestCase):
                 all(
                     command[command.index("--optimize") + 1] == "full"
                     for command in sampler_commands
+                )
+            )
+            scenario = result["scenarios"]["global_morning_peak"]
+            self.assertEqual(result["route_endpoint_policy"]["upstream_extensions"], {})
+            self.assertEqual(
+                result["route_endpoint_policy"]["downstream_extensions"], {}
+            )
+            route_root = ET.parse(generated / scenario["route_file"]).getroot()
+            self.assertTrue(
+                all(
+                    flow.get("departPos") == "50"
+                    for flow in route_root.findall("flow")
+                )
+            )
+            self.assertTrue(
+                all(
+                    flow.get("arrivalPos") == "50"
+                    for flow in route_root.findall("flow")
                 )
             )
 
@@ -440,7 +564,7 @@ class GlobalTrafficTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             generated, manifest_intersections = _write_tls_fixture(
-                root, ("demo_a", "demo_b")
+                root, ("demo_a", "demo_b"), segmented_endpoints=True
             )
             demand_path = root / "demands.json"
             _write_demand(demand_path)
@@ -465,21 +589,51 @@ class GlobalTrafficTests(unittest.TestCase):
             self.assertGreater(scenario["multi_intersection_vehicle_count"], 0)
             self.assertEqual(scenario["selected_seed"], 42)
             self.assertEqual(
+                result["route_endpoint_policy"]["upstream_extensions"],
+                {"in_0": "far_in_0", "in_1": "far_in_1"},
+            )
+            self.assertEqual(
+                result["route_endpoint_policy"]["downstream_extensions"],
+                {"out_0": "far_out_0", "out_1": "far_out_1"},
+            )
+            self.assertGreater(
+                scenario["departure_position"]["extended_vehicle_count"], 0
+            )
+            self.assertEqual(
+                scenario["departure_position"],
+                {
+                    "strategy": "first_edge_midpoint",
+                    "fraction": 0.5,
+                    "remote_segment_when_extended": True,
+                    "extended_vehicle_count": scenario["sampled_vehicle_count"],
+                },
+            )
+            self.assertGreater(
+                scenario["arrival_position"]["extended_vehicle_count"], 0
+            )
+            self.assertEqual(
                 scenario["arrival_position"],
-                {"strategy": "final_edge_midpoint", "fraction": 0.5},
+                {
+                    "strategy": "final_edge_midpoint",
+                    "fraction": 0.5,
+                    "remote_segment_when_extended": True,
+                    "extended_vehicle_count": scenario["sampled_vehicle_count"],
+                },
             )
             route_root = ET.parse(generated / scenario["route_file"]).getroot()
             self.assertEqual(len(route_root.findall("vType")), 3)
             self.assertTrue(route_root.findall("flow"))
             self.assertTrue(
                 all(
-                    flow.get("arrivalPos") == "50"
+                    flow.get("departPos") == "100"
+                    and flow.get("arrivalPos") == "150"
                     for flow in route_root.findall("flow")
                 )
             )
             self.assertTrue(
                 any(
-                    flow.find("route").get("edges") == "in_0 out_0 in_1 out_1"
+                    flow.find("route").get("edges")
+                    == "far_in_0 in_0 out_0 in_1 out_1 far_out_1"
                     for flow in route_root.findall("flow")
                 )
             )

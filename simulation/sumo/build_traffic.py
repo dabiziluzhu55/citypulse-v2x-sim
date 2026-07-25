@@ -77,6 +77,14 @@ class RouteSamplerCapabilities:
 
 
 @dataclass(frozen=True)
+class NetworkRouteMetadata:
+    edge_lengths: Mapping[str, float]
+    u_turn_pairs: frozenset[Tuple[str, str]]
+    upstream_extensions: Mapping[str, str]
+    downstream_extensions: Mapping[str, str]
+
+
+@dataclass(frozen=True)
 class SampledFlow:
     flow_id: str
     type_id: str
@@ -588,18 +596,27 @@ def _write_candidate_trips(
     path: Path,
     profile: VehicleProfile,
     locations: Sequence[CountLocation],
+    upstream_extensions: Mapping[str, str],
+    downstream_extensions: Mapping[str, str],
 ) -> int:
     root = ET.Element("routes")
     candidate_type = f"candidate_{_safe_id(profile.v_class)}"
     ET.SubElement(root, "vType", {"id": candidate_type, "vClass": profile.v_class})
     forced_paths = []
     for location in locations:
-        forced_paths.append((f"local_{location.location_id}", location.edges))
+        forced = _extend_route_endpoints(
+            location.edges, upstream_extensions, downstream_extensions
+        )
+        if len(set(forced)) == len(forced):
+            forced_paths.append((f"local_{location.location_id}", forced))
     for first in locations:
         for second in locations:
             if first.intersection_id == second.intersection_id:
                 continue
             forced = _dedupe_adjacent(first.edges + second.edges)
+            forced = _extend_route_endpoints(
+                forced, upstream_extensions, downstream_extensions
+            )
             if len(set(forced)) != len(forced):
                 continue
             forced_paths.append(
@@ -621,45 +638,42 @@ def _write_candidate_trips(
     return len(forced_paths)
 
 
+def _extend_route_endpoints(
+    edges: Sequence[str],
+    upstream_extensions: Mapping[str, str],
+    downstream_extensions: Mapping[str, str],
+) -> Tuple[str, ...]:
+    if not edges:
+        return ()
+    result = list(edges)
+    upstream = upstream_extensions.get(result[0])
+    if upstream is not None:
+        result.insert(0, upstream)
+    downstream = downstream_extensions.get(result[-1])
+    if downstream is not None:
+        result.append(downstream)
+    return tuple(result)
+
+
 def _route_contains(route: Sequence[str], path: Sequence[str]) -> bool:
     width = len(path)
     return any(tuple(route[index : index + width]) == tuple(path) for index in range(len(route) - width + 1))
 
 
-def _u_turn_edge_pairs(network_path: Path) -> set[Tuple[str, str]]:
+def _inspect_route_network(
+    network_path: Path,
+    locations: Sequence[CountLocation],
+    official_junction_ids: Sequence[str],
+) -> NetworkRouteMetadata:
     try:
         root = ET.parse(network_path).getroot()
     except (FileNotFoundError, ET.ParseError) as exc:
         raise TrafficDemandError(
             f"Cannot inspect generated SUMO network: {network_path}"
         ) from exc
-    endpoints = {
-        str(edge.get("id")): (str(edge.get("from")), str(edge.get("to")))
-        for edge in root.findall("edge")
-        if edge.get("id")
-        and edge.get("from") is not None
-        and edge.get("to") is not None
-        and edge.get("function") != "internal"
-    }
-    by_endpoints: dict[Tuple[str, str], list[str]] = defaultdict(list)
-    for edge_id, edge_endpoints in endpoints.items():
-        by_endpoints[edge_endpoints].append(edge_id)
-    return {
-        (first, second)
-        for first, (from_node, to_node) in endpoints.items()
-        for second in by_endpoints.get((to_node, from_node), ())
-    }
-
-
-def _network_edge_lengths(network_path: Path) -> Mapping[str, float]:
-    try:
-        root = ET.parse(network_path).getroot()
-    except (FileNotFoundError, ET.ParseError) as exc:
-        raise TrafficDemandError(
-            f"Cannot inspect generated SUMO network: {network_path}"
-        ) from exc
-
-    lengths = {}
+    endpoints = {}
+    lane_counts = {}
+    edge_lengths = {}
     for edge in root.findall("edge"):
         edge_id = edge.get("id")
         if (
@@ -668,18 +682,111 @@ def _network_edge_lengths(network_path: Path) -> Mapping[str, float]:
             or edge.get("function") == "internal"
         ):
             continue
-        lane_lengths = []
-        for lane in edge.findall("lane"):
+        if edge.get("from") is not None and edge.get("to") is not None:
+            endpoints[str(edge_id)] = (
+                str(edge.get("from")),
+                str(edge.get("to")),
+            )
+        lanes = edge.findall("lane")
+        lane_counts[str(edge_id)] = len(lanes)
+        lengths = []
+        for lane in lanes:
             try:
                 length = float(str(lane.get("length", "")))
             except ValueError:
                 continue
             if math.isfinite(length) and length > 0:
-                lane_lengths.append(length)
-        if lane_lengths:
-            # Keep the midpoint valid even when parallel lanes have unequal lengths.
-            lengths[str(edge_id)] = min(lane_lengths)
-    return lengths
+                lengths.append(length)
+        if lengths:
+            # Keep midpoint positions valid when parallel lanes differ slightly.
+            edge_lengths[str(edge_id)] = min(lengths)
+
+    by_endpoints: dict[Tuple[str, str], list[str]] = defaultdict(list)
+    for edge_id, edge_endpoints in endpoints.items():
+        by_endpoints[edge_endpoints].append(edge_id)
+    u_turn_pairs = frozenset({
+        (first, second)
+        for first, (from_node, to_node) in endpoints.items()
+        for second in by_endpoints.get((to_node, from_node), ())
+    })
+
+    predecessors: dict[str, dict[str, set[str]]] = defaultdict(
+        lambda: defaultdict(set)
+    )
+    successors: dict[str, dict[str, set[str]]] = defaultdict(
+        lambda: defaultdict(set)
+    )
+    for connection in root.findall("connection"):
+        source = str(connection.get("from", ""))
+        target = str(connection.get("to", ""))
+        if source not in lane_counts or target not in lane_counts:
+            continue
+        direction = str(connection.get("dir", ""))
+        predecessors[target][source].add(direction)
+        successors[source][target].add(direction)
+
+    protected_junctions = {str(item) for item in official_junction_ids}
+    protected_junctions.update(
+        str(junction.get("id"))
+        for junction in root.findall("junction")
+        if junction.get("id") and junction.get("type") == "traffic_light"
+    )
+    for location in locations:
+        incoming_endpoints = endpoints.get(location.edges[0])
+        outgoing_endpoints = endpoints.get(location.edges[-1])
+        if incoming_endpoints is not None:
+            protected_junctions.add(incoming_endpoints[1])
+        if outgoing_endpoints is not None:
+            protected_junctions.add(outgoing_endpoints[0])
+
+    upstream_extensions = {}
+    for near_edge in sorted({location.edges[0] for location in locations}):
+        near_endpoints = endpoints.get(near_edge)
+        if near_endpoints is None or near_endpoints[0] in protected_junctions:
+            continue
+        straight = [
+            edge_id
+            for edge_id, directions in predecessors[near_edge].items()
+            if directions == {"s"}
+        ]
+        if len(straight) != 1:
+            continue
+        far_edge = straight[0]
+        if lane_counts[near_edge] > lane_counts[far_edge]:
+            if far_edge not in edge_lengths:
+                raise TrafficDemandError(
+                    f"Upstream endpoint extension edge {far_edge!r} has no positive "
+                    "lane length in the generated SUMO network."
+                )
+            upstream_extensions[near_edge] = far_edge
+
+    downstream_extensions = {}
+    for near_edge in sorted({location.edges[-1] for location in locations}):
+        near_endpoints = endpoints.get(near_edge)
+        if near_endpoints is None or near_endpoints[1] in protected_junctions:
+            continue
+        straight = [
+            edge_id
+            for edge_id, directions in successors[near_edge].items()
+            if directions == {"s"}
+        ]
+        if len(straight) != 1:
+            continue
+        far_edge = straight[0]
+        if lane_counts[near_edge] > lane_counts[far_edge]:
+            if far_edge not in edge_lengths:
+                raise TrafficDemandError(
+                    f"Downstream endpoint extension edge {far_edge!r} has no positive "
+                    "lane length in the generated SUMO network."
+                )
+            downstream_extensions[near_edge] = far_edge
+
+    return NetworkRouteMetadata(
+        edge_lengths=edge_lengths,
+        u_turn_pairs=u_turn_pairs,
+        upstream_extensions=upstream_extensions,
+        downstream_extensions=downstream_extensions,
+    )
 
 
 def _read_candidate_routes(
@@ -727,6 +834,7 @@ def _write_candidate_routes(path: Path, routes: Sequence[Tuple[str, ...]]) -> No
 def _build_candidates(
     work_dir: Path,
     network_path: Path,
+    network_metadata: NetworkRouteMetadata,
     compiled: CompiledGlobalDemand,
     class_targets,
     profiles: Mapping[str, VehicleProfile],
@@ -734,7 +842,6 @@ def _build_candidates(
     runner,
 ) -> Mapping[str, Path]:
     locations = tuple(sorted(compiled.locations.values(), key=lambda item: item.location_id))
-    u_turn_pairs = _u_turn_edge_pairs(network_path)
     by_vclass: dict[str, list[str]] = defaultdict(list)
     for profile_id in sorted(profiles):
         by_vclass[profiles[profile_id].v_class].append(profile_id)
@@ -744,7 +851,13 @@ def _build_candidates(
         trips_path = work_dir / f"candidate_{_safe_id(vclass)}.trips.xml"
         raw_path = work_dir / f"candidate_{_safe_id(vclass)}.raw.rou.xml"
         clean_path = work_dir / f"candidate_{_safe_id(vclass)}.rou.xml"
-        _write_candidate_trips(trips_path, profile, locations)
+        _write_candidate_trips(
+            trips_path,
+            profile,
+            locations,
+            network_metadata.upstream_extensions,
+            network_metadata.downstream_extensions,
+        )
         _run_command(
             [
                 tools["duarouter"],
@@ -763,7 +876,7 @@ def _build_candidates(
             ],
             runner,
         )
-        routes = _read_candidate_routes(raw_path, u_turn_pairs)
+        routes = _read_candidate_routes(raw_path, set(network_metadata.u_turn_pairs))
         if not routes:
             raise TrafficDemandError(f"duarouter produced no {vclass} candidate routes.")
         _write_candidate_routes(clean_path, routes)
@@ -1160,7 +1273,7 @@ def _write_routes(
     path: Path,
     profiles: Mapping[str, VehicleProfile],
     flows: Sequence[SampledFlow],
-    edge_lengths: Mapping[str, float],
+    network_metadata: NetworkRouteMetadata,
 ) -> None:
     root = ET.Element("routes")
     for profile_id in sorted(profiles):
@@ -1171,28 +1284,34 @@ def _write_routes(
             raise TrafficDemandError(
                 f"Sampled flow {flow.flow_id!r} has no route edges."
             )
+        attributes = {
+            "id": flow.flow_id,
+            "type": flow.type_id,
+            "begin": _format_number(flow.begin),
+            "end": _format_number(flow.end),
+            "number": str(flow.number),
+            "departLane": "best",
+            "departSpeed": "max",
+        }
+        first_edge = flow.edges[0]
+        first_edge_length = network_metadata.edge_lengths.get(first_edge)
+        if first_edge_length is None:
+            raise TrafficDemandError(
+                f"Cannot place sampled flow {flow.flow_id!r} at the midpoint "
+                f"of first edge {first_edge!r}: the generated SUMO network "
+                "has no positive lane length for that edge."
+            )
+        attributes["departPos"] = _format_number(first_edge_length * 0.5)
         final_edge = flow.edges[-1]
-        final_edge_length = edge_lengths.get(final_edge)
+        final_edge_length = network_metadata.edge_lengths.get(final_edge)
         if final_edge_length is None:
             raise TrafficDemandError(
                 f"Cannot place sampled flow {flow.flow_id!r} at the midpoint of "
                 f"final edge {final_edge!r}: the generated SUMO network has no "
                 "positive lane length for that edge."
             )
-        node = ET.SubElement(
-            root,
-            "flow",
-            {
-                "id": flow.flow_id,
-                "type": flow.type_id,
-                "begin": _format_number(flow.begin),
-                "end": _format_number(flow.end),
-                "number": str(flow.number),
-                "departLane": "best",
-                "departSpeed": "max",
-                "arrivalPos": _format_number(final_edge_length * 0.5),
-            },
-        )
+        attributes["arrivalPos"] = _format_number(final_edge_length * 0.5)
+        node = ET.SubElement(root, "flow", attributes)
         ET.SubElement(node, "route", {"edges": " ".join(flow.edges)})
     ET.indent(root, space="  ")
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
@@ -1318,11 +1437,22 @@ def build_traffic_scenarios(
             "Generated TLS artifacts are missing: "
             f"{[str(path) for path in missing_artifacts]}. Run build_tls first."
         )
-    edge_lengths = _network_edge_lengths(layout.network_file)
-    tools = _toolchain(tool_paths)
     compiled = _compile_global_demand(
         requested, manifest_intersections, configuration
     )
+    official_junction_ids = tuple(
+        str(junction_id)
+        for intersection_id in requested
+        for junction_id in manifest_intersections[intersection_id].get(
+            "junction_ids", ()
+        )
+    )
+    network_metadata = _inspect_route_network(
+        layout.network_file,
+        tuple(compiled.locations.values()),
+        official_junction_ids,
+    )
+    tools = _toolchain(tool_paths)
     class_targets = _class_targets(
         compiled, configuration.vehicle_mix.shares, profiles
     )
@@ -1343,6 +1473,7 @@ def build_traffic_scenarios(
     candidate_paths = _build_candidates(
         work_dir,
         layout.network_file,
+        network_metadata,
         compiled,
         class_targets,
         profiles,
@@ -1370,6 +1501,16 @@ def build_traffic_scenarios(
         "vehicle_type_profiles": {
             f"official_{_safe_id(profile_id)}": profile_id
             for profile_id in profiles
+        },
+        "route_endpoint_policy": {
+            "strategy": "route_endpoint_midpoint_with_lane_expansion_extension",
+            "fraction": 0.5,
+            "upstream_extensions": dict(
+                sorted(network_metadata.upstream_extensions.items())
+            ),
+            "downstream_extensions": dict(
+                sorted(network_metadata.downstream_extensions.items())
+            ),
         },
         "intersections": {
             intersection_id: {
@@ -1480,7 +1621,7 @@ def build_traffic_scenarios(
         route_path = scenario_dir / "routes.rou.xml"
         additional_path = scenario_dir / "signals.add.xml"
         sumocfg_path = scenario_dir / "simulation.sumocfg"
-        _write_routes(route_path, profiles, selected["flows"], edge_lengths)
+        _write_routes(route_path, profiles, selected["flows"], network_metadata)
         _write_program_additional(
             layout.signal_programs_file,
             additional_path,
@@ -1524,9 +1665,27 @@ def build_traffic_scenarios(
             "demand_duration": period.duration,
             "simulation_end": simulation_end,
             "selected_seed": selected["seed"],
+            "departure_position": {
+                "strategy": "first_edge_midpoint",
+                "fraction": 0.5,
+                "remote_segment_when_extended": True,
+                "extended_vehicle_count": sum(
+                    flow.number
+                    for flow in selected["flows"]
+                    if flow.edges[0]
+                    in frozenset(network_metadata.upstream_extensions.values())
+                ),
+            },
             "arrival_position": {
                 "strategy": "final_edge_midpoint",
                 "fraction": 0.5,
+                "remote_segment_when_extended": True,
+                "extended_vehicle_count": sum(
+                    flow.number
+                    for flow in selected["flows"]
+                    if flow.edges[-1]
+                    in frozenset(network_metadata.downstream_extensions.values())
+                ),
             },
             "target_observation_pcu": selected["report"]["target_observation_pcu"],
             "sampled_vehicle_count": selected["report"]["sampled_vehicle_count"],
