@@ -43,6 +43,7 @@ DEFAULT_MANIFEST = GeneratedArtifactLayout(DEFAULT_OUTPUT_DIR).tls_manifest
 ROUTE_SAMPLER_SEEDS = (42, 43, 44, 45, 46)
 MINIMIZE_VEHICLES = 0.1
 ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY = "routeSamplerSupportsNoSampling"
+ROUTE_SAMPLER_VIA_MISMATCH_CAPABILITY = "routeSamplerSupportsViaMismatch"
 ROUTE_SAMPLER_REQUIRED_OPTIONS = (
     "--interval",
     "--write-flows",
@@ -67,6 +68,12 @@ class CountLocation:
             f"{self.intersection_id}_{self.official_approach}_"
             f"{self.official_movement}_{'_'.join(self.edges)}"
         )
+
+
+@dataclass(frozen=True)
+class RouteSamplerCapabilities:
+    no_sampling: bool
+    via_mismatch: bool
 
 
 @dataclass(frozen=True)
@@ -146,7 +153,7 @@ def _sumo_tool(name: str) -> str:
     )
 
 
-def _validate_route_sampler(path: str) -> bool:
+def _validate_route_sampler(path: str) -> RouteSamplerCapabilities:
     try:
         source = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
@@ -161,7 +168,13 @@ def _validate_route_sampler(path: str) -> bool:
             f"SUMO routeSampler at {path} does not support required options: {missing}. "
             "Install a current SUMO release and point SUMO_HOME to it."
         )
-    return "--no-sampling" in source
+    return RouteSamplerCapabilities(
+        no_sampling="--no-sampling" in source,
+        via_mismatch=(
+            "output for edge relations with more than 2 edges not supported"
+            not in source
+        ),
+    )
 
 
 def _toolchain(overrides: Mapping[str, str] | None) -> Mapping[str, str]:
@@ -171,6 +184,7 @@ def _toolchain(overrides: Mapping[str, str] | None) -> Mapping[str, str]:
             raise TrafficDemandError(f"Tool overrides are missing: {sorted(missing)}")
         result = dict(overrides)
         result.setdefault(ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY, "true")
+        result.setdefault(ROUTE_SAMPLER_VIA_MISMATCH_CAPABILITY, "true")
         return result
     try:
         import numpy  # noqa: F401
@@ -184,15 +198,24 @@ def _toolchain(overrides: Mapping[str, str] | None) -> Mapping[str, str]:
         "sumo": _binary("sumo"),
         "routeSampler": _sumo_tool("routeSampler.py"),
     }
-    supports_no_sampling = _validate_route_sampler(tools["routeSampler"])
+    capabilities = _validate_route_sampler(tools["routeSampler"])
     tools[ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY] = str(
-        supports_no_sampling
+        capabilities.no_sampling
     ).lower()
-    if not supports_no_sampling:
+    tools[ROUTE_SAMPLER_VIA_MISMATCH_CAPABILITY] = str(
+        capabilities.via_mismatch
+    ).lower()
+    if not capabilities.no_sampling:
         print(
             "SUMO routeSampler does not support --no-sampling; continuing with "
             "--optimize full. The installed legacy version may perform a seeded "
             "pre-sampling pass before full optimization."
+        )
+    if not capabilities.via_mismatch:
+        print(
+            "SUMO routeSampler cannot write mismatch XML for edge relations with "
+            "via edges. Native mismatch output will be disabled for those count "
+            "files; CityPulse independent PCU/GEH quality reports remain enabled."
         )
     return tools
 
@@ -757,6 +780,43 @@ def _read_sampled_flows(path: Path) -> Tuple[SampledFlow, ...]:
     return tuple(result)
 
 
+def _turn_counts_have_via(path: Path) -> bool:
+    try:
+        root = ET.parse(path).getroot()
+    except (FileNotFoundError, ET.ParseError) as exc:
+        raise TrafficDemandError(f"Cannot read routeSampler turn counts: {path}") from exc
+    return any(relation.get("via") for relation in root.findall("interval/edgeRelation"))
+
+
+def _write_legacy_mismatch_marker(
+    path: Path,
+    route_sampler_path: str,
+    counts_path: Path,
+) -> None:
+    root = ET.Element(
+        "data",
+        {
+            "native": "false",
+            "reason": "legacy-routeSampler-via-mismatch-unsupported",
+        },
+    )
+    warning = ET.SubElement(
+        root,
+        "warning",
+        {
+            "routeSampler": route_sampler_path,
+            "turnCounts": str(counts_path),
+        },
+    )
+    warning.text = (
+        "The installed routeSampler can optimize via edge relations but crashes "
+        "while serializing their native mismatch XML. Use the CityPulse traffic "
+        "quality JSON/CSV for authoritative PCU, GEH, and zero-flow validation."
+    )
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+
 def _run_route_sampler(
     tools: Mapping[str, str],
     runner,
@@ -773,6 +833,14 @@ def _run_route_sampler(
     optimization_options = ["--optimize", "full"]
     if tools.get(ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY, "true") == "true":
         optimization_options.append("--no-sampling")
+    write_native_mismatch = not _turn_counts_have_via(counts_path) or (
+        tools.get(ROUTE_SAMPLER_VIA_MISMATCH_CAPABILITY, "true") == "true"
+    )
+    mismatch_options = (
+        ["--mismatch-output", str(mismatch_path)]
+        if write_native_mismatch
+        else []
+    )
     _run_command(
         [
             sys.executable,
@@ -783,8 +851,7 @@ def _run_route_sampler(
             str(counts_path),
             "--output-file",
             str(output_path),
-            "--mismatch-output",
-            str(mismatch_path),
+            *mismatch_options,
             "--begin",
             "0",
             "--end",
@@ -805,7 +872,13 @@ def _run_route_sampler(
         ],
         runner,
     )
-    if not mismatch_path.is_file():
+    if not write_native_mismatch:
+        _write_legacy_mismatch_marker(
+            mismatch_path,
+            tools["routeSampler"],
+            counts_path,
+        )
+    elif not mismatch_path.is_file():
         raise TrafficDemandError(
             f"routeSampler did not write the requested mismatch output: {mismatch_path}"
         )
@@ -814,11 +887,13 @@ def _run_route_sampler(
 
 def _flow_interval(flow: SampledFlow, period: DemandPeriod) -> int:
     for index, interval in enumerate(period.intervals):
+        begin = interval.start - period.start
         end = interval.end - period.start
-        if abs(flow.end - end) < 1e-6:
+        if begin - 1e-6 <= flow.begin < end - 1e-6:
             return index
     raise TrafficDemandError(
-        f"Flow {flow.flow_id} ends outside official 15-minute intervals: {flow.end}."
+        f"Flow {flow.flow_id} begins outside official 15-minute intervals: "
+        f"{flow.begin}."
     )
 
 

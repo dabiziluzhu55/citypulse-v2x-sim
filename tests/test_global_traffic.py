@@ -101,9 +101,10 @@ class FakeSumoToolchain:
             ET.ElementTree(output).write(
                 _arg(command, "--output-file"), encoding="utf-8", xml_declaration=True
             )
-            _arg(command, "--mismatch-output").write_text(
-                "<data/>", encoding="utf-8"
-            )
+            if "--mismatch-output" in command:
+                _arg(command, "--mismatch-output").write_text(
+                    "<data/>", encoding="utf-8"
+                )
         return subprocess.CompletedProcess(command, 0, stdout="ok")
 
 
@@ -121,6 +122,20 @@ class RetrySumoToolchain(FakeSumoToolchain):
                     ET.ElementTree(root).write(
                         output_path, encoding="utf-8", xml_declaration=True
                     )
+        return result
+
+
+class LegacyFlowWindowSumoToolchain(FakeSumoToolchain):
+    def __call__(self, command, **kwargs):
+        result = super().__call__(command, **kwargs)
+        if len(command) > 1 and command[1] == "fake-routeSampler.py":
+            output_path = _arg(command, "--output-file")
+            root = ET.parse(output_path).getroot()
+            for flow in root.findall("flow"):
+                flow.set("end", str(float(flow.get("begin")) + 1))
+            ET.ElementTree(root).write(
+                output_path, encoding="utf-8", xml_declaration=True
+            )
         return result
 
 
@@ -300,11 +315,14 @@ class GlobalTrafficTests(unittest.TestCase):
                         "--mismatch-output",
                         "--seed",
                         "--attributes",
+                        "output for edge relations with more than 2 edges not supported",
                     )
                 ),
                 encoding="utf-8",
             )
-            self.assertFalse(_validate_route_sampler(str(script)))
+            capabilities = _validate_route_sampler(str(script))
+            self.assertFalse(capabilities.no_sampling)
+            self.assertFalse(capabilities.via_mismatch)
 
     def test_legacy_route_sampler_command_omits_no_sampling(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -314,7 +332,7 @@ class GlobalTrafficTests(unittest.TestCase):
             )
             demand_path = root / "demands.json"
             _write_demand(demand_path)
-            fake = FakeSumoToolchain()
+            fake = LegacyFlowWindowSumoToolchain()
             build_traffic_scenarios(
                 {"intersections": manifest_intersections},
                 demand_path=demand_path,
@@ -546,6 +564,7 @@ class GlobalTrafficTests(unittest.TestCase):
                     "duarouter": "fake-duarouter",
                     "sumo": "fake-sumo",
                     "routeSampler": "fake-routeSampler.py",
+                    "routeSamplerSupportsViaMismatch": "false",
                 },
             )
 
@@ -561,6 +580,23 @@ class GlobalTrafficTests(unittest.TestCase):
             self.assertEqual(
                 report["vehicle_target_allocations"][0]["edges"],
                 ["in_0", "via_0", "out_0"],
+            )
+            sampler_commands = [
+                command
+                for command in fake.commands
+                if len(command) > 1 and command[1] == "fake-routeSampler.py"
+            ]
+            self.assertTrue(
+                all("--mismatch-output" not in command for command in sampler_commands)
+            )
+            mismatch_path = generated / scenario["route_sampler_mismatch_files"][
+                "passenger"
+            ]
+            mismatch_root = ET.parse(mismatch_path).getroot()
+            self.assertEqual(mismatch_root.get("native"), "false")
+            self.assertEqual(
+                mismatch_root.get("reason"),
+                "legacy-routeSampler-via-mismatch-unsupported",
             )
 
 
