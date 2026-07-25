@@ -6,14 +6,16 @@
 `data/maps/sumo/official_traffic_demands.json`，生成文件保存在
 `data/maps/sumo/generated/`。当前已录入需求的 `demo_1`、`demo_2`、`demo_3`、`demo_4`、`demo_5`、`demo_6`、`demo_7`、`demo_8`、`demo_9`、
 `demo_10`、`demo_11`、`demo_12`、`demo_13`、`demo_14`、`demo_15`、`demo_16`、`demo_17`、`demo_18`、`demo_19`、`demo_20`
-使用小客车，
-`1 vehicle = 1 PCU`，
-因此生成车辆数与表格 PCU 数严格相等。
+共同参与一套全局约束，不再分别生成局部车流。
 
-车型动力和排放参数独立保存在 `data/maps/sumo/vehicle_profiles.json`。需求文件中的
-`vehicle_type: "passenger"` 引用同名画像；默认使用汽油小客车和
-`HBEFA3/PC_G_EU4`，生成的 `<vType>` 会携带 `emissionClass`，供运行期通过 TraCI
-采集瞬时油耗。后续增加车型时应新增画像并引用其 ID，不要在生成器中硬编码参数。
+官方数值是 PCU 观测量，不等同于车辆数。当前 `vehicle_mix` 是明确标注的仿真假设：
+按车辆数使用小客车 85%、公交车 10%、货车 5%，PCU 系数分别为 1.0、2.0、2.5。
+车型动力、排放和 PCU 参数保存在 `data/maps/sumo/vehicle_profiles.json`；构建器用
+0.5 PCU 整数规划把每个物理计数位置换算为分车型车辆约束。
+
+生成器调用 `$SUMO_HOME/tools/routeSampler.py`，一条全局路线经过多个官方路口时，
+会在每个经过的进口转向上贡献该车型的 PCU。这样同一辆车可以同时满足多个路口的
+观测约束，而不会在场景合并时被重复创建。
 
 `demo_1` 三个时段的校验总量为：
 
@@ -410,11 +412,10 @@ edge，不调用 `sumo/netconvert`，不写文件，也不会清空已有生成�
 `SUMO_HOME` 后执行正式构建：
 
 ```bash
-python -m simulation.sumo.build_tls \
-  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
+python -m simulation.sumo.build_tls
 ```
 
-该命令一次生成公共信号路网，以及 20 个路口各 3 个时段、共 60 个真实交通场景：
+不传 `--intersections` 时默认构建全部 20 个路口，并生成 3 个全局交通场景：
 
 ```text
 generated/
@@ -423,22 +424,25 @@ generated/
   manifests/tls_manifest.json
   manifests/traffic_manifest.json
   reports/official_tls_connections.csv
-  traffic/demo_2/morning_peak/
+  reports/traffic_quality_morning_peak.json
+  reports/traffic_quality_morning_peak.csv
+  reports/traffic_morning_peak_passenger_mismatch.xml
+  traffic/global/morning_peak/
     routes.rou.xml
     signals.add.xml
     simulation.sumocfg
-  traffic/demo_2/off_peak/
+  traffic/global/off_peak/
     routes.rou.xml
     signals.add.xml
     simulation.sumocfg
-  traffic/demo_2/evening_peak/
+  traffic/global/evening_peak/
     routes.rou.xml
     signals.add.xml
     simulation.sumocfg
 ```
 
-每个场景使用独立的 `signals.add.xml`，其中只保留与车流时段对应的
-program，保证直接用 `sumo-gui` 打开时不会误选其他时段配时。
+每个场景使用独立的 `signals.add.xml`，其中包含 20 个路口与车流时段对应的 program，
+保证未被算法选中的路口仍按该时段官方固定配时运行。
 整个 `data/maps/sumo/generated/` 目录由 Git 忽略，所有文件都必须由构建器生成，禁止
 手工修改或提交其中的 XML 和 manifest。
 
@@ -449,12 +453,12 @@ program，保证直接用 `sumo-gui` 打开时不会误选其他时段配时。
 直接检查 GUI：
 
 ```bash
-sumo-gui -c data/maps/sumo/generated/traffic/demo_2/morning_peak/simulation.sumocfg
+sumo-gui -c data/maps/sumo/generated/traffic/global/morning_peak/simulation.sumocfg
 ```
 
-部署验收时应先对 60 个 `simulation.sumocfg` 做无界面启动检查，再重点打开
-`demo_8/morning_peak`：东、南右转车辆应分别走 `E14`、`E15` 且不等待 `J1`，其余方向
-按官方四相位运行。
+构建器会无界面完整运行 3 个 `simulation.sumocfg`。质量门槛为：非零单元格误差不超过
+`max(3 PCU, 5%)`、零值不溢出、每路口每 15 分钟总量误差不超过 3%，且至少 90%
+的非零计数点 `GEH < 5`。详细结果及 routeSampler 原始 mismatch 位于 `reports/`。
 
 固定配时 runner（默认就是 `demo_2` 早高峰）：
 
@@ -481,5 +485,5 @@ python -m simulation.sumo.run --gui --mode fixed \
 4. 构建后检查 `generated/reports/official_tls_connections.csv`，再用真实场景 GUI 查看每种转向。
 5. 运行单元测试，确认区间、合计、路线和接口校验均通过。
 
-如果后续加入公交车或货车，不能继续直接把 PCU 当车辆数。应在需求配置中增加车型
-占比与 PCU 系数，再把 PCU 确定性换算为各车型车辆数，同时保留舍入误差报告。
+调整车型构成时修改 `vehicle_mix.shares` 和车辆画像中的 `pcu_factor`；占比必须合计为
+1.0，PCU 系数必须按 0.5 递增。不要把官方 PCU 总量直接当作 SUMO 车辆数。

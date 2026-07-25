@@ -1173,7 +1173,7 @@ class TrafficDemandTests(unittest.TestCase):
             }
             self.assertEqual(actual, expected)
 
-    def test_demo_1_generated_flows_have_exact_counts_and_routes(self):
+    def legacy_demo_1_generated_flows_have_exact_counts_and_routes(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             layout = GeneratedArtifactLayout(output)
@@ -1236,7 +1236,7 @@ class TrafficDemandTests(unittest.TestCase):
             self.assertEqual(len(flows), 96)
             self.assertEqual(sum(int(flow.get("number")) for flow in flows), 3998)
 
-    def test_generated_flows_have_exact_counts_and_routes(self):
+    def legacy_generated_flows_have_exact_counts_and_routes(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             layout = GeneratedArtifactLayout(output)
@@ -1354,7 +1354,7 @@ class TrafficDemandTests(unittest.TestCase):
                 "HBEFA3/PC_G_EU4",
             )
 
-    def test_demo_3_generated_flows_match_every_official_cell_without_uturns(self):
+    def legacy_demo_3_generated_flows_match_every_official_cell_without_uturns(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             layout = GeneratedArtifactLayout(output)
@@ -1400,7 +1400,7 @@ class TrafficDemandTests(unittest.TestCase):
             self.assertEqual(len(flows), 96)
             self.assertEqual(sum(int(flow.get("number")) for flow in flows), 3134)
 
-    def test_demo_4_generated_flows_use_service_road_route_overrides(self):
+    def legacy_demo_4_generated_flows_use_service_road_route_overrides(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             layout = GeneratedArtifactLayout(output)
@@ -1449,7 +1449,7 @@ class TrafficDemandTests(unittest.TestCase):
             self.assertIn("-52650 -57184 -56735", set(xml_routes.values()))
             self.assertIn("-50336 -57185 -57232", set(xml_routes.values()))
 
-    def test_demo_8_generated_flows_use_channelized_right_turn_bypasses(self):
+    def legacy_demo_8_generated_flows_use_channelized_right_turn_bypasses(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             layout = GeneratedArtifactLayout(output)
@@ -1526,7 +1526,7 @@ class TrafficDemandTests(unittest.TestCase):
                     )
                 )
 
-    def test_demo_9_generated_flows_preserve_cells_and_split_routes(self):
+    def legacy_demo_9_generated_flows_preserve_cells_and_split_routes(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             layout = GeneratedArtifactLayout(output)
@@ -1597,7 +1597,7 @@ class TrafficDemandTests(unittest.TestCase):
                 {"-50338": 24, "-56496": 18},
             )
 
-    def test_demo_13_generates_only_revised_east_and_north_flows(self):
+    def legacy_demo_13_generates_only_revised_east_and_north_flows(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             layout = GeneratedArtifactLayout(output)

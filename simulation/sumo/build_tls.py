@@ -897,7 +897,7 @@ def _write_connection_report(path: Path, connections: Sequence[ControlledConnect
 
 
 def validate(
-    intersection_ids: Sequence[str],
+    intersection_ids: Sequence[str] | None = None,
     mapping_path: Path = DEFAULT_MAPPING,
     plans_path: Path = DEFAULT_PLANS,
     topology_path: Path = DEFAULT_TOPOLOGY,
@@ -905,13 +905,15 @@ def validate(
     source_net: Path = DEFAULT_BASE_NET,
 ) -> Mapping[str, int]:
     configuration = load_signal_configuration(mapping_path, plans_path, topology_path)
-    selected = configuration.select(intersection_ids)
+    selected = configuration.select(
+        intersection_ids if intersection_ids is not None else configuration.intersections
+    )
     demands = load_traffic_demands(demand_path)
     return validate_source_compatibility(source_net, selected, demands)
 
 
 def build(
-    intersection_ids: Sequence[str],
+    intersection_ids: Sequence[str] | None = None,
     mapping_path: Path = DEFAULT_MAPPING,
     plans_path: Path = DEFAULT_PLANS,
     topology_path: Path = DEFAULT_TOPOLOGY,
@@ -920,7 +922,9 @@ def build(
     demand_path: Path = DEFAULT_DEMANDS,
 ) -> Mapping[str, object]:
     configuration = load_signal_configuration(mapping_path, plans_path, topology_path)
-    selected = configuration.select(intersection_ids)
+    selected = configuration.select(
+        intersection_ids if intersection_ids is not None else configuration.intersections
+    )
     demands = load_traffic_demands(demand_path)
     validate_source_compatibility(source_net, selected, demands)
     junction_ids = sorted({item for config in selected for item in config.junction_ids})
@@ -1058,7 +1062,12 @@ def build(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--intersections", nargs="+", default=["demo_2"])
+    parser.add_argument(
+        "--intersections",
+        nargs="+",
+        default=None,
+        help="Intersection IDs to build; defaults to every configured intersection.",
+    )
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING)
     parser.add_argument("--plans", type=Path, default=DEFAULT_PLANS)
     parser.add_argument("--topology", type=Path, default=DEFAULT_TOPOLOGY)

@@ -63,16 +63,21 @@ class DemandPeriod:
 @dataclass(frozen=True)
 class IntersectionDemand:
     intersection_id: str
-    vehicle_type: str
-    pcu_per_vehicle: float
     approaches: Mapping[str, ApproachDemandMapping]
     periods: Mapping[str, DemandPeriod]
+
+
+@dataclass(frozen=True)
+class VehicleMix:
+    basis: str
+    shares: Mapping[str, float]
 
 
 @dataclass(frozen=True)
 class TrafficDemandConfiguration:
     unit: str
     interval_seconds: int
+    vehicle_mix: VehicleMix
     intersections: Mapping[str, IntersectionDemand]
 
 
@@ -314,15 +319,8 @@ def _parse_intersection(
     if not periods:
         raise TrafficDemandError(f"{intersection_id}: no demand periods.")
 
-    pcu_per_vehicle = float(raw.get("pcu_per_vehicle", 0))
-    if pcu_per_vehicle != 1.0:
-        raise TrafficDemandError(
-            f"{intersection_id}: only 1.0 PCU passenger demand is currently supported."
-        )
     return IntersectionDemand(
         intersection_id=intersection_id,
-        vehicle_type=str(raw.get("vehicle_type", "passenger")),
-        pcu_per_vehicle=pcu_per_vehicle,
         approaches=approaches,
         periods=periods,
     )
@@ -330,13 +328,30 @@ def _parse_intersection(
 
 def load_traffic_demands(path: Path) -> TrafficDemandConfiguration:
     raw = _read_json(path)
-    if int(raw.get("schema_version", 0)) != 1:
-        raise TrafficDemandError("official_traffic_demands.json must use schema_version 1.")
+    if int(raw.get("schema_version", 0)) != 2:
+        raise TrafficDemandError("official_traffic_demands.json must use schema_version 2.")
     if str(raw.get("unit", "")) != "pcu":
         raise TrafficDemandError("Traffic demand unit must be 'pcu'.")
     interval_seconds = int(raw.get("interval_seconds", 0))
     if interval_seconds <= 0:
         raise TrafficDemandError("interval_seconds must be positive.")
+    raw_mix = raw.get("vehicle_mix", {})
+    if str(raw_mix.get("basis", "")) != "vehicle_count":
+        raise TrafficDemandError("vehicle_mix.basis must be 'vehicle_count'.")
+    shares = {}
+    for profile_id, value in raw_mix.get("shares", {}).items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TrafficDemandError(
+                f"vehicle_mix.shares/{profile_id} must be a positive number."
+            )
+        share = float(value)
+        if not share > 0:
+            raise TrafficDemandError(
+                f"vehicle_mix.shares/{profile_id} must be a positive number."
+            )
+        shares[str(profile_id)] = share
+    if not shares or abs(sum(shares.values()) - 1.0) > 1e-9:
+        raise TrafficDemandError("vehicle_mix shares must sum to 1.0.")
     intersections = {
         str(intersection_id): _parse_intersection(
             str(intersection_id), item, interval_seconds
@@ -348,5 +363,6 @@ def load_traffic_demands(path: Path) -> TrafficDemandConfiguration:
     return TrafficDemandConfiguration(
         unit="pcu",
         interval_seconds=interval_seconds,
+        vehicle_mix=VehicleMix(basis="vehicle_count", shares=shares),
         intersections=intersections,
     )

@@ -234,7 +234,7 @@ if __name__ == "__main__":
         "sumo",
         "generated",
         "traffic",
-        "demo_2",
+        "global",
         "morning_peak",
         "simulation.sumocfg",
     )

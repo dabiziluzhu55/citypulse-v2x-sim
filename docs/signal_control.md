@@ -140,8 +140,7 @@ python -m simulation.sumo.build_tls --validate-only \
 在已安装 SUMO 的服务器执行正式全量构建：
 
 ```bash
-python -m simulation.sumo.build_tls \
-  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
+python -m simulation.sumo.build_tls
 ```
 
 `data/maps/sumo/generated/` 整体由 Git 忽略，是可删除、可重建且不提交的目录，不要手工修改。
@@ -175,14 +174,16 @@ TLS 属性和 `tlLogic` 会被移除，再由 `--tls.set 4409` 完整重建。�
 | `manifests/tls_manifest.json` | runner 使用的相位、连接、lane 和灯色桥接数据 |
 | `manifests/traffic_manifest.json` | 场景路径、官方时间和 PCU 合计 |
 | `reports/official_tls_connections.csv` | 人工核对 connection、movement 和 linkIndex |
-| `traffic/demo_N/PERIOD/routes.rou.xml` | 该路口、该时段的真实 15 分钟车流 |
-| `traffic/demo_N/PERIOD/signals.add.xml` | 只包含该时段 program 的信号文件 |
-| `traffic/demo_N/PERIOD/simulation.sumocfg` | 可直接运行的独立场景 |
+| `traffic/global/PERIOD/routes.rou.xml` | 联合满足全部路口 15 分钟约束的全局车流 |
+| `traffic/global/PERIOD/signals.add.xml` | 全部路口在该时段的官方 program |
+| `traffic/global/PERIOD/simulation.sumocfg` | 可直接运行的全局场景 |
+| `reports/traffic_quality_PERIOD.json/csv` | PCU、GEH、车型和跨路口路线质量报告 |
 
 生成目录根层只保留上述分类目录。旧的转向验证车流、验证用 `sumocfg` 和 debug POI
 工具已经删除；路线正确性由配置校验、连接报告、单元测试和真实场景 GUI 检查共同保证。
-全量构建完成后，`tls_manifest.json` 应包含 20 个路口，`traffic_manifest.json` 应包含
-20 个路口各 3 个时段、共 60 个场景；manifest 的 `source_net_sha256` 必须对应当前基础路网。
+全量构建完成后，`tls_manifest.json` 应包含 20 个路口，`traffic_manifest.json` 应为
+schema v3 且只包含 3 个 `global_PERIOD` 场景；manifest 的 `source_net_sha256` 必须对应
+当前基础路网。
 
 真实车流的数据口径和场景命令见 [traffic_demand.md](traffic_demand.md)。
 

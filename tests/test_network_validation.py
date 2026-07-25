@@ -232,14 +232,16 @@ class SyntheticNetworkCompatibilityTests(unittest.TestCase):
         self.demands.write_text(
             json.dumps(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "source": "test",
                     "unit": "pcu",
                     "interval_seconds": 900,
+                    "vehicle_mix": {
+                        "basis": "vehicle_count",
+                        "shares": {"passenger": 1.0},
+                    },
                     "intersections": {
                         "demo_x": {
-                            "vehicle_type": "passenger",
-                            "pcu_per_vehicle": 1.0,
                             "approaches": {
                                 "east": {
                                     "label": "east",

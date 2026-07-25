@@ -76,9 +76,10 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
     }
   },
   "vehicle_types": {
-    "demo_2_official_passenger": {
-      "type_id": "demo_2_official_passenger",
+    "official_passenger": {
+      "type_id": "official_passenger",
       "profile_id": "passenger",
+      "pcu_factor": 1.0,
       "vehicle_class": "passenger",
       "powertrain": "gasoline",
       "emission_class": "HBEFA3/PC_G_EU4",

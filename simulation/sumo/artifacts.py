@@ -37,7 +37,15 @@ class GeneratedArtifactLayout:
     def connections_report(self) -> Path:
         return self.root / "reports" / "official_tls_connections.csv"
 
+    @property
+    def reports_dir(self) -> Path:
+        return self.root / "reports"
+
+    def global_traffic_scenario_dir(self, period_id: str) -> Path:
+        return self.root / "traffic" / "global" / period_id
+
     def traffic_scenario_dir(self, intersection_id: str, period_id: str) -> Path:
+        """Legacy path resolver retained for callers migrating to global traffic."""
         return self.root / "traffic" / intersection_id / period_id
 
     def relative(self, path: Path) -> str:
