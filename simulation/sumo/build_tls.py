@@ -23,7 +23,8 @@ from .config import (
     SignalConfigurationError,
     load_signal_configuration,
 )
-from .traffic import TrafficDemandError
+from .network_validation import validate_source_compatibility
+from .traffic import TrafficDemandError, load_traffic_demands
 from .vehicle_profiles import VehicleProfileError
 
 
@@ -32,6 +33,7 @@ SUMO_DIR = PROJECT_ROOT / "data" / "maps" / "sumo"
 DEFAULT_MAPPING = SUMO_DIR / "TotalMap_20.intersections.json"
 DEFAULT_PLANS = SUMO_DIR / "official_tls_plans.json"
 DEFAULT_TOPOLOGY = SUMO_DIR / "official_tls_topology.json"
+DEFAULT_DEMANDS = SUMO_DIR / "official_traffic_demands.json"
 DEFAULT_BASE_NET = SUMO_DIR / "TotalMap_20.net.xml"
 DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
 
@@ -99,13 +101,16 @@ def _run_netconvert(
     target_net: Path,
     junction_ids: Sequence[str],
     blocked_turnarounds: Sequence[Tuple[str, str]] = (),
+    refresh_junction_ids: Sequence[str] = (),
 ) -> Tuple[bool, int]:
     target_net.parent.mkdir(parents=True, exist_ok=True)
     junction_types = _read_junction_types(source_net, junction_ids)
+    refresh_junctions = set(refresh_junction_ids) & set(junction_ids)
     junctions_to_signal = [
         junction_id
         for junction_id in junction_ids
         if junction_types[junction_id] != "traffic_light"
+        or junction_id in refresh_junctions
     ]
     if not junctions_to_signal and not blocked_turnarounds:
         shutil.copy2(source_net, target_net)
@@ -120,10 +125,13 @@ def _run_netconvert(
     shutil.copy2(source_net, sanitized_source)
     try:
         removed_empty_params = _remove_empty_params(sanitized_source)
+        _reset_tls_control_attrs(sanitized_source, refresh_junctions)
         command = [
             netconvert,
             "--sumo-net-file",
             str(sanitized_source),
+            "--tls.ignore-internal-junction-jam",
+            "true",
         ]
         if junctions_to_signal:
             command.extend(
@@ -156,6 +164,144 @@ def _run_netconvert(
         sanitized_source.unlink(missing_ok=True)
         connection_deletions.unlink(missing_ok=True)
     return True, removed_empty_params
+
+
+def _junction_id_from_via(via: str, junction_ids: Iterable[str]) -> str | None:
+    for junction_id in sorted(junction_ids, key=len, reverse=True):
+        if re.match(rf"^:{re.escape(junction_id)}_\d+_", via):
+            return junction_id
+    return None
+
+
+def _reset_tls_control_attrs(net_path: Path, junction_ids: Iterable[str]) -> int:
+    refresh_junctions = tuple(junction_ids)
+    if not refresh_junctions:
+        return 0
+    refresh_set = set(refresh_junctions)
+    tree = ET.parse(net_path)
+    root = tree.getroot()
+    changes = 0
+    # Force --tls.set to rebuild incomplete pre-existing traffic lights.
+    for junction in root.iter("junction"):
+        if junction.get("id") not in refresh_set:
+            continue
+        if junction.get("type") != "priority":
+            junction.set("type", "priority")
+            changes += 1
+    for logic in list(root.findall("tlLogic")):
+        if logic.get("id") in refresh_set:
+            root.remove(logic)
+            changes += 1
+    for elem in root.iter("connection"):
+        if _junction_id_from_via(elem.get("via", ""), refresh_junctions) is None:
+            continue
+        for attribute in ("tl", "linkIndex", "linkIndex2", "uncontrolled", "state"):
+            if attribute in elem.attrib:
+                del elem.attrib[attribute]
+                changes += 1
+    if not changes:
+        return 0
+
+    temporary_path = net_path.with_name(f"{net_path.name}.tls-refresh.tmp")
+    try:
+        tree.write(temporary_path, encoding="utf-8", xml_declaration=True)
+        temporary_path.replace(net_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+    return changes
+
+
+def _junctions_requiring_tls_refresh(
+    net_path: Path,
+    selected: Sequence[IntersectionConfiguration],
+) -> Tuple[str, ...]:
+    edge_owner = {
+        edge_id: config
+        for config in selected
+        for edge_id in config.topology.incoming_edges
+    }
+    junction_ids = sorted({junction for config in selected for junction in config.junction_ids})
+    junction_types = _read_junction_types(net_path, junction_ids)
+    refresh = set()
+    for _, elem in ET.iterparse(net_path, events=("end",)):
+        if elem.tag == "connection":
+            config = edge_owner.get(elem.get("from", ""))
+            if config is not None:
+                junction_id = _junction_id_from_via(
+                    elem.get("via", ""), config.junction_ids
+                )
+                if (
+                    junction_id is not None
+                    and junction_types.get(junction_id) == "traffic_light"
+                    and (
+                        elem.get("uncontrolled") == "1"
+                        or elem.get("tl") is None
+                        or elem.get("linkIndex") is None
+                    )
+                ):
+                    refresh.add(junction_id)
+        elem.clear()
+    return tuple(sorted(refresh))
+
+
+def _repair_uncontrolled_tls_connections(
+    net_path: Path,
+    selected: Sequence[IntersectionConfiguration],
+) -> int:
+    edge_owner = {
+        edge_id: config
+        for config in selected
+        for edge_id in config.topology.incoming_edges
+    }
+    if not edge_owner:
+        return 0
+    tree = ET.parse(net_path)
+    root = tree.getroot()
+    max_link_index: Dict[str, int] = {}
+    for elem in root.iter("connection"):
+        tls_id = elem.get("tl")
+        link_index = elem.get("linkIndex")
+        if tls_id is None or link_index is None:
+            continue
+        max_link_index[tls_id] = max(max_link_index.get(tls_id, -1), int(link_index))
+
+    next_link_index = {key: value + 1 for key, value in max_link_index.items()}
+    repaired = 0
+    for elem in root.iter("connection"):
+        config = edge_owner.get(elem.get("from", ""))
+        if config is None:
+            continue
+        junction_id = _junction_id_from_via(elem.get("via", ""), config.junction_ids)
+        if junction_id is None:
+            continue
+        needs_repair = (
+            elem.get("uncontrolled") == "1"
+            or elem.get("tl") is None
+            or elem.get("linkIndex") is None
+        )
+        if not needs_repair:
+            continue
+        elem.set("tl", junction_id)
+        if elem.get("linkIndex") is None:
+            link_index = next_link_index.get(junction_id, 0)
+            elem.set("linkIndex", str(link_index))
+            next_link_index[junction_id] = link_index + 1
+        elem.attrib.pop("uncontrolled", None)
+        if elem.get("state") not in {"o", "O"}:
+            elem.set("state", "o")
+        repaired += 1
+    if not repaired:
+        return 0
+
+    temporary_path = net_path.with_name(f"{net_path.name}.tls-repair.tmp")
+    try:
+        tree.write(temporary_path, encoding="utf-8", xml_declaration=True)
+        temporary_path.replace(net_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+    return repaired
 
 
 def _blocked_turnaround_deletions(
@@ -265,6 +411,7 @@ def _inspect_generated_network(
             junction_owner[junction_id] = config
 
     found_junction_types = {}
+    tls_logic_state_lengths: Dict[str, set[int]] = {}
     request_foes: Dict[str, Dict[int, str]] = {}
     max_link_index: Dict[str, int] = {}
     raw_connections = []
@@ -280,8 +427,16 @@ def _inspect_generated_network(
                 }
             elem.clear()
             continue
+        if elem.tag == "tlLogic":
+            tls_id = elem.get("id", "")
+            if tls_id:
+                tls_logic_state_lengths.setdefault(tls_id, set()).update(
+                    len(phase.get("state", "")) for phase in elem.findall("phase")
+                )
+            elem.clear()
+            continue
         if elem.tag != "connection":
-            if elem.tag in {"edge", "tlLogic"}:
+            if elem.tag == "edge":
                 elem.clear()
             continue
 
@@ -348,6 +503,27 @@ def _inspect_generated_network(
 
     if not connections:
         raise SignalConfigurationError("No official controlled connections were found.")
+    controlled_tls_ids = {item.tls_id for item in connections}
+    missing_tls_logics = controlled_tls_ids - set(tls_logic_state_lengths)
+    if missing_tls_logics:
+        raise SignalConfigurationError(
+            "Generated network references TLS without an internal tlLogic: "
+            f"{sorted(missing_tls_logics)}. Rebuild these junctions with netconvert."
+        )
+    invalid_state_lengths = {}
+    for tls_id in sorted(controlled_tls_ids):
+        expected_length = max_link_index[tls_id] + 1
+        actual_lengths = tls_logic_state_lengths[tls_id]
+        if actual_lengths != {expected_length}:
+            invalid_state_lengths[tls_id] = {
+                "expected": expected_length,
+                "actual": sorted(actual_lengths),
+            }
+    if invalid_state_lengths:
+        raise SignalConfigurationError(
+            "Generated network has tlLogic state lengths inconsistent with linkIndex: "
+            f"{invalid_state_lengths}"
+        )
     for config in selected:
         present_edges = {
             item.from_edge
@@ -381,6 +557,66 @@ def _is_foe(foes: str, other_request_index: int) -> bool:
     return 0 <= bit_index < len(foes) and foes[bit_index] == "1"
 
 
+def _connections_conflict(
+    first: ControlledConnection,
+    second: ControlledConnection,
+    request_foes: Mapping[str, Mapping[int, str]],
+) -> bool:
+    if first.junction_id != second.junction_id:
+        return False
+    if first.request_index == second.request_index:
+        return False
+    matrix = request_foes.get(first.junction_id, {})
+    first_foes = matrix.get(first.request_index, "")
+    second_foes = matrix.get(second.request_index, "")
+    return _is_foe(first_foes, second.request_index) or _is_foe(
+        second_foes, first.request_index
+    )
+
+
+def _can_demote_internal_conflict(
+    first: ControlledConnection,
+    second: ControlledConnection,
+) -> bool:
+    return (
+        first.junction_id == second.junction_id
+        and first.approach == second.approach
+        and first.movement == second.movement
+        and first.from_edge == second.from_edge
+    )
+
+
+def _split_protected_movements(
+    protected: Sequence[ControlledConnection],
+    request_foes: Mapping[str, Mapping[int, str]],
+    intersection_id: str,
+    phase_number: int,
+) -> Tuple[List[ControlledConnection], List[ControlledConnection]]:
+    kept: List[ControlledConnection] = []
+    demoted: List[ControlledConnection] = []
+    for connection in protected:
+        conflicting = next(
+            (
+                existing
+                for existing in kept
+                if _connections_conflict(existing, connection, request_foes)
+            ),
+            None,
+        )
+        if conflicting is None:
+            kept.append(connection)
+            continue
+        if _can_demote_internal_conflict(conflicting, connection):
+            demoted.append(connection)
+            continue
+        raise SignalConfigurationError(
+            f"{intersection_id}/phase {phase_number}: protected connections "
+            f"{conflicting.via} and {connection.via} conflict according to the "
+            "SUMO foe matrix."
+        )
+    return kept, demoted
+
+
 def _validate_protected_movements(
     protected: Sequence[ControlledConnection],
     request_foes: Mapping[str, Mapping[int, str]],
@@ -389,16 +625,7 @@ def _validate_protected_movements(
 ) -> None:
     for position, first in enumerate(protected):
         for second in protected[position + 1 :]:
-            if first.junction_id != second.junction_id:
-                continue
-            if first.request_index == second.request_index:
-                continue
-            matrix = request_foes.get(first.junction_id, {})
-            first_foes = matrix.get(first.request_index, "")
-            second_foes = matrix.get(second.request_index, "")
-            if _is_foe(first_foes, second.request_index) or _is_foe(
-                second_foes, first.request_index
-            ):
+            if _connections_conflict(first, second, request_foes):
                 raise SignalConfigurationError(
                     f"{intersection_id}/phase {phase_number}: protected connections "
                     f"{first.via} and {second.via} conflict according to the SUMO foe matrix."
@@ -434,6 +661,7 @@ def _build_templates(
     served_connections = set()
     if phase_mappings is None:
         phase_mappings = config.topology.phases
+    phase_mappings = tuple(phase_mappings)
     for phase_mapping in phase_mappings:
         primary = [
             item
@@ -463,6 +691,13 @@ def _build_templates(
                 )
             protected.extend(matches)
         protected = list(dict.fromkeys(protected))
+        protected, demoted = _split_protected_movements(
+            protected,
+            request_foes,
+            config.intersection_id,
+            phase_mapping.phase_number,
+        )
+        permissive.extend(demoted)
         _validate_protected_movements(
             protected,
             request_foes,
@@ -483,13 +718,18 @@ def _build_templates(
                     f"{group.approaches}."
                 )
             permissive.extend(matches)
+        permissive = [
+            item for item in dict.fromkeys(permissive) if item not in protected
+        ]
         green = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         yellow = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         clearance = {tls: ["r"] * state_lengths[tls] for tls in tls_ids}
         for connection in own_connections:
             if (
                 connection.movement == "right"
-                and config.topology.right_turn_policy == "permissive_always"
+                and config.topology.right_turn_is_always_permissive(
+                    connection.approach
+                )
             ):
                 _set_state_char(green, connection, "g")
                 _set_state_char(yellow, connection, "g")
@@ -596,18 +836,37 @@ def _write_connection_report(path: Path, connections: Sequence[ControlledConnect
             writer.writerow(row)
 
 
+def validate(
+    intersection_ids: Sequence[str] | None = None,
+    mapping_path: Path = DEFAULT_MAPPING,
+    plans_path: Path = DEFAULT_PLANS,
+    topology_path: Path = DEFAULT_TOPOLOGY,
+    demand_path: Path = DEFAULT_DEMANDS,
+    source_net: Path = DEFAULT_BASE_NET,
+) -> Mapping[str, int]:
+    configuration = load_signal_configuration(mapping_path, plans_path, topology_path)
+    selected = configuration.select(
+        intersection_ids if intersection_ids is not None else configuration.intersections
+    )
+    demands = load_traffic_demands(demand_path)
+    return validate_source_compatibility(source_net, selected, demands)
+
+
 def build(
-    intersection_ids: Sequence[str] | None,
+    intersection_ids: Sequence[str] | None = None,
     mapping_path: Path = DEFAULT_MAPPING,
     plans_path: Path = DEFAULT_PLANS,
     topology_path: Path = DEFAULT_TOPOLOGY,
     source_net: Path = DEFAULT_BASE_NET,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
-    skip_traffic_audit: bool = False,
+    demand_path: Path = DEFAULT_DEMANDS,
 ) -> Mapping[str, object]:
     configuration = load_signal_configuration(mapping_path, plans_path, topology_path)
-    requested = tuple(intersection_ids or configuration.intersections)
-    selected = configuration.select(requested)
+    selected = configuration.select(
+        intersection_ids if intersection_ids is not None else configuration.intersections
+    )
+    demands = load_traffic_demands(demand_path)
+    validate_source_compatibility(source_net, selected, demands)
     junction_ids = sorted({item for config in selected for item in config.junction_ids})
     netconvert = _binary("netconvert")
     sumo = _binary("sumo")
@@ -615,12 +874,14 @@ def build(
     layout.reset()
     target_net = layout.network_file
     blocked_turnarounds = _blocked_turnaround_deletions(source_net, selected)
+    refresh_junctions = _junctions_requiring_tls_refresh(source_net, selected)
     netconvert_applied, removed_empty_params = _run_netconvert(
         netconvert,
         source_net,
         target_net,
         junction_ids,
         blocked_turnarounds,
+        refresh_junctions,
     )
     removed_empty_params += _remove_empty_params(target_net)
     if removed_empty_params:
@@ -628,7 +889,12 @@ def build(
             f"Removed {removed_empty_params} empty SUMO <param> elements "
             f"from {target_net}."
         )
-    connections, state_lengths, request_foes = _inspect_generated_network(target_net, selected)
+    repaired_tls_connections = _repair_uncontrolled_tls_connections(
+        target_net, selected
+    )
+    connections, state_lengths, request_foes = _inspect_generated_network(
+        target_net, selected
+    )
     retained_blocked_turnarounds = [
         item
         for item in connections
@@ -666,6 +932,8 @@ def build(
         "netconvert_version": _version(netconvert),
         "sumo_version": _version(sumo),
         "netconvert_applied": netconvert_applied,
+        "refreshed_tls_junctions": list(refresh_junctions),
+        "repaired_tls_connections": repaired_tls_connections,
         "removed_blocked_turnarounds": [
             {"from_edge": from_edge, "to_edge": to_edge}
             for from_edge, to_edge in blocked_turnarounds
@@ -725,10 +993,9 @@ def build(
 
     build_traffic_scenarios(
         manifest,
+        demand_path=demand_path,
         output_dir=output_dir,
-        intersection_ids=requested,
-        sumo_binary=sumo,
-        skip_audit=skip_traffic_audit,
+        intersection_ids=[item.intersection_id for item in selected],
     )
     return manifest
 
@@ -739,17 +1006,21 @@ def parse_args() -> argparse.Namespace:
         "--intersections",
         nargs="+",
         default=None,
-        help="Official intersections to couple; default builds all configured intersections.",
+        help="Intersection IDs to build; defaults to every configured intersection.",
     )
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING)
     parser.add_argument("--plans", type=Path, default=DEFAULT_PLANS)
     parser.add_argument("--topology", type=Path, default=DEFAULT_TOPOLOGY)
+    parser.add_argument("--demand", type=Path, default=DEFAULT_DEMANDS)
     parser.add_argument("--source-net", type=Path, default=DEFAULT_BASE_NET)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument(
-        "--skip-traffic-audit",
+        "--validate-only",
         action="store_true",
-        help="Skip the post-build SUMO passage-time audit (development only).",
+        help=(
+            "Validate source configurations without requiring SUMO or writing "
+            "artifacts."
+        ),
     )
     return parser.parse_args()
 
@@ -757,14 +1028,30 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     try:
+        if args.validate_only:
+            report = validate(
+                intersection_ids=args.intersections,
+                mapping_path=args.mapping,
+                plans_path=args.plans,
+                topology_path=args.topology,
+                demand_path=args.demand,
+                source_net=args.source_net,
+            )
+            print(
+                "Validated source network compatibility for "
+                f"{report['intersections']} intersections, "
+                f"{report['periods']} periods, and "
+                f"{report['nonzero_movements']} non-zero movements."
+            )
+            return
         manifest = build(
             intersection_ids=args.intersections,
             mapping_path=args.mapping,
             plans_path=args.plans,
             topology_path=args.topology,
+            demand_path=args.demand,
             source_net=args.source_net,
             output_dir=args.output_dir,
-            skip_traffic_audit=args.skip_traffic_audit,
         )
     except (
         SignalConfigurationError,

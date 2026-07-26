@@ -6,15 +6,16 @@
 `data/maps/sumo/official_traffic_demands.json`，生成文件保存在
 `data/maps/sumo/generated/`。当前已录入需求的 `demo_1`、`demo_2`、`demo_3`、`demo_4`、`demo_5`、`demo_6`、`demo_7`、`demo_8`、`demo_9`、
 `demo_10`、`demo_11`、`demo_12`、`demo_13`、`demo_14`、`demo_15`、`demo_16`、`demo_17`、`demo_18`、`demo_19`、`demo_20`
-使用小客车，
-`1 vehicle = 1 PCU`，
-因此每条路线的车辆数可直接由 PCU 约束确定。全局生成器会复用经过多个指定路口的车辆，
-所以全局实际车辆数通常小于 20 个路口官方总量的简单相加；同一辆车会在经过的每个路口计数。
+共同参与一套全局约束，不再分别生成局部车流。
 
-车型动力和排放参数独立保存在 `data/maps/sumo/vehicle_profiles.json`。需求文件中的
-`vehicle_type: "passenger"` 引用同名画像；默认使用汽油小客车和
-`HBEFA3/PC_G_EU4`，生成的 `<vType>` 会携带 `emissionClass`，供运行期通过 TraCI
-采集瞬时油耗。后续增加车型时应新增画像并引用其 ID，不要在生成器中硬编码参数。
+官方数值是 PCU 观测量，不等同于车辆数。当前 `vehicle_mix` 是明确标注的仿真假设：
+按车辆数使用小客车 85%、公交车 10%、货车 5%，PCU 系数分别为 1.0、2.0、2.5。
+车型动力、排放和 PCU 参数保存在 `data/maps/sumo/vehicle_profiles.json`；构建器用
+0.5 PCU 整数规划把每个物理计数位置换算为分车型车辆约束。
+
+生成器调用 `$SUMO_HOME/tools/routeSampler.py`，一条全局路线经过多个官方路口时，
+会在每个经过的进口转向上贡献该车型的 PCU。这样同一辆车可以同时满足多个路口的
+观测约束，而不会在场景合并时被重复创建。
 
 `demo_1` 三个时段的校验总量为：
 
@@ -263,6 +264,13 @@
 `demo_4` 只生成官方表中的左转、直行和右转车流。基础路网中的 `t` 掉头连接会在信号路网
 构建时删除，官方左转流量不会选择或分配到掉头路线。
 
+东、西进口右转分别通过渠化辅路
+`-52650 -> -57184 -> -56735` 和 `-50336 -> -57185 -> -57232` 完成，仍计入对应
+官方进口右转 PCU，不是额外增加的流量。主路与辅路在分流/汇流处使用显式端点延长，避免车辆
+在靠近 junction `3935` 的短边中点生成或消失。北进口 `-57229` 的上一段必须穿过
+`demo_2` 的官方 junction `317`，因此禁止延长；南进口 `-56732` 没有物理前驱边。二者均在
+本边 50% 处生成，不能为视觉效果跨越其他官方观测点或补造连接。
+
 `demo_5` 的三个 incoming edge 与有效转向为：
 
 | 官方进口 | incoming edge | 有效转向 |
@@ -288,12 +296,27 @@
 | 西进口 | `-46217` | 左转、直行 |
 | 南进口 | `-51871` | 直行、右转 |
 
-`demo_8` 和 `demo_11` 的四个进口均支持左转、直行和右转：
+`demo_8` 和 `demo_11` 的中心信号进口为：
 
 | 路口 | 东进口 | 西进口 | 北进口 | 南进口 |
 |---|---|---|---|---|
 | `demo_8` | `-54807` | `-57234` | `-57112` | `-57109` |
 | `demo_11` | `-57303` | `-51264` | `-57053` | `-56346` |
+
+`demo_11` 的十二种转向都在中心 junction 内完成。最新 `demo_8` 路网中，东、南进口的
+右转已从中心 junction 移到上游渠化道路，需求文件通过显式路径保留官方右转流量：
+
+| 官方车流 | SUMO 物理路线 | 信号控制 |
+|---|---|---|
+| 东进口右转 | `-54807.1099 -> E14 -> -57125.103` | 不进入 `J1` 冲突区 |
+| 南进口右转 | `-57109.1195 -> E15 -> -57236.80` | 不进入 `J1` 冲突区 |
+
+东、南进口的左转和直行仍分别从 `-54807`、`-57109` 进入 junction `4393`；西、北
+右转仍在中心路口使用让行绿。三个时段的原始 15 分钟流量和总量没有因路线调整而改变。
+显式端点配置分别把主路与渠化路延长到各自相邻的远端分段，例如
+`-54807 -> -54807.1099`、`-54807.1099 -> -54808` 和
+`-57236 -> -57236.80`、`-57236.80 -> -57237`；每个端点最多只追加一条远端边，
+不递归延长。
 
 `demo_9` 的五个 incoming edge 为：
 
@@ -359,6 +382,13 @@
 两处路口四个进口的官方左转、直行、右转都能唯一映射到基础路网出口。基础路网中额外存在的
 `t` 连接没有对应官方车流，信号拓扑将其保持为红灯，车流生成器不向这些连接分配车辆。
 
+`demo_18` 还存在与西南进口平行的辅路 `E7`。三个时段的西南进口右转按 `1:1` 分配到
+`-57077 -> -56009` 与 `E7 -> -56009`；最大余数法保证每个 15 分钟单元格的两条路径
+PCU 之和严格等于官方右转值，奇数值时两路最多相差 1 PCU。`E7` 长 `247.82m`，其中点距
+`demo_18` 已约 `123.91m`；其上游连接跨越另一个信号灯，不能继续延长。四条出口边长约
+`145m` 至 `265m` 且末端直接连接其他信号灯，所以车辆仍在出口边 50% 处移除，不穿越
+相邻路口。
+
 `demo_20` 的车流表使用东、西、北、南命名，而配时表使用斜向命名。统一映射为：
 
 | 项目进口 | 配时表名称 | incoming edge | 左转出口 | 直行出口 | 右转出口 |
@@ -388,17 +418,22 @@
 
 ## 构建与运行
 
-服务器上设置 `SUMO_HOME` 后执行：
+没有 SUMO 的开发环境先执行全量只读预检：
+
+```bash
+python -m simulation.sumo.build_tls --validate-only \
+  --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
+```
+
+预检会核对 junction、incoming edge、非零官方转向、分流目标和显式路径中的每一对相邻
+edge，不调用 `sumo/netconvert`，不写文件，也不会清空已有生成物。服务器上设置
+`SUMO_HOME` 后执行正式构建：
 
 ```bash
 python -m simulation.sumo.build_tls
 ```
 
-不传 `--intersections` 时默认构建全部 20 个路口。开发期间可以显式传入较小子集，例如
-`--intersections demo_1 demo_2`；子集仍生成三套联合场景，而不是逐路口场景。构建器要求
-`SUMO_HOME` 下存在 `duarouter`、`sumo` 和 `tools/routeSampler.py`，Python 环境还需安装 NumPy。
-
-该命令一次生成公共信号路网以及三个真实交通场景：
+不传 `--intersections` 时默认构建全部 20 个路口，并生成 3 个全局交通场景：
 
 ```text
 generated/
@@ -407,30 +442,60 @@ generated/
   manifests/tls_manifest.json
   manifests/traffic_manifest.json
   reports/official_tls_connections.csv
-  reports/traffic/morning_peak.assignment.json
-  reports/traffic/morning_peak.sumo_audit.json
-  traffic/global/candidates.rou.xml
+  reports/traffic_quality_morning_peak.json
+  reports/traffic_quality_morning_peak.csv
+  reports/traffic_morning_peak_passenger_mismatch.xml
   traffic/global/morning_peak/
-    official_turn_counts.xml
     routes.rou.xml
     signals.add.xml
     simulation.sumocfg
-  traffic/global/off_peak/...
-  traffic/global/evening_peak/...
+  traffic/global/off_peak/
+    routes.rou.xml
+    signals.add.xml
+    simulation.sumocfg
+  traffic/global/evening_peak/
+    routes.rou.xml
+    signals.add.xml
+    simulation.sumocfg
 ```
 
-候选池包含每个物理转向的兜底路线和由 `duarouter` 计算的跨路口路线。每个 15 分钟区间
-使用零流量约束和 `routeSampler` 固定种子采样，路线分配必须逐物理转向严格等于官方计数。
-每个场景的 `signals.add.xml` 同时包含所有已构建路口在该时段的 program。
+每个场景使用独立的 `signals.add.xml`，其中包含 20 个路口与车流时段对应的 program，
+保证未被算法选中的路口仍按该时段官方固定配时运行。
+整个 `data/maps/sumo/generated/` 目录由 Git 忽略，所有文件都必须由构建器生成，禁止
+手工修改或提交其中的 XML 和 manifest。
 
 每个场景把本时段起点归一化为仿真 `t=0`，保留 `traffic_manifest.json` 中的官方
-起止时间。这样早高峰只从 `t=0` 运行 7200 秒需求期，不需要从午夜空跑到 07:00。
-直接场景另留最多 3600 秒让跨路口车辆排空。
+起止时间。这样早高峰只运行 7200 秒需求期，不需要从午夜空跑到 07:00。配置另留
+300 秒用于最后一批车辆驶离路口。
 
-默认构建会用 `vehroute-output.exit-times` 复核车辆实际通过时刻。路线分配的 15 分钟计数
-必须零误差；实际仿真的每路口周期总量误差不得超过 5%。转向和 15 分钟桶的实际误差、
-GEH、未完成车辆与排空时间写入 `reports/traffic/*.sumo_audit.json`。只有无 SUMO 的开发测试
-才应使用 `--skip-traffic-audit`，此时 manifest 会明确记录 `audit_status: skipped`。
+构建器会识别官方计数边两端的车道扩展分段：如果近端边与相邻边之间存在唯一的
+直行连接，且远离路口一侧的车道数更少，就把 routeSampler 候选路线向远端延长一条
+边。车辆使用远端进口边 50% 处作为 `departPos`，并在远端出口边 50% 处通过
+`arrivalPos` 移除。未检测到这种两段结构时，不延长路线，但车辆仍在原首边的 50%
+处生成、在原末边的 50% 处移除。也就是说，所有全局 flow 都会同时写入数值型
+`departPos` 和 `arrivalPos`；延长只决定取远端边还是原边，不改变统一的 50% 规则。
+延长不会跨过任何官方或其他信号灯路口。
+
+`demo_4`、`demo_8`、`demo_18` 的辅路结构不能只靠车道数自动识别，需求文件在路口级使用
+以下可选配置固定经过人工核对的相邻远端边：
+
+```json
+"route_endpoint_extensions": {
+  "upstream": {"near_in": "far_in"},
+  "downstream": {"near_out": "far_out"}
+}
+```
+
+只读预检和正式构建都会确认近端边属于该路口官方计数路径、两条边存在正长度车道、连接方向
+为直行，并且中间节点不是官方 junction 或其他信号灯。显式配置允许两段车道数相等或远端
+车道更多，也允许经过同一路口主辅路自己的分流/汇流节点。配置与自动结果冲突时构建立即失败。
+最终合并映射和按路口保存的 `configured_extensions` 都写入 `traffic_manifest.json` 的
+`route_endpoint_policy`。
+
+端点延长发生在 routeSampler 采样前，三种车型的路线都会再经过 duarouter 和 SUMO
+可行性校验。官方 `(from, via..., to)` 计数子路径保持不变，所以 PCU 误差和 GEH
+仍按相同规则计算。实际识别出的近端到远端边映射记录在 `traffic_manifest.json` 的
+`route_endpoint_policy` 中，每个场景同时记录使用远端起点和终点的车辆数。
 
 直接检查 GUI：
 
@@ -438,7 +503,11 @@ GEH、未完成车辆与排空时间写入 `reports/traffic/*.sumo_audit.json`�
 sumo-gui -c data/maps/sumo/generated/traffic/global/morning_peak/simulation.sumocfg
 ```
 
-固定配时 runner 默认控制并展示全局场景中的全部路口：
+构建器会无界面完整运行 3 个 `simulation.sumocfg`。质量门槛为：非零单元格误差不超过
+`max(3 PCU, 5%)`、零值不溢出、每路口每 15 分钟总量误差不超过 3%，且至少 90%
+的非零计数点 `GEH < 5`。详细结果及 routeSampler 原始 mismatch 位于 `reports/`。
+
+固定配时 runner（默认就是 `demo_2` 早高峰）：
 
 ```bash
 python -m simulation.sumo.run --gui --realtime --mode fixed
@@ -450,10 +519,6 @@ python -m simulation.sumo.run --gui --realtime --mode fixed
 python -m simulation.sumo.run --gui --mode fixed \
   --intersection demo_4 --period off_peak
 ```
-
-显式 `--intersection` 只限制控制器、算法输入和快照范围，底层仍加载完整全局车流；其他路口
-继续执行官方固定配时。`--origin demo_4:east` 按路线首个受控进口做调试过滤，使用过滤、
-非完整时间窗口或非 `1.0` 倍率的会话会标记为非官方完整需求。
 
 ## 扩展其他路口
 
@@ -467,5 +532,5 @@ python -m simulation.sumo.run --gui --mode fixed \
 4. 构建后检查 `generated/reports/official_tls_connections.csv`，再用真实场景 GUI 查看每种转向。
 5. 运行单元测试，确认区间、合计、路线和接口校验均通过。
 
-如果后续加入公交车或货车，不能继续直接把 PCU 当车辆数。应在需求配置中增加车型
-占比与 PCU 系数，再把 PCU 确定性换算为各车型车辆数，同时保留舍入误差报告。
+调整车型构成时修改 `vehicle_mix.shares` 和车辆画像中的 `pcu_factor`；占比必须合计为
+1.0，PCU 系数必须按 0.5 递增。不要把官方 PCU 总量直接当作 SUMO 车辆数。

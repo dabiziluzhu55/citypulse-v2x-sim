@@ -17,6 +17,7 @@ class VehicleProfileTests(unittest.TestCase):
     def test_default_passenger_profile_has_fuel_and_emission_parameters(self):
         profile = load_vehicle_profiles(PROFILES)["passenger"]
         self.assertEqual(profile.powertrain, "gasoline")
+        self.assertEqual(profile.pcu_factor, 1.0)
         self.assertEqual(profile.emission_class, "HBEFA3/PC_G_EU4")
         self.assertEqual(profile.fuel_density_mg_per_ml, 745.0)
         self.assertLess(profile.hard_braking_threshold_mps2, 0)
@@ -24,6 +25,9 @@ class VehicleProfileTests(unittest.TestCase):
             profile.sumo_attributes("test")["emissionClass"],
             "HBEFA3/PC_G_EU4",
         )
+        profiles = load_vehicle_profiles(PROFILES)
+        self.assertEqual(profiles["bus"].pcu_factor, 2.0)
+        self.assertEqual(profiles["truck"].pcu_factor, 2.5)
 
     def test_invalid_profile_is_rejected(self):
         raw = json.loads(PROFILES.read_text(encoding="utf-8"))

@@ -1,7 +1,8 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "profiles": {
     "passenger": {
+      "pcu_factor": 1.0,
       "v_class": "passenger",
       "powertrain": "gasoline",
       "emission_class": "HBEFA3/PC_G_EU4",
@@ -14,6 +15,36 @@
       "sigma": 0.5,
       "fuel_density_mg_per_ml": 745.0,
       "hard_braking_threshold_mps2": -3.0
+    },
+    "bus": {
+      "pcu_factor": 2.0,
+      "v_class": "bus",
+      "powertrain": "diesel",
+      "emission_class": "HBEFA3/Bus",
+      "accel_mps2": 1.2,
+      "decel_mps2": 4.5,
+      "length_m": 12.0,
+      "width_m": 2.5,
+      "min_gap_m": 3.0,
+      "max_speed_mps": 13.9,
+      "sigma": 0.5,
+      "fuel_density_mg_per_ml": 832.0,
+      "hard_braking_threshold_mps2": -2.5
+    },
+    "truck": {
+      "pcu_factor": 2.5,
+      "v_class": "truck",
+      "powertrain": "diesel",
+      "emission_class": "HBEFA3/HDV_D_EU4",
+      "accel_mps2": 1.3,
+      "decel_mps2": 4.5,
+      "length_m": 10.0,
+      "width_m": 2.5,
+      "min_gap_m": 3.0,
+      "max_speed_mps": 13.9,
+      "sigma": 0.5,
+      "fuel_density_mg_per_ml": 832.0,
+      "hard_braking_threshold_mps2": -2.5
     }
   }
 }

@@ -28,7 +28,10 @@
         {
           "official_phase_no": 1,
           "movement": "through",
-          "approaches": ["east", "west"]
+          "approaches": ["west"],
+          "permissive": [
+            {"movement": "through", "approaches": ["east"]}
+          ]
         },
         {
           "official_phase_no": 2,
@@ -71,18 +74,13 @@
         {
           "official_phase_no": 1,
           "movement": "through",
-          "approaches": ["north", "south"],
-          "permissive": [
-            {
-              "movement": "left",
-              "approaches": ["south"]
-            }
-          ]
+          "approaches": ["north", "south"]
         },
         {
           "official_phase_no": 2,
           "movement": "left",
-          "approaches": ["west"]
+          "approaches": ["west", "south"],
+          "priority": "permissive"
         }
       ]
     },
@@ -149,12 +147,18 @@
             {
               "official_phase_no": 1,
               "movement": "through",
-              "approaches": ["north", "south"]
+              "approaches": ["south"],
+              "permissive": [
+                {"movement": "through", "approaches": ["north"]}
+              ]
             },
             {
               "official_phase_no": 2,
               "movement": "left",
-              "approaches": ["north", "south"]
+              "approaches": ["south"],
+              "permissive": [
+                {"movement": "left", "approaches": ["north"]}
+              ]
             },
             {
               "official_phase_no": 3,
@@ -179,8 +183,9 @@
             {
               "official_phase_no": 1,
               "movement": "through",
-              "approaches": ["north", "south"],
+              "approaches": ["south"],
               "permissive": [
+                {"movement": "through", "approaches": ["north"]},
                 {"movement": "left", "approaches": ["north", "south"]}
               ]
             },
@@ -207,22 +212,34 @@
             {
               "official_phase_no": 1,
               "movement": "through",
-              "approaches": ["east", "west"]
+              "approaches": ["west"],
+              "permissive": [
+                {"movement": "through", "approaches": ["east"]}
+              ]
             },
             {
               "official_phase_no": 2,
               "movement": "left",
-              "approaches": ["east", "west"]
+              "approaches": ["west"],
+              "permissive": [
+                {"movement": "left", "approaches": ["east"]}
+              ]
             },
             {
               "official_phase_no": 3,
               "movement": "through",
-              "approaches": ["north", "south"]
+              "approaches": ["south"],
+              "permissive": [
+                {"movement": "through", "approaches": ["north"]}
+              ]
             },
             {
               "official_phase_no": 4,
               "movement": "left",
-              "approaches": ["north", "south"]
+              "approaches": ["south"],
+              "permissive": [
+                {"movement": "left", "approaches": ["north"]}
+              ]
             }
           ]
         }
@@ -230,6 +247,7 @@
     },
     "demo_5": {
       "right_turn_policy": "permissive_always",
+      "phase_controlled_right_turn_approaches": ["south"],
       "u_turn_policy": "blocked",
       "approaches": {
         "east": {
@@ -260,7 +278,10 @@
         {
           "official_phase_no": 2,
           "movement": "left",
-          "approaches": ["south"]
+          "approaches": ["south"],
+          "protected": [
+            {"movement": "right", "approaches": ["south"]}
+          ]
         }
       ]
     },
@@ -297,12 +318,16 @@
         {
           "official_phase_no": 3,
           "movement": "through",
-          "approaches": ["north", "south"]
+          "approaches": ["north"],
+          "permissive": [
+            {"movement": "through", "approaches": ["south"]}
+          ]
         }
       ]
     },
     "demo_7": {
-      "right_turn_policy": "phase_controlled",
+      "right_turn_policy": "permissive_always",
+      "phase_controlled_right_turn_approaches": ["east", "south"],
       "u_turn_policy": "blocked",
       "approaches": {
         "east": {"incoming_edges": ["-51953"]},
@@ -366,6 +391,7 @@
     },
     "demo_9": {
       "right_turn_policy": "permissive_always",
+      "phase_controlled_right_turn_approaches": ["northeast"],
       "u_turn_policy": "blocked",
       "approaches": {
         "east": {"incoming_edges": ["-56619"]},
@@ -377,13 +403,12 @@
       "direction_mapping": {
         "s": "through",
         "l": "left",
-        "L": "blocked",
+        "L": "left",
         "r": "right",
-        "R": "blocked",
+        "R": "right",
         "t": "blocked"
       },
       "approach_direction_mapping": {
-        "east": {"R": "right"},
         "northeast": {"s": "blocked"}
       },
       "phases": [
@@ -406,7 +431,10 @@
         {
           "official_phase_no": 3,
           "movement": "left",
-          "approaches": ["northeast"]
+          "approaches": ["northeast"],
+          "protected": [
+            {"movement": "right", "approaches": ["northeast"]}
+          ]
         }
       ]
     },
@@ -426,10 +454,38 @@
         "t": "blocked"
       },
       "phases": [
-        {"official_phase_no": 1, "movement": "through", "approaches": ["east", "west"]},
-        {"official_phase_no": 2, "movement": "left", "approaches": ["east", "west"]},
-        {"official_phase_no": 3, "movement": "through", "approaches": ["north", "south"]},
-        {"official_phase_no": 4, "movement": "left", "approaches": ["north", "south"]}
+        {
+          "official_phase_no": 1,
+          "movement": "through",
+          "approaches": ["west"],
+          "permissive": [
+            {"movement": "through", "approaches": ["east"]}
+          ]
+        },
+        {
+          "official_phase_no": 2,
+          "movement": "left",
+          "approaches": ["west"],
+          "permissive": [
+            {"movement": "left", "approaches": ["east"]}
+          ]
+        },
+        {
+          "official_phase_no": 3,
+          "movement": "through",
+          "approaches": ["south"],
+          "permissive": [
+            {"movement": "through", "approaches": ["north"]}
+          ]
+        },
+        {
+          "official_phase_no": 4,
+          "movement": "left",
+          "approaches": ["south"],
+          "permissive": [
+            {"movement": "left", "approaches": ["north"]}
+          ]
+        }
       ]
     },
     "demo_12": {
@@ -448,14 +504,36 @@
         "t": "blocked"
       },
       "phases": [
-        {"official_phase_no": 1, "movement": "through", "approaches": ["east", "west"]},
-        {"official_phase_no": 2, "movement": "left", "approaches": ["east", "west"]},
-        {"official_phase_no": 3, "movement": "through", "approaches": ["north", "south"]},
+        {
+          "official_phase_no": 1,
+          "movement": "through",
+          "approaches": ["west"],
+          "permissive": [
+            {"movement": "through", "approaches": ["east"]}
+          ]
+        },
+        {
+          "official_phase_no": 2,
+          "movement": "left",
+          "approaches": ["west"],
+          "permissive": [
+            {"movement": "left", "approaches": ["east"]}
+          ]
+        },
+        {
+          "official_phase_no": 3,
+          "movement": "through",
+          "approaches": ["south"],
+          "permissive": [
+            {"movement": "through", "approaches": ["north"]}
+          ]
+        },
         {"official_phase_no": 4, "movement": "left", "approaches": ["north", "south"], "priority": "permissive"}
       ]
     },
     "demo_14": {
-      "right_turn_policy": "phase_controlled",
+      "right_turn_policy": "permissive_always",
+      "phase_controlled_right_turn_approaches": ["east", "south"],
       "u_turn_policy": "blocked",
       "approaches": {
         "east": {"incoming_edges": ["-46785"]},
@@ -602,6 +680,7 @@
     },
     "demo_17": {
       "right_turn_policy": "permissive_always",
+      "phase_controlled_right_turn_approaches": ["east"],
       "u_turn_policy": "blocked",
       "approaches": {
         "east": {"incoming_edges": ["-56184"]},
@@ -615,7 +694,14 @@
         "t": "blocked"
       },
       "phases": [
-        {"official_phase_no": 1, "movement": "left", "approaches": ["east"]},
+        {
+          "official_phase_no": 1,
+          "movement": "left",
+          "approaches": ["east"],
+          "protected": [
+            {"movement": "right", "approaches": ["east"]}
+          ]
+        },
         {
           "official_phase_no": 2,
           "movement": "through",
@@ -633,11 +719,13 @@
         "northeast": {"incoming_edges": ["-56830"]},
         "southwest": {"incoming_edges": ["-57077"]},
         "northwest": {"incoming_edges": ["-56004"]},
-        "southeast": {"incoming_edges": ["-57004"]}
+        "southeast": {"incoming_edges": ["-57004"]},
+        "auxiliary_east": {"incoming_edges": ["E7"]}
       },
       "direction_mapping": {
         "s": "through",
         "l": "left",
+        "L": "left",
         "r": "right",
         "t": "blocked"
       },

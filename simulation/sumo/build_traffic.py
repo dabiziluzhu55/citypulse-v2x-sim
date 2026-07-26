@@ -1,10 +1,10 @@
-"""Build globally coupled SUMO traffic from official 15-minute turn counts."""
+"""Build globally calibrated SUMO traffic with the official routeSampler tool."""
 
 from __future__ import annotations
 
 import argparse
 import copy
-import importlib.util
+import csv
 import json
 import math
 import os
@@ -12,22 +12,27 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Sequence, Tuple
+from typing import Callable, Mapping, Sequence, Tuple
 
 from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 from .traffic import (
     ApproachDemandMapping,
     DemandPeriod,
+    RouteEndpointExtensions,
+    RoutePath,
     RouteSplit,
     TrafficDemandError,
     load_traffic_demands,
 )
-from .vehicle_profiles import VehicleProfileError, load_vehicle_profiles
+from .vehicle_profiles import (
+    VehicleProfile,
+    VehicleProfileError,
+    load_vehicle_profiles,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -36,40 +41,76 @@ DEFAULT_DEMANDS = SUMO_DIR / "official_traffic_demands.json"
 DEFAULT_VEHICLE_PROFILES = SUMO_DIR / "vehicle_profiles.json"
 DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
 DEFAULT_MANIFEST = GeneratedArtifactLayout(DEFAULT_OUTPUT_DIR).tls_manifest
-DEFAULT_SAMPLER_SEEDS = (42, 43, 44)
-DEFAULT_AUDIT_DRAIN_SECONDS = 3600
-DEFAULT_AUDIT_TOLERANCE = 0.05
+ROUTE_SAMPLER_SEEDS = (42, 43, 44, 45, 46)
+MINIMIZE_VEHICLES = 0.1
+ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY = "routeSamplerSupportsNoSampling"
+ROUTE_SAMPLER_VIA_MISMATCH_CAPABILITY = "routeSamplerSupportsViaMismatch"
+ROUTE_SAMPLER_REQUIRED_OPTIONS = (
+    "--interval",
+    "--write-flows",
+    "--optimize",
+    "--minimize-vehicles",
+    "--mismatch-output",
+    "--seed",
+    "--attributes",
+)
 
 
 @dataclass(frozen=True)
-class PhysicalMovement:
-    movement_id: str
+class CountLocation:
     intersection_id: str
     official_approach: str
     official_movement: str
-    from_edge: str
-    to_edge: str
+    edges: Tuple[str, ...]
 
-    def manifest_view(self) -> Mapping[str, object]:
-        return asdict(self)
+    @property
+    def location_id(self) -> str:
+        return _safe_id(
+            f"{self.intersection_id}_{self.official_approach}_"
+            f"{self.official_movement}_{'_'.join(self.edges)}"
+        )
 
 
 @dataclass(frozen=True)
-class IntervalTargets:
-    begin: int
-    end: int
-    counts: Mapping[str, int]
+class RouteSamplerCapabilities:
+    no_sampling: bool
+    via_mismatch: bool
 
 
-@dataclass
-class SampleResult:
-    seed: int
-    route_root: ET.Element
-    flow_records: list[Mapping[str, object]]
-    assigned: Mapping[Tuple[int, int], Mapping[str, int]]
-    vehicle_count: int
-    multi_intersection_vehicle_count: int
-    average_intersections_per_vehicle: float
+@dataclass(frozen=True)
+class NetworkRouteMetadata:
+    edge_lengths: Mapping[str, float]
+    u_turn_pairs: frozenset[Tuple[str, str]]
+    upstream_extensions: Mapping[str, str]
+    downstream_extensions: Mapping[str, str]
+    configured_extensions: Mapping[str, RouteEndpointExtensions]
+
+
+@dataclass(frozen=True)
+class SampledFlow:
+    flow_id: str
+    type_id: str
+    begin: float
+    end: float
+    number: int
+    edges: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CompiledGlobalDemand:
+    periods: Mapping[str, DemandPeriod]
+    program_ids: Mapping[str, Mapping[str, str]]
+    locations: Mapping[Tuple[str, ...], CountLocation]
+    targets: Mapping[str, Tuple[Mapping[Tuple[str, ...], int], ...]]
+    cell_targets: Mapping[
+        str, Tuple[Mapping[Tuple[str, str, str], int], ...]
+    ]
+    cell_paths: Mapping[
+        str,
+        Tuple[
+            Mapping[Tuple[str, str, str], Mapping[Tuple[str, ...], int]], ...
+        ],
+    ]
 
 
 def _safe_id(value: str) -> str:
@@ -78,6 +119,10 @@ def _safe_id(value: str) -> str:
 
 def _clock(seconds: int) -> str:
     return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+
+
+def _format_number(value: float) -> str:
+    return f"{value:g}"
 
 
 def _load_manifest(path: Path) -> Mapping[str, object]:
@@ -91,6 +136,119 @@ def _load_manifest(path: Path) -> Mapping[str, object]:
         raise TrafficDemandError(f"Invalid TLS manifest {path}: {exc}") from exc
 
 
+def _binary(name: str) -> str:
+    executable = f"{name}.exe" if os.name == "nt" else name
+    candidates = []
+    if os.environ.get("SUMO_HOME"):
+        candidates.append(Path(os.environ["SUMO_HOME"]) / "bin" / executable)
+    located = shutil.which(name)
+    if located:
+        candidates.append(Path(located))
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    raise TrafficDemandError(
+        f"Cannot find SUMO binary {name!r}; set SUMO_HOME or update PATH."
+    )
+
+
+def _sumo_tool(name: str) -> str:
+    sumo_home = os.environ.get("SUMO_HOME")
+    if sumo_home:
+        candidate = Path(sumo_home) / "tools" / name
+        if candidate.is_file():
+            return str(candidate)
+    raise TrafficDemandError(
+        f"Cannot find $SUMO_HOME/tools/{name}; set SUMO_HOME to the SUMO installation."
+    )
+
+
+def _validate_route_sampler(path: str) -> RouteSamplerCapabilities:
+    try:
+        source = Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise TrafficDemandError(
+            f"Cannot read SUMO routeSampler script at {path}: {exc}"
+        ) from exc
+    missing = [
+        option for option in ROUTE_SAMPLER_REQUIRED_OPTIONS if option not in source
+    ]
+    if missing:
+        raise TrafficDemandError(
+            f"SUMO routeSampler at {path} does not support required options: {missing}. "
+            "Install a current SUMO release and point SUMO_HOME to it."
+        )
+    return RouteSamplerCapabilities(
+        no_sampling="--no-sampling" in source,
+        via_mismatch=(
+            "output for edge relations with more than 2 edges not supported"
+            not in source
+        ),
+    )
+
+
+def _toolchain(overrides: Mapping[str, str] | None) -> Mapping[str, str]:
+    if overrides is not None:
+        missing = {"duarouter", "sumo", "routeSampler"} - set(overrides)
+        if missing:
+            raise TrafficDemandError(f"Tool overrides are missing: {sorted(missing)}")
+        result = dict(overrides)
+        result.setdefault(ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY, "true")
+        result.setdefault(ROUTE_SAMPLER_VIA_MISMATCH_CAPABILITY, "true")
+        return result
+    try:
+        import numpy  # noqa: F401
+        import scipy.optimize  # noqa: F401
+    except ImportError as exc:
+        raise TrafficDemandError(
+            "routeSampler optimization needs numpy and scipy; install requirements.txt."
+        ) from exc
+    tools = {
+        "duarouter": _binary("duarouter"),
+        "sumo": _binary("sumo"),
+        "routeSampler": _sumo_tool("routeSampler.py"),
+    }
+    capabilities = _validate_route_sampler(tools["routeSampler"])
+    tools[ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY] = str(
+        capabilities.no_sampling
+    ).lower()
+    tools[ROUTE_SAMPLER_VIA_MISMATCH_CAPABILITY] = str(
+        capabilities.via_mismatch
+    ).lower()
+    if not capabilities.no_sampling:
+        print(
+            "SUMO routeSampler does not support --no-sampling; continuing with "
+            "--optimize full. The installed legacy version may perform a seeded "
+            "pre-sampling pass before full optimization."
+        )
+    if not capabilities.via_mismatch:
+        print(
+            "SUMO routeSampler cannot write mismatch XML for edge relations with "
+            "via edges. Native mismatch output will be disabled for those count "
+            "files; CityPulse independent PCU/GEH quality reports remain enabled."
+        )
+    return tools
+
+
+def _run_command(
+    command: Sequence[str],
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return runner(
+            list(command),
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+    except subprocess.CalledProcessError as exc:
+        output = (exc.stdout or "").strip()
+        raise TrafficDemandError(
+            f"SUMO command failed ({' '.join(command)}): {output}"
+        ) from exc
+
+
 def _movement_route(
     intersection_id: str,
     intersection_manifest: Mapping[str, object],
@@ -98,13 +256,20 @@ def _movement_route(
     official_movement: str,
 ) -> Tuple[str, str]:
     sumo_movement = approach.movements[official_movement]
+    matches = [
+        item
+        for item in intersection_manifest.get("connections", [])
+        if item.get("approach") == approach.sumo_approach
+        and item.get("movement") == sumo_movement
+    ]
+    # Uppercase L/R are auxiliary signal paths unless demand explicitly splits to them.
+    primary_matches = [
+        item for item in matches if item.get("direction") not in {"L", "R"}
+    ]
+    if primary_matches:
+        matches = primary_matches
     route_pairs = sorted(
-        {
-            (str(item["from_edge"]), str(item["to_edge"]))
-            for item in intersection_manifest.get("connections", [])
-            if item.get("approach") == approach.sumo_approach
-            and item.get("movement") == sumo_movement
-        }
+        {(str(item["from_edge"]), str(item["to_edge"])) for item in matches}
     )
     if len(route_pairs) != 1:
         raise TrafficDemandError(
@@ -121,7 +286,10 @@ def _movement_routes(
     approach: ApproachDemandMapping,
     official_movement: str,
     splits: Sequence[RouteSplit],
-) -> Tuple[Tuple[Tuple[str, str], int], ...]:
+    overrides: Sequence[RoutePath] = (),
+) -> Tuple[Tuple[Tuple[str, ...], int], ...]:
+    if overrides:
+        return tuple((item.edges, item.weight) for item in overrides)
     if not splits:
         return (
             (
@@ -134,7 +302,6 @@ def _movement_routes(
                 1,
             ),
         )
-
     sumo_movement = approach.movements[official_movement]
     route_pairs = sorted(
         {
@@ -148,10 +315,7 @@ def _movement_routes(
         to_edge: (from_edge, to_edge) for from_edge, to_edge in route_pairs
     }
     configured_targets = {item.to_edge for item in splits}
-    if (
-        len(routes_by_target) != len(route_pairs)
-        or set(routes_by_target) != configured_targets
-    ):
+    if len(routes_by_target) != len(route_pairs) or set(routes_by_target) != configured_targets:
         raise TrafficDemandError(
             f"{intersection_id}/{approach.official_name}/{official_movement}: "
             f"configured split targets {sorted(configured_targets)} do not match "
@@ -165,7 +329,7 @@ def _movement_routes(
 
 def _allocate_route_counts(
     count: int,
-    weighted_routes: Sequence[Tuple[Tuple[str, str], int]],
+    weighted_routes: Sequence[Tuple[Tuple[str, ...], int]],
 ) -> Tuple[int, ...]:
     total_weight = sum(weight for _, weight in weighted_routes)
     allocated = [count * weight // total_weight for _, weight in weighted_routes]
@@ -179,576 +343,1099 @@ def _allocate_route_counts(
     return tuple(allocated)
 
 
-def _movement_has_demand(demand, official_approach: str, official_movement: str) -> bool:
-    return any(
-        interval.volumes[official_approach][official_movement] > 0
-        for period in demand.periods.values()
-        for interval in period.intervals
-    )
+def _allocate_vehicle_mix(
+    target_pcu: int,
+    shares: Mapping[str, float],
+    profiles: Mapping[str, VehicleProfile],
+) -> Mapping[str, int]:
+    """Allocate integer vehicles with a half-PCU dynamic program."""
+    profile_ids = tuple(sorted(shares))
+    factors = {name: int(round(profiles[name].pcu_factor * 2)) for name in profile_ids}
+    target_units = target_pcu * 2
+    max_units = target_units + max(factors.values())
+    average_pcu = sum(shares[name] * profiles[name].pcu_factor for name in profile_ids)
+    raw_total = target_pcu / average_pcu if average_pcu else 0.0
+    raw_counts = {name: raw_total * shares[name] for name in profile_ids}
 
-
-def _find_binary(name: str) -> str:
-    executable = f"{name}.exe" if os.name == "nt" else name
-    candidates = []
-    sumo_home = os.environ.get("SUMO_HOME")
-    if sumo_home:
-        candidates.append(Path(sumo_home) / "bin" / executable)
-    located = shutil.which(name)
-    if located:
-        candidates.append(Path(located))
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
-    raise TrafficDemandError(
-        f"Cannot find SUMO binary {name!r}. Set SUMO_HOME or add SUMO/bin to PATH."
-    )
-
-
-def _find_route_sampler() -> Path:
-    sumo_home = os.environ.get("SUMO_HOME")
-    candidates = []
-    if sumo_home:
-        candidates.append(Path(sumo_home) / "tools" / "routeSampler.py")
-    for binary_name in ("sumo", "duarouter"):
-        located = shutil.which(binary_name)
-        if located:
-            candidates.append(Path(located).resolve().parent.parent / "tools" / "routeSampler.py")
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    raise TrafficDemandError(
-        "Cannot find SUMO tools/routeSampler.py. Set SUMO_HOME to the SUMO installation."
-    )
-
-
-def _require_numpy() -> None:
-    if importlib.util.find_spec("numpy") is None:
-        raise TrafficDemandError(
-            "SUMO routeSampler requires NumPy. Install the project requirements in the "
-            "same Python environment used to run the builder."
-        )
-
-
-def _physical_movements(
-    intersection_ids: Sequence[str],
-    manifest_intersections: Mapping[str, object],
-    demands,
-) -> tuple[PhysicalMovement, ...]:
-    movements_by_pair: dict[tuple[str, str], PhysicalMovement] = {}
-    for intersection_id in intersection_ids:
-        demand = demands.intersections[intersection_id]
-        intersection_manifest = manifest_intersections[intersection_id]
-        for official_approach, approach in demand.approaches.items():
-            for official_movement in approach.movements:
-                if not _movement_has_demand(
-                    demand, official_approach, official_movement
-                ):
-                    continue
-                route_pairs = set()
-                for period in demand.periods.values():
-                    weighted = _movement_routes(
-                        intersection_id,
-                        intersection_manifest,
-                        approach,
-                        official_movement,
-                        period.route_splits.get(official_approach, {}).get(
-                            official_movement, ()
-                        ),
-                    )
-                    route_pairs.update(route for route, _ in weighted)
-                for from_edge, to_edge in sorted(route_pairs):
-                    movement = PhysicalMovement(
-                        movement_id=_safe_id(
-                            f"{intersection_id}:{official_approach}:"
-                            f"{official_movement}:{from_edge}:{to_edge}"
-                        ),
-                        intersection_id=intersection_id,
-                        official_approach=official_approach,
-                        official_movement=official_movement,
-                        from_edge=from_edge,
-                        to_edge=to_edge,
-                    )
-                    pair = (from_edge, to_edge)
-                    previous = movements_by_pair.get(pair)
-                    if previous is not None and previous != movement:
-                        raise TrafficDemandError(
-                            f"Physical turn {from_edge}->{to_edge} maps to both "
-                            f"{previous.movement_id} and {movement.movement_id}."
-                        )
-                    movements_by_pair[pair] = movement
-    return tuple(
-        sorted(
-            movements_by_pair.values(),
-            key=lambda item: (
-                item.intersection_id,
-                item.official_approach,
-                item.official_movement,
-                item.from_edge,
-                item.to_edge,
-            ),
-        )
-    )
-
-
-def _period_targets(
-    period_id: str,
-    intersection_ids: Sequence[str],
-    manifest_intersections: Mapping[str, object],
-    demands,
-    movements: Sequence[PhysicalMovement],
-) -> tuple[DemandPeriod, tuple[IntervalTargets, ...]]:
-    reference = demands.intersections[intersection_ids[0]].periods[period_id]
-    movement_by_pair = {(item.from_edge, item.to_edge): item for item in movements}
-    targets = [
-        IntervalTargets(
-            begin=interval.start - reference.start,
-            end=interval.end - reference.start,
-            counts={item.movement_id: 0 for item in movements},
-        )
-        for interval in reference.intervals
-    ]
-    mutable = [dict(item.counts) for item in targets]
-
-    for intersection_id in intersection_ids:
-        demand = demands.intersections[intersection_id]
-        period = demand.periods.get(period_id)
-        if period is None:
-            raise TrafficDemandError(f"{intersection_id} has no {period_id!r} demand.")
-        if (
-            period.start != reference.start
-            or period.end != reference.end
-            or len(period.intervals) != len(reference.intervals)
-        ):
-            raise TrafficDemandError(
-                f"{intersection_id}/{period_id} does not share the global time grid."
-            )
-        intersection_manifest = manifest_intersections[intersection_id]
-        active_movements = {
-            (official_approach, official_movement)
-            for official_approach, approach in demand.approaches.items()
-            for official_movement in approach.movements
-            if _movement_has_demand(demand, official_approach, official_movement)
-        }
-        for index, (interval, reference_interval) in enumerate(
-            zip(period.intervals, reference.intervals)
-        ):
-            if interval.start != reference_interval.start or interval.end != reference_interval.end:
-                raise TrafficDemandError(
-                    f"{intersection_id}/{period_id} uses different 15-minute intervals."
+    states: dict[int, Tuple[Tuple[int, ...], float]] = {0: ((), 0.0)}
+    for name in profile_ids:
+        next_states: dict[int, Tuple[Tuple[int, ...], float]] = {}
+        factor = factors[name]
+        for prior_units, (prior_counts, prior_penalty) in states.items():
+            for count in range((max_units - prior_units) // factor + 1):
+                units = prior_units + count * factor
+                penalty = prior_penalty + (
+                    (count - raw_counts[name]) ** 2 / max(raw_counts[name], 1.0)
                 )
+                candidate = (prior_counts + (count,), penalty)
+                current = next_states.get(units)
+                if current is None or (penalty, candidate[0]) < (
+                    current[1],
+                    current[0],
+                ):
+                    next_states[units] = candidate
+        states = next_states
+
+    _, (counts, _) = min(
+        states.items(),
+        key=lambda item: (
+            abs(item[0] - target_units),
+            item[1][1],
+            item[1][0],
+        ),
+    )
+    return dict(zip(profile_ids, counts))
+
+
+def _aligned_periods(
+    requested: Sequence[str], configuration
+) -> Mapping[str, DemandPeriod]:
+    first = configuration.intersections[requested[0]].periods
+    expected_ids = set(first)
+    for intersection_id in requested[1:]:
+        periods = configuration.intersections[intersection_id].periods
+        if set(periods) != expected_ids:
+            raise TrafficDemandError("All intersections must define the same demand periods.")
+        for period_id, reference in first.items():
+            candidate = periods[period_id]
+            if (
+                candidate.start != reference.start
+                or candidate.end != reference.end
+                or len(candidate.intervals) != len(reference.intervals)
+                or any(
+                    (a.start, a.end) != (b.start, b.end)
+                    for a, b in zip(candidate.intervals, reference.intervals)
+                )
+            ):
+                raise TrafficDemandError(
+                    f"{intersection_id}/{period_id}: official intervals are not globally aligned."
+                )
+    return first
+
+
+def _compile_global_demand(
+    requested: Sequence[str],
+    manifest_intersections: Mapping[str, object],
+    configuration,
+) -> CompiledGlobalDemand:
+    periods = _aligned_periods(requested, configuration)
+    locations: dict[Tuple[str, ...], CountLocation] = {}
+    targets: dict[str, list[dict[Tuple[str, ...], int]]] = {
+        period_id: [defaultdict(int) for _ in period.intervals]
+        for period_id, period in periods.items()
+    }
+    cell_targets: dict[str, list[dict[Tuple[str, str, str], int]]] = {
+        period_id: [dict() for _ in period.intervals]
+        for period_id, period in periods.items()
+    }
+    cell_paths: dict[
+        str,
+        list[dict[Tuple[str, str, str], dict[Tuple[str, ...], int]]],
+    ] = {
+        period_id: [dict() for _ in period.intervals]
+        for period_id, period in periods.items()
+    }
+    program_ids = {period_id: {} for period_id in periods}
+
+    for intersection_id in requested:
+        demand = configuration.intersections[intersection_id]
+        own_manifest = manifest_intersections[intersection_id]
+        available_programs = set(own_manifest.get("program_ids", []))
+        for period_id, period in demand.periods.items():
+            if period.program_id not in available_programs:
+                raise TrafficDemandError(
+                    f"{intersection_id}/{period_id}: signal program "
+                    f"{period.program_id!r} is absent from the TLS manifest."
+                )
+            program_ids[period_id][intersection_id] = period.program_id
+            routes = {}
             for official_approach, approach in demand.approaches.items():
                 for official_movement in approach.movements:
-                    if (official_approach, official_movement) not in active_movements:
-                        continue
-                    count = interval.volumes[official_approach][official_movement]
-                    weighted = _movement_routes(
-                        intersection_id,
-                        intersection_manifest,
-                        approach,
-                        official_movement,
-                        period.route_splits.get(official_approach, {}).get(
-                            official_movement, ()
-                        ),
+                    has_positive_demand = any(
+                        interval.volumes[official_approach][official_movement] > 0
+                        for interval in period.intervals
                     )
-                    allocated = _allocate_route_counts(count, weighted)
-                    for ((pair, _), route_count) in zip(weighted, allocated):
-                        mutable[index][movement_by_pair[pair].movement_id] += route_count
+                    try:
+                        routes[(official_approach, official_movement)] = (
+                            _movement_routes(
+                                intersection_id,
+                                own_manifest,
+                                approach,
+                                official_movement,
+                                period.route_splits.get(official_approach, {}).get(
+                                    official_movement, ()
+                                ),
+                                period.route_overrides.get(official_approach, {}).get(
+                                    official_movement, ()
+                                ),
+                            )
+                        )
+                    except TrafficDemandError:
+                        if has_positive_demand:
+                            raise
+                        sumo_movement = approach.movements[official_movement]
+                        zero_paths = sorted(
+                            {
+                                (
+                                    str(item["from_edge"]),
+                                    str(item["to_edge"]),
+                                )
+                                for item in own_manifest.get("connections", [])
+                                if item.get("approach") == approach.sumo_approach
+                                and item.get("movement") == sumo_movement
+                            }
+                        )
+                        if zero_paths:
+                            routes[(official_approach, official_movement)] = tuple(
+                                (edges, 1) for edges in zero_paths
+                            )
+                        # If no physical connection exists, the all-zero cell is
+                        # naturally satisfied because no route can traverse it.
+                        continue
+            for interval_index, interval in enumerate(period.intervals):
+                for official_approach, approach in demand.approaches.items():
+                    for official_movement in approach.movements:
+                        cell = (
+                            intersection_id,
+                            official_approach,
+                            official_movement,
+                        )
+                        target = interval.volumes[official_approach][official_movement]
+                        route_key = (official_approach, official_movement)
+                        cell_targets[period_id][interval_index][cell] = target
+                        if route_key not in routes:
+                            if target != 0:
+                                raise TrafficDemandError(
+                                    f"{intersection_id}/{period_id}/{official_approach}/"
+                                    f"{official_movement}: non-zero demand has no physical route."
+                                )
+                            cell_paths[period_id][interval_index][cell] = {}
+                            continue
+                        weighted_routes = routes[route_key]
+                        allocated = _allocate_route_counts(target, weighted_routes)
+                        own_paths: dict[Tuple[str, ...], int] = {}
+                        for (edges, _), count in zip(weighted_routes, allocated):
+                            edges = tuple(edges)
+                            if edges not in locations:
+                                locations[edges] = CountLocation(
+                                    intersection_id=intersection_id,
+                                    official_approach=official_approach,
+                                    official_movement=official_movement,
+                                    edges=edges,
+                                )
+                            elif locations[edges].intersection_id != intersection_id:
+                                raise TrafficDemandError(
+                                    f"Physical count path {edges} is shared by multiple intersections."
+                                )
+                            targets[period_id][interval_index][edges] += count
+                            own_paths[edges] = count
+                        cell_paths[period_id][interval_index][cell] = own_paths
 
-    return reference, tuple(
-        IntervalTargets(item.begin, item.end, mutable[index])
-        for index, item in enumerate(targets)
+    return CompiledGlobalDemand(
+        periods=periods,
+        program_ids=program_ids,
+        locations=locations,
+        targets={key: tuple(value) for key, value in targets.items()},
+        cell_targets={key: tuple(value) for key, value in cell_targets.items()},
+        cell_paths={key: tuple(value) for key, value in cell_paths.items()},
     )
 
 
-def _route_coverage(
-    edges: Sequence[str],
-    movements_by_pair: Mapping[Tuple[str, str], PhysicalMovement],
-) -> tuple[PhysicalMovement, ...] | None:
-    if len(edges) < 2 or len(edges) != len(set(edges)):
-        return None
-    monitored_from = {item.from_edge for item in movements_by_pair.values()}
-    seen_incoming = set()
-    coverage = []
-    for from_edge, to_edge in zip(edges, edges[1:]):
-        if from_edge not in monitored_from:
-            continue
-        if from_edge in seen_incoming:
-            return None
-        seen_incoming.add(from_edge)
-        movement = movements_by_pair.get((from_edge, to_edge))
-        if movement is None:
-            return None
-        coverage.append(movement)
-    intersection_ids = [item.intersection_id for item in coverage]
-    if len(intersection_ids) != len(set(intersection_ids)):
-        return None
-    return tuple(coverage)
+def _class_targets(
+    compiled: CompiledGlobalDemand,
+    shares: Mapping[str, float],
+    profiles: Mapping[str, VehicleProfile],
+) -> Mapping[
+    str, Tuple[Mapping[Tuple[str, ...], Mapping[str, int]], ...]
+]:
+    result = {}
+    for period_id, intervals in compiled.targets.items():
+        own_intervals = []
+        for targets in intervals:
+            own_intervals.append(
+                {
+                    edges: _allocate_vehicle_mix(target, shares, profiles)
+                    for edges, target in targets.items()
+                }
+            )
+        result[period_id] = tuple(own_intervals)
+    return result
+
+
+def _write_turn_counts(
+    path: Path,
+    period: DemandPeriod,
+    interval_targets: Sequence[Mapping[Tuple[str, ...], Mapping[str, int]]],
+    profile_id: str,
+) -> None:
+    root = ET.Element("data")
+    for index, targets in enumerate(interval_targets):
+        interval = period.intervals[index]
+        interval_node = ET.SubElement(
+            root,
+            "interval",
+            {
+                "begin": str(interval.start - period.start),
+                "end": str(interval.end - period.start),
+            },
+        )
+        for edges, counts in sorted(targets.items()):
+            attributes = {
+                "from": edges[0],
+                "to": edges[-1],
+                "count": str(counts[profile_id]),
+            }
+            if len(edges) > 2:
+                attributes["via"] = " ".join(edges[1:-1])
+            ET.SubElement(interval_node, "edgeRelation", attributes)
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+
+def _dedupe_adjacent(edges: Sequence[str]) -> Tuple[str, ...]:
+    result = []
+    for edge in edges:
+        if not result or result[-1] != edge:
+            result.append(edge)
+    return tuple(result)
 
 
 def _write_candidate_trips(
-    path: Path, movements: Sequence[PhysicalMovement]
-) -> Mapping[str, Tuple[str, str]]:
+    path: Path,
+    profile: VehicleProfile,
+    locations: Sequence[CountLocation],
+    upstream_extensions: Mapping[str, str],
+    downstream_extensions: Mapping[str, str],
+) -> int:
     root = ET.Element("routes")
-    expected = {}
-    index = 0
-    for first in movements:
-        for second in movements:
+    candidate_type = f"candidate_{_safe_id(profile.v_class)}"
+    ET.SubElement(root, "vType", {"id": candidate_type, "vClass": profile.v_class})
+    forced_paths = []
+    for location in locations:
+        forced = _extend_route_endpoints(
+            location.edges, upstream_extensions, downstream_extensions
+        )
+        if len(set(forced)) == len(forced):
+            forced_paths.append((f"local_{location.location_id}", forced))
+    for first in locations:
+        for second in locations:
             if first.intersection_id == second.intersection_id:
                 continue
-            trip_id = f"candidate_pair_{index:06d}"
-            via_edges = [first.to_edge]
-            if second.from_edge != first.to_edge:
-                via_edges.append(second.from_edge)
-            ET.SubElement(
-                root,
-                "trip",
-                {
-                    "id": trip_id,
-                    "depart": "0",
-                    "from": first.from_edge,
-                    "to": second.to_edge,
-                    "via": " ".join(via_edges),
-                },
+            forced = _dedupe_adjacent(first.edges + second.edges)
+            forced = _extend_route_endpoints(
+                forced, upstream_extensions, downstream_extensions
             )
-            expected[trip_id] = (first.movement_id, second.movement_id)
-            index += 1
+            if len(set(forced)) != len(forced):
+                continue
+            forced_paths.append(
+                (f"pair_{first.location_id}_{second.location_id}", forced)
+            )
+    for index, (trip_id, forced) in enumerate(forced_paths):
+        attributes = {
+            "id": _safe_id(trip_id),
+            "type": candidate_type,
+            "depart": str(index),
+            "from": forced[0],
+            "to": forced[-1],
+        }
+        if len(forced) > 2:
+            attributes["via"] = " ".join(forced[1:-1])
+        ET.SubElement(root, "trip", attributes)
     ET.indent(root, space="  ")
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
-    return expected
+    return len(forced_paths)
 
 
-def _read_duarouter_routes(path: Path) -> Iterable[Tuple[str, tuple[str, ...]]]:
-    root = ET.parse(path).getroot()
-    for element in root:
-        if element.tag not in {"vehicle", "trip", "route"}:
-            continue
-        route = element if element.tag == "route" else element.find("route")
-        if route is None or not route.get("edges"):
-            continue
-        yield str(element.get("id", route.get("id", ""))), tuple(route.get("edges", "").split())
+def _extend_route_endpoints(
+    edges: Sequence[str],
+    upstream_extensions: Mapping[str, str],
+    downstream_extensions: Mapping[str, str],
+) -> Tuple[str, ...]:
+    if not edges:
+        return ()
+    result = list(edges)
+    upstream = upstream_extensions.get(result[0])
+    if upstream is not None:
+        result.insert(0, upstream)
+    downstream = downstream_extensions.get(result[-1])
+    if downstream is not None:
+        result.append(downstream)
+    return tuple(result)
 
 
-def _build_candidate_routes(
-    path: Path,
+def _route_contains(route: Sequence[str], path: Sequence[str]) -> bool:
+    width = len(path)
+    return any(tuple(route[index : index + width]) == tuple(path) for index in range(len(route) - width + 1))
+
+
+def _inspect_route_network(
     network_path: Path,
-    movements: Sequence[PhysicalMovement],
-    duarouter_binary: str,
-) -> Mapping[str, object]:
-    movements_by_pair = {(item.from_edge, item.to_edge): item for item in movements}
-    routes = {(item.from_edge, item.to_edge) for item in movements}
-    long_routes = set()
-    rejected = defaultdict(int)
-    pair_count = 0
+    locations: Sequence[CountLocation],
+    official_junction_ids: Sequence[str],
+    configured_extensions: Mapping[str, RouteEndpointExtensions] | None = None,
+) -> NetworkRouteMetadata:
+    try:
+        root = ET.parse(network_path).getroot()
+    except (FileNotFoundError, ET.ParseError) as exc:
+        raise TrafficDemandError(
+            f"Cannot inspect generated SUMO network: {network_path}"
+        ) from exc
+    endpoints = {}
+    lane_counts = {}
+    edge_lengths = {}
+    for edge in root.findall("edge"):
+        edge_id = edge.get("id")
+        if (
+            not edge_id
+            or edge_id.startswith(":")
+            or edge.get("function") == "internal"
+        ):
+            continue
+        if edge.get("from") is not None and edge.get("to") is not None:
+            endpoints[str(edge_id)] = (
+                str(edge.get("from")),
+                str(edge.get("to")),
+            )
+        lanes = edge.findall("lane")
+        lane_counts[str(edge_id)] = len(lanes)
+        lengths = []
+        for lane in lanes:
+            try:
+                length = float(str(lane.get("length", "")))
+            except ValueError:
+                continue
+            if math.isfinite(length) and length > 0:
+                lengths.append(length)
+        if lengths:
+            # Keep midpoint positions valid when parallel lanes differ slightly.
+            edge_lengths[str(edge_id)] = min(lengths)
 
-    if len({item.intersection_id for item in movements}) > 1:
-        with tempfile.TemporaryDirectory(prefix=".candidate-", dir=str(path.parent)) as directory:
-            directory_path = Path(directory)
-            trips_path = directory_path / "pairs.trips.xml"
-            routed_path = directory_path / "pairs.rou.xml"
-            expected = _write_candidate_trips(trips_path, movements)
-            pair_count = len(expected)
-            command = [
-                duarouter_binary,
+    by_endpoints: dict[Tuple[str, str], list[str]] = defaultdict(list)
+    for edge_id, edge_endpoints in endpoints.items():
+        by_endpoints[edge_endpoints].append(edge_id)
+    u_turn_pairs = frozenset({
+        (first, second)
+        for first, (from_node, to_node) in endpoints.items()
+        for second in by_endpoints.get((to_node, from_node), ())
+    })
+
+    predecessors: dict[str, dict[str, set[str]]] = defaultdict(
+        lambda: defaultdict(set)
+    )
+    successors: dict[str, dict[str, set[str]]] = defaultdict(
+        lambda: defaultdict(set)
+    )
+    for connection in root.findall("connection"):
+        source = str(connection.get("from", ""))
+        target = str(connection.get("to", ""))
+        if source not in lane_counts or target not in lane_counts:
+            continue
+        direction = str(connection.get("dir", ""))
+        predecessors[target][source].add(direction)
+        successors[source][target].add(direction)
+
+    network_protected_junctions = {str(item) for item in official_junction_ids}
+    network_protected_junctions.update(
+        str(junction.get("id"))
+        for junction in root.findall("junction")
+        if junction.get("id") and junction.get("type") == "traffic_light"
+    )
+    protected_junctions = set(network_protected_junctions)
+    for location in locations:
+        incoming_endpoints = endpoints.get(location.edges[0])
+        outgoing_endpoints = endpoints.get(location.edges[-1])
+        if incoming_endpoints is not None:
+            protected_junctions.add(incoming_endpoints[1])
+        if outgoing_endpoints is not None:
+            protected_junctions.add(outgoing_endpoints[0])
+
+    upstream_extensions = {}
+    for near_edge in sorted({location.edges[0] for location in locations}):
+        near_endpoints = endpoints.get(near_edge)
+        if near_endpoints is None or near_endpoints[0] in protected_junctions:
+            continue
+        straight = [
+            edge_id
+            for edge_id, directions in predecessors[near_edge].items()
+            if directions == {"s"}
+        ]
+        if len(straight) != 1:
+            continue
+        far_edge = straight[0]
+        if lane_counts[near_edge] > lane_counts[far_edge]:
+            if far_edge not in edge_lengths:
+                raise TrafficDemandError(
+                    f"Upstream endpoint extension edge {far_edge!r} has no positive "
+                    "lane length in the generated SUMO network."
+                )
+            upstream_extensions[near_edge] = far_edge
+
+    downstream_extensions = {}
+    for near_edge in sorted({location.edges[-1] for location in locations}):
+        near_endpoints = endpoints.get(near_edge)
+        if near_endpoints is None or near_endpoints[1] in protected_junctions:
+            continue
+        straight = [
+            edge_id
+            for edge_id, directions in successors[near_edge].items()
+            if directions == {"s"}
+        ]
+        if len(straight) != 1:
+            continue
+        far_edge = straight[0]
+        if lane_counts[near_edge] > lane_counts[far_edge]:
+            if far_edge not in edge_lengths:
+                raise TrafficDemandError(
+                    f"Downstream endpoint extension edge {far_edge!r} has no positive "
+                    "lane length in the generated SUMO network."
+                )
+            downstream_extensions[near_edge] = far_edge
+
+    configured_extensions = configured_extensions or {}
+    endpoints_by_intersection = {
+        intersection_id: {
+            "upstream": {
+                location.edges[0]
+                for location in locations
+                if location.intersection_id == intersection_id
+            },
+            "downstream": {
+                location.edges[-1]
+                for location in locations
+                if location.intersection_id == intersection_id
+            },
+        }
+        for intersection_id in configured_extensions
+    }
+    merged_by_direction = {
+        "upstream": upstream_extensions,
+        "downstream": downstream_extensions,
+    }
+    adjacency_by_direction = {
+        "upstream": predecessors,
+        "downstream": successors,
+    }
+    protected_endpoint_index = {"upstream": 0, "downstream": 1}
+    for intersection_id, extensions in sorted(configured_extensions.items()):
+        for direction in ("upstream", "downstream"):
+            mapping = getattr(extensions, direction)
+            valid_near_edges = endpoints_by_intersection[intersection_id][direction]
+            merged = merged_by_direction[direction]
+            adjacency = adjacency_by_direction[direction]
+            endpoint_index = protected_endpoint_index[direction]
+            for near_edge, far_edge in sorted(mapping.items()):
+                context = (
+                    f"{intersection_id}/route_endpoint_extensions/{direction}/"
+                    f"{near_edge}"
+                )
+                if near_edge not in valid_near_edges:
+                    raise TrafficDemandError(
+                        f"{context}: near edge is not a {direction} endpoint of an "
+                        "official count path."
+                    )
+                missing_edges = [
+                    edge_id
+                    for edge_id in (near_edge, far_edge)
+                    if edge_id not in endpoints
+                ]
+                if missing_edges:
+                    raise TrafficDemandError(
+                        f"{context}: endpoint extension edges are missing from the "
+                        f"generated SUMO network: {missing_edges}."
+                    )
+                invalid_lengths = [
+                    edge_id
+                    for edge_id in (near_edge, far_edge)
+                    if edge_id not in edge_lengths
+                ]
+                if invalid_lengths:
+                    raise TrafficDemandError(
+                        f"{context}: endpoint extension edges have no positive lane "
+                        f"length: {invalid_lengths}."
+                    )
+                junction_id = endpoints[near_edge][endpoint_index]
+                if junction_id in network_protected_junctions:
+                    raise TrafficDemandError(
+                        f"{context}: extension would cross protected junction "
+                        f"{junction_id!r}."
+                    )
+                directions = adjacency[near_edge].get(far_edge, set())
+                if "s" not in directions:
+                    first, second = (
+                        (far_edge, near_edge)
+                        if direction == "upstream"
+                        else (near_edge, far_edge)
+                    )
+                    raise TrafficDemandError(
+                        f"{context}: edges {first!r} and {second!r} must have a "
+                        f"straight connection; found directions {sorted(directions)}."
+                    )
+                existing = merged.get(near_edge)
+                if existing is not None and existing != far_edge:
+                    raise TrafficDemandError(
+                        f"{context}: conflicts with detected extension "
+                        f"{near_edge!r}->{existing!r}."
+                    )
+                merged[near_edge] = far_edge
+
+    return NetworkRouteMetadata(
+        edge_lengths=edge_lengths,
+        u_turn_pairs=u_turn_pairs,
+        upstream_extensions=upstream_extensions,
+        downstream_extensions=downstream_extensions,
+        configured_extensions=configured_extensions,
+    )
+
+
+def _read_candidate_routes(
+    path: Path,
+    u_turn_pairs: set[Tuple[str, str]] | None = None,
+) -> Tuple[Tuple[str, ...], ...]:
+    try:
+        root = ET.parse(path).getroot()
+    except (FileNotFoundError, ET.ParseError) as exc:
+        raise TrafficDemandError(f"Cannot read duarouter candidate output: {path}") from exc
+    route_defs = {
+        str(item.get("id")): tuple(str(item.get("edges", "")).split())
+        for item in root.findall("route")
+    }
+    routes = set()
+    forbidden_u_turns = u_turn_pairs or set()
+    for vehicle in root.findall("vehicle"):
+        route_node = vehicle.find("route")
+        if route_node is not None:
+            edges = tuple(str(route_node.get("edges", "")).split())
+        else:
+            edges = route_defs.get(str(vehicle.get("route")), ())
+        has_u_turn = any(
+            (first, second) in forbidden_u_turns
+            for first, second in zip(edges, edges[1:])
+        )
+        if len(edges) >= 2 and len(set(edges)) == len(edges) and not has_u_turn:
+            routes.add(edges)
+    return tuple(sorted(routes))
+
+
+def _write_candidate_routes(path: Path, routes: Sequence[Tuple[str, ...]]) -> None:
+    root = ET.Element("routes")
+    for index, edges in enumerate(routes):
+        vehicle = ET.SubElement(
+            root,
+            "vehicle",
+            {"id": f"candidate_{index:06d}", "depart": str(index)},
+        )
+        ET.SubElement(vehicle, "route", {"edges": " ".join(edges)})
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+
+def _build_candidates(
+    work_dir: Path,
+    network_path: Path,
+    network_metadata: NetworkRouteMetadata,
+    compiled: CompiledGlobalDemand,
+    class_targets,
+    profiles: Mapping[str, VehicleProfile],
+    tools: Mapping[str, str],
+    runner,
+) -> Mapping[str, Path]:
+    locations = tuple(sorted(compiled.locations.values(), key=lambda item: item.location_id))
+    by_vclass: dict[str, list[str]] = defaultdict(list)
+    for profile_id in sorted(profiles):
+        by_vclass[profiles[profile_id].v_class].append(profile_id)
+    result = {}
+    for vclass, profile_ids in sorted(by_vclass.items()):
+        profile = profiles[profile_ids[0]]
+        trips_path = work_dir / f"candidate_{_safe_id(vclass)}.trips.xml"
+        raw_path = work_dir / f"candidate_{_safe_id(vclass)}.raw.rou.xml"
+        clean_path = work_dir / f"candidate_{_safe_id(vclass)}.rou.xml"
+        _write_candidate_trips(
+            trips_path,
+            profile,
+            locations,
+            network_metadata.upstream_extensions,
+            network_metadata.downstream_extensions,
+        )
+        _run_command(
+            [
+                tools["duarouter"],
                 "--net-file",
                 str(network_path),
                 "--route-files",
                 str(trips_path),
                 "--output-file",
-                str(routed_path),
-                "--routing-algorithm",
-                "dijkstra",
+                str(raw_path),
                 "--ignore-errors",
+                "true",
+                "--remove-loops",
                 "true",
                 "--no-step-log",
                 "true",
-            ]
-            completed = subprocess.run(command, capture_output=True, text=True)
-            if completed.returncode != 0 or not routed_path.is_file():
-                details = (completed.stderr or completed.stdout)[-4000:]
-                raise TrafficDemandError(f"duarouter candidate generation failed: {details}")
-            for trip_id, edges in _read_duarouter_routes(routed_path):
-                coverage = _route_coverage(edges, movements_by_pair)
-                if coverage is None:
-                    rejected["invalid_or_repeated_controlled_turn"] += 1
-                    continue
-                covered_ids = {item.movement_id for item in coverage}
-                required = expected.get(trip_id)
-                if required is None or not set(required).issubset(covered_ids):
-                    rejected["missing_required_pair"] += 1
-                    continue
-                if len({item.intersection_id for item in coverage}) < 2:
-                    rejected["not_cross_intersection"] += 1
-                    continue
-                long_routes.add(edges)
-    routes.update(long_routes)
-
-    root = ET.Element("routes")
-    for index, edges in enumerate(sorted(routes, key=lambda value: (len(value), value))):
-        ET.SubElement(
-            root,
-            "route",
-            {"id": f"candidate_{index:06d}", "edges": " ".join(edges)},
+            ],
+            runner,
         )
-    ET.indent(root, space="  ")
-    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
-    return {
-        "ordered_pair_trips": pair_count,
-        "fallback_routes": len(movements),
-        "cross_intersection_routes": len(long_routes),
-        "candidate_routes": len(routes),
-        "rejected": dict(sorted(rejected.items())),
-    }
-
-
-def _write_turn_counts(
-    path: Path,
-    targets: Sequence[IntervalTargets],
-    movements: Sequence[PhysicalMovement],
-) -> None:
-    root = ET.Element("data")
-    for interval in targets:
-        node = ET.SubElement(
-            root,
-            "interval",
-            {"begin": str(interval.begin), "end": str(interval.end)},
-        )
-        for movement in movements:
-            ET.SubElement(
-                node,
-                "edgeRelation",
-                {
-                    "from": movement.from_edge,
-                    "to": movement.to_edge,
-                    "count": str(interval.counts[movement.movement_id]),
-                },
-            )
-    ET.indent(root, space="  ")
-    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
-
-
-def _sample_result(
-    sample_path: Path,
-    seed: int,
-    period_id: str,
-    targets: Sequence[IntervalTargets],
-    movements: Sequence[PhysicalMovement],
-    vehicle_type_id: str,
-    vehicle_profile,
-) -> SampleResult:
-    source_root = ET.parse(sample_path).getroot()
-    named_routes = {
-        item.get("id"): tuple(item.get("edges", "").split())
-        for item in source_root.findall("route")
-        if item.get("id") and item.get("edges")
-    }
-    movements_by_pair = {(item.from_edge, item.to_edge): item for item in movements}
-    target_keys = {(item.begin, item.end): item for item in targets}
-    assigned = {
-        key: {movement.movement_id: 0 for movement in movements}
-        for key in target_keys
-    }
-    normalized_root = ET.Element("routes")
-    ET.SubElement(normalized_root, "vType", vehicle_profile.sumo_attributes(vehicle_type_id))
-    records = []
-    vehicle_count = 0
-    multi_count = 0
-    intersection_visits = 0
-
-    flows = list(source_root.findall("flow"))
-    if not flows:
-        raise TrafficDemandError(f"routeSampler seed {seed} produced no flows.")
-    for index, source_flow in enumerate(flows):
-        sampled_begin = float(source_flow.get("begin", "0"))
-        sampled_end = float(source_flow.get("end", "0"))
-        number = int(source_flow.get("number", "0"))
-        matching_intervals = [
-            key
-            for key in target_keys
-            if key[0] - 1e-6 <= sampled_begin < key[1]
-            # Older routeSampler versions extend a one-vehicle flow by up to
-            # one second beyond the count interval to keep its duration positive.
-            and sampled_begin < sampled_end <= key[1] + 1.01
-        ]
-        if len(matching_intervals) != 1 or number <= 0:
-            raise TrafficDemandError(
-                f"routeSampler seed {seed} produced invalid flow interval/count: "
-                f"{sampled_begin:g}-{sampled_end:g}/{number}."
-            )
-        key = matching_intervals[0]
-        begin, end = key
-        route_node = source_flow.find("route")
-        if route_node is not None and route_node.get("edges"):
-            edges = tuple(route_node.get("edges", "").split())
-        elif source_flow.get("route") in named_routes:
-            edges = named_routes[source_flow.get("route")]
-        else:
-            raise TrafficDemandError(
-                f"routeSampler seed {seed} flow {source_flow.get('id')} has no route."
-            )
-        coverage = _route_coverage(edges, movements_by_pair)
-        if not coverage:
-            raise TrafficDemandError(
-                f"routeSampler seed {seed} emitted an invalid or unrestricted route: {edges}."
-            )
-        for movement in coverage:
-            assigned[key][movement.movement_id] += number
-        intersections = tuple(dict.fromkeys(item.intersection_id for item in coverage))
-        vehicle_count += number
-        intersection_visits += number * len(intersections)
-        if len(intersections) >= 2:
-            multi_count += number
-
-        flow_id = f"global_{period_id}_{index:06d}"
-        flow = ET.SubElement(
-            normalized_root,
-            "flow",
-            {
-                "id": flow_id,
-                "type": vehicle_type_id,
-                "begin": str(begin),
-                "end": str(end),
-                "number": str(number),
-                "departLane": "best",
-                "departSpeed": "max",
-            },
-        )
-        ET.SubElement(flow, "route", {"edges": " ".join(edges)})
-        first = coverage[0]
-        records.append(
-            {
-                "flow_id": flow_id,
-                "begin": begin,
-                "end": end,
-                "number": number,
-                "route_edges": list(edges),
-                "source_intersection_id": first.intersection_id,
-                "source_official_approach": first.official_approach,
-                "covered_movements": [item.movement_id for item in coverage],
-                "covered_intersection_ids": list(intersections),
+        routes = _read_candidate_routes(raw_path, set(network_metadata.u_turn_pairs))
+        if not routes:
+            raise TrafficDemandError(f"duarouter produced no {vclass} candidate routes.")
+        _write_candidate_routes(clean_path, routes)
+        for profile_id in profile_ids:
+            required = {
+                edges
+                for intervals in class_targets.values()
+                for interval in intervals
+                for edges, counts in interval.items()
+                if counts[profile_id] > 0
             }
-        )
-
-    mismatches = []
-    for interval in targets:
-        key = (interval.begin, interval.end)
-        for movement in movements:
-            expected = interval.counts[movement.movement_id]
-            actual = assigned[key][movement.movement_id]
-            if actual != expected:
-                mismatches.append(
-                    f"{interval.begin}-{interval.end}/{movement.movement_id}: "
-                    f"expected {expected}, assigned {actual}"
+            missing = [
+                edges
+                for edges in sorted(required)
+                if not any(_route_contains(route, edges) for route in routes)
+            ]
+            if missing:
+                raise TrafficDemandError(
+                    f"{profile_id} candidate routes do not cover count paths: {missing[:10]}"
                 )
-    if mismatches:
-        raise TrafficDemandError(
-            f"routeSampler seed {seed} did not satisfy turn counts: "
-            + "; ".join(mismatches[:20])
+            result[profile_id] = clean_path
+    return result
+
+
+def _read_sampled_flows(path: Path) -> Tuple[SampledFlow, ...]:
+    try:
+        root = ET.parse(path).getroot()
+    except (FileNotFoundError, ET.ParseError) as exc:
+        raise TrafficDemandError(f"Cannot read routeSampler output: {path}") from exc
+    result = []
+    for flow in root.findall("flow"):
+        route = flow.find("route")
+        if route is None:
+            raise TrafficDemandError(f"routeSampler flow {flow.get('id')} has no inline route.")
+        result.append(
+            SampledFlow(
+                flow_id=str(flow.get("id")),
+                type_id=str(flow.get("type")),
+                begin=float(flow.get("begin", "0")),
+                end=float(flow.get("end", "0")),
+                number=int(flow.get("number", "0")),
+                edges=tuple(str(route.get("edges", "")).split()),
+            )
         )
-    ET.indent(normalized_root, space="  ")
-    return SampleResult(
-        seed=seed,
-        route_root=normalized_root,
-        flow_records=records,
-        assigned=assigned,
-        vehicle_count=vehicle_count,
-        multi_intersection_vehicle_count=multi_count,
-        average_intersections_per_vehicle=(
-            intersection_visits / vehicle_count if vehicle_count else 0.0
-        ),
+    return tuple(result)
+
+
+def _turn_counts_have_via(path: Path) -> bool:
+    try:
+        root = ET.parse(path).getroot()
+    except (FileNotFoundError, ET.ParseError) as exc:
+        raise TrafficDemandError(f"Cannot read routeSampler turn counts: {path}") from exc
+    return any(relation.get("via") for relation in root.findall("interval/edgeRelation"))
+
+
+def _write_legacy_mismatch_marker(
+    path: Path,
+    route_sampler_path: str,
+    counts_path: Path,
+) -> None:
+    root = ET.Element(
+        "data",
+        {
+            "native": "false",
+            "reason": "legacy-routeSampler-via-mismatch-unsupported",
+        },
     )
+    warning = ET.SubElement(
+        root,
+        "warning",
+        {
+            "routeSampler": route_sampler_path,
+            "turnCounts": str(counts_path),
+        },
+    )
+    warning.text = (
+        "The installed routeSampler can optimize via edge relations but crashes "
+        "while serializing their native mismatch XML. Use the CityPulse traffic "
+        "quality JSON/CSV for authoritative PCU, GEH, and zero-flow validation."
+    )
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
 def _run_route_sampler(
-    candidates_path: Path,
+    tools: Mapping[str, str],
+    runner,
+    candidate_path: Path,
     counts_path: Path,
-    scenario_dir: Path,
-    period_id: str,
-    targets: Sequence[IntervalTargets],
-    movements: Sequence[PhysicalMovement],
-    route_sampler_path: Path,
-    sampler_seeds: Sequence[int],
-    vehicle_type_id: str,
-    vehicle_profile,
-) -> SampleResult:
-    successful = []
-    failures = []
-    for seed in sampler_seeds:
-        sample_path = scenario_dir / f".route_sampler_{seed}.rou.xml"
-        mismatch_path = scenario_dir / f".route_sampler_{seed}.mismatch.xml"
-        command = [
+    output_path: Path,
+    mismatch_path: Path,
+    profile_id: str,
+    period: DemandPeriod,
+    interval_seconds: int,
+    seed: int,
+) -> Tuple[SampledFlow, ...]:
+    type_id = f"official_{_safe_id(profile_id)}"
+    optimization_options = ["--optimize", "full"]
+    if tools.get(ROUTE_SAMPLER_NO_SAMPLING_CAPABILITY, "true") == "true":
+        optimization_options.append("--no-sampling")
+    write_native_mismatch = not _turn_counts_have_via(counts_path) or (
+        tools.get(ROUTE_SAMPLER_VIA_MISMATCH_CAPABILITY, "true") == "true"
+    )
+    mismatch_options = (
+        ["--mismatch-output", str(mismatch_path)]
+        if write_native_mismatch
+        else []
+    )
+    _run_command(
+        [
             sys.executable,
-            str(route_sampler_path),
+            tools["routeSampler"],
             "--route-files",
-            str(candidates_path),
+            str(candidate_path),
             "--turn-files",
             str(counts_path),
             "--output-file",
-            str(sample_path),
-            "--mismatch-output",
-            str(mismatch_path),
+            str(output_path),
+            *mismatch_options,
+            "--begin",
+            "0",
+            "--end",
+            str(period.duration),
+            "--interval",
+            str(interval_seconds),
             "--write-flows",
             "number",
+            *optimization_options,
+            "--minimize-vehicles",
+            str(MINIMIZE_VEHICLES),
             "--seed",
             str(seed),
             "--prefix",
-            f"global_{period_id}_{seed}_",
-        ]
-        completed = subprocess.run(command, capture_output=True, text=True)
-        try:
-            if completed.returncode != 0 or not sample_path.is_file():
-                details = (completed.stderr or completed.stdout)[-4000:]
-                raise TrafficDemandError(f"routeSampler failed: {details}")
-            successful.append(
-                _sample_result(
-                    sample_path,
-                    seed,
-                    period_id,
-                    targets,
-                    movements,
-                    vehicle_type_id,
-                    vehicle_profile,
-                )
-            )
-        except (TrafficDemandError, ET.ParseError) as exc:
-            failures.append(f"seed {seed}: {exc}")
-        finally:
-            sample_path.unlink(missing_ok=True)
-            mismatch_path.unlink(missing_ok=True)
-    if not successful:
-        raise TrafficDemandError(
-            "No routeSampler seed produced an exact assignment. " + " | ".join(failures)
+            f"{_safe_id(profile_id)}_",
+            "--attributes",
+            f'type="{type_id}" departLane="best" departSpeed="max"',
+        ],
+        runner,
+    )
+    if not write_native_mismatch:
+        _write_legacy_mismatch_marker(
+            mismatch_path,
+            tools["routeSampler"],
+            counts_path,
         )
-    return min(
-        successful,
-        key=lambda item: (
-            item.vehicle_count,
-            -item.multi_intersection_vehicle_count,
-            item.seed,
-        ),
+    elif not mismatch_path.is_file():
+        raise TrafficDemandError(
+            f"routeSampler did not write the requested mismatch output: {mismatch_path}"
+        )
+    return _read_sampled_flows(output_path)
+
+
+def _flow_interval(flow: SampledFlow, period: DemandPeriod) -> int:
+    for index, interval in enumerate(period.intervals):
+        begin = interval.start - period.start
+        end = interval.end - period.start
+        if begin - 1e-6 <= flow.begin < end - 1e-6:
+            return index
+    raise TrafficDemandError(
+        f"Flow {flow.flow_id} begins outside official 15-minute intervals: "
+        f"{flow.begin}."
     )
 
 
+def _geh(target: float, actual: float) -> float:
+    target_hourly = target * 4
+    actual_hourly = actual * 4
+    if target_hourly + actual_hourly == 0:
+        return 0.0
+    return math.sqrt(
+        2 * (actual_hourly - target_hourly) ** 2 / (actual_hourly + target_hourly)
+    )
+
+
+def _quality_report(
+    period_id: str,
+    compiled: CompiledGlobalDemand,
+    flows: Sequence[SampledFlow],
+    profiles: Mapping[str, VehicleProfile],
+    class_targets: Sequence[
+        Mapping[Tuple[str, ...], Mapping[str, int]]
+    ],
+) -> Mapping[str, object]:
+    period = compiled.periods[period_id]
+    profile_by_type = {
+        f"official_{_safe_id(profile_id)}": profile
+        for profile_id, profile in profiles.items()
+    }
+    achieved = [defaultdict(float) for _ in period.intervals]
+    achieved_by_profile = [
+        defaultdict(lambda: defaultdict(float)) for _ in period.intervals
+    ]
+    type_counts: dict[str, int] = {profile_id: 0 for profile_id in profiles}
+    route_intersections = {
+        edges: location.intersection_id
+        for edges, location in compiled.locations.items()
+    }
+    multi_count = 0
+    route_intersection_distribution: dict[int, int] = defaultdict(int)
+    multi_covered_paths: set[Tuple[str, ...]] = set()
+    for flow in flows:
+        if flow.type_id not in profile_by_type:
+            raise TrafficDemandError(
+                f"Flow {flow.flow_id} references unknown type {flow.type_id!r}."
+            )
+        interval_index = _flow_interval(flow, period)
+        profile = profile_by_type[flow.type_id]
+        type_counts[profile.profile_id] += flow.number
+        crossed = set()
+        crossed_paths = set()
+        for edges, intersection_id in route_intersections.items():
+            if _route_contains(flow.edges, edges):
+                contribution = flow.number * profile.pcu_factor
+                achieved[interval_index][edges] += contribution
+                achieved_by_profile[interval_index][edges][
+                    profile.profile_id
+                ] += contribution
+                crossed.add(intersection_id)
+                crossed_paths.add(edges)
+        route_intersection_distribution[len(crossed)] += flow.number
+        if len(crossed) >= 2:
+            multi_count += flow.number
+            if flow.number > 0:
+                multi_covered_paths.update(crossed_paths)
+
+    rows = []
+    cell_pass = True
+    nonzero_geh = []
+    group_totals: dict[Tuple[int, str], list[float]] = defaultdict(lambda: [0.0, 0.0])
+    for interval_index, cells in enumerate(compiled.cell_targets[period_id]):
+        for cell, target in sorted(cells.items()):
+            actual = 0.0
+            profile_contributions = {profile_id: 0.0 for profile_id in profiles}
+            for edges, allocated in compiled.cell_paths[period_id][interval_index][cell].items():
+                location_target = compiled.targets[period_id][interval_index][edges]
+                if location_target > 0:
+                    ratio = allocated / location_target
+                    actual += achieved[interval_index][edges] * ratio
+                    for profile_id in profiles:
+                        profile_contributions[profile_id] += (
+                            achieved_by_profile[interval_index][edges][profile_id]
+                            * ratio
+                        )
+                elif achieved[interval_index][edges] != 0:
+                    actual += achieved[interval_index][edges]
+                    for profile_id in profiles:
+                        profile_contributions[profile_id] += achieved_by_profile[
+                            interval_index
+                        ][edges][profile_id]
+            error = actual - target
+            tolerance = 0.0 if target == 0 else max(3.0, target * 0.05)
+            passed = abs(error) <= tolerance + 1e-9
+            cell_pass = cell_pass and passed
+            geh = _geh(target, actual)
+            if target > 0:
+                nonzero_geh.append(geh)
+            group_totals[(interval_index, cell[0])][0] += target
+            group_totals[(interval_index, cell[0])][1] += actual
+            rows.append(
+                {
+                    "interval_index": interval_index,
+                    "begin": period.intervals[interval_index].start - period.start,
+                    "end": period.intervals[interval_index].end - period.start,
+                    "intersection_id": cell[0],
+                    "official_approach": cell[1],
+                    "official_movement": cell[2],
+                    "target_pcu": target,
+                    "actual_pcu": actual,
+                    "error_pcu": error,
+                    "relative_error": None if target == 0 else error / target,
+                    "geh": geh,
+                    "vehicle_contributions_pcu": profile_contributions,
+                    "passed": passed,
+                }
+            )
+    intersection_totals = []
+    totals_pass = True
+    for (interval_index, intersection_id), (target, actual) in sorted(group_totals.items()):
+        relative_error = 0.0 if target == 0 else abs(actual - target) / target
+        passed = relative_error <= 0.03 + 1e-9
+        totals_pass = totals_pass and passed
+        intersection_totals.append(
+            {
+                "interval_index": interval_index,
+                "intersection_id": intersection_id,
+                "target_pcu": target,
+                "actual_pcu": actual,
+                "relative_error": relative_error,
+                "passed": passed,
+            }
+        )
+    geh_ok_percentage = (
+        100.0 * sum(value < 5 for value in nonzero_geh) / len(nonzero_geh)
+        if nonzero_geh
+        else 100.0
+    )
+    total_vehicles = sum(type_counts.values())
+    total_abs_error = sum(abs(float(row["error_pcu"])) for row in rows)
+    requires_multi_intersection = (
+        len({item.intersection_id for item in compiled.locations.values()}) > 1
+    )
+    allocation_rows = []
+    for interval_index, targets in enumerate(class_targets):
+        for edges, counts in sorted(targets.items()):
+            target = compiled.targets[period_id][interval_index][edges]
+            allocated_pcu = sum(
+                counts[profile_id] * profiles[profile_id].pcu_factor
+                for profile_id in profiles
+            )
+            location = compiled.locations[edges]
+            allocation_rows.append(
+                {
+                    "interval_index": interval_index,
+                    "location_id": location.location_id,
+                    "intersection_id": location.intersection_id,
+                    "official_approach": location.official_approach,
+                    "official_movement": location.official_movement,
+                    "edges": list(edges),
+                    "target_pcu": target,
+                    "vehicle_targets": dict(sorted(counts.items())),
+                    "allocated_pcu": allocated_pcu,
+                    "rounding_error_pcu": allocated_pcu - target,
+                }
+            )
+    uncovered = [
+        {
+            "location_id": location.location_id,
+            "intersection_id": location.intersection_id,
+            "official_approach": location.official_approach,
+            "official_movement": location.official_movement,
+            "edges": list(edges),
+        }
+        for edges, location in sorted(
+            compiled.locations.items(), key=lambda item: item[1].location_id
+        )
+        if edges not in multi_covered_paths
+    ]
+    passed = (
+        cell_pass
+        and totals_pass
+        and geh_ok_percentage + 1e-9 >= 90.0
+        and (multi_count > 0 or not requires_multi_intersection)
+    )
+    return {
+        "schema_version": 1,
+        "period_id": period_id,
+        "passed": passed,
+        "target_observation_pcu": sum(int(row["target_pcu"]) for row in rows),
+        "actual_observation_pcu": sum(float(row["actual_pcu"]) for row in rows),
+        "total_absolute_error_pcu": total_abs_error,
+        "geh_below_5_percentage": geh_ok_percentage,
+        "sampled_vehicle_count": total_vehicles,
+        "multi_intersection_vehicle_count": multi_count,
+        "multi_intersection_vehicle_share": (
+            multi_count / total_vehicles if total_vehicles else 0.0
+        ),
+        "multi_intersection_required": requires_multi_intersection,
+        "vehicle_counts": dict(sorted(type_counts.items())),
+        "vehicle_shares": {
+            key: value / total_vehicles if total_vehicles else 0.0
+            for key, value in sorted(type_counts.items())
+        },
+        "vehicle_target_allocations": allocation_rows,
+        "vehicle_target_total_absolute_rounding_error_pcu": sum(
+            abs(float(item["rounding_error_pcu"])) for item in allocation_rows
+        ),
+        "route_intersection_count_distribution": {
+            str(count): vehicle_count
+            for count, vehicle_count in sorted(route_intersection_distribution.items())
+        },
+        "locations_without_multi_intersection_route": uncovered,
+        "cells": rows,
+        "intersection_interval_totals": intersection_totals,
+    }
+
+
+def _write_quality_report(
+    json_path: Path,
+    csv_path: Path,
+    report: Mapping[str, object],
+) -> None:
+    json_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    rows = list(report["cells"])
+    with csv_path.open("w", encoding="utf-8-sig", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]) if rows else [])
+        if rows:
+            writer.writeheader()
+            writer.writerows(rows)
+
+
+def _write_routes(
+    path: Path,
+    profiles: Mapping[str, VehicleProfile],
+    flows: Sequence[SampledFlow],
+    network_metadata: NetworkRouteMetadata,
+) -> None:
+    root = ET.Element("routes")
+    for profile_id in sorted(profiles):
+        type_id = f"official_{_safe_id(profile_id)}"
+        ET.SubElement(root, "vType", profiles[profile_id].sumo_attributes(type_id))
+    for flow in sorted(flows, key=lambda item: (item.begin, item.flow_id)):
+        if not flow.edges:
+            raise TrafficDemandError(
+                f"Sampled flow {flow.flow_id!r} has no route edges."
+            )
+        attributes = {
+            "id": flow.flow_id,
+            "type": flow.type_id,
+            "begin": _format_number(flow.begin),
+            "end": _format_number(flow.end),
+            "number": str(flow.number),
+            "departLane": "best",
+            "departSpeed": "max",
+        }
+        first_edge = flow.edges[0]
+        first_edge_length = network_metadata.edge_lengths.get(first_edge)
+        if first_edge_length is None:
+            raise TrafficDemandError(
+                f"Cannot place sampled flow {flow.flow_id!r} at the midpoint "
+                f"of first edge {first_edge!r}: the generated SUMO network "
+                "has no positive lane length for that edge."
+            )
+        attributes["departPos"] = _format_number(first_edge_length * 0.5)
+        final_edge = flow.edges[-1]
+        final_edge_length = network_metadata.edge_lengths.get(final_edge)
+        if final_edge_length is None:
+            raise TrafficDemandError(
+                f"Cannot place sampled flow {flow.flow_id!r} at the midpoint of "
+                f"final edge {final_edge!r}: the generated SUMO network has no "
+                "positive lane length for that edge."
+            )
+        attributes["arrivalPos"] = _format_number(final_edge_length * 0.5)
+        node = ET.SubElement(root, "flow", attributes)
+        ET.SubElement(node, "route", {"edges": " ".join(flow.edges)})
+    ET.indent(root, space="  ")
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+
 def _write_program_additional(
-    source_path: Path, target_path: Path, program_ids: Iterable[str]
+    source_path: Path,
+    target_path: Path,
+    program_ids: Mapping[str, str],
 ) -> None:
     try:
         source_root = ET.parse(source_path).getroot()
     except (FileNotFoundError, ET.ParseError) as exc:
         raise TrafficDemandError(f"Cannot read generated TLS programs: {source_path}") from exc
-    requested = set(program_ids)
-    root = ET.Element("additional")
+    expected = set(program_ids.values())
     found = set()
+    root = ET.Element("additional")
     for child in source_root:
         if child.tag != "tlLogic":
             root.append(copy.deepcopy(child))
-            continue
-        if child.get("programID") in requested:
+        elif child.get("programID") in expected:
             root.append(copy.deepcopy(child))
-            found.add(child.get("programID"))
-    missing = requested - found
-    if missing:
+            found.add(str(child.get("programID")))
+    if found != expected:
         raise TrafficDemandError(
-            f"Signal programs are missing from {source_path}: {sorted(missing)}"
+            f"Signal programs are missing from {source_path}: {sorted(expected - found)}"
         )
     ET.indent(root, space="  ")
     ET.ElementTree(root).write(target_path, encoding="utf-8", xml_declaration=True)
@@ -759,10 +1446,9 @@ def _write_sumocfg(
     network_path: Path,
     route_filename: str,
     additional_filename: str,
-    demand_duration: int,
-    drain_seconds: int,
+    period: DemandPeriod,
 ) -> int:
-    simulation_end = demand_duration + drain_seconds
+    simulation_end = period.duration + 300
     root = ET.Element("configuration")
     input_node = ET.SubElement(root, "input")
     relative_network = os.path.relpath(network_path, path.parent).replace(os.sep, "/")
@@ -780,226 +1466,21 @@ def _write_sumocfg(
     return simulation_end
 
 
-def _geh(expected: int, actual: int) -> float:
-    if expected + actual == 0:
-        return 0.0
-    return math.sqrt(2 * (actual - expected) ** 2 / (actual + expected))
-
-
-def _audit_vehroute_output(
-    vehroute_path: Path,
-    targets: Sequence[IntervalTargets],
-    movements: Sequence[PhysicalMovement],
-    demand_duration: int,
-    simulation_end: int,
-    tolerance: float,
-) -> Mapping[str, object]:
-    movements_by_pair = {(item.from_edge, item.to_edge): item for item in movements}
-    by_id = {item.movement_id: item for item in movements}
-    actual_total = {item.movement_id: 0 for item in movements}
-    actual_intervals = {
-        (item.begin, item.end): {movement.movement_id: 0 for movement in movements}
-        for item in targets
-    }
-    unfinished = 0
-    vehicles = 0
-    illegal = []
-    last_exit = 0.0
-
-    for _, vehicle in ET.iterparse(vehroute_path, events=("end",)):
-        if vehicle.tag != "vehicle":
-            continue
-        route = vehicle.find("route")
-        if route is None:
-            vehicle.clear()
-            continue
-        edges = route.get("edges", "").split()
-        exit_times = [float(value) for value in route.get("exitTimes", "").split()]
-        vehicles += 1
-        if len(exit_times) < len(edges):
-            unfinished += 1
-        if exit_times:
-            last_exit = max(last_exit, max(exit_times))
-        monitored_from = {item.from_edge for item in movements}
-        for index, (from_edge, to_edge) in enumerate(zip(edges, edges[1:])):
-            if from_edge not in monitored_from or index >= len(exit_times):
-                continue
-            movement = movements_by_pair.get((from_edge, to_edge))
-            if movement is None:
-                illegal.append(
-                    {
-                        "vehicle_id": vehicle.get("id"),
-                        "from_edge": from_edge,
-                        "to_edge": to_edge,
-                    }
-                )
-                continue
-            passage_time = exit_times[index]
-            if passage_time > simulation_end + 1e-9:
-                continue
-            actual_total[movement.movement_id] += 1
-            for interval in targets:
-                if interval.begin <= passage_time < interval.end:
-                    actual_intervals[(interval.begin, interval.end)][movement.movement_id] += 1
-                    break
-        vehicle.clear()
-
-    target_total = {item.movement_id: 0 for item in movements}
-    assignment_rows = []
-    for interval in targets:
-        key = (interval.begin, interval.end)
-        for movement in movements:
-            target = interval.counts[movement.movement_id]
-            target_total[movement.movement_id] += target
-            actual = actual_intervals[key][movement.movement_id]
-            assignment_rows.append(
-                {
-                    "begin": interval.begin,
-                    "end": interval.end,
-                    "movement_id": movement.movement_id,
-                    "intersection_id": movement.intersection_id,
-                    "target": target,
-                    "actual": actual,
-                    "absolute_error": abs(actual - target),
-                    "relative_error": (
-                        abs(actual - target) / target if target else (0.0 if actual == 0 else None)
-                    ),
-                    "geh": _geh(target, actual),
-                }
-            )
-
-    movement_rows = []
-    intersection_totals = defaultdict(lambda: {"target": 0, "actual": 0})
-    for movement_id, target in target_total.items():
-        movement = by_id[movement_id]
-        actual = actual_total[movement_id]
-        intersection_totals[movement.intersection_id]["target"] += target
-        intersection_totals[movement.intersection_id]["actual"] += actual
-        movement_rows.append(
-            {
-                **movement.manifest_view(),
-                "target": target,
-                "actual": actual,
-                "absolute_error": abs(actual - target),
-                "relative_error": (
-                    abs(actual - target) / target if target else (0.0 if actual == 0 else None)
-                ),
-                "geh": _geh(target, actual),
-            }
-        )
-
-    intersection_rows = []
-    failed = []
-    for intersection_id, values in sorted(intersection_totals.items()):
-        target = values["target"]
-        actual = values["actual"]
-        relative = abs(actual - target) / target if target else (0.0 if actual == 0 else None)
-        passed = actual == 0 if target == 0 else relative <= tolerance + 1e-12
-        if not passed:
-            failed.append(intersection_id)
-        intersection_rows.append(
-            {
-                "intersection_id": intersection_id,
-                "target": target,
-                "actual": actual,
-                "absolute_error": abs(actual - target),
-                "relative_error": relative,
-                "passed": passed,
-            }
-        )
-    status = "passed" if not failed and not illegal else "failed"
+def _origin_metadata(intersection_manifest, demand) -> Mapping[str, object]:
     return {
-        "status": status,
-        "tolerance": tolerance,
-        "demand_duration": demand_duration,
-        "simulation_end": simulation_end,
-        "last_recorded_exit": last_exit,
-        "vehicles": vehicles,
-        "unfinished_vehicles": unfinished,
-        "failed_intersections": failed,
-        "illegal_controlled_turns": illegal,
-        "intersections": intersection_rows,
-        "movements": movement_rows,
-        "intervals": assignment_rows,
-    }
-
-
-def _run_sumo_audit(
-    sumo_binary: str,
-    sumocfg_path: Path,
-    report_path: Path,
-    targets: Sequence[IntervalTargets],
-    movements: Sequence[PhysicalMovement],
-    demand_duration: int,
-    simulation_end: int,
-    tolerance: float,
-) -> Mapping[str, object]:
-    vehroute_path = sumocfg_path.parent / ".audit.vehroute.xml"
-    command = [
-        sumo_binary,
-        "--configuration-file",
-        str(sumocfg_path),
-        "--step-length",
-        "1",
-        "--end",
-        str(simulation_end),
-        "--no-step-log",
-        "true",
-        "--vehroute-output",
-        str(vehroute_path),
-        "--vehroute-output.exit-times",
-        "true",
-        "--vehroute-output.write-unfinished",
-        "true",
-    ]
-    completed = subprocess.run(command, capture_output=True, text=True)
-    try:
-        if completed.returncode != 0 or not vehroute_path.is_file():
-            details = (completed.stderr or completed.stdout)[-4000:]
-            raise TrafficDemandError(f"SUMO traffic audit failed: {details}")
-        report = _audit_vehroute_output(
-            vehroute_path,
-            targets,
-            movements,
-            demand_duration,
-            simulation_end,
-            tolerance,
-        )
-        report_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
-        if report["status"] != "passed":
-            raise TrafficDemandError(
-                "SUMO traffic audit exceeded the allowed 5% intersection error or "
-                f"found illegal turns. See {report_path}."
-            )
-        return report
-    finally:
-        vehroute_path.unlink(missing_ok=True)
-
-
-def _origin_metadata(
-    intersection_ids: Sequence[str], manifest_intersections: Mapping[str, object], demands
-) -> Mapping[str, object]:
-    result = {}
-    for intersection_id in intersection_ids:
-        demand = demands.intersections[intersection_id]
-        intersection_manifest = manifest_intersections[intersection_id]
-        result[intersection_id] = {
-            official_name: {
-                "label": approach.label,
-                "sumo_approach": approach.sumo_approach,
-                "lane_ids": sorted(
-                    {
-                        f"{connection['from_edge']}_{connection['from_lane']}"
-                        for connection in intersection_manifest["connections"]
-                        if connection["approach"] == approach.sumo_approach
-                    }
-                ),
-            }
-            for official_name, approach in demand.approaches.items()
+        official_name: {
+            "label": approach.label,
+            "sumo_approach": approach.sumo_approach,
+            "lane_ids": sorted(
+                {
+                    f"{connection['from_edge']}_{connection['from_lane']}"
+                    for connection in intersection_manifest["connections"]
+                    if connection["approach"] == approach.sumo_approach
+                }
+            ),
         }
-    return result
+        for official_name, approach in demand.approaches.items()
+    }
 
 
 def build_traffic_scenarios(
@@ -1009,238 +1490,347 @@ def build_traffic_scenarios(
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     intersection_ids: Sequence[str] | None = None,
     *,
-    duarouter_binary: str | None = None,
-    route_sampler_path: Path | None = None,
-    sumo_binary: str | None = None,
-    sampler_seeds: Sequence[int] = DEFAULT_SAMPLER_SEEDS,
-    skip_audit: bool = False,
-    audit_drain_seconds: int = DEFAULT_AUDIT_DRAIN_SECONDS,
-    audit_tolerance: float = DEFAULT_AUDIT_TOLERANCE,
-    candidate_builder: Callable[
-        [Path, Path, Sequence[PhysicalMovement], str], Mapping[str, object]
-    ] = _build_candidate_routes,
-    sampler: Callable[..., SampleResult] = _run_route_sampler,
+    command_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    tool_paths: Mapping[str, str] | None = None,
+    validate_sumo: bool = True,
 ) -> Mapping[str, object]:
-    demands = load_traffic_demands(demand_path)
-    profiles = load_vehicle_profiles(vehicle_profile_path)
+    configuration = load_traffic_demands(demand_path)
+    all_profiles = load_vehicle_profiles(vehicle_profile_path)
+    referenced = set(configuration.vehicle_mix.shares)
+    missing_profiles = referenced - set(all_profiles)
+    if missing_profiles:
+        raise VehicleProfileError(
+            f"Traffic mix references unknown vehicle profiles: {sorted(missing_profiles)}"
+        )
+    profiles = {name: all_profiles[name] for name in sorted(referenced)}
     manifest_intersections = tls_manifest.get("intersections", {})
-    requested = tuple(intersection_ids or manifest_intersections)
+    requested = (
+        tuple(intersection_ids)
+        if intersection_ids is not None
+        else tuple(configuration.intersections)
+    )
     if not requested:
-        raise TrafficDemandError("No intersections were selected for global traffic.")
-    unknown = set(requested) - set(demands.intersections)
-    missing_manifest = set(requested) - set(manifest_intersections)
+        raise TrafficDemandError("At least one intersection is required.")
+    if len(requested) != len(set(requested)):
+        raise TrafficDemandError("Intersection IDs must be unique.")
+    unknown = set(requested) - set(configuration.intersections)
     if unknown:
-        raise TrafficDemandError(f"No official demand is configured for: {sorted(unknown)}")
+        raise TrafficDemandError(
+            f"No official traffic demand is configured for: {sorted(unknown)}"
+        )
+    missing_manifest = set(requested) - set(manifest_intersections)
     if missing_manifest:
         raise TrafficDemandError(
-            f"Selected intersections are absent from the TLS manifest: {sorted(missing_manifest)}"
+            f"Requested intersections are absent from the TLS manifest: {sorted(missing_manifest)}"
         )
-    vehicle_types = {demands.intersections[item].vehicle_type for item in requested}
-    if len(vehicle_types) != 1:
-        raise TrafficDemandError(
-            "Global route sampling currently requires one shared vehicle profile; found "
-            f"{sorted(vehicle_types)}."
-        )
-    vehicle_profile_id = next(iter(vehicle_types))
-    if vehicle_profile_id not in profiles:
-        raise VehicleProfileError(f"Unknown vehicle profile: {vehicle_profile_id}")
-    if not sampler_seeds or len(set(sampler_seeds)) != len(sampler_seeds):
-        raise TrafficDemandError("routeSampler seeds must be non-empty and unique.")
-    if audit_drain_seconds < 0 or not 0 <= audit_tolerance < 1:
-        raise TrafficDemandError("Traffic audit drain/tolerance settings are invalid.")
-
-    _require_numpy()
-    duarouter_binary = duarouter_binary or _find_binary("duarouter")
-    route_sampler_path = route_sampler_path or _find_route_sampler()
-    if not skip_audit:
-        sumo_binary = sumo_binary or _find_binary("sumo")
 
     layout = GeneratedArtifactLayout(output_dir)
-    layout.create_base_directories()
-    if (output_dir / "traffic").exists():
-        shutil.rmtree(output_dir / "traffic")
-    layout.traffic_global_dir.mkdir(parents=True)
-    if layout.traffic_reports_dir.exists():
-        shutil.rmtree(layout.traffic_reports_dir)
-    layout.traffic_reports_dir.mkdir(parents=True)
-
-    movements = _physical_movements(requested, manifest_intersections, demands)
-    candidate_stats = candidate_builder(
-        layout.traffic_candidates_file,
+    missing_artifacts = [
+        path
+        for path in (layout.network_file, layout.signal_programs_file)
+        if not path.is_file()
+    ]
+    if missing_artifacts:
+        raise TrafficDemandError(
+            "Generated TLS artifacts are missing: "
+            f"{[str(path) for path in missing_artifacts]}. Run build_tls first."
+        )
+    compiled = _compile_global_demand(
+        requested, manifest_intersections, configuration
+    )
+    official_junction_ids = tuple(
+        str(junction_id)
+        for intersection_id in requested
+        for junction_id in manifest_intersections[intersection_id].get(
+            "junction_ids", ()
+        )
+    )
+    configured_extensions = {}
+    for intersection_id in requested:
+        extensions = configuration.intersections[
+            intersection_id
+        ].route_endpoint_extensions
+        if extensions.upstream or extensions.downstream:
+            configured_extensions[intersection_id] = extensions
+    network_metadata = _inspect_route_network(
         layout.network_file,
-        movements,
-        duarouter_binary,
+        tuple(compiled.locations.values()),
+        official_junction_ids,
+        configured_extensions,
     )
-    candidate_report = {
-        **candidate_stats,
-        "intersection_ids": list(requested),
-        "physical_movements": [item.manifest_view() for item in movements],
-    }
-    (layout.traffic_reports_dir / "candidate_routes.json").write_text(
-        json.dumps(candidate_report, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    tools = _toolchain(tool_paths)
+    class_targets = _class_targets(
+        compiled, configuration.vehicle_mix.shares, profiles
     )
 
-    period_ids = tuple(demands.intersections[requested[0]].periods)
+    layout.create_base_directories()
+    traffic_root = output_dir / "traffic"
+    if traffic_root.exists():
+        shutil.rmtree(traffic_root)
+    traffic_root.mkdir(parents=True)
+    for stale in layout.reports_dir.glob("traffic_*"):
+        if stale.is_file():
+            stale.unlink()
+        elif stale.is_dir():
+            shutil.rmtree(stale)
+    work_dir = traffic_root / ".work"
+    work_dir.mkdir()
+
+    candidate_paths = _build_candidates(
+        work_dir,
+        layout.network_file,
+        network_metadata,
+        compiled,
+        class_targets,
+        profiles,
+        tools,
+        command_runner,
+    )
+
     result = {
         "schema_version": 3,
+        "scope": "global",
         "source": str(demand_path.resolve()),
-        "vehicle_profile_source": str(vehicle_profile_path.resolve()),
-        "vehicle_profile_schema_version": 1,
-        "unit": demands.unit,
+        "unit": configuration.unit,
+        "interval_seconds": configuration.interval_seconds,
         "intersection_ids": list(requested),
-        "vehicle_profiles": {vehicle_profile_id: asdict(profiles[vehicle_profile_id])},
-        "physical_movements": [item.manifest_view() for item in movements],
-        "origins": _origin_metadata(requested, manifest_intersections, demands),
-        "candidate_routes": layout.relative(layout.traffic_candidates_file),
-        "candidate_statistics": candidate_stats,
+        "vehicle_mix": {
+            "basis": configuration.vehicle_mix.basis,
+            "shares": dict(configuration.vehicle_mix.shares),
+        },
+        "vehicle_profile_source": str(vehicle_profile_path.resolve()),
+        "vehicle_profile_schema_version": 2,
+        "vehicle_profiles": {
+            profile_id: asdict(profile)
+            for profile_id, profile in profiles.items()
+        },
+        "vehicle_type_profiles": {
+            f"official_{_safe_id(profile_id)}": profile_id
+            for profile_id in profiles
+        },
+        "route_endpoint_policy": {
+            "strategy": (
+                "route_endpoint_midpoint_with_lane_expansion_extension_and_"
+                "validated_overrides"
+            ),
+            "fraction": 0.5,
+            "upstream_extensions": dict(
+                sorted(network_metadata.upstream_extensions.items())
+            ),
+            "downstream_extensions": dict(
+                sorted(network_metadata.downstream_extensions.items())
+            ),
+            "configured_extensions": {
+                intersection_id: {
+                    "upstream": dict(sorted(extensions.upstream.items())),
+                    "downstream": dict(sorted(extensions.downstream.items())),
+                }
+                for intersection_id, extensions in sorted(
+                    network_metadata.configured_extensions.items()
+                )
+            },
+        },
+        "intersections": {
+            intersection_id: {
+                "periods": list(compiled.periods),
+                "origins": _origin_metadata(
+                    manifest_intersections[intersection_id],
+                    configuration.intersections[intersection_id],
+                ),
+            }
+            for intersection_id in requested
+        },
         "scenarios": {},
     }
-    vehicle_type_id = f"global_official_{_safe_id(vehicle_profile_id)}"
 
-    for period_id in period_ids:
-        period, targets = _period_targets(
-            period_id, requested, manifest_intersections, demands, movements
-        )
-        scenario_dir = layout.traffic_scenario_dir(period_id)
-        scenario_dir.mkdir(parents=True)
-        counts_path = scenario_dir / "official_turn_counts.xml"
-        routes_path = scenario_dir / "routes.rou.xml"
+    for period_id, period in compiled.periods.items():
+        counts_paths = {}
+        for profile_id in profiles:
+            counts_path = work_dir / f"counts_{period_id}_{profile_id}.xml"
+            _write_turn_counts(
+                counts_path,
+                period,
+                class_targets[period_id],
+                profile_id,
+            )
+            counts_paths[profile_id] = counts_path
+
+        attempts = []
+        selected = None
+        seeds = ROUTE_SAMPLER_SEEDS
+        for seed_index, seed in enumerate(seeds):
+            sampled_flows = []
+            mismatch_paths = {}
+            for profile_id in profiles:
+                sample_path = work_dir / f"sample_{period_id}_{profile_id}_{seed}.rou.xml"
+                mismatch_path = work_dir / f"mismatch_{period_id}_{profile_id}_{seed}.xml"
+                sampled_flows.extend(
+                    _run_route_sampler(
+                        tools,
+                        command_runner,
+                        candidate_paths[profile_id],
+                        counts_paths[profile_id],
+                        sample_path,
+                        mismatch_path,
+                        profile_id,
+                        period,
+                        configuration.interval_seconds,
+                        seed,
+                    )
+                )
+                mismatch_paths[profile_id] = mismatch_path
+            report = dict(
+                _quality_report(
+                    period_id,
+                    compiled,
+                    sampled_flows,
+                    profiles,
+                    class_targets[period_id],
+                )
+            )
+            report["seed"] = seed
+            report["route_sampler_mismatch_files"] = {
+                profile_id: layout.relative(path)
+                for profile_id, path in mismatch_paths.items()
+            }
+            attempt = {
+                "seed": seed,
+                "flows": tuple(sampled_flows),
+                "mismatch_paths": mismatch_paths,
+                "report": report,
+            }
+            attempts.append(attempt)
+            if report["passed"] and seed_index == 0:
+                selected = attempt
+                break
+        if selected is None:
+            passing = [item for item in attempts if item["report"]["passed"]]
+            if passing:
+                selected = min(
+                    passing,
+                    key=lambda item: (
+                        item["report"]["total_absolute_error_pcu"],
+                        item["report"]["sampled_vehicle_count"],
+                        -item["report"]["multi_intersection_vehicle_count"],
+                        item["seed"],
+                    ),
+                )
+            else:
+                failure_path = layout.reports_dir / f"traffic_quality_{period_id}_failed.json"
+                failure_path.write_text(
+                    json.dumps(
+                        {
+                            "period_id": period_id,
+                            "attempts": [item["report"] for item in attempts],
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                raise TrafficDemandError(
+                    f"Global traffic quality thresholds failed for {period_id}; "
+                    f"see {failure_path}."
+                )
+
+        scenario_dir = layout.global_traffic_scenario_dir(period_id)
+        scenario_dir.mkdir(parents=True, exist_ok=True)
+        route_path = scenario_dir / "routes.rou.xml"
         additional_path = scenario_dir / "signals.add.xml"
         sumocfg_path = scenario_dir / "simulation.sumocfg"
-        _write_turn_counts(counts_path, targets, movements)
-        sample = sampler(
-            layout.traffic_candidates_file,
-            counts_path,
-            scenario_dir,
-            period_id,
-            targets,
-            movements,
-            route_sampler_path,
-            sampler_seeds,
-            vehicle_type_id,
-            profiles[vehicle_profile_id],
-        )
-        ET.ElementTree(sample.route_root).write(
-            routes_path, encoding="utf-8", xml_declaration=True
-        )
-        program_ids = {
-            intersection_id: demands.intersections[intersection_id]
-            .periods[period_id]
-            .program_id
-            for intersection_id in requested
-        }
-        for intersection_id, program_id in program_ids.items():
-            if program_id not in manifest_intersections[intersection_id].get("program_ids", []):
-                raise TrafficDemandError(
-                    f"{intersection_id}/{period_id}: signal program {program_id!r} is "
-                    "absent from the TLS manifest."
-                )
+        _write_routes(route_path, profiles, selected["flows"], network_metadata)
         _write_program_additional(
-            layout.signal_programs_file, additional_path, program_ids.values()
+            layout.signal_programs_file,
+            additional_path,
+            compiled.program_ids[period_id],
         )
         simulation_end = _write_sumocfg(
             sumocfg_path,
             layout.network_file,
-            routes_path.name,
+            route_path.name,
             additional_path.name,
-            period.duration,
-            audit_drain_seconds,
+            period,
         )
-        assignment_report = {
-            "status": "exact",
-            "period_id": period_id,
-            "seed": sample.seed,
-            "vehicle_count": sample.vehicle_count,
-            "multi_intersection_vehicle_count": sample.multi_intersection_vehicle_count,
-            "multi_intersection_vehicle_share": (
-                sample.multi_intersection_vehicle_count / sample.vehicle_count
-                if sample.vehicle_count
-                else 0.0
-            ),
-            "average_intersections_per_vehicle": sample.average_intersections_per_vehicle,
-            "intervals": [
-                {
-                    "begin": interval.begin,
-                    "end": interval.end,
-                    "targets": dict(interval.counts),
-                    "assigned": dict(sample.assigned[(interval.begin, interval.end)]),
-                }
-                for interval in targets
-            ],
-        }
-        assignment_path = layout.traffic_reports_dir / f"{period_id}.assignment.json"
-        assignment_path.write_text(
-            json.dumps(assignment_report, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        audit_path = layout.traffic_reports_dir / f"{period_id}.sumo_audit.json"
-        if skip_audit:
-            audit_report = {
-                "status": "skipped",
-                "reason": "--skip-traffic-audit",
-                "tolerance": audit_tolerance,
-                "drain_seconds": audit_drain_seconds,
-            }
-            audit_path.write_text(
-                json.dumps(audit_report, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
-        else:
-            audit_report = _run_sumo_audit(
-                str(sumo_binary),
-                sumocfg_path,
-                audit_path,
-                targets,
-                movements,
-                period.duration,
-                simulation_end,
-                audit_tolerance,
-            )
+        mismatch_files = {}
+        for profile_id, source in selected["mismatch_paths"].items():
+            target = layout.reports_dir / f"traffic_{period_id}_{profile_id}_mismatch.xml"
+            shutil.copy2(source, target)
+            mismatch_files[profile_id] = layout.relative(target)
+        selected_report = dict(selected["report"])
+        selected_report["route_sampler_mismatch_files"] = mismatch_files
+        report_json = layout.reports_dir / f"traffic_quality_{period_id}.json"
+        report_csv = layout.reports_dir / f"traffic_quality_{period_id}.csv"
+        _write_quality_report(report_json, report_csv, selected_report)
 
         scenario_id = f"global_{period_id}"
         result["scenarios"][scenario_id] = {
             "scenario_id": scenario_id,
-            "intersection_ids": list(requested),
             "period_id": period_id,
             "label": period.label,
-            "program_ids": program_ids,
+            "intersection_ids": list(requested),
+            "program_ids": dict(compiled.program_ids[period_id]),
             "official_time_range": {
                 "start": _clock(period.start),
                 "end": _clock(period.end),
             },
-            "route_file": layout.relative(routes_path),
-            "turn_count_file": layout.relative(counts_path),
+            "route_file": layout.relative(route_path),
             "additional_file": layout.relative(additional_path),
             "sumocfg": layout.relative(sumocfg_path),
-            "assignment_report": layout.relative(assignment_path),
-            "audit_report": layout.relative(audit_path),
-            "audit_status": audit_report["status"],
+            "quality_report": layout.relative(report_json),
+            "quality_report_csv": layout.relative(report_csv),
+            "route_sampler_mismatch_files": mismatch_files,
             "demand_duration": period.duration,
             "simulation_end": simulation_end,
-            "flow_count": len(sample.flow_records),
-            "planned_vehicle_count": sample.vehicle_count,
-            "vehicle_profile_id": vehicle_profile_id,
-            "sumo_vehicle_type_id": vehicle_type_id,
-            "flows": sample.flow_records,
-            "assignment_statistics": {
-                key: assignment_report[key]
-                for key in (
-                    "seed",
-                    "vehicle_count",
-                    "multi_intersection_vehicle_count",
-                    "multi_intersection_vehicle_share",
-                    "average_intersections_per_vehicle",
-                )
+            "selected_seed": selected["seed"],
+            "departure_position": {
+                "strategy": "first_edge_midpoint",
+                "fraction": 0.5,
+                "remote_segment_when_extended": True,
+                "extended_vehicle_count": sum(
+                    flow.number
+                    for flow in selected["flows"]
+                    if flow.edges[0]
+                    in frozenset(network_metadata.upstream_extensions.values())
+                ),
             },
-            "intersection_totals": {
-                intersection_id: demands.intersections[intersection_id]
-                .periods[period_id]
-                .totals["all"]
-                for intersection_id in requested
+            "arrival_position": {
+                "strategy": "final_edge_midpoint",
+                "fraction": 0.5,
+                "remote_segment_when_extended": True,
+                "extended_vehicle_count": sum(
+                    flow.number
+                    for flow in selected["flows"]
+                    if flow.edges[-1]
+                    in frozenset(network_metadata.downstream_extensions.values())
+                ),
             },
+            "target_observation_pcu": selected["report"]["target_observation_pcu"],
+            "sampled_vehicle_count": selected["report"]["sampled_vehicle_count"],
+            "multi_intersection_vehicle_count": selected["report"][
+                "multi_intersection_vehicle_count"
+            ],
+            "multi_intersection_vehicle_share": selected["report"][
+                "multi_intersection_vehicle_share"
+            ],
         }
+        if validate_sumo:
+            _run_command(
+                [
+                    tools["sumo"],
+                    "--configuration-file",
+                    str(sumocfg_path),
+                    "--step-length",
+                    "1",
+                    "--no-step-log",
+                    "true",
+                    "--duration-log.disable",
+                    "true",
+                ],
+                command_runner,
+            )
 
+    shutil.rmtree(work_dir)
     layout.traffic_manifest.write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -1251,13 +1841,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--demand", type=Path, default=DEFAULT_DEMANDS)
-    parser.add_argument("--vehicle-profiles", type=Path, default=DEFAULT_VEHICLE_PROFILES)
+    parser.add_argument(
+        "--vehicle-profiles", type=Path, default=DEFAULT_VEHICLE_PROFILES
+    )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--intersections", nargs="+", default=None)
-    parser.add_argument("--sampler-seeds", nargs="+", type=int, default=list(DEFAULT_SAMPLER_SEEDS))
-    parser.add_argument("--skip-traffic-audit", action="store_true")
-    parser.add_argument("--audit-drain-seconds", type=int, default=DEFAULT_AUDIT_DRAIN_SECONDS)
-    parser.add_argument("--audit-tolerance", type=float, default=DEFAULT_AUDIT_TOLERANCE)
     return parser.parse_args()
 
 
@@ -1270,14 +1858,10 @@ def main() -> None:
             vehicle_profile_path=args.vehicle_profiles,
             output_dir=args.output_dir,
             intersection_ids=args.intersections,
-            sampler_seeds=args.sampler_seeds,
-            skip_audit=args.skip_traffic_audit,
-            audit_drain_seconds=args.audit_drain_seconds,
-            audit_tolerance=args.audit_tolerance,
         )
     except (TrafficDemandError, VehicleProfileError) as exc:
         raise SystemExit(f"Traffic build failed: {exc}") from exc
-    print("Built global official traffic scenarios: " + ", ".join(result["scenarios"]))
+    print("Built global traffic scenarios: " + ", ".join(result["scenarios"]))
 
 
 if __name__ == "__main__":

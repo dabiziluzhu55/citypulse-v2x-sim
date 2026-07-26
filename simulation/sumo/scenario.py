@@ -33,7 +33,6 @@ class CompiledScenario:
     window_start_seconds: float
     duration_seconds: float
     planned_vehicle_count: int
-    official_complete_demand: bool
     selected_origins: Mapping[str, tuple[str, ...]]
     vehicle_type_profiles: Mapping[str, str]
     vehicle_profiles: Mapping[str, VehicleProfile]
@@ -135,6 +134,11 @@ def compile_session_scenario(
         duration_seconds,
         flow_multiplier,
     )
+    if requested_origins:
+        raise ScenarioCompilationError(
+            "Origin filtering is unavailable for globally calibrated traffic; "
+            "intersection_ids only select control and observation scope."
+        )
     if step_length <= 0:
         raise ScenarioCompilationError("step_length must be positive.")
 
@@ -142,7 +146,7 @@ def compile_session_scenario(
     traffic_manifest = _load_json(layout.traffic_manifest, "traffic manifest")
     if int(traffic_manifest.get("schema_version", 0)) != 3:
         raise ScenarioCompilationError(
-            "traffic_manifest.json must use schema_version 3; rebuild global official traffic."
+            "traffic_manifest.json must use schema_version 3; rebuild official TLS."
         )
     scenarios = traffic_manifest.get("scenarios", {})
     try:
@@ -163,11 +167,10 @@ def compile_session_scenario(
     if scenario_id not in scenarios:
         raise ScenarioCompilationError(f"Traffic scenario {scenario_id!r} is unavailable.")
     scenario = scenarios[scenario_id]
-    built_intersections = set(str(value) for value in scenario.get("intersection_ids", ()))
-    missing_intersections = set(intersection_ids) - built_intersections
-    if missing_intersections:
+    unavailable = set(intersection_ids) - set(scenario.get("intersection_ids", ()))
+    if unavailable:
         raise ScenarioCompilationError(
-            f"Global traffic scenario does not contain: {sorted(missing_intersections)}"
+            f"Global traffic scenario does not include intersections: {sorted(unavailable)}"
         )
     maximum_duration = float(scenario["demand_duration"]) - window_start_seconds
     if maximum_duration <= 0:
@@ -175,29 +178,17 @@ def compile_session_scenario(
             f"window_start_seconds is outside {scenario_id}."
         )
     official_start = _clock_seconds(scenario["official_time_range"]["start"])
-    origin_catalog = traffic_manifest.get("origins", {})
     normalized_origins = {}
-    for intersection_id in intersection_ids:
-        available_origins = set(origin_catalog.get(intersection_id, {}))
-        selected_origin_names = tuple(
-            requested_origins.get(intersection_id, sorted(available_origins))
-        )
-        unknown = set(selected_origin_names) - available_origins
-        if unknown:
-            raise ScenarioCompilationError(
-                f"{intersection_id} has unknown origins: {sorted(unknown)}"
-            )
-        normalized_origins[intersection_id] = selected_origin_names
-    if not scenario.get("sumo_vehicle_type_id") or not scenario.get(
-        "vehicle_profile_id"
-    ):
-        raise ScenarioCompilationError(
-            f"Traffic scenario {scenario_id!r} has no vehicle profile metadata; "
-            "rebuild official TLS and global traffic artifacts."
-        )
     vehicle_type_profiles = {
-        str(scenario["sumo_vehicle_type_id"]): str(scenario["vehicle_profile_id"])
+        str(type_id): str(profile_id)
+        for type_id, profile_id in traffic_manifest.get(
+            "vehicle_type_profiles", {}
+        ).items()
     }
+    if not vehicle_type_profiles:
+        raise ScenarioCompilationError(
+            "Global traffic manifest has no vehicle type/profile mapping."
+        )
 
     actual_duration = maximum_duration if duration_seconds is None else duration_seconds
     if actual_duration > maximum_duration + 1e-9:
@@ -214,42 +205,37 @@ def compile_session_scenario(
     route_root = ET.Element("routes")
     candidates: list[_CandidateFlow] = []
     additional_root = ET.Element("additional")
+    seen_logics = set()
     route_path = generated_dir / str(scenario["route_file"])
     route_source = ET.parse(route_path).getroot()
-    flow_elements = {
-        element.get("id"): element for element in route_source.findall("flow")
-    }
     for vehicle_type in route_source.findall("vType"):
+        vehicle_type_id = str(vehicle_type.get("id"))
+        if vehicle_type_id not in vehicle_type_profiles:
+            raise ScenarioCompilationError(
+                f"Vehicle type {vehicle_type_id!r} has no profile mapping."
+            )
         route_root.append(copy.deepcopy(vehicle_type))
-    for record in scenario.get("flows", []):
-        source_intersection = str(record["source_intersection_id"])
-        source_approach = str(record["source_official_approach"])
-        if (
-            source_intersection in requested_origins
-            and source_approach not in set(requested_origins[source_intersection])
-        ):
-            continue
-        begin = float(record["begin"])
-        end = float(record["end"])
+    for element in route_source.findall("flow"):
+        begin = float(element.get("begin", "0"))
+        end = float(element.get("end", "0"))
+        if end <= begin:
+            raise ScenarioCompilationError(
+                f"Global flow {element.get('id')!r} has an invalid time range."
+            )
         overlap_begin = max(begin, window_start_seconds)
         overlap_end = min(end, window_end)
         if overlap_end <= overlap_begin:
             continue
-        flow_id = str(record["flow_id"])
-        if flow_id not in flow_elements:
-            raise ScenarioCompilationError(
-                f"Flow {flow_id!r} is missing from {route_path}."
-            )
         expected = (
-            float(record["number"])
+            float(element.get("number", "0"))
             * (overlap_end - overlap_begin)
             / (end - begin)
             * flow_multiplier
         )
         candidates.append(
             _CandidateFlow(
-                flow_id=flow_id,
-                element=copy.deepcopy(flow_elements[flow_id]),
+                flow_id=str(element.get("id")),
+                element=copy.deepcopy(element),
                 begin=overlap_begin - window_start_seconds,
                 end=overlap_end - window_start_seconds,
                 expected=expected,
@@ -260,11 +246,17 @@ def compile_session_scenario(
         generated_dir / str(scenario["additional_file"])
     ).getroot()
     for child in additional_source:
-        additional_root.append(copy.deepcopy(child))
+        if child.tag != "tlLogic":
+            additional_root.append(copy.deepcopy(child))
+            continue
+        key = (child.get("id"), child.get("programID"))
+        if key not in seen_logics:
+            additional_root.append(copy.deepcopy(child))
+            seen_logics.add(key)
 
     if not candidates:
-        raise ScenarioCompilationError("The selected origins and time window contain no traffic.")
-    if not additional_root.findall("tlLogic"):
+        raise ScenarioCompilationError("The selected time window contains no global traffic.")
+    if not seen_logics:
         raise ScenarioCompilationError("Selected scenarios contain no signal programs.")
     _allocate_counts(candidates)
     ET.SubElement(
@@ -310,24 +302,16 @@ def compile_session_scenario(
     ET.ElementTree(config_root).write(sumocfg, encoding="utf-8", xml_declaration=True)
 
     planned_count = sum(item.count for item in candidates)
-    official_complete_demand = (
-        not requested_origins
-        and abs(window_start_seconds) <= 1e-9
-        and abs(actual_duration - float(scenario["demand_duration"])) <= 1e-9
-        and abs(flow_multiplier - 1.0) <= 1e-9
-    )
     session_manifest = {
         "schema_version": 1,
         "session_id": session_id,
         "intersection_ids": list(intersection_ids),
-        "global_traffic_intersection_ids": sorted(built_intersections),
         "period": period,
         "official_start_seconds": official_start,
         "window_start_seconds": window_start_seconds,
         "duration_seconds": actual_duration,
         "flow_multiplier": flow_multiplier,
         "planned_vehicle_count": planned_count,
-        "official_complete_demand": official_complete_demand,
         "origins": {key: list(value) for key, value in normalized_origins.items()},
         "vehicle_type_profiles": vehicle_type_profiles,
     }
@@ -346,7 +330,6 @@ def compile_session_scenario(
         window_start_seconds=float(window_start_seconds),
         duration_seconds=float(actual_duration),
         planned_vehicle_count=planned_count,
-        official_complete_demand=official_complete_demand,
         selected_origins=normalized_origins,
         vehicle_type_profiles=vehicle_type_profiles,
         vehicle_profiles=vehicle_profiles,

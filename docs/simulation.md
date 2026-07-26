@@ -28,13 +28,15 @@ python simulation/carla_sumo/run_synchronization.py [--sumo-gui]
 
 默认配置：
 `data/maps/sumo/generated/traffic/global/morning_peak/simulation.sumocfg`，运行前必须先
-构建 20 路口官方信号和全局车流。
+构建官方信号和车流。
 
 ## 纯 SUMO 管控
 
 `simulation.sumo.run` 提供固定配时和外部 HTTP 算法两种模式。Max Pressure、IPPO 和
 多路口强化学习通过 HTTP 协议 2.0 提交官方目标相位、单车目标速度和当前道路换道请求；
 runner 独占 TraCI，负责信号安全切换、动作校验和车辆控制租约。
+车流始终是全部已构建路口的全局车流；命令中选择的路口只决定控制、观测和事件范围，
+不会从路线文件中删除其他路口的车辆。
 真实车流构建见 [traffic_demand.md](traffic_demand.md)，算法契约见
 [algorithm_interface.md](algorithm_interface.md)。
 

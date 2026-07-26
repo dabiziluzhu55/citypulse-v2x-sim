@@ -6,22 +6,13 @@ from pathlib import Path
 
 from simulation.sumo.artifacts import GeneratedArtifactLayout
 from simulation.sumo.build_traffic import (
-    IntervalTargets,
-    PhysicalMovement,
-    SampleResult,
     _allocate_route_counts,
-    _audit_vehroute_output,
     _movement_route,
-    _period_targets,
-    _physical_movements,
-    _route_coverage,
-    _sample_result,
-    _write_candidate_trips,
+    _movement_routes,
     build_traffic_scenarios,
 )
 from simulation.sumo.scenario import compile_session_scenario
 from simulation.sumo.traffic import TrafficDemandError, load_traffic_demands
-from simulation.sumo.vehicle_profiles import load_vehicle_profiles
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +115,80 @@ def demo_3_manifest():
                     "demo_3_morning_peak",
                     "demo_3_off_peak",
                     "demo_3_evening_peak",
+                ],
+                "connections": [
+                    {
+                        "approach": approach,
+                        "movement": movement,
+                        "from_edge": from_edge,
+                        "from_lane": 0,
+                        "to_edge": to_edge,
+                        "to_lane": 0,
+                    }
+                    for approach, movement, from_edge, to_edge in routes
+                ],
+            }
+        }
+    }
+
+
+def demo_4_manifest():
+    routes = (
+        ("east", "left", "-57186", "-57230"),
+        ("east", "through", "-57186", "-56613"),
+        ("west", "left", "-50333", "-56733"),
+        ("west", "through", "-50333", "-50675"),
+        ("north", "left", "-57229", "-50675"),
+        ("north", "through", "-57229", "-57230"),
+        ("north", "right", "-57229", "-56613"),
+        ("south", "left", "-56732", "-56613"),
+        ("south", "through", "-56732", "-56733"),
+        ("south", "right", "-56732", "-50675"),
+    )
+    return {
+        "intersections": {
+            "demo_4": {
+                "program_ids": [
+                    "demo_4_morning_peak",
+                    "demo_4_off_peak",
+                    "demo_4_evening_peak",
+                ],
+                "connections": [
+                    {
+                        "approach": approach,
+                        "movement": movement,
+                        "from_edge": from_edge,
+                        "from_lane": 0,
+                        "to_edge": to_edge,
+                        "to_lane": 0,
+                    }
+                    for approach, movement, from_edge, to_edge in routes
+                ],
+            }
+        }
+    }
+
+
+def demo_8_manifest():
+    routes = (
+        ("east", "left", "-54807", "-57113"),
+        ("east", "through", "-54807", "-54810"),
+        ("west", "left", "-57234", "-57125"),
+        ("west", "through", "-57234", "-57236"),
+        ("west", "right", "-57234", "-57113"),
+        ("north", "left", "-57112", "-57236"),
+        ("north", "through", "-57112", "-57113"),
+        ("north", "right", "-57112", "-54810"),
+        ("south", "left", "-57109", "-54810"),
+        ("south", "through", "-57109", "-57125"),
+    )
+    return {
+        "intersections": {
+            "demo_8": {
+                "program_ids": [
+                    "demo_8_morning_peak",
+                    "demo_8_off_peak",
+                    "demo_8_evening_peak",
                 ],
                 "connections": [
                     {
@@ -664,6 +729,107 @@ class TrafficDemandTests(unittest.TestCase):
         for count in range(100):
             self.assertEqual(sum(_allocate_route_counts(count, routes)), count)
 
+    def test_route_endpoint_extensions_default_and_real_configuration(self):
+        configuration = load_traffic_demands(DEMANDS)
+        empty = configuration.intersections["demo_1"].route_endpoint_extensions
+        self.assertEqual(empty.upstream, {})
+        self.assertEqual(empty.downstream, {})
+
+        raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
+        raw["intersections"]["demo_1"]["route_endpoint_extensions"] = {}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "empty-endpoints.json"
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            explicit_empty = load_traffic_demands(path).intersections[
+                "demo_1"
+            ].route_endpoint_extensions
+        self.assertEqual(explicit_empty.upstream, {})
+        self.assertEqual(explicit_empty.downstream, {})
+
+        demo_4 = configuration.intersections["demo_4"].route_endpoint_extensions
+        self.assertEqual(demo_4.upstream["-57186"], "-52650")
+        self.assertEqual(demo_4.upstream["-52650"], "-52649")
+        self.assertEqual(demo_4.downstream["-56735"], "-56734")
+        self.assertNotIn("-57229", demo_4.upstream)
+        with self.assertRaises(TypeError):
+            demo_4.upstream["-57186"] = "mutated"
+
+        demo_18 = configuration.intersections["demo_18"].route_endpoint_extensions
+        self.assertEqual(
+            demo_18.upstream,
+            {
+                "-56004": "-56004.184",
+                "-56830": "-56830.40",
+                "-57004": "-57004.108",
+                "-57077": "-57077.168",
+            },
+        )
+        self.assertEqual(demo_18.downstream, {})
+
+    def test_demo_18_right_demand_is_split_exactly_across_main_and_auxiliary(self):
+        demo_18 = load_traffic_demands(DEMANDS).intersections["demo_18"]
+        expected_routes = (
+            (("-57077", "-56009"), 1),
+            (("E7", "-56009"), 1),
+        )
+        for period in demo_18.periods.values():
+            routes = period.route_overrides["southwest"]["right"]
+            weighted_routes = tuple((route.edges, route.weight) for route in routes)
+            self.assertEqual(weighted_routes, expected_routes)
+            for interval in period.intervals:
+                target = interval.volumes["southwest"]["right"]
+                allocated = _allocate_route_counts(target, weighted_routes)
+                self.assertEqual(sum(allocated), target)
+                self.assertLessEqual(abs(allocated[0] - allocated[1]), 1)
+                self.assertGreaterEqual(allocated[0], allocated[1])
+
+    def test_route_endpoint_extension_format_and_conflicts_are_rejected(self):
+        cases = (
+            (
+                None,
+                "route_endpoint_extensions must be an object",
+            ),
+            (
+                {"upstream": {"": "far"}},
+                "edge IDs must be non-empty strings",
+            ),
+            (
+                {"upstream": {"near": ""}},
+                "edge IDs must be non-empty strings",
+            ),
+            (
+                {"downstream": {"same": "same"}},
+                "cannot map edge 'same' to itself",
+            ),
+            (
+                {"sideways": {"near": "far"}},
+                "unknown directions",
+            ),
+        )
+        for extensions, message in cases:
+            with self.subTest(extensions=extensions):
+                raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
+                raw["intersections"]["demo_1"][
+                    "route_endpoint_extensions"
+                ] = extensions
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "invalid-endpoints.json"
+                    path.write_text(json.dumps(raw), encoding="utf-8")
+                    with self.assertRaisesRegex(TrafficDemandError, message):
+                        load_traffic_demands(path)
+
+        raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
+        raw["intersections"]["demo_8"]["route_endpoint_extensions"][
+            "upstream"
+        ]["-57186"] = "different"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "conflicting-endpoints.json"
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            with self.assertRaisesRegex(
+                TrafficDemandError, "Conflicting upstream route endpoint extension"
+            ):
+                load_traffic_demands(path)
+
     def test_declared_total_mismatch_is_rejected(self):
         raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
         raw["intersections"]["demo_2"]["periods"][0]["expected_totals"]["all"] = 1
@@ -699,6 +865,65 @@ class TrafficDemandTests(unittest.TestCase):
                 "left",
             ),
             ("-57229", "-50675"),
+        )
+
+    def test_demo_9_implicit_routes_prefer_lowercase_direction_codes(self):
+        demand = load_traffic_demands(DEMANDS).intersections["demo_9"]
+        manifest = {
+            "connections": [
+                {
+                    "approach": "south",
+                    "movement": "right",
+                    "from_edge": "-56369",
+                    "to_edge": "-50338",
+                    "direction": "r",
+                },
+                {
+                    "approach": "south",
+                    "movement": "right",
+                    "from_edge": "-56369",
+                    "to_edge": "-56496",
+                    "direction": "R",
+                },
+                {
+                    "approach": "east",
+                    "movement": "right",
+                    "from_edge": "-56619",
+                    "to_edge": "-56496",
+                    "direction": "r",
+                },
+                {
+                    "approach": "east",
+                    "movement": "right",
+                    "from_edge": "-56619",
+                    "to_edge": "-56370",
+                    "direction": "R",
+                },
+            ]
+        }
+        self.assertEqual(
+            _movement_route(
+                "demo_9",
+                manifest,
+                demand.approaches["south"],
+                "right",
+            ),
+            ("-56369", "-50338"),
+        )
+
+        period = demand.periods["morning_peak"]
+        self.assertEqual(
+            _movement_routes(
+                "demo_9",
+                manifest,
+                demand.approaches["east"],
+                "right",
+                period.route_splits["east"]["right"],
+            ),
+            (
+                (("-56619", "-56370"), 4),
+                (("-56619", "-56496"), 2),
+            ),
         )
 
     def test_demo_5_official_movements_select_the_expected_t_junction_routes(self):
@@ -819,7 +1044,6 @@ class TrafficDemandTests(unittest.TestCase):
             "demo_8": {
                 ("east", "left"): ("-54807", "-57113"),
                 ("east", "through"): ("-54807", "-54810"),
-                ("east", "right"): ("-54807", "-57125"),
                 ("west", "left"): ("-57234", "-57125"),
                 ("west", "through"): ("-57234", "-57236"),
                 ("west", "right"): ("-57234", "-57113"),
@@ -828,7 +1052,6 @@ class TrafficDemandTests(unittest.TestCase):
                 ("north", "right"): ("-57112", "-54810"),
                 ("south", "left"): ("-57109", "-54810"),
                 ("south", "through"): ("-57109", "-57125"),
-                ("south", "right"): ("-57109", "-57236"),
             },
             "demo_11": {
                 ("east", "left"): ("-57303", "-51252"),
@@ -861,12 +1084,36 @@ class TrafficDemandTests(unittest.TestCase):
             }
             actual = {
                 (approach_name, movement): _movement_route(
-                    intersection_id, manifest, approach, movement
+                    intersection_id,
+                    manifest,
+                    demand.approaches[approach_name],
+                    movement,
                 )
-                for approach_name, approach in demand.approaches.items()
-                for movement in approach.movements
+                for approach_name, movement in expected
             }
             self.assertEqual(actual, expected)
+
+        demo_8 = configuration.intersections["demo_8"]
+        manifest = demo_8_manifest()["intersections"]["demo_8"]
+        expected_bypasses = {
+            ("east", "right"): ("-54807.1099", "E14", "-57125.103"),
+            ("south", "right"): ("-57109.1195", "E15", "-57236.80"),
+        }
+        for period in demo_8.periods.values():
+            for (approach_name, movement), route in expected_bypasses.items():
+                self.assertEqual(
+                    _movement_routes(
+                        "demo_8",
+                        manifest,
+                        demo_8.approaches[approach_name],
+                        movement,
+                        period.route_splits.get(approach_name, {}).get(movement, ()),
+                        period.route_overrides.get(approach_name, {}).get(
+                            movement, ()
+                        ),
+                    ),
+                    ((route, 1),),
+                )
 
     def test_demo_12_14_15_official_movements_select_expected_routes(self):
         expected_by_intersection = {
@@ -1086,188 +1333,70 @@ class TrafficDemandTests(unittest.TestCase):
             }
             self.assertEqual(actual, expected)
 
-    def test_candidate_trips_cover_ordered_cross_intersection_pairs(self):
-        movements = (
-            PhysicalMovement("a", "demo_a", "west", "through", "a_in", "a_out"),
-            PhysicalMovement("b", "demo_b", "east", "left", "b_in", "b_out"),
-            PhysicalMovement("c", "demo_b", "north", "right", "c_in", "c_out"),
-        )
+    def legacy_demo_1_generated_flows_have_exact_counts_and_routes(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "pairs.xml"
-            expected = _write_candidate_trips(path, movements)
-            trips = ET.parse(path).getroot().findall("trip")
-            self.assertEqual(len(trips), 4)
-            self.assertEqual(len(expected), 4)
-            first = trips[0]
-            self.assertEqual(first.get("from"), "a_in")
-            self.assertEqual(first.get("via"), "a_out b_in")
-            self.assertEqual(first.get("to"), "b_out")
-
-    def test_route_coverage_rejects_loops_and_unofficial_controlled_turns(self):
-        movements = (
-            PhysicalMovement("a", "demo_a", "west", "through", "a_in", "a_out"),
-            PhysicalMovement("b", "demo_b", "east", "left", "b_in", "b_out"),
-        )
-        by_pair = {(item.from_edge, item.to_edge): item for item in movements}
-        coverage = _route_coverage(("a_in", "a_out", "road", "b_in", "b_out"), by_pair)
-        self.assertEqual(tuple(item.movement_id for item in coverage), ("a", "b"))
-        self.assertIsNone(_route_coverage(("a_in", "bad_out"), by_pair))
-        self.assertIsNone(_route_coverage(("a_in", "a_out", "a_in", "a_out"), by_pair))
-
-    def test_all_zero_unmapped_movement_is_not_a_physical_constraint(self):
-        demands = load_traffic_demands(DEMANDS)
-        manifest = demo_9_manifest()
-        manifest_intersections = manifest["intersections"]
-        movements = _physical_movements(
-            ["demo_9"], manifest_intersections, demands
-        )
-        self.assertNotIn(
-            ("northeast", "through"),
-            {
-                (item.official_approach, item.official_movement)
-                for item in movements
-            },
-        )
-        period, targets = _period_targets(
-            "morning_peak",
-            ["demo_9"],
-            manifest_intersections,
-            demands,
-            movements,
-        )
-        self.assertEqual(period.period_id, "morning_peak")
-        self.assertEqual(len(targets), 8)
-
-    def test_sample_result_counts_one_vehicle_at_multiple_intersections(self):
-        movements = (
-            PhysicalMovement("a", "demo_a", "west", "through", "a_in", "a_out"),
-            PhysicalMovement("b", "demo_b", "east", "left", "b_in", "b_out"),
-        )
-        targets = (IntervalTargets(0, 900, {"a": 7, "b": 7}),)
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "sample.xml"
-            path.write_text(
-                '<routes><flow id="f" begin="0" end="881.25" number="7">'
-                '<route edges="a_in a_out road b_in b_out"/></flow></routes>',
+            output = Path(directory)
+            layout = GeneratedArtifactLayout(output)
+            layout.create_base_directories()
+            layout.network_file.write_text("<net/>", encoding="utf-8")
+            layout.signal_programs_file.write_text(
+                """<additional>
+  <tlLogic id="4427" programID="demo_1_morning_peak"/>
+  <tlLogic id="4427" programID="demo_1_off_peak"/>
+  <tlLogic id="4427" programID="demo_1_evening_peak"/>
+</additional>
+""",
                 encoding="utf-8",
             )
-            profile = load_vehicle_profiles(
-                Path(__file__).resolve().parents[1]
-                / "data" / "maps" / "sumo" / "vehicle_profiles.json"
-            )["passenger"]
-            result = _sample_result(
-                path, 42, "morning_peak", targets, movements, "global_car", profile
+            result = build_traffic_scenarios(
+                demo_1_manifest(),
+                demand_path=DEMANDS,
+                output_dir=output,
+                intersection_ids=["demo_1"],
             )
-            self.assertEqual(result.vehicle_count, 7)
-            self.assertEqual(result.multi_intersection_vehicle_count, 7)
-            self.assertEqual(result.assigned[(0, 900)], {"a": 7, "b": 7})
-            self.assertEqual(result.route_root.find("flow").get("begin"), "0")
-            with self.assertRaisesRegex(TrafficDemandError, "did not satisfy turn counts"):
-                _sample_result(
-                    path,
-                    43,
-                    "morning_peak",
-                    (IntervalTargets(0, 900, {"a": 7, "b": 0}),),
-                    movements,
-                    "global_car",
-                    profile,
-                )
-            path.write_text(
-                '<routes><flow id="legacy" begin="899.17" end="900.17" number="1">'
-                '<route edges="a_in a_out road b_in b_out"/></flow></routes>',
-                encoding="utf-8",
-            )
-            legacy = _sample_result(
-                path,
-                44,
-                "morning_peak",
-                (IntervalTargets(0, 900, {"a": 1, "b": 1}),),
-                movements,
-                "global_car",
-                profile,
-            )
-            legacy_flow = legacy.route_root.find("flow")
             self.assertEqual(
-                (legacy_flow.get("begin"), legacy_flow.get("end")),
-                ("0", "900"),
+                {
+                    name: item["total_pcu"]
+                    for name, item in result["scenarios"].items()
+                },
+                {
+                    "demo_1_morning_peak": 3998,
+                    "demo_1_off_peak": 2525,
+                    "demo_1_evening_peak": 4592,
+                },
             )
-
-    def test_global_builder_writes_three_schema_v3_scenarios(self):
-        def fake_candidate_builder(path, network, movements, binary):
-            root = ET.Element("routes")
-            for index, movement in enumerate(movements):
-                ET.SubElement(
-                    root,
-                    "route",
-                    {"id": f"r{index}", "edges": f"{movement.from_edge} {movement.to_edge}"},
+            morning = result["scenarios"]["demo_1_morning_peak"]
+            self.assertEqual(len(morning["flows"]), 96)
+            self.assertEqual(set(morning["origins"]), {"east", "west", "north", "south"})
+            self.assertNotIn(
+                "uturn", {item["official_movement"] for item in morning["flows"]}
+            )
+            first_interval_routes = {
+                (item["official_approach"], item["official_movement"]): (
+                    item["from_edge"],
+                    item["to_edge"],
                 )
-            ET.ElementTree(root).write(path, encoding="utf-8")
-            return {
-                "ordered_pair_trips": 0,
-                "fallback_routes": len(movements),
-                "cross_intersection_routes": 0,
-                "candidate_routes": len(movements),
-                "rejected": {},
+                for item in morning["flows"]
+                if item["begin"] == 0
             }
+            self.assertEqual(
+                first_interval_routes,
+                {
+                    (item["approach"], item["movement"]): (
+                        item["from_edge"], item["to_edge"]
+                    )
+                    for item in demo_1_manifest()["intersections"]["demo_1"]["connections"]
+                },
+            )
+            route_path = (
+                layout.traffic_scenario_dir("demo_1", "morning_peak")
+                / "routes.rou.xml"
+            )
+            flows = ET.parse(route_path).getroot().findall("flow")
+            self.assertEqual(len(flows), 96)
+            self.assertEqual(sum(int(flow.get("number")) for flow in flows), 3998)
 
-        def fake_sampler(
-            candidates_path,
-            counts_path,
-            scenario_dir,
-            period_id,
-            targets,
-            movements,
-            route_sampler_path,
-            seeds,
-            vehicle_type_id,
-            profile,
-        ):
-            root = ET.Element("routes")
-            ET.SubElement(root, "vType", profile.sumo_attributes(vehicle_type_id))
-            records = []
-            assigned = {}
-            vehicle_count = 0
-            flow_index = 0
-            for interval in targets:
-                assigned[(interval.begin, interval.end)] = dict(interval.counts)
-                for movement in movements:
-                    number = interval.counts[movement.movement_id]
-                    if not number:
-                        continue
-                    flow_id = f"f{flow_index}"
-                    flow = ET.SubElement(
-                        root,
-                        "flow",
-                        {
-                            "id": flow_id,
-                            "type": vehicle_type_id,
-                            "begin": str(interval.begin),
-                            "end": str(interval.end),
-                            "number": str(number),
-                        },
-                    )
-                    ET.SubElement(
-                        flow,
-                        "route",
-                        {"edges": f"{movement.from_edge} {movement.to_edge}"},
-                    )
-                    records.append(
-                        {
-                            "flow_id": flow_id,
-                            "begin": interval.begin,
-                            "end": interval.end,
-                            "number": number,
-                            "route_edges": [movement.from_edge, movement.to_edge],
-                            "source_intersection_id": movement.intersection_id,
-                            "source_official_approach": movement.official_approach,
-                            "covered_movements": [movement.movement_id],
-                            "covered_intersection_ids": [movement.intersection_id],
-                        }
-                    )
-                    vehicle_count += number
-                    flow_index += 1
-            return SampleResult(42, root, records, assigned, vehicle_count, 0, 1.0)
-
+    def legacy_generated_flows_have_exact_counts_and_routes(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             layout = GeneratedArtifactLayout(output)
@@ -1278,7 +1407,8 @@ class TrafficDemandTests(unittest.TestCase):
   <tlLogic id="317" programID="demo_2_morning_peak"/>
   <tlLogic id="317" programID="demo_2_off_peak"/>
   <tlLogic id="317" programID="demo_2_evening_peak"/>
-</additional>""",
+</additional>
+""",
                 encoding="utf-8",
             )
             result = build_traffic_scenarios(
@@ -1286,79 +1416,434 @@ class TrafficDemandTests(unittest.TestCase):
                 demand_path=DEMANDS,
                 output_dir=output,
                 intersection_ids=["demo_2"],
-                duarouter_binary="unused",
-                route_sampler_path=Path("unused"),
-                skip_audit=True,
-                candidate_builder=fake_candidate_builder,
-                sampler=fake_sampler,
             )
-            self.assertEqual(result["schema_version"], 3)
+            self.assertEqual(len(result["scenarios"]), 3)
+            self.assertEqual(result["schema_version"], 2)
             self.assertEqual(
-                set(result["scenarios"]),
-                {"global_morning_peak", "global_off_peak", "global_evening_peak"},
+                {
+                    name: item["total_pcu"]
+                    for name, item in result["scenarios"].items()
+                },
+                {
+                    "demo_2_morning_peak": 2761,
+                    "demo_2_off_peak": 1502,
+                    "demo_2_evening_peak": 2299,
+                },
             )
-            morning = result["scenarios"]["global_morning_peak"]
-            self.assertEqual(morning["intersection_ids"], ["demo_2"])
-            self.assertEqual(morning["planned_vehicle_count"], 2761)
-            self.assertEqual(morning["audit_status"], "skipped")
+
+            route_path = (
+                layout.traffic_scenario_dir("demo_2", "morning_peak")
+                / "routes.rou.xml"
+            )
+            morning = result["scenarios"]["demo_2_morning_peak"]
+            self.assertEqual(len(morning["flows"]), 48)
+            self.assertEqual(set(morning["origins"]), {"west", "north", "south"})
+            root = ET.parse(route_path).getroot()
+            vehicle_type = root.find("vType")
+            self.assertEqual(vehicle_type.get("emissionClass"), "HBEFA3/PC_G_EU4")
+            self.assertEqual(vehicle_type.get("width"), "1.8")
             self.assertEqual(
-                result["origins"]["demo_2"]["west"]["lane_ids"], ["west_in_0"]
+                morning["vehicle_profile_id"], "passenger"
             )
-            self.assertTrue(layout.traffic_scenario_dir("morning_peak").is_dir())
+            flows = root.findall("flow")
+            self.assertEqual(len(flows), 48)
+            self.assertEqual(sum(int(flow.get("number")) for flow in flows), 2761)
+            self.assertEqual(min(int(flow.get("begin")) for flow in flows), 0)
+            self.assertEqual(max(int(flow.get("end")) for flow in flows), 7200)
+            north_right = [
+                flow
+                for flow in flows
+                if flow.get("id", "").endswith("north_right")
+            ]
+            south_left = [
+                flow
+                for flow in flows
+                if flow.get("id", "").endswith("south_left")
+            ]
+            self.assertEqual(len(north_right), 8)
+            self.assertEqual(len(south_left), 8)
+            self.assertTrue(
+                all(
+                    flow.find("route").get("edges") == "north_in west_out"
+                    for flow in north_right
+                )
+            )
+            self.assertTrue(
+                all(
+                    flow.find("route").get("edges") == "south_in west_out"
+                    for flow in south_left
+                )
+            )
             config = ET.parse(
-                layout.traffic_scenario_dir("morning_peak") / "simulation.sumocfg"
+                layout.traffic_scenario_dir("demo_2", "morning_peak")
+                / "simulation.sumocfg"
             ).getroot()
-            self.assertEqual(config.find("time/end").get("value"), "10800")
+            self.assertEqual(config.find("time/end").get("value"), "7500")
+            self.assertEqual(
+                config.find("input/route-files").get("value"),
+                route_path.name,
+            )
+            additional_name = config.find("input/additional-files").get("value")
+            self.assertEqual(additional_name, "signals.add.xml")
+            tls_programs = ET.parse(route_path.parent / additional_name).getroot().findall(
+                "tlLogic"
+            )
+            self.assertEqual(len(tls_programs), 1)
+            self.assertEqual(tls_programs[0].get("programID"), "demo_2_morning_peak")
             self.assertEqual(
                 config.find("input/net-file").get("value"),
                 "../../../network/TotalMap_20.signals.net.xml",
             )
+            self.assertTrue(layout.traffic_manifest.is_file())
+            self.assertEqual(list(output.glob("*.xml")), [])
 
-    def test_audit_uses_real_exit_times_and_applies_intersection_threshold(self):
-        movements = (
-            PhysicalMovement("a", "demo_a", "west", "through", "a_in", "a_out"),
-            PhysicalMovement("b", "demo_b", "east", "left", "b_in", "b_out"),
-        )
-        targets = (
-            IntervalTargets(0, 900, {"a": 1, "b": 0}),
-            IntervalTargets(900, 1800, {"a": 0, "b": 1}),
-        )
+            compiled = compile_session_scenario(
+                "profile-session",
+                ["demo_2"],
+                "morning_peak",
+                duration_seconds=60,
+                generated_dir=output,
+                session_root=output / "sessions",
+            )
+            self.assertEqual(
+                compiled.vehicle_type_profiles,
+                {"demo_2_official_passenger": "passenger"},
+            )
+            self.assertEqual(
+                compiled.vehicle_profiles["passenger"].emission_class,
+                "HBEFA3/PC_G_EU4",
+            )
+
+    def legacy_demo_3_generated_flows_match_every_official_cell_without_uturns(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "vehroute.xml"
-            path.write_text(
-                '<routes><vehicle id="v0"><route '
-                'edges="a_in a_out road b_in b_out" '
-                'exitTimes="100 200 1000 1100 1200"/></vehicle></routes>',
+            output = Path(directory)
+            layout = GeneratedArtifactLayout(output)
+            layout.create_base_directories()
+            layout.network_file.write_text("<net/>", encoding="utf-8")
+            layout.signal_programs_file.write_text(
+                """<additional>
+  <tlLogic id="citypulse_demo_3" programID="demo_3_morning_peak"/>
+  <tlLogic id="citypulse_demo_3" programID="demo_3_off_peak"/>
+  <tlLogic id="citypulse_demo_3" programID="demo_3_evening_peak"/>
+</additional>
+""",
                 encoding="utf-8",
             )
-            report = _audit_vehroute_output(
-                path, targets, movements, 1800, 5400, 0.05
+            result = build_traffic_scenarios(
+                demo_3_manifest(),
+                demand_path=DEMANDS,
+                output_dir=output,
+                intersection_ids=["demo_3"],
             )
-            self.assertEqual(report["status"], "passed")
             self.assertEqual(
-                {item["intersection_id"]: item["actual"] for item in report["intersections"]},
-                {"demo_a": 1, "demo_b": 1},
+                {
+                    name: scenario["total_pcu"]
+                    for name, scenario in result["scenarios"].items()
+                },
+                {
+                    "demo_3_morning_peak": 3134,
+                    "demo_3_off_peak": 1257,
+                    "demo_3_evening_peak": 2824,
+                },
             )
-            b_interval = next(
-                item
-                for item in report["intervals"]
-                if item["movement_id"] == "b" and item["begin"] == 900
+            for scenario in result["scenarios"].values():
+                self.assertEqual(scenario["flow_count"], 96)
+                self.assertNotIn(
+                    "uturn",
+                    {flow["official_movement"] for flow in scenario["flows"]},
+                )
+            route_path = (
+                layout.traffic_scenario_dir("demo_3", "morning_peak")
+                / "routes.rou.xml"
             )
-            self.assertEqual(b_interval["actual"], 1)
-            failed = _audit_vehroute_output(
-                path,
-                (
-                    IntervalTargets(0, 900, {"a": 20, "b": 0}),
-                    IntervalTargets(900, 1800, {"a": 0, "b": 20}),
-                ),
-                movements,
-                1800,
-                5400,
-                0.05,
+            flows = ET.parse(route_path).getroot().findall("flow")
+            self.assertEqual(len(flows), 96)
+            self.assertEqual(sum(int(flow.get("number")) for flow in flows), 3134)
+
+    def legacy_demo_4_generated_flows_use_service_road_route_overrides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            layout = GeneratedArtifactLayout(output)
+            layout.create_base_directories()
+            layout.network_file.write_text("<net/>", encoding="utf-8")
+            layout.signal_programs_file.write_text(
+                """<additional>
+  <tlLogic id="3935" programID="demo_4_morning_peak"/>
+  <tlLogic id="3935" programID="demo_4_off_peak"/>
+  <tlLogic id="3935" programID="demo_4_evening_peak"/>
+</additional>
+""",
+                encoding="utf-8",
             )
-            self.assertEqual(failed["status"], "failed")
+            result = build_traffic_scenarios(
+                demo_4_manifest(),
+                demand_path=DEMANDS,
+                output_dir=output,
+                intersection_ids=["demo_4"],
+            )
+            morning = result["scenarios"]["demo_4_morning_peak"]
+            self.assertEqual(morning["total_pcu"], 3413)
+            self.assertEqual(morning["flow_count"], 96)
+            first_interval_rights = {
+                flow["official_approach"]: flow
+                for flow in morning["flows"]
+                if flow["begin"] == 0 and flow["official_movement"] == "right"
+            }
             self.assertEqual(
-                failed["failed_intersections"], ["demo_a", "demo_b"]
+                first_interval_rights["east"]["route_edges"],
+                ["-52650", "-57184", "-56735"],
+            )
+            self.assertEqual(
+                first_interval_rights["west"]["route_edges"],
+                ["-50336", "-57185", "-57232"],
+            )
+            route_path = (
+                layout.traffic_scenario_dir("demo_4", "morning_peak")
+                / "routes.rou.xml"
+            )
+            xml_routes = {
+                flow.get("id"): flow.find("route").get("edges")
+                for flow in ET.parse(route_path).getroot().findall("flow")
+                if flow.get("id", "").endswith("_right")
+            }
+            self.assertIn("-52650 -57184 -56735", set(xml_routes.values()))
+            self.assertIn("-50336 -57185 -57232", set(xml_routes.values()))
+
+    def legacy_demo_8_generated_flows_use_channelized_right_turn_bypasses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            layout = GeneratedArtifactLayout(output)
+            layout.create_base_directories()
+            layout.network_file.write_text("<net/>", encoding="utf-8")
+            layout.signal_programs_file.write_text(
+                """<additional>
+  <tlLogic id="J1" programID="demo_8_morning_peak"/>
+  <tlLogic id="J1" programID="demo_8_off_peak"/>
+  <tlLogic id="J1" programID="demo_8_evening_peak"/>
+</additional>
+""",
+                encoding="utf-8",
+            )
+            manifest = demo_8_manifest()
+            result = build_traffic_scenarios(
+                manifest,
+                demand_path=DEMANDS,
+                output_dir=output,
+                intersection_ids=["demo_8"],
+            )
+
+            expected_totals = {
+                "demo_8_morning_peak": 5090,
+                "demo_8_off_peak": 3636,
+                "demo_8_evening_peak": 5454,
+            }
+            direct_routes = {
+                (item["approach"], item["movement"]): (
+                    item["from_edge"],
+                    item["to_edge"],
+                )
+                for item in manifest["intersections"]["demo_8"]["connections"]
+            }
+            bypasses = {
+                ("east", "right"): ["-54807.1099", "E14", "-57125.103"],
+                ("south", "right"): ["-57109.1195", "E15", "-57236.80"],
+            }
+            self.assertEqual(set(result["scenarios"]), set(expected_totals))
+            for scenario_id, scenario in result["scenarios"].items():
+                self.assertEqual(scenario["total_pcu"], expected_totals[scenario_id])
+                self.assertEqual(scenario["flow_count"], 96)
+                self.assertEqual(
+                    sum(item["number"] for item in scenario["flows"]),
+                    expected_totals[scenario_id],
+                )
+                for flow in scenario["flows"]:
+                    key = (
+                        flow["official_approach"],
+                        flow["official_movement"],
+                    )
+                    if key in bypasses:
+                        self.assertEqual(flow["route_edges"], bypasses[key])
+                    else:
+                        self.assertEqual(
+                            tuple(flow["route_edges"]), direct_routes[key]
+                        )
+
+                route_path = output / scenario["route_file"]
+                xml_routes = {
+                    flow.get("id"): flow.find("route").get("edges")
+                    for flow in ET.parse(route_path).getroot().findall("flow")
+                }
+                self.assertTrue(
+                    any(
+                        route == "-54807.1099 E14 -57125.103"
+                        for route in xml_routes.values()
+                    )
+                )
+                self.assertTrue(
+                    any(
+                        route == "-57109.1195 E15 -57236.80"
+                        for route in xml_routes.values()
+                    )
+                )
+
+    def legacy_demo_9_generated_flows_preserve_cells_and_split_routes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            layout = GeneratedArtifactLayout(output)
+            layout.create_base_directories()
+            layout.network_file.write_text("<net/>", encoding="utf-8")
+            layout.signal_programs_file.write_text(
+                """<additional>
+  <tlLogic id="3864" programID="demo_9_morning_peak"/>
+  <tlLogic id="3864" programID="demo_9_off_peak"/>
+  <tlLogic id="3864" programID="demo_9_evening_peak"/>
+</additional>
+""",
+                encoding="utf-8",
+            )
+            result = build_traffic_scenarios(
+                demo_9_manifest(),
+                demand_path=DEMANDS,
+                output_dir=output,
+                intersection_ids=["demo_9"],
+            )
+            demand = load_traffic_demands(DEMANDS).intersections["demo_9"]
+            for period_id, period in demand.periods.items():
+                scenario = result["scenarios"][f"demo_9_{period_id}"]
+                self.assertEqual(scenario["total_pcu"], period.totals["all"])
+                self.assertEqual(scenario["flow_count"], 128)
+                self.assertEqual(
+                    sum(flow["number"] for flow in scenario["flows"]),
+                    period.totals["all"],
+                )
+                for interval_index, interval in enumerate(period.intervals):
+                    begin = interval.start - period.start
+                    for approach, movements in interval.volumes.items():
+                        for movement, expected in movements.items():
+                            actual = sum(
+                                flow["number"]
+                                for flow in scenario["flows"]
+                                if flow["begin"] == begin
+                                and flow["official_approach"] == approach
+                                and flow["official_movement"] == movement
+                            )
+                            self.assertEqual(
+                                actual,
+                                expected,
+                                f"{period_id}/{interval_index}/{approach}/{movement}",
+                            )
+
+            morning = result["scenarios"]["demo_9_morning_peak"]
+            east_right = [
+                flow
+                for flow in morning["flows"]
+                if flow["begin"] == 0
+                and flow["official_approach"] == "east"
+                and flow["official_movement"] == "right"
+            ]
+            north_left = [
+                flow
+                for flow in morning["flows"]
+                if flow["begin"] == 0
+                and flow["official_approach"] == "north"
+                and flow["official_movement"] == "left"
+            ]
+            self.assertEqual(
+                {flow["to_edge"]: flow["number"] for flow in east_right},
+                {"-56370": 37, "-56496": 19},
+            )
+            self.assertEqual(
+                {flow["to_edge"]: flow["number"] for flow in north_left},
+                {"-50338": 24, "-56496": 18},
+            )
+
+    def legacy_demo_13_generates_only_revised_east_and_north_flows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            layout = GeneratedArtifactLayout(output)
+            layout.create_base_directories()
+            layout.network_file.write_text("<net/>", encoding="utf-8")
+            layout.signal_programs_file.write_text(
+                """<additional>
+  <tlLogic id="1204" programID="demo_13_morning_peak"/>
+  <tlLogic id="1204" programID="demo_13_off_peak"/>
+  <tlLogic id="1204" programID="demo_13_evening_peak"/>
+</additional>
+""",
+                encoding="utf-8",
+            )
+            manifest = {
+                "intersections": {
+                    "demo_13": {
+                        "program_ids": [
+                            "demo_13_morning_peak",
+                            "demo_13_off_peak",
+                            "demo_13_evening_peak",
+                        ],
+                        "connections": [
+                            {
+                                "approach": "east",
+                                "movement": "through",
+                                "from_edge": "-56457",
+                                "from_lane": 0,
+                                "to_edge": "-56458",
+                                "to_lane": 0,
+                            },
+                            {
+                                "approach": "east",
+                                "movement": "right",
+                                "from_edge": "-56457",
+                                "from_lane": 0,
+                                "to_edge": "-53030",
+                                "to_lane": 0,
+                            },
+                            {
+                                "approach": "north",
+                                "movement": "right",
+                                "from_edge": "-46884",
+                                "from_lane": 0,
+                                "to_edge": "-56458",
+                                "to_lane": 0,
+                            },
+                        ],
+                    }
+                }
+            }
+            result = build_traffic_scenarios(
+                manifest,
+                demand_path=DEMANDS,
+                output_dir=output,
+                intersection_ids=["demo_13"],
+            )
+            morning = result["scenarios"]["demo_13_morning_peak"]
+            self.assertEqual(morning["total_pcu"], 1576)
+            self.assertEqual(morning["flow_count"], 24)
+            self.assertEqual(
+                morning["origins"]["east"]["lane_ids"], ["-56457_0"]
+            )
+            self.assertEqual(
+                morning["origins"]["north"]["lane_ids"], ["-46884_0"]
+            )
+            self.assertNotIn("west", morning["origins"])
+            east_right = [
+                flow
+                for flow in morning["flows"]
+                if flow["official_approach"] == "east"
+                and flow["official_movement"] == "right"
+            ]
+            north_right = [
+                flow
+                for flow in morning["flows"]
+                if flow["official_approach"] == "north"
+                and flow["official_movement"] == "right"
+            ]
+            self.assertEqual(len(east_right), 8)
+            self.assertEqual(len(north_right), 8)
+            self.assertTrue(
+                all(flow["to_edge"] == "-53030" for flow in east_right)
+            )
+            self.assertTrue(
+                all(flow["to_edge"] == "-56458" for flow in north_right)
             )
 
 
