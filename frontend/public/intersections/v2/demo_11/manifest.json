@@ -1,0 +1,1014 @@
+{
+  "schemaVersion": 2,
+  "intersectionId": "demo_11",
+  "junctionId": "4306",
+  "tlsIds": [
+    "4306"
+  ],
+  "sourceCoordinateSystem": "SUMO local meters",
+  "renderCoordinateSystem": "MapV scene meters, Z-up",
+  "sourceSha256": "f10f9fd9ba466ac89969befeccf4bcb4803c860267768aac8bdea7304e824a05",
+  "origin": {
+    "x": 33148.59,
+    "y": 11149.91,
+    "longitude": 115.840476,
+    "latitude": 39.069596
+  },
+  "radiusMeters": 140,
+  "junctionShape": [
+    [
+      11.91,
+      29.3
+    ],
+    [
+      28.84,
+      8.83
+    ],
+    [
+      27.42,
+      7.04
+    ],
+    [
+      27.2,
+      6.08
+    ],
+    [
+      27.28,
+      5.08
+    ],
+    [
+      27.69,
+      4.03
+    ],
+    [
+      28.42,
+      2.94
+    ],
+    [
+      -6.83,
+      -27.18
+    ],
+    [
+      -8.71,
+      -25.83
+    ],
+    [
+      -9.75,
+      -25.66
+    ],
+    [
+      -10.87,
+      -25.84
+    ],
+    [
+      -12.06,
+      -26.35
+    ],
+    [
+      -13.32,
+      -27.2
+    ],
+    [
+      -27.42,
+      -9.11
+    ],
+    [
+      -26.24,
+      -7.01
+    ],
+    [
+      -26.35,
+      -5.62
+    ],
+    [
+      -26.92,
+      -3.99
+    ],
+    [
+      -27.95,
+      -2.14
+    ],
+    [
+      -29.45,
+      -0.06
+    ],
+    [
+      5.54,
+      29.27
+    ],
+    [
+      7.39,
+      27.91
+    ],
+    [
+      8.42,
+      27.74
+    ],
+    [
+      9.51,
+      27.92
+    ],
+    [
+      10.68,
+      28.44
+    ]
+  ],
+  "edges": [
+    {
+      "id": "-51252",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-51252_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              27.73,
+              10.09
+            ],
+            [
+              113.919,
+              81.378
+            ]
+          ]
+        },
+        {
+          "id": "-51252_1",
+          "index": 1,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              25.6,
+              12.67
+            ],
+            [
+              111.939,
+              84.082
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-51264",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-51264_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              103.621,
+              -94.142
+            ],
+            [
+              27.11,
+              1.9
+            ]
+          ]
+        },
+        {
+          "id": "-51264_1",
+          "index": 1,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              101.309,
+              -96.625
+            ],
+            [
+              24.49,
+              -0.19
+            ]
+          ]
+        },
+        {
+          "id": "-51264_2",
+          "index": 2,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              98.95,
+              -99.04
+            ],
+            [
+              21.87,
+              -2.28
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-51265",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-51265_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              4.29,
+              28.15
+            ],
+            [
+              -59.42,
+              104.16
+            ],
+            [
+              -59.88,
+              104.71
+            ],
+            [
+              -60.38,
+              105.32
+            ],
+            [
+              -60.94,
+              106
+            ],
+            [
+              -61.52,
+              106.7
+            ],
+            [
+              -62.08,
+              107.38
+            ],
+            [
+              -62.69,
+              108.14
+            ],
+            [
+              -63.33,
+              108.92
+            ],
+            [
+              -63.95,
+              109.7
+            ],
+            [
+              -64.62,
+              110.53
+            ],
+            [
+              -65.3,
+              111.36
+            ],
+            [
+              -65.95,
+              112.18
+            ],
+            [
+              -66.65,
+              113.06
+            ],
+            [
+              -67.35,
+              113.93
+            ],
+            [
+              -68.02,
+              114.77
+            ],
+            [
+              -68.71,
+              115.64
+            ],
+            [
+              -69.4,
+              116.51
+            ],
+            [
+              -70.07,
+              117.36
+            ],
+            [
+              -70.73,
+              118.21
+            ],
+            [
+              -71.4,
+              119.06
+            ],
+            [
+              -72.04,
+              119.88
+            ],
+            [
+              -72.126,
+              119.991
+            ]
+          ]
+        },
+        {
+          "id": "-51265_1",
+          "index": 1,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              1.72,
+              26
+            ],
+            [
+              -61.99,
+              102.01
+            ],
+            [
+              -62.46,
+              102.57
+            ],
+            [
+              -62.97,
+              103.19
+            ],
+            [
+              -63.52,
+              103.87
+            ],
+            [
+              -64.1,
+              104.57
+            ],
+            [
+              -64.68,
+              105.27
+            ],
+            [
+              -65.29,
+              106.03
+            ],
+            [
+              -65.93,
+              106.81
+            ],
+            [
+              -66.56,
+              107.6
+            ],
+            [
+              -67.23,
+              108.43
+            ],
+            [
+              -67.91,
+              109.26
+            ],
+            [
+              -68.57,
+              110.09
+            ],
+            [
+              -69.26,
+              110.97
+            ],
+            [
+              -69.96,
+              111.84
+            ],
+            [
+              -70.64,
+              112.69
+            ],
+            [
+              -71.33,
+              113.56
+            ],
+            [
+              -72.02,
+              114.43
+            ],
+            [
+              -72.7,
+              115.29
+            ],
+            [
+              -73.36,
+              116.14
+            ],
+            [
+              -74.04,
+              116.99
+            ],
+            [
+              -74.68,
+              117.82
+            ],
+            [
+              -74.993,
+              118.221
+            ]
+          ]
+        },
+        {
+          "id": "-51265_2",
+          "index": 2,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -0.85,
+              23.85
+            ],
+            [
+              -64.56,
+              99.86
+            ],
+            [
+              -65.04,
+              100.44
+            ],
+            [
+              -65.56,
+              101.06
+            ],
+            [
+              -66.11,
+              101.74
+            ],
+            [
+              -66.69,
+              102.44
+            ],
+            [
+              -67.28,
+              103.16
+            ],
+            [
+              -67.89,
+              103.92
+            ],
+            [
+              -68.53,
+              104.7
+            ],
+            [
+              -69.17,
+              105.5
+            ],
+            [
+              -69.84,
+              106.32
+            ],
+            [
+              -70.52,
+              107.16
+            ],
+            [
+              -71.19,
+              108
+            ],
+            [
+              -71.88,
+              108.88
+            ],
+            [
+              -72.58,
+              109.75
+            ],
+            [
+              -73.27,
+              110.61
+            ],
+            [
+              -73.96,
+              111.48
+            ],
+            [
+              -74.65,
+              112.35
+            ],
+            [
+              -75.33,
+              113.22
+            ],
+            [
+              -76,
+              114.07
+            ],
+            [
+              -76.67,
+              114.92
+            ],
+            [
+              -77.32,
+              115.75
+            ],
+            [
+              -77.814,
+              116.383
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-56346",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-56346_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              99.481,
+              98.506
+            ],
+            [
+              12.93,
+              27.97
+            ]
+          ]
+        },
+        {
+          "id": "-56346_1",
+          "index": 1,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              101.817,
+              96.09
+            ],
+            [
+              15.04,
+              25.37
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-57053",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-57053_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 22.22,
+          "points": [
+            [
+              -102.527,
+              -95.332
+            ],
+            [
+              -14.35,
+              -25.89
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-57056",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-57056_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 22.22,
+          "points": [
+            [
+              -26.39,
+              -10.43
+            ],
+            [
+              -115.158,
+              -79.615
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-57303",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-57303_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -102.51,
+              95.35
+            ],
+            [
+              -28.14,
+              0.97
+            ]
+          ]
+        },
+        {
+          "id": "-57303_1",
+          "index": 1,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -100.178,
+              97.798
+            ],
+            [
+              -25.51,
+              3.05
+            ]
+          ]
+        },
+        {
+          "id": "-57303_2",
+          "index": 2,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -97.794,
+              100.181
+            ],
+            [
+              -22.87,
+              5.12
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-57304",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-57304_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -5.56,
+              -26.09
+            ],
+            [
+              73.804,
+              -118.966
+            ]
+          ]
+        },
+        {
+          "id": "-57304_1",
+          "index": 1,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -3.01,
+              -23.91
+            ],
+            [
+              76.661,
+              -117.146
+            ]
+          ]
+        },
+        {
+          "id": "-57304_2",
+          "index": 2,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -0.46,
+              -21.74
+            ],
+            [
+              79.459,
+              -115.266
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "tlsId": "4306",
+      "linkIndex": 0,
+      "fromEdge": "-56346",
+      "fromLane": 0,
+      "toEdge": "-51265",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "右转"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 1,
+      "fromEdge": "-56346",
+      "fromLane": 0,
+      "toEdge": "-57056",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 2,
+      "fromEdge": "-56346",
+      "fromLane": 1,
+      "toEdge": "-57304",
+      "toLane": 2,
+      "direction": "l",
+      "directionLabel": "左转"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 3,
+      "fromEdge": "-51264",
+      "fromLane": 0,
+      "toEdge": "-51252",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "右转"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 4,
+      "fromEdge": "-51264",
+      "fromLane": 0,
+      "toEdge": "-51265",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 5,
+      "fromEdge": "-51264",
+      "fromLane": 1,
+      "toEdge": "-51265",
+      "toLane": 1,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 6,
+      "fromEdge": "-51264",
+      "fromLane": 2,
+      "toEdge": "-51265",
+      "toLane": 2,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 7,
+      "fromEdge": "-51264",
+      "fromLane": 2,
+      "toEdge": "-57056",
+      "toLane": 0,
+      "direction": "l",
+      "directionLabel": "左转"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 8,
+      "fromEdge": "-57053",
+      "fromLane": 0,
+      "toEdge": "-57304",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "右转"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 9,
+      "fromEdge": "-57053",
+      "fromLane": 0,
+      "toEdge": "-51252",
+      "toLane": 1,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 10,
+      "fromEdge": "-57053",
+      "fromLane": 0,
+      "toEdge": "-51265",
+      "toLane": 2,
+      "direction": "l",
+      "directionLabel": "左转"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 11,
+      "fromEdge": "-57303",
+      "fromLane": 0,
+      "toEdge": "-57056",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "右转"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 12,
+      "fromEdge": "-57303",
+      "fromLane": 0,
+      "toEdge": "-57304",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 13,
+      "fromEdge": "-57303",
+      "fromLane": 1,
+      "toEdge": "-57304",
+      "toLane": 1,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 14,
+      "fromEdge": "-57303",
+      "fromLane": 2,
+      "toEdge": "-57304",
+      "toLane": 2,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "4306",
+      "linkIndex": 15,
+      "fromEdge": "-57303",
+      "fromLane": 2,
+      "toEdge": "-51252",
+      "toLane": 1,
+      "direction": "l",
+      "directionLabel": "左转"
+    }
+  ],
+  "phases": [
+    {
+      "tlsId": "4306",
+      "index": 0,
+      "durationSeconds": 33,
+      "state": "rrrGGGGgrrrGGGGg",
+      "label": "SUMO phase 1"
+    },
+    {
+      "tlsId": "4306",
+      "index": 1,
+      "durationSeconds": 6,
+      "state": "rrryyyyyrrryyyyy",
+      "label": "SUMO phase 2"
+    },
+    {
+      "tlsId": "4306",
+      "index": 2,
+      "durationSeconds": 33,
+      "state": "GGrrrrrrGGrrrrrr",
+      "label": "SUMO phase 3"
+    },
+    {
+      "tlsId": "4306",
+      "index": 3,
+      "durationSeconds": 6,
+      "state": "yyrrrrrryyrrrrrr",
+      "label": "SUMO phase 4"
+    },
+    {
+      "tlsId": "4306",
+      "index": 4,
+      "durationSeconds": 6,
+      "state": "rrGrrrrrrrGrrrrr",
+      "label": "SUMO phase 5"
+    },
+    {
+      "tlsId": "4306",
+      "index": 5,
+      "durationSeconds": 6,
+      "state": "rryrrrrrrryrrrrr",
+      "label": "SUMO phase 6"
+    }
+  ],
+  "phaseTemplates": {
+    "1": {
+      "4306": {
+        "green": "grrgGGGrgrrgGGGr",
+        "yellow": "grrgyyyrgrrgyyyr",
+        "clearance": "grrgrrrrgrrgrrrr"
+      }
+    },
+    "2": {
+      "4306": {
+        "green": "grrgrrrGgrrgrrrG",
+        "yellow": "grrgrrrygrrgrrry",
+        "clearance": "grrgrrrrgrrgrrrr"
+      }
+    },
+    "3": {
+      "4306": {
+        "green": "gGrgrrrrgGrgrrrr",
+        "yellow": "gyrgrrrrgyrgrrrr",
+        "clearance": "grrgrrrrgrrgrrrr"
+      }
+    },
+    "4": {
+      "4306": {
+        "green": "grGgrrrrgrGgrrrr",
+        "yellow": "grygrrrrgrygrrrr",
+        "clearance": "grrgrrrrgrrgrrrr"
+      }
+    }
+  },
+  "signalGroups": [
+    {
+      "tlsId": "4306",
+      "laneId": "-56346_0",
+      "linkIndexes": [
+        0,
+        1
+      ]
+    },
+    {
+      "tlsId": "4306",
+      "laneId": "-56346_1",
+      "linkIndexes": [
+        2
+      ]
+    },
+    {
+      "tlsId": "4306",
+      "laneId": "-51264_0",
+      "linkIndexes": [
+        3,
+        4
+      ]
+    },
+    {
+      "tlsId": "4306",
+      "laneId": "-51264_1",
+      "linkIndexes": [
+        5
+      ]
+    },
+    {
+      "tlsId": "4306",
+      "laneId": "-51264_2",
+      "linkIndexes": [
+        6,
+        7
+      ]
+    },
+    {
+      "tlsId": "4306",
+      "laneId": "-57053_0",
+      "linkIndexes": [
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "tlsId": "4306",
+      "laneId": "-57303_0",
+      "linkIndexes": [
+        11,
+        12
+      ]
+    },
+    {
+      "tlsId": "4306",
+      "laneId": "-57303_1",
+      "linkIndexes": [
+        13
+      ]
+    },
+    {
+      "tlsId": "4306",
+      "laneId": "-57303_2",
+      "linkIndexes": [
+        14,
+        15
+      ]
+    }
+  ]
+}

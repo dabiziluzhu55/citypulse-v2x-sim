@@ -107,7 +107,9 @@ export function buildSimulationPayload(
   const time = resolveTimePreset(config)
   const scenario = SCENARIO_MODE_OPTIONS.find((item) => item.value === config.scenario_mode)
   return {
-    intersection_ids: [scenario?.backendIntersectionId ?? DEFAULT_INTERSECTION_ID],
+    intersection_ids: [
+      intersection?.intersection_id ?? scenario?.backendIntersectionId ?? DEFAULT_INTERSECTION_ID,
+    ],
     period: resolvePeriod(config, periods),
     origins: {},
     window_start_seconds: time.windowStartSeconds,

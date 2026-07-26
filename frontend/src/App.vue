@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 import AppBackgroundMap from './components/visualization/AppBackgroundMap.vue'
-import BaiduThreeMap from './components/visualization/BaiduThreeMap.vue'
 import AppMapGradientMask from './components/visualization/AppMapGradientMask.vue'
 import DashboardChrome from './components/dashboard/chrome/DashboardChrome.vue'
 import { provideAppMapView } from './composables/useAppMapView'
 
 const route = useRoute()
+const BaiduThreeMap = defineAsyncComponent(
+  () => import('./components/visualization/BaiduThreeMap.vue'),
+)
 const mapView = provideAppMapView()
 const mapDimension = computed(() => mapView.dimension.value)
 const isStandaloneRoute = computed(() => route.meta.standalone === true)

@@ -1,0 +1,679 @@
+{
+  "schemaVersion": 3,
+  "intersectionId": "demo_1",
+  "junctionId": "4427",
+  "tlsIds": [
+    "4427"
+  ],
+  "sourceCoordinateSystem": "SUMO XY, tmerc",
+  "renderCoordinateSystem": "LOCAL_BD09_WEB_MERCATOR_METERS, Z-up",
+  "sourceSha256": "f10f9fd9ba466ac89969befeccf4bcb4803c860267768aac8bdea7304e824a05",
+  "origin": {
+    "x": 21807.28,
+    "y": 42363.87,
+    "longitude": 116.10226663297253,
+    "latitude": 39.00465074763003,
+    "bd09": [
+      116.1150865980269,
+      39.01141322336837
+    ],
+    "webMercator": [
+      12925872.31350922,
+      4723306.550779744
+    ]
+  },
+  "requestedOrigin": {
+    "longitude": 116.102265,
+    "latitude": 39.004651
+  },
+  "horizontalScale": 1.286844155512418,
+  "sumoUnitScale": 0.921773787776591,
+  "radiusMeters": 140,
+  "radiusSceneUnits": 180.1581817717385,
+  "junctionShape": [
+    [
+      7.285,
+      -15.873
+    ],
+    [
+      -14.587,
+      -13.976
+    ],
+    [
+      -14.442,
+      -11.357
+    ],
+    [
+      -14.54,
+      -9.207
+    ],
+    [
+      -14.895,
+      -7.514
+    ],
+    [
+      -15.493,
+      -6.29
+    ],
+    [
+      -16.336,
+      -5.522
+    ],
+    [
+      -17.436,
+      -5.211
+    ],
+    [
+      -16.643,
+      12.695
+    ],
+    [
+      -14.029,
+      13.325
+    ],
+    [
+      -13.051,
+      14.198
+    ],
+    [
+      -12.295,
+      15.443
+    ],
+    [
+      -11.756,
+      17.054
+    ],
+    [
+      -11.44,
+      19.036
+    ],
+    [
+      9.415,
+      17.152
+    ],
+    [
+      9.379,
+      13.922
+    ],
+    [
+      9.959,
+      11.27
+    ],
+    [
+      11.167,
+      9.2
+    ],
+    [
+      12.989,
+      7.722
+    ],
+    [
+      15.433,
+      6.819
+    ],
+    [
+      18.512,
+      6.503
+    ],
+    [
+      17.943,
+      -8.576
+    ],
+    [
+      15.038,
+      -8.711
+    ],
+    [
+      12.58,
+      -9.274
+    ],
+    [
+      10.57,
+      -10.276
+    ],
+    [
+      9.026,
+      -11.708
+    ],
+    [
+      7.93,
+      -13.581
+    ]
+  ],
+  "edges": [
+    {
+      "id": "-56371",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-56371_0",
+          "index": 0,
+          "width": 4.311,
+          "speed": 27.78,
+          "points": [
+            [
+              7.892,
+              17.286
+            ],
+            [
+              23.902,
+              178.566
+            ]
+          ],
+          "widthMeters": 3.35
+        },
+        {
+          "id": "-56371_1",
+          "index": 1,
+          "width": 4.311,
+          "speed": 27.78,
+          "points": [
+            [
+              4.831,
+              17.564
+            ],
+            [
+              20.852,
+              178.947
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-56384",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-56384_0",
+          "index": 0,
+          "width": 4.311,
+          "speed": 27.78,
+          "points": [
+            [
+              -11.804,
+              -179.771
+            ],
+            [
+              2.008,
+              -40.992
+            ],
+            [
+              2.643,
+              -34.579
+            ],
+            [
+              5.769,
+              -15.639
+            ]
+          ],
+          "widthMeters": 3.35
+        },
+        {
+          "id": "-56384_1",
+          "index": 1,
+          "width": 4.311,
+          "speed": 27.78,
+          "points": [
+            [
+              -14.871,
+              -179.543
+            ],
+            [
+              -1.053,
+              -40.713
+            ],
+            [
+              -0.404,
+              -34.206
+            ],
+            [
+              2.736,
+              -15.159
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-56907",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-56907_0",
+          "index": 0,
+          "width": 4.311,
+          "speed": 22.22,
+          "points": [
+            [
+              180.158,
+              -0.315
+            ],
+            [
+              49.335,
+              4.719
+            ],
+            [
+              18.477,
+              4.948
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-56915",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-56915_0",
+          "index": 0,
+          "width": 4.311,
+          "speed": 22.22,
+          "points": [
+            [
+              18.005,
+              -7.03
+            ],
+            [
+              31.03,
+              -7.375
+            ],
+            [
+              33.775,
+              -7.478
+            ],
+            [
+              179.714,
+              -12.642
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-57217",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-57217_0",
+          "index": 0,
+          "width": 4.311,
+          "speed": 27.78,
+          "points": [
+            [
+              5.805,
+              180.065
+            ],
+            [
+              -9.904,
+              18.904
+            ]
+          ],
+          "widthMeters": 3.35
+        },
+        {
+          "id": "-57217_1",
+          "index": 1,
+          "width": 4.311,
+          "speed": 27.78,
+          "points": [
+            [
+              8.879,
+              179.939
+            ],
+            [
+              -6.843,
+              18.625
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-57218",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-57218_0",
+          "index": 0,
+          "width": 4.311,
+          "speed": 27.78,
+          "points": [
+            [
+              -13.063,
+              -14.11
+            ],
+            [
+              -28.755,
+              -177.849
+            ]
+          ],
+          "widthMeters": 3.35
+        },
+        {
+          "id": "-57218_1",
+          "index": 1,
+          "width": 4.311,
+          "speed": 27.78,
+          "points": [
+            [
+              -10.004,
+              -14.376
+            ],
+            [
+              -25.715,
+              -178.314
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-manual_demo1_missing_arm",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-manual_demo1_missing_arm_0",
+          "index": 0,
+          "width": 4.697,
+          "speed": 13.89,
+          "points": [
+            [
+              -180.039,
+              6.552
+            ],
+            [
+              -17.317,
+              -3.532
+            ]
+          ],
+          "widthMeters": 3.65
+        }
+      ]
+    },
+    {
+      "id": "manual_demo1_missing_arm",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "manual_demo1_missing_arm_0",
+          "index": 0,
+          "width": 4.697,
+          "speed": 13.89,
+          "points": [
+            [
+              -16.714,
+              11.004
+            ],
+            [
+              -179.373,
+              16.797
+            ]
+          ],
+          "widthMeters": 3.65
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "tlsId": "4427",
+      "linkIndex": 0,
+      "fromEdge": "-56384",
+      "fromLane": 0,
+      "toEdge": "-56915",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "right"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 1,
+      "fromEdge": "-56384",
+      "fromLane": 0,
+      "toEdge": "-56371",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 2,
+      "fromEdge": "-56384",
+      "fromLane": 1,
+      "toEdge": "-56371",
+      "toLane": 1,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 3,
+      "fromEdge": "-56384",
+      "fromLane": 1,
+      "toEdge": "manual_demo1_missing_arm",
+      "toLane": 0,
+      "direction": "l",
+      "directionLabel": "left"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 4,
+      "fromEdge": "-manual_demo1_missing_arm",
+      "fromLane": 0,
+      "toEdge": "-57218",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "right"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 5,
+      "fromEdge": "-manual_demo1_missing_arm",
+      "fromLane": 0,
+      "toEdge": "-56915",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 6,
+      "fromEdge": "-manual_demo1_missing_arm",
+      "fromLane": 0,
+      "toEdge": "-56371",
+      "toLane": 1,
+      "direction": "l",
+      "directionLabel": "left"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 7,
+      "fromEdge": "-57217",
+      "fromLane": 0,
+      "toEdge": "manual_demo1_missing_arm",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "right"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 8,
+      "fromEdge": "-57217",
+      "fromLane": 0,
+      "toEdge": "-57218",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 9,
+      "fromEdge": "-57217",
+      "fromLane": 1,
+      "toEdge": "-57218",
+      "toLane": 1,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 10,
+      "fromEdge": "-57217",
+      "fromLane": 1,
+      "toEdge": "-56915",
+      "toLane": 0,
+      "direction": "l",
+      "directionLabel": "left"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 11,
+      "fromEdge": "-56907",
+      "fromLane": 0,
+      "toEdge": "-56371",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "right"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 12,
+      "fromEdge": "-56907",
+      "fromLane": 0,
+      "toEdge": "manual_demo1_missing_arm",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "4427",
+      "linkIndex": 13,
+      "fromEdge": "-56907",
+      "fromLane": 0,
+      "toEdge": "-57218",
+      "toLane": 1,
+      "direction": "l",
+      "directionLabel": "left"
+    }
+  ],
+  "phases": [
+    {
+      "tlsId": "4427",
+      "index": 0,
+      "durationSeconds": 39,
+      "state": "GGGgrrrGGGgrrr",
+      "label": "SUMO phase 1"
+    },
+    {
+      "tlsId": "4427",
+      "index": 1,
+      "durationSeconds": 6,
+      "state": "yyyyrrryyyyrrr",
+      "label": "SUMO phase 2"
+    },
+    {
+      "tlsId": "4427",
+      "index": 2,
+      "durationSeconds": 39,
+      "state": "rrrrGGgrrrrGGg",
+      "label": "SUMO phase 3"
+    },
+    {
+      "tlsId": "4427",
+      "index": 3,
+      "durationSeconds": 6,
+      "state": "rrrryyyrrrryyy",
+      "label": "SUMO phase 4"
+    }
+  ],
+  "phaseTemplates": {
+    "1": {
+      "4427": {
+        "green": "grrrgGrgrrrgGr",
+        "yellow": "grrrgyrgrrrgyr",
+        "clearance": "grrrgrrgrrrgrr"
+      }
+    },
+    "2": {
+      "4427": {
+        "green": "grrrgrGgrrrgrG",
+        "yellow": "grrrgrygrrrgry",
+        "clearance": "grrrgrrgrrrgrr"
+      }
+    },
+    "3": {
+      "4427": {
+        "green": "gGGrgrrgGGrgrr",
+        "yellow": "gyyrgrrgyyrgrr",
+        "clearance": "grrrgrrgrrrgrr"
+      }
+    },
+    "4": {
+      "4427": {
+        "green": "grrGgrrgrrGgrr",
+        "yellow": "grrygrrgrrygrr",
+        "clearance": "grrrgrrgrrrgrr"
+      }
+    }
+  },
+  "signalGroups": [
+    {
+      "tlsId": "4427",
+      "laneId": "-56384_0",
+      "linkIndexes": [
+        0,
+        1
+      ]
+    },
+    {
+      "tlsId": "4427",
+      "laneId": "-56384_1",
+      "linkIndexes": [
+        2,
+        3
+      ]
+    },
+    {
+      "tlsId": "4427",
+      "laneId": "-manual_demo1_missing_arm_0",
+      "linkIndexes": [
+        4,
+        5,
+        6
+      ]
+    },
+    {
+      "tlsId": "4427",
+      "laneId": "-57217_0",
+      "linkIndexes": [
+        7,
+        8
+      ]
+    },
+    {
+      "tlsId": "4427",
+      "laneId": "-57217_1",
+      "linkIndexes": [
+        9,
+        10
+      ]
+    },
+    {
+      "tlsId": "4427",
+      "laneId": "-56907_0",
+      "linkIndexes": [
+        11,
+        12,
+        13
+      ]
+    }
+  ]
+}

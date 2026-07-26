@@ -4,6 +4,7 @@ import { DISTURBANCE_CHOICE_OPTIONS, FLOW_SCALE_SELECT_OPTIONS, SCENARIO_MODE_OP
 import { DASHBOARD_CONTROL_MODES } from '../../constants/simulationOptions'
 import { useCompactScenarioConfig } from '../../composables/useCompactScenarioConfig'
 import { useCatalog } from '../../composables/useCatalog'
+import { useActiveIntersectionScene } from '../../composables/useActiveIntersectionScene'
 import LeftSidebarFrameSvg from './LeftSidebarFrameSvg.vue'
 import LeftSidebarBottomChrome from './LeftSidebarBottomChrome.vue'
 import LeftSidebarSectionHeader from './LeftSidebarSectionHeader.vue'
@@ -13,7 +14,8 @@ import type { SimulationSnapshot, SimulationState, StartSimulationRequest } from
 const props = defineProps<{ sessionId: string; state: SimulationState | null; snapshot: SimulationSnapshot | null; starting: boolean; controlling: boolean; startError: string | null; controlError: string | null; healthReady: boolean; healthLabel: string }>()
 const emit = defineEmits<{ start: [payload: StartSimulationRequest]; stop: [] }>()
 
-const { intersection, periods, error: catalogError } = useCatalog()
+const { activeIntersectionId } = useActiveIntersectionScene()
+const { intersection, periods, error: catalogError } = useCatalog(activeIntersectionId)
 const { config, configNote, availableTimeOptions, buildPayload, applyImportedConfig, buildExport } = useCompactScenarioConfig(intersection, periods)
 const fileInput = ref<HTMLInputElement | null>(null)
 const feedback = ref<string | null>(null)

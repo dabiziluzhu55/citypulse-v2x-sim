@@ -22,6 +22,7 @@ export class BaiduDetailedRoadRenderer {
   private readonly crosswalk: mapvthree.Polygon
   private readonly projector: RoadCoordinateProjector
   private currentKey: string | null = null
+  private realisticDetailActive = false
 
   constructor(
     engine: mapvthree.Engine,
@@ -108,6 +109,21 @@ export class BaiduDetailedRoadRenderer {
     this.stopLine.dataSource = sources.stopLines
     this.crosswalk.dataSource = sources.crosswalkStripes
     this.currentKey = nextKey
+    this.engine.requestRender()
+  }
+
+  setRealisticDetailActive(active: boolean): void {
+    if (this.realisticDetailActive === active) return
+    this.realisticDetailActive = active
+    ;(this.shoulder as unknown as { visible: boolean }).visible = !active
+    ;(this.mainSurface as unknown as { visible: boolean }).visible = !active
+    ;(this.secondarySurface as unknown as { visible: boolean }).visible = !active
+    ;(this.outerBoundary as unknown as { visible: boolean }).visible = !active
+    ;(this.median as unknown as { visible: boolean }).visible = !active
+    ;(this.junctionSurface as unknown as { visible: boolean }).visible = !active
+    ;(this.laneDivider as unknown as { visible: boolean }).visible = !active
+    ;(this.stopLine as unknown as { visible: boolean }).visible = !active
+    ;(this.crosswalk as unknown as { visible: boolean }).visible = !active
     this.engine.requestRender()
   }
 

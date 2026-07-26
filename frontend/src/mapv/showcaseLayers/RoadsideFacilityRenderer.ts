@@ -172,6 +172,12 @@ export class RoadsideFacilityRenderer {
     this.engine.requestRender()
   }
 
+  setRealisticDetailActive(active: boolean): void {
+    if (!this.group) return
+    this.group.visible = !active
+    this.engine.requestRender()
+  }
+
   destroy(): void {
     this.clear()
   }

@@ -8,6 +8,8 @@ import { useOptionalAppMapView } from '../composables/useAppMapView'
 import { useSimulationStore } from '../composables/useSimulationStore'
 import { useSnapshotMetrics } from '../composables/useSnapshotMetrics'
 import { useHealth } from '../composables/useHealth'
+import { useCatalog } from '../composables/useCatalog'
+import { useActiveIntersectionScene } from '../composables/useActiveIntersectionScene'
 import { CESIUM_CAMERA_PRESETS } from '../constants/mapDefaults'
 import type { CesiumCameraPresetId, MapDimension } from '../types/map'
 import type { StartSimulationRequest } from '../types/simulation'
@@ -16,6 +18,12 @@ const mapView = useOptionalAppMapView()
 const mapDimension = computed(() => mapView?.dimension.value ?? '2d')
 const cameraPreset = computed(() => mapView?.cameraPreset.value ?? 'overview')
 const cameraPresets = CESIUM_CAMERA_PRESETS
+const { activeIntersectionId, sceneStatus, selectIntersection } = useActiveIntersectionScene()
+useCatalog(activeIntersectionId)
+const localIntersectionOptions = Array.from({ length: 20 }, (_, index) => ({
+  intersection_id: `demo_${index + 1}`,
+}))
+const intersectionOptions = localIntersectionOptions
 
 function setMapDimension(next: MapDimension) {
   mapView?.setDimension(next)
@@ -59,6 +67,10 @@ onBeforeUnmount(() => {
 })
 
 async function handleStart(payload: StartSimulationRequest) {
+  const intersectionId = payload.intersection_ids[0]
+  if (intersectionId) selectIntersection(intersectionId)
+  mapView?.setCameraPreset('intersection')
+  mapView?.setDimension('3d')
   await launchRun(payload)
 }
 
@@ -70,6 +82,23 @@ async function handleStop() {
 <template>
   <section class="dashboard-page">
     <div v-if="mapView" class="map-view-controls">
+      <label class="intersection-picker">
+        <span class="map-dimension-toggle__label">路口</span>
+        <select
+          :value="activeIntersectionId"
+          aria-label="选择高精度路口"
+          @change="selectIntersection(($event.target as HTMLSelectElement).value)"
+        >
+          <option
+            v-for="item in intersectionOptions"
+            :key="item.intersection_id"
+            :value="item.intersection_id"
+          >
+            {{ item.intersection_id }}
+          </option>
+        </select>
+        <i :class="`is-${sceneStatus}`" aria-hidden="true" />
+      </label>
       <div class="map-dimension-toggle">
         <span class="map-dimension-toggle__label">地图视图</span>
         <button
@@ -242,7 +271,8 @@ async function handleStop() {
 }
 
 .map-dimension-toggle,
-.map-camera-toggle {
+.map-camera-toggle,
+.intersection-picker {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -251,6 +281,41 @@ async function handleStop() {
   border-radius: 999px;
   background: rgba(2, 10, 24, 0.82);
   backdrop-filter: blur(10px);
+}
+
+.intersection-picker select {
+  min-width: 92px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #d8f5ff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.intersection-picker select option {
+  background: #07182a;
+  color: #d8f5ff;
+}
+
+.intersection-picker i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7f8d99;
+}
+
+.intersection-picker i.is-loading {
+  background: #e8b94c;
+}
+
+.intersection-picker i.is-ready {
+  background: #3ce69a;
+  box-shadow: 0 0 7px rgba(60, 230, 154, 0.72);
+}
+
+.intersection-picker i.is-error {
+  background: #ff6b6b;
 }
 
 .map-camera-toggle {

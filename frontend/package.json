@@ -12,12 +12,14 @@
     "generate:focused-buildings": "node scripts/focus-building-tileset.mjs",
     "generate:scene-facilities": "node scripts/generate-scene-facilities.mjs",
     "generate:scene-vegetation": "node scripts/generate-scene-vegetation.mjs",
+    "generate:intersection-demo": "node scripts/generate-realistic-intersection.mjs",
     "generate:showcase-landcover": "node scripts/generate-showcase-landcover.mjs",
     "test:roadside-facilities": "node --test scripts/roadside-facilities.test.mjs",
     "test:showcase-layers": "node --test scripts/showcase-layers.test.mjs",
     "test:vegetation": "node --test scripts/vegetation.test.mjs",
     "test:vehicles": "node --test scripts/vehicle-visibility.test.mjs",
     "test:roads": "node --test scripts/road-geometry.test.mjs scripts/road-tileset.test.mjs",
+    "test:intersection-demo": "node --test scripts/realistic-intersection.test.mjs",
     "test:buildings": "node --test scripts/building-tileset.test.mjs"
   },
   "dependencies": {
@@ -34,6 +36,7 @@
     "@types/node": "^24.0.13",
     "@types/three": "^0.180.0",
     "@vitejs/plugin-vue": "^6.0.0",
+    "fast-xml-parser": "^5.10.1",
     "rollup-plugin-copy": "^3.5.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",

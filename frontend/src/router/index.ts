@@ -17,5 +17,11 @@ export const router = createRouter({
       component: Amap3DTestPage,
       meta: { title: '高德 3D 验证', standalone: true },
     },
+    {
+      path: '/intersection-rebuild-demo',
+      name: 'intersection-rebuild-demo',
+      component: () => import('../pages/IntersectionRebuildDemo.vue'),
+      meta: { title: 'demo_2 真实路口重建', standalone: true },
+    },
   ],
 })
