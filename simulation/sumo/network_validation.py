@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
@@ -65,6 +66,9 @@ def validate_source_compatibility(
 
     override_edge_contexts: DefaultDict[str, Set[str]] = defaultdict(set)
     override_pair_contexts: DefaultDict[Tuple[str, str], Set[str]] = defaultdict(set)
+    endpoint_extensions = []
+    required_endpoint_edges: Set[str] = set()
+    required_endpoint_pairs: Set[Tuple[str, str]] = set()
     for intersection_id in selected_by_id:
         demand = demands.intersections[intersection_id]
         for period in demand.periods.values():
@@ -81,6 +85,23 @@ def validate_source_compatibility(
                             override_edge_contexts[edge_id].add(context)
                         for pair in zip(route.edges, route.edges[1:]):
                             override_pair_contexts[pair].add(context)
+        configured = demand.route_endpoint_extensions
+        for direction in ("upstream", "downstream"):
+            for near_edge, far_edge in getattr(configured, direction).items():
+                context = (
+                    f"{intersection_id}/route_endpoint_extensions/{direction}/"
+                    f"{near_edge}"
+                )
+                pair = (
+                    (far_edge, near_edge)
+                    if direction == "upstream"
+                    else (near_edge, far_edge)
+                )
+                endpoint_extensions.append(
+                    (intersection_id, direction, near_edge, far_edge, context)
+                )
+                required_endpoint_edges.update((near_edge, far_edge))
+                required_endpoint_pairs.add(pair)
 
     required_override_edges = set(override_edge_contexts)
     required_override_pairs = set(override_pair_contexts)
@@ -89,19 +110,49 @@ def validate_source_compatibility(
     incoming_targets: Dict[str, str] = {}
     found_override_edges: Set[str] = set()
     found_override_pairs: Set[Tuple[str, str]] = set()
+    endpoint_edge_nodes: Dict[str, Tuple[str, str]] = {}
+    positive_endpoint_edges: Set[str] = set()
+    endpoint_pair_directions: DefaultDict[Tuple[str, str], Set[str]] = defaultdict(set)
+    traffic_light_junctions: Set[str] = set()
     incoming_connections: Dict[str, List[Mapping[str, str]]] = defaultdict(list)
+    current_edge_id = ""
     try:
-        for _, elem in ET.iterparse(source_net, events=("end",)):
+        for event, elem in ET.iterparse(source_net, events=("start", "end")):
+            if event == "start" and elem.tag == "edge":
+                edge_id = elem.get("id", "")
+                current_edge_id = (
+                    edge_id
+                    if edge_id and elem.get("function") != "internal"
+                    else ""
+                )
+                if current_edge_id in incoming_owner:
+                    incoming_targets[current_edge_id] = elem.get("to", "")
+                if current_edge_id in required_override_edges:
+                    found_override_edges.add(current_edge_id)
+                if current_edge_id in required_endpoint_edges:
+                    endpoint_edge_nodes[current_edge_id] = (
+                        elem.get("from", ""),
+                        elem.get("to", ""),
+                    )
+                continue
+            if event == "start" and elem.tag == "lane":
+                if current_edge_id in required_endpoint_edges:
+                    try:
+                        length = float(elem.get("length", ""))
+                    except ValueError:
+                        length = 0.0
+                    if math.isfinite(length) and length > 0:
+                        positive_endpoint_edges.add(current_edge_id)
+                continue
+            if event == "start":
+                continue
+
             if elem.tag == "junction":
                 junction_id = elem.get("id", "")
                 if junction_id in junction_owner:
                     found_junctions.add(junction_id)
-            elif elem.tag == "edge" and elem.get("function") != "internal":
-                edge_id = elem.get("id", "")
-                if edge_id in incoming_owner:
-                    incoming_targets[edge_id] = elem.get("to", "")
-                if edge_id in required_override_edges:
-                    found_override_edges.add(edge_id)
+                if elem.get("type") == "traffic_light":
+                    traffic_light_junctions.add(junction_id)
             elif elem.tag == "connection":
                 from_edge = elem.get("from", "")
                 to_edge = elem.get("to", "")
@@ -110,6 +161,10 @@ def validate_source_compatibility(
                 pair = (from_edge, to_edge)
                 if pair in required_override_pairs:
                     found_override_pairs.add(pair)
+                if pair in required_endpoint_pairs:
+                    endpoint_pair_directions[pair].add(elem.get("dir", ""))
+            elif elem.tag == "edge":
+                current_edge_id = ""
             elem.clear()
     except (FileNotFoundError, ET.ParseError) as exc:
         raise SignalConfigurationError(
@@ -160,6 +215,48 @@ def validate_source_compatibility(
                 "are not connected in the source network."
             )
 
+    protected_junctions = set(junction_owner) | traffic_light_junctions
+    for intersection_id, direction, near_edge, far_edge, context in endpoint_extensions:
+        missing_edges = [
+            edge_id
+            for edge_id in (near_edge, far_edge)
+            if edge_id not in endpoint_edge_nodes
+        ]
+        if missing_edges:
+            problems.append(
+                f"{context}: endpoint extension edges are missing from the source "
+                f"network: {missing_edges}."
+            )
+            continue
+        invalid_lengths = [
+            edge_id
+            for edge_id in (near_edge, far_edge)
+            if edge_id not in positive_endpoint_edges
+        ]
+        if invalid_lengths:
+            problems.append(
+                f"{context}: endpoint extension edges have no positive lane length: "
+                f"{invalid_lengths}."
+            )
+        pair = (
+            (far_edge, near_edge)
+            if direction == "upstream"
+            else (near_edge, far_edge)
+        )
+        directions = endpoint_pair_directions[pair]
+        if "s" not in directions:
+            problems.append(
+                f"{context}: edges {pair[0]!r} and {pair[1]!r} must have a "
+                f"straight connection; found directions {sorted(directions)}."
+            )
+        endpoint_index = 0 if direction == "upstream" else 1
+        junction_id = endpoint_edge_nodes[near_edge][endpoint_index]
+        if junction_id in protected_junctions:
+            problems.append(
+                f"{context}: extension would cross protected junction "
+                f"{junction_id!r}."
+            )
+
     routes_by_intersection: Dict[
         str, Dict[Tuple[str, str], Set[Tuple[str, str]]]
     ] = {}
@@ -194,6 +291,16 @@ def validate_source_compatibility(
 
     checked_movements = 0
     override_routes = 0
+    count_endpoint_edges = {
+        intersection_id: {"upstream": set(), "downstream": set()}
+        for intersection_id in selected_by_id
+    }
+
+    def record_count_path(intersection_id: str, edges: Sequence[str]) -> None:
+        if edges:
+            count_endpoint_edges[intersection_id]["upstream"].add(edges[0])
+            count_endpoint_edges[intersection_id]["downstream"].add(edges[-1])
+
     for intersection_id in selected_by_id:
         config = selected_by_id[intersection_id]
         demand = demands.intersections[intersection_id]
@@ -226,6 +333,8 @@ def validate_source_compatibility(
                 )
                 if overrides:
                     override_routes += len(overrides)
+                    for route in overrides:
+                        record_count_path(intersection_id, route.edges)
                     continue
                 splits = period.route_splits.get(official_approach, {}).get(
                     official_movement, ()
@@ -245,6 +354,9 @@ def validate_source_compatibility(
                             f"{sorted(configured_targets)} do not match SUMO routes "
                             f"{all_route_pairs}."
                         )
+                    else:
+                        for route_pair in routes_by_target.values():
+                            record_count_path(intersection_id, route_pair)
                     continue
                 route_pairs = sorted(
                     implicit_routes.get(
@@ -257,6 +369,15 @@ def validate_source_compatibility(
                         f"{approach.sumo_approach}/{sumo_movement}, found "
                         f"{route_pairs}."
                     )
+                else:
+                    record_count_path(intersection_id, route_pairs[0])
+
+    for intersection_id, direction, near_edge, _far_edge, context in endpoint_extensions:
+        if near_edge not in count_endpoint_edges[intersection_id][direction]:
+            problems.append(
+                f"{context}: near edge is not a {direction} endpoint of an "
+                "official count path."
+            )
 
     if problems:
         details = "\n".join(f"- {problem}" for problem in problems)

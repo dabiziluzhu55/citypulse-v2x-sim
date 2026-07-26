@@ -35,7 +35,7 @@ class RealNetworkCompatibilityTests(unittest.TestCase):
         self.assertEqual(report["intersections"], 20)
         self.assertEqual(report["periods"], 60)
         self.assertEqual(report["nonzero_movements"], 591)
-        self.assertEqual(report["override_routes"], 12)
+        self.assertEqual(report["override_routes"], 18)
 
     def test_demo_8_real_tls_controls_only_central_junction_movements(self):
         configuration = load_signal_configuration(MAPPING, PLANS, TOPOLOGY)
@@ -112,10 +112,15 @@ class RealNetworkCompatibilityTests(unittest.TestCase):
                     build(["demo_8"], demand_path=demand_path)
 
         message = str(caught.exception)
-        self.assertIn("failed with 6 issue(s)", message)
+        self.assertIn("failed with 10 issue(s)", message)
         for period_id in ("morning_peak", "off_peak", "evening_peak"):
             self.assertIn(f"demo_8/{period_id}/east/right", message)
             self.assertIn(f"demo_8/{period_id}/south/right", message)
+        for edge_id in ("-54807.1099", "-57109.1195", "-57125.103", "-57236.80"):
+            self.assertIn(
+                f"demo_8/route_endpoint_extensions/", message
+            )
+            self.assertIn(edge_id, message)
         binary.assert_not_called()
         reset.assert_not_called()
 
@@ -230,7 +235,12 @@ class SyntheticNetworkCompatibilityTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def write_demands(self, route_overrides=None, route_splits=None):
+    def write_demands(
+        self,
+        route_overrides=None,
+        route_splits=None,
+        route_endpoint_extensions=None,
+    ):
         period = {
             "period_id": "period",
             "label": "test",
@@ -249,6 +259,18 @@ class SyntheticNetworkCompatibilityTests(unittest.TestCase):
             period["route_overrides"] = route_overrides
         if route_splits is not None:
             period["route_splits"] = route_splits
+        intersection = {
+            "approaches": {
+                "east": {
+                    "label": "east",
+                    "sumo_approach": "east",
+                    "movements": {"through": "through"},
+                }
+            },
+            "periods": [period],
+        }
+        if route_endpoint_extensions is not None:
+            intersection["route_endpoint_extensions"] = route_endpoint_extensions
         self.demands.write_text(
             json.dumps(
                 {
@@ -261,33 +283,41 @@ class SyntheticNetworkCompatibilityTests(unittest.TestCase):
                         "shares": {"passenger": 1.0},
                     },
                     "intersections": {
-                        "demo_x": {
-                            "approaches": {
-                                "east": {
-                                    "label": "east",
-                                    "sumo_approach": "east",
-                                    "movements": {"through": "through"},
-                                }
-                            },
-                            "periods": [period],
-                        }
+                        "demo_x": intersection
                     },
                 }
             ),
             encoding="utf-8",
         )
 
-    def write_network(self, connections, incoming_edge="in", incoming_target="J"):
+    def write_network(
+        self,
+        connections,
+        incoming_edge="in",
+        incoming_target="J",
+        connection_directions=None,
+        extra_junctions=(),
+        edge_nodes=None,
+    ):
+        connection_directions = connection_directions or {}
+        edge_nodes = edge_nodes or {}
         edges = {incoming_edge, "out", "out2", "out3"}
         edges.update(edge for pair in connections for edge in pair)
         edge_xml = []
         for edge_id in sorted(edges):
-            target = incoming_target if edge_id == incoming_edge else f"T_{edge_id}"
+            default_nodes = (
+                f"F_{edge_id}",
+                incoming_target if edge_id == incoming_edge else f"T_{edge_id}",
+            )
+            from_node, target = edge_nodes.get(edge_id, default_nodes)
             edge_xml.append(
-                f'<edge id="{edge_id}" from="F_{edge_id}" to="{target}"/>'
+                f'<edge id="{edge_id}" from="{from_node}" to="{target}">'
+                f'<lane id="{edge_id}_0" index="0" length="100"/>'
+                "</edge>"
             )
         connection_xml = [
-            f'<connection from="{first}" to="{second}" dir="s"/>'
+            f'<connection from="{first}" to="{second}" '
+            f'dir="{connection_directions.get((first, second), "s")}"/>'
             for first, second in connections
         ]
         junctions = ['<junction id="J" type="priority"/>']
@@ -295,6 +325,10 @@ class SyntheticNetworkCompatibilityTests(unittest.TestCase):
             junctions.append(
                 f'<junction id="{incoming_target}" type="priority"/>'
             )
+        junctions.extend(
+            f'<junction id="{junction_id}" type="{junction_type}"/>'
+            for junction_id, junction_type in extra_junctions
+        )
         self.network.write_text(
             "<net>"
             + "".join(edge_xml)
@@ -404,6 +438,96 @@ class SyntheticNetworkCompatibilityTests(unittest.TestCase):
         with self.assertRaisesRegex(
             TrafficDemandError,
             "configured split targets.*out3.*do not match SUMO routes",
+        ):
+            self.validate()
+
+    def test_route_endpoint_extension_accepts_a_valid_straight_predecessor(self):
+        self.write_network(
+            [("in", "out"), ("far", "in")],
+            edge_nodes={"far": ("source", "F_in"), "in": ("F_in", "J")},
+        )
+        self.write_demands(
+            route_endpoint_extensions={
+                "upstream": {"in": "far"},
+                "downstream": {},
+            }
+        )
+        report = self.validate()
+        self.assertEqual(report["intersections"], 1)
+
+    def test_route_endpoint_extension_rejects_missing_or_nonstraight_edges(self):
+        cases = (
+            (
+                [("in", "out")],
+                {},
+                "missing",
+                "endpoint extension edges are missing",
+            ),
+            (
+                [("in", "out"), ("far", "in")],
+                {("far", "in"): "l"},
+                "far",
+                "must have a straight connection",
+            ),
+            (
+                [("in", "out"), ("in", "far")],
+                {},
+                "far",
+                "must have a straight connection",
+            ),
+        )
+        for connections, directions, far_edge, message in cases:
+            with self.subTest(message=message, connections=connections):
+                self.write_network(
+                    connections,
+                    connection_directions=directions,
+                    edge_nodes={
+                        far_edge: ("source", "F_in"),
+                        "in": ("F_in", "J"),
+                    },
+                )
+                self.write_demands(
+                    route_endpoint_extensions={
+                        "upstream": {"in": far_edge},
+                        "downstream": {},
+                    }
+                )
+                with self.assertRaisesRegex(TrafficDemandError, message):
+                    self.validate()
+
+    def test_route_endpoint_extension_rejects_a_protected_junction(self):
+        self.write_network(
+            [("in", "out"), ("far", "in")],
+            edge_nodes={"far": ("source", "F_in"), "in": ("F_in", "J")},
+            extra_junctions=(("F_in", "traffic_light"),),
+        )
+        self.write_demands(
+            route_endpoint_extensions={
+                "upstream": {"in": "far"},
+                "downstream": {},
+            }
+        )
+        with self.assertRaisesRegex(
+            TrafficDemandError, "would cross protected junction 'F_in'"
+        ):
+            self.validate()
+
+    def test_route_endpoint_extension_near_edge_must_be_an_official_endpoint(self):
+        self.write_network(
+            [("in", "out"), ("remote", "other")],
+            edge_nodes={
+                "remote": ("source", "F_other"),
+                "other": ("F_other", "sink"),
+            },
+        )
+        self.write_demands(
+            route_endpoint_extensions={
+                "upstream": {"other": "remote"},
+                "downstream": {},
+            }
+        )
+        with self.assertRaisesRegex(
+            TrafficDemandError, "near edge is not a upstream endpoint"
         ):
             self.validate()
 

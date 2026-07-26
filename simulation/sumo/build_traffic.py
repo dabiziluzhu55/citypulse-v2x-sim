@@ -22,6 +22,7 @@ from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 from .traffic import (
     ApproachDemandMapping,
     DemandPeriod,
+    RouteEndpointExtensions,
     RoutePath,
     RouteSplit,
     TrafficDemandError,
@@ -82,6 +83,7 @@ class NetworkRouteMetadata:
     u_turn_pairs: frozenset[Tuple[str, str]]
     upstream_extensions: Mapping[str, str]
     downstream_extensions: Mapping[str, str]
+    configured_extensions: Mapping[str, RouteEndpointExtensions]
 
 
 @dataclass(frozen=True)
@@ -670,6 +672,7 @@ def _inspect_route_network(
     network_path: Path,
     locations: Sequence[CountLocation],
     official_junction_ids: Sequence[str],
+    configured_extensions: Mapping[str, RouteEndpointExtensions] | None = None,
 ) -> NetworkRouteMetadata:
     try:
         root = ET.parse(network_path).getroot()
@@ -731,12 +734,13 @@ def _inspect_route_network(
         predecessors[target][source].add(direction)
         successors[source][target].add(direction)
 
-    protected_junctions = {str(item) for item in official_junction_ids}
-    protected_junctions.update(
+    network_protected_junctions = {str(item) for item in official_junction_ids}
+    network_protected_junctions.update(
         str(junction.get("id"))
         for junction in root.findall("junction")
         if junction.get("id") and junction.get("type") == "traffic_light"
     )
+    protected_junctions = set(network_protected_junctions)
     for location in locations:
         incoming_endpoints = endpoints.get(location.edges[0])
         outgoing_endpoints = endpoints.get(location.edges[-1])
@@ -787,11 +791,99 @@ def _inspect_route_network(
                 )
             downstream_extensions[near_edge] = far_edge
 
+    configured_extensions = configured_extensions or {}
+    endpoints_by_intersection = {
+        intersection_id: {
+            "upstream": {
+                location.edges[0]
+                for location in locations
+                if location.intersection_id == intersection_id
+            },
+            "downstream": {
+                location.edges[-1]
+                for location in locations
+                if location.intersection_id == intersection_id
+            },
+        }
+        for intersection_id in configured_extensions
+    }
+    merged_by_direction = {
+        "upstream": upstream_extensions,
+        "downstream": downstream_extensions,
+    }
+    adjacency_by_direction = {
+        "upstream": predecessors,
+        "downstream": successors,
+    }
+    protected_endpoint_index = {"upstream": 0, "downstream": 1}
+    for intersection_id, extensions in sorted(configured_extensions.items()):
+        for direction in ("upstream", "downstream"):
+            mapping = getattr(extensions, direction)
+            valid_near_edges = endpoints_by_intersection[intersection_id][direction]
+            merged = merged_by_direction[direction]
+            adjacency = adjacency_by_direction[direction]
+            endpoint_index = protected_endpoint_index[direction]
+            for near_edge, far_edge in sorted(mapping.items()):
+                context = (
+                    f"{intersection_id}/route_endpoint_extensions/{direction}/"
+                    f"{near_edge}"
+                )
+                if near_edge not in valid_near_edges:
+                    raise TrafficDemandError(
+                        f"{context}: near edge is not a {direction} endpoint of an "
+                        "official count path."
+                    )
+                missing_edges = [
+                    edge_id
+                    for edge_id in (near_edge, far_edge)
+                    if edge_id not in endpoints
+                ]
+                if missing_edges:
+                    raise TrafficDemandError(
+                        f"{context}: endpoint extension edges are missing from the "
+                        f"generated SUMO network: {missing_edges}."
+                    )
+                invalid_lengths = [
+                    edge_id
+                    for edge_id in (near_edge, far_edge)
+                    if edge_id not in edge_lengths
+                ]
+                if invalid_lengths:
+                    raise TrafficDemandError(
+                        f"{context}: endpoint extension edges have no positive lane "
+                        f"length: {invalid_lengths}."
+                    )
+                junction_id = endpoints[near_edge][endpoint_index]
+                if junction_id in network_protected_junctions:
+                    raise TrafficDemandError(
+                        f"{context}: extension would cross protected junction "
+                        f"{junction_id!r}."
+                    )
+                directions = adjacency[near_edge].get(far_edge, set())
+                if "s" not in directions:
+                    first, second = (
+                        (far_edge, near_edge)
+                        if direction == "upstream"
+                        else (near_edge, far_edge)
+                    )
+                    raise TrafficDemandError(
+                        f"{context}: edges {first!r} and {second!r} must have a "
+                        f"straight connection; found directions {sorted(directions)}."
+                    )
+                existing = merged.get(near_edge)
+                if existing is not None and existing != far_edge:
+                    raise TrafficDemandError(
+                        f"{context}: conflicts with detected extension "
+                        f"{near_edge!r}->{existing!r}."
+                    )
+                merged[near_edge] = far_edge
+
     return NetworkRouteMetadata(
         edge_lengths=edge_lengths,
         u_turn_pairs=u_turn_pairs,
         upstream_extensions=upstream_extensions,
         downstream_extensions=downstream_extensions,
+        configured_extensions=configured_extensions,
     )
 
 
@@ -1453,10 +1545,18 @@ def build_traffic_scenarios(
             "junction_ids", ()
         )
     )
+    configured_extensions = {}
+    for intersection_id in requested:
+        extensions = configuration.intersections[
+            intersection_id
+        ].route_endpoint_extensions
+        if extensions.upstream or extensions.downstream:
+            configured_extensions[intersection_id] = extensions
     network_metadata = _inspect_route_network(
         layout.network_file,
         tuple(compiled.locations.values()),
         official_junction_ids,
+        configured_extensions,
     )
     tools = _toolchain(tool_paths)
     class_targets = _class_targets(
@@ -1509,7 +1609,10 @@ def build_traffic_scenarios(
             for profile_id in profiles
         },
         "route_endpoint_policy": {
-            "strategy": "route_endpoint_midpoint_with_lane_expansion_extension",
+            "strategy": (
+                "route_endpoint_midpoint_with_lane_expansion_extension_and_"
+                "validated_overrides"
+            ),
             "fraction": 0.5,
             "upstream_extensions": dict(
                 sorted(network_metadata.upstream_extensions.items())
@@ -1517,6 +1620,15 @@ def build_traffic_scenarios(
             "downstream_extensions": dict(
                 sorted(network_metadata.downstream_extensions.items())
             ),
+            "configured_extensions": {
+                intersection_id: {
+                    "upstream": dict(sorted(extensions.upstream.items())),
+                    "downstream": dict(sorted(extensions.downstream.items())),
+                }
+                for intersection_id, extensions in sorted(
+                    network_metadata.configured_extensions.items()
+                )
+            },
         },
         "intersections": {
             intersection_id: {

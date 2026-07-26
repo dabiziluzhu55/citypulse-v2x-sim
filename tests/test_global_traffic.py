@@ -14,7 +14,7 @@ from simulation.sumo.build_traffic import (
     _validate_route_sampler,
     build_traffic_scenarios,
 )
-from simulation.sumo.traffic import load_traffic_demands
+from simulation.sumo.traffic import RouteEndpointExtensions, load_traffic_demands
 from simulation.sumo.traffic import TrafficDemandError
 from simulation.sumo.vehicle_profiles import VehicleProfileError, load_vehicle_profiles
 
@@ -427,6 +427,131 @@ class GlobalTrafficTests(unittest.TestCase):
         self.assertNotIn("-57582", metadata.upstream_extensions)
         self.assertNotIn("-46791.1195", metadata.downstream_extensions)
 
+    def test_real_network_applies_configured_endpoint_extensions_only_where_declared(self):
+        sumo_dir = ROOT / "data" / "maps" / "sumo"
+        configuration = load_traffic_demands(
+            sumo_dir / "official_traffic_demands.json"
+        )
+        configured = {
+            intersection_id: configuration.intersections[
+                intersection_id
+            ].route_endpoint_extensions
+            for intersection_id in ("demo_4", "demo_8", "demo_18")
+        }
+        locations = (
+            CountLocation("demo_1", "north", "through", ("-57217", "-56915")),
+            CountLocation("demo_4", "east", "left", ("-57186", "-57230")),
+            CountLocation(
+                "demo_4", "east", "right", ("-52650", "-57184", "-56735")
+            ),
+            CountLocation("demo_4", "west", "left", ("-50333", "-56733")),
+            CountLocation(
+                "demo_4", "west", "right", ("-50336", "-57185", "-57232")
+            ),
+            CountLocation("demo_4", "east", "through", ("-57186", "-56613")),
+            CountLocation("demo_4", "west", "through", ("-50333", "-50675")),
+            CountLocation("demo_8", "east", "left", ("-54807", "-57113")),
+            CountLocation(
+                "demo_8",
+                "east",
+                "right",
+                ("-54807.1099", "E14", "-57125.103"),
+            ),
+            CountLocation("demo_8", "west", "left", ("-57234", "-57125")),
+            CountLocation("demo_8", "north", "right", ("-57112", "-54810")),
+            CountLocation("demo_8", "south", "left", ("-57109", "-54810")),
+            CountLocation("demo_8", "west", "through", ("-57234", "-57236")),
+            CountLocation(
+                "demo_8",
+                "south",
+                "right",
+                ("-57109.1195", "E15", "-57236.80"),
+            ),
+            CountLocation("demo_18", "northwest", "through", ("-56004", "-56009")),
+            CountLocation("demo_18", "northeast", "through", ("-56830", "-56831")),
+            CountLocation("demo_18", "southeast", "through", ("-57004", "-57005")),
+            CountLocation("demo_18", "southwest", "through", ("-57077", "-57058")),
+            CountLocation("demo_18", "southwest", "right", ("E7", "-56009")),
+        )
+        mapping = json.loads(
+            (sumo_dir / "TotalMap_20.intersections.json").read_text(encoding="utf-8")
+        )
+        metadata = _inspect_route_network(
+            sumo_dir / "TotalMap_20.net.xml",
+            locations,
+            tuple(item["junction_id"] for item in mapping.values()),
+            configured,
+        )
+
+        for intersection_id, extensions in configured.items():
+            for near_edge, far_edge in extensions.upstream.items():
+                self.assertEqual(metadata.upstream_extensions[near_edge], far_edge)
+            for near_edge, far_edge in extensions.downstream.items():
+                self.assertEqual(metadata.downstream_extensions[near_edge], far_edge)
+            self.assertEqual(metadata.configured_extensions[intersection_id], extensions)
+        self.assertEqual(metadata.upstream_extensions["-57217"], "-57217.363")
+        self.assertNotIn("-57229", metadata.upstream_extensions)
+        self.assertNotIn("E7", metadata.upstream_extensions)
+
+    def test_configured_extensions_allow_equal_or_wider_remote_edges(self):
+        with tempfile.TemporaryDirectory() as directory:
+            network = Path(directory) / "network.net.xml"
+            network.write_text(
+                """<net>
+  <edge id="far_in" from="source" to="split_in">
+    <lane id="far_in_0" index="0" length="200"/>
+    <lane id="far_in_1" index="1" length="200"/>
+    <lane id="far_in_2" index="2" length="200"/>
+  </edge>
+  <edge id="near_in" from="split_in" to="J">
+    <lane id="near_in_0" index="0" length="100"/>
+    <lane id="near_in_1" index="1" length="100"/>
+  </edge>
+  <edge id="out" from="J" to="split_out">
+    <lane id="out_0" index="0" length="100"/>
+    <lane id="out_1" index="1" length="100"/>
+  </edge>
+  <edge id="far_out" from="split_out" to="sink">
+    <lane id="far_out_0" index="0" length="300"/>
+    <lane id="far_out_1" index="1" length="300"/>
+    <lane id="far_out_2" index="2" length="300"/>
+  </edge>
+  <junction id="J" type="priority"/>
+  <junction id="split_in" type="priority"/>
+  <junction id="split_out" type="priority"/>
+  <connection from="far_in" to="near_in" dir="s"/>
+  <connection from="far_in" to="near_in" dir="r"/>
+  <connection from="near_in" to="out" dir="s"/>
+  <connection from="out" to="far_out" dir="s"/>
+  <connection from="out" to="far_out" dir="r"/>
+</net>""",
+                encoding="utf-8",
+            )
+            locations = (
+                CountLocation("demo_x", "main", "through", ("near_in", "out")),
+                CountLocation(
+                    "demo_x",
+                    "auxiliary",
+                    "through",
+                    ("far_in", "near_in", "out", "far_out"),
+                ),
+            )
+            automatic = _inspect_route_network(network, locations, ("J",))
+            self.assertNotIn("near_in", automatic.upstream_extensions)
+            self.assertNotIn("out", automatic.downstream_extensions)
+
+            configured = {
+                "demo_x": RouteEndpointExtensions(
+                    upstream={"near_in": "far_in"},
+                    downstream={"out": "far_out"},
+                )
+            }
+            metadata = _inspect_route_network(
+                network, locations, ("J",), configured
+            )
+            self.assertEqual(metadata.upstream_extensions["near_in"], "far_in")
+            self.assertEqual(metadata.downstream_extensions["out"], "far_out")
+
     def test_legacy_route_sampler_without_no_sampling_is_supported(self):
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "routeSampler.py"
@@ -568,6 +693,14 @@ class GlobalTrafficTests(unittest.TestCase):
             )
             demand_path = root / "demands.json"
             _write_demand(demand_path)
+            raw_demand = json.loads(demand_path.read_text(encoding="utf-8"))
+            raw_demand["intersections"]["demo_a"][
+                "route_endpoint_extensions"
+            ] = {
+                "upstream": {"in_0": "far_in_0"},
+                "downstream": {"out_0": "far_out_0"},
+            }
+            demand_path.write_text(json.dumps(raw_demand), encoding="utf-8")
             fake = FakeSumoToolchain()
             result = build_traffic_scenarios(
                 {"intersections": manifest_intersections},
@@ -595,6 +728,15 @@ class GlobalTrafficTests(unittest.TestCase):
             self.assertEqual(
                 result["route_endpoint_policy"]["downstream_extensions"],
                 {"out_0": "far_out_0", "out_1": "far_out_1"},
+            )
+            self.assertEqual(
+                result["route_endpoint_policy"]["configured_extensions"],
+                {
+                    "demo_a": {
+                        "upstream": {"in_0": "far_in_0"},
+                        "downstream": {"out_0": "far_out_0"},
+                    }
+                },
             )
             self.assertGreater(
                 scenario["departure_position"]["extended_vehicle_count"], 0

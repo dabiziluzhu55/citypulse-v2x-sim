@@ -729,6 +729,107 @@ class TrafficDemandTests(unittest.TestCase):
         for count in range(100):
             self.assertEqual(sum(_allocate_route_counts(count, routes)), count)
 
+    def test_route_endpoint_extensions_default_and_real_configuration(self):
+        configuration = load_traffic_demands(DEMANDS)
+        empty = configuration.intersections["demo_1"].route_endpoint_extensions
+        self.assertEqual(empty.upstream, {})
+        self.assertEqual(empty.downstream, {})
+
+        raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
+        raw["intersections"]["demo_1"]["route_endpoint_extensions"] = {}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "empty-endpoints.json"
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            explicit_empty = load_traffic_demands(path).intersections[
+                "demo_1"
+            ].route_endpoint_extensions
+        self.assertEqual(explicit_empty.upstream, {})
+        self.assertEqual(explicit_empty.downstream, {})
+
+        demo_4 = configuration.intersections["demo_4"].route_endpoint_extensions
+        self.assertEqual(demo_4.upstream["-57186"], "-52650")
+        self.assertEqual(demo_4.upstream["-52650"], "-52649")
+        self.assertEqual(demo_4.downstream["-56735"], "-56734")
+        self.assertNotIn("-57229", demo_4.upstream)
+        with self.assertRaises(TypeError):
+            demo_4.upstream["-57186"] = "mutated"
+
+        demo_18 = configuration.intersections["demo_18"].route_endpoint_extensions
+        self.assertEqual(
+            demo_18.upstream,
+            {
+                "-56004": "-56004.184",
+                "-56830": "-56830.40",
+                "-57004": "-57004.108",
+                "-57077": "-57077.168",
+            },
+        )
+        self.assertEqual(demo_18.downstream, {})
+
+    def test_demo_18_right_demand_is_split_exactly_across_main_and_auxiliary(self):
+        demo_18 = load_traffic_demands(DEMANDS).intersections["demo_18"]
+        expected_routes = (
+            (("-57077", "-56009"), 1),
+            (("E7", "-56009"), 1),
+        )
+        for period in demo_18.periods.values():
+            routes = period.route_overrides["southwest"]["right"]
+            weighted_routes = tuple((route.edges, route.weight) for route in routes)
+            self.assertEqual(weighted_routes, expected_routes)
+            for interval in period.intervals:
+                target = interval.volumes["southwest"]["right"]
+                allocated = _allocate_route_counts(target, weighted_routes)
+                self.assertEqual(sum(allocated), target)
+                self.assertLessEqual(abs(allocated[0] - allocated[1]), 1)
+                self.assertGreaterEqual(allocated[0], allocated[1])
+
+    def test_route_endpoint_extension_format_and_conflicts_are_rejected(self):
+        cases = (
+            (
+                None,
+                "route_endpoint_extensions must be an object",
+            ),
+            (
+                {"upstream": {"": "far"}},
+                "edge IDs must be non-empty strings",
+            ),
+            (
+                {"upstream": {"near": ""}},
+                "edge IDs must be non-empty strings",
+            ),
+            (
+                {"downstream": {"same": "same"}},
+                "cannot map edge 'same' to itself",
+            ),
+            (
+                {"sideways": {"near": "far"}},
+                "unknown directions",
+            ),
+        )
+        for extensions, message in cases:
+            with self.subTest(extensions=extensions):
+                raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
+                raw["intersections"]["demo_1"][
+                    "route_endpoint_extensions"
+                ] = extensions
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "invalid-endpoints.json"
+                    path.write_text(json.dumps(raw), encoding="utf-8")
+                    with self.assertRaisesRegex(TrafficDemandError, message):
+                        load_traffic_demands(path)
+
+        raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
+        raw["intersections"]["demo_8"]["route_endpoint_extensions"][
+            "upstream"
+        ]["-57186"] = "different"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "conflicting-endpoints.json"
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            with self.assertRaisesRegex(
+                TrafficDemandError, "Conflicting upstream route endpoint extension"
+            ):
+                load_traffic_demands(path)
+
     def test_declared_total_mismatch_is_rejected(self):
         raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
         raw["intersections"]["demo_2"]["periods"][0]["expected_totals"]["all"] = 1

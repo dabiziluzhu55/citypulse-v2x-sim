@@ -270,6 +270,22 @@
           "movements": {"left": "left", "through": "through", "right": "right"}
         }
       },
+      "route_endpoint_extensions": {
+        "upstream": {
+          "-57186": "-52650",
+          "-52650": "-52649",
+          "-50333": "-50336",
+          "-50336": "-50337"
+        },
+        "downstream": {
+          "-57230": "-57232",
+          "-57232": "-57231",
+          "-56613": "-56617",
+          "-50675": "-50674",
+          "-56733": "-56735",
+          "-56735": "-56734"
+        }
+      },
       "periods": [
         {
           "period_id": "morning_peak",
@@ -529,6 +545,24 @@
         "west": {"label": "西进口", "sumo_approach": "west", "movements": {"left": "left", "through": "through", "right": "right"}},
         "north": {"label": "北进口", "sumo_approach": "north", "movements": {"left": "left", "through": "through", "right": "right"}},
         "south": {"label": "南进口", "sumo_approach": "south", "movements": {"left": "left", "through": "through", "right": "right"}}
+      },
+      "route_endpoint_extensions": {
+        "upstream": {
+          "-54807": "-54807.1099",
+          "-54807.1099": "-54808",
+          "-57234": "-57234.424",
+          "-57112": "-57112.999",
+          "-57109": "-57109.1195",
+          "-57109.1195": "-48752"
+        },
+        "downstream": {
+          "-57113": "-57113.97",
+          "-54810": "-54811",
+          "-57125": "-57125.103",
+          "-57125.103": "-57543",
+          "-57236": "-57236.80",
+          "-57236.80": "-57237"
+        }
       },
       "periods": [
         {
@@ -1106,11 +1140,26 @@
         "northwest": {"label": "西北进口", "sumo_approach": "northwest", "movements": {"left": "left", "through": "through", "right": "right"}},
         "northeast": {"label": "东北进口", "sumo_approach": "northeast", "movements": {"left": "left", "through": "through", "right": "right"}}
       },
+      "route_endpoint_extensions": {
+        "upstream": {
+          "-56004": "-56004.184",
+          "-56830": "-56830.40",
+          "-57004": "-57004.108",
+          "-57077": "-57077.168"
+        },
+        "downstream": {}
+      },
       "periods": [
         {
           "period_id": "morning_peak", "label": "早高峰", "program_id": "demo_18_morning_peak",
           "time_range": {"start": "07:00:00", "end": "09:00:00"},
           "expected_totals": {"southwest": 1566, "southeast": 988, "northwest": 1024, "northeast": 1375, "all": 4953},
+          "route_overrides": {
+            "southwest": {"right": [
+              {"edges": ["-57077", "-56009"], "weight": 1},
+              {"edges": ["E7", "-56009"], "weight": 1}
+            ]}
+          },
           "intervals": [
             {"start": "07:00:00", "end": "07:15:00", "volumes": {"southwest": {"left": 76, "through": 72, "right": 42}, "southeast": {"left": 48, "through": 46, "right": 28}, "northwest": {"left": 32, "through": 48, "right": 38}, "northeast": {"left": 27, "through": 79, "right": 58}}},
             {"start": "07:15:00", "end": "07:30:00", "volumes": {"southwest": {"left": 81, "through": 65, "right": 47}, "southeast": {"left": 42, "through": 41, "right": 22}, "northwest": {"left": 34, "through": 52, "right": 35}, "northeast": {"left": 29, "through": 76, "right": 62}}},
@@ -1126,6 +1175,12 @@
           "period_id": "off_peak", "label": "平峰", "program_id": "demo_18_off_peak",
           "time_range": {"start": "14:30:00", "end": "16:30:00"},
           "expected_totals": {"southwest": 1382, "southeast": 1254, "northwest": 1170, "northeast": 1668, "all": 5474},
+          "route_overrides": {
+            "southwest": {"right": [
+              {"edges": ["-57077", "-56009"], "weight": 1},
+              {"edges": ["E7", "-56009"], "weight": 1}
+            ]}
+          },
           "intervals": [
             {"start": "14:30:00", "end": "14:45:00", "volumes": {"southwest": {"left": 30, "through": 78, "right": 69}, "southeast": {"left": 53, "through": 72, "right": 32}, "northwest": {"left": 91, "through": 23, "right": 32}, "northeast": {"left": 98, "through": 74, "right": 30}}},
             {"start": "14:45:00", "end": "15:00:00", "volumes": {"southwest": {"left": 34, "through": 82, "right": 53}, "southeast": {"left": 49, "through": 68, "right": 29}, "northwest": {"left": 89, "through": 19, "right": 29}, "northeast": {"left": 102, "through": 69, "right": 26}}},
@@ -1141,6 +1196,12 @@
           "period_id": "evening_peak", "label": "晚高峰", "program_id": "demo_18_evening_peak",
           "time_range": {"start": "17:30:00", "end": "19:30:00"},
           "expected_totals": {"southwest": 1825, "southeast": 1573, "northwest": 1185, "northeast": 2015, "all": 6598},
+          "route_overrides": {
+            "southwest": {"right": [
+              {"edges": ["-57077", "-56009"], "weight": 1},
+              {"edges": ["E7", "-56009"], "weight": 1}
+            ]}
+          },
           "intervals": [
             {"start": "17:30:00", "end": "17:45:00", "volumes": {"southwest": {"left": 71, "through": 92, "right": 68}, "southeast": {"left": 56, "through": 102, "right": 26}, "northwest": {"left": 57, "through": 67, "right": 31}, "northeast": {"left": 103, "through": 131, "right": 36}}},
             {"start": "17:45:00", "end": "18:00:00", "volumes": {"southwest": {"left": 66, "through": 88, "right": 62}, "southeast": {"left": 61, "through": 108, "right": 24}, "northwest": {"left": 58, "through": 62, "right": 33}, "northeast": {"left": 89, "through": 109, "right": 41}}},
