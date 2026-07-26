@@ -1,9 +1,9 @@
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, type Ref } from 'vue'
 import { fetchCatalog } from '../api/catalog'
 import { DEFAULT_INTERSECTION_ID } from '../constants/simulationOptions'
 import type { CatalogIntersection, CatalogResponse } from '../types/catalog'
 
-export function useCatalog() {
+export function useCatalog(intersectionId: Ref<string> | string = DEFAULT_INTERSECTION_ID) {
   const catalog = ref<CatalogResponse | null>(null)
   const loading = ref(true)
   const error = ref<string | null>(null)
@@ -14,7 +14,9 @@ export function useCatalog() {
     }
     return (
       catalog.value.intersections.find(
-        (item) => item.intersection_id === DEFAULT_INTERSECTION_ID,
+        (item) => item.intersection_id === (
+          typeof intersectionId === 'string' ? intersectionId : intersectionId.value
+        ),
       ) ??
       catalog.value.intersections[0] ??
       null

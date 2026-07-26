@@ -1,0 +1,442 @@
+{
+  "schemaVersion": 2,
+  "intersectionId": "demo_5",
+  "junctionId": "3807",
+  "tlsIds": [
+    "3807"
+  ],
+  "sourceCoordinateSystem": "SUMO local meters",
+  "renderCoordinateSystem": "MapV scene meters, Z-up",
+  "sourceSha256": "f10f9fd9ba466ac89969befeccf4bcb4803c860267768aac8bdea7304e824a05",
+  "origin": {
+    "x": 24175.48,
+    "y": 42427.52,
+    "longitude": 116.090679,
+    "latitude": 38.992321
+  },
+  "radiusMeters": 140,
+  "junctionShape": [
+    [
+      4.59,
+      7.73
+    ],
+    [
+      8.41,
+      2.23
+    ],
+    [
+      6.56,
+      0.41
+    ],
+    [
+      6.11,
+      -0.58
+    ],
+    [
+      5.97,
+      -1.62
+    ],
+    [
+      6.15,
+      -2.71
+    ],
+    [
+      6.64,
+      -3.85
+    ],
+    [
+      -5.06,
+      -10.37
+    ],
+    [
+      -12.22,
+      1.9
+    ],
+    [
+      -0.78,
+      8.86
+    ],
+    [
+      0.74,
+      7.22
+    ],
+    [
+      1.6,
+      6.87
+    ],
+    [
+      2.53,
+      6.84
+    ],
+    [
+      3.53,
+      7.13
+    ]
+  ],
+  "edges": [
+    {
+      "id": "-50172",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-50172_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -3.6,
+              -9.56
+            ],
+            [
+              33.64,
+              -76.41
+            ]
+          ]
+        },
+        {
+          "id": "-50172_1",
+          "index": 1,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -0.67,
+              -7.93
+            ],
+            [
+              36.57,
+              -74.78
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-50182",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-50182_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -60.04,
+              83.7
+            ],
+            [
+              -10.79,
+              2.77
+            ]
+          ]
+        },
+        {
+          "id": "-50182_1",
+          "index": 1,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -57.18,
+              85.44
+            ],
+            [
+              -7.93,
+              4.51
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-50820",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-50820_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 22.22,
+          "points": [
+            [
+              7.46,
+              3.6
+            ],
+            [
+              115.666,
+              78.876
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-56392",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-56392_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              42.42,
+              -71.51
+            ],
+            [
+              5.18,
+              -4.66
+            ]
+          ]
+        },
+        {
+          "id": "-56392_1",
+          "index": 1,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              39.49,
+              -73.14
+            ],
+            [
+              2.25,
+              -6.29
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-56402",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-56402_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -2.21,
+              7.99
+            ],
+            [
+              -51.46,
+              88.92
+            ]
+          ]
+        },
+        {
+          "id": "-56402_1",
+          "index": 1,
+          "width": 3.35,
+          "speed": 27.78,
+          "points": [
+            [
+              -5.07,
+              6.25
+            ],
+            [
+              -54.32,
+              87.18
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "-57586",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-57586_0",
+          "index": 0,
+          "width": 3.35,
+          "speed": 22.22,
+          "points": [
+            [
+              113.738,
+              81.631
+            ],
+            [
+              5.54,
+              6.36
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "tlsId": "3807",
+      "linkIndex": 0,
+      "fromEdge": "-57586",
+      "fromLane": 0,
+      "toEdge": "-56402",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "右转"
+    },
+    {
+      "tlsId": "3807",
+      "linkIndex": 1,
+      "fromEdge": "-57586",
+      "fromLane": 0,
+      "toEdge": "-50172",
+      "toLane": 1,
+      "direction": "l",
+      "directionLabel": "左转"
+    },
+    {
+      "tlsId": "3807",
+      "linkIndex": 2,
+      "fromEdge": "-56392",
+      "fromLane": 0,
+      "toEdge": "-50820",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "右转"
+    },
+    {
+      "tlsId": "3807",
+      "linkIndex": 3,
+      "fromEdge": "-56392",
+      "fromLane": 0,
+      "toEdge": "-56402",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "3807",
+      "linkIndex": 4,
+      "fromEdge": "-56392",
+      "fromLane": 1,
+      "toEdge": "-56402",
+      "toLane": 1,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "3807",
+      "linkIndex": 5,
+      "fromEdge": "-50182",
+      "fromLane": 0,
+      "toEdge": "-50172",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "3807",
+      "linkIndex": 6,
+      "fromEdge": "-50182",
+      "fromLane": 1,
+      "toEdge": "-50172",
+      "toLane": 1,
+      "direction": "s",
+      "directionLabel": "直行"
+    },
+    {
+      "tlsId": "3807",
+      "linkIndex": 7,
+      "fromEdge": "-50182",
+      "fromLane": 1,
+      "toEdge": "-50820",
+      "toLane": 0,
+      "direction": "l",
+      "directionLabel": "左转"
+    }
+  ],
+  "phases": [
+    {
+      "tlsId": "3807",
+      "index": 0,
+      "durationSeconds": 39,
+      "state": "rrGGGGGg",
+      "label": "SUMO phase 1"
+    },
+    {
+      "tlsId": "3807",
+      "index": 1,
+      "durationSeconds": 6,
+      "state": "rrGyyyyy",
+      "label": "SUMO phase 2"
+    },
+    {
+      "tlsId": "3807",
+      "index": 2,
+      "durationSeconds": 39,
+      "state": "GGGrrrrr",
+      "label": "SUMO phase 3"
+    },
+    {
+      "tlsId": "3807",
+      "index": 3,
+      "durationSeconds": 6,
+      "state": "yyGrrrrr",
+      "label": "SUMO phase 4"
+    }
+  ],
+  "phaseTemplates": {
+    "1": {
+      "3807": {
+        "green": "grgGGGGg",
+        "yellow": "grgyyyyy",
+        "clearance": "grgrrrrr"
+      }
+    },
+    "2": {
+      "3807": {
+        "green": "gGgrrrrr",
+        "yellow": "gygrrrrr",
+        "clearance": "grgrrrrr"
+      }
+    }
+  },
+  "signalGroups": [
+    {
+      "tlsId": "3807",
+      "laneId": "-57586_0",
+      "linkIndexes": [
+        0,
+        1
+      ]
+    },
+    {
+      "tlsId": "3807",
+      "laneId": "-56392_0",
+      "linkIndexes": [
+        2,
+        3
+      ]
+    },
+    {
+      "tlsId": "3807",
+      "laneId": "-56392_1",
+      "linkIndexes": [
+        4
+      ]
+    },
+    {
+      "tlsId": "3807",
+      "laneId": "-50182_0",
+      "linkIndexes": [
+        5
+      ]
+    },
+    {
+      "tlsId": "3807",
+      "laneId": "-50182_1",
+      "linkIndexes": [
+        6,
+        7
+      ]
+    }
+  ]
+}

@@ -43,6 +43,7 @@ export function snapshotToTrafficView(snapshot: SimulationSnapshot): TrafficStat
       intersection_id: id,
       name: id,
       current_phase: runtime.current_phase,
+      stage: runtime.stage,
       phase_name: resolvePhaseName(runtime.current_phase, runtime.stage),
       stage_elapsed: runtime.stage_elapsed,
       queue_length: halting,

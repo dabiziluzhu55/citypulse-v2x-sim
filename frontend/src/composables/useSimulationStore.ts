@@ -131,6 +131,11 @@ function ensureInitialized() {
   })
   registerSimulationStreamConnectionListener((connected) => {
     wsConnected.value = connected
+    if (connected) {
+      stopPolling()
+    } else if (sessionId.value && !isTerminal(snapshot.value?.state)) {
+      startPolling()
+    }
   })
 
   if (sessionId.value) {

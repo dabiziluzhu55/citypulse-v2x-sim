@@ -1,0 +1,583 @@
+{
+  "schemaVersion": 3,
+  "intersectionId": "demo_14",
+  "junctionId": "892",
+  "tlsIds": [
+    "892"
+  ],
+  "sourceCoordinateSystem": "SUMO XY, tmerc",
+  "renderCoordinateSystem": "LOCAL_BD09_WEB_MERCATOR_METERS, Z-up",
+  "sourceSha256": "f10f9fd9ba466ac89969befeccf4bcb4803c860267768aac8bdea7304e824a05",
+  "origin": {
+    "x": 29877.58,
+    "y": 20438.5,
+    "longitude": 115.91790845273727,
+    "latitude": 39.049874797372325,
+    "bd09": [
+      115.93013595421704,
+      39.056954085693405
+    ],
+    "webMercator": [
+      12905283.702018417,
+      4729833.043262075
+    ]
+  },
+  "requestedOrigin": {
+    "longitude": 115.917907,
+    "latitude": 39.049875
+  },
+  "horizontalScale": 1.2876677310575344,
+  "sumoUnitScale": 0.9235357002613169,
+  "radiusMeters": 140,
+  "radiusSceneUnits": 180.2734823480548,
+  "junctionShape": [
+    [
+      3.198,
+      -7.045
+    ],
+    [
+      -2.971,
+      -7.121
+    ],
+    [
+      -3.204,
+      7.038
+    ],
+    [
+      2.965,
+      7.113
+    ],
+    [
+      3.173,
+      6.335
+    ],
+    [
+      3.411,
+      6.069
+    ],
+    [
+      3.747,
+      5.867
+    ],
+    [
+      4.17,
+      5.75
+    ],
+    [
+      4.689,
+      5.698
+    ],
+    [
+      4.564,
+      -5.677
+    ],
+    [
+      3.8,
+      -5.82
+    ],
+    [
+      3.529,
+      -6.007
+    ],
+    [
+      3.347,
+      -6.274
+    ],
+    [
+      3.234,
+      -6.618
+    ]
+  ],
+  "edges": [
+    {
+      "id": "-46538",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-46538_0",
+          "index": 0,
+          "width": 4.314,
+          "speed": 22.22,
+          "points": [
+            [
+              1.423,
+              7.094
+            ],
+            [
+              1.113,
+              26.256
+            ],
+            [
+              1.092,
+              27.018
+            ],
+            [
+              1.038,
+              27.829
+            ],
+            [
+              0.972,
+              28.685
+            ],
+            [
+              0.879,
+              29.596
+            ],
+            [
+              0.756,
+              30.531
+            ],
+            [
+              0.617,
+              31.489
+            ],
+            [
+              0.468,
+              32.479
+            ],
+            [
+              0.296,
+              33.486
+            ],
+            [
+              0.116,
+              34.512
+            ],
+            [
+              -0.085,
+              35.542
+            ],
+            [
+              -0.3,
+              36.583
+            ],
+            [
+              -0.527,
+              37.609
+            ],
+            [
+              -0.759,
+              38.628
+            ],
+            [
+              -1.003,
+              39.633
+            ],
+            [
+              -1.259,
+              40.636
+            ],
+            [
+              -1.516,
+              41.592
+            ],
+            [
+              -1.783,
+              42.521
+            ],
+            [
+              -2.06,
+              43.436
+            ],
+            [
+              -2.329,
+              44.285
+            ],
+            [
+              -2.608,
+              45.107
+            ],
+            [
+              -2.9,
+              45.881
+            ],
+            [
+              -3.188,
+              46.57
+            ],
+            [
+              -56.067,
+              171.333
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-46539",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-46539_0",
+          "index": 0,
+          "width": 4.314,
+          "speed": 22.22,
+          "points": [
+            [
+              2.37,
+              -51.113
+            ],
+            [
+              1.656,
+              -7.064
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-46785",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-46785_0",
+          "index": 0,
+          "width": 3.605,
+          "speed": 13.89,
+          "points": [
+            [
+              180.267,
+              1.526
+            ],
+            [
+              4.675,
+              4.403
+            ]
+          ],
+          "widthMeters": 2.8
+        },
+        {
+          "id": "-46785_1",
+          "index": 1,
+          "width": 4.314,
+          "speed": 13.89,
+          "points": [
+            [
+              180.269,
+              -1.321
+            ],
+            [
+              4.647,
+              1.557
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-52216",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-52216_0",
+          "index": 0,
+          "width": 4.314,
+          "speed": 22.22,
+          "points": [
+            [
+              -58.999,
+              170.346
+            ],
+            [
+              -6.029,
+              45.376
+            ],
+            [
+              -5.776,
+              44.748
+            ],
+            [
+              -5.523,
+              44.075
+            ],
+            [
+              -5.266,
+              43.316
+            ],
+            [
+              -5.003,
+              42.519
+            ],
+            [
+              -4.747,
+              41.668
+            ],
+            [
+              -4.499,
+              40.776
+            ],
+            [
+              -4.245,
+              39.845
+            ],
+            [
+              -3.996,
+              38.894
+            ],
+            [
+              -3.77,
+              37.927
+            ],
+            [
+              -3.541,
+              36.934
+            ],
+            [
+              -3.318,
+              35.933
+            ],
+            [
+              -3.109,
+              34.944
+            ],
+            [
+              -2.927,
+              33.952
+            ],
+            [
+              -2.738,
+              32.967
+            ],
+            [
+              -2.585,
+              31.997
+            ],
+            [
+              -2.428,
+              31.047
+            ],
+            [
+              -2.307,
+              30.126
+            ],
+            [
+              -2.191,
+              29.244
+            ],
+            [
+              -2.108,
+              28.41
+            ],
+            [
+              -2.037,
+              27.621
+            ],
+            [
+              -1.994,
+              26.888
+            ],
+            [
+              -1.97,
+              26.205
+            ],
+            [
+              -1.661,
+              7.057
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-52217",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-52217_0",
+          "index": 0,
+          "width": 4.314,
+          "speed": 22.22,
+          "points": [
+            [
+              -1.429,
+              -7.102
+            ],
+            [
+              -0.715,
+              -51.151
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-52559",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-52559_0",
+          "index": 0,
+          "width": 3.605,
+          "speed": 13.89,
+          "points": [
+            [
+              4.578,
+              -4.382
+            ],
+            [
+              180.127,
+              -7.259
+            ]
+          ],
+          "widthMeters": 2.8
+        },
+        {
+          "id": "-52559_1",
+          "index": 1,
+          "width": 4.314,
+          "speed": 13.89,
+          "points": [
+            [
+              4.606,
+              -1.536
+            ],
+            [
+              180.219,
+              -4.413
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "tlsId": "892",
+      "linkIndex": 0,
+      "fromEdge": "-46539",
+      "fromLane": 0,
+      "toEdge": "-52559",
+      "toLane": 1,
+      "direction": "r",
+      "directionLabel": "right"
+    },
+    {
+      "tlsId": "892",
+      "linkIndex": 1,
+      "fromEdge": "-46539",
+      "fromLane": 0,
+      "toEdge": "-46538",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "892",
+      "linkIndex": 2,
+      "fromEdge": "-52216",
+      "fromLane": 0,
+      "toEdge": "-52217",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "892",
+      "linkIndex": 3,
+      "fromEdge": "-52216",
+      "fromLane": 0,
+      "toEdge": "-52559",
+      "toLane": 1,
+      "direction": "l",
+      "directionLabel": "left"
+    },
+    {
+      "tlsId": "892",
+      "linkIndex": 4,
+      "fromEdge": "-46785",
+      "fromLane": 1,
+      "toEdge": "-46538",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "right"
+    },
+    {
+      "tlsId": "892",
+      "linkIndex": 5,
+      "fromEdge": "-46785",
+      "fromLane": 1,
+      "toEdge": "-52217",
+      "toLane": 0,
+      "direction": "l",
+      "directionLabel": "left"
+    }
+  ],
+  "phases": [
+    {
+      "tlsId": "892",
+      "index": 0,
+      "durationSeconds": 40,
+      "state": "GGGgrr",
+      "label": "SUMO phase 1"
+    },
+    {
+      "tlsId": "892",
+      "index": 1,
+      "durationSeconds": 5,
+      "state": "Gyyyrr",
+      "label": "SUMO phase 2"
+    },
+    {
+      "tlsId": "892",
+      "index": 2,
+      "durationSeconds": 40,
+      "state": "GrrrGG",
+      "label": "SUMO phase 3"
+    },
+    {
+      "tlsId": "892",
+      "index": 3,
+      "durationSeconds": 5,
+      "state": "Grrryy",
+      "label": "SUMO phase 4"
+    }
+  ],
+  "phaseTemplates": {
+    "1": {
+      "892": {
+        "green": "rrGGGg",
+        "yellow": "rryyyy",
+        "clearance": "rrrrrr"
+      }
+    },
+    "2": {
+      "892": {
+        "green": "GGrrrr",
+        "yellow": "yyrrrr",
+        "clearance": "rrrrrr"
+      }
+    }
+  },
+  "signalGroups": [
+    {
+      "tlsId": "892",
+      "laneId": "-46539_0",
+      "linkIndexes": [
+        0,
+        1
+      ]
+    },
+    {
+      "tlsId": "892",
+      "laneId": "-52216_0",
+      "linkIndexes": [
+        2,
+        3
+      ]
+    },
+    {
+      "tlsId": "892",
+      "laneId": "-46785_1",
+      "linkIndexes": [
+        4,
+        5
+      ]
+    }
+  ]
+}

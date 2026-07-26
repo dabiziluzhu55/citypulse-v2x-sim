@@ -10,14 +10,23 @@ import {
 import { fetchMapConfig } from '../../api/mapConfig'
 import type { MapRuntimeConfig } from '../../types/mapConfig'
 import { useAppMapView } from '../../composables/useAppMapView'
+import { useSimulationMap } from '../../composables/useSimulationMap'
+import { useSimulationStore } from '../../composables/useSimulationStore'
+import { CesiumRoadNetworkRenderer } from '../../cesium/traffic/CesiumRoadNetworkRenderer'
+import { TIANDITU_BROWSER_TOKEN } from '../../constants/mapBasemaps'
+import { CesiumVehicleRenderer } from '../../cesium/traffic/CesiumVehicleRenderer'
 
 const mapView = useAppMapView()
+const { geojson } = useSimulationMap()
+const { trafficView } = useSimulationStore()
 const containerRef = ref<HTMLElement | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 
 let viewer: Cesium.Viewer | null = null
 let localTileset: Cesium.Cesium3DTileset | null = null
+let roadRenderer: CesiumRoadNetworkRenderer | null = null
+let vehicleRenderer: CesiumVehicleRenderer | null = null
 
 const DEFAULT_TILESET_SSE = 24
 const MOVING_TILESET_SSE = 36
@@ -219,7 +228,6 @@ async function loadOsmBuildings(currentViewer: Cesium.Viewer): Promise<void> {
 
 function addTiandituLayers(
   currentViewer: Cesium.Viewer,
-  proxyBaseUrl: string,
   ionToken: string,
 ): void {
   let totalErrors = 0
@@ -252,11 +260,12 @@ function addTiandituLayers(
 
   const makeProvider = (layer: 'img' | 'cia') => {
     const provider = new Cesium.WebMapTileServiceImageryProvider({
-      url: `${proxyBaseUrl}/${layer}/wmts`,
+      url: `https://{s}.tianditu.gov.cn/${layer}_w/wmts?tk=${TIANDITU_BROWSER_TOKEN}`,
       layer,
       style: 'default',
       format: 'tiles',
       tileMatrixSetID: 'w',
+      subdomains: ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7'],
       minimumLevel: 0,
       maximumLevel: 18,
     })
@@ -364,7 +373,7 @@ async function initViewer() {
   viewer.camera.moveEnd.addEventListener(handleCameraMoveEnd)
   applyCruiseRenderingProfile(viewer)
   if (tiandituEnabled) {
-    addTiandituLayers(viewer, mapConfig.tiandituProxyBaseUrl, ionToken)
+    addTiandituLayers(viewer, ionToken)
   }
 
   viewer.scene.globe.depthTestAgainstTerrain = Boolean(ionToken)
@@ -389,14 +398,55 @@ async function initViewer() {
   }
 
   mapView.registerCesium(viewer)
+
+  roadRenderer = new CesiumRoadNetworkRenderer(viewer)
+  vehicleRenderer = new CesiumVehicleRenderer(viewer)
+  roadRenderer.render(geojson.value)
+  vehicleRenderer.update(trafficView.value?.vehicles ?? [])
   loading.value = false
   requestSceneRender(viewer)
 }
+
+const stopGeojsonWatch = watch(geojson, (next) => {
+  roadRenderer?.render(next)
+})
+
+const VEHICLE_UPDATE_THROTTLE_MS = 200
+let vehicleUpdateTimer: ReturnType<typeof setTimeout> | null = null
+let pendingVehicleUpdate = false
+
+// 浅监听 trafficView（computed 每帧换新引用即触发），并做 200ms 节流，
+// 降低密集车流下的重绘开销；SampledPositionProperty 插值保证移动仍平滑。
+const stopTrafficWatch = watch(trafficView, () => {
+  if (vehicleUpdateTimer !== null) {
+    pendingVehicleUpdate = true
+    return
+  }
+  vehicleRenderer?.update(trafficView.value?.vehicles ?? [])
+  vehicleUpdateTimer = setTimeout(function flush() {
+    vehicleUpdateTimer = null
+    if (pendingVehicleUpdate) {
+      pendingVehicleUpdate = false
+      vehicleRenderer?.update(trafficView.value?.vehicles ?? [])
+      vehicleUpdateTimer = setTimeout(flush, VEHICLE_UPDATE_THROTTLE_MS)
+    }
+  }, VEHICLE_UPDATE_THROTTLE_MS)
+})
 
 onMounted(() => { void initViewer() })
 
 onUnmounted(() => {
   stopPresetWatch()
+  stopGeojsonWatch()
+  stopTrafficWatch()
+  if (vehicleUpdateTimer !== null) {
+    clearTimeout(vehicleUpdateTimer)
+    vehicleUpdateTimer = null
+  }
+  vehicleRenderer?.destroy()
+  vehicleRenderer = null
+  roadRenderer?.destroy()
+  roadRenderer = null
   mapView.unregisterCesium()
   if (viewer) {
     viewer.camera.moveStart.removeEventListener(handleCameraMoveStart)

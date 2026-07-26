@@ -1,0 +1,91 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+import { projectBd09ToWebMercator, wgs84ToBd09 } from '../src/mapv/sceneCoordinates.ts'
+import { cropPolylineToRadius, validateIntersectionManifest } from './realistic-intersection-core.mjs'
+
+function pointToSegmentDistance(point, start, end) {
+  const dx = end[0] - start[0]
+  const dy = end[1] - start[1]
+  const denominator = dx * dx + dy * dy
+  const ratio = denominator === 0 ? 0 : Math.max(0, Math.min(1,
+    ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / denominator,
+  ))
+  return Math.hypot(point[0] - start[0] - dx * ratio, point[1] - start[1] - dy * ratio)
+}
+
+test('clips a lane shape at the exact preview radius', () => {
+  const clipped = cropPolylineToRadius([[-200, 0], [-80, 0], [0, 0]], 140)
+  assert.deepEqual(clipped, [[-140, 0], [-80, 0], [0, 0]])
+})
+
+test('catalog contains 20 projection-correct realistic intersections', async () => {
+  const catalog = JSON.parse(await readFile(
+    new URL('../public/intersections/v3/catalog.json', import.meta.url),
+    'utf8',
+  ))
+  assert.equal(catalog.schemaVersion, 3)
+  assert.equal(catalog.intersections.length, 20)
+  assert.deepEqual(
+    catalog.intersections.map((item) => item.intersectionId),
+    Array.from({ length: 20 }, (_, index) => `demo_${index + 1}`),
+  )
+  for (const entry of catalog.intersections) {
+    const manifest = JSON.parse(await readFile(
+      new URL(`../public/intersections/v3/${entry.intersectionId}/manifest.json`, import.meta.url),
+      'utf8',
+    ))
+    assert.deepEqual(validateIntersectionManifest(manifest), [], entry.intersectionId)
+    assert.equal(manifest.intersectionId, entry.intersectionId)
+    assert.ok(manifest.horizontalScale > 1.28 && manifest.horizontalScale < 1.30)
+    assert.ok(manifest.connections.length > 0)
+    assert.ok(manifest.edges.some((edge) => edge.incoming))
+    assert.ok(manifest.edges.some((edge) => !edge.incoming))
+  }
+})
+
+test('demo_2 lanes align with the authoritative WGS84 road export', async () => {
+  const [manifestSource, roadsSource, mappingSource] = await Promise.all([
+    readFile(new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url), 'utf8'),
+    readFile(new URL('../../data/maps/sumo/generated/geojson/demo_2.roads.wgs84.geojson', import.meta.url), 'utf8'),
+    readFile(new URL('../../data/maps/sumo/TotalMap_20.intersections.json', import.meta.url), 'utf8'),
+  ])
+  const manifest = JSON.parse(manifestSource)
+  const roads = JSON.parse(roadsSource)
+  const mapping = JSON.parse(mappingSource)
+  assert.ok(Math.abs(manifest.origin.longitude - mapping.demo_2.junction_lon) < 1e-10)
+  assert.ok(Math.abs(manifest.origin.latitude - mapping.demo_2.junction_lat) < 1e-10)
+
+  const origin = manifest.origin.webMercator
+  let maximumDistance = 0
+  for (const edge of manifest.edges) {
+    const feature = roads.features.find((item) => String(item.properties.edge_id) === edge.id)
+    assert.ok(feature, `missing GeoJSON edge ${edge.id}`)
+    const line = feature.geometry.coordinates.map((coordinate) => {
+      const projected = projectBd09ToWebMercator(wgs84ToBd09(...coordinate))
+      return [projected[0] - origin[0], projected[1] - origin[1]]
+    })
+    for (const lane of edge.lanes) {
+      for (const point of lane.points) {
+        const distance = Math.min(...line.slice(0, -1).map((start, index) => (
+          pointToSegmentDistance(point, start, line[index + 1])
+        )))
+        maximumDistance = Math.max(maximumDistance, distance)
+      }
+    }
+  }
+  assert.ok(maximumDistance < 8, `lane/road alignment error is ${maximumDistance.toFixed(3)}m`)
+})
+
+test('demo_2 keeps the exact TLS link contract used by the simulator', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
+    'utf8',
+  ))
+  assert.equal(manifest.tlsIds[0], '317')
+  assert.deepEqual(
+    [...new Set(manifest.connections.map((item) => item.linkIndex))].sort((a, b) => a - b),
+    [0, 1, 2, 3, 4, 5, 6, 7],
+  )
+  assert.equal(manifest.phaseTemplates['1']['317'].green, 'GGggrgGG')
+})

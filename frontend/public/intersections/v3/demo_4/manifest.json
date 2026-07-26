@@ -1,0 +1,986 @@
+{
+  "schemaVersion": 3,
+  "intersectionId": "demo_4",
+  "junctionId": "3935",
+  "tlsIds": [
+    "3935"
+  ],
+  "sourceCoordinateSystem": "SUMO XY, tmerc",
+  "renderCoordinateSystem": "LOCAL_BD09_WEB_MERCATOR_METERS, Z-up",
+  "sourceSha256": "f10f9fd9ba466ac89969befeccf4bcb4803c860267768aac8bdea7304e824a05",
+  "origin": {
+    "x": 22384.95,
+    "y": 46377.04,
+    "longitude": 116.1255620109444,
+    "latitude": 38.98582386570558,
+    "bd09": [
+      116.13821646630313,
+      38.99290042677416
+    ],
+    "webMercator": [
+      12928447.118667847,
+      4720654.670647411
+    ]
+  },
+  "requestedOrigin": {
+    "longitude": 116.125562,
+    "latitude": 38.985824
+  },
+  "horizontalScale": 1.286501845697153,
+  "sumoUnitScale": 0.919374587538683,
+  "radiusMeters": 140,
+  "radiusSceneUnits": 180.11025839760143,
+  "junctionShape": [
+    [
+      9.066,
+      -21.458
+    ],
+    [
+      -15.766,
+      -17.958
+    ],
+    [
+      -15.804,
+      -16.124
+    ],
+    [
+      -16.141,
+      -15.667
+    ],
+    [
+      -16.682,
+      -15.51
+    ],
+    [
+      -17.434,
+      -15.662
+    ],
+    [
+      -18.401,
+      -16.13
+    ],
+    [
+      -21.314,
+      -10.737
+    ],
+    [
+      -18.907,
+      -8.663
+    ],
+    [
+      -16.635,
+      -5.244
+    ],
+    [
+      -14.483,
+      -0.478
+    ],
+    [
+      -12.459,
+      5.627
+    ],
+    [
+      -10.56,
+      13.072
+    ],
+    [
+      -8.796,
+      21.861
+    ],
+    [
+      15.738,
+      18.026
+    ],
+    [
+      15.743,
+      16.194
+    ],
+    [
+      16.067,
+      15.734
+    ],
+    [
+      16.602,
+      15.583
+    ],
+    [
+      17.353,
+      15.735
+    ],
+    [
+      18.327,
+      16.197
+    ],
+    [
+      24.139,
+      5.422
+    ],
+    [
+      20.472,
+      2.823
+    ],
+    [
+      17.266,
+      -0.537
+    ],
+    [
+      14.516,
+      -4.634
+    ],
+    [
+      12.233,
+      -9.499
+    ],
+    [
+      10.414,
+      -15.105
+    ]
+  ],
+  "edges": [
+    {
+      "id": "-50333",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-50333_0",
+          "index": 0,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              -53.994,
+              -34.687
+            ],
+            [
+              -19.13,
+              -14.775
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-50675",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-50675_0",
+          "index": 0,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              23.417,
+              6.771
+            ],
+            [
+              67.47,
+              31.909
+            ]
+          ],
+          "widthMeters": 3.35
+        },
+        {
+          "id": "-50675_1",
+          "index": 1,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              21.96,
+              9.468
+            ],
+            [
+              66.014,
+              34.606
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-56613",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-56613_0",
+          "index": 0,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              -20.585,
+              -12.092
+            ],
+            [
+              -55.449,
+              -32.003
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-56732",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-56732_0",
+          "index": 0,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              -19.195,
+              -179.085
+            ],
+            [
+              -9.291,
+              -121.87
+            ],
+            [
+              -9.173,
+              -121.141
+            ],
+            [
+              -9.051,
+              -120.437
+            ],
+            [
+              -8.903,
+              -119.624
+            ],
+            [
+              -8.761,
+              -118.771
+            ],
+            [
+              -8.617,
+              -117.932
+            ],
+            [
+              -8.457,
+              -117.012
+            ],
+            [
+              -8.309,
+              -116.093
+            ],
+            [
+              -8.144,
+              -115.165
+            ],
+            [
+              -7.973,
+              -114.17
+            ],
+            [
+              -7.808,
+              -113.183
+            ],
+            [
+              -7.636,
+              -112.201
+            ],
+            [
+              -7.461,
+              -111.186
+            ],
+            [
+              -7.288,
+              -110.158
+            ],
+            [
+              -7.127,
+              -109.145
+            ],
+            [
+              -6.945,
+              -108.135
+            ],
+            [
+              -6.772,
+              -107.107
+            ],
+            [
+              -6.597,
+              -106.092
+            ],
+            [
+              -6.423,
+              -105.077
+            ],
+            [
+              -6.258,
+              -104.09
+            ],
+            [
+              -6.101,
+              -103.143
+            ],
+            [
+              -5.944,
+              -102.197
+            ],
+            [
+              -5.785,
+              -101.263
+            ],
+            [
+              -5.629,
+              -100.363
+            ],
+            [
+              -5.484,
+              -99.477
+            ],
+            [
+              -5.351,
+              -98.653
+            ],
+            [
+              -5.219,
+              -97.875
+            ],
+            [
+              -5.089,
+              -97.13
+            ],
+            [
+              -4.971,
+              -96.401
+            ],
+            [
+              7.55,
+              -21.236
+            ]
+          ],
+          "widthMeters": 3.35
+        },
+        {
+          "id": "-56732_1",
+          "index": 1,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              -22.229,
+              -178.733
+            ],
+            [
+              -12.305,
+              -121.405
+            ],
+            [
+              -12.185,
+              -120.688
+            ],
+            [
+              -12.061,
+              -119.951
+            ],
+            [
+              -11.918,
+              -119.158
+            ],
+            [
+              -11.774,
+              -118.319
+            ],
+            [
+              -11.631,
+              -117.467
+            ],
+            [
+              -11.469,
+              -116.559
+            ],
+            [
+              -11.317,
+              -115.633
+            ],
+            [
+              -11.158,
+              -114.699
+            ],
+            [
+              -10.986,
+              -113.717
+            ],
+            [
+              -10.821,
+              -112.73
+            ],
+            [
+              -10.65,
+              -111.735
+            ],
+            [
+              -10.476,
+              -110.72
+            ],
+            [
+              -10.301,
+              -109.705
+            ],
+            [
+              -10.134,
+              -108.685
+            ],
+            [
+              -9.959,
+              -107.669
+            ],
+            [
+              -9.779,
+              -106.647
+            ],
+            [
+              -9.61,
+              -105.639
+            ],
+            [
+              -9.441,
+              -104.632
+            ],
+            [
+              -9.276,
+              -103.644
+            ],
+            [
+              -9.115,
+              -102.677
+            ],
+            [
+              -8.951,
+              -101.736
+            ],
+            [
+              -8.798,
+              -100.81
+            ],
+            [
+              -8.642,
+              -99.91
+            ],
+            [
+              -8.503,
+              -99.032
+            ],
+            [
+              -8.37,
+              -98.208
+            ],
+            [
+              -8.232,
+              -97.422
+            ],
+            [
+              -8.102,
+              -96.678
+            ],
+            [
+              -7.989,
+              -95.955
+            ],
+            [
+              4.538,
+              -20.783
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-56733",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-56733_0",
+          "index": 0,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              14.233,
+              18.262
+            ],
+            [
+              28.138,
+              98.139
+            ]
+          ],
+          "widthMeters": 3.35
+        },
+        {
+          "id": "-56733_1",
+          "index": 1,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              11.219,
+              18.728
+            ],
+            [
+              25.123,
+              98.605
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-57186",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-57186_0",
+          "index": 0,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              63.102,
+              39.987
+            ],
+            [
+              19.049,
+              14.848
+            ]
+          ],
+          "widthMeters": 3.35
+        },
+        {
+          "id": "-57186_1",
+          "index": 1,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              64.559,
+              37.29
+            ],
+            [
+              20.505,
+              12.152
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-57229",
+      "incoming": true,
+      "lanes": [
+        {
+          "id": "-57229_0",
+          "index": 0,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              21.122,
+              178.867
+            ],
+            [
+              -7.29,
+              21.611
+            ]
+          ],
+          "widthMeters": 3.35
+        },
+        {
+          "id": "-57229_1",
+          "index": 1,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              24.149,
+              178.484
+            ],
+            [
+              -4.28,
+              21.125
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    },
+    {
+      "id": "-57230",
+      "incoming": false,
+      "lanes": [
+        {
+          "id": "-57230_0",
+          "index": 0,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              -14.259,
+              -18.161
+            ],
+            [
+              -22.368,
+              -69.121
+            ]
+          ],
+          "widthMeters": 3.35
+        },
+        {
+          "id": "-57230_1",
+          "index": 1,
+          "width": 4.31,
+          "speed": 27.78,
+          "points": [
+            [
+              -11.237,
+              -18.586
+            ],
+            [
+              -19.346,
+              -69.546
+            ]
+          ],
+          "widthMeters": 3.35
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "tlsId": "3935",
+      "linkIndex": 0,
+      "fromEdge": "-57186",
+      "fromLane": 1,
+      "toEdge": "-57230",
+      "toLane": 1,
+      "direction": "l",
+      "directionLabel": "left"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 1,
+      "fromEdge": "-57186",
+      "fromLane": 0,
+      "toEdge": "-56613",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 2,
+      "fromEdge": "-57186",
+      "fromLane": 0,
+      "toEdge": "-56733",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "right"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 3,
+      "fromEdge": "-57229",
+      "fromLane": 1,
+      "toEdge": "-50675",
+      "toLane": 1,
+      "direction": "l",
+      "directionLabel": "left"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 4,
+      "fromEdge": "-57229",
+      "fromLane": 0,
+      "toEdge": "-57230",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 5,
+      "fromEdge": "-57229",
+      "fromLane": 1,
+      "toEdge": "-57230",
+      "toLane": 1,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 6,
+      "fromEdge": "-57229",
+      "fromLane": 0,
+      "toEdge": "-56613",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "right"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 7,
+      "fromEdge": "-50333",
+      "fromLane": 0,
+      "toEdge": "-56733",
+      "toLane": 1,
+      "direction": "l",
+      "directionLabel": "left"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 8,
+      "fromEdge": "-50333",
+      "fromLane": 0,
+      "toEdge": "-50675",
+      "toLane": 1,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 9,
+      "fromEdge": "-50333",
+      "fromLane": 0,
+      "toEdge": "-50675",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 10,
+      "fromEdge": "-50333",
+      "fromLane": 0,
+      "toEdge": "-57230",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "right"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 11,
+      "fromEdge": "-56732",
+      "fromLane": 1,
+      "toEdge": "-56613",
+      "toLane": 0,
+      "direction": "l",
+      "directionLabel": "left"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 12,
+      "fromEdge": "-56732",
+      "fromLane": 0,
+      "toEdge": "-56733",
+      "toLane": 0,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 13,
+      "fromEdge": "-56732",
+      "fromLane": 1,
+      "toEdge": "-56733",
+      "toLane": 1,
+      "direction": "s",
+      "directionLabel": "through"
+    },
+    {
+      "tlsId": "3935",
+      "linkIndex": 14,
+      "fromEdge": "-56732",
+      "fromLane": 0,
+      "toEdge": "-50675",
+      "toLane": 0,
+      "direction": "r",
+      "directionLabel": "right"
+    }
+  ],
+  "phases": [
+    {
+      "tlsId": "3935",
+      "index": 0,
+      "durationSeconds": 42,
+      "state": "rrrrrrrrrrrgggg",
+      "label": "SUMO phase 1"
+    },
+    {
+      "tlsId": "3935",
+      "index": 1,
+      "durationSeconds": 3,
+      "state": "rrrrrrrrrrryyyy",
+      "label": "SUMO phase 2"
+    },
+    {
+      "tlsId": "3935",
+      "index": 2,
+      "durationSeconds": 3,
+      "state": "rrrrrrrrrrrrrrr",
+      "label": "SUMO phase 3"
+    },
+    {
+      "tlsId": "3935",
+      "index": 3,
+      "durationSeconds": 42,
+      "state": "gggrrrrrrrrrrrr",
+      "label": "SUMO phase 4"
+    },
+    {
+      "tlsId": "3935",
+      "index": 4,
+      "durationSeconds": 3,
+      "state": "yyyrrrrrrrrrrrr",
+      "label": "SUMO phase 5"
+    },
+    {
+      "tlsId": "3935",
+      "index": 5,
+      "durationSeconds": 3,
+      "state": "rrrrrrrrrrrrrrr",
+      "label": "SUMO phase 6"
+    },
+    {
+      "tlsId": "3935",
+      "index": 6,
+      "durationSeconds": 42,
+      "state": "rrrrrrrggggrrrr",
+      "label": "SUMO phase 7"
+    },
+    {
+      "tlsId": "3935",
+      "index": 7,
+      "durationSeconds": 3,
+      "state": "rrrrrrryyyyrrrr",
+      "label": "SUMO phase 8"
+    },
+    {
+      "tlsId": "3935",
+      "index": 8,
+      "durationSeconds": 3,
+      "state": "rrrrrrrrrrrrrrr",
+      "label": "SUMO phase 9"
+    },
+    {
+      "tlsId": "3935",
+      "index": 9,
+      "durationSeconds": 42,
+      "state": "rrrggggrrrrrrrr",
+      "label": "SUMO phase 10"
+    },
+    {
+      "tlsId": "3935",
+      "index": 10,
+      "durationSeconds": 3,
+      "state": "rrryyyyrrrrrrrr",
+      "label": "SUMO phase 11"
+    },
+    {
+      "tlsId": "3935",
+      "index": 11,
+      "durationSeconds": 3,
+      "state": "rrrrrrrrrrrrrrr",
+      "label": "SUMO phase 12"
+    }
+  ],
+  "phaseTemplates": {
+    "1": {
+      "3935": {
+        "green": "rrgrGGgrrrgrGGg",
+        "yellow": "rrgryygrrrgryyg",
+        "clearance": "rrgrrrgrrrgrrrg"
+      }
+    },
+    "2": {
+      "3935": {
+        "green": "rrgGrrgrrrgGrrg",
+        "yellow": "rrgyrrgrrrgyrrg",
+        "clearance": "rrgrrrgrrrgrrrg"
+      }
+    },
+    "3": {
+      "3935": {
+        "green": "rrgrrrgGGGgrrrg",
+        "yellow": "rrgrrrgyyygrrrg",
+        "clearance": "rrgrrrgrrrgrrrg"
+      }
+    },
+    "4": {
+      "3935": {
+        "green": "GGgrrrgrrrgrrrg",
+        "yellow": "yygrrrgrrrgrrrg",
+        "clearance": "rrgrrrgrrrgrrrg"
+      }
+    }
+  },
+  "signalGroups": [
+    {
+      "tlsId": "3935",
+      "laneId": "-57186_1",
+      "linkIndexes": [
+        0
+      ]
+    },
+    {
+      "tlsId": "3935",
+      "laneId": "-57186_0",
+      "linkIndexes": [
+        1,
+        2
+      ]
+    },
+    {
+      "tlsId": "3935",
+      "laneId": "-57229_1",
+      "linkIndexes": [
+        3,
+        5
+      ]
+    },
+    {
+      "tlsId": "3935",
+      "laneId": "-57229_0",
+      "linkIndexes": [
+        4,
+        6
+      ]
+    },
+    {
+      "tlsId": "3935",
+      "laneId": "-50333_0",
+      "linkIndexes": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "tlsId": "3935",
+      "laneId": "-56732_1",
+      "linkIndexes": [
+        11,
+        13
+      ]
+    },
+    {
+      "tlsId": "3935",
+      "laneId": "-56732_0",
+      "linkIndexes": [
+        12,
+        14
+      ]
+    }
+  ]
+}

@@ -1,5 +1,9 @@
 import type { CesiumCameraPreset, CesiumCameraPresetId } from '../types/map'
 import type { ScenarioTemplate } from '../types/scenario'
+import {
+  DEMO_2_SOURCE_CENTER,
+  XIONGAN_SCENE_ANCHOR,
+} from '../mapv/sceneCoordinates.ts'
 
 /**
  * 3D Tiles 真实中心（从 tileset.json transform 反算）：
@@ -10,12 +14,14 @@ import type { ScenarioTemplate } from '../types/scenario'
  */
 
 /** 地图默认中心对齐 3D Tiles 真实中心（WGS84: [lon, lat]） */
-export const DEFAULT_MAP_CENTER: [number, number] = [115.981, 38.985]
+export const DEFAULT_MAP_CENTER: [number, number] = DEMO_2_SOURCE_CENTER
 
 export const DEFAULT_MAP_ZOOM = 14
 
-/** Cesium 相机默认高度（米） */
-export const DEFAULT_CESIUM_CAMERA_HEIGHT = 2000
+/** 桌面 3D 场景保持在有道路与建筑内容的有效观察范围内。 */
+export const DEFAULT_CESIUM_CAMERA_HEIGHT = 1100
+export const BAIDU_3D_MIN_RANGE = 100
+export const BAIDU_3D_MAX_RANGE = 1400
 
 export const DEFAULT_CESIUM_CAMERA_PRESET_ID: CesiumCameraPresetId = 'overview'
 
@@ -25,9 +31,9 @@ export const CESIUM_CAMERA_PRESETS: CesiumCameraPreset[] = [
     label: '总览视角',
     shortLabel: '总览',
     description: '覆盖雄安测试区全局，适合查看建筑和道路整体态势。',
-    height: 2200,
-    pitchDegrees: -55,
-    headingDegrees: 0,
+    height: 1100,
+    pitchDegrees: -58,
+    headingDegrees: 30,
     rangeMultiplier: 1.25,
   },
   {
@@ -35,8 +41,8 @@ export const CESIUM_CAMERA_PRESETS: CesiumCameraPreset[] = [
     label: '倾斜鸟瞰',
     shortLabel: '鸟瞰',
     description: '增强空间层次和建筑立面观感。',
-    height: 1400,
-    pitchDegrees: -48,
+    height: 900,
+    pitchDegrees: -62,
     headingDegrees: 35,
     rangeMultiplier: 1,
   },
@@ -45,7 +51,7 @@ export const CESIUM_CAMERA_PRESETS: CesiumCameraPreset[] = [
     label: '交通俯视',
     shortLabel: '俯视',
     description: '接近监控视角，便于观察路网和交通状态。',
-    height: 1000,
+    height: 850,
     pitchDegrees: -80,
     headingDegrees: 0,
     rangeMultiplier: 0.9,
@@ -55,22 +61,22 @@ export const CESIUM_CAMERA_PRESETS: CesiumCameraPreset[] = [
     label: '道路巡航',
     shortLabel: '巡航',
     description: '低空聚焦局部建筑群，减少远端瓦片加载并提升巡航稳定性。',
-    height: 720,
-    pitchDegrees: -35,
+    height: 520,
+    pitchDegrees: -62,
     headingDegrees: 35,
     rangeMultiplier: 0.55,
-    maxCameraHeight: 800,
+    maxCameraHeight: 700,
     localViewRadiusMeters: 1000,
-    minimumZoomDistance: 150,
-    maximumZoomDistance: 1600,
+    minimumZoomDistance: BAIDU_3D_MIN_RANGE,
+    maximumZoomDistance: BAIDU_3D_MAX_RANGE,
   },
   {
     id: 'intersection',
     label: '路口观察',
     shortLabel: '路口',
     description: '面向关键路口的低空观察视角。',
-    height: 260,
-    pitchDegrees: -32,
+    height: 110,
+    pitchDegrees: -70,
     headingDegrees: 60,
     rangeMultiplier: 0.45,
   },
@@ -311,9 +317,9 @@ export interface TemplateMapViewport {
 /** 各场景模板视野对齐 3D Tiles 真实位置 */
 export const TEMPLATE_MAP_REGISTRY: Record<string, TemplateMapViewport> = {
   demo_2: {
-    center: [116.126756, 38.99115],
+    center: XIONGAN_SCENE_ANCHOR,
     zoom: 17,
-    bounds: [116.1198, 38.9858, 116.1337, 38.9965],
+    bounds: [115.947, 38.9805, 115.962, 38.9925],
   },
   xiongan20: {
     center: [115.981, 38.985],

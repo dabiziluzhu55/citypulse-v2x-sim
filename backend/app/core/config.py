@@ -13,9 +13,9 @@ def resolve_project_root() -> Path:
 
 
 REQUIRED_GENERATED_FILES = (
-    "traffic_manifest.json",
-    "tls_manifest.json",
-    "TotalMap_20.signals.net.xml",
+    "manifests/traffic_manifest.json",
+    "manifests/tls_manifest.json",
+    "network/TotalMap_20.signals.net.xml",
 )
 
 
@@ -67,7 +67,7 @@ class Settings(BaseSettings):
 
     @property
     def signals_net_path(self) -> Path:
-        return self.generated_dir / "TotalMap_20.signals.net.xml"
+        return self.generated_dir / "network" / "TotalMap_20.signals.net.xml"
 
     @property
     def cors_origins(self) -> list[str]:

@@ -9,7 +9,7 @@ import {
   resolveTemplateMapViewport,
   XIONGAN_MAP_BOUNDS,
 } from '../constants/mapDefaults'
-import type { AppMapMode, AppMapView, CesiumCameraPresetId, MapDimension } from '../types/map'
+import type { AppMapMode, AppMapView, CesiumCameraPresetId, MapDimension, ThreeMapController } from '../types/map'
 import { appMapViewKey } from '../types/map'
 import {
   applyCesiumViewport,
@@ -17,6 +17,7 @@ import {
   type ApplyViewportOptions,
   type StoredMapViewport,
 } from '../utils/mapViewportSync'
+import { wgs84ToBd09 } from '../mapv/sceneCoordinates'
 
 export function provideAppMapView() {
   const mode = ref<AppMapMode>('explore')
@@ -29,6 +30,7 @@ export function provideAppMapView() {
     zoom: DEFAULT_MAP_ZOOM,
   })
   const mapRef = shallowRef<Map | null>(null)
+  const threeMapRef = shallowRef<ThreeMapController | null>(null)
   const cesiumRef = shallowRef<Viewer | null>(null)
 
   function setDimension(next: MapDimension) {
@@ -47,6 +49,32 @@ export function provideAppMapView() {
       applyOlViewport(map, viewport.value, options)
     }
 
+    const threeMap = threeMapRef.value
+    if (threeMap) {
+      if (viewport.value.kind === 'bounds') {
+        const [minLon, minLat, maxLon, maxLat] = viewport.value.bounds
+        const [bdMinLon, bdMinLat] = wgs84ToBd09(minLon, minLat)
+        const [bdMaxLon, bdMaxLat] = wgs84ToBd09(maxLon, maxLat)
+        threeMap.setViewport(
+          [[bdMinLon, bdMinLat, 0], [bdMaxLon, bdMaxLat, 0]],
+          { range: 2200 },
+        )
+      } else {
+        const preset = resolveCesiumCameraPreset(cameraPreset.value)
+        const [bdLon, bdLat] = wgs84ToBd09(viewport.value.center[0], viewport.value.center[1])
+        threeMap.flyTo(
+          [bdLon, bdLat, 0],
+          {
+            heading: preset.headingDegrees,
+            pitch: Math.abs(preset.pitchDegrees),
+            range: preset.height,
+            duration: options.duration ?? 0,
+            complete: () => undefined,
+          },
+        )
+      }
+    }
+
     const viewer = cesiumRef.value
     if (viewer) {
       applyCesiumViewport(viewer, viewport.value, {
@@ -63,6 +91,15 @@ export function provideAppMapView() {
 
   function unregisterMap() {
     mapRef.value = null
+  }
+
+  function registerThreeMap(map: ThreeMapController) {
+    threeMapRef.value = map
+    applyViewport({ duration: 0 })
+  }
+
+  function unregisterThreeMap() {
+    threeMapRef.value = null
   }
 
   function registerCesium(viewer: Viewer) {
@@ -152,6 +189,8 @@ export function provideAppMapView() {
     setCameraPreset,
     registerMap,
     unregisterMap,
+    registerThreeMap,
+    unregisterThreeMap,
     registerCesium,
     unregisterCesium,
     flyTo,
@@ -181,6 +220,13 @@ export function bindMapInstance(mapView: AppMapView, map: Map) {
   mapView.registerMap(map)
   onScopeDispose(() => {
     mapView.unregisterMap()
+  })
+}
+
+export function bindThreeMapInstance(mapView: AppMapView, map: ThreeMapController) {
+  mapView.registerThreeMap(map)
+  onScopeDispose(() => {
+    mapView.unregisterThreeMap()
   })
 }
 

@@ -38,6 +38,7 @@ export interface StartSimulationResponse {
   state: SimulationState
   status_url: string
   websocket_url: string
+  metrics_url: string | null
 }
 
 export interface StopSimulationResponse {
@@ -82,6 +83,26 @@ export interface SimulationMetrics {
   halting_vehicles: number
   total_waiting_time: number
   mean_speed: number
+  avg_waiting_time?: number
+  avg_travel_time?: number
+  avg_queue_length?: number
+  throughput?: number
+  fuel_consumption?: number
+  evaluation?: SimulationEvaluation
+}
+
+export interface SimulationEvaluation {
+  episode_id: string
+  algorithm: string
+  avg_waiting_time: number
+  avg_travel_time: number
+  avg_queue_length: number
+  throughput: number
+  fuel_consumption: number
+  avg_decision_latency_ms: number
+  departed: number
+  arrived: number
+  finished: boolean
 }
 
 export interface SimulationEvent {
@@ -105,6 +126,7 @@ export interface SimulationSnapshot {
   vehicles: SimulationVehicle[]
   events: SimulationEvent[]
   metrics: SimulationMetrics
+  evaluation?: SimulationEvaluation | null
   error: string | null
 }
 

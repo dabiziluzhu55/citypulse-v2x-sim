@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
+import CenterCommunicationPanel from '../components/dashboard/CenterCommunicationPanel.vue'
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
+import { useDashboardOverlay } from '../composables/useDashboardOverlay'
 import { useOptionalAppMapView } from '../composables/useAppMapView'
 import { useSimulationStore } from '../composables/useSimulationStore'
 import { useSnapshotMetrics } from '../composables/useSnapshotMetrics'
 import { useHealth } from '../composables/useHealth'
+import { useCatalog } from '../composables/useCatalog'
+import { useActiveIntersectionScene } from '../composables/useActiveIntersectionScene'
 import { CESIUM_CAMERA_PRESETS } from '../constants/mapDefaults'
 import type { CesiumCameraPresetId, MapDimension } from '../types/map'
 import type { StartSimulationRequest } from '../types/simulation'
@@ -14,6 +18,12 @@ const mapView = useOptionalAppMapView()
 const mapDimension = computed(() => mapView?.dimension.value ?? '2d')
 const cameraPreset = computed(() => mapView?.cameraPreset.value ?? 'overview')
 const cameraPresets = CESIUM_CAMERA_PRESETS
+const { activeIntersectionId, sceneStatus, selectIntersection } = useActiveIntersectionScene()
+useCatalog(activeIntersectionId)
+const localIntersectionOptions = Array.from({ length: 20 }, (_, index) => ({
+  intersection_id: `demo_${index + 1}`,
+}))
+const intersectionOptions = localIntersectionOptions
 
 function setMapDimension(next: MapDimension) {
   mapView?.setDimension(next)
@@ -39,8 +49,28 @@ const {
 const { ready: healthReady, statusLabel: healthLabel } = useHealth()
 
 const { timeseries, logEntries } = useSnapshotMetrics(sessionId, snapshot)
+const { communicationPanelOpen, closeCommunicationPanel } = useDashboardOverlay()
+
+function handleOverlayKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && communicationPanelOpen.value) {
+    closeCommunicationPanel()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleOverlayKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleOverlayKeydown)
+  closeCommunicationPanel()
+})
 
 async function handleStart(payload: StartSimulationRequest) {
+  const intersectionId = payload.intersection_ids[0]
+  if (intersectionId) selectIntersection(intersectionId)
+  mapView?.setCameraPreset('intersection')
+  mapView?.setDimension('3d')
   await launchRun(payload)
 }
 
@@ -52,6 +82,23 @@ async function handleStop() {
 <template>
   <section class="dashboard-page">
     <div v-if="mapView" class="map-view-controls">
+      <label class="intersection-picker">
+        <span class="map-dimension-toggle__label">路口</span>
+        <select
+          :value="activeIntersectionId"
+          aria-label="选择高精度路口"
+          @change="selectIntersection(($event.target as HTMLSelectElement).value)"
+        >
+          <option
+            v-for="item in intersectionOptions"
+            :key="item.intersection_id"
+            :value="item.intersection_id"
+          >
+            {{ item.intersection_id }}
+          </option>
+        </select>
+        <i :class="`is-${sceneStatus}`" aria-hidden="true" />
+      </label>
       <div class="map-dimension-toggle">
         <span class="map-dimension-toggle__label">地图视图</span>
         <button
@@ -104,7 +151,34 @@ async function handleStop() {
       />
     </div>
 
-    <div class="dashboard-column center" aria-hidden="true" />
+    <div class="dashboard-column center" />
+
+    <Transition name="communication-overlay">
+      <div
+        v-if="communicationPanelOpen"
+        id="center-communication-dialog"
+        class="communication-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="车路云通信记录"
+      >
+        <button
+          type="button"
+          class="communication-overlay__backdrop"
+          aria-label="关闭车路云通信记录"
+          @click="closeCommunicationPanel"
+        />
+        <div class="communication-overlay__panel">
+          <CenterCommunicationPanel
+            :log-entries="logEntries"
+            :loading="false"
+            :error="null"
+            :connected="wsConnected"
+            @close="closeCommunicationPanel"
+          />
+        </div>
+      </div>
+    </Transition>
 
     <div class="dashboard-column right">
       <RightSidebarPanel
@@ -122,6 +196,68 @@ async function handleStop() {
 </template>
 
 <style scoped>
+.communication-overlay {
+  position: fixed;
+  inset: var(--dashboard-top-offset) 0 var(--dashboard-bottom-offset);
+  z-index: 9;
+  display: grid;
+  place-items: end center;
+  padding: 24px max(calc(var(--dashboard-right-width) + 36px), 24px) 42px
+    max(calc(var(--dashboard-left-width) + 36px), 24px);
+  pointer-events: none;
+}
+
+.communication-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: radial-gradient(circle at 50% 72%, rgba(8, 35, 68, 0.2), transparent 42%);
+  cursor: default;
+  pointer-events: auto;
+}
+
+.communication-overlay__panel {
+  position: relative;
+  z-index: 1;
+  width: min(760px, 100%);
+  pointer-events: auto;
+}
+
+.communication-overlay__panel::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -28px;
+  width: 170px;
+  height: 28px;
+  background: linear-gradient(180deg, rgba(33, 230, 255, 0.2), transparent);
+  clip-path: polygon(37% 0, 63% 0, 100% 100%, 0 100%);
+  transform: translateX(-50%);
+  opacity: 0.66;
+  pointer-events: none;
+}
+
+.communication-overlay-enter-active,
+.communication-overlay-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.communication-overlay-enter-active .communication-overlay__panel,
+.communication-overlay-leave-active .communication-overlay__panel {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.communication-overlay-enter-from,
+.communication-overlay-leave-to {
+  opacity: 0;
+}
+
+.communication-overlay-enter-from .communication-overlay__panel,
+.communication-overlay-leave-to .communication-overlay__panel {
+  opacity: 0;
+  transform: translateY(18px) scale(0.97);
+}
+
 .map-view-controls {
   position: fixed;
   top: calc(var(--dashboard-top-offset) + 10px);
@@ -135,7 +271,8 @@ async function handleStop() {
 }
 
 .map-dimension-toggle,
-.map-camera-toggle {
+.map-camera-toggle,
+.intersection-picker {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -144,6 +281,41 @@ async function handleStop() {
   border-radius: 999px;
   background: rgba(2, 10, 24, 0.82);
   backdrop-filter: blur(10px);
+}
+
+.intersection-picker select {
+  min-width: 92px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #d8f5ff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.intersection-picker select option {
+  background: #07182a;
+  color: #d8f5ff;
+}
+
+.intersection-picker i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7f8d99;
+}
+
+.intersection-picker i.is-loading {
+  background: #e8b94c;
+}
+
+.intersection-picker i.is-ready {
+  background: #3ce69a;
+  box-shadow: 0 0 7px rgba(60, 230, 154, 0.72);
+}
+
+.intersection-picker i.is-error {
+  background: #ff6b6b;
 }
 
 .map-camera-toggle {
@@ -191,7 +363,28 @@ async function handleStop() {
   }
 }
 
+@media (max-width: 1320px) {
+  .communication-overlay {
+    inset: var(--dashboard-top-offset) 0 80px;
+    padding: 20px;
+    place-items: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .communication-overlay-enter-active,
+  .communication-overlay-leave-active,
+  .communication-overlay-enter-active .communication-overlay__panel,
+  .communication-overlay-leave-active .communication-overlay__panel {
+    transition: none;
+  }
+}
+
 @media (max-width: 1100px) {
+  .dashboard-page {
+    top: calc(var(--dashboard-top-offset) + 116px);
+  }
+
   .map-view-controls {
     flex-direction: column;
     top: calc(var(--dashboard-top-offset) + 6px);

@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv, type ProxyOptions } from 'vite'
 
+import copyPlugin from 'rollup-plugin-copy'
 import vue from '@vitejs/plugin-vue'
 
 import cesium from 'vite-plugin-cesium'
@@ -36,7 +37,14 @@ export default defineConfig(({ mode }) => {
   const usePolling = env.VITE_DEV_USE_POLLING === '1'
 
   return {
-    plugins: [vue(), cesium()],
+    plugins: [
+      vue(),
+      cesium(),
+      copyPlugin({
+        targets: [{ src: 'node_modules/@baidumap/mapv-three/dist/assets', dest: 'public/mapvthree' }],
+        hook: 'buildStart',
+      }),
+    ],
     server: {
       host: '127.0.0.1',
       port: 5173,
