@@ -719,7 +719,8 @@
         "northeast": {"incoming_edges": ["-56830"]},
         "southwest": {"incoming_edges": ["-57077"]},
         "northwest": {"incoming_edges": ["-56004"]},
-        "southeast": {"incoming_edges": ["-57004"]}
+        "southeast": {"incoming_edges": ["-57004"]},
+        "auxiliary_east": {"incoming_edges": ["E7"]}
       },
       "direction_mapping": {
         "s": "through",

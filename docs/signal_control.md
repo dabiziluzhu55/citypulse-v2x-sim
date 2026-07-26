@@ -109,7 +109,9 @@ junction `4393`，在所有相位使用让行绿。
 `demo_18` 三个时段均使用 `80s` 周期，每个相位为 `37s` 绿灯加 `3s` 黄灯；`demo_19`
 三个时段均使用 `76s` 周期，每个相位为 `35s` 绿灯加 `3s` 黄灯。两处路口都先放行东北、
 西南进口，再放行西北、东南进口；同向直行使用受保护绿、左转使用让行绿，四个右转始终
-让行放行，基础路网中不属于官方方案的 `t` 连接保持红灯。
+让行放行，基础路网中不属于官方方案的 `t` 连接保持红灯。`demo_18` 还有一条从上游
+`J89` 汇入 junction `4409` 的渠化辅助进口 `E7`；它只包含右转连接，在所有相位使用
+让行绿 `g`，不参与官方车流需求统计。
 
 `demo_20` 对应现有交通灯 junction/TLS `3637`。配时表的东北、西南、西北、东南依次映射为
 项目中的东、西、北、南进口；三个时段周期分别为 `120s`、`90s`、`110s`。相位 1/3
@@ -169,8 +171,9 @@ python -m simulation.sumo.build_tls
 `traffic_light`。最新路网的 `demo_18` 含未受 TLS 控制的进口 connection，构建器会检测后
 刷新 junction `4409`：它只在传给 `netconvert` 的临时副本中被降为 `priority`，旧的
 TLS 属性和 `tlLogic` 会被移除，再由 `--tls.set 4409` 完整重建。基础路网中的 junction
-类型不会改变，不要使用 NetEdit 手工修改 `TotalMap_20.net.xml`。`demo_19` 则直接复用
-现有 `linkIndex` 与 foe 矩阵。构建器还会确认派生网络中每个受控 TLS 都有内置
+类型不会改变，不要使用 NetEdit 手工修改 `TotalMap_20.net.xml`。刷新后 `E7` 会被纳入
+TLS linkIndex，拓扑中的 `auxiliary_east` 使其三条目的车道连接全周期保持 `g`，避免生成
+从未放行的 signal index。`demo_19` 则直接复用现有 `linkIndex` 与 foe 矩阵。构建器还会确认派生网络中每个受控 TLS 都有内置
 `tlLogic`，并检查其状态长度与实际 `linkIndex` 一致，防止无效产物进入 manifest。
 
 | 生成路径 | 用途 |

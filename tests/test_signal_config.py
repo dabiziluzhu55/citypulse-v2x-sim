@@ -765,6 +765,7 @@ class SignalConfigurationTests(unittest.TestCase):
                 "southwest": ("-57077",),
                 "northwest": ("-56004",),
                 "southeast": ("-57004",),
+                "auxiliary_east": ("E7",),
             },
         )
         for program in demo_18.programs.values():
@@ -778,6 +779,12 @@ class SignalConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(
             demo_18.topology.movement_for_direction("-57077", "L"), "left"
+        )
+        self.assertEqual(
+            demo_18.topology.movement_for_direction("E7", "r"), "right"
+        )
+        self.assertTrue(
+            demo_18.topology.right_turn_is_always_permissive("auxiliary_east")
         )
 
         demo_19 = self.load().intersections["demo_19"]
