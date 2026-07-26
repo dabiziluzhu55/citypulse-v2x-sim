@@ -163,8 +163,12 @@ def validate_source_compatibility(
     routes_by_intersection: Dict[
         str, Dict[Tuple[str, str], Set[Tuple[str, str]]]
     ] = {}
+    implicit_routes_by_intersection: Dict[
+        str, Dict[Tuple[str, str], Set[Tuple[str, str]]]
+    ] = {}
     for config in selected:
         routes: Dict[Tuple[str, str], Set[Tuple[str, str]]] = defaultdict(set)
+        primary_routes: Dict[Tuple[str, str], Set[Tuple[str, str]]] = defaultdict(set)
         for edge_id in config.topology.incoming_edges:
             approach = config.topology.approach_for_edge(edge_id)
             for connection in incoming_connections[edge_id]:
@@ -176,10 +180,17 @@ def validate_source_compatibility(
                         f"{direction!r} on {edge_id}->{connection.get('to', '')}."
                     )
                 if movement != "blocked":
-                    routes[(approach, movement)].add(
-                        (edge_id, connection.get("to", ""))
-                    )
+                    route = (edge_id, connection.get("to", ""))
+                    key = (approach, movement)
+                    routes[key].add(route)
+                    # Match build_traffic's implicit-route preference.
+                    if direction not in {"L", "R"}:
+                        primary_routes[key].add(route)
         routes_by_intersection[config.intersection_id] = routes
+        implicit_routes_by_intersection[config.intersection_id] = {
+            key: primary_routes.get(key) or candidates
+            for key, candidates in routes.items()
+        }
 
     checked_movements = 0
     override_routes = 0
@@ -187,6 +198,7 @@ def validate_source_compatibility(
         config = selected_by_id[intersection_id]
         demand = demands.intersections[intersection_id]
         routes = routes_by_intersection[intersection_id]
+        implicit_routes = implicit_routes_by_intersection[intersection_id]
         for period in demand.periods.values():
             for official_approach, official_movement in _nonzero_movements(
                 demand, period
@@ -206,7 +218,7 @@ def validate_source_compatibility(
                     )
                     continue
                 sumo_movement = approach.movements[official_movement]
-                route_pairs = sorted(
+                all_route_pairs = sorted(
                     routes.get((approach.sumo_approach, sumo_movement), set())
                 )
                 overrides = period.route_overrides.get(official_approach, {}).get(
@@ -221,19 +233,24 @@ def validate_source_compatibility(
                 if splits:
                     routes_by_target = {
                         to_edge: (from_edge, to_edge)
-                        for from_edge, to_edge in route_pairs
+                        for from_edge, to_edge in all_route_pairs
                     }
                     configured_targets = {item.to_edge for item in splits}
                     if (
-                        len(routes_by_target) != len(route_pairs)
+                        len(routes_by_target) != len(all_route_pairs)
                         or set(routes_by_target) != configured_targets
                     ):
                         problems.append(
                             f"{context}: configured split targets "
                             f"{sorted(configured_targets)} do not match SUMO routes "
-                            f"{route_pairs}."
+                            f"{all_route_pairs}."
                         )
                     continue
+                route_pairs = sorted(
+                    implicit_routes.get(
+                        (approach.sumo_approach, sumo_movement), set()
+                    )
+                )
                 if len(route_pairs) != 1:
                     problems.append(
                         f"{context}: expected one SUMO route for "

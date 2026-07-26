@@ -574,45 +574,6 @@ def _connections_conflict(
     )
 
 
-def _same_edge_conflicting_right_turns(
-    connections: Sequence[ControlledConnection],
-    green: Mapping[str, Sequence[str]],
-    request_foes: Mapping[str, Mapping[int, str]],
-    intersection_id: str,
-) -> set[Tuple[str, int]]:
-    """Find auxiliary right turns that form an unsupported same-edge mutual g/g."""
-    result: set[Tuple[str, int]] = set()
-    for position, first in enumerate(connections):
-        for second in connections[position + 1 :]:
-            if first.from_edge != second.from_edge or first.tls_id != second.tls_id:
-                continue
-            if (
-                green[first.tls_id][first.link_index] != "g"
-                or green[second.tls_id][second.link_index] != "g"
-                or not _connections_conflict(first, second, request_foes)
-            ):
-                continue
-            if first.movement == "right" and second.movement == "right":
-                continue
-            for connection in (first, second):
-                if connection.movement == "right" and connection.direction == "R":
-                    result.add((connection.tls_id, connection.link_index))
-
-    for tls_id, link_index in result:
-        shared_movements = {
-            item.movement
-            for item in connections
-            if item.tls_id == tls_id and item.link_index == link_index
-        }
-        if shared_movements != {"right"}:
-            raise SignalConfigurationError(
-                f"{intersection_id}: TLS {tls_id} linkIndex {link_index} needs "
-                "phase-specific right-turn blocking but is shared by movements "
-                f"{sorted(shared_movements)}."
-            )
-    return result
-
-
 def _can_demote_internal_conflict(
     first: ControlledConnection,
     second: ControlledConnection,
@@ -701,7 +662,6 @@ def _build_templates(
     if phase_mappings is None:
         phase_mappings = config.topology.phases
     phase_mappings = tuple(phase_mappings)
-    blocked_right_turns_by_phase: Dict[int, set[Tuple[str, int]]] = {}
     for phase_mapping in phase_mappings:
         primary = [
             item
@@ -783,14 +743,6 @@ def _build_templates(
             _set_state_char(green, connection, "G")
             _set_state_char(yellow, connection, "y")
             served_connections.add(connection)
-        blocked_right_turns_by_phase[phase_mapping.phase_number] = (
-            _same_edge_conflicting_right_turns(
-                own_connections,
-                green,
-                request_foes,
-                config.intersection_id,
-            )
-        )
         templates[phase_mapping.phase_number] = {
             tls_id: {
                 "green": "".join(green[tls_id]),
@@ -799,22 +751,6 @@ def _build_templates(
             }
             for tls_id in tls_ids
         }
-    all_blocked_right_turns = set().union(*blocked_right_turns_by_phase.values())
-    phase_order = [item.phase_number for item in phase_mappings]
-    for position, phase_number in enumerate(phase_order):
-        next_phase_number = phase_order[(position + 1) % len(phase_order)]
-        current_blocked = blocked_right_turns_by_phase[phase_number]
-        next_blocked = blocked_right_turns_by_phase[next_phase_number]
-        for tls_id, link_index in all_blocked_right_turns:
-            replacements = {}
-            if (tls_id, link_index) in current_blocked:
-                replacements = {"green": "r", "yellow": "r", "clearance": "r"}
-            elif (tls_id, link_index) in next_blocked:
-                replacements = {"yellow": "y", "clearance": "r"}
-            for stage, value in replacements.items():
-                state = list(templates[phase_number][tls_id][stage])
-                state[link_index] = value
-                templates[phase_number][tls_id][stage] = "".join(state)
     unserved = [
         connection
         for connection in own_connections

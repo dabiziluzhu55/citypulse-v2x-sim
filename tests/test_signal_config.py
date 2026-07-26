@@ -16,7 +16,6 @@ from simulation.sumo.build_tls import (
     _remove_empty_params,
     _repair_uncontrolled_tls_connections,
     _run_netconvert,
-    _same_edge_conflicting_right_turns,
 )
 from simulation.sumo.config import (
     PhaseMovement,
@@ -254,51 +253,6 @@ class SignalConfigurationTests(unittest.TestCase):
                                         for stage in ("green", "yellow", "clearance")
                                     )
                                 )
-
-    def test_same_edge_conflict_only_blocks_auxiliary_uppercase_right_turns(self):
-        def connection(index, movement, direction):
-            return ControlledConnection(
-                intersection_id="fixture",
-                junction_id="junction",
-                tls_id="tls",
-                link_index=index,
-                approach="east",
-                movement=movement,
-                from_edge="incoming",
-                from_lane=index,
-                to_edge=f"out_{index}",
-                to_lane=0,
-                direction=direction,
-                via=f":junction_{index}_0",
-                request_index=index,
-            )
-
-        def foes_with(*request_indices):
-            bits = ["0"] * 3
-            for request_index in request_indices:
-                bits[2 - request_index] = "1"
-            return "".join(bits)
-
-        connections = (
-            connection(0, "right", "r"),
-            connection(1, "right", "R"),
-            connection(2, "left", "l"),
-        )
-        self.assertEqual(
-            _same_edge_conflicting_right_turns(
-                connections,
-                {"tls": "ggg"},
-                {
-                    "junction": {
-                        0: foes_with(1, 2),
-                        1: foes_with(0, 2),
-                        2: foes_with(0, 1),
-                    }
-                },
-                "fixture",
-            ),
-            {("tls", 1)},
-        )
 
     def test_demo_4_real_multi_lane_right_turns_remain_always_permissive(self):
         config = self.load().intersections["demo_4"]
@@ -627,7 +581,13 @@ class SignalConfigurationTests(unittest.TestCase):
             demo_9.topology.movement_for_direction("-56619", "R"), "right"
         )
         self.assertEqual(
-            demo_9.topology.movement_for_direction("-56369", "R"), "blocked"
+            demo_9.topology.movement_for_direction("-56369", "R"), "right"
+        )
+        self.assertEqual(
+            demo_9.topology.movement_for_direction("-50339", "L"), "left"
+        )
+        self.assertEqual(
+            demo_9.topology.movement_for_direction("-50241", "R"), "right"
         )
         self.assertEqual(
             demo_9.topology.movement_for_direction("-50241", "s"), "blocked"
@@ -941,31 +901,31 @@ class SignalConfigurationTests(unittest.TestCase):
             demo_13.topology.movement_for_direction("-46884", "t"), "blocked"
         )
 
-    def test_demo_9_templates_follow_five_arm_topology_and_real_foes(self):
+    def test_demo_9_templates_follow_updated_five_arm_topology(self):
         config = self.load().intersections["demo_9"]
         definitions = (
-            (0, "south", "-56369", "-50338", "r"),
-            (1, "south", "-56369", "-56496", "R"),
-            (2, "south", "-56369", "-56370", "s"),
-            (4, "south", "-56369", "-56620", "l"),
-            (5, "south", "-56369", "-56715", "t"),
-            (6, "west", "-50339", "-56715", "r"),
-            (7, "west", "-50339", "-50338", "s"),
-            (8, "west", "-50339", "-56496", "L"),
-            (9, "west", "-50339", "-56370", "l"),
-            (10, "north", "-57214", "-56620", "r"),
-            (11, "north", "-57214", "-56715", "s"),
-            (13, "north", "-57214", "-50338", "l"),
-            (14, "north", "-57214", "-56496", "l"),
-            (15, "north", "-57214", "-56370", "t"),
-            (16, "northeast", "-50241", "-56370", "r"),
-            (17, "northeast", "-50241", "-56620", "R"),
-            (18, "northeast", "-50241", "-56715", "s"),
-            (19, "northeast", "-50241", "-50338", "l"),
-            (20, "east", "-56619", "-56496", "r"),
-            (21, "east", "-56619", "-56370", "R"),
-            (22, "east", "-56619", "-56620", "s"),
-            (23, "east", "-56619", "-56715", "l"),
+            (0, "south", "-56369", 1, "-50338", "r"),
+            (1, "south", "-56369", 1, "-56496", "R"),
+            (2, "south", "-56369", 1, "-56370", "s"),
+            (3, "south", "-56369", 3, "-56620", "l"),
+            (4, "south", "-56369", 3, "-56715", "t"),
+            (5, "west", "-50339", 0, "-56715", "r"),
+            (6, "west", "-50339", 1, "-50338", "s"),
+            (7, "west", "-50339", 3, "-56496", "L"),
+            (8, "west", "-50339", 3, "-56370", "l"),
+            (9, "north", "-57214", 0, "-56620", "r"),
+            (10, "north", "-57214", 1, "-56715", "s"),
+            (11, "north", "-57214", 3, "-50338", "l"),
+            (12, "north", "-57214", 3, "-56370", "t"),
+            (13, "northeast", "-50241", 1, "-56370", "r"),
+            (14, "northeast", "-50241", 1, "-56620", "R"),
+            (15, "northeast", "-50241", 1, "-56715", "s"),
+            (16, "northeast", "-50241", 1, "-50338", "l"),
+            (17, "northeast", "-50241", 1, "-56496", "L"),
+            (18, "east", "-56619", 1, "-56496", "r"),
+            (19, "east", "-56619", 1, "-56370", "R"),
+            (20, "east", "-56619", 1, "-56620", "s"),
+            (21, "east", "-56619", 3, "-56715", "l"),
         )
         connections = [
             ControlledConnection(
@@ -976,57 +936,66 @@ class SignalConfigurationTests(unittest.TestCase):
                 approach=approach,
                 movement=config.topology.movement_for_direction(from_edge, direction),
                 from_edge=from_edge,
-                from_lane=0,
+                from_lane=from_lane,
                 to_edge=to_edge,
                 to_lane=0,
                 direction=direction,
                 via=f":3864_{request_index}_0",
                 request_index=request_index,
             )
-            for request_index, approach, from_edge, to_edge, direction in definitions
+            for (
+                request_index,
+                approach,
+                from_edge,
+                from_lane,
+                to_edge,
+                direction,
+            ) in definitions
         ]
-        foes = {
-            0: "000010000010000010000000",
-            1: "111110000110000110000000",
-            2: "111001111110001110000000",
-            3: "111001111110001110000000",
-            4: "110001100001111110000000",
-            5: "100001000001100000000000",
-            6: "000000000001100000000000",
-            7: "100011000011100000011111",
-            8: "111111000111100000011110",
-            9: "010000101111100000011100",
-            10: "010000100000000000010000",
-            11: "110001100000001111110000",
-            12: "110001100000001111110000",
-            13: "110011100000001110001111",
-            14: "001111100000001100001110",
-            15: "000000000000001000001100",
-            16: "001000000000000000001100",
-            17: "011000000111111000011100",
-            18: "111000000111100110111100",
-            19: "111000000110000110000011",
-            20: "000000000100000100000010",
-            21: "000011110100000100001110",
-            22: "000011100011111100011110",
-            23: "000011000011100110111110",
-        }
+        state_length = len(connections)
         templates = _build_templates(
             config,
             connections,
-            {"3864": 24},
-            {"3864": foes},
+            {"3864": state_length},
+            {
+                "3864": {
+                    index: "0" * state_length for index in range(state_length)
+                }
+            },
         )
-        phase_one = templates[1]["3864"]["green"]
-        phase_two = templates[2]["3864"]["green"]
-        phase_three = templates[3]["3864"]["green"]
-        self.assertTrue(all(phase_one[index] == "G" for index in (2, 11)))
-        self.assertTrue(all(phase_one[index] == "g" for index in (4, 13, 14)))
-        self.assertTrue(all(phase_two[index] == "G" for index in (7, 22)))
-        self.assertTrue(all(phase_two[index] == "g" for index in (9, 23)))
-        self.assertEqual(phase_three[19], "G")
-        always_permissive_right_turns = (0, 6, 10, 20, 21)
-        blocked = (1, 5, 8, 15, 17, 18)
+
+        phase_one = templates[1]["3864"]
+        phase_two = templates[2]["3864"]
+        phase_three = templates[3]["3864"]
+
+        south_lane_one_straight = connections[2]
+        self.assertEqual(south_lane_one_straight.lane_id, "-56369_1")
+        self.assertEqual(south_lane_one_straight.movement, "through")
+        self.assertEqual(
+            tuple(
+                phase_one[stage][2]
+                for stage in ("green", "yellow", "clearance")
+            ),
+            ("G", "y", "r"),
+        )
+        for phase in (phase_two, phase_three):
+            self.assertTrue(
+                all(
+                    phase[stage][2] == "r"
+                    for stage in ("green", "yellow", "clearance")
+                )
+            )
+
+        self.assertEqual(connections[7].movement, "left")
+        self.assertEqual(
+            tuple(
+                phase_two[stage][7]
+                for stage in ("green", "yellow", "clearance")
+            ),
+            ("g", "y", "r"),
+        )
+
+        always_permissive_right_turns = (0, 1, 5, 9, 18, 19)
         for phase in templates.values():
             for stage in ("green", "yellow", "clearance"):
                 state = phase["3864"][stage]
@@ -1036,100 +1005,34 @@ class SignalConfigurationTests(unittest.TestCase):
                         for index in always_permissive_right_turns
                     )
                 )
-                self.assertTrue(all(state[index] == "r" for index in blocked))
-        for phase_number in (1, 2):
-            self.assertTrue(
-                all(
-                    templates[phase_number]["3864"][stage][16] == "r"
-                    for stage in ("green", "yellow", "clearance")
+                self.assertTrue(all(state[index] == "r" for index in (4, 12, 15)))
+
+        for index in (13, 14):
+            self.assertEqual(connections[index].movement, "right")
+            for phase in (phase_one, phase_two):
+                self.assertTrue(
+                    all(
+                        phase[stage][index] == "r"
+                        for stage in ("green", "yellow", "clearance")
+                    )
                 )
-            )
-        self.assertEqual(phase_three[16], "G")
-        self.assertEqual(templates[3]["3864"]["yellow"][16], "y")
-        self.assertEqual(templates[3]["3864"]["clearance"][16], "r")
-
-    def test_demo_9_same_edge_mutual_right_turn_is_blocked_only_in_conflict_phase(self):
-        config = self.load().intersections["demo_9"]
-
-        def connection(request_index, from_edge, to_edge, direction):
-            return ControlledConnection(
-                intersection_id="demo_9",
-                junction_id="3864",
-                tls_id="3864",
-                link_index=request_index,
-                approach=config.topology.approach_for_edge(from_edge),
-                movement=config.topology.movement_for_direction(
-                    from_edge, direction
+            self.assertEqual(
+                tuple(
+                    phase_three[stage][index]
+                    for stage in ("green", "yellow", "clearance")
                 ),
-                from_edge=from_edge,
-                from_lane=0,
-                to_edge=to_edge,
-                to_lane=0,
-                direction=direction,
-                via=f":3864_{request_index}_0",
-                request_index=request_index,
+                ("G", "y", "r"),
             )
 
-        connections = (
-            connection(2, "-56369", "-56370", "s"),
-            connection(4, "-56369", "-56620", "l"),
-            connection(12, "-50339", "-50338", "s"),
-            connection(13, "-50339", "-56370", "l"),
-            connection(22, "-57214", "-56715", "s"),
-            connection(23, "-57214", "-50338", "l"),
-            connection(40, "-50241", "-50338", "l"),
-            connection(41, "-50241", "-56370", "r"),
-            connection(43, "-56619", "-56620", "s"),
-            connection(44, "-56619", "-56715", "l"),
-            connection(45, "-56619", "-56496", "r"),
-            connection(46, "-56619", "-56370", "R"),
-        )
-
-        def foes_with(other_index):
-            bits = ["0"] * 47
-            bits[46 - other_index] = "1"
-            return "".join(bits)
-
-        templates = _build_templates(
-            config,
-            connections,
-            {"3864": 47},
-            {"3864": {44: foes_with(46), 46: foes_with(44)}},
-        )
-        phase_one = templates[1]["3864"]
-        phase_two = templates[2]["3864"]
-        phase_three = templates[3]["3864"]
-        self.assertTrue(
-            all(
-                phase_one[stage][41] == "r" and phase_two[stage][41] == "r"
-                for stage in ("green", "yellow", "clearance")
+        for index in (16, 17):
+            self.assertEqual(connections[index].movement, "left")
+            self.assertEqual(
+                tuple(
+                    phase_three[stage][index]
+                    for stage in ("green", "yellow", "clearance")
+                ),
+                ("G", "y", "r"),
             )
-        )
-        self.assertEqual(phase_three["green"][41], "G")
-        self.assertEqual(phase_three["yellow"][41], "y")
-        self.assertEqual(phase_three["clearance"][41], "r")
-        self.assertEqual(phase_two["green"][44], "g")
-        self.assertTrue(
-            all(
-                phase_two[stage][45] == "g"
-                for stage in ("green", "yellow", "clearance")
-            )
-        )
-        self.assertTrue(
-            all(
-                phase_two[stage][46] == "r"
-                for stage in ("green", "yellow", "clearance")
-            )
-        )
-        self.assertEqual(phase_one["green"][46], "g")
-        self.assertEqual(phase_one["yellow"][46], "y")
-        self.assertEqual(phase_one["clearance"][46], "r")
-        self.assertTrue(
-            all(
-                phase_three[stage][46] == "g"
-                for stage in ("green", "yellow", "clearance")
-            )
-        )
 
     def test_demo_8_and_11_templates_follow_real_foe_matrices(self):
         def make_connections(config, intersection_id, junction_id, tls_id, definitions):

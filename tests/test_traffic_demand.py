@@ -766,6 +766,65 @@ class TrafficDemandTests(unittest.TestCase):
             ("-57229", "-50675"),
         )
 
+    def test_demo_9_implicit_routes_prefer_lowercase_direction_codes(self):
+        demand = load_traffic_demands(DEMANDS).intersections["demo_9"]
+        manifest = {
+            "connections": [
+                {
+                    "approach": "south",
+                    "movement": "right",
+                    "from_edge": "-56369",
+                    "to_edge": "-50338",
+                    "direction": "r",
+                },
+                {
+                    "approach": "south",
+                    "movement": "right",
+                    "from_edge": "-56369",
+                    "to_edge": "-56496",
+                    "direction": "R",
+                },
+                {
+                    "approach": "east",
+                    "movement": "right",
+                    "from_edge": "-56619",
+                    "to_edge": "-56496",
+                    "direction": "r",
+                },
+                {
+                    "approach": "east",
+                    "movement": "right",
+                    "from_edge": "-56619",
+                    "to_edge": "-56370",
+                    "direction": "R",
+                },
+            ]
+        }
+        self.assertEqual(
+            _movement_route(
+                "demo_9",
+                manifest,
+                demand.approaches["south"],
+                "right",
+            ),
+            ("-56369", "-50338"),
+        )
+
+        period = demand.periods["morning_peak"]
+        self.assertEqual(
+            _movement_routes(
+                "demo_9",
+                manifest,
+                demand.approaches["east"],
+                "right",
+                period.route_splits["east"]["right"],
+            ),
+            (
+                (("-56619", "-56370"), 4),
+                (("-56619", "-56496"), 2),
+            ),
+        )
+
     def test_demo_5_official_movements_select_the_expected_t_junction_routes(self):
         demand = load_traffic_demands(DEMANDS).intersections["demo_5"]
         manifest = {

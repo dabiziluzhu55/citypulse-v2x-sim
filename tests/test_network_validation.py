@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
@@ -74,6 +75,25 @@ class RealNetworkCompatibilityTests(unittest.TestCase):
                         self.assertEqual(
                             states["clearance"][connection.link_index], "g"
                         )
+
+    def test_demo_9_south_lane_one_keeps_its_straight_connection(self):
+        matches = set()
+        for _, element in ET.iterparse(NETWORK, events=("end",)):
+            if (
+                element.tag == "connection"
+                and element.get("from") == "-56369"
+                and element.get("fromLane") == "1"
+            ):
+                matches.add(
+                    (
+                        element.get("to"),
+                        element.get("toLane"),
+                        element.get("dir"),
+                    )
+                )
+            element.clear()
+
+        self.assertIn(("-56370", "1", "s"), matches)
 
     def test_missing_demo_8_bypasses_report_all_six_period_movements(self):
         raw = json.loads(DEMANDS.read_text(encoding="utf-8"))

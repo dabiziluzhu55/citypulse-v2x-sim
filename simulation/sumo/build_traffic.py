@@ -260,6 +260,12 @@ def _movement_route(
         if item.get("approach") == approach.sumo_approach
         and item.get("movement") == sumo_movement
     ]
+    # Uppercase L/R are auxiliary signal paths unless demand explicitly splits to them.
+    primary_matches = [
+        item for item in matches if item.get("direction") not in {"L", "R"}
+    ]
+    if primary_matches:
+        matches = primary_matches
     route_pairs = sorted(
         {(str(item["from_edge"]), str(item["to_edge"])) for item in matches}
     )

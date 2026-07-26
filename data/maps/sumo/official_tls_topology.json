@@ -403,13 +403,12 @@
       "direction_mapping": {
         "s": "through",
         "l": "left",
-        "L": "blocked",
+        "L": "left",
         "r": "right",
-        "R": "blocked",
+        "R": "right",
         "t": "blocked"
       },
       "approach_direction_mapping": {
-        "east": {"R": "right"},
         "northeast": {"s": "blocked"}
       },
       "phases": [
