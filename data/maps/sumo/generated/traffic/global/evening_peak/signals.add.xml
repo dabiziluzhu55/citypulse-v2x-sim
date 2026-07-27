@@ -154,10 +154,10 @@
     <phase duration="3" state="gyyyygggggrrrrrrgggyyyyyygggrrrrrr" name="p2_yellow" />
   </tlLogic>
   <tlLogic id="891" type="static" programID="demo_19_evening_peak" offset="0">
-    <phase duration="35" state="grggrrrggGGggrggrrrggGGg" name="p1_green" />
-    <phase duration="3" state="grggrrrggyyygrggrrrggyyy" name="p1_yellow" />
-    <phase duration="35" state="gGggGggggrrrgGggGggggrrr" name="p2_green" />
-    <phase duration="3" state="gyggyyyggrrrgyggyyyggrrr" name="p2_yellow" />
+    <phase duration="35" state="grggrrrrgGGggrggrrrggGGg" name="p1_green" />
+    <phase duration="3" state="grggrrrrgyyygrggrrrggyyy" name="p1_yellow" />
+    <phase duration="35" state="gGggGggrgrrrgGggGggggrrr" name="p2_green" />
+    <phase duration="3" state="gyggyyyrgrrrgyggyyyggrrr" name="p2_yellow" />
   </tlLogic>
   <tlLogic id="3637" type="static" programID="demo_20_evening_peak" offset="0">
     <phase duration="41" state="grrrgGGGggrrgGGGg" name="p1_green" />
