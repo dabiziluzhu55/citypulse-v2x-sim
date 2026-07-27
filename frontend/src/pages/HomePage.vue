@@ -13,11 +13,13 @@ import { useActiveIntersectionScene } from '../composables/useActiveIntersection
 import { CESIUM_CAMERA_PRESETS } from '../constants/mapDefaults'
 import type { CesiumCameraPresetId, MapDimension } from '../types/map'
 import type { StartSimulationRequest } from '../types/simulation'
+import { detectMap3dCapability } from '../mapv/map3dCapabilities'
 
 const mapView = useOptionalAppMapView()
 const mapDimension = computed(() => mapView?.dimension.value ?? '2d')
 const cameraPreset = computed(() => mapView?.cameraPreset.value ?? 'overview')
 const cameraPresets = CESIUM_CAMERA_PRESETS
+const map3dCapability = detectMap3dCapability()
 const { activeIntersectionId, sceneStatus, selectIntersection } = useActiveIntersectionScene()
 const { catalog } = useCatalog(activeIntersectionId)
 const localIntersectionOptions = Array.from({ length: 20 }, (_, index) => ({
@@ -32,7 +34,7 @@ const intersectionOptions = computed(() => localIntersectionOptions.map((item) =
 })))
 
 function setMapDimension(next: MapDimension) {
-  mapView?.setDimension(next)
+  mapView?.setDimension(next === '3d' && !map3dCapability.supported ? '2d' : next)
 }
 
 function setCameraPreset(next: CesiumCameraPresetId) {
@@ -80,7 +82,7 @@ watch(
       || Object.keys(nextSnapshot.intersections)[0]
     if (intersectionId) selectIntersection(intersectionId)
     mapView?.setCameraPreset('intersection')
-    mapView?.setDimension('3d')
+    setMapDimension('3d')
     markRestoredSessionHandled()
   },
   { immediate: true },
@@ -105,7 +107,7 @@ async function handleStart(payload: StartSimulationRequest) {
   const intersectionId = payload.intersection_ids[0]
   if (intersectionId) selectIntersection(intersectionId)
   mapView?.setCameraPreset('intersection')
-  mapView?.setDimension('3d')
+  setMapDimension('3d')
   await launchRun(payload)
 }
 
@@ -150,6 +152,8 @@ async function handleStop() {
           type="button"
           class="map-dimension-toggle__btn"
           :class="{ active: mapDimension === '3d' }"
+          :disabled="!map3dCapability.supported"
+          :title="map3dCapability.reason ?? '切换到三维地图'"
           @click="setMapDimension('3d')"
         >
           3D

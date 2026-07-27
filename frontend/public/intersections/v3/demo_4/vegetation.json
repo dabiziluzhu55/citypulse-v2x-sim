@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "model": "low-poly-plants.glb",
+    "license": "unverified"
+  },
+  "cellSizeMeters": 300,
+  "items": [
+    {
+      "id": "tree:-56732:0",
+      "kind": "tree",
+      "variant": "Tree-03-2",
+      "position": [
+        116.12553137225754,
+        38.984750206718935,
+        0
+      ],
+      "heading": 0.95,
+      "scale": 1.3199999999999998,
+      "cell": "demo_4:core"
+    },
+    {
+      "id": "tree:-56732:1",
+      "kind": "tree",
+      "variant": "Tree-01-1",
+      "position": [
+        116.12541135769001,
+        38.985259947944606,
+        0
+      ],
+      "heading": 2.56,
+      "scale": 1.3499999999999999,
+      "cell": "demo_4:core"
+    },
+    {
+      "id": "tree:-56733:0",
+      "kind": "tree",
+      "variant": "Tree-02-1",
+      "position": [
+        116.12560795600402,
+        38.986164167946434,
+        0
+      ],
+      "heading": 1.16,
+      "scale": 1.25,
+      "cell": "demo_4:core"
+    },
+    {
+      "id": "tree:-57229:0",
+      "kind": "tree",
+      "variant": "Tree-02-2",
+      "position": [
+        116.1256082970261,
+        38.9868967829031,
+        0
+      ],
+      "heading": 3.41,
+      "scale": 1.3399999999999999,
+      "cell": "demo_4:core"
+    },
+    {
+      "id": "tree:-57229:1",
+      "kind": "tree",
+      "variant": "Tree-03-1",
+      "position": [
+        116.1257218179631,
+        38.98638603248954,
+        0
+      ],
+      "heading": 4.98,
+      "scale": 1.16,
+      "cell": "demo_4:core"
+    }
+  ]
+}

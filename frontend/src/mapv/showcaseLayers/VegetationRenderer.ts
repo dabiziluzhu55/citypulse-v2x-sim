@@ -54,6 +54,7 @@ export class VegetationRenderer {
   private destroyed = false
   private interactionActive = false
   private visibilityTimer: ReturnType<typeof setInterval> | null = null
+  private requestVersion = 0
 
   constructor(engine: Engine, projector: RoadCoordinateProjector) {
     this.engine = engine
@@ -61,15 +62,16 @@ export class VegetationRenderer {
   }
 
   async load(manifestUrl: string, modelUrl: string): Promise<void> {
+    const version = ++this.requestVersion
     const response = await fetch(manifestUrl)
     if (!response.ok) throw new Error(`Vegetation manifest returned HTTP ${response.status}`)
     const manifest = parseSceneVegetationManifest(await response.json())
     const gltf = await new GLTFLoader().loadAsync(modelUrl)
-    if (this.destroyed) {
+    if (this.destroyed || version !== this.requestVersion) {
       disposeObject(gltf.scene)
       return
     }
-    this.clear()
+    this.clearResources()
     this.sourceScene = gltf.scene
     this.prepareMaterials(gltf.scene)
     this.build(manifest, gltf.scene)
@@ -80,7 +82,14 @@ export class VegetationRenderer {
 
   destroy(): void {
     this.destroyed = true
-    this.clear()
+    this.requestVersion += 1
+    this.clearResources()
+  }
+
+  clearScene(): void {
+    this.requestVersion += 1
+    this.clearResources()
+    this.engine.requestRender()
   }
 
   setInteractionActive(active: boolean): void {
@@ -207,8 +216,7 @@ export class VegetationRenderer {
     const visibleRadius = Math.max(420, cameraRange * 1.35)
     let changed = false
     for (const cell of this.cells) {
-      const nextCellVisible = !this.interactionActive
-        && distanceMeters(center, cell.center) <= visibleRadius
+      const nextCellVisible = distanceMeters(center, cell.center) <= visibleRadius
       if (cell.group.visible !== nextCellVisible) {
         cell.group.visible = nextCellVisible
         changed = true
@@ -216,7 +224,9 @@ export class VegetationRenderer {
       if (!nextCellVisible) continue
       for (const child of cell.group.children) {
         const kind = child.userData.vegetationKind as VegetationKind
+        const stableDuringInteraction = kind === 'tree' || kind === 'hedge'
         const nextVisible = cameraRange <= KIND_MAX_CAMERA_RANGE[kind]
+          && (!this.interactionActive || stableDuringInteraction)
         if (child.visible !== nextVisible) {
           child.visible = nextVisible
           changed = true
@@ -226,7 +236,7 @@ export class VegetationRenderer {
     if (changed) this.engine.requestRender()
   }
 
-  private clear(): void {
+  private clearResources(): void {
     if (this.visibilityTimer) clearInterval(this.visibilityTimer)
     this.visibilityTimer = null
     if (this.root) this.engine.remove(this.root)

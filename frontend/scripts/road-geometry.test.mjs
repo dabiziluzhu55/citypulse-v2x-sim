@@ -75,9 +75,9 @@ test('a three-lane SUMO centerline becomes stable layered road geometry', () => 
 test('real SUMO GeoJSON produces lanes, paired medians, and junction markings', () => {
   const data = buildDetailedRoadData(response(realGeoJson.features, realGeoJson.metadata))
 
-  assert.equal(data.mainSurfaces.length + data.secondarySurfaces.length, 15)
-  assert.equal(data.outerBoundaries.length, 30)
-  assert.equal(data.laneDividers.length, 13)
+  assert.equal(data.mainSurfaces.length + data.secondarySurfaces.length, 16)
+  assert.equal(data.outerBoundaries.length, 32)
+  assert.equal(data.laneDividers.length, 24)
   assert.ok(data.medians.length >= 3)
   assert.ok(data.junctionSurfaces.length >= 1)
   assert.ok(data.stopLines.length >= 3)

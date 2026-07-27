@@ -10,9 +10,10 @@ import {
 import { createVehicleTwinSample } from './vehicleTwinSample'
 import { resolveVehicleModelProfile } from './vehicleModelProfiles.ts'
 import {
-  resolveContinuousVehicleHeading,
-  type GeographicPoint,
+  resolveStableVehicleHeading,
+  type VehicleHeadingState,
 } from './vehicleOrientation.ts'
+import type { LaneHeadingResolver } from './realistic/intersectionLaneHeading.ts'
 
 const TWIN_INTERPOLATION_DELAY_MS = 300
 const INITIAL_SAMPLE_LEAD_MS = 200
@@ -23,11 +24,6 @@ export interface VehicleRenderContext {
   state: SimulationState | null
   sequence: number
   elapsedSeconds: number
-}
-
-interface VehiclePoseHistory {
-  point: GeographicPoint
-  heading: number
 }
 
 export interface VehicleRenderStats {
@@ -41,7 +37,8 @@ export class BaiduVehicleRenderer {
   private readonly twin: mapvthree.Twin
   private readonly projector: RoadCoordinateProjector
   private readonly selector = new StableVehicleSelector()
-  private readonly poseHistory = new Map<string, VehiclePoseHistory>()
+  private readonly poseHistory = new Map<string, VehicleHeadingState>()
+  private laneHeadingResolver: LaneHeadingResolver | null = null
   private lastVehicles: TrafficVehicleView[] = []
   private lastContext: VehicleRenderContext = {
     sessionId: '',
@@ -70,6 +67,10 @@ export class BaiduVehicleRenderer {
       },
       keepSize: false,
     }))
+  }
+
+  setLaneHeadingResolver(resolver: LaneHeadingResolver | null): void {
+    this.laneHeadingResolver = resolver
   }
 
   update(
@@ -120,14 +121,15 @@ export class BaiduVehicleRenderer {
     const samples = visible.map(({ vehicle, longitude, latitude }) => {
       const previous = this.poseHistory.get(vehicle.vehicle_id)
       const point = { longitude, latitude }
-      const heading = resolveContinuousVehicleHeading(
-        vehicle.angle,
-        vehicle.speed,
-        point,
-        previous?.point ?? null,
-        previous?.heading ?? null,
-      )
-      this.poseHistory.set(vehicle.vehicle_id, { point, heading })
+      const resolved = resolveStableVehicleHeading({
+        sumoAngleDegrees: vehicle.angle,
+        speedMetersPerSecond: vehicle.speed,
+        current: point,
+        timeSeconds: context.elapsedSeconds,
+        laneHeading: this.laneHeadingResolver?.(vehicle.lane_id, vehicle.lane_position),
+      }, previous ?? null)
+      const heading = resolved.heading
+      this.poseHistory.set(vehicle.vehicle_id, resolved.state)
       activeIds.add(vehicle.vehicle_id)
       return createVehicleTwinSample(
         vehicle,

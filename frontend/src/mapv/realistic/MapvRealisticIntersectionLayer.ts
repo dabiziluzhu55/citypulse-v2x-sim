@@ -444,7 +444,7 @@ export class MapvRealisticIntersectionLayer {
     return this.activeId
   }
 
-  async switchTo(intersectionId: string): Promise<RealisticIntersectionManifest> {
+  async prepare(intersectionId: string): Promise<RealisticIntersectionManifest> {
     const version = ++this.requestVersion
     let cached = this.cache.get(intersectionId)
     if (!cached) {
@@ -467,14 +467,25 @@ export class MapvRealisticIntersectionLayer {
       this.cache.set(intersectionId, cached)
     }
     if (version !== this.requestVersion) throw new DOMException('Stale intersection request', 'AbortError')
-    const previous = this.activeId ? this.cache.get(this.activeId) : null
     cached.usedAt = performance.now()
+    return cached.manifest
+  }
+
+  activate(intersectionId: string): RealisticIntersectionManifest {
+    const cached = this.cache.get(intersectionId)
+    if (!cached) throw new Error(`Intersection ${intersectionId} has not been prepared`)
+    const previous = this.activeId ? this.cache.get(this.activeId) : null
     cached.object.group.visible = true
     if (previous && previous !== cached) previous.object.group.visible = false
     this.activeId = intersectionId
     this.trimCache()
     this.engine.requestRender()
     return cached.manifest
+  }
+
+  async switchTo(intersectionId: string): Promise<RealisticIntersectionManifest> {
+    await this.prepare(intersectionId)
+    return this.activate(intersectionId)
   }
 
   updateSignals(intersections: RealisticSignalRuntimeState[] | null): void {

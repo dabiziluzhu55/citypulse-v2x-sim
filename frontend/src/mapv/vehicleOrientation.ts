@@ -3,10 +3,34 @@ const TWO_PI = Math.PI * 2
 const TRAJECTORY_MIN_SPEED_MPS = 0.8
 const TRAJECTORY_MIN_DISTANCE_METERS = 0.25
 const TRAJECTORY_FALLBACK_ERROR_RADIANS = Math.PI / 4
+const STOP_SPEED_MPS = 0.35
+const START_SPEED_MPS = 0.8
+const MAX_TURN_RATE_RADIANS_PER_SECOND = 2.5
 
 export interface GeographicPoint {
   longitude: number
   latitude: number
+}
+
+export interface VehicleHeadingState {
+  point: GeographicPoint
+  heading: number
+  reliableHeading: number
+  moving: boolean
+  timeSeconds: number
+}
+
+export interface StableVehicleHeadingInput {
+  sumoAngleDegrees: number
+  speedMetersPerSecond: number
+  current: GeographicPoint
+  timeSeconds: number
+  laneHeading?: number | null
+}
+
+export interface StableVehicleHeadingResult {
+  heading: number
+  state: VehicleHeadingState
 }
 
 export function normalizeRadians(angle: number): number {
@@ -61,6 +85,56 @@ export function resolveContinuousVehicleHeading(
     }
   }
   return unwrapHeading(previousHeading, target)
+}
+
+export function resolveStableVehicleHeading(
+  input: StableVehicleHeadingInput,
+  previous: VehicleHeadingState | null,
+): StableVehicleHeadingResult {
+  const sumoHeading = sumoAngleToMapHeading(input.sumoAngleDegrees)
+  if (!previous) {
+    const initial = input.laneHeading ?? sumoHeading
+    const heading = normalizeRadians(initial)
+    return {
+      heading,
+      state: {
+        point: input.current,
+        heading,
+        reliableHeading: heading,
+        moving: input.speedMetersPerSecond >= START_SPEED_MPS,
+        timeSeconds: input.timeSeconds,
+      },
+    }
+  }
+
+  const movementHeading = trajectoryHeading(previous.point, input.current)
+  const moving = previous.moving
+    ? input.speedMetersPerSecond > STOP_SPEED_MPS && movementHeading != null
+    : input.speedMetersPerSecond >= START_SPEED_MPS && movementHeading != null
+  let target = previous.reliableHeading
+  if (moving && movementHeading != null) {
+    target = Math.abs(shortestAngleDelta(sumoHeading, movementHeading)) > TRAJECTORY_FALLBACK_ERROR_RADIANS
+      ? movementHeading
+      : sumoHeading
+  }
+
+  const elapsed = Math.max(0, input.timeSeconds - previous.timeSeconds)
+  const maxTurn = Math.max(0.08, elapsed * MAX_TURN_RATE_RADIANS_PER_SECOND)
+  const delta = shortestAngleDelta(previous.heading, target)
+  const heading = moving
+    ? previous.heading + Math.max(-maxTurn, Math.min(maxTurn, delta))
+    : previous.reliableHeading
+  const reliableHeading = moving ? heading : previous.reliableHeading
+  return {
+    heading,
+    state: {
+      point: input.current,
+      heading,
+      reliableHeading,
+      moving,
+      timeSeconds: input.timeSeconds,
+    },
+  }
 }
 
 export function moveFromFrontBumperToModelCenter(

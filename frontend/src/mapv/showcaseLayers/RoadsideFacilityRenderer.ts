@@ -198,6 +198,11 @@ export class RoadsideFacilityRenderer {
     this.clear()
   }
 
+  clearScene(): void {
+    this.clear()
+    this.engine.requestRender()
+  }
+
   private matrix(
     point: SceneFacilityPoint,
     height = 0,

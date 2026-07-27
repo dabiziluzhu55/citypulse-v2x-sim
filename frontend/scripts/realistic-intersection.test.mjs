@@ -8,6 +8,7 @@ import {
   CROSSWALK_FIRST_CENTER_METERS,
   STOP_LINE_CENTER_OFFSET_METERS,
 } from '../src/mapv/realistic/intersectionApproachGeometry.ts'
+import { parseIntersectionEnvironmentManifest } from '../src/mapv/realistic/intersectionEnvironmentManifest.ts'
 
 function pointToSegmentDistance(point, start, end) {
   const dx = end[0] - start[0]
@@ -46,6 +47,25 @@ test('catalog contains 20 projection-correct realistic intersections', async () 
     assert.ok(manifest.connections.length > 0)
     assert.ok(manifest.edges.some((edge) => edge.incoming))
     assert.ok(manifest.edges.some((edge) => !edge.incoming))
+  }
+})
+
+test('all realistic intersections have a matching environment bundle', async () => {
+  for (let index = 1; index <= 20; index += 1) {
+    const id = `demo_${index}`
+    const directory = new URL(`../public/intersections/v3/${id}/`, import.meta.url)
+    const [environmentSource, facilitiesSource, vegetationSource] = await Promise.all([
+      readFile(new URL('environment.json', directory), 'utf8'),
+      readFile(new URL('facilities.json', directory), 'utf8'),
+      readFile(new URL('vegetation.json', directory), 'utf8'),
+    ])
+    const environment = parseIntersectionEnvironmentManifest(JSON.parse(environmentSource), id)
+    const facilities = JSON.parse(facilitiesSource)
+    const vegetation = JSON.parse(vegetationSource)
+    assert.equal(environment.intersectionId, id)
+    assert.equal(facilities.intersectionId, id)
+    assert.ok(facilities.lamps.length > 0, `${id} requires roadside lamps`)
+    assert.ok(vegetation.items.length > 0, `${id} requires vegetation`)
   }
 })
 
@@ -116,7 +136,7 @@ test('demo_2 keeps the exact TLS link contract used by the simulator', async () 
   assert.equal(manifest.tlsIds[0], '317')
   assert.deepEqual(
     [...new Set(manifest.connections.map((item) => item.linkIndex))].sort((a, b) => a - b),
-    [0, 1, 2, 3, 4, 5, 6, 7],
+    Array.from({ length: 15 }, (_, index) => index),
   )
-  assert.equal(manifest.phaseTemplates['1']['317'].green, 'GGggrgGG')
+  assert.equal(manifest.phaseTemplates['1']['317'].green, 'GGGrrggrrrgGgGG')
 })

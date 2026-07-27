@@ -6,6 +6,7 @@ import type { MapGeoJsonResponse } from '../types/map'
 export function useSimulationMap(
   intersectionId: Ref<string> | string = DEFAULT_INTERSECTION_ID,
   radiusM = 600,
+  enabled: Ref<boolean> | boolean = true,
 ) {
   const geojson = ref<MapGeoJsonResponse | null>(null)
   const loading = ref(false)
@@ -15,10 +16,15 @@ export function useSimulationMap(
     return typeof intersectionId === 'string' ? intersectionId : intersectionId.value
   }
 
+  function isEnabled(): boolean {
+    return typeof enabled === 'boolean' ? enabled : enabled.value
+  }
+
   async function load() {
     const id = resolveId()
-    if (!id) {
+    if (!id || !isEnabled()) {
       geojson.value = null
+      loading.value = false
       return
     }
 
@@ -36,8 +42,12 @@ export function useSimulationMap(
 
   onMounted(load)
 
-  if (typeof intersectionId !== 'string') {
-    watch(intersectionId, load)
+  if (typeof intersectionId !== 'string' || typeof enabled !== 'boolean') {
+    const dependencies = [
+      ...(typeof intersectionId === 'string' ? [] : [intersectionId]),
+      ...(typeof enabled === 'boolean' ? [] : [enabled]),
+    ]
+    watch(dependencies, load)
   }
 
   return {

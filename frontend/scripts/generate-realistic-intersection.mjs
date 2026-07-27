@@ -21,6 +21,9 @@ const mappingPath = path.resolve(dataDirectory, 'TotalMap_20.intersections.json'
 const tlsManifestPath = path.resolve(dataDirectory, 'generated/manifests/tls_manifest.json')
 const converterPath = path.resolve(scriptsDirectory, 'convert-sumo-coordinates.py')
 const outputDirectory = path.resolve(frontendDirectory, 'public/intersections/v3')
+const requestedIntersectionId = process.argv
+  .find((argument) => argument.startsWith('--intersection='))
+  ?.split('=', 2)[1]
 
 function asArray(value) {
   if (value === undefined) return []
@@ -74,10 +77,17 @@ const tlLogics = new Map(asArray(net.tlLogic).map((logic) => [String(logic.id), 
 const sourceSha256 = createHash('sha256').update(source).digest('hex')
 const pending = []
 
-for (const intersectionId of Object.keys(mapping).sort(numericDemoOrder)) {
+const availableIntersectionIds = Object.keys(mapping)
+  .filter((intersectionId) => tlsManifest.intersections?.[intersectionId])
+  .filter((intersectionId) => !requestedIntersectionId || intersectionId === requestedIntersectionId)
+  .sort(numericDemoOrder)
+if (requestedIntersectionId && !availableIntersectionIds.includes(requestedIntersectionId)) {
+  throw new Error(`TLS manifest is missing ${requestedIntersectionId}`)
+}
+
+for (const intersectionId of availableIntersectionIds) {
   const location = mapping[intersectionId]
   const topology = tlsManifest.intersections?.[intersectionId]
-  if (!topology) throw new Error(`TLS manifest is missing ${intersectionId}`)
   const junctionId = String(location.junction_id)
   const junction = junctions.get(junctionId)
   if (!junction) throw new Error(`SUMO network is missing junction ${junctionId}`)
@@ -201,11 +211,16 @@ const converted = convertSumoCoordinates(conversionPoints)
 registrations.forEach(({ index, apply }) => apply(converted[index]))
 
 await mkdir(outputDirectory, { recursive: true })
+const existingCatalog = await readFile(path.resolve(outputDirectory, 'catalog.json'), 'utf8')
+  .then(JSON.parse)
+  .catch(() => ({ intersections: [] }))
 const catalog = {
   schemaVersion: 3,
   generatedAt: new Date().toISOString(),
   sourceSha256,
-  intersections: [],
+  intersections: existingCatalog.intersections.filter(
+    (entry) => !availableIntersectionIds.includes(entry.intersectionId),
+  ),
 }
 
 for (const item of pending) {
@@ -267,9 +282,11 @@ for (const item of pending) {
   })
 }
 
+catalog.intersections.sort((left, right) => numericDemoOrder(left.intersectionId, right.intersectionId))
+
 await writeFile(
   path.resolve(outputDirectory, 'catalog.json'),
   `${JSON.stringify(catalog, null, 2)}\n`,
   'utf8',
 )
-console.log(`Generated ${catalog.intersections.length} projection-correct intersections in public/intersections/v3`)
+console.log(`Updated ${pending.length} projection-correct intersections; catalog contains ${catalog.intersections.length}`)

@@ -57,7 +57,7 @@ export function provideAppMapView() {
         const [bdMaxLon, bdMaxLat] = wgs84ToBd09(maxLon, maxLat)
         threeMap.setViewport(
           [[bdMinLon, bdMinLat, 0], [bdMaxLon, bdMaxLat, 0]],
-          { range: 2200 },
+          { range: 2200, force: options.force },
         )
       } else {
         const preset = resolveCesiumCameraPreset(cameraPreset.value)
@@ -70,6 +70,7 @@ export function provideAppMapView() {
             range: preset.height,
             duration: options.duration ?? 0,
             complete: () => undefined,
+            force: options.force,
           },
         )
       }
@@ -116,8 +117,13 @@ export function provideAppMapView() {
     applyViewport(options)
   }
 
-  function flyTo(center: [number, number], zoom: number, nextAnchorId?: string) {
-    if (nextAnchorId && anchorId.value === nextAnchorId) {
+  function flyTo(
+    center: [number, number],
+    zoom: number,
+    nextAnchorId?: string,
+    options: { force?: boolean; duration?: number } = {},
+  ) {
+    if (nextAnchorId && anchorId.value === nextAnchorId && !options.force) {
       return
     }
 
@@ -125,7 +131,7 @@ export function provideAppMapView() {
     if (nextAnchorId) {
       anchorId.value = nextAnchorId
     }
-    setViewport({ kind: 'center', center, zoom })
+    setViewport({ kind: 'center', center, zoom }, options)
   }
 
   function fitBounds(bounds: [number, number, number, number], nextAnchorId?: string) {

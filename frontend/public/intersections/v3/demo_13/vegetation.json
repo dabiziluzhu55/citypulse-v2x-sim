@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "model": "low-poly-plants.glb",
+    "license": "unverified"
+  },
+  "cellSizeMeters": 300,
+  "items": [
+    {
+      "id": "tree:-46884:0",
+      "kind": "tree",
+      "variant": "Tree-03-1",
+      "position": [
+        115.90466931731747,
+        39.07445245387229,
+        0
+      ],
+      "heading": 1.48,
+      "scale": 1.16,
+      "cell": "demo_13:core"
+    },
+    {
+      "id": "tree:-46884:1",
+      "kind": "tree",
+      "variant": "Tree-02-2",
+      "position": [
+        115.90448286659984,
+        39.07396469879424,
+        0
+      ],
+      "heading": 5.55,
+      "scale": 1.16,
+      "cell": "demo_13:core"
+    },
+    {
+      "id": "tree:-53030:0",
+      "kind": "tree",
+      "variant": "Tree-02-2",
+      "position": [
+        115.90470278074552,
+        39.07364629091065,
+        0
+      ],
+      "heading": 0.93,
+      "scale": 1.19,
+      "cell": "demo_13:core"
+    },
+    {
+      "id": "tree:-53030:1",
+      "kind": "tree",
+      "variant": "Tree-03-1",
+      "position": [
+        115.90450934596886,
+        39.074132373622795,
+        0
+      ],
+      "heading": 6.02,
+      "scale": 1.3299999999999998,
+      "cell": "demo_13:core"
+    },
+    {
+      "id": "tree:-56457:0",
+      "kind": "tree",
+      "variant": "Tree-02-2",
+      "position": [
+        115.90594174426023,
+        39.07356253740177,
+        0
+      ],
+      "heading": 0.39,
+      "scale": 1.3699999999999999,
+      "cell": "demo_13:core"
+    },
+    {
+      "id": "tree:-56457:1",
+      "kind": "tree",
+      "variant": "Tree-03-1",
+      "position": [
+        115.90535780576747,
+        39.07329503639364,
+        0
+      ],
+      "heading": 0.48,
+      "scale": 1.18,
+      "cell": "demo_13:core"
+    },
+    {
+      "id": "tree:-56458:0",
+      "kind": "tree",
+      "variant": "Tree-02-1",
+      "position": [
+        115.90425755770126,
+        39.073308835308545,
+        0
+      ],
+      "heading": 3.62,
+      "scale": 1.23,
+      "cell": "demo_13:core"
+    },
+    {
+      "id": "tree:-56458:1",
+      "kind": "tree",
+      "variant": "Tree-01-2",
+      "position": [
+        115.9036825991558,
+        39.07359232539758,
+        0
+      ],
+      "heading": 1.09,
+      "scale": 1.3699999999999999,
+      "cell": "demo_13:core"
+    }
+  ]
+}

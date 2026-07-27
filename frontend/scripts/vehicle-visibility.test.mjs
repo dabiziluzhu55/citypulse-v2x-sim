@@ -11,10 +11,12 @@ import { createVehicleTwinSample } from '../src/mapv/vehicleTwinSample.ts'
 import { VEHICLE_MODEL_BASE_Z } from '../src/mapv/sceneElevation.ts'
 import {
   moveFromFrontBumperToModelCenter,
+  resolveStableVehicleHeading,
   shortestAngleDelta,
   sumoAngleToMapHeading,
   unwrapHeading,
 } from '../src/mapv/vehicleOrientation.ts'
+import { createIntersectionLaneHeadingResolver } from '../src/mapv/realistic/intersectionLaneHeading.ts'
 import {
   CAR_MODEL_PROFILE,
   resolveVehicleModelProfile,
@@ -110,6 +112,74 @@ test('converts SUMO headings to map headings and unwraps across north', () => {
   const previous = 359 * Math.PI / 180
   const next = unwrapHeading(previous, 1 * Math.PI / 180)
   assert.ok(Math.abs(shortestAngleDelta(previous, next) - 2 * Math.PI / 180) < 1e-9)
+})
+
+test('locks the last reliable heading while a vehicle is stopped', () => {
+  const first = resolveStableVehicleHeading({
+    sumoAngleDegrees: 90,
+    speedMetersPerSecond: 8,
+    current: { longitude: 116, latitude: 39 },
+    timeSeconds: 0,
+  }, null)
+  const moving = resolveStableVehicleHeading({
+    sumoAngleDegrees: 90,
+    speedMetersPerSecond: 8,
+    current: { longitude: 116.00001, latitude: 39 },
+    timeSeconds: 1,
+  }, first.state)
+  const stopped = resolveStableVehicleHeading({
+    sumoAngleDegrees: 35,
+    speedMetersPerSecond: 0,
+    current: { longitude: 116.00001, latitude: 39 },
+    timeSeconds: 2,
+  }, moving.state)
+
+  assert.ok(Math.abs(shortestAngleDelta(moving.heading, stopped.heading)) < 1e-9)
+  assert.equal(stopped.state.moving, false)
+})
+
+test('uses the lane tangent when a vehicle first appears already stopped', () => {
+  const laneHeading = Math.PI / 2
+  const stopped = resolveStableVehicleHeading({
+    sumoAngleDegrees: 90,
+    speedMetersPerSecond: 0,
+    current: { longitude: 116, latitude: 39 },
+    timeSeconds: 10,
+    laneHeading,
+  }, null)
+
+  assert.ok(Math.abs(shortestAngleDelta(stopped.heading, laneHeading)) < 1e-9)
+})
+
+test('keeps movement hysteresis through low-speed snapshots', () => {
+  const first = resolveStableVehicleHeading({
+    sumoAngleDegrees: 90,
+    speedMetersPerSecond: 2,
+    current: { longitude: 116, latitude: 39 },
+    timeSeconds: 0,
+  }, null)
+  const second = resolveStableVehicleHeading({
+    sumoAngleDegrees: 90,
+    speedMetersPerSecond: 0.6,
+    current: { longitude: 116.00001, latitude: 39 },
+    timeSeconds: 1,
+  }, first.state)
+
+  assert.equal(second.state.moving, true)
+})
+
+test('resolves a lane heading from the realistic intersection manifest', () => {
+  const resolveLaneHeading = createIntersectionLaneHeadingResolver({
+    edges: [{
+      id: 'edge',
+      incoming: true,
+      lanes: [{ id: 'edge_0', index: 0, width: 3.5, speed: 10, points: [[0, 0], [0, 10], [10, 10]] }],
+    }],
+  })
+
+  assert.ok(Math.abs(shortestAngleDelta(resolveLaneHeading('edge_0', 2), Math.PI / 2)) < 1e-9)
+  assert.ok(Math.abs(shortestAngleDelta(resolveLaneHeading('edge_0', 16), 0)) < 1e-9)
+  assert.equal(resolveLaneHeading('missing', 0), null)
 })
 
 test('moves the model center behind the front bumper in cardinal directions', () => {

@@ -46,15 +46,20 @@ test('derives one combined road marking per inbound SUMO lane', () => {
   assert.deepEqual(markings, {
     north: [
       { laneIndex: 0, movements: ['through', 'right'] },
-      { laneIndex: 1, movements: ['through'] },
+      { laneIndex: 1, movements: ['through', 'right'] },
+      { laneIndex: 2, movements: ['through'] },
     ],
     south: [
       { laneIndex: 0, movements: ['through'] },
-      { laneIndex: 1, movements: ['left', 'through'] },
+      { laneIndex: 1, movements: ['through'] },
+      { laneIndex: 2, movements: ['left', 'through'] },
     ],
     west: [
       { laneIndex: 0, movements: ['right'] },
-      { laneIndex: 1, movements: ['left'] },
+      { laneIndex: 1, movements: ['right'] },
+      { laneIndex: 2, movements: ['left'] },
+      { laneIndex: 3, movements: ['left'] },
+      { laneIndex: 4, movements: ['left'] },
     ],
   })
 })
