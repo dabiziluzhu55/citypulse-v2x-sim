@@ -2,6 +2,7 @@ import { computed, onMounted, ref, type Ref } from 'vue'
 import { fetchCatalog } from '../api/catalog'
 import { DEFAULT_INTERSECTION_ID } from '../constants/simulationOptions'
 import type { CatalogIntersection, CatalogResponse } from '../types/catalog'
+import { catalogSupportsIntersection, findCatalogIntersection } from './catalogCapabilities'
 
 export function useCatalog(intersectionId: Ref<string> | string = DEFAULT_INTERSECTION_ID) {
   const catalog = ref<CatalogResponse | null>(null)
@@ -12,16 +13,20 @@ export function useCatalog(intersectionId: Ref<string> | string = DEFAULT_INTERS
     if (!catalog.value) {
       return null
     }
-    return (
-      catalog.value.intersections.find(
-        (item) => item.intersection_id === (
-          typeof intersectionId === 'string' ? intersectionId : intersectionId.value
-        ),
-      ) ??
-      catalog.value.intersections[0] ??
-      null
+    return findCatalogIntersection(
+      catalog.value,
+      typeof intersectionId === 'string' ? intersectionId : intersectionId.value,
     )
   })
+
+  const supportedIntersectionIds = computed(() =>
+    catalog.value?.intersections.map((item) => item.intersection_id) ?? [],
+  )
+
+  const isIntersectionSupported = computed(() => catalogSupportsIntersection(
+    catalog.value,
+    typeof intersectionId === 'string' ? intersectionId : intersectionId.value,
+  ))
 
   const periods = computed<string[]>(() => intersection.value?.periods ?? [])
   const controlModes = computed<string[]>(() => catalog.value?.control_modes ?? ['fixed'])
@@ -51,6 +56,8 @@ export function useCatalog(intersectionId: Ref<string> | string = DEFAULT_INTERS
     controlModes,
     origins,
     flowMultiplierRange,
+    supportedIntersectionIds,
+    isIntersectionSupported,
     loading,
     error,
     refresh: load,

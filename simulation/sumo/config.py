@@ -67,6 +67,7 @@ class IntersectionTopology:
     right_turn_policy: str
     u_turn_policy: str
     phases: Tuple[PhaseMovement, ...]
+    phase_controlled_right_turn_approaches: Tuple[str, ...] = ()
     program_phases: Mapping[str, Tuple[PhaseMovement, ...]] = field(
         default_factory=dict
     )
@@ -95,6 +96,12 @@ class IntersectionTopology:
         approach = self.approach_for_edge(edge_id)
         return self.approach_direction_mapping.get(approach, {}).get(
             direction, self.direction_mapping.get(direction)
+        )
+
+    def right_turn_is_always_permissive(self, approach: str) -> bool:
+        return (
+            self.right_turn_policy == "permissive_always"
+            and approach not in self.phase_controlled_right_turn_approaches
         )
 
     def phases_for(self, program_id: str) -> Tuple[PhaseMovement, ...]:
@@ -345,6 +352,37 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
             f"{intersection_id}: right_turn_policy must be "
             "permissive_always or phase_controlled."
         )
+    raw_controlled_right_approaches = raw.get(
+        "phase_controlled_right_turn_approaches", []
+    )
+    if not isinstance(raw_controlled_right_approaches, list):
+        raise SignalConfigurationError(
+            f"{intersection_id}: phase_controlled_right_turn_approaches must be a list."
+        )
+    controlled_right_approaches = tuple(
+        str(value) for value in raw_controlled_right_approaches
+    )
+    if any(not value.strip() for value in controlled_right_approaches):
+        raise SignalConfigurationError(
+            f"{intersection_id}: phase-controlled right-turn approaches cannot be empty."
+        )
+    if len(controlled_right_approaches) != len(set(controlled_right_approaches)):
+        raise SignalConfigurationError(
+            f"{intersection_id}: phase-controlled right-turn approaches are duplicated."
+        )
+    unknown_controlled_right_approaches = set(controlled_right_approaches) - set(
+        approaches
+    )
+    if unknown_controlled_right_approaches:
+        raise SignalConfigurationError(
+            f"{intersection_id}: phase-controlled right turns use unknown approaches "
+            f"{sorted(unknown_controlled_right_approaches)}."
+        )
+    if right_policy == "phase_controlled" and controlled_right_approaches:
+        raise SignalConfigurationError(
+            f"{intersection_id}: phase_controlled right_turn_policy cannot be combined "
+            "with phase_controlled_right_turn_approaches."
+        )
     u_turn_policy = str(raw.get("u_turn_policy", ""))
     if u_turn_policy not in {"with_left", "blocked"}:
         raise SignalConfigurationError(
@@ -365,6 +403,7 @@ def _parse_topology(intersection_id: str, raw: Mapping[str, Any]) -> Intersectio
         direction_mapping=direction_mapping,
         approach_direction_mapping=approach_direction_mapping,
         right_turn_policy=right_policy,
+        phase_controlled_right_turn_approaches=controlled_right_approaches,
         u_turn_policy=u_turn_policy,
         phases=phases,
         program_phases=program_phases,

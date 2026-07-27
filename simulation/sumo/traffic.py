@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Dict, Mapping, Tuple
 
 
@@ -38,6 +39,22 @@ class RouteSplit:
 
 
 @dataclass(frozen=True)
+class RoutePath:
+    edges: Tuple[str, ...]
+    weight: int
+
+
+@dataclass(frozen=True)
+class RouteEndpointExtensions:
+    upstream: Mapping[str, str]
+    downstream: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "upstream", MappingProxyType(dict(self.upstream)))
+        object.__setattr__(self, "downstream", MappingProxyType(dict(self.downstream)))
+
+
+@dataclass(frozen=True)
 class DemandPeriod:
     period_id: str
     label: str
@@ -47,6 +64,7 @@ class DemandPeriod:
     intervals: Tuple[DemandInterval, ...]
     totals: Mapping[str, int]
     route_splits: Mapping[str, Mapping[str, Tuple[RouteSplit, ...]]]
+    route_overrides: Mapping[str, Mapping[str, Tuple[RoutePath, ...]]]
 
     @property
     def duration(self) -> int:
@@ -56,16 +74,22 @@ class DemandPeriod:
 @dataclass(frozen=True)
 class IntersectionDemand:
     intersection_id: str
-    vehicle_type: str
-    pcu_per_vehicle: float
     approaches: Mapping[str, ApproachDemandMapping]
     periods: Mapping[str, DemandPeriod]
+    route_endpoint_extensions: RouteEndpointExtensions
+
+
+@dataclass(frozen=True)
+class VehicleMix:
+    basis: str
+    shares: Mapping[str, float]
 
 
 @dataclass(frozen=True)
 class TrafficDemandConfiguration:
     unit: str
     interval_seconds: int
+    vehicle_mix: VehicleMix
     intersections: Mapping[str, IntersectionDemand]
 
 
@@ -97,6 +121,55 @@ def _volume(value: object, context: str) -> int:
     return value
 
 
+def _parse_route_endpoint_extensions(
+    intersection_id: str,
+    raw: Mapping[str, Any],
+) -> RouteEndpointExtensions:
+    raw_extensions = raw.get("route_endpoint_extensions", {})
+    if not isinstance(raw_extensions, dict):
+        raise TrafficDemandError(
+            f"{intersection_id}: route_endpoint_extensions must be an object."
+        )
+    unknown_directions = set(raw_extensions) - {"upstream", "downstream"}
+    if unknown_directions:
+        raise TrafficDemandError(
+            f"{intersection_id}: route_endpoint_extensions has unknown directions "
+            f"{sorted(unknown_directions)}."
+        )
+
+    parsed = {}
+    for direction in ("upstream", "downstream"):
+        raw_mapping = raw_extensions.get(direction, {})
+        if not isinstance(raw_mapping, dict):
+            raise TrafficDemandError(
+                f"{intersection_id}: route_endpoint_extensions/{direction} "
+                "must be an object."
+            )
+        mapping = {}
+        for near_edge, far_edge in raw_mapping.items():
+            if (
+                not isinstance(near_edge, str)
+                or not near_edge.strip()
+                or not isinstance(far_edge, str)
+                or not far_edge.strip()
+            ):
+                raise TrafficDemandError(
+                    f"{intersection_id}: route_endpoint_extensions/{direction} "
+                    "edge IDs must be non-empty strings."
+                )
+            if near_edge == far_edge:
+                raise TrafficDemandError(
+                    f"{intersection_id}: route_endpoint_extensions/{direction} "
+                    f"cannot map edge {near_edge!r} to itself."
+                )
+            mapping[near_edge] = far_edge
+        parsed[direction] = mapping
+    return RouteEndpointExtensions(
+        upstream=parsed["upstream"],
+        downstream=parsed["downstream"],
+    )
+
+
 def _parse_intersection(
     intersection_id: str,
     raw: Mapping[str, Any],
@@ -126,6 +199,9 @@ def _parse_intersection(
     if shared_sumo_approaches and raw.get("allow_shared_sumo_approaches") is not True:
         raise TrafficDemandError(f"{intersection_id}: SUMO approaches must be unique.")
 
+    route_endpoint_extensions = _parse_route_endpoint_extensions(
+        intersection_id, raw
+    )
     periods = {}
     for raw_period in raw.get("periods", []):
         period_id = str(raw_period["period_id"])
@@ -241,6 +317,58 @@ def _parse_intersection(
                     )
                 movement_splits[str(movement)] = splits
             route_splits[str(approach_name)] = movement_splits
+        route_overrides = {}
+        for approach_name, raw_movements in raw_period.get(
+            "route_overrides", {}
+        ).items():
+            if approach_name not in approaches:
+                raise TrafficDemandError(
+                    f"{intersection_id}/{period_id}: route override uses unknown "
+                    f"approach {approach_name!r}."
+                )
+            movement_routes = {}
+            for movement, raw_routes in raw_movements.items():
+                if movement not in approaches[approach_name].movements:
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}: route "
+                        f"override uses unknown movement {movement!r}."
+                    )
+                if (
+                    approach_name in route_splits
+                    and movement in route_splits[approach_name]
+                ):
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "use either route_splits or route_overrides, not both."
+                    )
+                routes = tuple(
+                    RoutePath(
+                        edges=tuple(str(edge) for edge in item.get("edges", ())),
+                        weight=_volume(
+                            item.get("weight", 1),
+                            f"{intersection_id}/{period_id}/{approach_name}/"
+                            f"{movement}/route override {index}",
+                        ),
+                    )
+                    for index, item in enumerate(raw_routes)
+                )
+                if not routes:
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "a route override needs at least one route."
+                    )
+                if any(len(item.edges) < 2 or item.weight == 0 for item in routes):
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "route override edges need at least two edges and positive weights."
+                    )
+                if len({item.edges for item in routes}) != len(routes):
+                    raise TrafficDemandError(
+                        f"{intersection_id}/{period_id}/{approach_name}/{movement}: "
+                        "route override paths must be unique."
+                    )
+                movement_routes[str(movement)] = routes
+            route_overrides[str(approach_name)] = movement_routes
         periods[period_id] = DemandPeriod(
             period_id=period_id,
             label=str(raw_period.get("label", period_id)),
@@ -250,33 +378,45 @@ def _parse_intersection(
             intervals=tuple(intervals),
             totals=computed_totals,
             route_splits=route_splits,
+            route_overrides=route_overrides,
         )
     if not periods:
         raise TrafficDemandError(f"{intersection_id}: no demand periods.")
 
-    pcu_per_vehicle = float(raw.get("pcu_per_vehicle", 0))
-    if pcu_per_vehicle != 1.0:
-        raise TrafficDemandError(
-            f"{intersection_id}: only 1.0 PCU passenger demand is currently supported."
-        )
     return IntersectionDemand(
         intersection_id=intersection_id,
-        vehicle_type=str(raw.get("vehicle_type", "passenger")),
-        pcu_per_vehicle=pcu_per_vehicle,
         approaches=approaches,
         periods=periods,
+        route_endpoint_extensions=route_endpoint_extensions,
     )
 
 
 def load_traffic_demands(path: Path) -> TrafficDemandConfiguration:
     raw = _read_json(path)
-    if int(raw.get("schema_version", 0)) != 1:
-        raise TrafficDemandError("official_traffic_demands.json must use schema_version 1.")
+    if int(raw.get("schema_version", 0)) != 2:
+        raise TrafficDemandError("official_traffic_demands.json must use schema_version 2.")
     if str(raw.get("unit", "")) != "pcu":
         raise TrafficDemandError("Traffic demand unit must be 'pcu'.")
     interval_seconds = int(raw.get("interval_seconds", 0))
     if interval_seconds <= 0:
         raise TrafficDemandError("interval_seconds must be positive.")
+    raw_mix = raw.get("vehicle_mix", {})
+    if str(raw_mix.get("basis", "")) != "vehicle_count":
+        raise TrafficDemandError("vehicle_mix.basis must be 'vehicle_count'.")
+    shares = {}
+    for profile_id, value in raw_mix.get("shares", {}).items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TrafficDemandError(
+                f"vehicle_mix.shares/{profile_id} must be a positive number."
+            )
+        share = float(value)
+        if not share > 0:
+            raise TrafficDemandError(
+                f"vehicle_mix.shares/{profile_id} must be a positive number."
+            )
+        shares[str(profile_id)] = share
+    if not shares or abs(sum(shares.values()) - 1.0) > 1e-9:
+        raise TrafficDemandError("vehicle_mix shares must sum to 1.0.")
     intersections = {
         str(intersection_id): _parse_intersection(
             str(intersection_id), item, interval_seconds
@@ -285,8 +425,22 @@ def load_traffic_demands(path: Path) -> TrafficDemandConfiguration:
     }
     if not intersections:
         raise TrafficDemandError("No official traffic demands are configured.")
+    for direction in ("upstream", "downstream"):
+        configured: Dict[str, Tuple[str, str]] = {}
+        for intersection_id, demand in intersections.items():
+            mapping = getattr(demand.route_endpoint_extensions, direction)
+            for near_edge, far_edge in mapping.items():
+                existing = configured.get(near_edge)
+                if existing is not None and existing[1] != far_edge:
+                    raise TrafficDemandError(
+                        f"Conflicting {direction} route endpoint extension for "
+                        f"{near_edge!r}: {existing[0]} maps to {existing[1]!r}, "
+                        f"but {intersection_id} maps to {far_edge!r}."
+                    )
+                configured[near_edge] = (intersection_id, far_edge)
     return TrafficDemandConfiguration(
         unit="pcu",
         interval_seconds=interval_seconds,
+        vehicle_mix=VehicleMix(basis="vehicle_count", shares=shares),
         intersections=intersections,
     )

@@ -3,6 +3,11 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { projectBd09ToWebMercator, wgs84ToBd09 } from '../src/mapv/sceneCoordinates.ts'
 import { cropPolylineToRadius, validateIntersectionManifest } from './realistic-intersection-core.mjs'
+import {
+  buildIntersectionApproachGeometry,
+  CROSSWALK_FIRST_CENTER_METERS,
+  STOP_LINE_CENTER_OFFSET_METERS,
+} from '../src/mapv/realistic/intersectionApproachGeometry.ts'
 
 function pointToSegmentDistance(point, start, end) {
   const dx = end[0] - start[0]
@@ -41,6 +46,32 @@ test('catalog contains 20 projection-correct realistic intersections', async () 
     assert.ok(manifest.connections.length > 0)
     assert.ok(manifest.edges.some((edge) => edge.incoming))
     assert.ok(manifest.edges.some((edge) => !edge.incoming))
+  }
+})
+
+test('anchors stop lines at lane ends and places crosswalks after them', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
+    'utf8',
+  ))
+  for (const edge of manifest.edges.filter((candidate) => candidate.incoming)) {
+    const approach = buildIntersectionApproachGeometry(edge.lanes, manifest.horizontalScale)
+    assert.ok(approach)
+    for (const sample of approach.laneSamples) {
+      const laneEnd = sample.lane.points.at(-1)
+      const distanceMeters = Math.hypot(
+        sample.point[0] - laneEnd[0],
+        sample.point[1] - laneEnd[1],
+      ) / manifest.horizontalScale
+      assert.ok(Math.abs(distanceMeters - STOP_LINE_CENTER_OFFSET_METERS) < 0.01)
+    }
+    const firstCrosswalk = approach.crosswalkCenters[0]
+    const along = (
+      (firstCrosswalk[0] - approach.stopLineCenter[0]) * approach.tangent[0]
+      + (firstCrosswalk[1] - approach.stopLineCenter[1]) * approach.tangent[1]
+    ) / manifest.horizontalScale
+    assert.ok(Math.abs(along - CROSSWALK_FIRST_CENTER_METERS) < 0.01)
+    assert.ok(along > 0)
   }
 })
 

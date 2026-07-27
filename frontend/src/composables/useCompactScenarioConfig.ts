@@ -7,10 +7,11 @@ import {
   type ScenarioModeId,
   type SimulationTimePresetId,
 } from '../constants/scenarioOptions'
-import { DASHBOARD_CONTROL_MODES, DEFAULT_INTERSECTION_ID, isBackendControlMode } from '../constants/simulationOptions'
+import { DASHBOARD_CONTROL_MODES, isBackendControlMode } from '../constants/simulationOptions'
 import type { CatalogIntersection } from '../types/catalog'
 import type { DisturbanceEventPayload, StartSimulationRequest } from '../types/simulation'
 import type { DisturbanceType, TrafficFlowMode } from '../types/scenario'
+import { requireSimulatableIntersection } from './catalogCapabilities'
 
 export interface CompactScenarioConfig {
   scenario_mode: ScenarioModeId
@@ -104,12 +105,10 @@ export function buildSimulationPayload(
   intersection: CatalogIntersection | null,
   periods: string[],
 ): StartSimulationRequest {
+  const simulatableIntersection = requireSimulatableIntersection(intersection)
   const time = resolveTimePreset(config)
-  const scenario = SCENARIO_MODE_OPTIONS.find((item) => item.value === config.scenario_mode)
   return {
-    intersection_ids: [
-      intersection?.intersection_id ?? scenario?.backendIntersectionId ?? DEFAULT_INTERSECTION_ID,
-    ],
+    intersection_ids: [simulatableIntersection.intersection_id],
     period: resolvePeriod(config, periods),
     origins: {},
     window_start_seconds: time.windowStartSeconds,

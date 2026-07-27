@@ -68,6 +68,7 @@ def build_vehicle_type_metadata(
         result[type_id] = VehicleTypeMetadata(
             type_id=type_id,
             profile_id=profile.profile_id,
+            pcu_factor=profile.pcu_factor,
             vehicle_class=profile.v_class,
             powertrain=profile.powertrain,
             emission_class=profile.emission_class,

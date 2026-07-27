@@ -78,6 +78,7 @@ class SimulationMetadata:
 class VehicleTypeMetadata:
     type_id: str
     profile_id: str
+    pcu_factor: float
     vehicle_class: str
     powertrain: str
     emission_class: str

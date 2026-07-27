@@ -8,7 +8,10 @@ import { useSimulationStore } from '../../composables/useSimulationStore'
 import { useActiveIntersectionScene } from '../../composables/useActiveIntersectionScene'
 import { BaiduDetailedRoadRenderer } from '../../mapv/BaiduDetailedRoadRenderer'
 import { BaiduRoadNetworkRenderer } from '../../mapv/BaiduRoadNetworkRenderer'
-import { BaiduVehicleRenderer } from '../../mapv/BaiduVehicleRenderer'
+import {
+  BaiduVehicleRenderer,
+  type VehicleRenderStats,
+} from '../../mapv/BaiduVehicleRenderer'
 import { ShowcaseGeoJsonLayers } from '../../mapv/showcaseLayers/ShowcaseGeoJsonLayers'
 import { ShowcaseModelLayers } from '../../mapv/showcaseLayers/ShowcaseModelLayers'
 import { RoadsideFacilityRenderer } from '../../mapv/showcaseLayers/RoadsideFacilityRenderer'
@@ -53,6 +56,12 @@ const error = ref<string | null>(null)
 const tilesStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const tilesMessage = ref('正在加载百度地图 3D 建筑…')
 const interacting = ref(false)
+const vehicleStats = ref<VehicleRenderStats>({
+  inputCount: 0,
+  visibleCount: 0,
+  radiusMeters: 420,
+})
+const showRenderDiagnostics = import.meta.env.DEV
 
 let engine: mapvthree.Engine | null = null
 let sky: mapvthree.DefaultSky | null = null
@@ -73,6 +82,7 @@ let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
 let vegetationLoadTimer: ReturnType<typeof setTimeout> | null = null
 let buildingLoadTimer: ReturnType<typeof setTimeout> | null = null
+let lastEmptyVehicleWarningSequence = -25
 
 const tilesetUrl =
   import.meta.env.VITE_XIONGAN_3DTILES_URL?.trim()
@@ -145,10 +155,31 @@ function markInteracting(): void {
     interacting.value = false
     if (buildingTileset) buildingTileset.errorTarget = BUILDING_IDLE_ERROR_TARGET
     vegetationRenderer?.setInteractionActive(false)
-    vehicleRenderer?.refreshViewport()
+    const stats = vehicleRenderer?.refreshViewport()
+    if (stats) updateVehicleRenderStats(stats)
     engine?.requestRender()
     interactionEndTimer = null
   }, 300)
+}
+
+function updateVehicleRenderStats(stats: VehicleRenderStats): void {
+  vehicleStats.value = stats
+  const current = snapshot.value
+  if (
+    showRenderDiagnostics
+    && current?.state === 'RUNNING'
+    && (current.metrics.active_vehicles ?? 0) > 0
+    && stats.visibleCount === 0
+    && current.sequence - lastEmptyVehicleWarningSequence >= 25
+  ) {
+    lastEmptyVehicleWarningSequence = current.sequence
+    console.warn('[vehicle-render] active simulation has no vehicles inside the camera radius', {
+      activeVehicles: current.metrics.active_vehicles,
+      inputVehicles: stats.inputCount,
+      renderRadiusMeters: Math.round(stats.radiusMeters),
+      snapshotSequence: current.sequence,
+    })
+  }
 }
 
 function syncAnimationLoop(): void {
@@ -437,7 +468,14 @@ async function initMap(): Promise<void> {
   watch(
     trafficView,
     (value) => {
-      vehicleRenderer?.update(value?.vehicles ?? [])
+      const current = snapshot.value
+      const stats = vehicleRenderer?.update(value?.vehicles ?? [], {
+        sessionId: current?.session_id ?? '',
+        state: current?.state ?? null,
+        sequence: current?.sequence ?? -1,
+        elapsedSeconds: current?.elapsed_seconds ?? 0,
+      })
+      if (stats) updateVehicleRenderStats(stats)
       roadsideFacilityRenderer?.updateSignals(value?.intersections ?? null)
       realisticIntersectionLayer?.updateSignals(value?.intersections ?? null)
     },
@@ -545,6 +583,14 @@ onUnmounted(() => {
       <span v-else-if="sceneStatus === 'error'">{{ sceneError }}</span>
       <span v-else>高精度路口待加载</span>
     </div>
+    <div
+      v-if="showRenderDiagnostics"
+      class="app-baidu-three-map__vehicle-diagnostics"
+      aria-label="车辆渲染诊断"
+    >
+      车辆 {{ vehicleStats.visibleCount }}/{{ vehicleStats.inputCount }} · 半径
+      {{ Math.round(vehicleStats.radiusMeters) }}m · 快照 {{ snapshot?.sequence ?? 0 }}
+    </div>
   </div>
 </template>
 
@@ -623,6 +669,20 @@ onUnmounted(() => {
 
 .app-baidu-three-map__detail-status.is-error {
   color: #ffb4b4;
+}
+
+.app-baidu-three-map__vehicle-diagnostics {
+  position: absolute;
+  left: 50%;
+  bottom: 57px;
+  z-index: 2;
+  padding: 4px 8px;
+  border-left: 2px solid rgba(88, 240, 174, 0.72);
+  background: rgba(2, 10, 24, 0.76);
+  color: #91b8ce;
+  font-size: 10px;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .app-baidu-three-map__status-dot {

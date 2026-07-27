@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import CenterCommunicationPanel from '../components/dashboard/CenterCommunicationPanel.vue'
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
@@ -19,11 +19,17 @@ const mapDimension = computed(() => mapView?.dimension.value ?? '2d')
 const cameraPreset = computed(() => mapView?.cameraPreset.value ?? 'overview')
 const cameraPresets = CESIUM_CAMERA_PRESETS
 const { activeIntersectionId, sceneStatus, selectIntersection } = useActiveIntersectionScene()
-useCatalog(activeIntersectionId)
+const { catalog } = useCatalog(activeIntersectionId)
 const localIntersectionOptions = Array.from({ length: 20 }, (_, index) => ({
   intersection_id: `demo_${index + 1}`,
 }))
-const intersectionOptions = localIntersectionOptions
+const simulatableIntersectionIds = computed(() => new Set(
+  catalog.value?.intersections.map((item) => item.intersection_id) ?? [],
+))
+const intersectionOptions = computed(() => localIntersectionOptions.map((item) => ({
+  ...item,
+  simulatable: simulatableIntersectionIds.value.has(item.intersection_id),
+})))
 
 function setMapDimension(next: MapDimension) {
   mapView?.setDimension(next)
@@ -42,14 +48,43 @@ const {
   startError,
   controlError,
   wsConnected,
+  statusError,
+  restoredSession,
+  sessionIntersectionId,
+  activeControlMode,
   launchRun,
   stopRun,
+  markRestoredSessionHandled,
 } = useSimulationStore()
+const isSimulationActive = computed(() => (
+  state.value === 'STARTING'
+  || state.value === 'RUNNING'
+  || state.value === 'STOPPING'
+))
 
 const { ready: healthReady, statusLabel: healthLabel } = useHealth()
 
 const { timeseries, logEntries } = useSnapshotMetrics(sessionId, snapshot)
 const { communicationPanelOpen, closeCommunicationPanel } = useDashboardOverlay()
+
+watch(
+  [snapshot, restoredSession],
+  ([nextSnapshot, shouldRestore]) => {
+    if (
+      !shouldRestore
+      || !nextSnapshot
+      || !['STARTING', 'RUNNING', 'STOPPING'].includes(nextSnapshot.state)
+    ) return
+
+    const intersectionId = sessionIntersectionId.value
+      || Object.keys(nextSnapshot.intersections)[0]
+    if (intersectionId) selectIntersection(intersectionId)
+    mapView?.setCameraPreset('intersection')
+    mapView?.setDimension('3d')
+    markRestoredSessionHandled()
+  },
+  { immediate: true },
+)
 
 function handleOverlayKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && communicationPanelOpen.value) {
@@ -86,7 +121,9 @@ async function handleStop() {
         <span class="map-dimension-toggle__label">路口</span>
         <select
           :value="activeIntersectionId"
+          :disabled="isSimulationActive"
           aria-label="选择高精度路口"
+          :title="isSimulationActive ? '仿真运行期间不能切换路口' : '选择高精度路口'"
           @change="selectIntersection(($event.target as HTMLSelectElement).value)"
         >
           <option
@@ -94,7 +131,7 @@ async function handleStop() {
             :key="item.intersection_id"
             :value="item.intersection_id"
           >
-            {{ item.intersection_id }}
+            {{ item.intersection_id }} · {{ item.simulatable ? '可仿真' : '仅查看' }}
           </option>
         </select>
         <i :class="`is-${sceneStatus}`" aria-hidden="true" />
@@ -144,6 +181,9 @@ async function handleStop() {
         :controlling="controlling"
         :start-error="startError"
         :control-error="controlError"
+        :status-error="statusError"
+        :ws-connected="wsConnected"
+        :active-control-mode="activeControlMode"
         :health-ready="healthReady"
         :health-label="healthLabel"
         @start="handleStart"

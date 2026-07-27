@@ -21,8 +21,8 @@ lane。前端应从 catalog 生成选项，不要硬编码 `demo_2`、`west` 或
 python -m simulation.sumo.build_tls
 ```
 
-该命令默认构建 20 路口联合场景，在 `generated/manifests/` 下生成 schema v2 的信号
-manifest 和 schema v3 的全局车流 manifest。旧车流生成物会被内核拒绝，重新构建即可。
+该命令在 `generated/manifests/` 下生成 schema v2 的信号 manifest 和 schema v3 的
+全局车流 manifest。旧生成物会被内核拒绝，重新构建即可。
 
 ## 启动会话
 
@@ -34,7 +34,6 @@ session_id = manager.start(
     SimulationConfig(
         intersection_ids=("demo_2",),
         period="morning_peak",
-        origins={"demo_2": ("west",)},
         window_start_seconds=1800,
         duration_seconds=1200,
         flow_multiplier=1.5,
@@ -50,9 +49,9 @@ session_id = manager.start(
 
 | 字段 | 规则 |
 |---|---|
-| `intersection_ids` | 非空、唯一且必须出现在 catalog 中；只决定控制和快照范围，不裁剪全局车流 |
+| `intersection_ids` | 非空、唯一，且必须出现在 catalog 中；只决定控制、观测和事件范围 |
 | `period` | `morning_peak`、`off_peak`、`evening_peak` |
-| `origins` | 调试过滤：按路线首个受控路口/进口过滤；省略的路口不裁剪其来源车流 |
+| `origins` | 仅为旧调用保留；全局校准车流不允许按进口过滤，非空值会被拒绝 |
 | `window_start_seconds` | 相对该高峰开始的偏移，必须大于等于 0 |
 | `duration_seconds` | 大于 0 且不能超过该高峰剩余时间；`None` 表示运行到时段末尾 |
 | `flow_multiplier` | 启动前固定的全局倍率，范围 `0.1-5.0` |
@@ -70,8 +69,6 @@ session_id = manager.start(
 
 时间窗口会被平移为本轮 `elapsed_seconds=0`。例如早高峰偏移 1800 秒对应官方
 `07:30:00`。车辆数按窗口重叠比例和倍率确定，并使用确定性最大余数法取整。
-只有完整时段、倍率 `1.0` 且无进口过滤时，session manifest 的
-`official_complete_demand` 才为 `true`。
 
 ## 开始、暂停与倍速
 
@@ -200,19 +197,10 @@ final_snapshot = manager.wait(session_id, timeout=30)
 
 ## CLI
 
-不传 `--intersection` 时默认控制全局场景中的全部路口：
-
-```bash
-python -m simulation.sumo.run --mode fixed --gui --period morning_peak
-```
-
-以下命令只控制和展示 `demo_2`，但仍加载完整全局车流：
-
 ```bash
 python -m simulation.sumo.run --mode fixed --gui \
   --intersection demo_2 \
   --period morning_peak \
-  --origin demo_2:west \
   --window-start 1800 \
   --duration 1200 \
   --flow-multiplier 1.5 \
@@ -220,7 +208,8 @@ python -m simulation.sumo.run --mode fixed --gui \
   --event-file events.json
 ```
 
-`--origin` 可重复。`--playback-speed` 会自动启用墙钟限速；不传时可继续使用原来的
+全局车流始终包含构建范围内的全部路口；`--intersection` 可重复，但只选择局部管控范围。
+`--playback-speed` 会自动启用墙钟限速；不传时可继续使用原来的
 `--realtime` 表示 `1x`。事件文件格式：
 
 ```json

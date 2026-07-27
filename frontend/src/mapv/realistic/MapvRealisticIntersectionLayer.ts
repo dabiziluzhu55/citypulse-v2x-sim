@@ -1,14 +1,18 @@
 import type { Engine } from '@baidumap/mapv-three'
 import * as THREE from 'three'
 import type { RoadCoordinateProjector } from '../roadGeometry'
+import { REALISTIC_INTERSECTION_SURFACE_Z } from '../sceneElevation'
 import {
   loadIntersectionManifest,
   realisticIntersectionAssetUrl,
   type Point2,
   type RealisticConnection,
   type RealisticIntersectionManifest,
-  type RealisticLane,
 } from './intersectionManifest'
+import {
+  buildIntersectionApproachGeometry,
+  pointAndTangent,
+} from './intersectionApproachGeometry'
 
 interface SignalHeadMaterials {
   tlsId: string
@@ -128,33 +132,6 @@ function stripGeometry(
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
-}
-
-function pointAndTangent(lane: RealisticLane, distance: number, incoming: boolean) {
-  const points = lane.points
-  let index = incoming ? points.length - 1 : 0
-  const step = incoming ? -1 : 1
-  let remaining = distance
-  let current = points[index]
-  while (index + step >= 0 && index + step < points.length) {
-    const next = points[index + step]
-    const segmentLength = Math.hypot(next[0] - current[0], next[1] - current[1])
-    if (segmentLength >= remaining) {
-      const ratio = remaining / segmentLength
-      const point: Point2 = [
-        current[0] + (next[0] - current[0]) * ratio,
-        current[1] + (next[1] - current[1]) * ratio,
-      ]
-      const tangent: Point2 = incoming
-        ? [(current[0] - next[0]) / segmentLength, (current[1] - next[1]) / segmentLength]
-        : [(next[0] - current[0]) / segmentLength, (next[1] - current[1]) / segmentLength]
-      return { point, tangent }
-    }
-    remaining -= segmentLength
-    current = next
-    index += step
-  }
-  return { point: current, tangent: [1, 0] as Point2 }
 }
 
 function boxBetween(
@@ -313,30 +290,16 @@ class RealisticIntersectionObject {
     this.group.add(junction)
 
     for (const edge of this.manifest.edges.filter((candidate) => candidate.incoming)) {
-      const laneSamples = edge.lanes.map((lane) => pointAndTangent(lane, 6 * scale, true))
-      if (laneSamples.length === 0) continue
-      const tangent = laneSamples[0].tangent
-      const normal: Point2 = [-tangent[1], tangent[0]]
-      const projected = laneSamples.map(({ point }) => point[0] * normal[0] + point[1] * normal[1])
-      const min = Math.min(...projected) - edge.lanes[0].width / 2
-      const max = Math.max(...projected) + edge.lanes[edge.lanes.length - 1].width / 2
-      const centerAlong = (min + max) / 2
-      const center = laneSamples[Math.floor(laneSamples.length / 2)].point
-      const centerProjection = center[0] * normal[0] + center[1] * normal[1]
-      const adjusted: Point2 = [
-        center[0] + normal[0] * (centerAlong - centerProjection),
-        center[1] + normal[1] * (centerAlong - centerProjection),
-      ]
-      const halfWidth = (max - min) / 2
+      const approach = buildIntersectionApproachGeometry(edge.lanes, scale)
+      if (!approach) continue
+      const { tangent, normal, stopLineCenter, halfWidth } = approach
       this.group.add(lineMesh(
-        [adjusted[0] - normal[0] * halfWidth, adjusted[1] - normal[1] * halfWidth],
-        [adjusted[0] + normal[0] * halfWidth, adjusted[1] + normal[1] * halfWidth],
+        [stopLineCenter[0] - normal[0] * halfWidth, stopLineCenter[1] - normal[1] * halfWidth],
+        [stopLineCenter[0] + normal[0] * halfWidth, stopLineCenter[1] + normal[1] * halfWidth],
         0.42 * scale,
         white,
       ))
-      for (let stripe = -4; stripe <= 4; stripe += 1) {
-        const offset = (11 + stripe * 0.72) * scale
-        const stripeCenter: Point2 = [adjusted[0] - tangent[0] * offset, adjusted[1] - tangent[1] * offset]
+      for (const stripeCenter of approach.crosswalkCenters) {
         this.group.add(lineMesh(
           [stripeCenter[0] - normal[0] * (halfWidth + 2 * scale), stripeCenter[1] - normal[1] * (halfWidth + 2 * scale)],
           [stripeCenter[0] + normal[0] * (halfWidth + 2 * scale), stripeCenter[1] + normal[1] * (halfWidth + 2 * scale)],
@@ -359,8 +322,8 @@ class RealisticIntersectionObject {
         this.group.add(arrow)
       }
       const guideStart: Point2 = [
-        adjusted[0] + normal[0] * (halfWidth + 0.15 * scale),
-        adjusted[1] + normal[1] * (halfWidth + 0.15 * scale),
+        stopLineCenter[0] + normal[0] * (halfWidth + 0.15 * scale),
+        stopLineCenter[1] + normal[1] * (halfWidth + 0.15 * scale),
       ]
       this.group.add(lineMesh(
         guideStart,
@@ -379,17 +342,13 @@ class RealisticIntersectionObject {
     for (const edge of this.manifest.edges.filter((candidate) => candidate.incoming)) {
       const controlled = this.manifest.connections.filter((item) => item.fromEdge === edge.id)
       if (controlled.length === 0) continue
-      const samples = edge.lanes.map((lane) => pointAndTangent(lane, 8.5 * scale, true))
-      const tangent = samples[0].tangent
-      const normal: Point2 = [-tangent[1], tangent[0]]
-      const center: Point2 = [
-        samples.reduce((sum, item) => sum + item.point[0], 0) / samples.length,
-        samples.reduce((sum, item) => sum + item.point[1], 0) / samples.length,
-      ]
+      const approach = buildIntersectionApproachGeometry(edge.lanes, scale)
+      if (!approach) continue
+      const { tangent, normal, stopLineCenter: center, laneSamples: samples, halfWidth } = approach
       const side = center[0] * normal[0] + center[1] * normal[1] >= 0 ? 1 : -1
       const poleBase: Point2 = [
-        center[0] + normal[0] * 7 * scale * side,
-        center[1] + normal[1] * 7 * scale * side,
+        center[0] + normal[0] * (halfWidth + 1.7 * scale) * side,
+        center[1] + normal[1] * (halfWidth + 1.7 * scale) * side,
       ]
       const pole = verticalCylinder(0.17 * scale, 6.2, poleMaterial)
       pole.position.set(poleBase[0], poleBase[1], 3.1)
@@ -497,7 +456,11 @@ export class MapvRealisticIntersectionLayer {
         ? [projected[0], projected[1]]
         : [projected[0], projected[1], projected[2]]
       const scenePosition = this.engine.map.projectArrayCoordinate(geographicPosition)
-      object.group.position.set(scenePosition[0], scenePosition[1], (scenePosition[2] ?? 0) + 1.04)
+      object.group.position.set(
+        scenePosition[0],
+        scenePosition[1],
+        (scenePosition[2] ?? 0) + REALISTIC_INTERSECTION_SURFACE_Z,
+      )
       object.group.visible = false
       this.engine.add(object.group)
       cached = { manifest, object, usedAt: performance.now() }

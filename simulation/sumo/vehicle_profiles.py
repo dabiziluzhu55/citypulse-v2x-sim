@@ -16,6 +16,7 @@ class VehicleProfileError(ValueError):
 @dataclass(frozen=True)
 class VehicleProfile:
     profile_id: str
+    pcu_factor: float
     v_class: str
     powertrain: str
     emission_class: str
@@ -55,8 +56,8 @@ def _positive(raw: Mapping[str, Any], key: str, context: str) -> float:
 
 
 def parse_vehicle_profiles(raw: Mapping[str, Any]) -> Mapping[str, VehicleProfile]:
-    if int(raw.get("schema_version", 0)) != 1:
-        raise VehicleProfileError("vehicle_profiles.json must use schema_version 1.")
+    if int(raw.get("schema_version", 0)) != 2:
+        raise VehicleProfileError("vehicle_profiles.json must use schema_version 2.")
     result = {}
     for profile_id, item in raw.get("profiles", {}).items():
         context = str(profile_id)
@@ -69,6 +70,11 @@ def parse_vehicle_profiles(raw: Mapping[str, Any]) -> Mapping[str, VehicleProfil
             raise VehicleProfileError(f"{context}: invalid vehicle class or powertrain.")
         if not emission_class:
             raise VehicleProfileError(f"{context}: emission_class is required.")
+        pcu_factor = _positive(item, "pcu_factor", context)
+        if not math.isclose(pcu_factor * 2, round(pcu_factor * 2), abs_tol=1e-9):
+            raise VehicleProfileError(
+                f"{context}/pcu_factor must use 0.5 PCU increments."
+            )
         sigma = float(item.get("sigma", -1))
         braking = float(item.get("hard_braking_threshold_mps2", 0))
         if not math.isfinite(sigma) or not 0 <= sigma <= 1:
@@ -79,6 +85,7 @@ def parse_vehicle_profiles(raw: Mapping[str, Any]) -> Mapping[str, VehicleProfil
             )
         result[context] = VehicleProfile(
             profile_id=context,
+            pcu_factor=pcu_factor,
             v_class=v_class,
             powertrain=powertrain,
             emission_class=emission_class,

@@ -287,30 +287,33 @@ def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatal
     traffic = _read_json(layout.traffic_manifest)
     tls = _read_json(layout.tls_manifest)
     if int(traffic.get("schema_version", 0)) != 3:
-        raise SessionError(
-            "Rebuild global traffic artifacts to obtain manifest schema_version 3."
-        )
+        raise SessionError("Rebuild traffic artifacts to obtain manifest schema_version 3.")
     if int(tls.get("schema_version", 0)) != 2:
         raise SessionError("Rebuild signal artifacts to obtain manifest schema_version 2.")
     mapping_path = generated_dir.parent / "TotalMap_20.intersections.json"
     mapping = _read_json(mapping_path)
-    scenarios = traffic.get("scenarios", {})
-    built_intersections = tuple(str(value) for value in traffic.get("intersection_ids", ()))
-    by_intersection = {intersection_id: list(scenarios.values()) for intersection_id in built_intersections}
+    traffic_intersections = traffic.get("intersections", {})
+    tls_intersections = tls.get("intersections", {})
+    missing_tls = set(traffic_intersections) - set(tls_intersections)
+    if missing_tls:
+        raise SessionError(
+            "Traffic manifest references intersections missing from the TLS manifest: "
+            f"{sorted(missing_tls)}"
+        )
     required_lanes = set()
-    for intersection_id in by_intersection:
-        for connection in tls["intersections"][intersection_id]["connections"]:
+    for intersection_id in traffic_intersections:
+        for connection in tls_intersections[intersection_id]["connections"]:
             required_lanes.add(f"{connection['from_edge']}_{connection['from_lane']}")
             required_lanes.add(f"{connection['to_edge']}_{connection['to_lane']}")
     specs = _lane_specs(layout.network_file, required_lanes)
 
     intersections = {}
     period_order = {"morning_peak": 0, "off_peak": 1, "evening_peak": 2}
-    for intersection_id, own_scenarios in sorted(by_intersection.items()):
-        tls_item = tls["intersections"].get(intersection_id)
+    for intersection_id, traffic_item in sorted(traffic_intersections.items()):
+        tls_item = tls_intersections.get(intersection_id)
         if tls_item is None:
             continue
-        origin_data = traffic.get("origins", {}).get(intersection_id, {})
+        origin_data = traffic_item.get("origins", {})
         origins = tuple(
             OriginCapability(
                 origin_id=name,
@@ -358,7 +361,7 @@ def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatal
             latitude=float(mapped["lat"]) if "lat" in mapped else None,
             periods=tuple(
                 sorted(
-                    (str(item["period_id"]) for item in own_scenarios),
+                    (str(value) for value in traffic_item.get("periods", ())),
                     key=lambda value: (period_order.get(value, 99), value),
                 )
             ),

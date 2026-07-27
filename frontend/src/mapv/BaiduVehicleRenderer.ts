@@ -1,16 +1,34 @@
 import * as mapvthree from '@baidumap/mapv-three'
+import type { SimulationState } from '../types/simulation'
 import type { TrafficVehicleView } from '../types/traffic'
 import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates'
 import type { RoadCoordinateProjector } from './roadGeometry'
 import {
   resolveVehicleRenderRadius,
-  selectVisibleVehicles,
+  StableVehicleSelector,
 } from './vehicleVisibility'
 import { createVehicleTwinSample } from './vehicleTwinSample'
+import { resolveVehicleModelProfile } from './vehicleModelProfiles.ts'
+import {
+  resolveContinuousVehicleHeading,
+  type GeographicPoint,
+} from './vehicleOrientation.ts'
 
-const MAX_TWIN_UPDATES_PER_SECOND = 4
-const TWIN_INTERPOLATION_DELAY_MS = 350
-const INITIAL_SAMPLE_LEAD_MS = 250
+const TWIN_INTERPOLATION_DELAY_MS = 300
+const INITIAL_SAMPLE_LEAD_MS = 200
+const EMPTY_SELECTION_RESET_GRACE = 3
+
+export interface VehicleRenderContext {
+  sessionId: string
+  state: SimulationState | null
+  sequence: number
+  elapsedSeconds: number
+}
+
+interface VehiclePoseHistory {
+  point: GeographicPoint
+  heading: number
+}
 
 export interface VehicleRenderStats {
   inputCount: number
@@ -22,8 +40,18 @@ export class BaiduVehicleRenderer {
   private readonly engine: mapvthree.Engine
   private readonly twin: mapvthree.Twin
   private readonly projector: RoadCoordinateProjector
-  private lastUpdateAt = 0
+  private readonly selector = new StableVehicleSelector()
+  private readonly poseHistory = new Map<string, VehiclePoseHistory>()
   private lastVehicles: TrafficVehicleView[] = []
+  private lastContext: VehicleRenderContext = {
+    sessionId: '',
+    state: null,
+    sequence: -1,
+    elapsedSeconds: 0,
+  }
+  private sessionId = ''
+  private lastPushedTime = Number.NEGATIVE_INFINITY
+  private emptySelectionCount = 0
   private visibleCount = 0
   private primed = false
 
@@ -41,39 +69,78 @@ export class BaiduVehicleRenderer {
         10: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.TRUCK,
       },
       keepSize: false,
-      maxScale: 20,
     }))
   }
 
-  update(vehicles: TrafficVehicleView[], force = false): VehicleRenderStats {
+  update(
+    vehicles: TrafficVehicleView[],
+    context: VehicleRenderContext,
+    force = false,
+  ): VehicleRenderStats {
+    const previousSnapshotKey = `${this.lastContext.sessionId}:${this.lastContext.sequence}`
+    if (this.sessionId && context.sessionId && this.sessionId !== context.sessionId) {
+      this.resetRuntime()
+    }
+    this.sessionId = context.sessionId
     this.lastVehicles = vehicles
-    const time = Date.now()
+    this.lastContext = context
     const cameraRange = this.engine.map.getRange()
     const radiusMeters = resolveVehicleRenderRadius(cameraRange)
-    if (!force && time - this.lastUpdateAt < 1000 / MAX_TWIN_UPDATES_PER_SECOND) {
+    const snapshotKey = `${context.sessionId}:${context.sequence}`
+    if (!force && snapshotKey === previousSnapshotKey && this.primed) {
       return { inputCount: vehicles.length, visibleCount: this.visibleCount, radiusMeters }
     }
-    this.lastUpdateAt = time
-    const visible = selectVisibleVehicles(
+    if (
+      vehicles.length === 0
+      && (context.state === 'STOPPED' || context.state === 'COMPLETED' || context.state === 'FAILED')
+    ) {
+      this.resetRuntime()
+      return { inputCount: 0, visibleCount: 0, radiusMeters }
+    }
+    const visible = this.selector.select(
       vehicles,
       this.projector,
       this.engine.map.getCenter(),
       cameraRange,
+      snapshotKey,
     )
     this.visibleCount = visible.length
     if (visible.length === 0) {
-      if (this.primed) this.clear()
+      this.emptySelectionCount += 1
+      if (this.primed && this.emptySelectionCount > EMPTY_SELECTION_RESET_GRACE) this.resetRuntime()
       return { inputCount: vehicles.length, visibleCount: 0, radiusMeters }
     }
-    const samples = visible.map(({ vehicle, longitude, latitude }) => (
-      createVehicleTwinSample(
+    this.emptySelectionCount = 0
+    const requestedTime = context.elapsedSeconds * 1000
+    const time = Number.isFinite(requestedTime)
+      ? Math.max(requestedTime, this.lastPushedTime + (force ? 1 : 0))
+      : this.lastPushedTime + 200
+    this.lastPushedTime = time
+    const activeIds = new Set<string>()
+    const samples = visible.map(({ vehicle, longitude, latitude }) => {
+      const previous = this.poseHistory.get(vehicle.vehicle_id)
+      const point = { longitude, latitude }
+      const heading = resolveContinuousVehicleHeading(
+        vehicle.angle,
+        vehicle.speed,
+        point,
+        previous?.point ?? null,
+        previous?.heading ?? null,
+      )
+      this.poseHistory.set(vehicle.vehicle_id, { point, heading })
+      activeIds.add(vehicle.vehicle_id)
+      return createVehicleTwinSample(
         vehicle,
         longitude,
         latitude,
         time,
-        this.resolveModelType(vehicle.lane_id),
+        resolveVehicleModelProfile(vehicle.type_id),
+        heading,
       )
-    ))
+    })
+    for (const id of this.poseHistory.keys()) {
+      if (!activeIds.has(id)) this.poseHistory.delete(id)
+    }
     if (!this.primed) {
       this.twin.push(samples.map((sample) => ({
         ...sample,
@@ -87,18 +154,23 @@ export class BaiduVehicleRenderer {
   }
 
   refreshViewport(): VehicleRenderStats {
-    return this.update(this.lastVehicles, true)
-  }
-
-  private resolveModelType(laneId: string): number {
-    const hash = [...laneId].reduce((value, character) => value + character.charCodeAt(0), 0)
-    return hash % 17 === 0 ? 6 : hash % 11 === 0 ? 10 : 3
+    return this.update(this.lastVehicles, this.lastContext, true)
   }
 
   clear(): void {
-    this.lastUpdateAt = 0
+    this.lastVehicles = []
+    this.lastContext = { sessionId: '', state: null, sequence: -1, elapsedSeconds: 0 }
+    this.sessionId = ''
+    this.resetRuntime()
+  }
+
+  private resetRuntime(): void {
     this.visibleCount = 0
+    this.emptySelectionCount = 0
     this.primed = false
+    this.lastPushedTime = Number.NEGATIVE_INFINITY
+    this.selector.reset()
+    this.poseHistory.clear()
     this.twin.reset()
   }
 

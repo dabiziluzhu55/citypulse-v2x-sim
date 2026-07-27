@@ -57,7 +57,8 @@ type XY = [number, number]
 
 const METERS_PER_DEGREE = 110_900
 const LAMP_SPACING_METERS = 70
-const JUNCTION_CLEARANCE_METERS = 42
+const JUNCTION_CLEARANCE_METERS = 60
+const APPROACH_LAMP_OFFSETS_METERS = [12, 42] as const
 const MAX_LAMPS = 160
 const MOVEMENT_ORDER: TurnMovement[] = ['left', 'through', 'right']
 
@@ -358,6 +359,23 @@ export function buildSceneFacilityManifest(
   }
 
   const lamps: SceneFacilityPoint[] = []
+  const localLampRoads = new Set<string>()
+  for (const group of signalGroups.values()) {
+    const road = roadsById.get(group[0].fromEdge)!
+    if (localLampRoads.has(road.id)) continue
+    localLampRoads.add(road.id)
+    const frame = approachFrame(road)
+    for (const offset of APPROACH_LAMP_OFFSETS_METERS) {
+      const point = add(frame.near, scale(frame.direction, -offset))
+      for (const side of [-1, 1] as const) {
+        lamps.push({
+          id: `lamp:approach:${road.id}:${offset}:${side}`,
+          position: toWgs84(add(point, scale(frame.normal, side * (road.width / 2 + 1.8))), origin),
+          heading: headingFor(frame.direction),
+        })
+      }
+    }
+  }
   for (const road of corridorRoads(roads)) {
     for (const [sampleIndex, sample] of sampleRoad(road).entries()) {
       if (length(sample.point) < JUNCTION_CLEARANCE_METERS) continue

@@ -47,6 +47,9 @@ export class RoadsideFacilityRenderer {
   private readonly projector: RoadCoordinateProjector
   private readonly transform = new Object3D()
   private group: Group | null = null
+  private furnitureGroup: Group | null = null
+  private legacySignalGroup: Group | null = null
+  private legacyMarkingGroup: Group | null = null
   private manifest: SceneFacilityManifest | null = null
   private signalLenses: Record<SignalColor, InstancedMesh> | null = null
 
@@ -59,70 +62,77 @@ export class RoadsideFacilityRenderer {
     this.clear()
     const group = new Group()
     group.name = 'roadside-facilities'
+    const furnitureGroup = new Group()
+    furnitureGroup.name = 'roadside-furniture'
+    const legacySignalGroup = new Group()
+    legacySignalGroup.name = 'legacy-traffic-signals'
+    const legacyMarkingGroup = new Group()
+    legacyMarkingGroup.name = 'legacy-road-markings'
+    group.add(furnitureGroup, legacySignalGroup, legacyMarkingGroup)
 
-    const polePoints = [
+    const furniturePolePoints = [
       ...manifest.lamps.map((point) => ({ point, height: 6 })),
-      ...manifest.signals.map((point) => ({ point, height: 5.2 })),
       ...manifest.cameras.map((point) => ({ point, height: 5.2 })),
     ]
-    const poles = new InstancedMesh(
-      new CylinderGeometry(1, 1, 1, 8).rotateX(Math.PI / 2),
-      new MeshStandardMaterial({ color: '#738495', roughness: 0.52, metalness: 0.48 }),
-      polePoints.length,
-    )
-    poles.name = 'street-poles'
-    polePoints.forEach(({ point, height }, index) => {
-      poles.setMatrixAt(index, this.matrix(point, height / 2, [0.12, 0.12, height]))
-    })
-    group.add(poles)
+    furnitureGroup.add(this.poleMesh('street-poles', furniturePolePoints))
+    legacySignalGroup.add(this.poleMesh(
+      'traffic-signal-poles',
+      manifest.signals.map((point) => ({ point, height: 5.2 })),
+    ))
 
-    group.add(this.facilityMesh(
+    furnitureGroup.add(this.facilityMesh(
       'street-lamp-arms',
       new BoxGeometry(0.18, 1.7, 0.18).translate(0, -0.75, 5.96),
       '#7f91a0',
       manifest.lamps,
     ))
-    group.add(this.facilityMesh(
+    furnitureGroup.add(this.facilityMesh(
       'street-lamp-housings',
       new BoxGeometry(0.56, 0.82, 0.24).translate(0, -1.55, 5.92),
       '#536472',
       manifest.lamps,
     ))
-    group.add(this.facilityMesh(
+    furnitureGroup.add(this.facilityMesh(
       'street-lamp-lenses',
       new BoxGeometry(0.38, 0.08, 0.12).translate(0, -1.98, 5.86),
       '#ffe4a1',
       manifest.lamps,
       '#ffd77a',
     ))
-    group.add(this.facilityMesh(
+    legacySignalGroup.add(this.facilityMesh(
       'traffic-signal-arms',
       new BoxGeometry(0.18, 3.4, 0.18).translate(0, -1.58, 5.1),
       '#6f8190',
       manifest.signals,
     ))
-    group.add(this.facilityMesh(
+    legacySignalGroup.add(this.facilityMesh(
       'traffic-signal-backs',
       new BoxGeometry(0.92, 0.24, 1.7).translate(0, -3.22, 4.55),
       '#17222b',
       manifest.signals,
     ))
-    group.add(this.facilityMesh(
+    furnitureGroup.add(this.facilityMesh(
       'roadside-camera-brackets',
       new BoxGeometry(0.16, 0.9, 0.16).translate(0, -0.4, 5.12),
       '#768896',
       manifest.cameras,
     ))
-    group.add(this.facilityMesh(
+    furnitureGroup.add(this.facilityMesh(
       'roadside-cameras',
       new BoxGeometry(0.62, 0.82, 0.44).translate(0, -1.02, 5.1),
       '#8aa0b2',
       manifest.cameras,
     ))
-    group.add(this.facilityMesh(
+    furnitureGroup.add(this.facilityMesh(
       'roadside-camera-lenses',
       new CylinderGeometry(0.14, 0.19, 0.18, 12).rotateX(Math.PI / 2).translate(0, -1.51, 5.1),
       '#182630',
+      manifest.cameras,
+    ))
+    furnitureGroup.add(this.facilityMesh(
+      'roadside-control-cabinets',
+      new BoxGeometry(0.82, 0.62, 1.28).translate(0, 1.12, 0.64),
+      '#6f7e87',
       manifest.cameras,
     ))
 
@@ -131,7 +141,7 @@ export class RoadsideFacilityRenderer {
       yellow: this.signalLens('yellow', 4.55, manifest.signals),
       green: this.signalLens('green', 4.05, manifest.signals),
     }
-    group.add(this.signalLenses.red, this.signalLenses.yellow, this.signalLenses.green)
+    legacySignalGroup.add(this.signalLenses.red, this.signalLenses.yellow, this.signalLenses.green)
 
     const markings = new Map<string, SceneArrow[]>()
     for (const arrow of manifest.arrows) {
@@ -139,10 +149,13 @@ export class RoadsideFacilityRenderer {
       markings.set(key, [...(markings.get(key) ?? []), arrow])
     }
     for (const [key, arrows] of markings) {
-      group.add(this.arrowMesh(key, arrows))
+      legacyMarkingGroup.add(this.arrowMesh(key, arrows))
     }
 
     this.group = this.engine.add(group)
+    this.furnitureGroup = furnitureGroup
+    this.legacySignalGroup = legacySignalGroup
+    this.legacyMarkingGroup = legacyMarkingGroup
     this.manifest = manifest
     this.updateSignals(null)
   }
@@ -174,7 +187,10 @@ export class RoadsideFacilityRenderer {
 
   setRealisticDetailActive(active: boolean): void {
     if (!this.group) return
-    this.group.visible = !active
+    this.group.visible = true
+    if (this.furnitureGroup) this.furnitureGroup.visible = true
+    if (this.legacySignalGroup) this.legacySignalGroup.visible = !active
+    if (this.legacyMarkingGroup) this.legacyMarkingGroup.visible = !active
     this.engine.requestRender()
   }
 
@@ -198,6 +214,22 @@ export class RoadsideFacilityRenderer {
     this.transform.scale.set(...scale)
     this.transform.updateMatrix()
     return this.transform.matrix
+  }
+
+  private poleMesh(
+    name: string,
+    points: Array<{ point: SceneFacilityPoint, height: number }>,
+  ): InstancedMesh {
+    const mesh = new InstancedMesh(
+      new CylinderGeometry(1, 1, 1, 8).rotateX(Math.PI / 2),
+      new MeshStandardMaterial({ color: '#738495', roughness: 0.52, metalness: 0.48 }),
+      points.length,
+    )
+    mesh.name = name
+    points.forEach(({ point, height }, index) => {
+      mesh.setMatrixAt(index, this.matrix(point, height / 2, [0.12, 0.12, height]))
+    })
+    return mesh
   }
 
   private facilityMesh(
@@ -300,6 +332,9 @@ export class RoadsideFacilityRenderer {
       materials.forEach((material: Material) => material.dispose())
     })
     this.group = null
+    this.furnitureGroup = null
+    this.legacySignalGroup = null
+    this.legacyMarkingGroup = null
     this.manifest = null
     this.signalLenses = null
   }
