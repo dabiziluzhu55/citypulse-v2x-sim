@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .max_pressure import MaxPressureController
+from .sotl import SOTLController
 
 
 @dataclass(frozen=True)
@@ -37,11 +38,17 @@ CONTROL_MODE_REGISTRY: dict[str, ControlModeSpec] = {
         kernel_mode="algorithm",
         algorithm_name="max_pressure",
     ),
+    "sotl": ControlModeSpec(
+        name="sotl",
+        kernel_mode="algorithm",
+        algorithm_name="sotl",
+    ),
 }
 
 # 算法名（仅算法型模式需要）
 CONTROLLER_FACTORIES: dict[str, ControllerFactory] = {
     "max_pressure": MaxPressureController,
+    "sotl": SOTLController,
 }
 
 
@@ -89,7 +96,7 @@ def create_controller(algorithm_name: str, metadata: dict[str, Any]) -> Any:
 
 
 def validate_enabled_modes(enabled: tuple[str, ...] | list[str]) -> tuple[str, ...]:
-    """校验启用白名单必须是注册表子集，返回规范化元组。"""
+    """校验启用白名单必须是注册表子集，返回规范化元组"""
     modes = tuple(enabled)
     unknown = [m for m in modes if m not in CONTROL_MODE_REGISTRY]
     if unknown:

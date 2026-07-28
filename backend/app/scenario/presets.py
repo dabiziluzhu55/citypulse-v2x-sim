@@ -25,13 +25,13 @@ SCENARIO_PRESET_REGISTRY: dict[str, ScenarioPreset] = {
     "east_dense": ScenarioPreset(
         preset_id="east_dense",
         label="东部密集路口场景",
-        intersection_ids=("demo_14", "demo_15", "demo_19"),
+        intersection_ids=("demo_3", "demo_5", "demo_6", "demo_9"),
         map_template="east_dense",
     ),
     "west_dense": ScenarioPreset(
         preset_id="west_dense",
         label="西部密集路口场景",
-        intersection_ids=("demo_3", "demo_5", "demo_6", "demo_9"),
+        intersection_ids=("demo_14", "demo_15", "demo_19"),
         map_template="west_dense",
     ),
 }

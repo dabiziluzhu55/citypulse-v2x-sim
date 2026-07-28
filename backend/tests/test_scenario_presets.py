@@ -47,9 +47,10 @@ def _intersection(intersection_id: str, lane_id: str) -> IntersectionCapability:
 def east_dense_catalog() -> SimulationCatalog:
     return SimulationCatalog(
         intersections={
-            "demo_14": _intersection("demo_14", "-140_0"),
-            "demo_15": _intersection("demo_15", "-150_0"),
-            "demo_19": _intersection("demo_19", "-190_0"),
+            "demo_3": _intersection("demo_3", "-30_0"),
+            "demo_5": _intersection("demo_5", "-50_0"),
+            "demo_6": _intersection("demo_6", "-60_0"),
+            "demo_9": _intersection("demo_9", "-90_0"),
         }
     )
 
@@ -81,13 +82,13 @@ def test_resolve_east_dense_disturbance_targets(east_dense_catalog: SimulationCa
         disturbance_targets=[
             {
                 "event_type": "lane_closure",
-                "intersection_id": "demo_14",
+                "intersection_id": "demo_3",
                 "start_seconds": 60,
                 "end_seconds": 300,
             },
             {
                 "event_type": "accident",
-                "intersection_id": "demo_19",
+                "intersection_id": "demo_9",
                 "start_seconds": 120,
                 "end_seconds": 420,
                 "position_ratio": 0.4,
@@ -98,10 +99,10 @@ def test_resolve_east_dense_disturbance_targets(east_dense_catalog: SimulationCa
     resolved = resolve_start_simulation(request, east_dense_catalog)
 
     assert resolved.scenario_preset_id == "east_dense"
-    assert resolved.intersection_ids == ("demo_14", "demo_15", "demo_19")
+    assert resolved.intersection_ids == ("demo_3", "demo_5", "demo_6", "demo_9")
     assert len(resolved.initial_events) == 2
-    assert resolved.initial_events[0].lane_ids == ["-140_0"]
-    assert resolved.initial_events[1].lane_id == "-190_0"
+    assert resolved.initial_events[0].lane_ids == ["-30_0"]
+    assert resolved.initial_events[1].lane_id == "-90_0"
 
 
 def test_reject_disturbance_outside_preset(east_dense_catalog: SimulationCatalog) -> None:
@@ -112,7 +113,7 @@ def test_reject_disturbance_outside_preset(east_dense_catalog: SimulationCatalog
         disturbance_targets=[
             {
                 "event_type": "lane_closure",
-                "intersection_id": "demo_3",
+                "intersection_id": "demo_14",
                 "start_seconds": 60,
                 "end_seconds": 300,
             },
@@ -131,7 +132,7 @@ def test_resolve_disturbance_targets_only(east_dense_catalog: SimulationCatalog)
         [
             DisturbanceTargetSpeedLimit(
                 event_type="speed_limit",
-                intersection_id="demo_15",
+                intersection_id="demo_5",
                 start_seconds=10,
                 end_seconds=100,
                 max_speed=4.0,
@@ -142,5 +143,5 @@ def test_resolve_disturbance_targets_only(east_dense_catalog: SimulationCatalog)
     )
 
     assert events[0].event_type == "speed_limit"
-    assert events[0].lane_ids == ["-150_0"]
+    assert events[0].lane_ids == ["-50_0"]
     assert events[0].max_speed == 4.0

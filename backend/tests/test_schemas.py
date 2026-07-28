@@ -44,14 +44,14 @@ def test_start_simulation_accepts_playback_speed() -> None:
     assert request.playback_speed == 2.0
 
 
-def test_reject_invalid_playback_speed() -> None:
-    with pytest.raises(ValidationError):
-        StartSimulationRequest(
-            scenario_preset_id="east_dense",
-            period="morning_peak",
-            duration_seconds=600,
-            playback_speed=4.0,
-        )
+def test_start_simulation_accepts_sotl() -> None:
+    request = StartSimulationRequest(
+        scenario_preset_id="west_dense",
+        period="morning_peak",
+        duration_seconds=600,
+        control_mode="sotl",
+    )
+    assert request.control_mode == "sotl"
 
 
 def test_reject_invalid_playback_speed() -> None:

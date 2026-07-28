@@ -93,7 +93,7 @@ def test_export_scenario_returns_zip_bundle(
         disturbance_targets=[
             {
                 "event_type": "lane_closure",
-                "intersection_id": "demo_14",
+                "intersection_id": "demo_3",
                 "start_seconds": 60,
                 "end_seconds": 300,
             }
