@@ -1,13 +1,15 @@
 """
-SOTL (Self-Organizing Traffic Lights) 信号控制 —— 纯规则驱动。
+SOTL (Self-Organizing Traffic Lights) v2 —— 参照 Gershenson 原版 + Nonurt 实现重写。
+
+与 v1 的关键差异：
+  1. vehicle_count 替代 halting_count —— 不低估慢行车辆
+  2. 动态最小相位保持时间 —— max(3, min(15, total_vehicles // 3))
+  3. 直接选排队最多的相位 —— 不等"清空"
+  4. 绿灯时长与排队量成正比 —— max(5, min(60, count * 2))
 
 参考：
   Gershenson, C. (2005). "Self-Organizing Traffic Lights."
-
-策略：
-  1. 当前相位 halting_count 总和 < 阈值 → 认为已清空
-  2. 有其他相位 halting_count 更大 → 切换到排队最多的相位
-  3. 否则保持当前相位
+  Nonurt/SUMO-SOTL (GitHub)
 
 最小绿灯、黄灯、全红过渡由仿真端负责。
 """
@@ -21,56 +23,49 @@ logger = logging.getLogger(__name__)
 
 
 class SOTLController:
-    """SOTL 自适应信号控制器。
+    """SOTL v2 自适应信号控制器。
 
-    纯启发式规则：清空当前相位后切到排队最多的相位。
+    每相位至少保持动态最小间隔，到期后切到排队（车辆数）最多的相位。
     """
-
-    # 默认阈值：当前相位排队车辆数低于此值就考虑切换
-    DEFAULT_CLEAR_THRESHOLD = 3
-    # 最小切换排队差：另一相位至少多排这么多才切换（避免乒乓）
-    DEFAULT_MIN_QUEUE_DIFF = 2
 
     def __init__(self, metadata: Dict[str, Any]) -> None:
         self._metadata = metadata
         self._episode_id: str = metadata.get("episode_id", "")
-
-        # 参数：可从 metadata 中读取，或用默认值
-        self._clear_threshold: float = float(
-            metadata.get("sotl_clear_threshold", self.DEFAULT_CLEAR_THRESHOLD)
-        )
-        self._min_queue_diff: float = float(
-            metadata.get("sotl_min_queue_diff", self.DEFAULT_MIN_QUEUE_DIFF)
-        )
 
         # ── 预建每个路口的索引 ──
         self._ix: Dict[str, _SOTLIndex] = {}
         for iid, i_meta in metadata.get("intersections", {}).items():
             self._ix[iid] = _build_sotl_index(i_meta)
 
+        # ── 运行时状态：每个路口的上次切换时间 ──
+        self._last_switch: Dict[str, float] = {}
+
         logger.info(
-            "SOTLController 初始化完成: episode=%s 路口数=%d "
-            "清空阈值=%.0f 最小差=%.0f",
+            "SOTLController v2 初始化完成: episode=%s 路口数=%d",
             self._episode_id,
             len(self._ix),
-            self._clear_threshold,
-            self._min_queue_diff,
         )
 
     def compute_actions(self, observation: Dict[str, Any]) -> Dict[str, Optional[int]]:
         """返回 {路口id: 目标相位id}。"""
         actions: Dict[str, Optional[int]] = {}
         obs_intersections: Dict[str, Any] = observation.get("intersections", {})
+        sim_time: float = float(observation.get("simulation_time", 0.0))
 
         for iid, ix in self._ix.items():
             i_obs = obs_intersections.get(iid)
             if i_obs is None:
                 continue
-            actions[iid] = _sotl_decide(
+
+            # 初始化 last_switch
+            if iid not in self._last_switch:
+                self._last_switch[iid] = sim_time
+
+            actions[iid] = _sotl_decide_v2(
                 ix,
                 i_obs,
-                self._clear_threshold,
-                self._min_queue_diff,
+                sim_time,
+                self._last_switch,
             )
 
         return actions
@@ -89,7 +84,6 @@ class _SOTLIndex:
     def __init__(self) -> None:
         self.intersection_id: str = ""
         self.phase_order: List[int] = []
-        # phase_id → 该相位对应的进口道 lane ID 列表
         self.phase_lanes: Dict[int, List[str]] = {}
 
 
@@ -99,7 +93,6 @@ def _build_sotl_index(i_meta: Dict[str, Any]) -> _SOTLIndex:
     ix.intersection_id = i_meta["intersection_id"]
     ix.phase_order = [int(p) for p in i_meta.get("phase_order", [])]
 
-    # 索引 connections：from_lane 就是该相位的进口道
     connections = {c["connection_id"]: c for c in i_meta.get("connections", [])}
     raw_phases = i_meta.get("phases", {})
 
@@ -111,66 +104,74 @@ def _build_sotl_index(i_meta: Dict[str, Any]) -> _SOTLIndex:
             conn = connections.get(conn_id)
             if conn:
                 lanes.append(conn["from_lane"])
-        ix.phase_lanes[pid] = list(set(lanes))  # 去重（同一车道可能出现在多个 connection）
-
-        logger.debug(
-            "相位 %d: 进口道 %s", pid, ix.phase_lanes[pid]
-        )
+        ix.phase_lanes[pid] = list(set(lanes))
 
     return ix
 
 
-def _sotl_decide(
+def _sotl_decide_v2(
     ix: _SOTLIndex,
     i_obs: Dict[str, Any],
-    clear_threshold: float,
-    min_queue_diff: float,
+    sim_time: float,
+    last_switch: Dict[str, float],
 ) -> Optional[int]:
-    """SOTL 决策：清空当前 → 选排队最多的相位。"""
+    """SOTL v2 决策：动态间隔 + 选车最多的相位。"""
     lanes_obs: Dict[str, Any] = i_obs.get("lanes", {})
     current_phase: int = i_obs.get("current_phase", ix.phase_order[0])
 
-    # 计算每个相位的排队
-    phase_queue: Dict[int, float] = {}
+    # ── 1. 计算每相位车辆总数 ──
+    phase_vehicles: Dict[int, float] = {}
+    total_all_lanes: float = 0.0
     for pid in ix.phase_order:
         total = 0.0
         for lane_id in ix.phase_lanes.get(pid, []):
             obs = lanes_obs.get(lane_id)
             if obs:
-                total += float(obs.get("halting_count", 0))
-        phase_queue[pid] = total
+                total += float(obs.get("vehicle_count", 0))
+        phase_vehicles[pid] = total
 
-    current_queue = phase_queue.get(current_phase, 0.0)
+    for lane_id in lanes_obs:
+        total_all_lanes += float(lanes_obs[lane_id].get("vehicle_count", 0))
 
-    # 找排队最多的相位
-    max_phase = max(phase_queue, key=lambda p: phase_queue[p])  # type: ignore[arg-type]
-    max_queue = phase_queue[max_phase]
+    # ── 2. 动态最小保持间隔 ──
+    # interval = max(3, min(15, total_vehicles // 3))
+    min_hold: float = max(3.0, min(15.0, total_all_lanes / 3.0))
+    elapsed: float = sim_time - last_switch.get(ix.intersection_id, sim_time)
 
-    # 决策
-    if max_phase != current_phase:
-        if current_queue < clear_threshold:
-            # 当前相位已清空，切换到排队最多的
-            logger.debug(
-                "路口 %s: 当前相位 %d 已清空(%.0f<%.0f) → 切相位 %d(排队%.0f)",
-                ix.intersection_id,
-                current_phase,
-                current_queue,
-                clear_threshold,
-                max_phase,
-                max_queue,
-            )
-            return max_phase
-        elif max_queue > current_queue + min_queue_diff:
-            # 虽然当前没清空，但另一方向排队严重超标，强制切换
-            logger.debug(
-                "路口 %s: 相位 %d 排队 %.0f, 相位 %d 排队 %.0f → 差距超阈值",
-                ix.intersection_id,
-                current_phase,
-                current_queue,
-                max_phase,
-                max_queue,
-            )
-            return max_phase
+    if elapsed < min_hold:
+        # 还没到最小保持时间，继续当前相位
+        return current_phase
 
-    # 保持当前相位
+    # ── 3. 找车辆最多的相位 ──
+    best_phase = max(phase_vehicles, key=lambda p: phase_vehicles[p])
+    best_count = phase_vehicles[best_phase]
+
+    # ── 4. 如果最优相位就是当前相位，更新 last_switch 继续保持 ──
+    if best_phase == current_phase:
+        # 延长当前相位：更新切换时间避免立即被切
+        # 但如果车多，给更长的绿灯
+        duration = max(5.0, min(60.0, best_count * 2.0))
+        if elapsed < duration:
+            return current_phase
+        # 超时了也留它，除非有别的相位车明显更多
+        second_best = sorted(phase_vehicles, key=lambda p: phase_vehicles[p], reverse=True)
+        if len(second_best) >= 2:
+            if phase_vehicles[second_best[1]] > best_count * 0.7:
+                # 第二相位排队接近当前 → 切过去
+                best_phase = second_best[1]
+
+    # ── 5. 切换 ──
+    if best_phase != current_phase:
+        last_switch[ix.intersection_id] = sim_time
+        logger.debug(
+            "路口 %s: %d→%d (当前车数=%.0f 最优=%.0f 间隔=%.1fs)",
+            ix.intersection_id,
+            current_phase,
+            best_phase,
+            phase_vehicles.get(current_phase, 0),
+            best_count,
+            min_hold,
+        )
+        return best_phase
+
     return current_phase
