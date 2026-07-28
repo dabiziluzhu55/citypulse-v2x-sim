@@ -86,15 +86,6 @@ def main():
         except Exception as e:
             logger.error("EP%d ERR: %s", ep, str(e)[:100])
 
-        # 内存清理：防 SUMO malloc 崩溃
-        import gc
-        del mgr
-        gc.collect()
-        try:
-            import torch
-            torch.cuda.empty_cache()
-        except:
-            pass
         time.sleep(2.0)
 
     # 保存最终模型
