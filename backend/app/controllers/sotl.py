@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# 初始调参值（vehicle-seconds/meters/vehicles）
+# 初始参数值（vehicle-seconds/meters/vehicles）
 DEFAULT_THRESHOLD = 30.0
 DEFAULT_OMEGA = 25.0
 DEFAULT_MU = 3
