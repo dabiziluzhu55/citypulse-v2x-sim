@@ -17,6 +17,7 @@ from .core.exceptions import register_exception_handlers
 from .core.sumo_env import configure_sumo_home
 from .metrics.session_hub import SessionMetricsHub
 from .services.map_service import MapService
+from .services.scenario_export_service import ScenarioExportService
 from .services.simulation_service import SimulationService
 from .services.snapshot_serializer import SnapshotSerializer
 
@@ -59,6 +60,7 @@ async def lifespan(app: FastAPI):
         algorithm_store=algorithm_store,
         metrics_hub=metrics_hub,
     )
+    scenario_export_service = ScenarioExportService(settings, manager)
 
     app.state.settings = settings
     app.state.simulation_manager = manager
@@ -67,6 +69,7 @@ async def lifespan(app: FastAPI):
     app.state.algorithm_store = algorithm_store
     app.state.metrics_hub = metrics_hub
     app.state.simulation_service = simulation_service
+    app.state.scenario_export_service = scenario_export_service
     app.state.sumo_home_configured = sumo_home is not None
     app.state.artifacts_ready = len(missing_files) == 0
     app.state.missing_files = missing_files

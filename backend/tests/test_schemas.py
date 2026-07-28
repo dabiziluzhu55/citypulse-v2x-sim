@@ -3,25 +3,30 @@
 import pytest
 from pydantic import ValidationError
 
+from backend.app.schemas.disturbance_targets import (
+    DisturbanceTargetAccident,
+    DisturbanceTargetLaneClosure,
+    DisturbanceTargetSpeedLimit,
+)
 from backend.app.schemas.events import AccidentRequest, LaneClosureRequest, SpeedLimitRequest
 from backend.app.schemas.simulations import StartSimulationRequest
 
 
 def test_start_simulation_request_valid() -> None:
     request = StartSimulationRequest(
-        intersection_ids=["demo_2"],
+        scenario_preset_id="east_dense",
         period="morning_peak",
         duration_seconds=600,
-        flow_multiplier=1.2,
         control_mode="fixed",
     )
     assert request.realtime is True
     assert request.gui is False
+    assert request.disturbance_targets == []
 
 
 def test_start_simulation_accepts_max_pressure() -> None:
     request = StartSimulationRequest(
-        intersection_ids=["demo_2"],
+        scenario_preset_id="west_dense",
         period="morning_peak",
         duration_seconds=600,
         control_mode="max_pressure",
@@ -29,21 +34,40 @@ def test_start_simulation_accepts_max_pressure() -> None:
     assert request.control_mode == "max_pressure"
 
 
-def test_flow_multiplier_out_of_range() -> None:
+def test_start_simulation_accepts_playback_speed() -> None:
+    request = StartSimulationRequest(
+        scenario_preset_id="east_dense",
+        period="morning_peak",
+        duration_seconds=600,
+        playback_speed=2.0,
+    )
+    assert request.playback_speed == 2.0
+
+
+def test_reject_invalid_playback_speed() -> None:
     with pytest.raises(ValidationError):
         StartSimulationRequest(
-            intersection_ids=["demo_2"],
+            scenario_preset_id="east_dense",
             period="morning_peak",
             duration_seconds=600,
-            flow_multiplier=6.0,
-            control_mode="fixed",
+            playback_speed=4.0,
         )
 
 
-def test_reject_non_demo_2_intersection() -> None:
+def test_reject_invalid_playback_speed() -> None:
     with pytest.raises(ValidationError):
         StartSimulationRequest(
-            intersection_ids=["demo_1"],
+            scenario_preset_id="east_dense",
+            period="morning_peak",
+            duration_seconds=600,
+            playback_speed=4.0,
+        )
+
+
+def test_reject_unknown_scenario_preset() -> None:
+    with pytest.raises(ValidationError):
+        StartSimulationRequest(
+            scenario_preset_id="demo_2_single",
             period="morning_peak",
             duration_seconds=600,
             control_mode="fixed",
@@ -54,11 +78,37 @@ def test_reject_non_demo_2_intersection() -> None:
 def test_reject_unsupported_control_mode(control_mode: str) -> None:
     with pytest.raises(ValidationError):
         StartSimulationRequest(
-            intersection_ids=["demo_2"],
+            scenario_preset_id="east_dense",
             period="morning_peak",
             duration_seconds=600,
             control_mode=control_mode,
         )
+
+
+def test_disturbance_target_discriminated_union() -> None:
+    lane_closure = DisturbanceTargetLaneClosure(
+        event_type="lane_closure",
+        intersection_id="demo_14",
+        start_seconds=60,
+        end_seconds=300,
+    )
+    speed_limit = DisturbanceTargetSpeedLimit(
+        event_type="speed_limit",
+        intersection_id="demo_15",
+        start_seconds=60,
+        end_seconds=300,
+        max_speed=5.0,
+    )
+    accident = DisturbanceTargetAccident(
+        event_type="accident",
+        intersection_id="demo_19",
+        start_seconds=60,
+        end_seconds=300,
+        position_ratio=0.6,
+    )
+    assert lane_closure.intersection_id == "demo_14"
+    assert speed_limit.max_speed == 5.0
+    assert accident.position_ratio == 0.6
 
 
 def test_event_discriminated_union() -> None:

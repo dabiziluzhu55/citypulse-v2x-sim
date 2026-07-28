@@ -29,6 +29,8 @@ from ..schemas.events import (
     LaneClosureRequest,
     SpeedLimitRequest,
 )
+from ..scenario.presets import list_scenario_presets, supported_intersection_ids
+from ..scenario.resolver import ResolvedStartSimulation, resolve_start_simulation
 from ..schemas.simulations import StartSimulationRequest
 from .snapshot_serializer import SnapshotSerializer
 
@@ -55,6 +57,7 @@ class SimulationService:
         self._metrics_hub = metrics_hub or SessionMetricsHub()
         self._metrics_threads: dict[str, threading.Thread] = {}
         self._session_modes: dict[str, str] = {}
+        self._session_presets: dict[str, str] = {}
         self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
@@ -67,35 +70,38 @@ class SimulationService:
         catalog = self._manager.catalog()
         return MapService.serialize_catalog(
             catalog,
-            self._settings.mvp_intersection_ids,
+            supported_intersection_ids(),
             control_modes=list(self._settings.enabled_control_modes()),
         )
 
     def start(self, request: StartSimulationRequest) -> tuple[str, SimulationSnapshot]:
-        self._validate_request_against_catalog(request)
+        catalog = self._manager.catalog()
+        resolved = resolve_start_simulation(request, catalog)
         enabled = self._settings.enabled_control_modes()
-        if request.control_mode not in enabled:
+        if resolved.control_mode not in enabled:
             raise AppError(
                 code="INVALID_CONTROL_MODE",
                 message=(
-                    f"Unsupported control_mode={request.control_mode!r}. "
+                    f"Unsupported control_mode={resolved.control_mode!r}. "
                     f"Allowed: {list(enabled)}"
                 ),
                 status_code=422,
             )
 
-        config = self._build_config(request)
+        config = self._build_config(resolved)
         logger.info(
-            "启动仿真: intersections=%s period=%s control_mode=%s kernel_mode=%s",
-            request.intersection_ids,
-            request.period,
-            request.control_mode,
+            "启动仿真: preset=%s intersections=%s period=%s control_mode=%s kernel_mode=%s",
+            resolved.scenario_preset_id,
+            resolved.intersection_ids,
+            resolved.period,
+            resolved.control_mode,
             config.control_mode,
         )
         session_id = self._manager.start(config)
         with self._lock:
-            self._session_modes[session_id] = request.control_mode
-        self._metrics_hub.start_session(session_id, request.control_mode)
+            self._session_modes[session_id] = resolved.control_mode
+            self._session_presets[session_id] = resolved.scenario_preset_id
+        self._metrics_hub.start_session(session_id, resolved.control_mode)
         self._start_metrics_watcher(session_id)
         snapshot = self._manager.snapshot(session_id)
         return session_id, snapshot
@@ -129,9 +135,27 @@ class SimulationService:
         self._finalize_session(snapshot)
         return snapshot
 
+    def pause(self, session_id: str) -> SimulationSnapshot:
+        logger.info("暂停仿真: %s", session_id)
+        self._manager.pause(session_id)
+        return self._manager.snapshot(session_id)
+
+    def resume(self, session_id: str) -> SimulationSnapshot:
+        logger.info("恢复仿真: %s", session_id)
+        self._manager.resume(session_id)
+        return self._manager.snapshot(session_id)
+
+    def set_playback_speed(self, session_id: str, playback_speed: float) -> SimulationSnapshot:
+        from ..core.playback import validate_playback_speed
+
+        speed = validate_playback_speed(playback_speed)
+        logger.info("设置仿真倍速: session=%s playback_speed=%s", session_id, speed)
+        self._manager.set_playback_speed(session_id, speed)
+        return self._manager.snapshot(session_id)
+
     def add_event(self, session_id: str, request: EventRequest) -> str:
         event = self._to_disturbance_event(request)
-        self._validate_event_lanes(event)
+        self._validate_event_lanes(session_id, event)
         event_id = self._manager.add_event(session_id, event)
         logger.info("Added event %s to session %s", event_id, session_id)
         return event_id
@@ -199,6 +223,7 @@ class SimulationService:
         self._metrics_hub.clear_all()
         with self._lock:
             self._session_modes.clear()
+            self._session_presets.clear()
             self._metrics_threads.clear()
 
     def get_active_session_id(self) -> str | None:
@@ -260,16 +285,13 @@ class SimulationService:
         with self._lock:
             # 保留mode直至completed可被查询一段时间；finalize后mode可清
             self._session_modes.pop(session_id, None)
+            self._session_presets.pop(session_id, None)
 
     # ------------------------------------------------------------------
     # 配置构建
     # ------------------------------------------------------------------
 
-    def _build_config(self, request: StartSimulationRequest) -> SimulationConfig:
-        origins = {
-            intersection_id: tuple(origin_ids)
-            for intersection_id, origin_ids in request.origins.items()
-        }
+    def _build_config(self, request: ResolvedStartSimulation) -> SimulationConfig:
         spec = require_control_mode(request.control_mode)
         algorithm_endpoint = ""
         if spec.needs_algorithm:
@@ -280,12 +302,12 @@ class SimulationService:
             )
 
         return SimulationConfig(
-            intersection_ids=tuple(request.intersection_ids),
+            intersection_ids=request.intersection_ids,
             period=request.period,
-            origins=origins,
+            origins=request.origins,
             window_start_seconds=request.window_start_seconds,
             duration_seconds=request.duration_seconds,
-            flow_multiplier=request.flow_multiplier,
+            flow_multiplier=1.0,
             control_mode=spec.kernel_mode,
             algorithm_endpoint=algorithm_endpoint,
             algorithm_timeout=self._settings.algorithm_timeout,
@@ -295,51 +317,33 @@ class SimulationService:
             gui=request.gui,
             realtime=request.realtime,
             snapshot_interval_seconds=request.snapshot_interval_seconds,
+            playback_speed=request.playback_speed,
             initial_events=tuple(
                 self._to_disturbance_event(item) for item in request.initial_events
             ),
         )
 
-    def _validate_request_against_catalog(self, request: StartSimulationRequest) -> None:
+    def _validate_event_lanes(self, session_id: str, event: DisturbanceEvent) -> None:
         catalog = self._manager.catalog()
-        intersection = catalog.intersections.get(self._settings.default_intersection_id)
-        if intersection is None:
-            raise AppError(
-                code="UNKNOWN_INTERSECTION",
-                message=f"Catalog does not contain {self._settings.default_intersection_id}.",
-                status_code=422,
-            )
-        if request.period not in intersection.periods:
-            raise AppError(
-                code="INVALID_PERIOD",
-                message=f"Period {request.period!r} is not supported for demo_2.",
-                status_code=422,
-            )
-
-        valid_origins = {origin.origin_id for origin in intersection.origins}
-        for intersection_id, origin_ids in request.origins.items():
-            if intersection_id not in catalog.intersections:
+        preset_id = self._session_presets.get(session_id)
+        if preset_id is None:
+            snapshot = self._manager.snapshot(session_id)
+            if snapshot.state in TERMINAL_STATES:
                 raise AppError(
-                    code="INVALID_ORIGIN",
-                    message=f"Unknown intersection in origins: {intersection_id}",
-                    status_code=422,
+                    code="SESSION_NOT_ACTIVE",
+                    message=f"Session {session_id} is not active.",
+                    status_code=400,
                 )
-            unknown = set(origin_ids) - valid_origins
-            if unknown:
-                raise AppError(
-                    code="INVALID_ORIGIN",
-                    message=f"Unknown origin IDs for demo_2: {sorted(unknown)}",
-                    status_code=422,
-                )
+            allowed_intersections = set(catalog.intersections)
+        else:
+            from ..scenario.presets import require_scenario_preset
 
-        for event in request.initial_events:
-            self._validate_event_lanes(self._to_disturbance_event(event))
+            allowed_intersections = set(require_scenario_preset(preset_id).intersection_ids)
 
-    def _validate_event_lanes(self, event: DisturbanceEvent) -> None:
-        catalog = self._manager.catalog()
         lane_ids = {
             lane.lane_id
-            for intersection_id in self._settings.mvp_intersection_ids
+            for intersection_id in allowed_intersections
+            if intersection_id in catalog.intersections
             for lane in catalog.intersections[intersection_id].lanes
         }
         target_lanes = self._event_lane_ids(event)

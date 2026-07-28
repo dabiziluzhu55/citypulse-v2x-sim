@@ -267,11 +267,12 @@ class MapService:
     ):
         from ..schemas.catalog import (
             CatalogResponse,
-            FlowMultiplierRangeSchema,
             IntersectionSchema,
             LaneSchema,
             OriginSchema,
+            ScenarioPresetSchema,
         )
+        from ..scenario.presets import list_scenario_presets
 
         intersections = []
         for intersection_id in allowed_intersections:
@@ -310,10 +311,16 @@ class MapService:
 
         return CatalogResponse(
             intersections=intersections,
+            scenario_presets=[
+                ScenarioPresetSchema(
+                    preset_id=preset.preset_id,
+                    label=preset.label,
+                    intersection_ids=list(preset.intersection_ids),
+                    map_template=preset.map_template,
+                )
+                for preset in list_scenario_presets()
+            ],
             event_types=list(catalog.event_types),
             control_modes=control_modes or ["fixed"],
-            flow_multiplier=FlowMultiplierRangeSchema(
-                min=catalog.flow_multiplier_min,
-                max=catalog.flow_multiplier_max,
-            ),
+            playback_speeds=list(catalog.playback_speeds),
         )

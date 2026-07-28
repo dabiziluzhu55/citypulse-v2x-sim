@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, Response, WebSocket, WebSocketDisconnect
 from ...schemas.events import EventCreatedResponse, EventRequest
 from ...schemas.simulations import (
     MetricsResponse,
+    SetPlaybackSpeedRequest,
+    SimulationPlaybackResponse,
     SimulationStatusResponse,
     StartSimulationRequest,
     StartSimulationResponse,
@@ -40,6 +42,7 @@ def start_simulation(
         status_url=f"/api/v1/simulations/{session_id}",
         websocket_url=f"/api/v1/simulations/{session_id}/stream",
         metrics_url=f"/api/v1/simulations/{session_id}/metrics",
+        scenario_preset_id=request_body.scenario_preset_id,
     )
 
 
@@ -66,6 +69,55 @@ def stop_simulation(
 ) -> StopSimulationResponse:
     snapshot = service.stop(session_id)
     return StopSimulationResponse(session_id=session_id, state=snapshot.state)
+
+
+@router.post(
+    "/simulations/{session_id}/pause",
+    response_model=SimulationPlaybackResponse,
+)
+def pause_simulation(
+    session_id: str,
+    service: SimulationService = Depends(get_simulation_service),
+) -> SimulationPlaybackResponse:
+    snapshot = service.pause(session_id)
+    return SimulationPlaybackResponse(
+        session_id=session_id,
+        state=snapshot.state,
+        playback_speed=snapshot.playback_speed,
+    )
+
+
+@router.post(
+    "/simulations/{session_id}/resume",
+    response_model=SimulationPlaybackResponse,
+)
+def resume_simulation(
+    session_id: str,
+    service: SimulationService = Depends(get_simulation_service),
+) -> SimulationPlaybackResponse:
+    snapshot = service.resume(session_id)
+    return SimulationPlaybackResponse(
+        session_id=session_id,
+        state=snapshot.state,
+        playback_speed=snapshot.playback_speed,
+    )
+
+
+@router.post(
+    "/simulations/{session_id}/playback-speed",
+    response_model=SimulationPlaybackResponse,
+)
+def set_simulation_playback_speed(
+    session_id: str,
+    request_body: SetPlaybackSpeedRequest,
+    service: SimulationService = Depends(get_simulation_service),
+) -> SimulationPlaybackResponse:
+    snapshot = service.set_playback_speed(session_id, request_body.playback_speed)
+    return SimulationPlaybackResponse(
+        session_id=session_id,
+        state=snapshot.state,
+        playback_speed=snapshot.playback_speed,
+    )
 
 
 @router.post(

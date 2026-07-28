@@ -12,9 +12,9 @@ from fastapi.testclient import TestClient
 from backend.app.controllers.runtime import AlgorithmRuntimeStore
 from backend.app.main import create_app
 from backend.app.services.map_service import MapService
+from backend.app.services.scenario_export_service import ScenarioExportService
 from backend.app.services.simulation_service import SimulationService
 from backend.app.services.snapshot_serializer import SnapshotSerializer
-from backend.app.simulation.control import SimulationControlService
 from simulation.sumo.session import (
     IntersectionCapability,
     LaneCapability,
@@ -32,33 +32,36 @@ class FakeCatalog:
 
 
 def build_demo_catalog() -> SimulationCatalog:
-    lanes = (
-        LaneCapability(
-            lane_id="-56734_0",
-            edge_id="-56734",
-            lane_index=0,
-            role="incoming",
-            approach="west",
-            approach_label="West",
-            length=100.0,
-            max_speed=13.9,
-        ),
-    )
-    intersection = IntersectionCapability(
-        intersection_id="demo_2",
-        longitude=116.126756,
-        latitude=38.99115,
-        periods=("morning_peak", "off_peak", "evening_peak"),
-        origins=(
-            OriginCapability(
-                origin_id="west",
-                label="West",
-                lane_ids=("-56734_0",),
+    intersections: dict[str, IntersectionCapability] = {}
+    for index in range(1, 21):
+        intersection_id = f"demo_{index}"
+        lane_id = f"-{index}000_0"
+        intersections[intersection_id] = IntersectionCapability(
+            intersection_id=intersection_id,
+            longitude=116.126756,
+            latitude=38.99115,
+            periods=("morning_peak", "off_peak", "evening_peak"),
+            origins=(
+                OriginCapability(
+                    origin_id="incoming",
+                    label="Incoming",
+                    lane_ids=(lane_id,),
+                ),
             ),
-        ),
-        lanes=lanes,
-    )
-    return SimulationCatalog(intersections={"demo_2": intersection})
+            lanes=(
+                LaneCapability(
+                    lane_id=lane_id,
+                    edge_id=f"-{index}000",
+                    lane_index=0,
+                    role="incoming",
+                    approach="west",
+                    approach_label="West",
+                    length=100.0,
+                    max_speed=13.9,
+                ),
+            ),
+        )
+    return SimulationCatalog(intersections=intersections)
 
 
 @pytest.fixture
@@ -86,11 +89,15 @@ def serializer(coordinate_converter: MagicMock) -> SnapshotSerializer:
 
 
 @pytest.fixture
-def simulation_service(mock_manager: MagicMock, serializer: SnapshotSerializer) -> SimulationService:
+def simulation_service(
+    mock_manager: MagicMock,
+    serializer: SnapshotSerializer,
+    algorithm_store: AlgorithmRuntimeStore,
+) -> SimulationService:
     from backend.app.core.config import get_settings
 
     settings = get_settings()
-    return SimulationService(mock_manager, serializer, settings)
+    return SimulationService(mock_manager, serializer, settings, algorithm_store)
 
 
 @pytest.fixture
@@ -99,28 +106,19 @@ def algorithm_store() -> AlgorithmRuntimeStore:
 
 
 @pytest.fixture
-def simulation_control_service(
+def scenario_export_service(
     mock_manager: MagicMock,
-    serializer: SnapshotSerializer,
-    simulation_service: SimulationService,
-    algorithm_store: AlgorithmRuntimeStore,
-) -> SimulationControlService:
+) -> ScenarioExportService:
     from backend.app.core.config import get_settings
 
-    return SimulationControlService(
-        manager=mock_manager,
-        serializer=serializer,
-        settings=get_settings(),
-        algorithm_store=algorithm_store,
-        legacy_service=simulation_service,
-    )
+    return ScenarioExportService(get_settings(), mock_manager)
 
 
 @pytest.fixture
 def client(
     mock_manager: MagicMock,
     simulation_service: SimulationService,
-    simulation_control_service: SimulationControlService,
+    scenario_export_service: ScenarioExportService,
     algorithm_store: AlgorithmRuntimeStore,
 ) -> TestClient:
     app = create_app()
@@ -133,7 +131,7 @@ def client(
         app.state.missing_files = []
         app.state.simulation_manager = mock_manager
         app.state.simulation_service = simulation_service
-        app.state.simulation_control_service = simulation_control_service
+        app.state.scenario_export_service = scenario_export_service
         app.state.algorithm_store = algorithm_store
         app.state.map_service = map_service
         yield test_client

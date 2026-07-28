@@ -31,13 +31,16 @@ class IntersectionSchema(BaseModel):
     lanes: list[LaneSchema]
 
 
-class FlowMultiplierRangeSchema(BaseModel):
-    min: float
-    max: float
+class ScenarioPresetSchema(BaseModel):
+    preset_id: str
+    label: str
+    intersection_ids: list[str]
+    map_template: str
 
 
 class CatalogResponse(BaseModel):
     intersections: list[IntersectionSchema]
+    scenario_presets: list[ScenarioPresetSchema]
     event_types: list[str]
     control_modes: list[str]
-    flow_multiplier: FlowMultiplierRangeSchema
+    playback_speeds: list[float]
