@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-"""SOTL 自适应信号控制 —— HTTP 算法服务。"""
-=======
 """SOTL 自适应信号控制 —— Protocol 2.0 local transport。"""
 
 from __future__ import annotations
@@ -34,4 +31,3 @@ def step(payload: dict) -> dict:
 def finish(payload: dict) -> None:
     global _controller
     _controller = None
->>>>>>> origin/feature/rl
