@@ -11,8 +11,18 @@ import {
 } from './intersectionManifest'
 import {
   buildIntersectionApproachGeometry,
+  CROSSWALK_STRIPE_WIDTH_METERS,
   pointAndTangent,
+  SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS,
+  signalPoleBase,
 } from './intersectionApproachGeometry'
+import {
+  edgeCenterline,
+  edgeRoadWidth,
+  expandPolygon,
+  junctionApronPoints,
+  visualLanePoints,
+} from './intersectionRoadGeometry'
 
 interface SignalHeadMaterials {
   tlsId: string
@@ -40,7 +50,9 @@ export interface RealisticSignalRuntimeState {
 const COLORS = {
   asphalt: 0x515454,
   junction: 0x494c4c,
-  shoulder: 0x777b7a,
+  sidewalk: 0x969994,
+  curb: 0xc8c8c1,
+  bicycle: 0x655f55,
   marking: 0xf0eee3,
   yellow: 0xe1b63c,
   pole: 0x596164,
@@ -155,6 +167,38 @@ function lineMesh(start: Point2, end: Point2, width: number, material: THREE.Mat
   return mesh
 }
 
+function offsetPolyline(points: Point2[], offset: number): Point2[] {
+  return points.map((point, index) => {
+    const previous = points[Math.max(0, index - 1)]
+    const next = points[Math.min(points.length - 1, index + 1)]
+    const dx = next[0] - previous[0]
+    const dy = next[1] - previous[1]
+    const length = Math.hypot(dx, dy) || 1
+    return [point[0] - dy / length * offset, point[1] + dx / length * offset]
+  })
+}
+
+function addPolylineSegments(
+  group: THREE.Group,
+  points: Point2[],
+  width: number,
+  material: THREE.Material,
+  dashed: boolean,
+): void {
+  for (let index = 0; index < points.length - 1; index += 1) {
+    if (dashed && index % 2 !== 0) continue
+    group.add(lineMesh(points[index], points[index + 1], width, material))
+  }
+}
+
+function polygonMesh(points: Point2[], material: THREE.Material, z: number, renderOrder: number): THREE.Mesh {
+  const shape = new THREE.Shape(points.map(([x, y]) => new THREE.Vector2(x, y)))
+  const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), material)
+  mesh.position.z = z
+  mesh.renderOrder = renderOrder
+  return mesh
+}
+
 function verticalCylinder(radius: number, height: number, material: THREE.Material) {
   const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 1.04, height, 16), material)
   mesh.rotation.x = Math.PI / 2
@@ -245,7 +289,9 @@ class RealisticIntersectionObject {
       roughness: 0.94,
       metalness: 0.02,
     })
-    const shoulder = new THREE.MeshStandardMaterial({ color: COLORS.shoulder, roughness: 0.9 })
+    const sidewalk = new THREE.MeshStandardMaterial({ color: COLORS.sidewalk, roughness: 0.92 })
+    const curb = new THREE.MeshStandardMaterial({ color: COLORS.curb, roughness: 0.84 })
+    const bicycle = new THREE.MeshStandardMaterial({ color: COLORS.bicycle, roughness: 0.9 })
     const white = new THREE.MeshStandardMaterial({
       color: COLORS.marking,
       roughness: 0.58,
@@ -256,43 +302,51 @@ class RealisticIntersectionObject {
     const yellow = new THREE.MeshStandardMaterial({ color: COLORS.yellow, roughness: 0.62 })
 
     for (const edge of this.manifest.edges) {
+      const centerline = edgeCenterline(edge)
+      const roadWidth = edgeRoadWidth(edge)
+      this.group.add(new THREE.Mesh(stripGeometry(centerline, roadWidth + 6.36 * scale, -0.075), sidewalk))
+      this.group.add(new THREE.Mesh(stripGeometry(centerline, roadWidth + 0.36 * scale, -0.035), curb))
+      this.group.add(new THREE.Mesh(stripGeometry(centerline, roadWidth + 0.03 * scale, 0, scale), asphalt))
       for (const lane of edge.lanes) {
-        this.group.add(new THREE.Mesh(stripGeometry(lane.points, lane.width + 0.44 * scale, -0.06), shoulder))
-        this.group.add(new THREE.Mesh(stripGeometry(lane.points, lane.width + 0.08 * scale, 0, scale), asphalt))
+        if (lane.kind !== 'bicycle') continue
+        const laneSurface = new THREE.Mesh(stripGeometry(visualLanePoints(lane), Math.max(0.4 * scale, lane.width - 0.08 * scale), 0.018), bicycle)
+        laneSurface.renderOrder = 30
+        this.group.add(laneSurface)
       }
       for (let laneIndex = 0; laneIndex < edge.lanes.length - 1; laneIndex += 1) {
         const left = edge.lanes[laneIndex]
         const right = edge.lanes[laneIndex + 1]
-        const count = Math.min(left.points.length, right.points.length)
-        for (let index = 0; index < count - 1; index += 1) {
-          if (index % 2 !== 0) continue
-          const start: Point2 = [
-            (left.points[index][0] + right.points[index][0]) / 2,
-            (left.points[index][1] + right.points[index][1]) / 2,
-          ]
-          const end: Point2 = [
-            (left.points[index + 1][0] + right.points[index + 1][0]) / 2,
-            (left.points[index + 1][1] + right.points[index + 1][1]) / 2,
-          ]
-          this.group.add(lineMesh(start, end, 0.11 * scale, white))
-        }
+        const leftPoints = visualLanePoints(left)
+        const rightPoints = visualLanePoints(right)
+        const count = Math.min(leftPoints.length, rightPoints.length)
+        const ratio = left.width / (left.width + right.width)
+        const boundary = Array.from({ length: count }, (_, index) => ([
+          leftPoints[index][0] + (rightPoints[index][0] - leftPoints[index][0]) * ratio,
+          leftPoints[index][1] + (rightPoints[index][1] - leftPoints[index][1]) * ratio,
+        ] as Point2))
+        addPolylineSegments(
+          this.group,
+          boundary,
+          (left.kind === 'bicycle' || right.kind === 'bicycle' ? 0.14 : 0.1) * scale,
+          white,
+          left.kind === 'driving' && right.kind === 'driving',
+        )
       }
+      addPolylineSegments(this.group, offsetPolyline(centerline, roadWidth / 2), 0.12 * scale, white, false)
+      addPolylineSegments(this.group, offsetPolyline(centerline, -roadWidth / 2), 0.12 * scale, white, false)
     }
 
-    const junctionShape = new THREE.Shape(
-      this.manifest.junctionShape.map(([x, y]) => new THREE.Vector2(x, y)),
-    )
+    const apronPoints = junctionApronPoints(this.manifest.junctionShape, this.manifest.edges)
     const junctionMaterial = asphalt.clone()
     junctionMaterial.color.setHex(COLORS.junction)
-    const junction = new THREE.Mesh(new THREE.ShapeGeometry(junctionShape), junctionMaterial)
-    junction.position.z = 0.012
-    junction.renderOrder = 29
-    this.group.add(junction)
+    this.group.add(polygonMesh(expandPolygon(apronPoints, 3.18 * scale), sidewalk, -0.072, 26))
+    this.group.add(polygonMesh(expandPolygon(apronPoints, 0.18 * scale), curb, -0.032, 27))
+    this.group.add(polygonMesh(apronPoints, junctionMaterial, 0.012, 29))
 
     for (const edge of this.manifest.edges.filter((candidate) => candidate.incoming)) {
-      const approach = buildIntersectionApproachGeometry(edge.lanes, scale)
+      const approach = buildIntersectionApproachGeometry(edge, scale, this.manifest.edges)
       if (!approach) continue
-      const { tangent, normal, stopLineCenter, halfWidth } = approach
+      const { tangent, normal, stopLineCenter, halfWidth, crosswalkHalfWidth } = approach
       this.group.add(lineMesh(
         [stopLineCenter[0] - normal[0] * halfWidth, stopLineCenter[1] - normal[1] * halfWidth],
         [stopLineCenter[0] + normal[0] * halfWidth, stopLineCenter[1] + normal[1] * halfWidth],
@@ -301,13 +355,13 @@ class RealisticIntersectionObject {
       ))
       for (const stripeCenter of approach.crosswalkCenters) {
         this.group.add(lineMesh(
-          [stripeCenter[0] - normal[0] * (halfWidth + 2 * scale), stripeCenter[1] - normal[1] * (halfWidth + 2 * scale)],
-          [stripeCenter[0] + normal[0] * (halfWidth + 2 * scale), stripeCenter[1] + normal[1] * (halfWidth + 2 * scale)],
-          0.38 * scale,
+          [stripeCenter[0] - normal[0] * crosswalkHalfWidth, stripeCenter[1] - normal[1] * crosswalkHalfWidth],
+          [stripeCenter[0] + normal[0] * crosswalkHalfWidth, stripeCenter[1] + normal[1] * crosswalkHalfWidth],
+          CROSSWALK_STRIPE_WIDTH_METERS * scale,
           white,
         ))
       }
-      for (const lane of edge.lanes) {
+      for (const lane of edge.lanes.filter((candidate) => candidate.kind !== 'bicycle' && candidate.kind !== 'pedestrian')) {
         const connection = this.manifest.connections.find(
           (item) => item.fromEdge === edge.id && item.fromLane === lane.index,
         )
@@ -342,24 +396,20 @@ class RealisticIntersectionObject {
     for (const edge of this.manifest.edges.filter((candidate) => candidate.incoming)) {
       const controlled = this.manifest.connections.filter((item) => item.fromEdge === edge.id)
       if (controlled.length === 0) continue
-      const approach = buildIntersectionApproachGeometry(edge.lanes, scale)
+      const approach = buildIntersectionApproachGeometry(edge, scale, this.manifest.edges)
       if (!approach) continue
-      const { tangent, normal, stopLineCenter: center, laneSamples: samples, halfWidth } = approach
-      const side = center[0] * normal[0] + center[1] * normal[1] >= 0 ? 1 : -1
-      const poleBase: Point2 = [
-        center[0] + normal[0] * (halfWidth + 1.7 * scale) * side,
-        center[1] + normal[1] * (halfWidth + 1.7 * scale) * side,
-      ]
+      const { tangent, normal, stopLineCenter: center, laneSamples: samples, outerSide: side } = approach
+      const poleBase = signalPoleBase(approach, scale)
       const pole = verticalCylinder(0.17 * scale, 6.2, poleMaterial)
       pole.position.set(poleBase[0], poleBase[1], 3.1)
       this.group.add(pole)
       const armEnd: Point2 = [
-        center[0] - normal[0] * 2.5 * scale * side,
-        center[1] - normal[1] * 2.5 * scale * side,
+        center[0] - normal[0] * 2.5 * scale * side - tangent[0] * SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS * scale,
+        center[1] - normal[1] * 2.5 * scale * side - tangent[1] * SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS * scale,
       ]
       this.group.add(boxBetween(poleBase, armEnd, 5.9, 0.2 * scale, poleMaterial, 0.2))
-      for (let laneIndex = 0; laneIndex < edge.lanes.length; laneIndex += 1) {
-        const lane = edge.lanes[laneIndex]
+      for (let laneIndex = 0; laneIndex < samples.length; laneIndex += 1) {
+        const lane = samples[laneIndex].lane
         const connections = controlled.filter((item) => item.fromLane === lane.index)
         connections.forEach((connection, connectionIndex) => {
           const shift = (connectionIndex - (connections.length - 1) / 2) * 0.58 * scale

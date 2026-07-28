@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 import {
@@ -16,7 +17,16 @@ import {
   sumoAngleToMapHeading,
   unwrapHeading,
 } from '../src/mapv/vehicleOrientation.ts'
-import { createIntersectionLaneHeadingResolver } from '../src/mapv/realistic/intersectionLaneHeading.ts'
+import {
+  createIntersectionLaneHeadingResolver,
+  createIntersectionLanePoseResolver,
+} from '../src/mapv/realistic/intersectionLaneHeading.ts'
+import { samplePolyline } from '../src/mapv/realistic/intersectionRoadGeometry.ts'
+import {
+  projectBd09ToWebMercator,
+  projectSimulationCoordinateToBaiduMap,
+  unprojectWebMercatorToBd09,
+} from '../src/mapv/sceneCoordinates.ts'
 import {
   CAR_MODEL_PROFILE,
   resolveVehicleModelProfile,
@@ -180,6 +190,29 @@ test('resolves a lane heading from the realistic intersection manifest', () => {
   assert.ok(Math.abs(shortestAngleDelta(resolveLaneHeading('edge_0', 2), Math.PI / 2)) < 1e-9)
   assert.ok(Math.abs(shortestAngleDelta(resolveLaneHeading('edge_0', 16), 0)) < 1e-9)
   assert.equal(resolveLaneHeading('missing', 0), null)
+})
+
+test('snaps a SUMO vehicle position onto the rebuilt visual lane', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
+    'utf8',
+  ))
+  const lane = manifest.edges.find((edge) => edge.id === '-51425').lanes[0]
+  const sourcePoint = samplePolyline(lane.points, 0.5)
+  const expected = samplePolyline(lane.renderPoints, 0.5)
+  const coordinate = unprojectWebMercatorToBd09([
+    manifest.origin.webMercator[0] + sourcePoint[0],
+    manifest.origin.webMercator[1] + sourcePoint[1],
+  ])
+  const resolver = createIntersectionLanePoseResolver(manifest, projectSimulationCoordinateToBaiduMap)
+  const pose = resolver(lane.id, coordinate)
+  assert.ok(pose)
+  const projected = projectBd09ToWebMercator([pose.longitude, pose.latitude])
+  const local = [
+    projected[0] - manifest.origin.webMercator[0],
+    projected[1] - manifest.origin.webMercator[1],
+  ]
+  assert.ok(Math.hypot(local[0] - expected[0], local[1] - expected[1]) < 0.2)
 })
 
 test('moves the model center behind the front bumper in cardinal directions', () => {

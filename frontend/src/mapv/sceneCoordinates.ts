@@ -64,6 +64,16 @@ export function projectBd09ToWebMercator(
   ]
 }
 
+export function unprojectWebMercatorToBd09(
+  coordinate: readonly [number, number],
+): [number, number] {
+  const [x, y] = coordinate
+  return [
+    x * 180 / WEB_MERCATOR_HALF_WORLD,
+    Math.atan(Math.exp(y * Math.PI / WEB_MERCATOR_HALF_WORLD)) * 360 / Math.PI - 90,
+  ]
+}
+
 export function projectSimulationCoordinateToXiongan(
   coordinate: readonly number[],
 ): [number, number, number?] {

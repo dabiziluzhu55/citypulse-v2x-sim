@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { XMLParser } from 'fast-xml-parser'
 import { projectBd09ToWebMercator, wgs84ToBd09 } from '../src/mapv/sceneCoordinates.ts'
+import { rebuildRoadEdgeGeometry } from '../src/mapv/realistic/intersectionRoadGeometry.ts'
 import {
   REBUILD_RADIUS_METERS,
   cropPolylineToRadius,
@@ -36,6 +37,16 @@ function roundShape(shape) {
 
 function numericDemoOrder(left, right) {
   return Number(left.replace('demo_', '')) - Number(right.replace('demo_', ''))
+}
+
+function laneKind(lane) {
+  const allow = String(lane.allow ?? '').split(/\s+/)
+  const type = String(lane.type ?? '').toLowerCase()
+  if (type.includes('sidewalk') || allow.includes('pedestrian')) return 'pedestrian'
+  if (allow.includes('bicycle') && !allow.some((value) => ['passenger', 'private', 'bus', 'truck'].includes(value))) {
+    return 'bicycle'
+  }
+  return 'driving'
 }
 
 function convertSumoCoordinates(points) {
@@ -101,6 +112,7 @@ for (const intersectionId of availableIntersectionIds) {
     lanes: asArray(edge.lane).map((lane) => ({
       id: String(lane.id),
       index: Number(lane.index),
+      kind: laneKind(lane),
       width: Number(lane.width) || 3.2,
       speed: Number(lane.speed) || 13.9,
       points: roundShape(toLocalShape(parseShape(String(lane.shape)), sumoOrigin)),
@@ -257,6 +269,12 @@ for (const item of pending) {
       lane.points = roundShape(cropPolylineToRadius(projectedPoints, manifest.radiusSceneUnits))
       delete lane.wgs84
     }
+    const rebuilt = rebuildRoadEdgeGeometry(edge.lanes)
+    edge.centerline = roundShape(rebuilt.centerline)
+    edge.roadWidth = Number(rebuilt.roadWidth.toFixed(3))
+    edge.lanes.forEach((lane, index) => {
+      lane.renderPoints = roundShape(rebuilt.renderPoints[index])
+    })
   }
 
   const errors = validateIntersectionManifest(manifest)

@@ -13,7 +13,10 @@ import {
   resolveStableVehicleHeading,
   type VehicleHeadingState,
 } from './vehicleOrientation.ts'
-import type { LaneHeadingResolver } from './realistic/intersectionLaneHeading.ts'
+import type {
+  LaneHeadingResolver,
+  LanePoseResolver,
+} from './realistic/intersectionLaneHeading.ts'
 
 const TWIN_INTERPOLATION_DELAY_MS = 300
 const INITIAL_SAMPLE_LEAD_MS = 200
@@ -39,6 +42,7 @@ export class BaiduVehicleRenderer {
   private readonly selector = new StableVehicleSelector()
   private readonly poseHistory = new Map<string, VehicleHeadingState>()
   private laneHeadingResolver: LaneHeadingResolver | null = null
+  private lanePoseResolver: LanePoseResolver | null = null
   private lastVehicles: TrafficVehicleView[] = []
   private lastContext: VehicleRenderContext = {
     sessionId: '',
@@ -71,6 +75,11 @@ export class BaiduVehicleRenderer {
 
   setLaneHeadingResolver(resolver: LaneHeadingResolver | null): void {
     this.laneHeadingResolver = resolver
+  }
+
+  setLanePoseResolver(resolver: LanePoseResolver | null): void {
+    this.lanePoseResolver = resolver
+    this.poseHistory.clear()
   }
 
   update(
@@ -120,21 +129,25 @@ export class BaiduVehicleRenderer {
     const activeIds = new Set<string>()
     const samples = visible.map(({ vehicle, longitude, latitude }) => {
       const previous = this.poseHistory.get(vehicle.vehicle_id)
-      const point = { longitude, latitude }
+      const lanePose = this.lanePoseResolver?.(vehicle.lane_id, [longitude, latitude])
+      const renderLongitude = lanePose?.longitude ?? longitude
+      const renderLatitude = lanePose?.latitude ?? latitude
+      const point = { longitude: renderLongitude, latitude: renderLatitude }
       const resolved = resolveStableVehicleHeading({
         sumoAngleDegrees: vehicle.angle,
         speedMetersPerSecond: vehicle.speed,
         current: point,
         timeSeconds: context.elapsedSeconds,
-        laneHeading: this.laneHeadingResolver?.(vehicle.lane_id, vehicle.lane_position),
+        laneHeading: lanePose?.heading
+          ?? this.laneHeadingResolver?.(vehicle.lane_id, vehicle.lane_position),
       }, previous ?? null)
       const heading = resolved.heading
       this.poseHistory.set(vehicle.vehicle_id, resolved.state)
       activeIds.add(vehicle.vehicle_id)
       return createVehicleTwinSample(
         vehicle,
-        longitude,
-        latitude,
+        renderLongitude,
+        renderLatitude,
         time,
         resolveVehicleModelProfile(vehicle.type_id),
         heading,

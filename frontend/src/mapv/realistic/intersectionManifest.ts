@@ -1,17 +1,23 @@
 export type Point2 = [number, number]
 
+export type RealisticLaneKind = 'driving' | 'bicycle' | 'pedestrian'
+
 export interface RealisticLane {
   id: string
   index: number
+  kind?: RealisticLaneKind
   width: number
   widthMeters?: number
   speed: number
   points: Point2[]
+  renderPoints?: Point2[]
 }
 
 export interface RealisticRoadEdge {
   id: string
   incoming: boolean
+  centerline?: Point2[]
+  roadWidth?: number
   lanes: RealisticLane[]
 }
 
@@ -52,6 +58,7 @@ export interface RealisticIntersectionManifest {
   radiusMeters: number
   radiusSceneUnits?: number
   horizontalScale?: number
+  sumoUnitScale?: number
   renderCoordinateSystem?: string
   origin: {
     x: number

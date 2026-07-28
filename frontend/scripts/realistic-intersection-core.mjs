@@ -88,6 +88,12 @@ export function validateIntersectionManifest(manifest) {
     if (!Array.isArray(edge.lanes) || edge.lanes.length === 0) errors.push(`edge ${edge.id} has no lanes`)
     for (const lane of edge.lanes ?? []) {
       if (lane.points.length < 2) errors.push(`lane ${lane.id} must contain a renderable shape`)
+      if (lane.renderPoints && lane.renderPoints.length < 2) {
+        errors.push(`lane ${lane.id} renderPoints must contain a renderable shape`)
+      }
+      if (lane.kind && !['driving', 'bicycle', 'pedestrian'].includes(lane.kind)) {
+        errors.push(`lane ${lane.id} has unsupported kind ${lane.kind}`)
+      }
       const sceneRadius = manifest.radiusSceneUnits ?? manifest.radiusMeters
       if (lane.points.some((point) => Math.hypot(point[0], point[1]) > sceneRadius + 2)) {
         errors.push(`lane ${lane.id} exceeds the rebuild radius`)

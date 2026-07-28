@@ -18,7 +18,10 @@ import { ShowcaseModelLayers } from '../../mapv/showcaseLayers/ShowcaseModelLaye
 import { RoadsideFacilityRenderer } from '../../mapv/showcaseLayers/RoadsideFacilityRenderer'
 import { VegetationRenderer } from '../../mapv/showcaseLayers/VegetationRenderer'
 import { MapvRealisticIntersectionLayer } from '../../mapv/realistic/MapvRealisticIntersectionLayer'
-import { createIntersectionLaneHeadingResolver } from '../../mapv/realistic/intersectionLaneHeading'
+import {
+  createIntersectionLaneHeadingResolver,
+  createIntersectionLanePoseResolver,
+} from '../../mapv/realistic/intersectionLaneHeading'
 import { loadIntersectionEnvironmentManifest } from '../../mapv/realistic/intersectionEnvironmentManifest'
 import { parseSceneFacilityManifest } from '../../mapv/showcaseLayers/sceneFacilities'
 import { BAIDU_DARK_BASE_STYLE } from '../../mapv/baiduDarkStyle'
@@ -268,6 +271,7 @@ async function switchRealisticIntersection(intersectionId: string): Promise<void
     realisticIntersectionLayer.activate(intersectionId)
     realisticDetailReady = true
     vehicleRenderer?.setLaneHeadingResolver(createIntersectionLaneHeadingResolver(manifest))
+    vehicleRenderer?.setLanePoseResolver(createIntersectionLanePoseResolver(manifest, coordinateProjector))
     syncRoadRendering(geojson.value)
     roadsideFacilityRenderer?.setRealisticDetailActive(true)
     realisticIntersectionLayer.updateSignals(trafficView.value?.intersections ?? null)
