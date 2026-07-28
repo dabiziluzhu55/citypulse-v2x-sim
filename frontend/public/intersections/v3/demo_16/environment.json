@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "intersectionId": "demo_16",
+  "facilitiesUrl": "/intersections/v3/demo_16/facilities.json",
+  "vegetation": {
+    "manifestUrl": "/intersections/v3/demo_16/vegetation.json",
+    "modelUrl": "/assets/plants/low-poly-plants.glb"
+  }
+}

@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "model": "low-poly-plants.glb",
+    "license": "unverified"
+  },
+  "cellSizeMeters": 300,
+  "items": [
+    {
+      "id": "tree:-54807:0",
+      "kind": "tree",
+      "variant": "Tree-01-1",
+      "position": [
+        116.11927547234609,
+        39.01995363355885,
+        0
+      ],
+      "heading": 5.32,
+      "scale": 1.25,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-54807:1",
+      "kind": "tree",
+      "variant": "Tree-01-2",
+      "position": [
+        116.11864991197629,
+        39.020133750119065,
+        0
+      ],
+      "heading": 4.83,
+      "scale": 1.3299999999999998,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-54810:0",
+      "kind": "tree",
+      "variant": "Tree-01-1",
+      "position": [
+        116.11747431181132,
+        39.0199611759635,
+        0
+      ],
+      "heading": 4.4,
+      "scale": 1.27,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-54810:1",
+      "kind": "tree",
+      "variant": "Tree-03-2",
+      "position": [
+        116.11684904280081,
+        39.02014190215688,
+        0
+      ],
+      "heading": 5.03,
+      "scale": 1.3199999999999998,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57109:0",
+      "kind": "tree",
+      "variant": "Tree-01-1",
+      "position": [
+        116.11780846110345,
+        39.01893621905367,
+        0
+      ],
+      "heading": 2.46,
+      "scale": 1.25,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57109:1",
+      "kind": "tree",
+      "variant": "Tree-03-2",
+      "position": [
+        116.11807412336454,
+        39.019412603673274,
+        0
+      ],
+      "heading": 0.53,
+      "scale": 1.3199999999999998,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57112:0",
+      "kind": "tree",
+      "variant": "Tree-03-1",
+      "position": [
+        116.11817570444845,
+        39.02103017523037,
+        0
+      ],
+      "heading": 5.38,
+      "scale": 1.38,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57112:1",
+      "kind": "tree",
+      "variant": "Tree-02-2",
+      "position": [
+        116.11780875085775,
+        39.020598734650896,
+        0
+      ],
+      "heading": 6.25,
+      "scale": 1.3599999999999999,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57113:0",
+      "kind": "tree",
+      "variant": "Tree-01-2",
+      "position": [
+        116.11764806468882,
+        39.01970252679882,
+        0
+      ],
+      "heading": 0.89,
+      "scale": 1.3299999999999998,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57113:1",
+      "kind": "tree",
+      "variant": "Tree-02-1",
+      "position": [
+        116.1178399749411,
+        39.01920405504494,
+        0
+      ],
+      "heading": 3.26,
+      "scale": 1.3199999999999998,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57125:0",
+      "kind": "tree",
+      "variant": "Tree-02-1",
+      "position": [
+        116.11796100933267,
+        39.02030765004576,
+        0
+      ],
+      "heading": 2.84,
+      "scale": 1.3299999999999998,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57125:1",
+      "kind": "tree",
+      "variant": "Tree-01-2",
+      "position": [
+        116.11830853170879,
+        39.02074979883421,
+        0
+      ],
+      "heading": 0.51,
+      "scale": 1.39,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57234:0",
+      "kind": "tree",
+      "variant": "Tree-01-2",
+      "position": [
+        116.1165380618809,
+        39.01986224164326,
+        0
+      ],
+      "heading": 3.27,
+      "scale": 1.18,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57234:1",
+      "kind": "tree",
+      "variant": "Tree-02-1",
+      "position": [
+        116.11716686477756,
+        39.02003540887507,
+        0
+      ],
+      "heading": 3.52,
+      "scale": 1.39,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57236:0",
+      "kind": "tree",
+      "variant": "Tree-03-2",
+      "position": [
+        116.11833913232034,
+        39.0198496190356,
+        0
+      ],
+      "heading": 0.17,
+      "scale": 1.23,
+      "cell": "demo_8:core"
+    },
+    {
+      "id": "tree:-57236:1",
+      "kind": "tree",
+      "variant": "Tree-01-1",
+      "position": [
+        116.11896705462428,
+        39.02002258281432,
+        0
+      ],
+      "heading": 5.58,
+      "scale": 1.25,
+      "cell": "demo_8:core"
+    }
+  ]
+}

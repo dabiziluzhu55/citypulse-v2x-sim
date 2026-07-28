@@ -6,14 +6,23 @@ import { useAppMapView } from '../../composables/useAppMapView'
 import { useSimulationMap } from '../../composables/useSimulationMap'
 import { useSimulationStore } from '../../composables/useSimulationStore'
 import { useActiveIntersectionScene } from '../../composables/useActiveIntersectionScene'
+import { useCatalog } from '../../composables/useCatalog'
 import { BaiduDetailedRoadRenderer } from '../../mapv/BaiduDetailedRoadRenderer'
 import { BaiduRoadNetworkRenderer } from '../../mapv/BaiduRoadNetworkRenderer'
-import { BaiduVehicleRenderer } from '../../mapv/BaiduVehicleRenderer'
+import {
+  BaiduVehicleRenderer,
+  type VehicleRenderStats,
+} from '../../mapv/BaiduVehicleRenderer'
 import { ShowcaseGeoJsonLayers } from '../../mapv/showcaseLayers/ShowcaseGeoJsonLayers'
 import { ShowcaseModelLayers } from '../../mapv/showcaseLayers/ShowcaseModelLayers'
 import { RoadsideFacilityRenderer } from '../../mapv/showcaseLayers/RoadsideFacilityRenderer'
 import { VegetationRenderer } from '../../mapv/showcaseLayers/VegetationRenderer'
 import { MapvRealisticIntersectionLayer } from '../../mapv/realistic/MapvRealisticIntersectionLayer'
+import {
+  createIntersectionLaneHeadingResolver,
+  createIntersectionLanePoseResolver,
+} from '../../mapv/realistic/intersectionLaneHeading'
+import { loadIntersectionEnvironmentManifest } from '../../mapv/realistic/intersectionEnvironmentManifest'
 import { parseSceneFacilityManifest } from '../../mapv/showcaseLayers/sceneFacilities'
 import { BAIDU_DARK_BASE_STYLE } from '../../mapv/baiduDarkStyle'
 import {
@@ -33,6 +42,7 @@ import {
   type StaticRoadTilesetManifest,
 } from '../../mapv/staticRoadTileset'
 import type { MapGeoJsonResponse } from '../../types/map'
+import { detectMap3dCapability } from '../../mapv/map3dCapabilities'
 
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -41,11 +51,13 @@ const {
   activeIntersectionId,
   sceneStatus,
   sceneError,
+  selectionRevision,
   setSceneLoading,
   setSceneReady,
   setSceneError,
 } = useActiveIntersectionScene()
-const { geojson } = useSimulationMap(activeIntersectionId)
+const { isIntersectionSupported } = useCatalog(activeIntersectionId)
+const { geojson } = useSimulationMap(activeIntersectionId, 600, isIntersectionSupported)
 const { snapshot, trafficView } = useSimulationStore()
 
 const loading = ref(true)
@@ -53,6 +65,12 @@ const error = ref<string | null>(null)
 const tilesStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const tilesMessage = ref('正在加载百度地图 3D 建筑…')
 const interacting = ref(false)
+const vehicleStats = ref<VehicleRenderStats>({
+  inputCount: 0,
+  visibleCount: 0,
+  radiusMeters: 420,
+})
+const showRenderDiagnostics = import.meta.env.DEV
 
 let engine: mapvthree.Engine | null = null
 let sky: mapvthree.DefaultSky | null = null
@@ -71,8 +89,9 @@ let realisticDetailReady = false
 let showcaseLandmarkPromise: Promise<void> | null = null
 let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
-let vegetationLoadTimer: ReturnType<typeof setTimeout> | null = null
 let buildingLoadTimer: ReturnType<typeof setTimeout> | null = null
+let lastEmptyVehicleWarningSequence = -25
+let sceneSwitchRevision = 0
 
 const tilesetUrl =
   import.meta.env.VITE_XIONGAN_3DTILES_URL?.trim()
@@ -94,17 +113,11 @@ const roadRendererMode = import.meta.env.VITE_BAIDU_ROAD_RENDERER?.trim() || 'de
 const enableShowcaseLayers = import.meta.env.VITE_ENABLE_SHOWCASE_LAYERS === 'true'
 const enableJunctionMarkers = import.meta.env.VITE_ENABLE_JUNCTION_MARKERS === 'true'
 const enableRoadsideFacilities = import.meta.env.VITE_ENABLE_ROADSIDE_FACILITIES === 'true'
-const roadsideFacilitiesUrl = import.meta.env.VITE_SCENE_FACILITIES_URL?.trim()
-  || '/showcase-data/demo_2.facilities.json'
 const showcaseLandmarkUrl = import.meta.env.VITE_SHOWCASE_LANDMARK_MODEL_URL?.trim() || ''
 const enableVegetation = import.meta.env.VITE_ENABLE_VEGETATION === 'true'
-const vegetationManifestUrl = import.meta.env.VITE_VEGETATION_MANIFEST_URL?.trim()
-  || '/showcase-data/demo_2.vegetation.json'
-const vegetationModelUrl = import.meta.env.VITE_VEGETATION_MODEL_URL?.trim()
-  || '/assets/plants/low-poly-plants.glb'
 
 const BUILDING_IDLE_ERROR_TARGET = 24
-const BUILDING_MOVING_ERROR_TARGET = 96
+const BUILDING_MOVING_ERROR_TARGET = 48
 const ACTIVE_FRAME_TIME_MS = 33
 
 function createBaiduProvider(): mapvthree.BaiduVectorTileProvider {
@@ -145,10 +158,31 @@ function markInteracting(): void {
     interacting.value = false
     if (buildingTileset) buildingTileset.errorTarget = BUILDING_IDLE_ERROR_TARGET
     vegetationRenderer?.setInteractionActive(false)
-    vehicleRenderer?.refreshViewport()
+    const stats = vehicleRenderer?.refreshViewport()
+    if (stats) updateVehicleRenderStats(stats)
     engine?.requestRender()
     interactionEndTimer = null
   }, 300)
+}
+
+function updateVehicleRenderStats(stats: VehicleRenderStats): void {
+  vehicleStats.value = stats
+  const current = snapshot.value
+  if (
+    showRenderDiagnostics
+    && current?.state === 'RUNNING'
+    && (current.metrics.active_vehicles ?? 0) > 0
+    && stats.visibleCount === 0
+    && current.sequence - lastEmptyVehicleWarningSequence >= 25
+  ) {
+    lastEmptyVehicleWarningSequence = current.sequence
+    console.warn('[vehicle-render] active simulation has no vehicles inside the camera radius', {
+      activeVehicles: current.metrics.active_vehicles,
+      inputVehicles: stats.inputCount,
+      renderRadiusMeters: Math.round(stats.radiusMeters),
+      snapshotSequence: current.sequence,
+    })
+  }
 }
 
 function syncAnimationLoop(): void {
@@ -226,19 +260,28 @@ function syncRoadRendering(response: MapGeoJsonResponse | null): void {
 
 async function switchRealisticIntersection(intersectionId: string): Promise<void> {
   if (!realisticIntersectionLayer || !intersectionId) return
+  const revision = ++sceneSwitchRevision
   setSceneLoading()
   try {
-    const manifest = await realisticIntersectionLayer.switchTo(intersectionId)
+    const [manifest] = await Promise.all([
+      realisticIntersectionLayer.prepare(intersectionId),
+      switchIntersectionEnvironment(intersectionId, revision),
+    ])
+    if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return
+    realisticIntersectionLayer.activate(intersectionId)
     realisticDetailReady = true
+    vehicleRenderer?.setLaneHeadingResolver(createIntersectionLaneHeadingResolver(manifest))
+    vehicleRenderer?.setLanePoseResolver(createIntersectionLanePoseResolver(manifest, coordinateProjector))
     syncRoadRendering(geojson.value)
     roadsideFacilityRenderer?.setRealisticDetailActive(true)
     realisticIntersectionLayer.updateSignals(trafficView.value?.intersections ?? null)
-    setSceneReady()
+    setSceneReady(intersectionId)
     mapView.setCameraPreset('intersection')
     mapView.flyTo(
       [manifest.origin.longitude, manifest.origin.latitude],
       19,
       `intersection:${manifest.intersectionId}`,
+      { force: true, duration: 900 },
     )
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') return
@@ -277,25 +320,43 @@ function syncMapRendering(response: MapGeoJsonResponse | null): void {
   })
 }
 
-async function loadRoadsideFacilities(): Promise<void> {
-  const response = await fetch(roadsideFacilitiesUrl)
-  if (!response.ok) throw new Error(`Roadside facilities returned HTTP ${response.status}`)
-  const manifest = parseSceneFacilityManifest(await response.json())
-  if (!roadsideFacilityRenderer) return
-  roadsideFacilityRenderer.render(manifest)
-  roadsideFacilityRenderer.updateSignals(trafficView.value?.intersections ?? null)
-}
-
-function scheduleVegetationLoad(): void {
-  if (!engine || !enableVegetation) return
-  vegetationRenderer = new VegetationRenderer(engine, coordinateProjector)
-  vegetationRenderer.setInteractionActive(interacting.value)
-  vegetationLoadTimer = setTimeout(() => {
-    vegetationLoadTimer = null
-    void vegetationRenderer?.load(vegetationManifestUrl, vegetationModelUrl).catch((cause: unknown) => {
-      console.warn('[vegetation] layer disabled', cause)
+async function switchIntersectionEnvironment(intersectionId: string, revision: number): Promise<void> {
+  const environment = await loadIntersectionEnvironmentManifest(intersectionId)
+  const facilitiesPromise = environment.facilitiesUrl && enableRoadsideFacilities
+    ? fetch(environment.facilitiesUrl).then(async (response) => {
+      if (!response.ok) throw new Error(`Roadside facilities returned HTTP ${response.status}`)
+      return parseSceneFacilityManifest(await response.json())
     })
-  }, 450)
+    : Promise.resolve(null)
+  const nextGeoJsonLayers = enableShowcaseLayers && environment.geojson && engine
+    ? new ShowcaseGeoJsonLayers(engine, coordinateProjector)
+    : null
+  const geoJsonPromise = nextGeoJsonLayers && environment.geojson
+    ? nextGeoJsonLayers.load(environment.geojson)
+    : Promise.resolve()
+  const vegetationPromise = enableVegetation && vegetationRenderer && environment.vegetation
+    ? vegetationRenderer.load(
+      environment.vegetation.manifestUrl,
+      environment.vegetation.modelUrl,
+    )
+    : Promise.resolve()
+  const [facilities] = await Promise.all([
+    facilitiesPromise,
+    geoJsonPromise,
+    vegetationPromise,
+  ])
+  if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) {
+    nextGeoJsonLayers?.destroy()
+    return
+  }
+  if (facilities && roadsideFacilityRenderer) {
+    roadsideFacilityRenderer.render(facilities)
+    roadsideFacilityRenderer.updateSignals(trafficView.value?.intersections ?? null)
+  } else {
+    roadsideFacilityRenderer?.clearScene()
+  }
+  showcaseGeoJsonLayers?.destroy()
+  showcaseGeoJsonLayers = nextGeoJsonLayers
 }
 
 function scheduleBuildingTilesetLoad(): void {
@@ -314,10 +375,9 @@ function scheduleBuildingTilesetLoad(): void {
       foveatedScreenSpaceError: true,
       foveatedConeSize: 0.22,
       foveatedMinimumScreenSpaceErrorRelaxation: 1.2,
-      progressiveResolutionHeightFraction: 0.35,
-      cullRequestsWhileMoving: true,
-      cullRequestsWhileMovingMultiplier: 120,
-      cacheBytes: 192 * 1024 * 1024,
+      progressiveResolutionHeightFraction: 0.7,
+      cullRequestsWhileMoving: false,
+      cacheBytes: 256 * 1024 * 1024,
     })) as mapvthree.Default3DTiles
     buildingTileset.releaseCameraViewport()
     engine.requestRender()
@@ -359,9 +419,27 @@ function unbindContainerInteraction(container: HTMLElement | null): void {
   container.removeEventListener('wheel', markInteracting)
 }
 
+function handleWebglContextLost(event: Event): void {
+  event.preventDefault()
+  error.value = '三维图形上下文暂时不可用，正在恢复'
+  loading.value = true
+}
+
+function handleWebglContextRestored(): void {
+  error.value = null
+  loading.value = false
+  engine?.requestRender()
+  void switchRealisticIntersection(activeIntersectionId.value)
+}
+
 async function initMap(): Promise<void> {
   const container = containerRef.value
   if (!container) return
+  const capability = detectMap3dCapability()
+  if (!capability.supported) {
+    mapView.setDimension('2d')
+    return
+  }
   if (!baiduAk) {
     throw new Error('未配置 VITE_BAIDU_MAP_AK，请先填写百度地图浏览器端 AK')
   }
@@ -391,6 +469,8 @@ async function initMap(): Promise<void> {
   sky.skyLightIntensity = 0.78
   enableCameraInteraction()
   bindContainerInteraction(container)
+  container.addEventListener('webglcontextlost', handleWebglContextLost, true)
+  container.addEventListener('webglcontextrestored', handleWebglContextRestored, true)
 
   if (enableLocalTileset) {
     tilesMessage.value = '3D Tiles 已加入场景，正在加载可见建筑…'
@@ -416,36 +496,35 @@ async function initMap(): Promise<void> {
   vehicleRenderer = new BaiduVehicleRenderer(engine, coordinateProjector)
   realisticIntersectionLayer = new MapvRealisticIntersectionLayer(engine, coordinateProjector)
   if (enableShowcaseLayers) {
-    showcaseGeoJsonLayers = new ShowcaseGeoJsonLayers(engine, coordinateProjector)
     showcaseModelLayers = new ShowcaseModelLayers(engine, coordinateProjector)
-    void showcaseGeoJsonLayers.load({
-      water: import.meta.env.VITE_SHOWCASE_WATER_GEOJSON_URL?.trim(),
-      green: import.meta.env.VITE_SHOWCASE_GREEN_GEOJSON_URL?.trim(),
-      urban: import.meta.env.VITE_SHOWCASE_URBAN_GEOJSON_URL?.trim(),
-      buildings: import.meta.env.VITE_SHOWCASE_BUILDINGS_GEOJSON_URL?.trim(),
-      labels: import.meta.env.VITE_SHOWCASE_LABEL_GEOJSON_URL?.trim(),
-    })
   }
   if (enableRoadsideFacilities) {
     roadsideFacilityRenderer = new RoadsideFacilityRenderer(engine, coordinateProjector)
-    void loadRoadsideFacilities().catch((cause: unknown) => {
-      console.warn('[roadside-facilities] layer disabled', cause)
-    })
+  }
+  if (enableVegetation) {
+    vegetationRenderer = new VegetationRenderer(engine, coordinateProjector)
+    vegetationRenderer.setInteractionActive(interacting.value)
   }
   scheduleBuildingTilesetLoad()
-  scheduleVegetationLoad()
   watch(
     trafficView,
     (value) => {
-      vehicleRenderer?.update(value?.vehicles ?? [])
+      const current = snapshot.value
+      const stats = vehicleRenderer?.update(value?.vehicles ?? [], {
+        sessionId: current?.session_id ?? '',
+        state: current?.state ?? null,
+        sequence: current?.sequence ?? -1,
+        elapsedSeconds: current?.elapsed_seconds ?? 0,
+      })
+      if (stats) updateVehicleRenderStats(stats)
       roadsideFacilityRenderer?.updateSignals(value?.intersections ?? null)
       realisticIntersectionLayer?.updateSignals(value?.intersections ?? null)
     },
     { immediate: true },
   )
   watch(
-    activeIntersectionId,
-    (intersectionId) => { void switchRealisticIntersection(intersectionId) },
+    [activeIntersectionId, selectionRevision],
+    ([intersectionId]) => { void switchRealisticIntersection(intersectionId) },
     { immediate: true },
   )
   watch(snapshot, syncAnimationLoop, { immediate: true })
@@ -457,12 +536,12 @@ async function initMap(): Promise<void> {
 
   mapView.registerThreeMap({
     flyTo: (target, options) => {
-      if (!interacting.value) {
+      if (options.force || !interacting.value) {
         engine?.map.flyTo(placeBaiduCameraTarget(target, scenePlacement), options)
       }
     },
     setViewport: (points, options) => {
-      if (!interacting.value) {
+      if (options.force || !interacting.value) {
         engine?.map.setViewport(
           points.map((point) => placeBaiduCameraTarget(point, scenePlacement)),
           options,
@@ -486,13 +565,13 @@ onMounted(() => {
 onUnmounted(() => {
   mapView.unregisterThreeMap()
   unbindContainerInteraction(containerRef.value)
+  containerRef.value?.removeEventListener('webglcontextlost', handleWebglContextLost, true)
+  containerRef.value?.removeEventListener('webglcontextrestored', handleWebglContextRestored, true)
   if (tilesStatusTimer) clearInterval(tilesStatusTimer)
   if (interactionEndTimer) clearTimeout(interactionEndTimer)
-  if (vegetationLoadTimer) clearTimeout(vegetationLoadTimer)
   if (buildingLoadTimer) clearTimeout(buildingLoadTimer)
   tilesStatusTimer = null
   interactionEndTimer = null
-  vegetationLoadTimer = null
   buildingLoadTimer = null
   roadRenderer?.destroy()
   roadRenderer = null
@@ -544,6 +623,14 @@ onUnmounted(() => {
       <span v-else-if="sceneStatus === 'ready'">{{ activeIntersectionId }} 高精度路口已启用</span>
       <span v-else-if="sceneStatus === 'error'">{{ sceneError }}</span>
       <span v-else>高精度路口待加载</span>
+    </div>
+    <div
+      v-if="showRenderDiagnostics"
+      class="app-baidu-three-map__vehicle-diagnostics"
+      aria-label="车辆渲染诊断"
+    >
+      车辆 {{ vehicleStats.visibleCount }}/{{ vehicleStats.inputCount }} · 半径
+      {{ Math.round(vehicleStats.radiusMeters) }}m · 快照 {{ snapshot?.sequence ?? 0 }}
     </div>
   </div>
 </template>
@@ -623,6 +710,20 @@ onUnmounted(() => {
 
 .app-baidu-three-map__detail-status.is-error {
   color: #ffb4b4;
+}
+
+.app-baidu-three-map__vehicle-diagnostics {
+  position: absolute;
+  left: 50%;
+  bottom: 57px;
+  z-index: 2;
+  padding: 4px 8px;
+  border-left: 2px solid rgba(88, 240, 174, 0.72);
+  background: rgba(2, 10, 24, 0.76);
+  color: #91b8ce;
+  font-size: 10px;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .app-baidu-three-map__status-dot {

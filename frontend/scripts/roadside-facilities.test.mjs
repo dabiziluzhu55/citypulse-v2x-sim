@@ -46,15 +46,20 @@ test('derives one combined road marking per inbound SUMO lane', () => {
   assert.deepEqual(markings, {
     north: [
       { laneIndex: 0, movements: ['through', 'right'] },
-      { laneIndex: 1, movements: ['through'] },
+      { laneIndex: 1, movements: ['through', 'right'] },
+      { laneIndex: 2, movements: ['through'] },
     ],
     south: [
       { laneIndex: 0, movements: ['through'] },
-      { laneIndex: 1, movements: ['left', 'through'] },
+      { laneIndex: 1, movements: ['through'] },
+      { laneIndex: 2, movements: ['left', 'through'] },
     ],
     west: [
       { laneIndex: 0, movements: ['right'] },
-      { laneIndex: 1, movements: ['left'] },
+      { laneIndex: 1, movements: ['right'] },
+      { laneIndex: 2, movements: ['left'] },
+      { laneIndex: 3, movements: ['left'] },
+      { laneIndex: 4, movements: ['left'] },
     ],
   })
 })
@@ -105,14 +110,14 @@ test('renders one facility group and updates signal colors without rebuilding it
   renderer.render(manifest)
   assert.equal(added.length, 1)
   const group = added[0]
-  const greenLenses = group.children.find((child) => child.name === 'traffic-signal-green')
+  const greenLenses = group.getObjectByName('traffic-signal-green')
   const signalIndex = manifest.signals.findIndex((signal) => signal.approach === 'north')
   assert.ok(greenLenses)
-  const combinedArrow = group.children.find((child) => child.name === 'road-arrow-left-through')
+  const combinedArrow = group.getObjectByName('road-arrow-left-through')
   assert.ok(combinedArrow)
-  assert.ok(group.children.some((child) => child.name === 'road-arrow-through-right'))
+  assert.ok(group.getObjectByName('road-arrow-through-right'))
   for (const key of ['through', 'left', 'right', 'left-through', 'through-right']) {
-    const arrow = group.children.find((child) => child.name === `road-arrow-${key}`)
+    const arrow = group.getObjectByName(`road-arrow-${key}`)
     assert.ok(arrow, `missing complete ${key} marking`)
     arrow.geometry.computeBoundingBox()
     const bounds = arrow.geometry.boundingBox
@@ -129,11 +134,19 @@ test('renders one facility group and updates signal colors without rebuilding it
     'traffic-signal-backs',
     'roadside-camera-brackets',
     'roadside-camera-lenses',
+    'roadside-control-cabinets',
   ]) {
-    assert.ok(group.children.some((child) => child.name === name), `missing ${name}`)
+    assert.ok(group.getObjectByName(name), `missing ${name}`)
   }
-  const poles = group.children.find((child) => child.name === 'street-poles')
+  const poles = group.getObjectByName('street-poles')
   assert.equal(poles.material.type, 'MeshStandardMaterial')
+
+  renderer.setRealisticDetailActive(true)
+  assert.equal(group.getObjectByName('roadside-furniture').visible, true)
+  assert.equal(group.getObjectByName('legacy-traffic-signals').visible, false)
+  assert.equal(group.getObjectByName('legacy-road-markings').visible, false)
+  renderer.setRealisticDetailActive(false)
+  assert.equal(group.getObjectByName('legacy-traffic-signals').visible, true)
 
   renderer.updateSignals([{ intersection_id: 'demo_2', current_phase: 1, stage: 'GREEN' }])
   const active = new Color()
@@ -142,6 +155,18 @@ test('renders one facility group and updates signal colors without rebuilding it
 
   renderer.destroy()
   assert.deepEqual(removed, [group])
+})
+
+test('places street lamps on both sides near each controlled approach', () => {
+  const manifest = buildSceneFacilityManifest(roads, tls, 'demo_2')
+  const approachLamps = manifest.lamps.filter((lamp) => lamp.id.startsWith('lamp:approach:'))
+  assert.equal(approachLamps.length, 12)
+  for (const edgeId of ['-51425', '-56734', '-57228']) {
+    const lamps = approachLamps.filter((lamp) => lamp.id.includes(`:${edgeId}:`))
+    assert.equal(lamps.length, 4)
+    assert.ok(lamps.some((lamp) => lamp.id.endsWith(':-1')))
+    assert.ok(lamps.some((lamp) => lamp.id.endsWith(':1')))
+  }
 })
 
 test('preserves the backend signal stage for traffic-light rendering', () => {

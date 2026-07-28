@@ -13,6 +13,7 @@ export type StoredMapViewport =
 export interface ApplyViewportOptions {
   duration?: number
   cameraPreset?: CesiumCameraPreset
+  force?: boolean
 }
 
 const DEFAULT_CAMERA_PRESET = resolveCesiumCameraPreset(DEFAULT_CESIUM_CAMERA_PRESET_ID)

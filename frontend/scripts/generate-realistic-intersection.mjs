@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { XMLParser } from 'fast-xml-parser'
 import { projectBd09ToWebMercator, wgs84ToBd09 } from '../src/mapv/sceneCoordinates.ts'
+import { rebuildRoadEdgeGeometry } from '../src/mapv/realistic/intersectionRoadGeometry.ts'
 import {
   REBUILD_RADIUS_METERS,
   cropPolylineToRadius,
@@ -21,6 +22,9 @@ const mappingPath = path.resolve(dataDirectory, 'TotalMap_20.intersections.json'
 const tlsManifestPath = path.resolve(dataDirectory, 'generated/manifests/tls_manifest.json')
 const converterPath = path.resolve(scriptsDirectory, 'convert-sumo-coordinates.py')
 const outputDirectory = path.resolve(frontendDirectory, 'public/intersections/v3')
+const requestedIntersectionId = process.argv
+  .find((argument) => argument.startsWith('--intersection='))
+  ?.split('=', 2)[1]
 
 function asArray(value) {
   if (value === undefined) return []
@@ -33,6 +37,16 @@ function roundShape(shape) {
 
 function numericDemoOrder(left, right) {
   return Number(left.replace('demo_', '')) - Number(right.replace('demo_', ''))
+}
+
+function laneKind(lane) {
+  const allow = String(lane.allow ?? '').split(/\s+/)
+  const type = String(lane.type ?? '').toLowerCase()
+  if (type.includes('sidewalk') || allow.includes('pedestrian')) return 'pedestrian'
+  if (allow.includes('bicycle') && !allow.some((value) => ['passenger', 'private', 'bus', 'truck'].includes(value))) {
+    return 'bicycle'
+  }
+  return 'driving'
 }
 
 function convertSumoCoordinates(points) {
@@ -74,10 +88,17 @@ const tlLogics = new Map(asArray(net.tlLogic).map((logic) => [String(logic.id), 
 const sourceSha256 = createHash('sha256').update(source).digest('hex')
 const pending = []
 
-for (const intersectionId of Object.keys(mapping).sort(numericDemoOrder)) {
+const availableIntersectionIds = Object.keys(mapping)
+  .filter((intersectionId) => tlsManifest.intersections?.[intersectionId])
+  .filter((intersectionId) => !requestedIntersectionId || intersectionId === requestedIntersectionId)
+  .sort(numericDemoOrder)
+if (requestedIntersectionId && !availableIntersectionIds.includes(requestedIntersectionId)) {
+  throw new Error(`TLS manifest is missing ${requestedIntersectionId}`)
+}
+
+for (const intersectionId of availableIntersectionIds) {
   const location = mapping[intersectionId]
   const topology = tlsManifest.intersections?.[intersectionId]
-  if (!topology) throw new Error(`TLS manifest is missing ${intersectionId}`)
   const junctionId = String(location.junction_id)
   const junction = junctions.get(junctionId)
   if (!junction) throw new Error(`SUMO network is missing junction ${junctionId}`)
@@ -91,6 +112,7 @@ for (const intersectionId of Object.keys(mapping).sort(numericDemoOrder)) {
     lanes: asArray(edge.lane).map((lane) => ({
       id: String(lane.id),
       index: Number(lane.index),
+      kind: laneKind(lane),
       width: Number(lane.width) || 3.2,
       speed: Number(lane.speed) || 13.9,
       points: roundShape(toLocalShape(parseShape(String(lane.shape)), sumoOrigin)),
@@ -201,11 +223,16 @@ const converted = convertSumoCoordinates(conversionPoints)
 registrations.forEach(({ index, apply }) => apply(converted[index]))
 
 await mkdir(outputDirectory, { recursive: true })
+const existingCatalog = await readFile(path.resolve(outputDirectory, 'catalog.json'), 'utf8')
+  .then(JSON.parse)
+  .catch(() => ({ intersections: [] }))
 const catalog = {
   schemaVersion: 3,
   generatedAt: new Date().toISOString(),
   sourceSha256,
-  intersections: [],
+  intersections: existingCatalog.intersections.filter(
+    (entry) => !availableIntersectionIds.includes(entry.intersectionId),
+  ),
 }
 
 for (const item of pending) {
@@ -242,6 +269,12 @@ for (const item of pending) {
       lane.points = roundShape(cropPolylineToRadius(projectedPoints, manifest.radiusSceneUnits))
       delete lane.wgs84
     }
+    const rebuilt = rebuildRoadEdgeGeometry(edge.lanes)
+    edge.centerline = roundShape(rebuilt.centerline)
+    edge.roadWidth = Number(rebuilt.roadWidth.toFixed(3))
+    edge.lanes.forEach((lane, index) => {
+      lane.renderPoints = roundShape(rebuilt.renderPoints[index])
+    })
   }
 
   const errors = validateIntersectionManifest(manifest)
@@ -267,9 +300,11 @@ for (const item of pending) {
   })
 }
 
+catalog.intersections.sort((left, right) => numericDemoOrder(left.intersectionId, right.intersectionId))
+
 await writeFile(
   path.resolve(outputDirectory, 'catalog.json'),
   `${JSON.stringify(catalog, null, 2)}\n`,
   'utf8',
 )
-console.log(`Generated ${catalog.intersections.length} projection-correct intersections in public/intersections/v3`)
+console.log(`Updated ${pending.length} projection-correct intersections; catalog contains ${catalog.intersections.length}`)

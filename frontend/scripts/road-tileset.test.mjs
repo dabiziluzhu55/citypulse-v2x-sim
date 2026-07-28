@@ -50,7 +50,7 @@ test('SUMO roads produce a valid deterministic single-tile GLB', async () => {
   assert.equal(first.manifest.intersection_id, 'demo_2')
   assert.equal(first.manifest.placement_mode, 'actual')
   assert.deepEqual(first.manifest.placement_bd09, DEMO_2_SOURCE_CENTER_BD09)
-  assert.equal(first.manifest.feature_count, 15)
+  assert.equal(first.manifest.feature_count, 16)
   assert.equal(first.manifest.source_generated_at, source.metadata.generated_at)
   assert.match(first.manifest.source_sha256, /^[a-f0-9]{64}$/)
   assert.equal(sha256(first.glb), sha256(second.glb))

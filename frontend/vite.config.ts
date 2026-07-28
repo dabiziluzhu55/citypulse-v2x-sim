@@ -61,5 +61,8 @@ export default defineConfig(({ mode }) => {
         '/api': createApiProxy(backendTarget),
       },
     },
+    build: {
+      target: 'es2020',
+    },
   }
 })

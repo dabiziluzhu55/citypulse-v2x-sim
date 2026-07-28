@@ -28,7 +28,10 @@ export interface TrafficVehicleView {
   y: number
   speed: number
   angle: number
+  road_id: string
   lane_id: string
+  type_id?: string
+  lane_position?: number
 }
 
 export interface TrafficStateView {

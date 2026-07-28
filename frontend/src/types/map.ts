@@ -36,8 +36,9 @@ export interface ThreeMapController {
     range: number
     duration: number
     complete: () => void
+    force?: boolean
   }) => void
-  setViewport: (points: Array<[number, number, number]>, options: { range: number }) => void
+  setViewport: (points: Array<[number, number, number]>, options: { range: number; force?: boolean }) => void
 }
 
 export interface AppMapView {
@@ -54,7 +55,12 @@ export interface AppMapView {
   unregisterThreeMap: () => void
   registerCesium: (viewer: Viewer) => void
   unregisterCesium: () => void
-  flyTo: (center: [number, number], zoom: number, anchorId?: string) => void
+  flyTo: (
+    center: [number, number],
+    zoom: number,
+    anchorId?: string,
+    options?: { force?: boolean; duration?: number },
+  ) => void
   fitBounds: (bounds: [number, number, number, number], anchorId?: string) => void
   flyToTemplate: (templateId: string) => void
   flyToScenario: (scenarioId: string, templateId?: string) => void

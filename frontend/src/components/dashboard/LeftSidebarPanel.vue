@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { DISTURBANCE_CHOICE_OPTIONS, FLOW_SCALE_SELECT_OPTIONS, SCENARIO_MODE_OPTIONS, TRAFFIC_FLOW_MODE_OPTIONS } from '../../constants/scenarioOptions'
-import { DASHBOARD_CONTROL_MODES } from '../../constants/simulationOptions'
+import { DASHBOARD_CONTROL_MODES, resolveControlModeLabel } from '../../constants/simulationOptions'
 import { useCompactScenarioConfig } from '../../composables/useCompactScenarioConfig'
 import { useCatalog } from '../../composables/useCatalog'
 import { useActiveIntersectionScene } from '../../composables/useActiveIntersectionScene'
@@ -11,11 +11,30 @@ import LeftSidebarSectionHeader from './LeftSidebarSectionHeader.vue'
 import { LEFT_SIDEBAR_DESIGN_HEIGHT, LEFT_SIDEBAR_DESIGN_WIDTH, LEFT_SIDEBAR_REFERENCE_LAYOUT } from '../../constants/leftSidebarLayout'
 import type { SimulationSnapshot, SimulationState, StartSimulationRequest } from '../../types/simulation'
 
-const props = defineProps<{ sessionId: string; state: SimulationState | null; snapshot: SimulationSnapshot | null; starting: boolean; controlling: boolean; startError: string | null; controlError: string | null; healthReady: boolean; healthLabel: string }>()
+const props = defineProps<{
+  sessionId: string
+  state: SimulationState | null
+  snapshot: SimulationSnapshot | null
+  starting: boolean
+  controlling: boolean
+  startError: string | null
+  controlError: string | null
+  statusError: string | null
+  wsConnected: boolean
+  activeControlMode: string
+  healthReady: boolean
+  healthLabel: string
+}>()
 const emit = defineEmits<{ start: [payload: StartSimulationRequest]; stop: [] }>()
 
 const { activeIntersectionId } = useActiveIntersectionScene()
-const { intersection, periods, error: catalogError } = useCatalog(activeIntersectionId)
+const {
+  intersection,
+  periods,
+  loading: catalogLoading,
+  error: catalogError,
+  isIntersectionSupported,
+} = useCatalog(activeIntersectionId)
 const { config, configNote, availableTimeOptions, buildPayload, applyImportedConfig, buildExport } = useCompactScenarioConfig(intersection, periods)
 const fileInput = ref<HTMLInputElement | null>(null)
 const feedback = ref<string | null>(null)
@@ -28,10 +47,50 @@ const fields = computed(() => [
 ])
 const isRunning = computed(() => props.state === 'RUNNING' || props.state === 'STARTING' || props.state === 'STOPPING')
 const canStop = computed(() => isRunning.value)
-const canStart = computed(() => props.healthReady && !props.starting && !isRunning.value)
+const canStart = computed(() => (
+  props.healthReady
+  && !catalogLoading.value
+  && isIntersectionSupported.value
+  && !props.starting
+  && !isRunning.value
+))
 const progressPercent = computed(() => typeof props.snapshot?.progress === 'number' ? Math.min(100, Math.max(0, props.snapshot.progress * 100)) : 0)
-const statusMessage = computed(() => feedback.value || props.startError || props.controlError || catalogError.value || (!props.healthReady ? props.healthLabel : ''))
+const unsupportedMessage = computed(() => (
+  !catalogLoading.value && !isIntersectionSupported.value
+    ? `${activeIntersectionId.value} 当前仅支持高精度查看，尚未接入真实仿真路网`
+    : ''
+))
+const statusMessage = computed(() => feedback.value
+  || props.startError
+  || props.controlError
+  || props.statusError
+  || catalogError.value
+  || unsupportedMessage.value
+  || (!props.healthReady ? props.healthLabel : ''))
 const selectedAlgorithm = computed(() => DASHBOARD_CONTROL_MODES.find((item) => item.value === config.value.control_mode))
+const stateLabel = computed(() => props.state ?? (props.healthReady ? 'READY' : 'OFFLINE'))
+const connectionLabel = computed(() => {
+  if (!props.sessionId) return '未连接'
+  return props.wsConnected ? '实时推送' : '轮询同步'
+})
+const officialTimeLabel = computed(() => {
+  const value = props.snapshot?.official_time
+  if (!value) return '--:--:--'
+  const time = value.includes('T') ? value.split('T')[1] : value
+  return time.slice(0, 8)
+})
+const activeVehicleLabel = computed(() => props.snapshot?.metrics.active_vehicles ?? 0)
+const sequenceLabel = computed(() => props.snapshot?.sequence ?? 0)
+const algorithmLabel = computed(() => resolveControlModeLabel(
+  props.activeControlMode || config.value.control_mode,
+))
+const startTitle = computed(() => {
+  if (catalogLoading.value) return '正在读取真实仿真路口目录'
+  if (unsupportedMessage.value) return unsupportedMessage.value
+  if (!props.healthReady) return props.healthLabel
+  if (isRunning.value) return '当前仿真尚未结束'
+  return '开始仿真'
+})
 
 function fieldModel(key: string): 'scenario_mode' | 'disturbance' | 'flow_mode' | 'time_preset' {
   if (key === 'scenario') return 'scenario_mode'
@@ -58,7 +117,18 @@ function exportConfig() {
   URL.revokeObjectURL(url)
   feedback.value = '当前仿真场景已导出'
 }
-function handleStart() { multiplierOpen.value = false; emit('start', buildPayload()) }
+function handleStart() {
+  multiplierOpen.value = false
+  if (!isIntersectionSupported.value) {
+    feedback.value = unsupportedMessage.value
+    return
+  }
+  try {
+    emit('start', buildPayload())
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : '无法构造仿真请求'
+  }
+}
 function selectMultiplier(value: number) {
   if (isRunning.value) return
   config.value.flow_scale = value
@@ -90,7 +160,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
         :style="{ left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[index].left}px`, top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[index].top}px`, width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[index].width}px` }"
       >
         <span class="left-sidebar__field-label">{{ field.label }}</span>
-        <el-select v-model="config[fieldModel(field.key)]" class="left-sidebar__select" popper-class="left-sidebar-select-popper">
+        <el-select v-model="config[fieldModel(field.key)]" :disabled="isRunning" class="left-sidebar__select" popper-class="left-sidebar-select-popper">
           <el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
       </label>
@@ -116,7 +186,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
           :title="option.backendSupported ? '真实后端算法' : '模拟展示；启动时由固定配时后端承载'"
         >
           <span>{{ option.label }}</span><em v-if="!option.backendSupported">MOCK</em>
-          <input v-model="config.control_mode" type="radio" name="sidebar-algorithm" :value="option.value" /><i aria-hidden="true" />
+          <input v-model="config.control_mode" :disabled="isRunning" type="radio" name="sidebar-algorithm" :value="option.value" /><i aria-hidden="true" />
         </label>
       </div>
 
@@ -151,9 +221,23 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
       <div v-if="selectedAlgorithm && !selectedAlgorithm.backendSupported" class="left-sidebar__mock-note">当前算法为模拟展示，后端使用固定配时</div>
 
       <div class="left-sidebar__controls">
-        <button type="button" :disabled="!canStart" :title="canStart ? '开始仿真' : healthLabel" @click="handleStart">{{ starting ? '启动中…' : '开始仿真' }}</button>
+        <button type="button" :disabled="!canStart" :title="startTitle" @click="handleStart">{{ starting ? '启动中…' : '开始仿真' }}</button>
         <button type="button" disabled title="真实后端暂不支持暂停">暂停仿真</button>
         <button type="button" :disabled="!sessionId || !canStop || controlling" @click="emit('stop')">结束仿真</button>
+      </div>
+
+      <div class="left-sidebar__runtime" :class="`is-${state?.toLowerCase() ?? 'ready'}`" aria-live="polite">
+        <div class="left-sidebar__runtime-head">
+          <strong><i aria-hidden="true" />{{ stateLabel }}</strong>
+          <span>{{ connectionLabel }}</span>
+          <em>{{ algorithmLabel }}</em>
+        </div>
+        <dl>
+          <div><dt>仿真时间</dt><dd>{{ officialTimeLabel }}</dd></div>
+          <div><dt>活动车辆</dt><dd>{{ activeVehicleLabel }}</dd></div>
+          <div><dt>快照序号</dt><dd>{{ sequenceLabel }}</dd></div>
+          <div><dt>运行进度</dt><dd>{{ Math.round(progressPercent) }}%</dd></div>
+        </dl>
       </div>
     </div>
   </section>
@@ -170,7 +254,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 }
 
 .left-sidebar__canvas {
-  --ls-scale: min(1, calc(100cqw / 439), calc(100cqh / 870));
+  --ls-scale: min(1, calc(100cqw / 439px), calc(100cqh / 870px));
   position: relative;
   color: #fff;
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -443,6 +527,27 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__mock-note { position: absolute; z-index: 4; left: 35px; top: 647px; color: #8eb5cf; font-size: 9px; }
 .left-sidebar__controls { left: 21px; top: 703px; width: 382px; height: 40px; }
 .left-sidebar__controls button { border-width: 1px; display: grid; place-items: center; font-size: 18px; font-weight: 800; line-height: 1; letter-spacing: .02em; text-shadow: 0 1px 3px rgba(0,25,64,.65), 0 0 6px rgba(92,228,255,.2); white-space: nowrap; }
+.left-sidebar__runtime {
+  position: absolute; z-index: 4; left: 28px; top: 758px; width: 356px; height: 82px;
+  padding-top: 8px; border-top: 1px solid rgba(82,194,250,.28); color: #b9d9ec;
+}
+.left-sidebar__runtime-head { height: 22px; display: flex; align-items: center; gap: 10px; font-size: 10px; }
+.left-sidebar__runtime-head strong { display: flex; align-items: center; gap: 6px; color: #d8eaff; font-size: 11px; }
+.left-sidebar__runtime-head strong i { width: 6px; height: 6px; border-radius: 50%; background: #8da3b5; box-shadow: 0 0 6px currentColor; }
+.left-sidebar__runtime-head span { color: #7fa9c4; }
+.left-sidebar__runtime-head em { min-width: 0; margin-left: auto; overflow: hidden; color: #8fc6e5; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.left-sidebar__runtime.is-running .left-sidebar__runtime-head strong { color: #58f0ae; }
+.left-sidebar__runtime.is-running .left-sidebar__runtime-head strong i { background: #3ce69a; }
+.left-sidebar__runtime.is-starting .left-sidebar__runtime-head strong,
+.left-sidebar__runtime.is-stopping .left-sidebar__runtime-head strong { color: #ffe47a; }
+.left-sidebar__runtime.is-starting .left-sidebar__runtime-head strong i,
+.left-sidebar__runtime.is-stopping .left-sidebar__runtime-head strong i { background: #e8b94c; }
+.left-sidebar__runtime.is-failed .left-sidebar__runtime-head strong { color: #ff9d9d; }
+.left-sidebar__runtime.is-failed .left-sidebar__runtime-head strong i { background: #ff6b6b; }
+.left-sidebar__runtime dl { height: 45px; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; margin: 3px 0 0; }
+.left-sidebar__runtime dl div { min-width: 0; }
+.left-sidebar__runtime dt { color: #668fa9; font-size: 9px; white-space: nowrap; }
+.left-sidebar__runtime dd { margin: 3px 0 0; overflow: hidden; color: #eefaff; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
   .left-sidebar__algorithm-item,

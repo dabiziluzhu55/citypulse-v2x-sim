@@ -4,7 +4,11 @@ import {
   startSimulation,
   stopSimulation,
 } from '../api/simulation'
-import { ACTIVE_SESSION_ID_KEY, STATUS_POLL_INTERVAL_MS } from '../constants/simulationOptions'
+import {
+  ACTIVE_SESSION_ID_KEY,
+  ACTIVE_SIMULATION_CONTEXT_KEY,
+  STATUS_POLL_INTERVAL_MS,
+} from '../constants/simulationOptions'
 import { snapshotToTrafficView } from '../utils/trafficStateMerge'
 import {
   connectSimulationStream,
@@ -25,7 +29,37 @@ function isTerminal(state: SimulationState | null | undefined): boolean {
   return !!state && TERMINAL_SIMULATION_STATES.includes(state)
 }
 
+interface StoredSimulationContext {
+  sessionId: string
+  intersectionId: string
+  controlMode: string
+}
+
+function readStoredSimulationContext(): StoredSimulationContext | null {
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(ACTIVE_SIMULATION_CONTEXT_KEY) ?? 'null',
+    ) as Partial<StoredSimulationContext> | null
+    if (
+      parsed
+      && typeof parsed.sessionId === 'string'
+      && typeof parsed.intersectionId === 'string'
+      && typeof parsed.controlMode === 'string'
+    ) {
+      return parsed as StoredSimulationContext
+    }
+  } catch {
+    localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+  }
+  return null
+}
+
+function isMissingSessionError(message: string): boolean {
+  return /(^|\s)404(\s|$)|not found|不存在|未找到/i.test(message)
+}
+
 const sessionId = ref(localStorage.getItem(ACTIVE_SESSION_ID_KEY) ?? '')
+const storedContext = readStoredSimulationContext()
 const snapshot = ref<SimulationSnapshot | null>(null)
 const starting = ref(false)
 const controlling = ref(false)
@@ -34,6 +68,13 @@ const controlError = ref<string | null>(null)
 const statusError = ref<string | null>(null)
 const wsConnected = ref(false)
 const lastMessage = ref<string | null>(null)
+const restoredSession = ref(Boolean(sessionId.value))
+const sessionIntersectionId = ref(
+  storedContext?.sessionId === sessionId.value ? storedContext.intersectionId : '',
+)
+const activeControlMode = ref(
+  storedContext?.sessionId === sessionId.value ? storedContext.controlMode : '',
+)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let requestVersion = 0
@@ -58,6 +99,10 @@ function applySnapshot(next: SimulationSnapshot) {
   statusError.value = null
   if (isTerminal(next.state)) {
     stopPolling()
+    localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
+    localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+    connectSimulationStream('')
+    restoredSession.value = false
   }
 }
 
@@ -86,7 +131,21 @@ async function pollOnce() {
     if (version !== requestVersion) {
       return
     }
-    statusError.value = err instanceof Error ? err.message : '获取仿真状态失败'
+    const message = err instanceof Error ? err.message : '获取仿真状态失败'
+    if (restoredSession.value && isMissingSessionError(message)) {
+      stopPolling()
+      localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
+      localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+      connectSimulationStream('')
+      sessionId.value = ''
+      snapshot.value = null
+      sessionIntersectionId.value = ''
+      activeControlMode.value = ''
+      restoredSession.value = false
+      statusError.value = '上次仿真会话已失效，请重新启动仿真'
+      return
+    }
+    statusError.value = message
   }
 }
 
@@ -105,12 +164,28 @@ function startPolling() {
   }, STATUS_POLL_INTERVAL_MS)
 }
 
-function bindSession(nextSessionId: string) {
+function bindSession(
+  nextSessionId: string,
+  context?: { intersectionId: string; controlMode: string },
+) {
   sessionId.value = nextSessionId
+  restoredSession.value = false
   if (nextSessionId) {
     localStorage.setItem(ACTIVE_SESSION_ID_KEY, nextSessionId)
+    if (context) {
+      sessionIntersectionId.value = context.intersectionId
+      activeControlMode.value = context.controlMode
+      localStorage.setItem(ACTIVE_SIMULATION_CONTEXT_KEY, JSON.stringify({
+        sessionId: nextSessionId,
+        intersectionId: context.intersectionId,
+        controlMode: context.controlMode,
+      }))
+    }
   } else {
     localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
+    localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+    sessionIntersectionId.value = ''
+    activeControlMode.value = ''
   }
   snapshot.value = null
   statusError.value = null
@@ -151,7 +226,10 @@ async function launchRun(
   startError.value = null
   try {
     const result = await startSimulation(payload)
-    bindSession(result.session_id)
+    bindSession(result.session_id, {
+      intersectionId: payload.intersection_ids[0] ?? '',
+      controlMode: payload.control_mode,
+    })
     lastMessage.value = `仿真已启动，状态：${result.state}`
     return result
   } catch (err) {
@@ -198,9 +276,13 @@ export function useSimulationStore() {
     statusError,
     wsConnected,
     lastMessage,
+    restoredSession,
+    sessionIntersectionId,
+    activeControlMode,
     launchRun,
     stopRun,
     bindSession,
+    markRestoredSessionHandled: () => { restoredSession.value = false },
     refresh: pollOnce,
   }
 }

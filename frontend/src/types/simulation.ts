@@ -73,6 +73,8 @@ export interface SimulationVehicle {
   height: number
   road_id: string
   lane_id: string
+  type_id?: string
+  lane_position?: number
 }
 
 export interface SimulationMetrics {

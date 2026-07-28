@@ -1,16 +1,19 @@
 import { computed, ref } from 'vue'
-import { DEFAULT_INTERSECTION_ID } from '../constants/simulationOptions'
+import { DEFAULT_INTERSECTION_ID } from '../constants/simulationOptions.ts'
 
 const activeIntersectionId = ref(DEFAULT_INTERSECTION_ID)
 const sceneStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const sceneError = ref<string | null>(null)
+const selectionRevision = ref(0)
+const committedIntersectionId = ref<string | null>(null)
 
 export function useActiveIntersectionScene() {
   const hasActiveIntersection = computed(() => Boolean(activeIntersectionId.value))
 
   function selectIntersection(intersectionId: string): void {
-    if (!intersectionId || intersectionId === activeIntersectionId.value) return
-    activeIntersectionId.value = intersectionId
+    if (!intersectionId) return
+    if (intersectionId !== activeIntersectionId.value) activeIntersectionId.value = intersectionId
+    selectionRevision.value += 1
     sceneStatus.value = 'idle'
     sceneError.value = null
   }
@@ -20,7 +23,8 @@ export function useActiveIntersectionScene() {
     sceneError.value = null
   }
 
-  function setSceneReady(): void {
+  function setSceneReady(intersectionId = activeIntersectionId.value): void {
+    committedIntersectionId.value = intersectionId
     sceneStatus.value = 'ready'
     sceneError.value = null
   }
@@ -35,6 +39,8 @@ export function useActiveIntersectionScene() {
     hasActiveIntersection,
     sceneStatus,
     sceneError,
+    selectionRevision,
+    committedIntersectionId,
     selectIntersection,
     setSceneLoading,
     setSceneReady,
