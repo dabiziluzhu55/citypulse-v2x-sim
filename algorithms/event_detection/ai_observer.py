@@ -241,6 +241,7 @@ def _config_from_env() -> RuleConfig:
             "EVENT_DETECTION_ENABLE_SPEED_RESTRICTION",
             True,
         ),
+        enable_accident=_env_bool("EVENT_DETECTION_ENABLE_ACCIDENT", False),
     )
 
 

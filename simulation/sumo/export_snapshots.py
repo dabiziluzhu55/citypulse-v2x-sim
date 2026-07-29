@@ -140,7 +140,12 @@ def _writer(path: Path, fields: list[str]):
 
 
 def export_snapshots(args: argparse.Namespace) -> None:
-    manager = SimulationManager()
+    manager_kwargs = {}
+    if args.generated_dir is not None:
+        manager_kwargs["generated_dir"] = args.generated_dir
+    if args.session_root is not None:
+        manager_kwargs["session_root"] = args.session_root
+    manager = SimulationManager(**manager_kwargs)
     config = SimulationConfig(
         intersection_ids=tuple(args.intersection or ["demo_2"]),
         period=args.period,
@@ -210,6 +215,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--step-length", type=float, default=0.05)
     parser.add_argument("--snapshot-interval", type=float, default=5.0)
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument(
+        "--generated-dir",
+        type=Path,
+        default=None,
+        help="Use an explicit generated SUMO artifact directory.",
+    )
+    parser.add_argument(
+        "--session-root",
+        type=Path,
+        default=None,
+        help="Write temporary SUMO session files under this directory.",
+    )
     parser.add_argument("--gui", action="store_true")
     parser.add_argument("--realtime", action="store_true")
     parser.add_argument(

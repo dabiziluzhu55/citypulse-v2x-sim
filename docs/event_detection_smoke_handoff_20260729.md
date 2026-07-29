@@ -51,7 +51,7 @@ Backend integration should:
 2. Persist or retain the latest detection cards and summary.
 3. Include `event_detection` cards in the WebSocket payload and add a read endpoint, for example `GET /simulations/{id}/event-detection`.
 4. Add a `queue_spillback` event request if the frontend needs to inject that scenario (the current request schema supports lane closure, speed limit, and accident only).
-5. Add an explicit `EVENT_DETECTION_ENABLE_ACCIDENT` setting when constructing observer configuration; accident detection is deliberately opt-in.
+5. Set `EVENT_DETECTION_ENABLE_ACCIDENT=true` when accident detection is required; it is deliberately opt-in in the observer configuration.
 
 ## Current boundary and next work
 

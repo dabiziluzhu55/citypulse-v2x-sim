@@ -13,6 +13,7 @@ from simulation.sumo.events import (
     StoppedVehicleEvent,
 )
 from simulation.sumo.run import _load_events, _parse_origins, parse_args
+from simulation.sumo.export_snapshots import build_parser as build_snapshot_parser
 
 
 class SessionCliTests(unittest.TestCase):
@@ -47,6 +48,18 @@ class SessionCliTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "intersection:approach"):
             _parse_origins(["west"])
+
+    def test_snapshot_export_can_use_isolated_artifact_paths(self):
+        args = build_snapshot_parser().parse_args(
+            [
+                "--generated-dir",
+                "runs/generated",
+                "--session-root",
+                "runs/sessions",
+            ]
+        )
+        self.assertEqual(args.generated_dir, Path("runs/generated"))
+        self.assertEqual(args.session_root, Path("runs/sessions"))
 
     def test_event_file_loads_all_supported_types(self):
         payload = {
