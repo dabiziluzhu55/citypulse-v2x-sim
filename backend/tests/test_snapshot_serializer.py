@@ -48,19 +48,18 @@ def test_session_busy_maps_to_409(client, mock_manager: MagicMock) -> None:
     response = client.post(
         "/api/v1/simulations",
         json={
-            "intersection_ids": ["demo_2"],
+            "scenario_preset_id": "east_dense",
             "period": "morning_peak",
             "origins": {},
             "window_start_seconds": 0,
             "duration_seconds": 600,
-            "flow_multiplier": 1.2,
             "control_mode": "fixed",
             "seed": 42,
             "step_length": 0.05,
             "realtime": True,
             "gui": False,
             "snapshot_interval_seconds": 0.2,
-            "initial_events": [],
+            "disturbance_targets": [],
         },
     )
     assert response.status_code == 409

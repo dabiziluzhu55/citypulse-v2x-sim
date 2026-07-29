@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     sumo_home: str | None = None
     sumo_generated_dir: str = "data/maps/sumo/generated"
     sumo_session_root: str = "outputs/sessions"
+    sumo_scenario_export_dir: str = "outputs/scenario_exports"
 
     default_intersection_id: str = "demo_2"
     default_map_radius_meters: float = 600.0
@@ -64,6 +65,10 @@ class Settings(BaseSettings):
     @property
     def session_root(self) -> Path:
         return self.project_root / self.sumo_session_root
+
+    @property
+    def scenario_export_root(self) -> Path:
+        return self.project_root / self.sumo_scenario_export_dir
 
     @property
     def signals_net_path(self) -> Path:

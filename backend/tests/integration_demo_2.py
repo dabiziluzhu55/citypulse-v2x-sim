@@ -31,19 +31,18 @@ async def main() -> None:
         demo = next(item for item in catalog["intersections"] if item["intersection_id"] == "demo_2")
 
         start_payload = {
-            "intersection_ids": ["demo_2"],
+            "scenario_preset_id": "xiongan_20",
             "period": "morning_peak",
             "origins": {},
             "window_start_seconds": 0,
             "duration_seconds": 120,
-            "flow_multiplier": 1.2,
             "control_mode": "fixed",
             "seed": 42,
             "step_length": 0.05,
             "realtime": True,
             "gui": False,
             "snapshot_interval_seconds": 0.2,
-            "initial_events": [],
+            "disturbance_targets": [],
         }
         created = (await client.post("/simulations", json=start_payload)).json()
         session_id = created["session_id"]
@@ -73,7 +72,7 @@ async def main() -> None:
         await client.post(f"/simulations/{session_id}/stop")
         if not vehicle_seen:
             raise RuntimeError("No vehicle snapshot received during integration test.")
-        print("Integration test passed for demo_2.")
+        print("Integration test passed for xiongan_20 preset.")
 
 
 if __name__ == "__main__":

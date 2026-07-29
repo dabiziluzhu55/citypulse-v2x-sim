@@ -22,6 +22,8 @@
     "test:roads": "node --test scripts/road-geometry.test.mjs scripts/road-tileset.test.mjs",
     "test:intersection-demo": "node --test scripts/realistic-intersection.test.mjs",
     "test:intersection-scene": "node --test scripts/intersection-scene.test.mjs",
+    "test:scenario-config": "node --test scripts/scenario-config.test.mjs",
+    "test:snapshot-ordering": "node --test scripts/snapshot-ordering.test.mjs",
     "test:browser-capabilities": "node --test scripts/browser-capabilities.test.mjs",
     "test:buildings": "node --test scripts/building-tileset.test.mjs"
   },

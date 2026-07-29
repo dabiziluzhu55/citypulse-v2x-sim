@@ -6,6 +6,7 @@ from fastapi import Request
 
 from ..core.exceptions import ArtifactsNotReadyError, SumoHomeUnavailableError
 from ..services.map_service import MapService
+from ..services.scenario_export_service import ScenarioExportService
 from ..services.simulation_service import SimulationService
 
 
@@ -29,3 +30,8 @@ def get_map_service(request: Request) -> MapService:
     require_artifacts_ready(request)
     require_sumo_home(request)
     return request.app.state.map_service
+
+
+def get_scenario_export_service(request: Request) -> ScenarioExportService:
+    require_artifacts_ready(request)
+    return request.app.state.scenario_export_service

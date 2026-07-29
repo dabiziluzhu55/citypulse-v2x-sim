@@ -2,6 +2,7 @@ export const ACTIVE_SESSION_ID_KEY = 'citypulse.active_session_id'
 export const ACTIVE_SIMULATION_CONTEXT_KEY = 'citypulse.active_simulation_context'
 
 export const STATUS_POLL_INTERVAL_MS = 2_000
+export const SIMULATION_SNAPSHOT_INTERVAL_MS = 200
 
 export const DEFAULT_INTERSECTION_ID = 'demo_2'
 

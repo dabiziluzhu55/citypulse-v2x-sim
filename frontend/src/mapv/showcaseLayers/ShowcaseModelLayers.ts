@@ -20,6 +20,8 @@ export class ShowcaseModelLayers {
   private readonly projector: RoadCoordinateProjector
   private readonly junctionMarkers: mapvthree.EffectModelPoint
   private landmark: Object3D | null = null
+  private landmarkKey: string | null = null
+  private landmarkRequestVersion = 0
   private currentKey: string | null = null
   private destroyed = false
 
@@ -57,9 +59,15 @@ export class ShowcaseModelLayers {
   }
 
   async loadLandmark(config: ShowcaseLandmark | null): Promise<void> {
-    if (!config?.url) return
+    const version = ++this.landmarkRequestVersion
+    if (!config?.url) {
+      this.removeLandmark()
+      return
+    }
+    const key = JSON.stringify(config)
+    if (key === this.landmarkKey) return
     const gltf = await new GLTFLoader().loadAsync(config.url)
-    if (this.destroyed) {
+    if (this.destroyed || version !== this.landmarkRequestVersion) {
       disposeObject(gltf.scene)
       return
     }
@@ -72,7 +80,22 @@ export class ShowcaseModelLayers {
     model.position.set(scenePosition[0], scenePosition[1], scenePosition[2] ?? 0)
     model.rotation.set(...(config.rotation ?? [Math.PI / 2, 0, 0]))
     model.scale.setScalar(config.scale ?? 1)
+    const previous = this.landmark
     this.landmark = this.engine.add(model)
+    this.landmarkKey = key
+    if (previous) {
+      this.engine.remove(previous)
+      disposeObject(previous)
+    }
+    this.engine.requestRender()
+  }
+
+  private removeLandmark(): void {
+    this.landmarkKey = null
+    if (!this.landmark) return
+    this.engine.remove(this.landmark)
+    disposeObject(this.landmark)
+    this.landmark = null
     this.engine.requestRender()
   }
 
@@ -85,12 +108,10 @@ export class ShowcaseModelLayers {
 
   destroy(): void {
     this.destroyed = true
+    this.landmarkRequestVersion += 1
     this.clear()
     this.engine.remove(this.junctionMarkers)
-    if (!this.landmark) return
-    this.engine.remove(this.landmark)
-    disposeObject(this.landmark)
-    this.landmark = null
+    this.removeLandmark()
   }
 }
 

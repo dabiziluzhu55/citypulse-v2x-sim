@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { buildDetailedRoadData } from '../src/mapv/roadGeometry.ts'
+import { buildDetailedRoadData, excludeRoadCore } from '../src/mapv/roadGeometry.ts'
 import * as mapDefaults from '../src/constants/mapDefaults.ts'
 import {
   projectSimulationCoordinateToBaiduMap,
@@ -72,6 +72,22 @@ test('a three-lane SUMO centerline becomes stable layered road geometry', () => 
   assert.ok(Math.abs(longitudes.reduce((sum, value) => sum + value, 0) / longitudes.length - expectedLongitude) < 0.005)
 })
 
+test('a realistic intersection core is cut out without removing the surrounding road', () => {
+  const source = response([straightRoad()])
+  const clipped = excludeRoadCore(source, {
+    center: [116.1265, 38.991],
+    radiusMeters: 60,
+  })
+
+  assert.equal(clipped.geojson.features.length, 2)
+  assert.ok(clipped.geojson.features.every((feature) => feature.properties.realistic_core_excluded))
+  for (const feature of clipped.geojson.features) {
+    assert.ok(feature.geometry.coordinates.length >= 2)
+  }
+  const rebuilt = buildDetailedRoadData(clipped)
+  assert.equal(rebuilt.mainSurfaces.length, 2)
+})
+
 test('real SUMO GeoJSON produces lanes, paired medians, and junction markings', () => {
   const data = buildDetailedRoadData(response(realGeoJson.features, realGeoJson.metadata))
 
@@ -101,6 +117,24 @@ test('junction surfaces follow approach boundaries instead of circular patches',
     assert.notEqual(ring.length, 25, 'a junction must not use the old 24-segment circle')
     assert.ok(ring.length >= 4 && ring.length <= 13)
     assert.equal(surface.properties.geometry_kind, 'approach-boundary-hull')
+  }
+})
+
+test('generated zebra bars run with traffic and are distributed across the carriageway', () => {
+  const data = buildDetailedRoadData(response(realGeoJson.features, realGeoJson.metadata))
+
+  assert.ok(data.crosswalkStripes.length >= 12)
+  for (const stripe of data.crosswalkStripes) {
+    assert.equal(stripe.properties.bar_length_m, 4)
+    assert.equal(stripe.properties.bar_width_m, 0.5)
+    assert.deepEqual(stripe.properties.distribution_axis, [
+      -stripe.properties.road_tangent[1],
+      stripe.properties.road_tangent[0],
+    ])
+    const sourceWidth = Number(stripe.properties.width_m)
+    if (Number.isFinite(sourceWidth)) {
+      assert.ok(stripe.properties.bar_length_m < sourceWidth || sourceWidth < 4)
+    }
   }
 })
 

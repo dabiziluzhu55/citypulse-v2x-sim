@@ -7,7 +7,11 @@ import {
   type ScenarioModeId,
   type SimulationTimePresetId,
 } from '../constants/scenarioOptions'
-import { DASHBOARD_CONTROL_MODES, isBackendControlMode } from '../constants/simulationOptions'
+import {
+  DASHBOARD_CONTROL_MODES,
+  SIMULATION_SNAPSHOT_INTERVAL_MS,
+  isBackendControlMode,
+} from '../constants/simulationOptions'
 import type { CatalogIntersection } from '../types/catalog'
 import type { DisturbanceEventPayload, StartSimulationRequest } from '../types/simulation'
 import type { DisturbanceType, TrafficFlowMode } from '../types/scenario'
@@ -53,7 +57,7 @@ function defaultCompactConfig(): CompactScenarioConfig {
     scenario_mode: 'xiongan_20',
     flow_mode: 'morning_peak',
     disturbance: 'lane_closure',
-    time_preset: 'morning_15',
+    time_preset: 'morning_0700',
     flow_scale: 1,
     control_mode: 'fixed',
   }
@@ -119,7 +123,7 @@ export function buildSimulationPayload(
     step_length: 0.05,
     realtime: true,
     gui: false,
-    snapshot_interval_seconds: 0.2,
+    snapshot_interval_seconds: SIMULATION_SNAPSHOT_INTERVAL_MS / 1_000,
     initial_events: buildInitialEvents(config, intersection, time.durationSeconds),
   }
 }

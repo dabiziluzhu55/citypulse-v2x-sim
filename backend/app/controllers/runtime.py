@@ -138,7 +138,7 @@ class AlgorithmRuntimeStore:
         return {"ok": True}
 
     def abort_episode(self, episode_id: str) -> None:
-        """仿真停止/失败/关闭时本地清理；若仍活动则写入 completed。"""
+        """仿真停止/失败/关闭时本地清理；若仍活动则写入completed"""
         with self._lock:
             episode = self._active.pop(episode_id, None)
             if episode is None:

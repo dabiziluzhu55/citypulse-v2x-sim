@@ -29,10 +29,30 @@ export const SCENARIO_MODE_OPTIONS = [
 export type ScenarioModeId = (typeof SCENARIO_MODE_OPTIONS)[number]['value']
 
 export const SIMULATION_TIME_OPTIONS = [
-  { label: '7:00-7:15', value: 'morning_15', flowMode: 'morning_peak', windowStartSeconds: 0, durationSeconds: 900 },
-  { label: '7:15-7:30', value: 'morning_30', flowMode: 'morning_peak', windowStartSeconds: 900, durationSeconds: 900 },
-  { label: '17:00-17:15', value: 'evening_15', flowMode: 'evening_peak', windowStartSeconds: 0, durationSeconds: 900 },
-  { label: '平峰15分钟', value: 'off_peak_15', flowMode: 'flat', windowStartSeconds: 0, durationSeconds: 900 },
+  { label: '7:00-7:15', value: 'morning_0700', flowMode: 'morning_peak', windowStartSeconds: 0, durationSeconds: 900 },
+  { label: '7:15-7:30', value: 'morning_0715', flowMode: 'morning_peak', windowStartSeconds: 900, durationSeconds: 900 },
+  { label: '7:30-7:45', value: 'morning_0730', flowMode: 'morning_peak', windowStartSeconds: 1800, durationSeconds: 900 },
+  { label: '7:45-8:00', value: 'morning_0745', flowMode: 'morning_peak', windowStartSeconds: 2700, durationSeconds: 900 },
+  { label: '8:00-8:15', value: 'morning_0800', flowMode: 'morning_peak', windowStartSeconds: 3600, durationSeconds: 900 },
+  { label: '8:15-8:30', value: 'morning_0815', flowMode: 'morning_peak', windowStartSeconds: 4500, durationSeconds: 900 },
+  { label: '8:30-8:45', value: 'morning_0830', flowMode: 'morning_peak', windowStartSeconds: 5400, durationSeconds: 900 },
+  { label: '8:45-9:00', value: 'morning_0845', flowMode: 'morning_peak', windowStartSeconds: 6300, durationSeconds: 900 },
+  { label: '14:30-14:45', value: 'off_peak_1430', flowMode: 'flat', windowStartSeconds: 0, durationSeconds: 900 },
+  { label: '14:45-15:00', value: 'off_peak_1445', flowMode: 'flat', windowStartSeconds: 900, durationSeconds: 900 },
+  { label: '15:00-15:15', value: 'off_peak_1500', flowMode: 'flat', windowStartSeconds: 1800, durationSeconds: 900 },
+  { label: '15:15-15:30', value: 'off_peak_1515', flowMode: 'flat', windowStartSeconds: 2700, durationSeconds: 900 },
+  { label: '15:30-15:45', value: 'off_peak_1530', flowMode: 'flat', windowStartSeconds: 3600, durationSeconds: 900 },
+  { label: '15:45-16:00', value: 'off_peak_1545', flowMode: 'flat', windowStartSeconds: 4500, durationSeconds: 900 },
+  { label: '16:00-16:15', value: 'off_peak_1600', flowMode: 'flat', windowStartSeconds: 5400, durationSeconds: 900 },
+  { label: '16:15-16:30', value: 'off_peak_1615', flowMode: 'flat', windowStartSeconds: 6300, durationSeconds: 900 },
+  { label: '17:30-17:45', value: 'evening_1730', flowMode: 'evening_peak', windowStartSeconds: 0, durationSeconds: 900 },
+  { label: '17:45-18:00', value: 'evening_1745', flowMode: 'evening_peak', windowStartSeconds: 900, durationSeconds: 900 },
+  { label: '18:00-18:15', value: 'evening_1800', flowMode: 'evening_peak', windowStartSeconds: 1800, durationSeconds: 900 },
+  { label: '18:15-18:30', value: 'evening_1815', flowMode: 'evening_peak', windowStartSeconds: 2700, durationSeconds: 900 },
+  { label: '18:30-18:45', value: 'evening_1830', flowMode: 'evening_peak', windowStartSeconds: 3600, durationSeconds: 900 },
+  { label: '18:45-19:00', value: 'evening_1845', flowMode: 'evening_peak', windowStartSeconds: 4500, durationSeconds: 900 },
+  { label: '19:00-19:15', value: 'evening_1900', flowMode: 'evening_peak', windowStartSeconds: 5400, durationSeconds: 900 },
+  { label: '19:15-19:30', value: 'evening_1915', flowMode: 'evening_peak', windowStartSeconds: 6300, durationSeconds: 900 },
 ] as const
 
 export type SimulationTimePresetId = (typeof SIMULATION_TIME_OPTIONS)[number]['value']

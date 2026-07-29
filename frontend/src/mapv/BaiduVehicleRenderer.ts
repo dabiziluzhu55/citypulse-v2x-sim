@@ -1,6 +1,7 @@
 import * as mapvthree from '@baidumap/mapv-three'
 import type { SimulationState } from '../types/simulation'
 import type { TrafficVehicleView } from '../types/traffic'
+import { SIMULATION_SNAPSHOT_INTERVAL_MS } from '../constants/simulationOptions'
 import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates'
 import type { RoadCoordinateProjector } from './roadGeometry'
 import {
@@ -18,7 +19,6 @@ import type {
   LanePoseResolver,
 } from './realistic/intersectionLaneHeading.ts'
 
-const TWIN_INTERPOLATION_DELAY_MS = 300
 const INITIAL_SAMPLE_LEAD_MS = 200
 const EMPTY_SELECTION_RESET_GRACE = 3
 
@@ -41,6 +41,7 @@ export class BaiduVehicleRenderer {
   private readonly projector: RoadCoordinateProjector
   private readonly selector = new StableVehicleSelector()
   private readonly poseHistory = new Map<string, VehicleHeadingState>()
+  private readonly laneTrackHistory = new Map<string, { laneId: string; trackKey: string }>()
   private laneHeadingResolver: LaneHeadingResolver | null = null
   private lanePoseResolver: LanePoseResolver | null = null
   private lastVehicles: TrafficVehicleView[] = []
@@ -63,7 +64,7 @@ export class BaiduVehicleRenderer {
     this.engine = engine
     this.projector = projector
     this.twin = engine.add(new mapvthree.Twin({
-      delay: TWIN_INTERPOLATION_DELAY_MS,
+      delay: SIMULATION_SNAPSHOT_INTERVAL_MS,
       modelConfig: {
         3: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.CAR,
         6: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.BUS,
@@ -80,6 +81,7 @@ export class BaiduVehicleRenderer {
   setLanePoseResolver(resolver: LanePoseResolver | null): void {
     this.lanePoseResolver = resolver
     this.poseHistory.clear()
+    this.laneTrackHistory.clear()
   }
 
   update(
@@ -92,14 +94,22 @@ export class BaiduVehicleRenderer {
       this.resetRuntime()
     }
     this.sessionId = context.sessionId
-    this.lastVehicles = vehicles
-    this.lastContext = context
     const cameraRange = this.engine.map.getRange()
     const radiusMeters = resolveVehicleRenderRadius(cameraRange)
     const snapshotKey = `${context.sessionId}:${context.sequence}`
-    if (!force && snapshotKey === previousSnapshotKey && this.primed) {
+    const sameSession = context.sessionId === this.lastContext.sessionId
+    const staleSnapshot = sameSession && (
+      context.sequence < this.lastContext.sequence
+      || (
+        context.sequence === this.lastContext.sequence
+        && context.elapsedSeconds <= this.lastContext.elapsedSeconds
+      )
+    )
+    if (!force && this.primed && (snapshotKey === previousSnapshotKey || staleSnapshot)) {
       return { inputCount: vehicles.length, visibleCount: this.visibleCount, radiusMeters }
     }
+    this.lastVehicles = vehicles
+    this.lastContext = context
     if (
       vehicles.length === 0
       && (context.state === 'STOPPED' || context.state === 'COMPLETED' || context.state === 'FAILED')
@@ -129,7 +139,15 @@ export class BaiduVehicleRenderer {
     const activeIds = new Set<string>()
     const samples = visible.map(({ vehicle, longitude, latitude }) => {
       const previous = this.poseHistory.get(vehicle.vehicle_id)
-      const lanePose = this.lanePoseResolver?.(vehicle.lane_id, [longitude, latitude])
+      const previousLaneTrack = this.laneTrackHistory.get(vehicle.vehicle_id)
+      const profile = resolveVehicleModelProfile(vehicle.type_id)
+      const lanePose = this.lanePoseResolver?.(
+        vehicle.lane_id,
+        [longitude, latitude],
+        profile.targetLengthMeters / 2,
+        previousLaneTrack?.laneId,
+        previousLaneTrack?.trackKey,
+      )
       const renderLongitude = lanePose?.longitude ?? longitude
       const renderLatitude = lanePose?.latitude ?? latitude
       const point = { longitude: renderLongitude, latitude: renderLatitude }
@@ -143,18 +161,30 @@ export class BaiduVehicleRenderer {
       }, previous ?? null)
       const heading = resolved.heading
       this.poseHistory.set(vehicle.vehicle_id, resolved.state)
+      if (lanePose) {
+        this.laneTrackHistory.set(vehicle.vehicle_id, {
+          laneId: vehicle.lane_id,
+          trackKey: lanePose.trackKey,
+        })
+      } else {
+        this.laneTrackHistory.delete(vehicle.vehicle_id)
+      }
       activeIds.add(vehicle.vehicle_id)
       return createVehicleTwinSample(
         vehicle,
         renderLongitude,
         renderLatitude,
         time,
-        resolveVehicleModelProfile(vehicle.type_id),
+        profile,
         heading,
+        lanePose?.modelCenterResolved ?? false,
       )
     })
     for (const id of this.poseHistory.keys()) {
-      if (!activeIds.has(id)) this.poseHistory.delete(id)
+      if (!activeIds.has(id)) {
+        this.poseHistory.delete(id)
+        this.laneTrackHistory.delete(id)
+      }
     }
     if (!this.primed) {
       this.twin.push(samples.map((sample) => ({
@@ -186,6 +216,7 @@ export class BaiduVehicleRenderer {
     this.lastPushedTime = Number.NEGATIVE_INFINITY
     this.selector.reset()
     this.poseHistory.clear()
+    this.laneTrackHistory.clear()
     this.twin.reset()
   }
 

@@ -7,30 +7,44 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from ..controllers.registry import CONTROL_MODE_REGISTRY
-from .events import EventRequest
+from ..core.playback import ALLOWED_PLAYBACK_SPEEDS, validate_playback_speed
+from ..scenario.presets import SCENARIO_PRESET_REGISTRY
+from .disturbance_targets import DisturbanceTarget
 
 
 class StartSimulationRequest(BaseModel):
-    intersection_ids: list[str]
+    scenario_preset_id: str
     period: str
     origins: dict[str, list[str]] = Field(default_factory=dict)
     window_start_seconds: float = Field(default=0.0, ge=0.0)
     duration_seconds: float = Field(gt=0.0)
-    flow_multiplier: float = Field(default=1.0, ge=0.1, le=5.0)
     control_mode: str = "fixed"
     seed: int = Field(default=42, ge=0)
     step_length: float = Field(default=0.05, gt=0.0)
     realtime: bool = True
     gui: bool = False
     snapshot_interval_seconds: float = Field(default=0.2, gt=0.0)
-    initial_events: list[EventRequest] = Field(default_factory=list)
+    disturbance_targets: list[DisturbanceTarget] = Field(default_factory=list)
+    playback_speed: float | None = Field(
+        default=None,
+        description="播放倍速；None 时 realtime=true 由内核默认 1×，realtime=false 不限速。",
+    )
 
-    @field_validator("intersection_ids")
+    @field_validator("scenario_preset_id")
     @classmethod
-    def validate_intersection_ids(cls, value: list[str]) -> list[str]:
-        if value != ["demo_2"]:
-            raise ValueError("MVP only supports intersection_ids=['demo_2'].")
+    def validate_scenario_preset_id(cls, value: str) -> str:
+        if value not in SCENARIO_PRESET_REGISTRY:
+            raise ValueError(
+                f"scenario_preset_id must be one of {sorted(SCENARIO_PRESET_REGISTRY)}."
+            )
         return value
+
+    @field_validator("playback_speed")
+    @classmethod
+    def validate_playback_speed_field(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
+        return validate_playback_speed(value)
 
     @field_validator("control_mode")
     @classmethod
@@ -48,11 +62,29 @@ class StartSimulationResponse(BaseModel):
     status_url: str
     websocket_url: str
     metrics_url: str | None = None
+    scenario_preset_id: str | None = None
 
 
 class StopSimulationResponse(BaseModel):
     session_id: str
     state: str
+
+
+class SimulationPlaybackResponse(BaseModel):
+    """暂停/恢复等播放控制操作的统一响应。"""
+
+    session_id: str
+    state: str
+    playback_speed: float | None = None
+
+
+class SetPlaybackSpeedRequest(BaseModel):
+    playback_speed: float
+
+    @field_validator("playback_speed")
+    @classmethod
+    def validate_playback_speed_field(cls, value: float) -> float:
+        return validate_playback_speed(value)
 
 
 class SimulationStatusResponse(BaseModel):
@@ -63,6 +95,7 @@ class SimulationStatusResponse(BaseModel):
     duration_seconds: float
     progress: float
     official_time: str
+    playback_speed: float | None = None
     intersections: dict[str, Any]
     vehicles: list[dict[str, Any]]
     events: list[dict[str, Any]]

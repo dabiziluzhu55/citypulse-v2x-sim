@@ -10,6 +10,7 @@ import {
   STATUS_POLL_INTERVAL_MS,
 } from '../constants/simulationOptions'
 import { snapshotToTrafficView } from '../utils/trafficStateMerge'
+import { shouldApplySimulationSnapshot } from '../utils/snapshotOrdering'
 import {
   connectSimulationStream,
   registerSimulationStreamConnectionListener,
@@ -95,6 +96,7 @@ const summary = computed<TrafficSummary>(() => {
 const state = computed<SimulationState | null>(() => snapshot.value?.state ?? null)
 
 function applySnapshot(next: SimulationSnapshot) {
+  if (!shouldApplySimulationSnapshot(snapshot.value, next, sessionId.value)) return
   snapshot.value = next
   statusError.value = null
   if (isTerminal(next.state)) {
