@@ -229,6 +229,9 @@ class VehicleObservation:
     next_signal: NextSignalObservation | None
     energy: VehicleEnergyObservation
     driving_events: VehicleDrivingEventsObservation
+    leader_gap_m: float | None
+    follower_gap_m: float | None
+    time_since_last_lane_change_s: float | None
 
 
 @dataclass(frozen=True)

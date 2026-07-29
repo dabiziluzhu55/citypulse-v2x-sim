@@ -1,4 +1,5 @@
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 from simulation.sumo.vehicle import (
@@ -184,6 +185,38 @@ class VehicleTelemetryTests(unittest.TestCase):
         self.traci.vehicle.states.pop("car.0")
         self.tracker.tick(5.0)
         self.assertAlmostEqual(self.tracker.totals()[0], 500.0)
+
+    def test_neighbor_gaps_and_time_since_lane_change_use_cached_telemetry(self):
+        second = deepcopy(self.traci.vehicle.states["car.0"])
+        second["lane_position"] = 25.0
+        second["position"] = (23.0, 20.0)
+        self.traci.vehicle.states["car.1"] = second
+
+        self.tracker.tick(1.0)
+        observations = self.tracker.observations(reset_interval=False)
+        self.assertEqual(observations["car.0"].leader_gap_m, 8.0)
+        self.assertIsNone(observations["car.0"].follower_gap_m)
+        self.assertEqual(observations["car.1"].follower_gap_m, 8.0)
+        self.assertIsNone(observations["car.1"].leader_gap_m)
+        self.assertIsNone(observations["car.0"].time_since_last_lane_change_s)
+
+        self.traci.vehicle.states["car.0"]["lane_id"] = "edge_1"
+        self.traci.vehicle.states["car.0"]["lane_index"] = 1
+        self.tracker.tick(2.0)
+        changed = self.tracker.observations(reset_interval=False)["car.0"]
+        self.assertEqual(changed.time_since_last_lane_change_s, 0.0)
+        self.assertIsNone(changed.leader_gap_m)
+
+        self.tracker.tick(3.5)
+        later = self.tracker.observations(reset_interval=False)["car.0"]
+        self.assertEqual(later.time_since_last_lane_change_s, 1.5)
+
+        self.traci.vehicle.states["car.0"]["road_id"] = "out"
+        self.traci.vehicle.states["car.0"]["lane_id"] = "out_0"
+        self.traci.vehicle.states["car.0"]["lane_index"] = 0
+        self.tracker.tick(4.0)
+        next_edge = self.tracker.observations(reset_interval=False)["car.0"]
+        self.assertEqual(next_edge.time_since_last_lane_change_s, 2.0)
 
     def test_speed_and_lane_actions_are_validated_leased_and_reported(self):
         self.tracker.tick(1.0)

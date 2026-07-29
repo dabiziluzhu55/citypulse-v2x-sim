@@ -78,3 +78,7 @@ python -m simulation.sumo.run --mode fixed \
 `current_allowed_speed_mps` 是车道此刻的允许速度，可反映施工限速或封闭。它与单车动作的
 `target_speed_mps` 不同；当前车道受速度租约车辆的数量、最小目标和平均目标分别在
 `controlled_vehicle_count`、`min_target_speed_mps`、`mean_target_speed_mps` 中给出。
+
+每个 `VehicleObservation` 还提供 `leader_gap_m`、`follower_gap_m` 和
+`time_since_last_lane_change_s`。没有相应可观察邻车或车辆从未换道时返回 `null`；所有时间均为
+仿真时间，因此暂停期间不会增长。
