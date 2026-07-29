@@ -23,6 +23,10 @@ from .policy import (
 from .vehicle_profiles import VehicleProfile
 
 
+STOPPED_SPEED_EPSILON_MPS = 1e-3
+STOPPED_LANE_CHANGE_MODE = 512
+DEFAULT_LANE_CHANGE_MODE = 1621
+
 _SUBSCRIPTION_FIELDS = {
     "VAR_POSITION": "position",
     "VAR_SPEED": "speed",
@@ -255,8 +259,14 @@ class VehicleTelemetryTracker:
     def contains(self, vehicle_id: str) -> bool:
         return vehicle_id in self._tracked
 
+    def active_vehicle_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._tracked))
+
     def type_metadata(self, vehicle_id: str) -> VehicleTypeMetadata:
         return self.vehicle_types[self._tracked[vehicle_id].type_id]
+
+    def speed(self, vehicle_id: str) -> float:
+        return float(self._tracked[vehicle_id].values["speed"])
 
     def allowed_speed(self, vehicle_id: str) -> float:
         return float(self._tracked[vehicle_id].values["allowed_speed"])
@@ -308,6 +318,63 @@ class VehicleTelemetryTracker:
         return sum(
             item.length_m + item.min_gap_m for item in self.vehicle_types.values()
         ) / len(self.vehicle_types)
+
+
+class StoppedLaneChangeGuard:
+    """Disable autonomous SUMO lane changes while official vehicles are stopped."""
+
+    def __init__(
+        self,
+        traci,
+        telemetry: VehicleTelemetryTracker,
+        *,
+        stopped_speed_epsilon_mps: float = STOPPED_SPEED_EPSILON_MPS,
+    ) -> None:
+        if stopped_speed_epsilon_mps < 0:
+            raise ValueError("stopped_speed_epsilon_mps cannot be negative.")
+        vehicle = traci.vehicle
+        if not hasattr(vehicle, "getLaneChangeMode") or not hasattr(
+            vehicle, "setLaneChangeMode"
+        ):
+            raise RuntimeError(
+                "SUMO TraCI vehicle lane-change mode APIs are unavailable."
+            )
+        self.traci = traci
+        self.telemetry = telemetry
+        self.stopped_speed_epsilon_mps = float(stopped_speed_epsilon_mps)
+        self._locked_modes: dict[str, int] = {}
+
+    def tick(self) -> None:
+        active_ids = set(self.telemetry.active_vehicle_ids())
+        for vehicle_id in sorted(set(self._locked_modes) - active_ids):
+            self._locked_modes.pop(vehicle_id, None)
+        for vehicle_id in sorted(active_ids):
+            speed = self.telemetry.speed(vehicle_id)
+            if speed <= self.stopped_speed_epsilon_mps:
+                if vehicle_id not in self._locked_modes:
+                    self._lock(vehicle_id)
+            elif vehicle_id in self._locked_modes:
+                self._restore(vehicle_id)
+
+    def _lock(self, vehicle_id: str) -> None:
+        try:
+            raw_mode = self.traci.vehicle.getLaneChangeMode(vehicle_id)
+            original_mode = (
+                DEFAULT_LANE_CHANGE_MODE if raw_mode is None else int(raw_mode)
+            )
+            self.traci.vehicle.setLaneChangeMode(
+                vehicle_id, STOPPED_LANE_CHANGE_MODE
+            )
+        except Exception:
+            return
+        self._locked_modes[vehicle_id] = original_mode
+
+    def _restore(self, vehicle_id: str) -> None:
+        original_mode = self._locked_modes.pop(vehicle_id)
+        try:
+            self.traci.vehicle.setLaneChangeMode(vehicle_id, original_mode)
+        except Exception:
+            return
 
 
 class VehicleActionController:
@@ -377,6 +444,7 @@ class VehicleActionController:
                 raise ValueError(f"Action for vehicle {vehicle_id} cannot be empty.")
             speed = self._validate_speed(vehicle_id, raw_action.get("target_speed_mps"))
             lane = self._validate_lane(vehicle_id, raw_action.get("target_lane_index"))
+            self._validate_stopped_lane_change(vehicle_id, speed, lane)
             if speed is None and lane is None:
                 raise ValueError(
                     f"Action for vehicle {vehicle_id} must set at least one target."
@@ -414,9 +482,29 @@ class VehicleActionController:
         vehicle_class = self.telemetry.type_metadata(vehicle_id).vehicle_class
         allowed = tuple(self.traci.lane.getAllowed(lane_id))
         disallowed = tuple(self.traci.lane.getDisallowed(lane_id))
-        if (allowed and vehicle_class not in allowed) or vehicle_class in disallowed:
+        if (
+            (allowed and "all" not in allowed and vehicle_class not in allowed)
+            or "all" in disallowed
+            or vehicle_class in disallowed
+        ):
             raise ValueError(f"Lane {lane_id} does not allow {vehicle_class} vehicles.")
         return value
+
+    def _validate_stopped_lane_change(
+        self,
+        vehicle_id: str,
+        target_speed_mps: float | None,
+        target_lane_index: int | None,
+    ) -> None:
+        if target_lane_index is None:
+            return
+        if self.telemetry.speed(vehicle_id) <= STOPPED_SPEED_EPSILON_MPS:
+            raise ValueError(f"Vehicle {vehicle_id} cannot change lanes while stopped.")
+        if (
+            target_speed_mps is not None
+            and target_speed_mps <= STOPPED_SPEED_EPSILON_MPS
+        ):
+            raise ValueError(f"Vehicle {vehicle_id} cannot change lanes while stopped.")
 
     def apply(
         self,

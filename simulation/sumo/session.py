@@ -618,6 +618,7 @@ class SimulationManager:
         from .config import load_signal_configuration
         from .build_tls import DEFAULT_MAPPING, DEFAULT_PLANS, DEFAULT_TOPOLOGY
         from .vehicle import (
+            StoppedLaneChangeGuard,
             VehicleActionController,
             VehicleTelemetryTracker,
             build_vehicle_type_metadata,
@@ -682,6 +683,7 @@ class SimulationManager:
             vehicle_tracker = VehicleTelemetryTracker(
                 traci, vehicle_types, tls_to_intersection
             )
+            lane_change_guard = StoppedLaneChangeGuard(traci, vehicle_tracker)
             lane_targets = _lane_targets(traci, selected_manifest)
             scheduler = DisturbanceScheduler(
                 traci, lane_targets, scenario.duration_seconds
@@ -777,6 +779,7 @@ class SimulationManager:
                 elapsed = float(traci.simulation.getTime())
                 scheduler.tick(elapsed)
                 vehicle_tracker.tick(elapsed)
+                lane_change_guard.tick()
                 if fixed_tracker is not None:
                     fixed_tracker.tick(traci, elapsed)
                 departed = int(traci.simulation.getDepartedNumber())

@@ -10,6 +10,7 @@ from simulation.sumo.policy import (
     AIFrameObservation,
     IntersectionMetadata,
     LaneMetadata,
+    LanePermissionMetadata,
     PhaseMetadata,
     PROTOCOL_VERSION,
     RoadConnectionMetadata,
@@ -161,6 +162,41 @@ class LocalTransportTests(unittest.TestCase):
         self.assertEqual(payload["movements"], ["through", "left"])
         self.assertIsInstance(payload["movements"], list)
         self.assertEqual(payload["downstream_lane_ids"], ["out_0", "turn_0"])
+        metadata_payload = to_protocol_payload(
+            SimulationMetadata(
+                protocol_version=PROTOCOL_VERSION,
+                episode_id="episode-local",
+                period="morning_peak",
+                seed=42,
+                decision_interval=5.0,
+                minimum_green=5.0,
+                intersections={},
+                edge_lanes={
+                    "in": (
+                        LanePermissionMetadata(
+                            lane_id="in_0",
+                            edge_id="in",
+                            lane_index=0,
+                            length_m=100.0,
+                            speed_limit_mps=13.9,
+                            allowed_vehicle_classes=("passenger", "bus"),
+                            disallowed_vehicle_classes=("truck",),
+                            allowed_vehicle_type_ids=("official_passenger",),
+                        ),
+                    )
+                },
+            )
+        )
+        self.assertEqual(list(metadata_payload["edge_lanes"]), ["in"])
+        self.assertIsInstance(metadata_payload["edge_lanes"]["in"], list)
+        self.assertEqual(
+            metadata_payload["edge_lanes"]["in"][0]["allowed_vehicle_classes"],
+            ["passenger", "bus"],
+        )
+        self.assertEqual(
+            metadata_payload["edge_lanes"]["in"][0]["allowed_vehicle_type_ids"],
+            ["official_passenger"],
+        )
         phases = to_protocol_payload(
             {
                 1: PhaseMetadata(

@@ -93,6 +93,32 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
       "hard_braking_threshold_mps2": -3.0
     }
   },
+  "edge_lanes": {
+    "-56734": [
+      {
+        "lane_id": "-56734_0",
+        "edge_id": "-56734",
+        "lane_index": 0,
+        "length_m": 217.4,
+        "speed_limit_mps": 13.9,
+        "allowed_vehicle_classes": [],
+        "disallowed_vehicle_classes": [],
+        "allowed_vehicle_type_ids": ["official_passenger"]
+      }
+    ],
+    "bike_edge": [
+      {
+        "lane_id": "bike_edge_0",
+        "edge_id": "bike_edge",
+        "lane_index": 0,
+        "length_m": 80.0,
+        "speed_limit_mps": 5.5,
+        "allowed_vehicle_classes": ["bicycle"],
+        "disallowed_vehicle_classes": [],
+        "allowed_vehicle_type_ids": []
+      }
+    ]
+  },
   "vehicle_control": {
     "supported_actions": ["target_speed_mps", "target_lane_index"],
     "action_lease_seconds": 5.0,
@@ -119,6 +145,13 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
 `movements` 使用 `through/left/right/uturn`，因为一个物理车道可以支持多个转向，所以不是
 单值。纯出口车道的 `approach_id=null`、`movements=[]`、`downstream_lane_ids=[]`。
 `length/max_speed` 为兼容字段，`length_m/speed_limit_mps` 是带单位的同值别名。
+
+`edge_lanes` 是全网普通 edge 的静态车道权限表，不包含 `:` 开头的 internal edge。算法选择
+`target_lane_index` 时，应使用车辆 `type_id` 和 `location.road_id` 查询
+`edge_lanes[road_id]`，只选择 `allowed_vehicle_type_ids` 包含该 `type_id` 的 lane。
+`allowed_vehicle_classes/disallowed_vehicle_classes` 是 SUMO 原始权限，
+`allowed_vehicle_type_ids` 是仿真端按本轮官方车辆类型计算后的可控结果。若 `road_id` 不在
+`edge_lanes`，或 `road_id` 以 `:` 开头，算法不应返回换道动作。
 
 ## 2. 决策请求
 
@@ -283,7 +316,7 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
 3. 信号动作必须使用初始化给出的路口和 phase ID；省略路口表示保持当前目标相位。
 4. 车辆动作只能引用本次请求的车辆；动作至少设置速度或车道之一。
 5. `target_speed_mps` 必须在 `[0, allowed_speed_mps]` 内。SUMO 仍执行跟车、防碰撞和限速。
-6. `target_lane_index` 只指当前 road 上的车道；internal edge、越界车道和禁行车道非法。
+6. `target_lane_index` 只指当前 road 上的车道；算法应先用初始化阶段的 `edge_lanes` 过滤候选 lane，internal edge、越界车道和禁行车道非法。
 7. 单车动作只租用一个决策周期。下一周期省略速度会恢复 SUMO 自主速度，换道不续期。
 8. 换道可能因安全间隙不足而未完成；下一步返回 `completed` 或 `not_completed`，这不是协议错误。
 9. 仿真端在写入任何 TraCI 状态前验证全部动作；任意非法动作都会拒绝整步并终止 episode。
