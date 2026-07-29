@@ -58,6 +58,9 @@ class _TrackedVehicle:
     hard_braking_total: int = 0
     hard_braking_interval: int = 0
     hard_braking_active: bool = False
+    previous_road_id: str | None = None
+    previous_lane_index: int | None = None
+    last_lane_change_time: float | None = None
 
 
 def build_vehicle_type_metadata(
@@ -139,6 +142,17 @@ class VehicleTelemetryTracker:
             }
             if len(tracked.values) != len(self._variables):
                 tracked.values = self._read_direct(vehicle_id)
+            road_id = str(tracked.values["road_id"])
+            lane_index = int(tracked.values["lane_index"])
+            if (
+                tracked.previous_road_id == road_id
+                and tracked.previous_lane_index is not None
+                and tracked.previous_lane_index != lane_index
+                and not road_id.startswith(":")
+            ):
+                tracked.last_lane_change_time = now
+            tracked.previous_road_id = road_id
+            tracked.previous_lane_index = lane_index
             fuel_rate = max(0.0, float(tracked.values["fuel_rate"]))
             consumed = fuel_rate * delta
             tracked.fuel_total_mg += consumed
@@ -189,12 +203,16 @@ class VehicleTelemetryTracker:
 
     def observations(self, *, reset_interval: bool) -> Mapping[str, VehicleObservation]:
         result = {}
+        neighbor_gaps = self._neighbor_gaps()
         for vehicle_id in sorted(self._tracked):
             tracked = self._tracked[vehicle_id]
             values = tracked.values
             if not values:
                 continue
             type_metadata = self.vehicle_types[tracked.type_id]
+            leader_gap, follower_gap = neighbor_gaps.get(
+                vehicle_id, (None, None)
+            )
             x, y = values["position"]
             lane_index = int(values["lane_index"])
             route_edges = tuple(str(edge) for edge in values["route_edges"])
@@ -237,11 +255,54 @@ class VehicleTelemetryTracker:
                     hard_braking_since_last_decision=tracked.hard_braking_interval,
                     hard_braking_total=tracked.hard_braking_total,
                 ),
+                leader_gap_m=leader_gap,
+                follower_gap_m=follower_gap,
+                time_since_last_lane_change_s=(
+                    max(0.0, self._last_time - tracked.last_lane_change_time)
+                    if tracked.last_lane_change_time is not None
+                    else None
+                ),
             )
         if reset_interval:
             for tracked in self._tracked.values():
                 tracked.fuel_interval_mg = 0.0
                 tracked.hard_braking_interval = 0
+        return result
+
+    def _neighbor_gaps(self) -> Mapping[str, tuple[float | None, float | None]]:
+        """Derive bumper-to-bumper gaps from the subscribed lane-position cache."""
+        lanes: dict[str, list[tuple[float, str, float]]] = {}
+        for vehicle_id, tracked in self._tracked.items():
+            if not tracked.values:
+                continue
+            metadata = self.vehicle_types[tracked.type_id]
+            lanes.setdefault(str(tracked.values["lane_id"]), []).append(
+                (
+                    float(tracked.values["lane_position"]),
+                    vehicle_id,
+                    metadata.length_m,
+                )
+            )
+
+        result = {}
+        for vehicles in lanes.values():
+            vehicles.sort(key=lambda item: (item[0], item[1]))
+            for index, (position, vehicle_id, length) in enumerate(vehicles):
+                leader_gap = None
+                follower_gap = None
+                if index + 1 < len(vehicles):
+                    leader_position, _, leader_length = vehicles[index + 1]
+                    leader_gap = max(
+                        0.0,
+                        leader_position - leader_length - position,
+                    )
+                if index > 0:
+                    follower_position, _, _ = vehicles[index - 1]
+                    follower_gap = max(
+                        0.0,
+                        position - length - follower_position,
+                    )
+                result[vehicle_id] = (leader_gap, follower_gap)
         return result
 
     def _next_signal(self, values) -> NextSignalObservation | None:

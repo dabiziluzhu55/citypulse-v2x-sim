@@ -242,7 +242,10 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
       "driving_events": {
         "hard_braking_since_last_decision": 0,
         "hard_braking_total": 1
-      }
+      },
+      "leader_gap_m": 18.4,
+      "follower_gap_m": 11.7,
+      "time_since_last_lane_change_s": 6.5
     }
   },
   "traffic": {
@@ -284,6 +287,10 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
 - `fuel_rate_mg_s` 来自 SUMO HBEFA 排放模型；周期和累计油耗由仿真端逐步积分。
 - 急制动在加速度首次进入 `<= -3.0 m/s²` 时计一次，持续制动不重复计数。
 - `next_signal` 只返回下一处已选受控路口；不存在时为 `null`。
+- `leader_gap_m` 和 `follower_gap_m` 是同车道可观察车辆之间的保险杠间距；对应方向没有
+  可观察车辆时为 `null`。二者由已订阅的车道位置与车型长度计算，不额外逐车查询 TraCI。
+- `time_since_last_lane_change_s` 按仿真时间计算；车辆从未换道时为 `null`，换道发生帧为
+  `0.0`。只有同一普通 edge 内 lane index 改变才记为换道，正常驶入下一条 edge 不会重置。
 - `active_vehicles` 等于本次 `vehicles` 中的官方可控车辆数，不包含事故占位车。
 - `departed_vehicles` 和 `arrived_vehicles` 是本决策周期增量，其余汇总油耗和急制动为
   本轮累计值。
