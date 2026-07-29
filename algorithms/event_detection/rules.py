@@ -44,6 +44,7 @@ class RuleConfig:
     closure_min_peer_vehicle_count: int = 4
     closure_max_vehicle_count: int = 0
     closure_max_occupancy: float = 0.005
+    closure_max_allowed_speed: float = 1.0
     soft_closure_min_occupancy: float = 0.02
     soft_closure_max_occupancy: float = 0.3
     soft_closure_min_peer_mean_speed: float = 1.0
@@ -362,6 +363,27 @@ def _soft_closure_residual(
     return 1.0
 
 
+def _capacity_closure_residual(
+    *,
+    lane_has_green: bool,
+    stage_elapsed: float,
+    current_allowed_speed_mps: float | None,
+    vehicle_count: int,
+    config: RuleConfig,
+) -> float:
+    """Recognize a closure represented safely as an explicit capacity drop."""
+    if (
+        not lane_has_green
+        or stage_elapsed < config.startup_loss_seconds
+        or current_allowed_speed_mps is None
+        or current_allowed_speed_mps <= 0.0
+        or current_allowed_speed_mps > config.closure_max_allowed_speed
+        or vehicle_count < 1
+    ):
+        return 0.0
+    return 1.0
+
+
 def _queue_blockage_residual(
     *,
     lane_has_green: bool,
@@ -588,6 +610,13 @@ def detect_states(
             occupancy=occupancy,
             config=config,
         )
+        capacity_closure_residual = _capacity_closure_residual(
+            lane_has_green=lane_has_green,
+            stage_elapsed=stage_elapsed,
+            current_allowed_speed_mps=lane.current_allowed_speed_mps,
+            vehicle_count=vehicle_count,
+            config=config,
+        )
         queue_blockage_residual = _queue_blockage_residual(
             lane_has_green=lane_has_green,
             stage_elapsed=stage_elapsed,
@@ -621,11 +650,13 @@ def detect_states(
         closure_residual = max(
             closure_residual,
             soft_closure_residual,
+            capacity_closure_residual,
             queue_blockage_residual,
             speed_restriction_residual,
             accident_residual,
         )
         soft_closure_suspicious = soft_closure_residual > 0.0
+        capacity_closure_suspicious = capacity_closure_residual > 0.0
         queue_blockage_suspicious = queue_blockage_residual > 0.0
         speed_restriction_suspicious = speed_restriction_residual > 0.0
         accident_suspicious = accident_residual > 0.0
@@ -647,6 +678,7 @@ def detect_states(
             blockage_suspicious
             or closure_suspicious
             or soft_closure_suspicious
+            or capacity_closure_suspicious
             or queue_blockage_suspicious
             or speed_restriction_suspicious
             or accident_suspicious
@@ -663,7 +695,12 @@ def detect_states(
             candidate_event_type = EVENT_SPEED_RESTRICTION
         elif queue_blockage_suspicious:
             candidate_event_type = EVENT_SPILLBACK
-        elif blockage_suspicious or closure_suspicious or soft_closure_suspicious:
+        elif (
+            blockage_suspicious
+            or closure_suspicious
+            or soft_closure_suspicious
+            or capacity_closure_suspicious
+        ):
             candidate_event_type = EVENT_LANE_BLOCKED
 
         event_cusum_threshold = config.closure_cusum_threshold
@@ -681,7 +718,9 @@ def detect_states(
         ):
             active_until[lane_key] = elapsed_seconds + config.confirmed_hold_seconds
             active_event_types[lane_key] = candidate_event_type
-        elif not config.use_cusum and streak >= config.consecutive_points:
+        elif not config.use_cusum and streak >= (
+            1 if capacity_closure_suspicious else config.consecutive_points
+        ):
             active_until[lane_key] = elapsed_seconds + config.confirmed_hold_seconds
             active_event_types[lane_key] = candidate_event_type
         is_active = active_until.get(lane_key, -1.0) >= elapsed_seconds
@@ -716,6 +755,8 @@ def detect_states(
             reason = "queue_blockage_not_releasing"
         elif soft_closure_suspicious:
             reason = "soft_closure_lane_slow_peer_moving"
+        elif capacity_closure_suspicious:
+            reason = "lane_capacity_restricted"
         elif closure_suspicious:
             reason = "green_lane_empty_after_history"
         elif reasons:
@@ -727,6 +768,7 @@ def detect_states(
             if (
                 closure_suspicious
                 or soft_closure_suspicious
+                or capacity_closure_suspicious
                 or queue_blockage_suspicious
                 or speed_restriction_suspicious
                 or accident_suspicious
@@ -846,6 +888,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--closure-min-peer-vehicle-count", type=int, default=4)
     parser.add_argument("--closure-max-vehicle-count", type=int, default=0)
     parser.add_argument("--closure-max-occupancy", type=float, default=0.005)
+    parser.add_argument("--closure-max-allowed-speed", type=float, default=1.0)
     parser.add_argument("--soft-closure-min-occupancy", type=float, default=0.02)
     parser.add_argument("--soft-closure-max-occupancy", type=float, default=0.3)
     parser.add_argument("--soft-closure-min-peer-mean-speed", type=float, default=1.0)
@@ -893,6 +936,7 @@ def main(argv: list[str] | None = None) -> None:
         closure_min_peer_vehicle_count=args.closure_min_peer_vehicle_count,
         closure_max_vehicle_count=args.closure_max_vehicle_count,
         closure_max_occupancy=args.closure_max_occupancy,
+        closure_max_allowed_speed=args.closure_max_allowed_speed,
         soft_closure_min_occupancy=args.soft_closure_min_occupancy,
         soft_closure_max_occupancy=args.soft_closure_max_occupancy,
         soft_closure_min_peer_mean_speed=args.soft_closure_min_peer_mean_speed,

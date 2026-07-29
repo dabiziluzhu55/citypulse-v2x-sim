@@ -450,6 +450,39 @@ class EventDetectionStateTests(unittest.TestCase):
         self.assertNotIn("accident", {row.event_type for row in default_rows})
         self.assertIn("accident", {row.event_type for row in opt_in_rows})
 
+    def test_near_zero_allowed_speed_is_lane_closure_evidence(self):
+        rows = [
+            {
+                "session_id": "s1",
+                "sequence": str(index),
+                "elapsed_seconds": str(index * 5),
+                "official_time": "",
+                "intersection_id": "demo",
+                "current_phase": "1",
+                "pending_phase": "",
+                "stage": "GREEN",
+                "stage_elapsed": "20",
+                "lane_id": "lane_0",
+                "edge_id": "up",
+                "lane_has_green": "true",
+                "vehicle_count": "1",
+                "halting_count": "1",
+                "mean_speed": "0.1",
+                "waiting_time": str(index * 5),
+                "occupancy": "0.05",
+                "current_allowed_speed_mps": "0.1",
+            }
+            for index in range(3)
+        ]
+
+        detections = detect_rows(
+            rows,
+            resolver=FakeGreenResolver(),
+            config=RuleConfig(),
+        )
+
+        self.assertIn("lane_blocked", {row.event_type for row in detections})
+
     def test_speed_restriction_requires_slow_flow_without_queue(self):
         rows = []
         for index in range(6):
