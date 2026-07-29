@@ -22,6 +22,7 @@ from .policy import (
     LaneMetadata,
     LaneConnectionSignalObservation,
     LaneObservation,
+    LanePermissionMetadata,
     PhaseMetadata,
     PreviousActionResults,
     RoadConnectionMetadata,
@@ -139,6 +140,69 @@ def _connection_id(index: int) -> str:
     return f"connection_{index}"
 
 
+def _lane_allows_vehicle_class(
+    allowed: tuple[str, ...],
+    disallowed: tuple[str, ...],
+    vehicle_class: str,
+) -> bool:
+    return (
+        (not allowed or "all" in allowed or vehicle_class in allowed)
+        and "all" not in disallowed
+        and vehicle_class not in disallowed
+    )
+
+
+def _lane_permission_metadata(
+    traci,
+    edge_id: str,
+    lane_index: int,
+    vehicle_types: Mapping[str, VehicleTypeMetadata],
+) -> LanePermissionMetadata:
+    lane_id = f"{edge_id}_{lane_index}"
+    allowed = tuple(str(value) for value in traci.lane.getAllowed(lane_id))
+    disallowed = tuple(str(value) for value in traci.lane.getDisallowed(lane_id))
+    allowed_type_ids = tuple(
+        sorted(
+            type_id
+            for type_id, metadata in vehicle_types.items()
+            if _lane_allows_vehicle_class(
+                allowed,
+                disallowed,
+                metadata.vehicle_class,
+            )
+        )
+    )
+    return LanePermissionMetadata(
+        lane_id=lane_id,
+        edge_id=edge_id,
+        lane_index=lane_index,
+        length_m=float(traci.lane.getLength(lane_id)),
+        speed_limit_mps=float(traci.lane.getMaxSpeed(lane_id)),
+        allowed_vehicle_classes=allowed,
+        disallowed_vehicle_classes=disallowed,
+        allowed_vehicle_type_ids=allowed_type_ids,
+    )
+
+
+def _build_edge_lanes(
+    traci,
+    vehicle_types: Mapping[str, VehicleTypeMetadata],
+) -> Mapping[str, tuple[LanePermissionMetadata, ...]]:
+    edge_lanes = {}
+    for raw_edge_id in traci.edge.getIDList():
+        edge_id = str(raw_edge_id)
+        if edge_id.startswith(":"):
+            continue
+        lane_count = int(traci.edge.getLaneNumber(edge_id))
+        if lane_count <= 0:
+            continue
+        edge_lanes[edge_id] = tuple(
+            _lane_permission_metadata(traci, edge_id, lane_index, vehicle_types)
+            for lane_index in range(lane_count)
+        )
+    return edge_lanes
+
+
 def _build_metadata(
     traci,
     selected_manifest: Mapping[str, Mapping[str, object]],
@@ -150,6 +214,11 @@ def _build_metadata(
     episode_id: str,
     vehicle_types: Mapping[str, VehicleTypeMetadata] | None = None,
 ) -> SimulationMetadata:
+    vehicle_type_metadata = vehicle_types or {}
+    edge_lanes = _build_edge_lanes(traci, vehicle_type_metadata)
+    lane_permissions = {
+        lane.lane_id: lane for lanes in edge_lanes.values() for lane in lanes
+    }
     incoming_edges = {
         intersection_id: {
             str(connection["from_edge"]) for connection in item["connections"]
@@ -239,6 +308,11 @@ def _build_metadata(
             )
             length = float(traci.lane.getLength(lane_id))
             speed_limit = float(traci.lane.getMaxSpeed(lane_id))
+            permission = lane_permissions.get(lane_id)
+            if permission is None:
+                permission = _lane_permission_metadata(
+                    traci, edge_id, lane_index, vehicle_type_metadata
+                )
             lanes[lane_id] = LaneMetadata(
                 lane_id=lane_id,
                 edge_id=edge_id,
@@ -256,6 +330,9 @@ def _build_metadata(
                 downstream_lane_ids=tuple(
                     sorted({item.to_lane for item in lane_connections})
                 ),
+                allowed_vehicle_classes=permission.allowed_vehicle_classes,
+                disallowed_vehicle_classes=permission.disallowed_vehicle_classes,
+                allowed_vehicle_type_ids=permission.allowed_vehicle_type_ids,
             )
 
         program = programs[intersection_id]
@@ -311,13 +388,14 @@ def _build_metadata(
         decision_interval=decision_interval,
         minimum_green=minimum_green,
         intersections=intersections,
-        vehicle_types=vehicle_types or {},
+        vehicle_types=vehicle_type_metadata,
+        edge_lanes=edge_lanes,
         vehicle_control=(
             VehicleControlMetadata(
                 supported_actions=("target_speed_mps", "target_lane_index"),
                 action_lease_seconds=decision_interval,
             )
-            if vehicle_types
+            if vehicle_type_metadata
             else None
         ),
     )

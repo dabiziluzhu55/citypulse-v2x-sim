@@ -482,7 +482,11 @@ class VehicleActionController:
         vehicle_class = self.telemetry.type_metadata(vehicle_id).vehicle_class
         allowed = tuple(self.traci.lane.getAllowed(lane_id))
         disallowed = tuple(self.traci.lane.getDisallowed(lane_id))
-        if (allowed and vehicle_class not in allowed) or vehicle_class in disallowed:
+        if (
+            (allowed and "all" not in allowed and vehicle_class not in allowed)
+            or "all" in disallowed
+            or vehicle_class in disallowed
+        ):
             raise ValueError(f"Lane {lane_id} does not allow {vehicle_class} vehicles.")
         return value
 

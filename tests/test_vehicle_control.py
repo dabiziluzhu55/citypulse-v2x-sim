@@ -276,6 +276,16 @@ class VehicleTelemetryTests(unittest.TestCase):
             controller.validate({"missing": {"target_speed_mps": 3.0}})
         self.assertEqual(self.traci.vehicle.speed_commands, [])
 
+    def test_lane_disallow_all_rejects_vehicle_action(self):
+        self.tracker.tick(1.0)
+        self.traci.lane.getDisallowed = (
+            lambda lane_id: ("all",) if lane_id == "edge_1" else ()
+        )
+        controller = VehicleActionController(self.traci, self.tracker)
+        with self.assertRaisesRegex(ValueError, "does not allow passenger"):
+            controller.validate({"car.0": {"target_lane_index": 1}})
+        self.assertEqual(self.traci.vehicle.lane_commands, [])
+
 
 if __name__ == "__main__":
     unittest.main()
