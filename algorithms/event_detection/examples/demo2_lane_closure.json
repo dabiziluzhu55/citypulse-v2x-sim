@@ -1,0 +1,11 @@
+{
+  "events": [
+    {
+      "event_type": "lane_closure",
+      "event_id": "demo2_lane_closure_001",
+      "start_seconds": 300,
+      "end_seconds": 480,
+      "lane_ids": ["-56734_0"]
+    }
+  ]
+}

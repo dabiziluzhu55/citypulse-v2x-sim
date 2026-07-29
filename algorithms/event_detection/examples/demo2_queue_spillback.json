@@ -1,0 +1,14 @@
+{
+  "events": [
+    {
+      "event_type": "queue_spillback",
+      "event_id": "demo2_queue_spillback_001",
+      "start_seconds": 300,
+      "end_seconds": 480,
+      "lane_ids": ["-56734_0", "-56734_1"],
+      "blocked_lane_ids": ["-56736_0", "-56736_1"],
+      "max_speed": 0.1,
+      "position_ratio": 0.15
+    }
+  ]
+}
