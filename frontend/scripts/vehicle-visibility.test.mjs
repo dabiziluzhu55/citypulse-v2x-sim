@@ -10,6 +10,14 @@ import {
   StableVehicleSelector,
 } from '../src/mapv/vehicleVisibility.ts'
 import { createVehicleTwinSample } from '../src/mapv/vehicleTwinSample.ts'
+import {
+  isVehicleAnimationActive,
+  VehiclePresentationClock,
+} from '../src/mapv/vehiclePresentationClock.ts'
+import {
+  interpolateVehicleTwinSample,
+  VehicleMotionBuffer,
+} from '../src/mapv/vehicleMotionBuffer.ts'
 import { VEHICLE_MODEL_BASE_Z } from '../src/mapv/sceneElevation.ts'
 import {
   moveFromFrontBumperToModelCenter,
@@ -33,6 +41,117 @@ import {
   CAR_MODEL_PROFILE,
   resolveVehicleModelProfile,
 } from '../src/mapv/vehicleModelProfiles.ts'
+
+test('keeps Twin presentation timestamps monotonic across repeated frames', () => {
+  const clock = new VehiclePresentationClock()
+  assert.equal(clock.next(1_000), 1_000)
+  assert.equal(clock.next(1_000), 1_001)
+  assert.equal(clock.next(900), 1_002)
+  clock.reset()
+  assert.equal(clock.next(500), 500)
+})
+
+test('runs the single motion output clock only while simulation time advances', () => {
+  assert.equal(isVehicleAnimationActive('RUNNING'), true)
+  assert.equal(isVehicleAnimationActive('STARTING'), true)
+  assert.equal(isVehicleAnimationActive('STOPPING'), true)
+  assert.equal(isVehicleAnimationActive('PAUSED'), false)
+  assert.equal(isVehicleAnimationActive('COMPLETED'), false)
+})
+
+function motionSample(id, x, direction = 0) {
+  return {
+    id,
+    point: [x, 39, 1.1],
+    dir: direction,
+    time: 0,
+    modelType: 3,
+    scale: [1, 1, 1],
+    color: '#fff',
+  }
+}
+
+test('resamples genuine source frames into continuous moving output', () => {
+  const buffer = new VehicleMotionBuffer()
+  for (let index = 0; index <= 3; index += 1) {
+    buffer.push({
+      sequence: index,
+      elapsedSeconds: index * 0.2,
+      arrivalTimeMs: index * 200,
+      samples: [motionSample('car', index * 2)],
+    })
+  }
+  const first = buffer.sample(600)
+  const second = buffer.sample(700)
+  buffer.push({
+    sequence: 4,
+    elapsedSeconds: 0.8,
+    arrivalTimeMs: 800,
+    samples: [motionSample('car', 8)],
+  })
+  const third = buffer.sample(800)
+  assert.ok(first && second && third)
+  const firstStep = second[0].point[0] - first[0].point[0]
+  const secondStep = third[0].point[0] - second[0].point[0]
+  assert.ok(firstStep > 0.5)
+  assert.ok(secondStep > 0.5)
+  assert.ok(Math.abs(firstStep - secondStep) < 0.2)
+})
+
+test('continues output after consumed source frames are pruned', () => {
+  const buffer = new VehicleMotionBuffer()
+  for (let index = 0; index <= 3; index += 1) {
+    buffer.push({
+      sequence: index,
+      elapsedSeconds: index * 0.2,
+      arrivalTimeMs: index * 200,
+      samples: [motionSample('car', index * 2)],
+    })
+  }
+  let previousX = Number.NEGATIVE_INFINITY
+  for (let wallTimeMs = 600; wallTimeMs <= 2_000; wallTimeMs += 100) {
+    if (wallTimeMs >= 800 && wallTimeMs % 200 === 0) {
+      const sequence = wallTimeMs / 200
+      buffer.push({
+        sequence,
+        elapsedSeconds: sequence * 0.2,
+        arrivalTimeMs: wallTimeMs,
+        samples: [motionSample('car', sequence * 2)],
+      })
+    }
+    const samples = buffer.sample(wallTimeMs)
+    assert.ok(samples, `missing resampled output at ${wallTimeMs}ms`)
+    assert.ok(samples[0].point[0] >= previousX)
+    previousX = samples[0].point[0]
+  }
+})
+
+test('retains vehicle samples through short empty source gaps', () => {
+  const buffer = new VehicleMotionBuffer()
+  buffer.push({ sequence: 1, elapsedSeconds: 0, arrivalTimeMs: 0, samples: [motionSample('held', 0)] })
+  buffer.push({ sequence: 2, elapsedSeconds: 0.5, arrivalTimeMs: 500, samples: [motionSample('held', 1)] })
+  buffer.push({ sequence: 3, elapsedSeconds: 1, arrivalTimeMs: 1000, samples: [] })
+  buffer.push({ sequence: 4, elapsedSeconds: 1.4, arrivalTimeMs: 1400, samples: [] })
+  const held = buffer.sample(1400)
+  assert.ok(held?.some((sample) => sample.id === 'held'))
+  buffer.push({ sequence: 5, elapsedSeconds: 2, arrivalTimeMs: 2000, samples: [] })
+  buffer.push({ sequence: 6, elapsedSeconds: 2.5, arrivalTimeMs: 2500, samples: [] })
+  let expired = null
+  for (let wallTime = 1600; wallTime <= 5000; wallTime += 100) {
+    expired = buffer.sample(wallTime)
+  }
+  assert.ok(expired && !expired.some((sample) => sample.id === 'held'))
+})
+
+test('interpolates heading through the shortest turn instead of spinning backwards', () => {
+  const degrees = (value) => value * Math.PI / 180
+  const sample = interpolateVehicleTwinSample(
+    motionSample('turning', 0, degrees(350)),
+    motionSample('turning', 1, degrees(10)),
+    0.5,
+  )
+  assert.ok(Math.abs(sample.dir - Math.PI * 2) < 1e-9)
+})
 
 function vehicle(id, longitude, latitude) {
   return {

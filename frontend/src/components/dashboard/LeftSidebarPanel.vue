@@ -1,9 +1,20 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { DISTURBANCE_CHOICE_OPTIONS, TRAFFIC_FLOW_MODE_OPTIONS } from '../../constants/scenarioOptions'
+import {
+  DISTURBANCE_CHOICE_OPTIONS,
+  SIMULATION_PERIOD_RANGES,
+  TRAFFIC_FLOW_MODE_OPTIONS,
+} from '../../constants/scenarioOptions'
 import { resolveControlModeLabel, resolveDashboardControlModes } from '../../constants/simulationOptions'
 import { exportScenarioArchive } from '../../api/scenario'
-import { useCompactScenarioConfig } from '../../composables/useCompactScenarioConfig'
+import {
+  useCompactScenarioConfig,
+  type CompactScenarioConfig,
+} from '../../composables/useCompactScenarioConfig'
+import {
+  comparisonChangeRequiresConfirmation,
+  createScenarioFingerprint,
+} from '../../composables/useEvaluationComparison'
 import { useCatalog } from '../../composables/useCatalog'
 import { useActiveIntersectionScene } from '../../composables/useActiveIntersectionScene'
 import {
@@ -18,6 +29,7 @@ import LeftSidebarBottomChrome from './LeftSidebarBottomChrome.vue'
 import LeftSidebarSectionHeader from './LeftSidebarSectionHeader.vue'
 import { LEFT_SIDEBAR_DESIGN_HEIGHT, LEFT_SIDEBAR_DESIGN_WIDTH, LEFT_SIDEBAR_REFERENCE_LAYOUT } from '../../constants/leftSidebarLayout'
 import type { SimulationSnapshot, SimulationState, StartSimulationRequest } from '../../types/simulation'
+import { formatIntersectionLabel } from '../../utils/intersectionLabels'
 
 const props = defineProps<{
   sessionId: string
@@ -31,6 +43,9 @@ const props = defineProps<{
   wsConnected: boolean
   activeControlMode: string
   activePlaybackSpeed: number
+  achievedPlaybackSpeed: number | null
+  activeComparisonFingerprint: string
+  hasActiveComparisonData: boolean
   healthReady: boolean
   healthLabel: string
 }>()
@@ -40,7 +55,10 @@ const emit = defineEmits<{
   resume: []
   stop: []
   playbackSpeed: [value: number]
-  configChanged: []
+  configChangeRequested: [request: {
+    fingerprint: string
+    apply: () => void
+  }]
 }>()
 
 const { activeIntersectionId, selectIntersection } = useActiveIntersectionScene()
@@ -51,15 +69,24 @@ const {
   controlModes,
   scenarioPresets,
   playbackSpeeds,
+  supportedIntersectionIds,
   loading: catalogLoading,
   error: catalogError,
   isIntersectionSupported,
 } = useCatalog(activeIntersectionId)
-const { config, configNote, availableTimeOptions, buildPayload, applyImportedConfig } = useCompactScenarioConfig(
+const {
+  config,
+  configNote,
+  activeTimeRange,
+  buildPayload,
+  buildPayloadFor,
+  parseImportedConfig,
+} = useCompactScenarioConfig(
   intersection,
   periods,
   scenarioPresets,
   playbackSpeeds,
+  supportedIntersectionIds,
 )
 const fileInput = ref<HTMLInputElement | null>(null)
 const feedback = ref<string | null>(null)
@@ -70,11 +97,18 @@ const scenarioOptions = computed(() => scenarioPresets.value.map((item) => ({
   value: item.preset_id,
   disabled: !catalogSupportsScenarioPreset(catalog.value, item.preset_id),
 })))
+const disturbanceIntersectionOptions = computed(() => {
+  const preset = selectedPreset.value
+  if (!preset) return []
+  const supported = new Set(supportedIntersectionIds.value)
+  return preset.intersection_ids
+    .filter((id) => supported.has(id))
+    .map((id) => ({ label: formatIntersectionLabel(id), value: id }))
+})
 const fields = computed(() => [
   { key: 'scenario', label: '场景模式', options: scenarioOptions.value },
   { key: 'disturbance', label: '扰动事件', options: DISTURBANCE_CHOICE_OPTIONS },
   { key: 'flow', label: '交通流模式', options: TRAFFIC_FLOW_MODE_OPTIONS },
-  { key: 'time', label: '仿真时间', options: availableTimeOptions.value },
 ])
 const isSessionActive = computed(() => props.starting || (
   !!props.sessionId && (!props.state || ['STARTING', 'RUNNING', 'PAUSED', 'STOPPING'].includes(props.state))
@@ -120,10 +154,6 @@ const statusMessage = computed(() => feedback.value
 const controlModeOptions = computed(() => resolveDashboardControlModes(controlModes.value))
 const playbackSpeedOptions = computed(() => playbackSpeeds.value.map((value) => ({ label: `${value}x`, value })))
 const stateLabel = computed(() => props.state ?? (props.healthReady ? 'READY' : 'OFFLINE'))
-const connectionLabel = computed(() => {
-  if (!props.sessionId) return '未连接'
-  return props.wsConnected ? '实时推送' : '轮询同步'
-})
 const officialTimeLabel = computed(() => {
   const value = props.snapshot?.official_time
   if (!value) return '--:--:--'
@@ -131,10 +161,16 @@ const officialTimeLabel = computed(() => {
   return time.slice(0, 8)
 })
 const activeVehicleLabel = computed(() => props.snapshot?.metrics.active_vehicles ?? 0)
-const sequenceLabel = computed(() => props.snapshot?.sequence ?? 0)
 const algorithmLabel = computed(() => resolveControlModeLabel(
   props.activeControlMode || config.value.control_mode,
 ))
+const achievedPlaybackLabel = computed(() => {
+  if (!isSessionActive.value || props.achievedPlaybackSpeed == null) return ''
+  return `实${props.achievedPlaybackSpeed.toFixed(1)}×`
+})
+const playbackSpeedTitle = computed(() => achievedPlaybackLabel.value
+  ? `播放倍率：目标 ${config.value.playback_speed}×，实际 ${props.achievedPlaybackSpeed?.toFixed(2)}×`
+  : `播放倍率：目标 ${config.value.playback_speed}×`)
 const startTitle = computed(() => {
   if (catalogLoading.value) return '正在读取真实仿真路口目录'
   if (unsupportedMessage.value) return unsupportedMessage.value
@@ -188,22 +224,73 @@ watch(
   },
 )
 
-function fieldModel(key: string): 'scenario_preset_id' | 'disturbance' | 'flow_mode' | 'time_preset' {
+function fieldModel(key: string): 'scenario_preset_id' | 'disturbance' | 'flow_mode' {
   if (key === 'scenario') return 'scenario_preset_id'
   if (key === 'disturbance') return 'disturbance'
-  if (key === 'flow') return 'flow_mode'
-  return 'time_preset'
+  return 'flow_mode'
 }
-function notifyConfigChanged() { emit('configChanged') }
+
+function applyConfiguration(next: CompactScenarioConfig, onApplied?: () => void): void {
+  config.value = { ...next }
+  onApplied?.()
+}
+
+function requestConfiguration(next: CompactScenarioConfig, onApplied?: () => void): void {
+  let fingerprint: string
+  try {
+    fingerprint = createScenarioFingerprint(buildPayloadFor(next), activeIntersectionId.value)
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : '无法校验配置参数'
+    return
+  }
+  const changesComparison = comparisonChangeRequiresConfirmation(
+    props.activeComparisonFingerprint,
+    fingerprint,
+    props.hasActiveComparisonData,
+  )
+  if (!changesComparison) {
+    applyConfiguration(next, onApplied)
+    return
+  }
+  emit('configChangeRequested', {
+    fingerprint,
+    apply: () => applyConfiguration(next, onApplied),
+  })
+}
+
+function requestFieldChange(key: string, value: unknown): void {
+  const model = fieldModel(key)
+  const next = { ...config.value, [model]: value } as CompactScenarioConfig
+  if (model === 'flow_mode') {
+    const range = SIMULATION_PERIOD_RANGES[next.flow_mode]
+    next.simulation_start_time = range.start
+    next.simulation_end_time = range.end
+  }
+  if (model === 'disturbance') {
+    if (value === 'none') next.disturbance_intersection_ids = []
+    else if (next.disturbance_intersection_ids.length === 0) {
+      next.disturbance_intersection_ids = disturbanceIntersectionOptions.value.slice(0, 1).map((item) => item.value)
+    }
+  }
+  requestConfiguration(next)
+}
+
+function requestDisturbanceIntersections(value: string[]): void {
+  requestConfiguration({ ...config.value, disturbance_intersection_ids: value })
+}
+
+function requestTimeChange(key: 'simulation_start_time' | 'simulation_end_time', value: string): void {
+  requestConfiguration({ ...config.value, [key]: value })
+}
+
 function openFilePicker() { fileInput.value?.click() }
 async function importConfig(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
   try {
-    applyImportedConfig(JSON.parse(await file.text()))
-    feedback.value = '配置参数已载入'
-    notifyConfigChanged()
+    const next = parseImportedConfig(JSON.parse(await file.text()))
+    requestConfiguration(next, () => { feedback.value = '配置参数已载入' })
   }
   catch (error) { feedback.value = error instanceof Error ? error.message : '配置导入失败' }
   finally { input.value = '' }
@@ -277,7 +364,13 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
         :style="{ left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[index].left}px`, top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[index].top}px`, width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[index].width}px` }"
       >
         <span class="left-sidebar__field-label">{{ field.label }}</span>
-        <el-select v-model="config[fieldModel(field.key)]" :disabled="isSessionActive" class="left-sidebar__select" popper-class="left-sidebar-select-popper" @change="notifyConfigChanged">
+        <el-select
+          :model-value="config[fieldModel(field.key)]"
+          :disabled="isSessionActive"
+          class="left-sidebar__select"
+          popper-class="left-sidebar-select-popper"
+          @change="requestFieldChange(field.key, $event)"
+        >
           <el-option
             v-for="option in field.options"
             :key="option.value"
@@ -286,6 +379,70 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
             :disabled="'disabled' in option && option.disabled"
           />
         </el-select>
+      </label>
+
+      <label
+        class="left-sidebar__field left-sidebar__field--targets"
+        :style="{
+          left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.disturbanceTargets.left}px`,
+          top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.disturbanceTargets.top}px`,
+          width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.disturbanceTargets.width}px`,
+        }"
+      >
+        <span class="left-sidebar__field-label">扰动路口</span>
+        <el-select
+          :model-value="config.disturbance_intersection_ids"
+          :disabled="isSessionActive || config.disturbance === 'none' || disturbanceIntersectionOptions.length === 0"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          :max-collapse-tags="1"
+          class="left-sidebar__select"
+          popper-class="left-sidebar-select-popper"
+          placeholder="请选择路口"
+          @change="requestDisturbanceIntersections($event as string[])"
+        >
+          <el-option
+            v-for="option in disturbanceIntersectionOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+      </label>
+
+      <label
+        class="left-sidebar__field left-sidebar__field--time"
+        :style="{
+          left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.timeRange.left}px`,
+          top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.timeRange.top}px`,
+          width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.timeRange.width}px`,
+        }"
+      >
+        <span class="left-sidebar__field-label">仿真时间</span>
+        <div class="left-sidebar__time-range">
+          <el-time-select
+            :model-value="config.simulation_start_time"
+            :disabled="isSessionActive"
+            :start="activeTimeRange.start"
+            step="00:01"
+            :end="activeTimeRange.end"
+            :max-time="config.simulation_end_time"
+            placeholder="开始时间"
+            @change="requestTimeChange('simulation_start_time', $event as string)"
+          />
+          <i aria-hidden="true" />
+          <el-time-select
+            :model-value="config.simulation_end_time"
+            :disabled="isSessionActive"
+            :start="activeTimeRange.start"
+            step="00:01"
+            :end="activeTimeRange.end"
+            :min-time="config.simulation_start_time"
+            placeholder="结束时间"
+            @change="requestTimeChange('simulation_end_time', $event as string)"
+          />
+        </div>
       </label>
 
       <div class="left-sidebar__config-summary" :title="configNote">
@@ -309,7 +466,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
           title="真实后端算法"
         >
           <span>{{ option.label }}</span>
-          <input v-model="config.control_mode" :disabled="isSessionActive" type="radio" name="sidebar-algorithm" :value="option.value" @change="notifyConfigChanged" /><i aria-hidden="true" />
+          <input v-model="config.control_mode" :disabled="isSessionActive" type="radio" name="sidebar-algorithm" :value="option.value" /><i aria-hidden="true" />
         </label>
       </div>
 
@@ -334,8 +491,12 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
             :disabled="props.controlling"
             :aria-expanded="multiplierOpen"
             aria-haspopup="listbox"
-            title="选择仿真播放倍速"
-          >×{{ config.playback_speed }}</button>
+            :title="playbackSpeedTitle"
+            :aria-label="playbackSpeedTitle"
+          >
+            <span>×{{ config.playback_speed }}</span>
+            <small v-if="achievedPlaybackLabel">{{ achievedPlaybackLabel }}</small>
+          </button>
           <template #dropdown>
             <el-dropdown-menu aria-label="仿真播放倍速">
               <el-dropdown-item
@@ -362,13 +523,11 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
       <div class="left-sidebar__runtime" :class="`is-${state?.toLowerCase() ?? 'ready'}`" aria-live="polite">
         <div class="left-sidebar__runtime-head">
           <strong><i aria-hidden="true" />{{ stateLabel }}</strong>
-          <span>{{ connectionLabel }}</span>
           <em>{{ algorithmLabel }}</em>
         </div>
         <dl>
           <div><dt>仿真时间</dt><dd>{{ officialTimeLabel }}</dd></div>
           <div><dt>活动车辆</dt><dd>{{ activeVehicleLabel }}</dd></div>
-          <div><dt>快照序号</dt><dd>{{ sequenceLabel }}</dd></div>
           <div><dt>运行进度</dt><dd>{{ Math.round(progressPercent) }}%</dd></div>
         </dl>
       </div>
@@ -472,6 +631,38 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
   border-top: 8px solid #ffe47a;
+}
+.left-sidebar__select :deep(.el-tag) {
+  max-width: 102px;
+  border-color: rgba(82, 194, 250, .42);
+  background: rgba(20, 103, 169, .42);
+  color: #effaff;
+}
+.left-sidebar__time-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+}
+.left-sidebar__time-range > i {
+  width: 10px;
+  height: 1px;
+  justify-self: center;
+  background: #7fcde9;
+}
+.left-sidebar__time-range :deep(.el-select__wrapper) {
+  min-height: 34px;
+  padding: 3px 9px;
+  border: 1px solid rgba(27, 126, 242, .45);
+  border-radius: 5px;
+  background: linear-gradient(90deg, #043563, #03315b);
+  box-shadow: none;
+}
+.left-sidebar__time-range :deep(.el-select__selected-item),
+.left-sidebar__time-range :deep(.el-select__placeholder) {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .left-sidebar__config-summary {
@@ -607,13 +798,13 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__select :deep(.el-select__wrapper) { min-height: 36px; padding: 4px 12px; border-color: rgba(27,126,242,.45); }
 .left-sidebar__select :deep(.el-select__selected-item), .left-sidebar__select :deep(.el-select__placeholder) { font-weight: 600; }
 .left-sidebar__config-summary {
-  left: 32px; top: 252px; width: 330px; height: 51px; display: flex; flex-direction: column;
+  left: 32px; top: 307px; width: 330px; height: 43px; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 0; padding: 5px 12px; border-color: rgba(98,190,255,.7);
   background: linear-gradient(180deg,rgba(3,38,73,.88),rgba(1,20,46,.82)); color: #edf8ff;
   font-size: 12px; font-weight: 600; line-height: 1.35; white-space: nowrap;
 }
 .left-sidebar__file-actions {
-  position: absolute; z-index: 4; left: 28px; top: 312px; width: 334px; height: 42px;
+  position: absolute; z-index: 4; left: 28px; top: 358px; width: 334px; height: 38px;
   display: grid; grid-template-columns: 161px 161px; gap: 12px;
 }
 .left-sidebar__file-actions input { display: none; }
@@ -636,11 +827,12 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__progress { left: 25px; top: 680px; width: 263px; height: 3px; }
 .left-sidebar__progress-knob { width: 7px; height: 7px; }
 .left-sidebar__speed-badge {
-  position: absolute; z-index: 12; left: 315px; top: 663px; width: 68px; height: 34px; display: grid; place-items: center;
+  position: absolute; z-index: 12; left: 295px; top: 663px; width: 88px; height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px;
   padding: 0; border: 1px solid rgba(89,147,255,.7); border-radius: 18px; background: rgba(2,19,42,.9);
   box-shadow: inset 0 0 9px rgba(33,139,255,.14), 0 0 7px rgba(33,139,255,.12);
   color: #fff; font: 600 14px/1 inherit; cursor: pointer;
 }
+.left-sidebar__speed-badge small { color: #74dfff; font-size: 9px; font-weight: 600; white-space: nowrap; }
 .left-sidebar__speed-badge:hover:not(:disabled), .left-sidebar__speed-badge:focus-visible, .left-sidebar__speed-badge.is-open {
   border-color: #52c2fa; box-shadow: 0 0 9px rgba(33,230,255,.45); outline: none;
 }
@@ -672,7 +864,6 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__runtime-head { height: 22px; display: flex; align-items: center; gap: 10px; font-size: 10px; }
 .left-sidebar__runtime-head strong { display: flex; align-items: center; gap: 6px; color: #d8eaff; font-size: 11px; }
 .left-sidebar__runtime-head strong i { width: 6px; height: 6px; border-radius: 50%; background: #8da3b5; box-shadow: 0 0 6px currentColor; }
-.left-sidebar__runtime-head span { color: #7fa9c4; }
 .left-sidebar__runtime-head em { min-width: 0; margin-left: auto; overflow: hidden; color: #8fc6e5; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .left-sidebar__runtime.is-running .left-sidebar__runtime-head strong { color: #58f0ae; }
 .left-sidebar__runtime.is-running .left-sidebar__runtime-head strong i { background: #3ce69a; }
@@ -682,7 +873,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__runtime.is-stopping .left-sidebar__runtime-head strong i { background: #e8b94c; }
 .left-sidebar__runtime.is-failed .left-sidebar__runtime-head strong { color: #ff9d9d; }
 .left-sidebar__runtime.is-failed .left-sidebar__runtime-head strong i { background: #ff6b6b; }
-.left-sidebar__runtime dl { height: 45px; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; margin: 3px 0 0; }
+.left-sidebar__runtime dl { height: 45px; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 3px 0 0; }
 .left-sidebar__runtime dl div { min-width: 0; }
 .left-sidebar__runtime dt { color: #668fa9; font-size: 9px; white-space: nowrap; }
 .left-sidebar__runtime dd { margin: 3px 0 0; overflow: hidden; color: #eefaff; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }

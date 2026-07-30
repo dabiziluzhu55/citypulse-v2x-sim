@@ -62,6 +62,18 @@ export function createScenarioFingerprint(
   }))
 }
 
+export function comparisonChangeRequiresConfirmation(
+  activeFingerprint: string,
+  candidateFingerprint: string,
+  hasActiveData: boolean,
+): boolean {
+  return Boolean(
+    hasActiveData
+    && activeFingerprint
+    && candidateFingerprint !== activeFingerprint,
+  )
+}
+
 function emptyStore(): StoredComparison {
   return { version: STORAGE_VERSION, groups: [] }
 }
@@ -204,6 +216,18 @@ export function useEvaluationComparison(
   const hasComparisonData = computed(() => store.value.groups.some((group) => (
     Object.values(group.runs).some((run) => run.points.length > 0)
   )))
+  const hasActiveComparisonData = computed(() => Object.values(activeGroup.value?.runs ?? {})
+    .some((run) => run.points.length > 0))
+
+  function resetForConfiguration(fingerprint: string): void {
+    const now = Date.now()
+    store.value = {
+      version: STORAGE_VERSION,
+      groups: fingerprint ? [{ fingerprint, updatedAt: now, runs: {} }] : [],
+    }
+    activeFingerprint.value = fingerprint
+    persistSoon()
+  }
 
   watch(sessionId, (next) => {
     const restored = findFingerprintBySession(next)
@@ -220,7 +244,10 @@ export function useEvaluationComparison(
   return {
     timeseries,
     availableAlgorithms,
+    activeFingerprint,
     hasComparisonData,
+    hasActiveComparisonData,
     beginRun,
+    resetForConfiguration,
   }
 }

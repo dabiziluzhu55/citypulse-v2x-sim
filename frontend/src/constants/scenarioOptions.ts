@@ -57,6 +57,51 @@ export const SIMULATION_TIME_OPTIONS = [
 
 export type SimulationTimePresetId = (typeof SIMULATION_TIME_OPTIONS)[number]['value']
 
+export interface SimulationPeriodRange {
+  start: string
+  end: string
+}
+
+export const SIMULATION_PERIOD_RANGES: Record<TrafficFlowMode, SimulationPeriodRange> = {
+  morning_peak: { start: '07:00', end: '09:00' },
+  flat: { start: '14:30', end: '16:30' },
+  evening_peak: { start: '17:30', end: '19:30' },
+}
+
+export function clockTimeToMinutes(value: string): number {
+  const match = /^(\d{2}):(\d{2})$/.exec(value)
+  if (!match) return Number.NaN
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours > 23 || minutes > 59) return Number.NaN
+  return hours * 60 + minutes
+}
+
+export function simulationTimeWindow(
+  flowMode: TrafficFlowMode,
+  start: string,
+  end: string,
+): { windowStartSeconds: number; durationSeconds: number } {
+  const range = SIMULATION_PERIOD_RANGES[flowMode]
+  const rangeStart = clockTimeToMinutes(range.start)
+  const rangeEnd = clockTimeToMinutes(range.end)
+  const startMinutes = clockTimeToMinutes(start)
+  const endMinutes = clockTimeToMinutes(end)
+  if (
+    !Number.isFinite(startMinutes)
+    || !Number.isFinite(endMinutes)
+    || startMinutes < rangeStart
+    || endMinutes > rangeEnd
+    || endMinutes <= startMinutes
+  ) {
+    throw new Error(`Simulation time must stay within ${range.start}-${range.end}`)
+  }
+  return {
+    windowStartSeconds: (startMinutes - rangeStart) * 60,
+    durationSeconds: (endMinutes - startMinutes) * 60,
+  }
+}
+
 export const DEFAULT_PLAYBACK_SPEED_OPTIONS = [1, 1.25, 1.5, 2, 3, 5] as const
 
 export const DURATION_OPTIONS = [

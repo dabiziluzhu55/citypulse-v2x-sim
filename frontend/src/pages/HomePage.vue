@@ -14,6 +14,7 @@ import { useActiveIntersectionScene } from '../composables/useActiveIntersection
 import { CESIUM_CAMERA_PRESETS } from '../constants/mapDefaults'
 import type { CesiumCameraPresetId, MapDimension } from '../types/map'
 import type { StartSimulationRequest } from '../types/simulation'
+import { formatIntersectionLabel } from '../utils/intersectionLabels'
 import { detectMap3dCapability } from '../mapv/map3dCapabilities'
 
 const mapView = useOptionalAppMapView()
@@ -56,6 +57,7 @@ const {
   sessionIntersectionId,
   activeControlMode,
   activePlaybackSpeed,
+  achievedPlaybackSpeed,
   launchRun,
   pauseRun,
   resumeRun,
@@ -76,12 +78,17 @@ const { ready: healthReady, statusLabel: healthLabel } = useHealth()
 const { logEntries } = useSnapshotMetrics(sessionId, snapshot, wsConnected)
 const {
   timeseries,
-  hasComparisonData,
+  activeFingerprint,
+  hasActiveComparisonData,
   beginRun: beginComparisonRun,
+  resetForConfiguration,
 } = useEvaluationComparison(sessionId, snapshot)
 const { communicationPanelOpen, closeCommunicationPanel } = useDashboardOverlay()
-const configNotice = ref<string | null>(null)
-let configNoticeTimer: ReturnType<typeof setTimeout> | null = null
+interface ConfigurationChangeRequest {
+  fingerprint: string
+  apply: () => void
+}
+const pendingConfigChange = ref<ConfigurationChangeRequest | null>(null)
 
 watch(
   [snapshot, restoredSession],
@@ -95,7 +102,6 @@ watch(
     const intersectionId = sessionIntersectionId.value
       || Object.keys(nextSnapshot.intersections)[0]
     if (intersectionId) selectIntersection(intersectionId)
-    mapView?.setCameraPreset('intersection')
     setMapDimension('3d')
     markRestoredSessionHandled()
   },
@@ -103,7 +109,10 @@ watch(
 )
 
 function handleOverlayKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && communicationPanelOpen.value) {
+  if (event.key !== 'Escape') return
+  if (pendingConfigChange.value) {
+    pendingConfigChange.value = null
+  } else if (communicationPanelOpen.value) {
     closeCommunicationPanel()
   }
 }
@@ -114,26 +123,29 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleOverlayKeydown)
-  if (configNoticeTimer !== null) clearTimeout(configNoticeTimer)
   closeCommunicationPanel()
 })
 
 async function handleStart(payload: StartSimulationRequest) {
-  mapView?.setCameraPreset('intersection')
   setMapDimension('3d')
   const result = await launchRun(payload, activeIntersectionId.value)
   if (result) beginComparisonRun(result.session_id, payload, activeIntersectionId.value)
 }
 
-function handleConfigChanged() {
-  configNotice.value = hasComparisonData.value
-    ? '已切换对比条件，历史结果保留在上一对比组'
-    : '配置已更新'
-  if (configNoticeTimer !== null) clearTimeout(configNoticeTimer)
-  configNoticeTimer = setTimeout(() => {
-    configNotice.value = null
-    configNoticeTimer = null
-  }, 2_400)
+function handleConfigChangeRequested(request: ConfigurationChangeRequest) {
+  pendingConfigChange.value = request
+}
+
+function cancelConfigChange() {
+  pendingConfigChange.value = null
+}
+
+function confirmConfigChange() {
+  const request = pendingConfigChange.value
+  if (!request) return
+  request.apply()
+  resetForConfiguration(request.fingerprint)
+  pendingConfigChange.value = null
 }
 
 async function handlePause() { await pauseRun() }
@@ -162,7 +174,7 @@ async function handleStop() {
             :key="item.intersection_id"
             :value="item.intersection_id"
           >
-            {{ item.intersection_id }} · {{ item.simulatable ? '可仿真' : '仅查看' }}
+            {{ formatIntersectionLabel(item.intersection_id) }}
           </option>
         </select>
         <i :class="`is-${sceneStatus}`" aria-hidden="true" />
@@ -218,6 +230,9 @@ async function handleStop() {
         :ws-connected="wsConnected"
         :active-control-mode="activeControlMode"
         :active-playback-speed="activePlaybackSpeed"
+        :achieved-playback-speed="achievedPlaybackSpeed"
+        :active-comparison-fingerprint="activeFingerprint"
+        :has-active-comparison-data="hasActiveComparisonData"
         :health-ready="healthReady"
         :health-label="healthLabel"
         @start="handleStart"
@@ -225,16 +240,28 @@ async function handleStop() {
         @resume="handleResume"
         @playback-speed="handlePlaybackSpeed"
         @stop="handleStop"
-        @config-changed="handleConfigChanged"
+        @config-change-requested="handleConfigChangeRequested"
       />
     </div>
 
     <div class="dashboard-column center" />
 
     <Transition name="config-notice">
-      <div v-if="configNotice" class="config-change-notice" role="status" aria-live="polite">
-        <div class="config-change-notice__title"><i aria-hidden="true" />提示</div>
-        <p>{{ configNotice }}</p>
+      <div v-if="pendingConfigChange" class="config-change-dialog">
+        <button
+          type="button"
+          class="config-change-dialog__backdrop"
+          aria-label="取消参数变更"
+          @click="cancelConfigChange"
+        />
+        <div class="config-change-notice" role="dialog" aria-modal="true" aria-labelledby="config-change-title">
+          <div id="config-change-title" class="config-change-notice__title"><i aria-hidden="true" />参数变更确认</div>
+          <p>当前参数与右侧算法对比基线不一致。继续后将清空右侧已有算法曲线，再使用新参数开始对比。</p>
+          <div class="config-change-notice__actions">
+            <button type="button" @click="cancelConfigChange">取消</button>
+            <button type="button" class="is-primary" @click="confirmConfigChange">确认并清空</button>
+          </div>
+        </div>
       </div>
     </Transition>
 
@@ -281,11 +308,23 @@ async function handleStop() {
 </template>
 
 <style scoped>
-.config-change-notice {
+.config-change-dialog {
   position: fixed;
-  left: 50%;
-  top: 50%;
+  inset: 0;
   z-index: 11;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.config-change-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(1, 10, 24, .48);
+  cursor: default;
+}
+.config-change-notice {
+  position: relative;
   width: min(345px, calc(100vw - 32px));
   min-height: 141px;
   padding: 24px 30px 22px;
@@ -295,8 +334,7 @@ async function handleStop() {
   box-shadow: inset 0 0 30px rgba(33, 139, 255, .12), 0 0 22px rgba(33, 139, 255, .28);
   color: #edf9ff;
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
+  pointer-events: auto;
 }
 .config-change-notice::before,
 .config-change-notice::after {
@@ -313,10 +351,21 @@ async function handleStop() {
 .config-change-notice__title { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 18px; font-weight: 700; }
 .config-change-notice__title i { width: 5px; height: 18px; background: #21e6ff; box-shadow: 0 0 8px #21e6ff; }
 .config-change-notice p { margin: 18px 0 0; color: #bcdced; font-size: 14px; line-height: 1.6; text-align: center; }
+.config-change-notice__actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 22px; }
+.config-change-notice__actions button {
+  min-width: 92px; height: 34px; border: 1px solid rgba(82,194,250,.55); border-radius: 4px;
+  background: rgba(4,49,91,.82); color: #d7efff; font: 600 13px/1 inherit; cursor: pointer;
+}
+.config-change-notice__actions button:hover, .config-change-notice__actions button:focus-visible { border-color: #52c2fa; outline: none; filter: brightness(1.14); }
+.config-change-notice__actions button.is-primary { background: linear-gradient(180deg,#2e519e,#3c8de7); color: #fff; }
 .config-notice-enter-active,
-.config-notice-leave-active { transition: opacity .18s ease, transform .18s ease; }
+.config-notice-leave-active { transition: opacity .18s ease; }
+.config-notice-enter-active .config-change-notice,
+.config-notice-leave-active .config-change-notice { transition: opacity .18s ease, transform .18s ease; }
 .config-notice-enter-from,
-.config-notice-leave-to { opacity: 0; transform: translate(-50%, -46%) scale(.97); }
+.config-notice-leave-to { opacity: 0; }
+.config-notice-enter-from .config-change-notice,
+.config-notice-leave-to .config-change-notice { opacity: 0; transform: translateY(12px) scale(.97); }
 
 .communication-overlay {
   position: fixed;

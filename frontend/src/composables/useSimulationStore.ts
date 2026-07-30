@@ -15,6 +15,11 @@ import {
 import { snapshotToTrafficView } from '../utils/trafficStateMerge'
 import { shouldApplySimulationSnapshot } from '../utils/snapshotOrdering'
 import {
+  appendPlaybackRateSample,
+  calculatePlaybackRate,
+  type PlaybackRateSample,
+} from '../utils/playbackRate'
+import {
   connectSimulationStream,
   registerSimulationStreamConnectionListener,
   registerSimulationStreamHandler,
@@ -95,10 +100,12 @@ const activeControlMode = ref(
 const activePlaybackSpeed = ref(
   storedContext?.sessionId === sessionId.value ? storedContext.playbackSpeed : 1,
 )
+const achievedPlaybackSpeed = ref<number | null>(null)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let requestVersion = 0
 let initialized = false
+let playbackRateSamples: PlaybackRateSample[] = []
 
 const trafficView = computed(() =>
   snapshot.value ? snapshotToTrafficView(snapshot.value) : null,
@@ -114,8 +121,32 @@ const summary = computed<TrafficSummary>(() => {
 
 const state = computed<SimulationState | null>(() => snapshot.value?.state ?? null)
 
+function resetPlaybackRateTracking(): void {
+  playbackRateSamples = []
+  achievedPlaybackSpeed.value = null
+}
+
+function recordPlaybackRate(next: SimulationSnapshot): void {
+  if (next.state === 'PAUSED') {
+    playbackRateSamples = []
+    achievedPlaybackSpeed.value = 0
+    return
+  }
+  if (next.state !== 'RUNNING') {
+    resetPlaybackRateTracking()
+    return
+  }
+  playbackRateSamples = appendPlaybackRateSample(playbackRateSamples, {
+    sessionId: next.session_id,
+    wallTimeMs: Date.now(),
+    elapsedSeconds: next.elapsed_seconds,
+  })
+  achievedPlaybackSpeed.value = calculatePlaybackRate(playbackRateSamples)
+}
+
 function applySnapshot(next: SimulationSnapshot) {
   if (!shouldApplySimulationSnapshot(snapshot.value, next, sessionId.value)) return
+  recordPlaybackRate(next)
   snapshot.value = next
   if (typeof next.playback_speed === 'number') activePlaybackSpeed.value = next.playback_speed
   statusError.value = null
@@ -140,6 +171,7 @@ function stopPolling() {
 async function pollOnce() {
   if (!sessionId.value) {
     snapshot.value = null
+    resetPlaybackRateTracking()
     statusError.value = null
     return
   }
@@ -163,6 +195,7 @@ async function pollOnce() {
       connectSimulationStream('')
       sessionId.value = ''
       snapshot.value = null
+      resetPlaybackRateTracking()
       sessionIntersectionId.value = ''
       activeScenarioPresetId.value = ''
       activeControlMode.value = ''
@@ -225,6 +258,7 @@ function bindSession(
     activePlaybackSpeed.value = 1
   }
   snapshot.value = null
+  resetPlaybackRateTracking()
   statusError.value = null
   connectSimulationStream(nextSessionId)
   startPolling()
@@ -313,6 +347,7 @@ async function resumeRun() {
 }
 
 async function changePlaybackSpeed(playbackSpeed: number) {
+  resetPlaybackRateTracking()
   const result = await runPlaybackControl(
     () => setSimulationPlaybackSpeed(sessionId.value, playbackSpeed),
     `播放倍速已调整为 ${playbackSpeed}×`,
@@ -371,6 +406,7 @@ export function useSimulationStore() {
     activeScenarioPresetId,
     activeControlMode,
     activePlaybackSpeed,
+    achievedPlaybackSpeed,
     launchRun,
     pauseRun,
     resumeRun,

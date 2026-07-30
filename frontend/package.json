@@ -20,6 +20,7 @@
     "test:vegetation": "node --test scripts/vegetation.test.mjs",
     "test:vehicles": "node --test scripts/vehicle-visibility.test.mjs",
     "test:evaluation-comparison": "node --test scripts/evaluation-comparison.test.mjs",
+    "test:playback-rate": "node --test scripts/playback-rate.test.mjs",
     "test:roads": "node --test scripts/road-geometry.test.mjs scripts/road-tileset.test.mjs",
     "test:intersection-demo": "node --test scripts/realistic-intersection.test.mjs",
     "test:intersection-scene": "node --test scripts/intersection-scene.test.mjs",

@@ -29,11 +29,6 @@ watch(() => props.logEntries.length, () => {
 <template>
   <section class="communication-panel" aria-label="车路云通信记录">
     <header class="communication-panel__header">
-      <div class="communication-panel__heading">
-        <i aria-hidden="true" />
-        <strong>车路云通信记录</strong>
-        <span :class="{ 'is-online': connected }">{{ connected ? '实时连接' : '轮询同步' }}</span>
-      </div>
       <button type="button" class="communication-panel__close" title="关闭" aria-label="关闭车路云通信记录" @click="emit('close')">×</button>
     </header>
 
@@ -114,7 +109,7 @@ watch(() => props.logEntries.length, () => {
 }
 .communication-panel::before { left: 0; }
 .communication-panel::after { right: 0; transform: scaleX(-1); }
-.communication-panel__header { height: 42px; display: flex; align-items: center; justify-content: space-between; }
+.communication-panel__header { height: 30px; display: flex; align-items: flex-start; justify-content: flex-end; }
 .communication-panel__heading { display: flex; align-items: center; gap: 10px; }
 .communication-panel__heading > i { width: 4px; height: 18px; background: #21e6ff; box-shadow: 0 0 8px #21e6ff; }
 .communication-panel__heading strong { font-size: 18px; letter-spacing: 0; }

@@ -51,6 +51,11 @@ export function provideAppMapView() {
 
     const threeMap = threeMapRef.value
     if (threeMap) {
+      const preset = resolveCesiumCameraPreset(cameraPreset.value)
+      threeMap.setRangeLimits?.(
+        preset.minimumZoomDistance ?? 100,
+        preset.maximumZoomDistance ?? 1400,
+      )
       if (viewport.value.kind === 'bounds') {
         const [minLon, minLat, maxLon, maxLat] = viewport.value.bounds
         const [bdMinLon, bdMinLat] = wgs84ToBd09(minLon, minLat)
@@ -60,7 +65,6 @@ export function provideAppMapView() {
           { range: 2200, force: options.force },
         )
       } else {
-        const preset = resolveCesiumCameraPreset(cameraPreset.value)
         const [bdLon, bdLat] = wgs84ToBd09(viewport.value.center[0], viewport.value.center[1])
         threeMap.flyTo(
           [bdLon, bdLat, 0],
@@ -134,6 +138,20 @@ export function provideAppMapView() {
     setViewport({ kind: 'center', center, zoom }, options)
   }
 
+  function focusIntersection(
+    center: [number, number],
+    intersectionId: string,
+    options: { force?: boolean; duration?: number } = {},
+  ) {
+    const nextAnchorId = `intersection:${intersectionId}`
+    if (anchorId.value === nextAnchorId && !options.force) return
+    mode.value = 'anchored'
+    anchorId.value = nextAnchorId
+    cameraPreset.value = 'intersection'
+    viewport.value = { kind: 'center', center, zoom: 19 }
+    applyViewport({ force: options.force, duration: options.duration ?? 900 })
+  }
+
   function fitBounds(bounds: [number, number, number, number], nextAnchorId?: string) {
     if (nextAnchorId && anchorId.value === nextAnchorId) {
       return
@@ -200,6 +218,7 @@ export function provideAppMapView() {
     registerCesium,
     unregisterCesium,
     flyTo,
+    focusIntersection,
     fitBounds,
     flyToTemplate,
     flyToScenario,

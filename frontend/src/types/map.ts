@@ -39,6 +39,7 @@ export interface ThreeMapController {
     force?: boolean
   }) => void
   setViewport: (points: Array<[number, number, number]>, options: { range: number; force?: boolean }) => void
+  setRangeLimits?: (minimum: number, maximum: number) => void
 }
 
 export interface AppMapView {
@@ -59,6 +60,11 @@ export interface AppMapView {
     center: [number, number],
     zoom: number,
     anchorId?: string,
+    options?: { force?: boolean; duration?: number },
+  ) => void
+  focusIntersection: (
+    center: [number, number],
+    intersectionId: string,
     options?: { force?: boolean; duration?: number },
   ) => void
   fitBounds: (bounds: [number, number, number, number], anchorId?: string) => void

@@ -96,6 +96,8 @@ let realisticRoadExclusionZone: RoadExclusionZone | null = null
 let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
 let buildingLoadTimer: ReturnType<typeof setTimeout> | null = null
+let cameraFlightRevision = 0
+let cameraFlightActive = false
 let lastEmptyVehicleWarningSequence = -25
 let sceneSwitchRevision = 0
 
@@ -123,7 +125,7 @@ const enableVegetation = import.meta.env.VITE_ENABLE_VEGETATION === 'true'
 
 const BUILDING_IDLE_ERROR_TARGET = 12
 const BUILDING_MOVING_ERROR_TARGET = 24
-const ACTIVE_FRAME_TIME_MS = 33
+const ACTIVE_FRAME_TIME_MS = 1000 / 60
 
 function createBaiduProvider(): mapvthree.BaiduVectorTileProvider {
   return new mapvthree.BaiduVectorTileProvider({
@@ -152,6 +154,7 @@ function enableCameraInteraction(): void {
 }
 
 function markInteracting(): void {
+  if (cameraFlightActive) return
   if (!interacting.value) {
     buildingTileset && (buildingTileset.errorTarget = BUILDING_MOVING_ERROR_TARGET)
     vegetationRenderer?.setInteractionActive(true)
@@ -300,11 +303,9 @@ async function switchRealisticIntersection(intersectionId: string): Promise<void
     roadsideFacilityRenderer?.setRealisticDetailActive(true)
     realisticIntersectionLayer.updateSignals(trafficView.value?.intersections ?? null)
     setSceneReady(intersectionId)
-    mapView.setCameraPreset('intersection')
-    mapView.flyTo(
+    mapView.focusIntersection(
       [manifest.origin.longitude, manifest.origin.latitude],
-      19,
-      `intersection:${manifest.intersectionId}`,
+      manifest.intersectionId,
       { force: true, duration: 900 },
     )
   } catch (cause) {
@@ -558,7 +559,18 @@ async function initMap(): Promise<void> {
   mapView.registerThreeMap({
     flyTo: (target, options) => {
       if (options.force || !interacting.value) {
-        engine?.map.flyTo(placeBaiduCameraTarget(target, scenePlacement), options)
+        const revision = ++cameraFlightRevision
+        cameraFlightActive = options.duration > 0
+        if (cameraFlightActive && engine) engine.controller.enabled = false
+        engine?.map.flyTo(placeBaiduCameraTarget(target, scenePlacement), {
+          ...options,
+          complete: () => {
+            if (revision !== cameraFlightRevision) return
+            cameraFlightActive = false
+            enableCameraInteraction()
+            options.complete()
+          },
+        })
       }
     },
     setViewport: (points, options) => {
@@ -568,6 +580,10 @@ async function initMap(): Promise<void> {
           options,
         )
       }
+    },
+    setRangeLimits: (minimum, maximum) => {
+      engine?.map.setMinRange(minimum)
+      engine?.map.setMaxRange(maximum)
     },
   })
   engine.requestRender()
@@ -635,25 +651,15 @@ onUnmounted(() => {
     >
       {{ error }}
     </div>
-    <div class="app-baidu-three-map__status" :class="`is-${tilesStatus}`">
+    <div v-if="tilesStatus !== 'ready'" class="app-baidu-three-map__status" :class="`is-${tilesStatus}`">
       <span class="app-baidu-three-map__status-dot" />
       <span>{{ tilesMessage }}</span>
       <span v-if="interacting"> · 自由视角</span>
     </div>
-    <div class="app-baidu-three-map__detail-status" :class="`is-${sceneStatus}`">
+    <div v-if="sceneStatus === 'loading' || sceneStatus === 'error'" class="app-baidu-three-map__detail-status" :class="`is-${sceneStatus}`">
       <span class="app-baidu-three-map__status-dot" />
       <span v-if="sceneStatus === 'loading'">正在加载 {{ activeIntersectionId }} 高精度路口</span>
-      <span v-else-if="sceneStatus === 'ready'">{{ activeIntersectionId }} 高精度路口已启用</span>
       <span v-else-if="sceneStatus === 'error'">{{ sceneError }}</span>
-      <span v-else>高精度路口待加载</span>
-    </div>
-    <div
-      v-if="showRenderDiagnostics"
-      class="app-baidu-three-map__vehicle-diagnostics"
-      aria-label="车辆渲染诊断"
-    >
-      车辆 {{ vehicleStats.visibleCount }}/{{ vehicleStats.inputCount }} · 半径
-      {{ Math.round(vehicleStats.radiusMeters) }}m · 快照 {{ snapshot?.sequence ?? 0 }}
     </div>
   </div>
 </template>
@@ -733,20 +739,6 @@ onUnmounted(() => {
 
 .app-baidu-three-map__detail-status.is-error {
   color: #ffb4b4;
-}
-
-.app-baidu-three-map__vehicle-diagnostics {
-  position: absolute;
-  left: 50%;
-  bottom: 57px;
-  z-index: 2;
-  padding: 4px 8px;
-  border-left: 2px solid rgba(88, 240, 174, 0.72);
-  background: rgba(2, 10, 24, 0.76);
-  color: #91b8ce;
-  font-size: 10px;
-  transform: translateX(-50%);
-  pointer-events: none;
 }
 
 .app-baidu-three-map__status-dot {

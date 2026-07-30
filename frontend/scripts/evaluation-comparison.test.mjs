@@ -3,12 +3,20 @@ import test from 'node:test'
 
 import {
   appendRealEvaluationPoint,
+  comparisonChangeRequiresConfirmation,
   createScenarioFingerprint,
 } from '../src/composables/useEvaluationComparison.ts'
 import {
   buildAlgorithmMetricSeries,
   evaluationTimes,
 } from '../src/constants/metricsEvaluation.ts'
+
+test('prompts only when an accepted comparison with data would change', () => {
+  assert.equal(comparisonChangeRequiresConfirmation('same', 'same', true), false)
+  assert.equal(comparisonChangeRequiresConfirmation('old', 'new', false), false)
+  assert.equal(comparisonChangeRequiresConfirmation('', 'new', true), false)
+  assert.equal(comparisonChangeRequiresConfirmation('old', 'new', true), true)
+})
 
 function payload(overrides = {}) {
   return {

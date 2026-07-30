@@ -79,6 +79,9 @@ export const CESIUM_CAMERA_PRESETS: CesiumCameraPreset[] = [
     pitchDegrees: -70,
     headingDegrees: 60,
     rangeMultiplier: 0.45,
+    localViewRadiusMeters: 420,
+    minimumZoomDistance: 90,
+    maximumZoomDistance: 520,
   },
 ]
 

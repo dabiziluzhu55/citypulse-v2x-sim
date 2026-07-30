@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { SIMULATION_TIME_OPTIONS } from '../src/constants/scenarioOptions.ts'
+import {
+  SIMULATION_TIME_OPTIONS,
+  simulationTimeWindow,
+} from '../src/constants/scenarioOptions.ts'
+import { formatIntersectionLabel } from '../src/utils/intersectionLabels.ts'
 import { buildStartSimulationRequest } from '../src/utils/scenarioPayload.ts'
 import {
   catalogSupportsScenarioPreset,
@@ -43,6 +47,25 @@ test('keeps the final evening window aligned to the backend offset contract', ()
   assert.equal(option.durationSeconds, 900)
 })
 
+test('converts arbitrary clock ranges inside each official period', () => {
+  assert.deepEqual(
+    simulationTimeWindow('morning_peak', '07:20', '08:35'),
+    { windowStartSeconds: 1200, durationSeconds: 4500 },
+  )
+  assert.deepEqual(
+    simulationTimeWindow('flat', '14:30', '16:30'),
+    { windowStartSeconds: 0, durationSeconds: 7200 },
+  )
+  assert.throws(() => simulationTimeWindow('evening_peak', '17:00', '18:00'))
+  assert.throws(() => simulationTimeWindow('evening_peak', '19:00', '18:00'))
+})
+
+test('formats demo labels without changing backend ids', () => {
+  assert.equal(formatIntersectionLabel('demo_2'), 'demo2')
+  assert.equal(formatIntersectionLabel('demo_20'), 'demo20')
+  assert.equal(formatIntersectionLabel('custom'), 'custom')
+})
+
 test('builds the backend v2 preset request without removed legacy fields', () => {
   const payload = buildStartSimulationRequest({
     scenarioPresetId: 'xiongan_20',
@@ -67,6 +90,26 @@ test('builds the backend v2 preset request without removed legacy fields', () =>
   assert.equal('intersection_ids' in payload, false)
   assert.equal('flow_multiplier' in payload, false)
   assert.equal('initial_events' in payload, false)
+})
+
+test('builds one unique disturbance target for every selected intersection', () => {
+  const payload = buildStartSimulationRequest({
+    scenarioPresetId: 'east_dense',
+    period: 'morning_peak',
+    windowStartSeconds: 0,
+    durationSeconds: 600,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    disturbance: 'accident',
+    disturbanceIntersectionIds: ['demo_3', 'demo_5', 'demo_3'],
+    eventId: 'evt-test',
+    snapshotIntervalSeconds: 0.2,
+  })
+  assert.deepEqual(
+    payload.disturbance_targets.map((target) => target.intersection_id),
+    ['demo_3', 'demo_5'],
+  )
+  assert.equal(new Set(payload.disturbance_targets.map((target) => target.event_id)).size, 2)
 })
 
 test('marks a scenario unavailable until every preset intersection is in the catalog', () => {

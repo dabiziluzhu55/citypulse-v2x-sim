@@ -116,11 +116,11 @@ export const RIGHT_SIDEBAR_SECTION_HEADERS = {
 
 export const RIGHT_SIDEBAR_METRICS_LAYOUT = {
   metrics: [
-    { key: 'queue', titleTop: 92, legendTop: 124, chartTop: 143, chartHeight: 164 },
-    { key: 'waiting', titleTop: 322, legendTop: 354, chartTop: 373, chartHeight: 164 },
-    { key: 'fuel', titleTop: 552, legendTop: 584, chartTop: 603, chartHeight: 164 },
+    { key: 'queue', titleTop: 112, chartTop: 139, chartHeight: 174 },
+    { key: 'waiting', titleTop: 330, chartTop: 357, chartHeight: 174 },
+    { key: 'fuel', titleTop: 548, chartTop: 575, chartHeight: 174 },
   ],
-  exportButton: { left: 40, top: 786, width: 355, height: 38 },
+  exportButton: { left: 55, top: 786, width: 355, height: 38 },
 } as const
 
 /** 通信日志表 */

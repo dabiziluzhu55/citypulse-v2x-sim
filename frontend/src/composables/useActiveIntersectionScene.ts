@@ -12,7 +12,8 @@ export function useActiveIntersectionScene() {
 
   function selectIntersection(intersectionId: string): void {
     if (!intersectionId) return
-    if (intersectionId !== activeIntersectionId.value) activeIntersectionId.value = intersectionId
+    if (intersectionId === activeIntersectionId.value) return
+    activeIntersectionId.value = intersectionId
     selectionRevision.value += 1
     sceneStatus.value = 'idle'
     sceneError.value = null
