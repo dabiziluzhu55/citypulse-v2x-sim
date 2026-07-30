@@ -1367,6 +1367,136 @@ def _write_quality_report(
             writer.writerows(rows)
 
 
+def _od_report(
+    period_id: str,
+    flows: Sequence[SampledFlow],
+    profiles: Mapping[str, VehicleProfile],
+    locations: Mapping[Tuple[str, ...], CountLocation],
+    od_zones: Mapping[str, Sequence[str]],
+) -> Mapping[str, object]:
+    zone_ids = tuple(od_zones)
+    zone_index = {zone_id: index for index, zone_id in enumerate(zone_ids)}
+    intersection_zones = {
+        intersection_id: zone_id
+        for zone_id, intersection_ids in od_zones.items()
+        for intersection_id in intersection_ids
+    }
+    missing_intersections = {
+        location.intersection_id for location in locations.values()
+    } - set(intersection_zones)
+    if missing_intersections:
+        raise TrafficDemandError(
+            "OD zones do not cover sampled count locations: "
+            f"{sorted(missing_intersections)}"
+        )
+
+    locations_by_first_edge: dict[
+        str, list[Tuple[Tuple[str, ...], CountLocation]]
+    ] = defaultdict(list)
+    for edges, location in locations.items():
+        locations_by_first_edge[edges[0]].append((edges, location))
+    for candidates in locations_by_first_edge.values():
+        candidates.sort(key=lambda item: (len(item[0]), item[1].location_id))
+
+    profile_by_type = {
+        f"official_{_safe_id(profile_id)}": profile
+        for profile_id, profile in profiles.items()
+    }
+    matrix_pcu = [[0.0 for _ in zone_ids] for _ in zone_ids]
+    matrix_vehicle_count = [[0 for _ in zone_ids] for _ in zone_ids]
+    total_sampled_vehicle_count = 0
+    total_sampled_pcu = 0.0
+    interzonal_pcu = 0.0
+    interzonal_vehicle_count = 0
+    excluded_intra_zone_pcu = 0.0
+    excluded_intra_zone_vehicle_count = 0
+
+    for flow in flows:
+        profile = profile_by_type.get(flow.type_id)
+        if profile is None:
+            raise TrafficDemandError(
+                f"Flow {flow.flow_id} references unknown type {flow.type_id!r}."
+            )
+        occurrences = []
+        for start, edge_id in enumerate(flow.edges):
+            for path, location in locations_by_first_edge.get(edge_id, ()):
+                end = start + len(path)
+                if tuple(flow.edges[start:end]) == path:
+                    occurrences.append((start, end - 1, location))
+        if not occurrences:
+            raise TrafficDemandError(
+                f"Cannot assign OD zones for flow {flow.flow_id!r}: its route "
+                "does not contain an official count location."
+            )
+        origin_location = min(
+            occurrences,
+            key=lambda item: (item[0], item[1], item[2].location_id),
+        )[2]
+        destination_location = max(
+            occurrences,
+            key=lambda item: (item[1], item[0], item[2].location_id),
+        )[2]
+        origin_zone = intersection_zones[origin_location.intersection_id]
+        destination_zone = intersection_zones[destination_location.intersection_id]
+        pcu = flow.number * profile.pcu_factor
+        total_sampled_vehicle_count += flow.number
+        total_sampled_pcu += pcu
+        if origin_zone == destination_zone:
+            excluded_intra_zone_pcu += pcu
+            excluded_intra_zone_vehicle_count += flow.number
+            continue
+        origin_index = zone_index[origin_zone]
+        destination_index = zone_index[destination_zone]
+        matrix_pcu[origin_index][destination_index] += pcu
+        matrix_vehicle_count[origin_index][destination_index] += flow.number
+        interzonal_pcu += pcu
+        interzonal_vehicle_count += flow.number
+
+    return {
+        "schema_version": 1,
+        "period_id": period_id,
+        "unit": "pcu",
+        "row_axis": "origin_zone",
+        "column_axis": "destination_zone",
+        "endpoint_assignment": "first_and_last_official_count_location",
+        "intermediate_zones_ignored": True,
+        "diagonal_policy": "excluded_and_written_as_zero",
+        "zones": [
+            {
+                "zone_id": zone_id,
+                "intersection_ids": list(od_zones[zone_id]),
+            }
+            for zone_id in zone_ids
+        ],
+        "matrix_pcu": matrix_pcu,
+        "matrix_vehicle_count": matrix_vehicle_count,
+        "total_sampled_vehicle_count": total_sampled_vehicle_count,
+        "total_sampled_pcu": total_sampled_pcu,
+        "interzonal_pcu": interzonal_pcu,
+        "interzonal_vehicle_count": interzonal_vehicle_count,
+        "excluded_intra_zone_pcu": excluded_intra_zone_pcu,
+        "excluded_intra_zone_vehicle_count": excluded_intra_zone_vehicle_count,
+    }
+
+
+def _write_od_report(
+    json_path: Path,
+    csv_path: Path,
+    report: Mapping[str, object],
+) -> None:
+    json_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    zone_ids = [str(item["zone_id"]) for item in report["zones"]]
+    with csv_path.open("w", encoding="utf-8-sig", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["origin_zone/destination_zone", *zone_ids])
+        for zone_id, values in zip(zone_ids, report["matrix_pcu"]):
+            writer.writerow(
+                [zone_id, *(_format_number(float(value)) for value in values)]
+            )
+
+
 def _write_routes(
     path: Path,
     profiles: Mapping[str, VehicleProfile],
@@ -1608,6 +1738,10 @@ def build_traffic_scenarios(
             f"official_{_safe_id(profile_id)}": profile_id
             for profile_id in profiles
         },
+        "od_zones": {
+            zone_id: list(intersection_ids)
+            for zone_id, intersection_ids in configuration.od_zones.items()
+        },
         "route_endpoint_policy": {
             "strategy": (
                 "route_endpoint_midpoint_with_lane_expansion_extension_and_"
@@ -1762,6 +1896,16 @@ def build_traffic_scenarios(
         report_json = layout.reports_dir / f"traffic_quality_{period_id}.json"
         report_csv = layout.reports_dir / f"traffic_quality_{period_id}.csv"
         _write_quality_report(report_json, report_csv, selected_report)
+        od_report = _od_report(
+            period_id,
+            selected["flows"],
+            profiles,
+            compiled.locations,
+            configuration.od_zones,
+        )
+        od_report_json = layout.reports_dir / f"traffic_od_{period_id}.json"
+        od_matrix_csv = layout.reports_dir / f"traffic_od_{period_id}.csv"
+        _write_od_report(od_report_json, od_matrix_csv, od_report)
 
         scenario_id = f"global_{period_id}"
         result["scenarios"][scenario_id] = {
@@ -1779,6 +1923,12 @@ def build_traffic_scenarios(
             "sumocfg": layout.relative(sumocfg_path),
             "quality_report": layout.relative(report_json),
             "quality_report_csv": layout.relative(report_csv),
+            "od_report": layout.relative(od_report_json),
+            "od_matrix_csv": layout.relative(od_matrix_csv),
+            "od_interzonal_pcu": od_report["interzonal_pcu"],
+            "od_excluded_intra_zone_pcu": od_report[
+                "excluded_intra_zone_pcu"
+            ],
             "route_sampler_mismatch_files": mismatch_files,
             "demand_duration": period.duration,
             "simulation_end": simulation_end,

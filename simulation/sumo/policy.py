@@ -23,6 +23,21 @@ class LaneMetadata:
     length_m: float = 0.0
     speed_limit_mps: float = 0.0
     downstream_lane_ids: Tuple[str, ...] = ()
+    allowed_vehicle_classes: Tuple[str, ...] = ()
+    disallowed_vehicle_classes: Tuple[str, ...] = ()
+    allowed_vehicle_type_ids: Tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class LanePermissionMetadata:
+    lane_id: str
+    edge_id: str
+    lane_index: int
+    length_m: float
+    speed_limit_mps: float
+    allowed_vehicle_classes: Tuple[str, ...]
+    disallowed_vehicle_classes: Tuple[str, ...]
+    allowed_vehicle_type_ids: Tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -71,6 +86,9 @@ class SimulationMetadata:
     minimum_green: float
     intersections: Mapping[str, IntersectionMetadata]
     vehicle_types: Mapping[str, "VehicleTypeMetadata"] = field(default_factory=dict)
+    edge_lanes: Mapping[str, Tuple[LanePermissionMetadata, ...]] = field(
+        default_factory=dict
+    )
     vehicle_control: "VehicleControlMetadata | None" = None
 
 
@@ -211,6 +229,9 @@ class VehicleObservation:
     next_signal: NextSignalObservation | None
     energy: VehicleEnergyObservation
     driving_events: VehicleDrivingEventsObservation
+    leader_gap_m: float | None
+    follower_gap_m: float | None
+    time_since_last_lane_change_s: float | None
 
 
 @dataclass(frozen=True)

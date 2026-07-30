@@ -9,9 +9,15 @@
 共同参与一套全局约束，不再分别生成局部车流。
 
 官方数值是 PCU 观测量，不等同于车辆数。当前 `vehicle_mix` 是明确标注的仿真假设：
-按车辆数使用小客车 85%、公交车 10%、货车 5%，PCU 系数分别为 1.0、2.0、2.5。
+按车辆数使用小客车 80%、电动自行车 5%、公交车 10%、货车 5%，PCU 系数分别为
+1.0、0.5、2.0、2.5。电动自行车在 SUMO 中使用 `vClass="bicycle"`、
+`powertrain="electric"` 和零排放类别；其 5% 占比从原小客车占比中划出。
 车型动力、排放和 PCU 参数保存在 `data/maps/sumo/vehicle_profiles.json`；构建器用
 0.5 PCU 整数规划把每个物理计数位置换算为分车型车辆约束。
+
+电动自行车画像中的 `fuel_density_mg_per_ml=1.0` 仅用于兼容当前算法遥测协议中要求为
+正数的燃油体积换算字段，并不表示电池密度。由于其 SUMO 排放类别是 `HBEFA3/zero`，
+燃油消耗观测应为零；算法应结合 `powertrain="electric"` 识别该车型。
 
 生成器调用 `$SUMO_HOME/tools/routeSampler.py`，一条全局路线经过多个官方路口时，
 会在每个经过的进口转向上贡献该车型的 PCU。这样同一辆车可以同时满足多个路口的
@@ -444,6 +450,8 @@ generated/
   reports/official_tls_connections.csv
   reports/traffic_quality_morning_peak.json
   reports/traffic_quality_morning_peak.csv
+  reports/traffic_od_morning_peak.json
+  reports/traffic_od_morning_peak.csv
   reports/traffic_morning_peak_passenger_mismatch.xml
   traffic/global/morning_peak/
     routes.rou.xml
@@ -492,10 +500,40 @@ generated/
 最终合并映射和按路口保存的 `configured_extensions` 都写入 `traffic_manifest.json` 的
 `route_endpoint_policy`。
 
-端点延长发生在 routeSampler 采样前，三种车型的路线都会再经过 duarouter 和 SUMO
+端点延长发生在 routeSampler 采样前，四种车型的路线都会再经过 duarouter 和 SUMO
 可行性校验。官方 `(from, via..., to)` 计数子路径保持不变，所以 PCU 误差和 GEH
 仍按相同规则计算。实际识别出的近端到远端边映射记录在 `traffic_manifest.json` 的
 `route_endpoint_policy` 中，每个场景同时记录使用远端起点和终点的车辆数。
+
+## 九区域 OD 矩阵
+
+需求文件顶层的 `od_zones` 固定保存以下区域划分；加载需求时会验证 20 个路口恰好各属于
+一个区域，存在遗漏、未知路口或重复归属都会立即失败：
+
+| 区域 | 路口 |
+|---|---|
+| `zone_1` | `demo_1`、`demo_8`、`demo_10` |
+| `zone_2` | `demo_2`、`demo_4` |
+| `zone_3` | `demo_3`、`demo_5`、`demo_6`、`demo_9` |
+| `zone_4` | `demo_7` |
+| `zone_5` | `demo_11`、`demo_12` |
+| `zone_6` | `demo_13` |
+| `zone_7` | `demo_14`、`demo_15`、`demo_19` |
+| `zone_8` | `demo_16` |
+| `zone_9` | `demo_17`、`demo_18`、`demo_20` |
+
+OD 统计直接基于最终选中的 routeSampler flow。构建器沿完整 edge 序列定位官方计数子路径，
+以最先出现的官方路口作为起点、最后出现的官方路口作为终点；路线中间经过的路口或区域不会
+产生任何 OD 计数。每条 flow 只按 `number × pcu_factor` 累加一次，因此 OD 的
+`total_sampled_pcu` 是唯一车辆行程 PCU，不等于质量报告中允许一辆车在多个路口重复贡献的
+`actual_observation_pcu`。
+
+每个早高峰、平峰、晚高峰场景分别生成 `reports/traffic_od_PERIOD.json` 和
+`reports/traffic_od_PERIOD.csv`。CSV 行表示起点区域、列表示终点区域，单元格单位为 PCU；
+同一区域内的行程不写入对角线，对角线始终为 0。JSON 中的
+`excluded_intra_zone_pcu`、`excluded_intra_zone_vehicle_count` 单独记录这些被排除的
+同区域行程，`matrix_vehicle_count` 则提供与 PCU 矩阵对应的实际车辆数，便于核对。报告路径、
+区域间 PCU 和排除的同区域 PCU 同时写入 `traffic_manifest.json` 的对应全局场景。
 
 直接检查 GUI：
 

@@ -91,7 +91,49 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
       "max_speed_mps": 13.9,
       "fuel_density_mg_per_ml": 745.0,
       "hard_braking_threshold_mps2": -3.0
+    },
+    "official_electric_bicycle": {
+      "type_id": "official_electric_bicycle",
+      "profile_id": "electric_bicycle",
+      "pcu_factor": 0.5,
+      "vehicle_class": "bicycle",
+      "powertrain": "electric",
+      "emission_class": "HBEFA3/zero",
+      "accel_mps2": 1.5,
+      "decel_mps2": 3.0,
+      "length_m": 1.8,
+      "width_m": 0.65,
+      "min_gap_m": 0.5,
+      "max_speed_mps": 6.94,
+      "fuel_density_mg_per_ml": 1.0,
+      "hard_braking_threshold_mps2": -2.0
     }
+  },
+  "edge_lanes": {
+    "-56734": [
+      {
+        "lane_id": "-56734_0",
+        "edge_id": "-56734",
+        "lane_index": 0,
+        "length_m": 217.4,
+        "speed_limit_mps": 13.9,
+        "allowed_vehicle_classes": [],
+        "disallowed_vehicle_classes": [],
+        "allowed_vehicle_type_ids": ["official_passenger"]
+      }
+    ],
+    "bike_edge": [
+      {
+        "lane_id": "bike_edge_0",
+        "edge_id": "bike_edge",
+        "lane_index": 0,
+        "length_m": 80.0,
+        "speed_limit_mps": 5.5,
+        "allowed_vehicle_classes": ["bicycle"],
+        "disallowed_vehicle_classes": [],
+        "allowed_vehicle_type_ids": ["official_electric_bicycle"]
+      }
+    ]
   },
   "vehicle_control": {
     "supported_actions": ["target_speed_mps", "target_lane_index"],
@@ -119,6 +161,13 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
 `movements` 使用 `through/left/right/uturn`，因为一个物理车道可以支持多个转向，所以不是
 单值。纯出口车道的 `approach_id=null`、`movements=[]`、`downstream_lane_ids=[]`。
 `length/max_speed` 为兼容字段，`length_m/speed_limit_mps` 是带单位的同值别名。
+
+`edge_lanes` 是全网普通 edge 的静态车道权限表，不包含 `:` 开头的 internal edge。算法选择
+`target_lane_index` 时，应使用车辆 `type_id` 和 `location.road_id` 查询
+`edge_lanes[road_id]`，只选择 `allowed_vehicle_type_ids` 包含该 `type_id` 的 lane。
+`allowed_vehicle_classes/disallowed_vehicle_classes` 是 SUMO 原始权限，
+`allowed_vehicle_type_ids` 是仿真端按本轮官方车辆类型计算后的可控结果。若 `road_id` 不在
+`edge_lanes`，或 `road_id` 以 `:` 开头，算法不应返回换道动作。
 
 ## 2. 决策请求
 
@@ -209,7 +258,10 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
       "driving_events": {
         "hard_braking_since_last_decision": 0,
         "hard_braking_total": 1
-      }
+      },
+      "leader_gap_m": 18.4,
+      "follower_gap_m": 11.7,
+      "time_since_last_lane_change_s": 6.5
     }
   },
   "traffic": {
@@ -251,6 +303,10 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
 - `fuel_rate_mg_s` 来自 SUMO HBEFA 排放模型；周期和累计油耗由仿真端逐步积分。
 - 急制动在加速度首次进入 `<= -3.0 m/s²` 时计一次，持续制动不重复计数。
 - `next_signal` 只返回下一处已选受控路口；不存在时为 `null`。
+- `leader_gap_m` 和 `follower_gap_m` 是同车道可观察车辆之间的保险杠间距；对应方向没有
+  可观察车辆时为 `null`。二者由已订阅的车道位置与车型长度计算，不额外逐车查询 TraCI。
+- `time_since_last_lane_change_s` 按仿真时间计算；车辆从未换道时为 `null`，换道发生帧为
+  `0.0`。只有同一普通 edge 内 lane index 改变才记为换道，正常驶入下一条 edge 不会重置。
 - `active_vehicles` 等于本次 `vehicles` 中的官方可控车辆数，不包含事故占位车。
 - `departed_vehicles` 和 `arrived_vehicles` 是本决策周期增量，其余汇总油耗和急制动为
   本轮累计值。
@@ -283,7 +339,7 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
 3. 信号动作必须使用初始化给出的路口和 phase ID；省略路口表示保持当前目标相位。
 4. 车辆动作只能引用本次请求的车辆；动作至少设置速度或车道之一。
 5. `target_speed_mps` 必须在 `[0, allowed_speed_mps]` 内。SUMO 仍执行跟车、防碰撞和限速。
-6. `target_lane_index` 只指当前 road 上的车道；internal edge、越界车道和禁行车道非法。
+6. `target_lane_index` 只指当前 road 上的车道；算法应先用初始化阶段的 `edge_lanes` 过滤候选 lane，internal edge、越界车道和禁行车道非法。
 7. 单车动作只租用一个决策周期。下一周期省略速度会恢复 SUMO 自主速度，换道不续期。
 8. 换道可能因安全间隙不足而未完成；下一步返回 `completed` 或 `not_completed`，这不是协议错误。
 9. 仿真端在写入任何 TraCI 状态前验证全部动作；任意非法动作都会拒绝整步并终止 episode。
