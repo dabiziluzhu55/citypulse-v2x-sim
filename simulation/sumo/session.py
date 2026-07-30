@@ -149,6 +149,14 @@ class LaneRuntimeSnapshot:
     mean_speed: float
     waiting_time: float
     occupancy: float
+    edge_id: str = ""
+    lane_index: int = 0
+    role: str = ""
+    approach_id: str | None = None
+    downstream_lane_ids: tuple[str, ...] = ()
+    lane_has_green: bool | None = None
+    signal_state: str | None = None
+    current_allowed_speed_mps: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1103,6 +1111,10 @@ class SimulationManager:
 def _lane_targets(traci, selected_manifest) -> Mapping[str, LaneTarget]:
     result = {}
     for item in selected_manifest.values():
+        successors = {}
+        for connection in item["connections"]:
+            from_lane = f"{connection['from_edge']}_{connection['from_lane']}"
+            successors.setdefault(from_lane, set()).add(str(connection["to_edge"]))
         for connection in item["connections"]:
             for edge_key, lane_key in (("from_edge", "from_lane"), ("to_edge", "to_lane")):
                 edge_id = str(connection[edge_key])
@@ -1113,6 +1125,7 @@ def _lane_targets(traci, selected_manifest) -> Mapping[str, LaneTarget]:
                     edge_id=edge_id,
                     lane_index=lane_index,
                     length=float(traci.lane.getLength(lane_id)),
+                    successor_edge_ids=tuple(sorted(successors.get(lane_id, ()))),
                 )
     return result
 
@@ -1169,6 +1182,14 @@ def _capture_snapshot(
     intersections = {}
     unique_lanes = set()
     for intersection_id, item in selected_manifest.items():
+        connections_by_lane: dict[str, list[dict]] = {}
+        outgoing_lanes = set()
+        for connection in item["connections"]:
+            from_lane = f"{connection['from_edge']}_{connection['from_lane']}"
+            to_lane = f"{connection['to_edge']}_{connection['to_lane']}"
+            connections_by_lane.setdefault(from_lane, []).append(connection)
+            outgoing_lanes.add(to_lane)
+        tls_states = {}
         lane_ids = sorted(
             {
                 f"{connection[key]}_{connection[index_key]}"
@@ -1180,12 +1201,44 @@ def _capture_snapshot(
         lanes = {}
         for lane_id in lane_ids:
             count = int(traci.lane.getLastStepVehicleNumber(lane_id))
+            lane_connections = connections_by_lane.get(lane_id, [])
+            signal_states = []
+            for connection in lane_connections:
+                tls_id = str(connection["tls_id"])
+                tls_state = tls_states.setdefault(
+                    tls_id,
+                    str(traci.trafficlight.getRedYellowGreenState(tls_id)),
+                )
+                link_index = int(connection["link_index"])
+                if 0 <= link_index < len(tls_state):
+                    signal_states.append(tls_state[link_index])
+            edge_id, _, lane_index = lane_id.rpartition("_")
             lanes[lane_id] = LaneRuntimeSnapshot(
                 vehicle_count=count,
                 halting_count=int(traci.lane.getLastStepHaltingNumber(lane_id)),
                 mean_speed=float(traci.lane.getLastStepMeanSpeed(lane_id)) if count else 0.0,
                 waiting_time=float(traci.lane.getWaitingTime(lane_id)),
                 occupancy=float(traci.lane.getLastStepOccupancy(lane_id)),
+                edge_id=edge_id,
+                lane_index=int(lane_index),
+                role="incoming" if lane_connections else "outgoing" if lane_id in outgoing_lanes else "",
+                approach_id=(str(lane_connections[0]["approach"]) if lane_connections else None),
+                downstream_lane_ids=tuple(
+                    sorted(
+                        f"{connection['to_edge']}_{connection['to_lane']}"
+                        for connection in lane_connections
+                    )
+                ),
+                lane_has_green=(
+                    any(state in {"G", "g"} for state in signal_states)
+                    if signal_states else None
+                ),
+                signal_state=(
+                    signal_states[0]
+                    if len(set(signal_states)) == 1 and signal_states else
+                    "mixed" if signal_states else None
+                ),
+                current_allowed_speed_mps=float(traci.lane.getMaxSpeed(lane_id)),
             )
         if controllers:
             controller = controllers[intersection_id]

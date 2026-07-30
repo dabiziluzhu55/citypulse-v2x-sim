@@ -629,7 +629,14 @@ def _parse_origins(values: Sequence[str]) -> Mapping[str, tuple[str, ...]]:
 def _load_events(path: Path | None):
     if path is None:
         return ()
-    from .events import AccidentEvent, LaneClosureEvent, SpeedLimitEvent
+    from .events import (
+        AccidentEvent,
+        CollisionBlockageEvent,
+        LaneClosureEvent,
+        QueueSpillbackEvent,
+        SpeedLimitEvent,
+        StoppedVehicleEvent,
+    )
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -648,9 +655,10 @@ def _load_events(path: Path | None):
                 LaneClosureEvent(
                     **common,
                     lane_ids=tuple(str(value) for value in item["lane_ids"]),
+                    max_speed=_optional_event_float(item, "max_speed"),
                 )
             )
-        elif event_type == "speed_limit":
+        elif event_type in {"speed_limit", "speed_restriction"}:
             result.append(
                 SpeedLimitEvent(
                     **common,
@@ -664,11 +672,54 @@ def _load_events(path: Path | None):
                     **common,
                     lane_id=str(item["lane_id"]),
                     position_ratio=float(item["position_ratio"]),
+                    max_speed=_optional_event_float(item, "max_speed"),
+                )
+            )
+        elif event_type == "stopped_vehicle":
+            result.append(
+                StoppedVehicleEvent(
+                    **common,
+                    lane_id=str(item["lane_id"]),
+                    position_ratio=float(item.get("position_ratio", 0.5)),
+                    vehicle_type=str(
+                        item.get("vehicle_type", "citypulse_disturbance_vehicle")
+                    ),
+                )
+            )
+        elif event_type == "collision_blockage":
+            result.append(
+                CollisionBlockageEvent(
+                    **common,
+                    lane_ids=tuple(str(value) for value in item["lane_ids"]),
+                    position_ratio=float(item.get("position_ratio", 0.5)),
+                    vehicle_type=str(
+                        item.get("vehicle_type", "citypulse_disturbance_vehicle")
+                    ),
+                )
+            )
+        elif event_type in {"queue_spillback", "queue_blockage"}:
+            result.append(
+                QueueSpillbackEvent(
+                    **common,
+                    lane_ids=tuple(str(value) for value in item["lane_ids"]),
+                    blocked_lane_ids=tuple(
+                        str(value) for value in item["blocked_lane_ids"]
+                    ),
+                    max_speed=_optional_event_float(item, "max_speed"),
+                    position_ratio=float(item.get("position_ratio", 0.5)),
+                    vehicle_type=str(
+                        item.get("vehicle_type", "citypulse_disturbance_vehicle")
+                    ),
                 )
             )
         else:
             raise ValueError(f"Unsupported event_type: {event_type!r}")
     return tuple(result)
+
+
+def _optional_event_float(item: Mapping[str, object], field: str) -> float | None:
+    value = item.get(field)
+    return None if value in {None, ""} else float(value)
 
 
 def run(args: argparse.Namespace) -> None:
