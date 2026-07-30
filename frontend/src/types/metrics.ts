@@ -40,7 +40,7 @@ export interface MetricsTimeseriesPoint {
   fuel_consumption?: number
 }
 
-export type MetricSeriesSource = 'backend' | 'derived_mock' | 'estimated_mock'
+export type MetricSeriesSource = 'backend' | 'missing'
 
 export interface AlgorithmMetricSeries {
   id: string
@@ -48,7 +48,7 @@ export interface AlgorithmMetricSeries {
   label: string
   color: string
   source: MetricSeriesSource
-  values: number[]
+  values: Array<number | null>
 }
 
 export interface MetricsTimeseriesResponse {

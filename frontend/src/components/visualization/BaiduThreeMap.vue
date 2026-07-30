@@ -45,6 +45,10 @@ import type { RoadExclusionZone } from '../../mapv/roadGeometry'
 import type { MapGeoJsonResponse } from '../../types/map'
 import { detectMap3dCapability } from '../../mapv/map3dCapabilities'
 
+const emit = defineEmits<{
+  fatal: [cause: unknown]
+}>()
+
 const ROAD_RENDER_RADIUS_METERS = 900
 const containerRef = ref<HTMLElement | null>(null)
 const mapView = useAppMapView()
@@ -453,6 +457,7 @@ async function initMap(): Promise<void> {
   if (!container) return
   const capability = detectMap3dCapability()
   if (!capability.supported) {
+    emit('fatal', new Error(capability.reason ?? '当前浏览器不支持三维地图'))
     mapView.setDimension('2d')
     return
   }
@@ -571,10 +576,12 @@ async function initMap(): Promise<void> {
 
 onMounted(() => {
   void initMap().catch((cause: unknown) => {
-    error.value = cause instanceof Error ? cause.message : '百度三维地图初始化失败'
+    const failure = cause instanceof Error ? cause : new Error('百度三维地图初始化失败')
+    error.value = failure.message
     tilesStatus.value = 'error'
     tilesMessage.value = error.value
     loading.value = false
+    emit('fatal', failure)
   })
 })
 

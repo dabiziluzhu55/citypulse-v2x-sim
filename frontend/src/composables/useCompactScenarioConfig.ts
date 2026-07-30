@@ -12,22 +12,23 @@ import {
   SIMULATION_SNAPSHOT_INTERVAL_MS,
   isBackendControlMode,
 } from '../constants/simulationOptions'
-import type { CatalogIntersection } from '../types/catalog'
-import type { DisturbanceEventPayload, StartSimulationRequest } from '../types/simulation'
+import type { CatalogIntersection, CatalogScenarioPreset } from '../types/catalog'
+import type { StartSimulationRequest } from '../types/simulation'
 import type { DisturbanceType, TrafficFlowMode } from '../types/scenario'
 import { requireSimulatableIntersection } from './catalogCapabilities'
+import { buildStartSimulationRequest } from '../utils/scenarioPayload'
 
 export interface CompactScenarioConfig {
-  scenario_mode: ScenarioModeId
+  scenario_preset_id: ScenarioModeId
   flow_mode: TrafficFlowMode
   disturbance: DisturbanceType | 'none'
   time_preset: SimulationTimePresetId
-  flow_scale: number
+  playback_speed: number
   control_mode: string
 }
 
 export interface ScenarioConfigExport {
-  version: 1
+  version: 2
   exported_at: string
   ui_config: CompactScenarioConfig
   display: {
@@ -54,11 +55,11 @@ const FLOW_MODE_TO_PERIOD: Record<TrafficFlowMode, string> = {
 
 function defaultCompactConfig(): CompactScenarioConfig {
   return {
-    scenario_mode: 'xiongan_20',
+    scenario_preset_id: 'xiongan_20',
     flow_mode: 'morning_peak',
     disturbance: 'lane_closure',
     time_preset: 'morning_0700',
-    flow_scale: 1,
+    playback_speed: 1,
     control_mode: 'fixed',
   }
 }
@@ -76,34 +77,6 @@ function resolveTimePreset(config: CompactScenarioConfig) {
   )
 }
 
-function buildInitialEvents(
-  config: CompactScenarioConfig,
-  intersection: CatalogIntersection | null,
-  durationSeconds: number,
-): DisturbanceEventPayload[] {
-  if (config.disturbance === 'none' || !intersection) {
-    return []
-  }
-
-  const incomingLanes = intersection.lanes
-    .filter((lane) => lane.role === 'incoming')
-    .map((lane) => lane.lane_id)
-  if (incomingLanes.length === 0) {
-    return []
-  }
-
-  const start = Math.max(0, Math.min(60, durationSeconds - 1))
-  const eventId = `evt_${config.disturbance}_${Date.now()}`
-
-  if (config.disturbance === 'lane_closure') {
-    return [{ event_type: 'lane_closure', event_id: eventId, start_seconds: start, end_seconds: durationSeconds, lane_ids: [incomingLanes[0]] }]
-  }
-  if (config.disturbance === 'speed_limit') {
-    return [{ event_type: 'speed_limit', event_id: eventId, start_seconds: start, end_seconds: durationSeconds, lane_ids: [incomingLanes[0]], max_speed: 5 }]
-  }
-  return [{ event_type: 'accident', event_id: eventId, start_seconds: start, end_seconds: durationSeconds, lane_id: incomingLanes[0], position_ratio: 0.5 }]
-}
-
 export function buildSimulationPayload(
   config: CompactScenarioConfig,
   intersection: CatalogIntersection | null,
@@ -111,21 +84,17 @@ export function buildSimulationPayload(
 ): StartSimulationRequest {
   const simulatableIntersection = requireSimulatableIntersection(intersection)
   const time = resolveTimePreset(config)
-  return {
-    intersection_ids: [simulatableIntersection.intersection_id],
+  return buildStartSimulationRequest({
+    scenarioPresetId: config.scenario_preset_id,
     period: resolvePeriod(config, periods),
-    origins: {},
-    window_start_seconds: time.windowStartSeconds,
-    duration_seconds: time.durationSeconds,
-    flow_multiplier: config.flow_scale,
-    control_mode: isBackendControlMode(config.control_mode) ? config.control_mode : 'fixed',
-    seed: 42,
-    step_length: 0.05,
-    realtime: true,
-    gui: false,
-    snapshot_interval_seconds: SIMULATION_SNAPSHOT_INTERVAL_MS / 1_000,
-    initial_events: buildInitialEvents(config, intersection, time.durationSeconds),
-  }
+    windowStartSeconds: time.windowStartSeconds,
+    durationSeconds: time.durationSeconds,
+    controlMode: isBackendControlMode(config.control_mode) ? config.control_mode : 'fixed',
+    playbackSpeed: config.playback_speed,
+    disturbance: config.disturbance,
+    intersectionId: simulatableIntersection.intersection_id,
+    snapshotIntervalSeconds: SIMULATION_SNAPSHOT_INTERVAL_MS / 1_000,
+  })
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -135,6 +104,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function useCompactScenarioConfig(
   intersection: Ref<CatalogIntersection | null>,
   periods: Ref<string[]>,
+  scenarioPresets: Ref<CatalogScenarioPreset[]>,
+  playbackSpeeds: Ref<number[]>,
 ) {
   const config = ref<CompactScenarioConfig>(defaultCompactConfig())
 
@@ -153,8 +124,30 @@ export function useCompactScenarioConfig(
     },
   )
 
+  watch(
+    scenarioPresets,
+    (presets) => {
+      if (presets.length > 0 && !presets.some((item) => item.preset_id === config.value.scenario_preset_id)) {
+        config.value.scenario_preset_id = presets[0].preset_id
+      }
+    },
+    { immediate: true },
+  )
+
+  watch(
+    playbackSpeeds,
+    (speeds) => {
+      if (speeds.length > 0 && !speeds.includes(config.value.playback_speed)) {
+        config.value.playback_speed = speeds.includes(1) ? 1 : speeds[0]
+      }
+    },
+    { immediate: true },
+  )
+
   const labels = computed(() => ({
-    scenario: SCENARIO_MODE_OPTIONS.find((item) => item.value === config.value.scenario_mode)?.label ?? config.value.scenario_mode,
+    scenario: scenarioPresets.value.find((item) => item.preset_id === config.value.scenario_preset_id)?.label
+      ?? SCENARIO_MODE_OPTIONS.find((item) => item.value === config.value.scenario_preset_id)?.label
+      ?? config.value.scenario_preset_id,
     disturbance: DISTURBANCE_CHOICE_OPTIONS.find((item) => item.value === config.value.disturbance)?.label ?? config.value.disturbance,
     flow: TRAFFIC_FLOW_MODE_OPTIONS.find((item) => item.value === config.value.flow_mode)?.label ?? config.value.flow_mode,
     time: resolveTimePreset(config.value).label,
@@ -171,32 +164,37 @@ export function useCompactScenarioConfig(
   function applyImportedConfig(input: unknown): void {
     if (!isRecord(input)) throw new Error('配置文件格式无效')
     const candidate = isRecord(input.ui_config) ? input.ui_config : input
-    const scenarioMode = candidate.scenario_mode
+    const scenarioPresetId = candidate.scenario_preset_id ?? candidate.scenario_mode
     const flowMode = candidate.flow_mode
     const disturbance = candidate.disturbance
     const timePreset = candidate.time_preset
-    const flowScale = candidate.flow_scale
+    const playbackSpeed = candidate.playback_speed ?? candidate.flow_scale
     const controlMode = candidate.control_mode
 
-    if (!SCENARIO_MODE_OPTIONS.some((item) => item.value === scenarioMode)) throw new Error('场景模式不受支持')
+    const supportedPresetIds = scenarioPresets.value.length > 0
+      ? scenarioPresets.value.map((item) => item.preset_id)
+      : SCENARIO_MODE_OPTIONS.map((item) => item.value)
+    if (typeof scenarioPresetId !== 'string' || !supportedPresetIds.includes(scenarioPresetId)) throw new Error('场景模式不受支持')
     if (!TRAFFIC_FLOW_MODE_OPTIONS.some((item) => item.value === flowMode)) throw new Error('交通流模式不受支持')
     if (!DISTURBANCE_CHOICE_OPTIONS.some((item) => item.value === disturbance)) throw new Error('扰动事件不受支持')
     if (!SIMULATION_TIME_OPTIONS.some((item) => item.value === timePreset)) throw new Error('仿真时间不受支持')
     if (typeof controlMode === 'string' && !DASHBOARD_CONTROL_MODES.some((item) => item.value === controlMode)) throw new Error('管控算法不受支持')
 
     config.value = {
-      scenario_mode: scenarioMode as ScenarioModeId,
+      scenario_preset_id: scenarioPresetId,
       flow_mode: flowMode as TrafficFlowMode,
       disturbance: disturbance as DisturbanceType | 'none',
       time_preset: timePreset as SimulationTimePresetId,
-      flow_scale: typeof flowScale === 'number' && flowScale >= 0.1 && flowScale <= 5 ? flowScale : 1,
+      playback_speed: typeof playbackSpeed === 'number' && playbackSpeeds.value.includes(playbackSpeed)
+        ? playbackSpeed
+        : 1,
       control_mode: typeof controlMode === 'string' ? controlMode : 'fixed',
     }
   }
 
   function buildExport(): ScenarioConfigExport {
     return {
-      version: 1,
+      version: 2,
       exported_at: new Date().toISOString(),
       ui_config: { ...config.value },
       display: {
@@ -208,7 +206,7 @@ export function useCompactScenarioConfig(
       },
       backend_request: buildPayload(),
       data_sources: {
-        scenario: 'compatibility_preset',
+        scenario: 'catalog',
         disturbance: 'catalog',
         time: 'local_preset',
         algorithm: isBackendControlMode(config.value.control_mode) ? 'backend' : 'mock_preview',

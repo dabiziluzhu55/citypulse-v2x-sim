@@ -2,6 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { SIMULATION_TIME_OPTIONS } from '../src/constants/scenarioOptions.ts'
+import { buildStartSimulationRequest } from '../src/utils/scenarioPayload.ts'
+import {
+  catalogSupportsScenarioPreset,
+  catalogSupportsScenarioPresetForIntersection,
+  findRunnableScenarioPreset,
+  missingPresetIntersectionIds,
+} from '../src/composables/catalogCapabilities.ts'
 
 const EXPECTED_LABELS = {
   morning_peak: [
@@ -34,4 +41,81 @@ test('keeps the final evening window aligned to the backend offset contract', ()
   assert.equal(option.flowMode, 'evening_peak')
   assert.equal(option.windowStartSeconds, 5400)
   assert.equal(option.durationSeconds, 900)
+})
+
+test('builds the backend v2 preset request without removed legacy fields', () => {
+  const payload = buildStartSimulationRequest({
+    scenarioPresetId: 'xiongan_20',
+    period: 'morning_peak',
+    windowStartSeconds: 900,
+    durationSeconds: 900,
+    controlMode: 'sotl',
+    playbackSpeed: 1.5,
+    disturbance: 'lane_closure',
+    intersectionId: 'demo_2',
+    eventId: 'evt-test',
+    snapshotIntervalSeconds: 0.2,
+  })
+
+  assert.equal(payload.scenario_preset_id, 'xiongan_20')
+  assert.equal(payload.period, 'morning_peak')
+  assert.equal(payload.window_start_seconds, 900)
+  assert.equal(payload.duration_seconds, 900)
+  assert.equal(payload.control_mode, 'sotl')
+  assert.equal(payload.playback_speed, 1.5)
+  assert.equal(payload.disturbance_targets[0].intersection_id, 'demo_2')
+  assert.equal('intersection_ids' in payload, false)
+  assert.equal('flow_multiplier' in payload, false)
+  assert.equal('initial_events' in payload, false)
+})
+
+test('marks a scenario unavailable until every preset intersection is in the catalog', () => {
+  const catalog = {
+    intersections: [{ intersection_id: 'demo_2' }],
+    scenario_presets: [{
+      preset_id: 'xiongan_20',
+      label: '雄安20路口路网',
+      intersection_ids: ['demo_1', 'demo_2', 'demo_3'],
+      map_template: 'xiongan20',
+    }],
+    event_types: [],
+    control_modes: ['fixed'],
+    playback_speeds: [1],
+  }
+
+  assert.deepEqual(missingPresetIntersectionIds(catalog, 'xiongan_20'), ['demo_1', 'demo_3'])
+  assert.equal(catalogSupportsScenarioPreset(catalog, 'xiongan_20'), false)
+  catalog.intersections.push({ intersection_id: 'demo_1' }, { intersection_id: 'demo_3' })
+  assert.equal(catalogSupportsScenarioPreset(catalog, 'xiongan_20'), true)
+})
+
+test('selects the complete single-intersection preset for demo_2', () => {
+  const catalog = {
+    intersections: [{ intersection_id: 'demo_2' }],
+    scenario_presets: [
+      {
+        preset_id: 'xiongan_20',
+        label: '雄安20路口路网',
+        intersection_ids: ['demo_1', 'demo_2', 'demo_3'],
+        map_template: 'xiongan20',
+      },
+      {
+        preset_id: 'demo_2_single',
+        label: 'demo_2 单路口真实仿真',
+        intersection_ids: ['demo_2'],
+        map_template: 'xiongan20',
+      },
+    ],
+    event_types: [],
+    control_modes: ['fixed'],
+    playback_speeds: [1],
+  }
+
+  assert.equal(catalogSupportsScenarioPreset(catalog, 'xiongan_20'), false)
+  assert.equal(
+    catalogSupportsScenarioPresetForIntersection(catalog, 'demo_2_single', 'demo_2'),
+    true,
+  )
+  assert.equal(findRunnableScenarioPreset(catalog, 'demo_2')?.preset_id, 'demo_2_single')
+  assert.equal(findRunnableScenarioPreset(catalog, 'demo_3'), null)
 })

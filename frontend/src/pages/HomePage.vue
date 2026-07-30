@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CenterCommunicationPanel from '../components/dashboard/CenterCommunicationPanel.vue'
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
@@ -7,6 +7,7 @@ import { useDashboardOverlay } from '../composables/useDashboardOverlay'
 import { useOptionalAppMapView } from '../composables/useAppMapView'
 import { useSimulationStore } from '../composables/useSimulationStore'
 import { useSnapshotMetrics } from '../composables/useSnapshotMetrics'
+import { useEvaluationComparison } from '../composables/useEvaluationComparison'
 import { useHealth } from '../composables/useHealth'
 import { useCatalog } from '../composables/useCatalog'
 import { useActiveIntersectionScene } from '../composables/useActiveIntersectionScene'
@@ -54,20 +55,33 @@ const {
   restoredSession,
   sessionIntersectionId,
   activeControlMode,
+  activePlaybackSpeed,
   launchRun,
+  pauseRun,
+  resumeRun,
+  changePlaybackSpeed,
   stopRun,
   markRestoredSessionHandled,
 } = useSimulationStore()
 const isSimulationActive = computed(() => (
-  state.value === 'STARTING'
+  (!!sessionId.value && !state.value)
+  || state.value === 'STARTING'
   || state.value === 'RUNNING'
+  || state.value === 'PAUSED'
   || state.value === 'STOPPING'
 ))
 
 const { ready: healthReady, statusLabel: healthLabel } = useHealth()
 
-const { timeseries, logEntries } = useSnapshotMetrics(sessionId, snapshot)
+const { logEntries } = useSnapshotMetrics(sessionId, snapshot, wsConnected)
+const {
+  timeseries,
+  hasComparisonData,
+  beginRun: beginComparisonRun,
+} = useEvaluationComparison(sessionId, snapshot)
 const { communicationPanelOpen, closeCommunicationPanel } = useDashboardOverlay()
+const configNotice = ref<string | null>(null)
+let configNoticeTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(
   [snapshot, restoredSession],
@@ -75,7 +89,7 @@ watch(
     if (
       !shouldRestore
       || !nextSnapshot
-      || !['STARTING', 'RUNNING', 'STOPPING'].includes(nextSnapshot.state)
+      || !['STARTING', 'RUNNING', 'PAUSED', 'STOPPING'].includes(nextSnapshot.state)
     ) return
 
     const intersectionId = sessionIntersectionId.value
@@ -100,16 +114,31 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleOverlayKeydown)
+  if (configNoticeTimer !== null) clearTimeout(configNoticeTimer)
   closeCommunicationPanel()
 })
 
 async function handleStart(payload: StartSimulationRequest) {
-  const intersectionId = payload.intersection_ids[0]
-  if (intersectionId) selectIntersection(intersectionId)
   mapView?.setCameraPreset('intersection')
   setMapDimension('3d')
-  await launchRun(payload)
+  const result = await launchRun(payload, activeIntersectionId.value)
+  if (result) beginComparisonRun(result.session_id, payload, activeIntersectionId.value)
 }
+
+function handleConfigChanged() {
+  configNotice.value = hasComparisonData.value
+    ? '已切换对比条件，历史结果保留在上一对比组'
+    : '配置已更新'
+  if (configNoticeTimer !== null) clearTimeout(configNoticeTimer)
+  configNoticeTimer = setTimeout(() => {
+    configNotice.value = null
+    configNoticeTimer = null
+  }, 2_400)
+}
+
+async function handlePause() { await pauseRun() }
+async function handleResume() { await resumeRun() }
+async function handlePlaybackSpeed(value: number) { await changePlaybackSpeed(value) }
 
 async function handleStop() {
   await stopRun()
@@ -188,14 +217,26 @@ async function handleStop() {
         :status-error="statusError"
         :ws-connected="wsConnected"
         :active-control-mode="activeControlMode"
+        :active-playback-speed="activePlaybackSpeed"
         :health-ready="healthReady"
         :health-label="healthLabel"
         @start="handleStart"
+        @pause="handlePause"
+        @resume="handleResume"
+        @playback-speed="handlePlaybackSpeed"
         @stop="handleStop"
+        @config-changed="handleConfigChanged"
       />
     </div>
 
     <div class="dashboard-column center" />
+
+    <Transition name="config-notice">
+      <div v-if="configNotice" class="config-change-notice" role="status" aria-live="polite">
+        <div class="config-change-notice__title"><i aria-hidden="true" />提示</div>
+        <p>{{ configNotice }}</p>
+      </div>
+    </Transition>
 
     <Transition name="communication-overlay">
       <div
@@ -240,14 +281,50 @@ async function handleStop() {
 </template>
 
 <style scoped>
+.config-change-notice {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 11;
+  width: min(345px, calc(100vw - 32px));
+  min-height: 141px;
+  padding: 24px 30px 22px;
+  border: 1px solid rgba(49, 173, 255, .72);
+  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0 calc(100% - 12px), 0 12px);
+  background: linear-gradient(180deg, rgba(6, 43, 82, .98), rgba(2, 19, 44, .98));
+  box-shadow: inset 0 0 30px rgba(33, 139, 255, .12), 0 0 22px rgba(33, 139, 255, .28);
+  color: #edf9ff;
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.config-change-notice::before,
+.config-change-notice::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 95px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #52c2fa);
+  box-shadow: 0 0 8px #21e6ff;
+}
+.config-change-notice::before { left: 0; }
+.config-change-notice::after { right: 0; transform: scaleX(-1); }
+.config-change-notice__title { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 18px; font-weight: 700; }
+.config-change-notice__title i { width: 5px; height: 18px; background: #21e6ff; box-shadow: 0 0 8px #21e6ff; }
+.config-change-notice p { margin: 18px 0 0; color: #bcdced; font-size: 14px; line-height: 1.6; text-align: center; }
+.config-notice-enter-active,
+.config-notice-leave-active { transition: opacity .18s ease, transform .18s ease; }
+.config-notice-enter-from,
+.config-notice-leave-to { opacity: 0; transform: translate(-50%, -46%) scale(.97); }
+
 .communication-overlay {
   position: fixed;
   inset: var(--dashboard-top-offset) 0 var(--dashboard-bottom-offset);
   z-index: 9;
   display: grid;
-  place-items: end center;
-  padding: 24px max(calc(var(--dashboard-right-width) + 36px), 24px) 42px
-    max(calc(var(--dashboard-left-width) + 36px), 24px);
+  place-items: center;
+  padding: 24px;
   pointer-events: none;
 }
 
@@ -255,7 +332,7 @@ async function handleStop() {
   position: absolute;
   inset: 0;
   border: 0;
-  background: radial-gradient(circle at 50% 72%, rgba(8, 35, 68, 0.2), transparent 42%);
+  background: rgba(1, 10, 24, .34);
   cursor: default;
   pointer-events: auto;
 }
@@ -263,22 +340,8 @@ async function handleStop() {
 .communication-overlay__panel {
   position: relative;
   z-index: 1;
-  width: min(760px, 100%);
+  width: min(1000px, 100%);
   pointer-events: auto;
-}
-
-.communication-overlay__panel::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -28px;
-  width: 170px;
-  height: 28px;
-  background: linear-gradient(180deg, rgba(33, 230, 255, 0.2), transparent);
-  clip-path: polygon(37% 0, 63% 0, 100% 100%, 0 100%);
-  transform: translateX(-50%);
-  opacity: 0.66;
-  pointer-events: none;
 }
 
 .communication-overlay-enter-active,

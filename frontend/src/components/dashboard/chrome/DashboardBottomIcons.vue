@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import bottomIconsBg from '../../../assets/design/chrome/bottom-icons.svg?url'
+import { useDashboardOverlay } from '../../../composables/useDashboardOverlay'
 import {
   CHROME_BOTTOM_ICONS_HEIGHT,
   CHROME_BOTTOM_ICONS_WIDTH,
 } from '../../../constants/dashboardChromeLayout'
 
+const { toggleCommunicationPanel } = useDashboardOverlay()
 const iconItems = [
   {
     key: 'settings',
@@ -13,10 +15,10 @@ const iconItems = [
     action: () => {},
   },
   {
-    key: 'schedule',
-    label: '仿真日程',
-    title: '仿真计划与运行日程',
-    action: () => {},
+    key: 'communication',
+    label: '车路云通信记录',
+    title: '车路云通信记录',
+    action: toggleCommunicationPanel,
   },
   {
     key: 'report',

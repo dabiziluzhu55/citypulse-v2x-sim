@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { DISTURBANCE_CHOICE_OPTIONS, FLOW_SCALE_SELECT_OPTIONS, SCENARIO_MODE_OPTIONS, TRAFFIC_FLOW_MODE_OPTIONS } from '../../constants/scenarioOptions'
-import { DASHBOARD_CONTROL_MODES, resolveControlModeLabel } from '../../constants/simulationOptions'
+import { computed, ref, watch } from 'vue'
+import { DISTURBANCE_CHOICE_OPTIONS, TRAFFIC_FLOW_MODE_OPTIONS } from '../../constants/scenarioOptions'
+import { resolveControlModeLabel, resolveDashboardControlModes } from '../../constants/simulationOptions'
+import { exportScenarioArchive } from '../../api/scenario'
 import { useCompactScenarioConfig } from '../../composables/useCompactScenarioConfig'
 import { useCatalog } from '../../composables/useCatalog'
 import { useActiveIntersectionScene } from '../../composables/useActiveIntersectionScene'
+import {
+  catalogSupportsScenarioPreset,
+  catalogSupportsScenarioPresetForIntersection,
+  findCatalogScenarioPreset,
+  findRunnableScenarioPreset,
+  missingPresetIntersectionIds,
+} from '../../composables/catalogCapabilities'
 import LeftSidebarFrameSvg from './LeftSidebarFrameSvg.vue'
 import LeftSidebarBottomChrome from './LeftSidebarBottomChrome.vue'
 import LeftSidebarSectionHeader from './LeftSidebarSectionHeader.vue'
@@ -22,37 +30,78 @@ const props = defineProps<{
   statusError: string | null
   wsConnected: boolean
   activeControlMode: string
+  activePlaybackSpeed: number
   healthReady: boolean
   healthLabel: string
 }>()
-const emit = defineEmits<{ start: [payload: StartSimulationRequest]; stop: [] }>()
+const emit = defineEmits<{
+  start: [payload: StartSimulationRequest]
+  pause: []
+  resume: []
+  stop: []
+  playbackSpeed: [value: number]
+  configChanged: []
+}>()
 
-const { activeIntersectionId } = useActiveIntersectionScene()
+const { activeIntersectionId, selectIntersection } = useActiveIntersectionScene()
 const {
+  catalog,
   intersection,
   periods,
+  controlModes,
+  scenarioPresets,
+  playbackSpeeds,
   loading: catalogLoading,
   error: catalogError,
   isIntersectionSupported,
 } = useCatalog(activeIntersectionId)
-const { config, configNote, availableTimeOptions, buildPayload, applyImportedConfig, buildExport } = useCompactScenarioConfig(intersection, periods)
+const { config, configNote, availableTimeOptions, buildPayload, applyImportedConfig } = useCompactScenarioConfig(
+  intersection,
+  periods,
+  scenarioPresets,
+  playbackSpeeds,
+)
 const fileInput = ref<HTMLInputElement | null>(null)
 const feedback = ref<string | null>(null)
 const multiplierOpen = ref(false)
+const exporting = ref(false)
+const scenarioOptions = computed(() => scenarioPresets.value.map((item) => ({
+  label: item.label,
+  value: item.preset_id,
+  disabled: !catalogSupportsScenarioPreset(catalog.value, item.preset_id),
+})))
 const fields = computed(() => [
-  { key: 'scenario', label: '场景模式', options: SCENARIO_MODE_OPTIONS },
+  { key: 'scenario', label: '场景模式', options: scenarioOptions.value },
   { key: 'disturbance', label: '扰动事件', options: DISTURBANCE_CHOICE_OPTIONS },
   { key: 'flow', label: '交通流模式', options: TRAFFIC_FLOW_MODE_OPTIONS },
   { key: 'time', label: '仿真时间', options: availableTimeOptions.value },
 ])
-const isRunning = computed(() => props.state === 'RUNNING' || props.state === 'STARTING' || props.state === 'STOPPING')
-const canStop = computed(() => isRunning.value)
+const isSessionActive = computed(() => props.starting || (
+  !!props.sessionId && (!props.state || ['STARTING', 'RUNNING', 'PAUSED', 'STOPPING'].includes(props.state))
+))
+const canStop = computed(() => isSessionActive.value)
+const canPause = computed(() => props.state === 'RUNNING' && !props.controlling)
+const canResume = computed(() => props.state === 'PAUSED' && !props.controlling)
+const selectedPreset = computed(() => findCatalogScenarioPreset(catalog.value, config.value.scenario_preset_id))
+const presetMissingIds = computed(() => missingPresetIntersectionIds(catalog.value, config.value.scenario_preset_id))
+const presetUnavailableMessage = computed(() => {
+  if (catalogLoading.value) return ''
+  if (!selectedPreset.value) return '后端未提供当前场景预设'
+  if (presetMissingIds.value.length > 0) {
+    return `后端20路口 manifest 不完整，缺少 ${presetMissingIds.value.length} 个路口`
+  }
+  if (!selectedPreset.value.intersection_ids.includes(activeIntersectionId.value)) {
+    return `${activeIntersectionId.value} 不属于当前仿真场景，请先切换场景内路口`
+  }
+  return ''
+})
 const canStart = computed(() => (
   props.healthReady
   && !catalogLoading.value
   && isIntersectionSupported.value
+  && !presetUnavailableMessage.value
   && !props.starting
-  && !isRunning.value
+  && !isSessionActive.value
 ))
 const progressPercent = computed(() => typeof props.snapshot?.progress === 'number' ? Math.min(100, Math.max(0, props.snapshot.progress * 100)) : 0)
 const unsupportedMessage = computed(() => (
@@ -66,8 +115,10 @@ const statusMessage = computed(() => feedback.value
   || props.statusError
   || catalogError.value
   || unsupportedMessage.value
+  || presetUnavailableMessage.value
   || (!props.healthReady ? props.healthLabel : ''))
-const selectedAlgorithm = computed(() => DASHBOARD_CONTROL_MODES.find((item) => item.value === config.value.control_mode))
+const controlModeOptions = computed(() => resolveDashboardControlModes(controlModes.value))
+const playbackSpeedOptions = computed(() => playbackSpeeds.value.map((value) => ({ label: `${value}x`, value })))
 const stateLabel = computed(() => props.state ?? (props.healthReady ? 'READY' : 'OFFLINE'))
 const connectionLabel = computed(() => {
   if (!props.sessionId) return '未连接'
@@ -87,40 +138,105 @@ const algorithmLabel = computed(() => resolveControlModeLabel(
 const startTitle = computed(() => {
   if (catalogLoading.value) return '正在读取真实仿真路口目录'
   if (unsupportedMessage.value) return unsupportedMessage.value
+  if (presetUnavailableMessage.value) return presetUnavailableMessage.value
   if (!props.healthReady) return props.healthLabel
-  if (isRunning.value) return '当前仿真尚未结束'
+  if (isSessionActive.value) return '当前仿真尚未结束'
   return '开始仿真'
 })
 
-function fieldModel(key: string): 'scenario_mode' | 'disturbance' | 'flow_mode' | 'time_preset' {
-  if (key === 'scenario') return 'scenario_mode'
+watch(
+  [catalog, activeIntersectionId, () => config.value.scenario_preset_id],
+  ([nextCatalog, intersectionId, presetId]) => {
+    if (catalogSupportsScenarioPresetForIntersection(nextCatalog, presetId, intersectionId)) return
+    const fallback = findRunnableScenarioPreset(nextCatalog, intersectionId)
+    if (fallback) config.value.scenario_preset_id = fallback.preset_id
+  },
+  { immediate: true },
+)
+
+watch(
+  () => props.activePlaybackSpeed,
+  (value) => {
+    if (isSessionActive.value && playbackSpeeds.value.includes(value)) config.value.playback_speed = value
+  },
+  { immediate: true },
+)
+
+watch(
+  [() => props.activeControlMode, controlModeOptions, isSessionActive],
+  ([value, options, active]) => {
+    if (
+      active
+      && value
+      && options.some((option) => option.value === value)
+    ) config.value.control_mode = value
+  },
+  { immediate: true },
+)
+
+watch(
+  () => config.value.scenario_preset_id,
+  (presetId) => {
+    const preset = findCatalogScenarioPreset(catalog.value, presetId)
+    if (
+      preset
+      && catalogSupportsScenarioPreset(catalog.value, presetId)
+      && !preset.intersection_ids.includes(activeIntersectionId.value)
+    ) {
+      selectIntersection(preset.intersection_ids[0])
+    }
+  },
+)
+
+function fieldModel(key: string): 'scenario_preset_id' | 'disturbance' | 'flow_mode' | 'time_preset' {
+  if (key === 'scenario') return 'scenario_preset_id'
   if (key === 'disturbance') return 'disturbance'
   if (key === 'flow') return 'flow_mode'
   return 'time_preset'
 }
+function notifyConfigChanged() { emit('configChanged') }
 function openFilePicker() { fileInput.value?.click() }
 async function importConfig(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
-  try { applyImportedConfig(JSON.parse(await file.text())); feedback.value = '配置参数已载入' }
+  try {
+    applyImportedConfig(JSON.parse(await file.text()))
+    feedback.value = '配置参数已载入'
+    notifyConfigChanged()
+  }
   catch (error) { feedback.value = error instanceof Error ? error.message : '配置导入失败' }
   finally { input.value = '' }
 }
-function exportConfig() {
-  const blob = new Blob([JSON.stringify(buildExport(), null, 2)], { type: 'application/json;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `xiongan-simulation-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`
-  link.click()
-  URL.revokeObjectURL(url)
-  feedback.value = '当前仿真场景已导出'
+async function exportConfig() {
+  if (presetUnavailableMessage.value) {
+    feedback.value = presetUnavailableMessage.value
+    return
+  }
+  exporting.value = true
+  try {
+    const { blob, filename } = await exportScenarioArchive(buildPayload())
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename ?? `${config.value.scenario_preset_id}-${Date.now()}.zip`
+    link.click()
+    URL.revokeObjectURL(url)
+    feedback.value = 'SUMO仿真场景ZIP已导出'
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : '场景导出失败'
+  } finally {
+    exporting.value = false
+  }
 }
 function handleStart() {
   multiplierOpen.value = false
   if (!isIntersectionSupported.value) {
     feedback.value = unsupportedMessage.value
+    return
+  }
+  if (presetUnavailableMessage.value) {
+    feedback.value = presetUnavailableMessage.value
     return
   }
   try {
@@ -129,10 +245,11 @@ function handleStart() {
     feedback.value = error instanceof Error ? error.message : '无法构造仿真请求'
   }
 }
-function selectMultiplier(value: number) {
-  if (isRunning.value) return
-  config.value.flow_scale = value
+function selectPlaybackSpeed(value: number) {
+  if (props.controlling) return
+  config.value.playback_speed = value
   multiplierOpen.value = false
+  if (props.state === 'RUNNING' || props.state === 'PAUSED') emit('playbackSpeed', value)
 }
 function handleMultiplierKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') multiplierOpen.value = false
@@ -160,8 +277,14 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
         :style="{ left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[index].left}px`, top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[index].top}px`, width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[index].width}px` }"
       >
         <span class="left-sidebar__field-label">{{ field.label }}</span>
-        <el-select v-model="config[fieldModel(field.key)]" :disabled="isRunning" class="left-sidebar__select" popper-class="left-sidebar-select-popper">
-          <el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" />
+        <el-select v-model="config[fieldModel(field.key)]" :disabled="isSessionActive" class="left-sidebar__select" popper-class="left-sidebar-select-popper" @change="notifyConfigChanged">
+          <el-option
+            v-for="option in field.options"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+            :disabled="'disabled' in option && option.disabled"
+          />
         </el-select>
       </label>
 
@@ -172,21 +295,21 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
       <div class="left-sidebar__file-actions">
         <input ref="fileInput" type="file" accept="application/json,.json" @change="importConfig" />
         <button type="button" @click="openFilePicker">上传配置参数</button>
-        <button type="button" @click="exportConfig">导出当前仿真场景</button>
+        <button type="button" :disabled="exporting || !!presetUnavailableMessage" @click="exportConfig">{{ exporting ? '导出中…' : '导出当前仿真场景' }}</button>
       </div>
 
       <LeftSidebarSectionHeader title="管控算法选择" variant="algorithm" />
       <div class="left-sidebar__algorithm-list" role="radiogroup" aria-label="管控算法选择">
         <label
-          v-for="(option, index) in DASHBOARD_CONTROL_MODES"
+          v-for="(option, index) in controlModeOptions"
           :key="option.value"
           class="left-sidebar__algorithm-item"
           :class="{ 'is-selected': config.control_mode === option.value }"
           :style="{ top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.algorithmItems.top + index * (LEFT_SIDEBAR_REFERENCE_LAYOUT.algorithmItems.height + LEFT_SIDEBAR_REFERENCE_LAYOUT.algorithmItems.gap)}px` }"
-          :title="option.backendSupported ? '真实后端算法' : '模拟展示；启动时由固定配时后端承载'"
+          title="真实后端算法"
         >
-          <span>{{ option.label }}</span><em v-if="!option.backendSupported">MOCK</em>
-          <input v-model="config.control_mode" :disabled="isRunning" type="radio" name="sidebar-algorithm" :value="option.value" /><i aria-hidden="true" />
+          <span>{{ option.label }}</span>
+          <input v-model="config.control_mode" :disabled="isSessionActive" type="radio" name="sidebar-algorithm" :value="option.value" @change="notifyConfigChanged" /><i aria-hidden="true" />
         </label>
       </div>
 
@@ -196,33 +319,43 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
         <span class="left-sidebar__progress-knob" :style="{ left: `${progressPercent}%` }" />
       </div>
       <div class="left-sidebar__multiplier" @keydown="handleMultiplierKeydown">
-        <button
-          type="button"
-          class="left-sidebar__speed-badge"
-          :class="{ 'is-open': multiplierOpen }"
-          :disabled="isRunning"
-          :aria-expanded="multiplierOpen"
-          aria-haspopup="listbox"
-          :title="isRunning ? '仿真运行期间不能修改流量倍率' : '选择仿真流量倍率'"
-          @click="multiplierOpen = !multiplierOpen"
-        >×{{ config.flow_scale.toFixed(1) }}</button>
-        <div v-if="multiplierOpen" class="left-sidebar__speed-menu" role="listbox" aria-label="仿真流量倍率">
+        <el-dropdown
+          trigger="click"
+          placement="top-end"
+          :teleported="true"
+          popper-class="left-sidebar-speed-popper"
+          @command="selectPlaybackSpeed"
+          @visible-change="multiplierOpen = $event"
+        >
           <button
-            v-for="option in FLOW_SCALE_SELECT_OPTIONS"
-            :key="option.value"
             type="button"
-            role="option"
-            :aria-selected="config.flow_scale === option.value"
-            :class="{ 'is-selected': config.flow_scale === option.value }"
-            @click="selectMultiplier(option.value)"
-          >×{{ option.value.toFixed(1) }}</button>
-        </div>
+            class="left-sidebar__speed-badge"
+            :class="{ 'is-open': multiplierOpen }"
+            :disabled="props.controlling"
+            :aria-expanded="multiplierOpen"
+            aria-haspopup="listbox"
+            title="选择仿真播放倍速"
+          >×{{ config.playback_speed }}</button>
+          <template #dropdown>
+            <el-dropdown-menu aria-label="仿真播放倍速">
+              <el-dropdown-item
+                v-for="option in playbackSpeedOptions"
+                :key="option.value"
+                :command="option.value"
+                :class="{ 'is-selected': config.playback_speed === option.value }"
+              >×{{ option.value }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
-      <div v-if="selectedAlgorithm && !selectedAlgorithm.backendSupported" class="left-sidebar__mock-note">当前算法为模拟展示，后端使用固定配时</div>
-
       <div class="left-sidebar__controls">
         <button type="button" :disabled="!canStart" :title="startTitle" @click="handleStart">{{ starting ? '启动中…' : '开始仿真' }}</button>
-        <button type="button" disabled title="真实后端暂不支持暂停">暂停仿真</button>
+        <button
+          type="button"
+          :disabled="!canPause && !canResume"
+          :title="canResume ? '恢复仿真' : '暂停仿真'"
+          @click="canResume ? emit('resume') : emit('pause')"
+        >{{ props.state === 'PAUSED' ? '继续仿真' : '暂停仿真' }}</button>
         <button type="button" :disabled="!sessionId || !canStop || controlling" @click="emit('stop')">结束仿真</button>
       </div>
 
@@ -512,17 +645,22 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   border-color: #52c2fa; box-shadow: 0 0 9px rgba(33,230,255,.45); outline: none;
 }
 .left-sidebar__speed-badge:disabled { opacity: .6; cursor: not-allowed; }
-.left-sidebar__speed-menu {
-  position: absolute; z-index: 11; left: 315px; top: 531px; width: 68px; padding: 5px;
-  border: 1px solid rgba(82,194,250,.65); border-radius: 8px; background: rgba(2,19,42,.97);
-  box-shadow: 0 0 14px rgba(33,139,255,.32);
+.left-sidebar__multiplier { position: absolute; inset: 0; pointer-events: none; }
+.left-sidebar__multiplier :deep(.el-tooltip__trigger) { pointer-events: auto; }
+:global(.left-sidebar-speed-popper.el-popper) {
+  min-width: 76px !important; padding: 5px !important; border: 1px solid rgba(82,194,250,.65) !important;
+  border-radius: 8px !important; background: rgba(2,19,42,.98) !important; box-shadow: 0 0 14px rgba(33,139,255,.32) !important;
 }
-.left-sidebar__speed-menu button {
-  width: 100%; height: 29px; border: 0; border-radius: 5px; background: transparent; color: #b9d9ec;
-  font: 600 13px/1 inherit; cursor: pointer;
+:global(.left-sidebar-speed-popper .el-popper__arrow::before) { border-color: rgba(82,194,250,.65) !important; background: #02132a !important; }
+:global(.left-sidebar-speed-popper .el-dropdown-menu) { padding: 0; background: transparent; }
+:global(.left-sidebar-speed-popper .el-dropdown-menu__item) {
+  justify-content: center; height: 29px; padding: 0 10px; border-radius: 5px; color: #b9d9ec;
+  font: 600 13px/1 'PingFang SC','Microsoft YaHei',sans-serif;
 }
-.left-sidebar__speed-menu button:hover, .left-sidebar__speed-menu button:focus-visible, .left-sidebar__speed-menu button.is-selected {
-  background: rgba(33,139,255,.24); color: #fff; outline: none; text-shadow: 0 0 7px #21e6ff;
+:global(.left-sidebar-speed-popper .el-dropdown-menu__item:hover),
+:global(.left-sidebar-speed-popper .el-dropdown-menu__item:focus),
+:global(.left-sidebar-speed-popper .el-dropdown-menu__item.is-selected) {
+  background: rgba(33,139,255,.24); color: #fff; text-shadow: 0 0 7px #21e6ff;
 }
 .left-sidebar__mock-note { position: absolute; z-index: 4; left: 35px; top: 647px; color: #8eb5cf; font-size: 9px; }
 .left-sidebar__controls { left: 21px; top: 703px; width: 382px; height: 40px; }

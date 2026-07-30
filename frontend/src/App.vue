@@ -1,25 +1,39 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppBackgroundMap from './components/visualization/AppBackgroundMap.vue'
 import AppMapGradientMask from './components/visualization/AppMapGradientMask.vue'
+import AppThreeMapLoader from './components/visualization/AppThreeMapLoader.vue'
 import DashboardChrome from './components/dashboard/chrome/DashboardChrome.vue'
 import { provideAppMapView } from './composables/useAppMapView'
+import type { Map3dFailure } from './mapv/map3dLoadRecovery'
 
 const route = useRoute()
-const BaiduThreeMap = defineAsyncComponent(
-  () => import('./components/visualization/BaiduThreeMap.vue'),
-)
 const mapView = provideAppMapView()
 const mapDimension = computed(() => mapView.dimension.value)
 const isStandaloneRoute = computed(() => route.meta.standalone === true)
+const threeMapFailure = ref<Map3dFailure | null>(null)
+
+watch(mapDimension, (next) => {
+  if (next === '3d') threeMapFailure.value = null
+})
+
+function handleThreeMapFailure(failure: Map3dFailure): void {
+  threeMapFailure.value = failure
+  mapView.setDimension('2d')
+}
+
+function retryThreeMap(): void {
+  threeMapFailure.value = null
+  mapView.setDimension('3d')
+}
 </script>
 
 <template>
   <router-view v-if="isStandaloneRoute" />
   <div v-else class="app-shell app-shell--dashboard">
     <AppBackgroundMap v-if="mapDimension === '2d'" />
-    <BaiduThreeMap v-else />
+    <AppThreeMapLoader v-else @fatal="handleThreeMapFailure" />
     <AppMapGradientMask />
 
     <DashboardChrome />
@@ -43,6 +57,31 @@ const isStandaloneRoute = computed(() => route.meta.standalone === true)
         </a>
         contributors
       </template>
+    </div>
+
+    <div
+      v-if="threeMapFailure"
+      class="app-map-recovery"
+      role="alert"
+      aria-live="assertive"
+    >
+      <span class="app-map-recovery__status" aria-hidden="true" />
+      <div class="app-map-recovery__content">
+        <strong>3D地图已切换到2D</strong>
+        <span>{{ threeMapFailure.message }}</span>
+      </div>
+      <button type="button" class="app-map-recovery__retry" @click="retryThreeMap">
+        重试3D
+      </button>
+      <button
+        type="button"
+        class="app-map-recovery__close"
+        title="关闭提示"
+        aria-label="关闭提示"
+        @click="threeMapFailure = null"
+      >
+        ×
+      </button>
     </div>
   </div>
 </template>
@@ -139,11 +178,93 @@ const isStandaloneRoute = computed(() => route.meta.standalone === true)
   color: #21e6ff;
 }
 
+.app-map-recovery {
+  position: fixed;
+  top: 202px;
+  left: 50%;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: min(520px, calc(100vw - 780px));
+  min-width: 390px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 190, 92, 0.58);
+  border-radius: 6px;
+  background: rgba(3, 18, 31, 0.94);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  color: #d9f5ff;
+  transform: translateX(-50%);
+}
+
+.app-map-recovery__status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffbe5c;
+  box-shadow: 0 0 10px rgba(255, 190, 92, 0.72);
+}
+
+.app-map-recovery__content {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.app-map-recovery__content strong {
+  color: #fff2d3;
+  font-size: 13px;
+}
+
+.app-map-recovery__content span {
+  overflow-wrap: anywhere;
+  color: #a8c9d8;
+}
+
+.app-map-recovery__retry,
+.app-map-recovery__close {
+  height: 30px;
+  border: 1px solid rgba(33, 230, 255, 0.46);
+  border-radius: 4px;
+  background: rgba(9, 49, 76, 0.9);
+  color: #d9faff;
+  cursor: pointer;
+}
+
+.app-map-recovery__retry {
+  padding: 0 12px;
+}
+
+.app-map-recovery__close {
+  width: 30px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.app-map-recovery__retry:hover,
+.app-map-recovery__close:hover {
+  border-color: #21e6ff;
+  background: rgba(10, 72, 105, 0.96);
+}
+
 @media (max-width: 900px) {
   .app-content--dashboard {
     height: auto;
     min-height: 100vh;
     overflow: visible;
+  }
+
+  .app-map-recovery {
+    top: 150px;
+    width: auto;
+    min-width: 0;
+    right: 16px;
+    left: 16px;
+    transform: none;
   }
 }
 </style>

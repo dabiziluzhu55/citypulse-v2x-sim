@@ -16,6 +16,12 @@ class ScenarioPreset:
 
 
 SCENARIO_PRESET_REGISTRY: dict[str, ScenarioPreset] = {
+    "demo_2_single": ScenarioPreset(
+        preset_id="demo_2_single",
+        label="demo_2 单路口真实仿真",
+        intersection_ids=("demo_2",),
+        map_template="xiongan20",
+    ),
     "xiongan_20": ScenarioPreset(
         preset_id="xiongan_20",
         label="雄安20路口路网",

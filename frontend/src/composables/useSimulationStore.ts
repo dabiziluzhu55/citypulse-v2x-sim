@@ -1,6 +1,9 @@
 import { computed, ref } from 'vue'
 import {
   fetchSimulationStatus,
+  pauseSimulation,
+  resumeSimulation,
+  setSimulationPlaybackSpeed,
   startSimulation,
   stopSimulation,
 } from '../api/simulation'
@@ -17,6 +20,7 @@ import {
   registerSimulationStreamHandler,
 } from '../utils/runWebSocketManager'
 import type {
+  SimulationPlaybackResponse,
   SimulationSnapshot,
   SimulationState,
   StartSimulationRequest,
@@ -32,22 +36,31 @@ function isTerminal(state: SimulationState | null | undefined): boolean {
 
 interface StoredSimulationContext {
   sessionId: string
-  intersectionId: string
+  focusIntersectionId: string
+  scenarioPresetId: string
   controlMode: string
+  playbackSpeed: number
 }
 
 function readStoredSimulationContext(): StoredSimulationContext | null {
   try {
     const parsed = JSON.parse(
       localStorage.getItem(ACTIVE_SIMULATION_CONTEXT_KEY) ?? 'null',
-    ) as Partial<StoredSimulationContext> | null
+    ) as (Partial<StoredSimulationContext> & { intersectionId?: string }) | null
     if (
       parsed
       && typeof parsed.sessionId === 'string'
-      && typeof parsed.intersectionId === 'string'
       && typeof parsed.controlMode === 'string'
     ) {
-      return parsed as StoredSimulationContext
+      return {
+        sessionId: parsed.sessionId,
+        focusIntersectionId: typeof parsed.focusIntersectionId === 'string'
+          ? parsed.focusIntersectionId
+          : parsed.intersectionId ?? '',
+        scenarioPresetId: typeof parsed.scenarioPresetId === 'string' ? parsed.scenarioPresetId : '',
+        controlMode: parsed.controlMode,
+        playbackSpeed: typeof parsed.playbackSpeed === 'number' ? parsed.playbackSpeed : 1,
+      }
     }
   } catch {
     localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
@@ -71,10 +84,16 @@ const wsConnected = ref(false)
 const lastMessage = ref<string | null>(null)
 const restoredSession = ref(Boolean(sessionId.value))
 const sessionIntersectionId = ref(
-  storedContext?.sessionId === sessionId.value ? storedContext.intersectionId : '',
+  storedContext?.sessionId === sessionId.value ? storedContext.focusIntersectionId : '',
+)
+const activeScenarioPresetId = ref(
+  storedContext?.sessionId === sessionId.value ? storedContext.scenarioPresetId : '',
 )
 const activeControlMode = ref(
   storedContext?.sessionId === sessionId.value ? storedContext.controlMode : '',
+)
+const activePlaybackSpeed = ref(
+  storedContext?.sessionId === sessionId.value ? storedContext.playbackSpeed : 1,
 )
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -98,12 +117,15 @@ const state = computed<SimulationState | null>(() => snapshot.value?.state ?? nu
 function applySnapshot(next: SimulationSnapshot) {
   if (!shouldApplySimulationSnapshot(snapshot.value, next, sessionId.value)) return
   snapshot.value = next
+  if (typeof next.playback_speed === 'number') activePlaybackSpeed.value = next.playback_speed
   statusError.value = null
   if (isTerminal(next.state)) {
     stopPolling()
     localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
     localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
     connectSimulationStream('')
+    activeScenarioPresetId.value = ''
+    activePlaybackSpeed.value = 1
     restoredSession.value = false
   }
 }
@@ -142,7 +164,9 @@ async function pollOnce() {
       sessionId.value = ''
       snapshot.value = null
       sessionIntersectionId.value = ''
+      activeScenarioPresetId.value = ''
       activeControlMode.value = ''
+      activePlaybackSpeed.value = 1
       restoredSession.value = false
       statusError.value = '上次仿真会话已失效，请重新启动仿真'
       return
@@ -168,26 +192,37 @@ function startPolling() {
 
 function bindSession(
   nextSessionId: string,
-  context?: { intersectionId: string; controlMode: string },
+  context?: {
+    focusIntersectionId: string
+    scenarioPresetId: string
+    controlMode: string
+    playbackSpeed: number
+  },
 ) {
   sessionId.value = nextSessionId
   restoredSession.value = false
   if (nextSessionId) {
     localStorage.setItem(ACTIVE_SESSION_ID_KEY, nextSessionId)
     if (context) {
-      sessionIntersectionId.value = context.intersectionId
+      sessionIntersectionId.value = context.focusIntersectionId
+      activeScenarioPresetId.value = context.scenarioPresetId
       activeControlMode.value = context.controlMode
+      activePlaybackSpeed.value = context.playbackSpeed
       localStorage.setItem(ACTIVE_SIMULATION_CONTEXT_KEY, JSON.stringify({
         sessionId: nextSessionId,
-        intersectionId: context.intersectionId,
+        focusIntersectionId: context.focusIntersectionId,
+        scenarioPresetId: context.scenarioPresetId,
         controlMode: context.controlMode,
+        playbackSpeed: context.playbackSpeed,
       }))
     }
   } else {
     localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
     localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
     sessionIntersectionId.value = ''
+    activeScenarioPresetId.value = ''
     activeControlMode.value = ''
+    activePlaybackSpeed.value = 1
   }
   snapshot.value = null
   statusError.value = null
@@ -223,14 +258,17 @@ function ensureInitialized() {
 
 async function launchRun(
   payload: StartSimulationRequest,
+  focusIntersectionId: string,
 ): Promise<StartSimulationResponse | null> {
   starting.value = true
   startError.value = null
   try {
     const result = await startSimulation(payload)
     bindSession(result.session_id, {
-      intersectionId: payload.intersection_ids[0] ?? '',
+      focusIntersectionId,
+      scenarioPresetId: result.scenario_preset_id ?? payload.scenario_preset_id,
       controlMode: payload.control_mode,
+      playbackSpeed: payload.playback_speed ?? 1,
     })
     lastMessage.value = `仿真已启动，状态：${result.state}`
     return result
@@ -240,6 +278,56 @@ async function launchRun(
   } finally {
     starting.value = false
   }
+}
+
+async function runPlaybackControl(
+  action: () => Promise<SimulationPlaybackResponse>,
+  successMessage: string,
+): Promise<SimulationPlaybackResponse | null> {
+  if (!sessionId.value) {
+    controlError.value = '请先启动仿真'
+    return null
+  }
+  controlling.value = true
+  controlError.value = null
+  try {
+    const result = await action()
+    if (typeof result.playback_speed === 'number') activePlaybackSpeed.value = result.playback_speed
+    lastMessage.value = `${successMessage}，状态：${result.state}`
+    await pollOnce()
+    return result
+  } catch (err) {
+    controlError.value = err instanceof Error ? err.message : `${successMessage}失败`
+    return null
+  } finally {
+    controlling.value = false
+  }
+}
+
+async function pauseRun() {
+  return runPlaybackControl(() => pauseSimulation(sessionId.value), '仿真已暂停')
+}
+
+async function resumeRun() {
+  return runPlaybackControl(() => resumeSimulation(sessionId.value), '仿真已恢复')
+}
+
+async function changePlaybackSpeed(playbackSpeed: number) {
+  const result = await runPlaybackControl(
+    () => setSimulationPlaybackSpeed(sessionId.value, playbackSpeed),
+    `播放倍速已调整为 ${playbackSpeed}×`,
+  )
+  if (result) {
+    activePlaybackSpeed.value = playbackSpeed
+    const stored = readStoredSimulationContext()
+    if (stored?.sessionId === sessionId.value) {
+      localStorage.setItem(ACTIVE_SIMULATION_CONTEXT_KEY, JSON.stringify({
+        ...stored,
+        playbackSpeed,
+      }))
+    }
+  }
+  return result
 }
 
 async function stopRun(): Promise<StopSimulationResponse | null> {
@@ -280,8 +368,13 @@ export function useSimulationStore() {
     lastMessage,
     restoredSession,
     sessionIntersectionId,
+    activeScenarioPresetId,
     activeControlMode,
+    activePlaybackSpeed,
     launchRun,
+    pauseRun,
+    resumeRun,
+    changePlaybackSpeed,
     stopRun,
     bindSession,
     markRestoredSessionHandled: () => { restoredSession.value = false },

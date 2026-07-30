@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv, type ProxyOptions } from 'vite'
+import { defineConfig, loadEnv, type Plugin, type ProxyOptions } from 'vite'
 
 import copyPlugin from 'rollup-plugin-copy'
 import vue from '@vitejs/plugin-vue'
@@ -31,6 +31,30 @@ function createApiProxy(target: string): ProxyOptions {
   }
 }
 
+function createDevSourceNoStorePlugin(): Plugin {
+  return {
+    name: 'citypulse-dev-source-no-store',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.startsWith('/src/')) {
+          const setHeader = res.setHeader.bind(res)
+          res.setHeader = ((name: string, value: number | string | readonly string[]) => (
+            setHeader(
+              name,
+              name.toLowerCase() === 'cache-control' ? 'no-store, max-age=0' : value,
+            )
+          )) as typeof res.setHeader
+          res.setHeader('Cache-Control', 'no-store, max-age=0')
+          res.setHeader('Pragma', 'no-cache')
+          res.setHeader('Expires', '0')
+        }
+        next()
+      })
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const backendTarget = env.VITE_BACKEND_PROXY_TARGET?.trim() || 'http://127.0.0.1:8000'
@@ -38,6 +62,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      createDevSourceNoStorePlugin(),
       vue(),
       cesium(),
       copyPlugin({
@@ -45,6 +70,7 @@ export default defineConfig(({ mode }) => {
         hook: 'buildStart',
       }),
     ],
+    cacheDir: env.VITE_CACHE_DIR?.trim() || 'node_modules/.vite',
     server: {
       host: '127.0.0.1',
       port: 5173,

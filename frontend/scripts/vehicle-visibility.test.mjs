@@ -4,6 +4,7 @@ import test from 'node:test'
 
 import {
   MAX_VISIBLE_VEHICLES,
+  MISSING_SNAPSHOT_GRACE,
   resolveVehicleRenderRadius,
   selectVisibleVehicles,
   StableVehicleSelector,
@@ -102,17 +103,41 @@ test('retains selected vehicle ids across distance-order jitter', () => {
   )
 })
 
-test('keeps missing vehicles for three snapshots before removal', () => {
+test('keeps missing vehicles through short stream dropouts before removal', () => {
   const selector = new StableVehicleSelector()
   const center = [116, 39]
   selector.select([vehicle('held', 116.001, 39)], (coordinate) => [...coordinate], center, 500, 's:1')
-  for (let sequence = 2; sequence <= 4; sequence += 1) {
+  for (let sequence = 2; sequence <= MISSING_SNAPSHOT_GRACE + 1; sequence += 1) {
     assert.equal(
       selector.select([], (coordinate) => [...coordinate], center, 500, `s:${sequence}`).length,
       1,
     )
   }
-  assert.equal(selector.select([], (coordinate) => [...coordinate], center, 500, 's:5').length, 0)
+  assert.equal(
+    selector.select([], (coordinate) => [...coordinate], center, 500, `s:${MISSING_SNAPSHOT_GRACE + 2}`).length,
+    0,
+  )
+})
+
+test('does not age a retained vehicle on repeated viewport refreshes', () => {
+  const selector = new StableVehicleSelector()
+  const center = [116, 39]
+  selector.select([vehicle('held', 116.001, 39)], (coordinate) => [...coordinate], center, 500, 's:1')
+  for (let index = 0; index < MISSING_SNAPSHOT_GRACE * 2; index += 1) {
+    assert.equal(selector.select([], (coordinate) => [...coordinate], center, 500, 's:1').length, 1)
+  }
+  assert.equal(selector.select([], (coordinate) => [...coordinate], center, 500, 's:2').length, 1)
+})
+
+test('uses exit-radius hysteresis to absorb camera-boundary jitter', () => {
+  const selector = new StableVehicleSelector()
+  const center = [116, 39]
+  const entry = selector.select([vehicle('edge', 116.00535, 39)], (coordinate) => [...coordinate], center, 500, 's:1')
+  assert.equal(entry.length, 1)
+  const retained = selector.select([vehicle('edge', 116.0072, 39)], (coordinate) => [...coordinate], center, 500, 's:2')
+  assert.equal(retained.length, 1)
+  const removed = selector.select([vehicle('edge', 116.0083, 39)], (coordinate) => [...coordinate], center, 500, 's:3')
+  assert.equal(removed.length, 0)
 })
 
 test('converts SUMO headings to map headings and unwraps across north', () => {

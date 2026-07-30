@@ -1,6 +1,7 @@
 export type SimulationState =
   | 'STARTING'
   | 'RUNNING'
+  | 'PAUSED'
   | 'STOPPING'
   | 'STOPPED'
   | 'COMPLETED'
@@ -17,20 +18,49 @@ export interface DisturbanceEventPayload {
   position_ratio?: number
 }
 
+interface DisturbanceTargetBase {
+  intersection_id: string
+  event_id?: string
+  start_seconds: number
+  end_seconds: number
+}
+
+export interface LaneClosureDisturbanceTarget extends DisturbanceTargetBase {
+  event_type: 'lane_closure'
+  lane_ids?: string[]
+}
+
+export interface SpeedLimitDisturbanceTarget extends DisturbanceTargetBase {
+  event_type: 'speed_limit'
+  lane_ids?: string[]
+  max_speed?: number
+}
+
+export interface AccidentDisturbanceTarget extends DisturbanceTargetBase {
+  event_type: 'accident'
+  lane_id?: string
+  position_ratio?: number
+}
+
+export type DisturbanceTargetPayload =
+  | LaneClosureDisturbanceTarget
+  | SpeedLimitDisturbanceTarget
+  | AccidentDisturbanceTarget
+
 export interface StartSimulationRequest {
-  intersection_ids: string[]
+  scenario_preset_id: string
   period: string
   origins: Record<string, string[]>
   window_start_seconds: number
   duration_seconds: number
-  flow_multiplier: number
   control_mode: string
   seed: number
   step_length: number
   realtime: boolean
   gui: boolean
   snapshot_interval_seconds: number
-  initial_events: DisturbanceEventPayload[]
+  disturbance_targets: DisturbanceTargetPayload[]
+  playback_speed: number | null
 }
 
 export interface StartSimulationResponse {
@@ -39,6 +69,7 @@ export interface StartSimulationResponse {
   status_url: string
   websocket_url: string
   metrics_url: string | null
+  scenario_preset_id: string | null
 }
 
 export interface StopSimulationResponse {
@@ -75,6 +106,12 @@ export interface SimulationVehicle {
   lane_id: string
   type_id?: string
   lane_position?: number
+}
+
+export interface SimulationPlaybackResponse {
+  session_id: string
+  state: SimulationState
+  playback_speed: number | null
 }
 
 export interface SimulationMetrics {
@@ -124,6 +161,7 @@ export interface SimulationSnapshot {
   duration_seconds: number
   progress: number
   official_time: string
+  playback_speed: number | null
   intersections: Record<string, SimulationIntersectionRuntime>
   vehicles: SimulationVehicle[]
   events: SimulationEvent[]

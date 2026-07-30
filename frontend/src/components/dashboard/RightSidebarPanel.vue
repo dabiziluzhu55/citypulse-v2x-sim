@@ -26,6 +26,9 @@ const layout = RIGHT_SIDEBAR_METRICS_LAYOUT
 const points = computed(() => props.timeseries?.series ?? [])
 const hasRealData = computed(() => points.value.length > 0)
 const comparison = computed(() => Object.fromEntries(EVALUATION_METRICS.map((metric) => [metric.key, buildAlgorithmMetricSeries(points.value, metric.key)])) as Record<EvaluationMetricKey, ReturnType<typeof buildAlgorithmMetricSeries>>)
+function algorithmHasData(algorithmId: string): boolean {
+  return comparison.value.queue.some((series) => series.id === algorithmId && series.source === 'backend')
+}
 
 function setChartRef(key: EvaluationMetricKey, element: unknown) { chartRefs.value[key] = element as HTMLElement | null }
 function chartOption(metric: typeof EVALUATION_METRICS[number]) {
@@ -37,7 +40,7 @@ function chartOption(metric: typeof EVALUATION_METRICS[number]) {
     tooltip: { trigger: 'axis', backgroundColor: 'rgba(2,16,31,.96)', borderColor: 'rgba(82,194,250,.5)', textStyle: { color: '#f4fcff', fontSize: 11 }, valueFormatter: (value: number) => `${value} ${metric.unit}` },
     xAxis: { type: 'category', boundaryGap: false, data: times, axisLine: { lineStyle: { color: 'rgba(141,202,242,.28)' } }, axisTick: { show: false }, axisLabel: { color: 'rgba(188,219,241,.72)', fontSize: 10, hideOverlap: true } },
     yAxis: { type: 'value', min: 0, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: 'rgba(188,219,241,.68)', fontSize: 10 }, splitLine: { lineStyle: { color: 'rgba(176,215,255,.18)', type: 'dashed' } } },
-    series: comparison.value[metric.key].map((series, index) => ({ name: `${series.shortLabel} ${series.label}`, type: 'line', smooth: .42, showSymbol: false, emphasis: { focus: 'series' }, lineStyle: { color: series.color, width: index === 0 ? 2 : 1.7 }, areaStyle: index === 0 ? { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: `${series.color}38` }, { offset: 1, color: `${series.color}03` }]) } : undefined, data: series.values })),
+    series: comparison.value[metric.key].map((series) => ({ name: `${series.shortLabel} ${series.label}`, type: 'line', smooth: .42, connectNulls: false, showSymbol: false, emphasis: { focus: 'series' }, lineStyle: { color: series.color, width: 1.9 }, data: series.values })),
   }
 }
 function renderCharts() {
@@ -52,7 +55,7 @@ function renderCharts() {
 function resizeCharts() { charts.forEach((chart) => chart.resize()) }
 function disposeCharts() { charts.forEach((chart) => chart.dispose()); charts.clear() }
 function handleExport() {
-  const payload = { run_id: props.runId || 'demo', exported_at: new Date().toISOString(), contains_real_data: hasRealData.value, metrics: EVALUATION_METRICS.map((metric) => ({ ...metric, times: evaluationTimes(points.value), algorithms: comparison.value[metric.key] })), algorithms: METRICS_ALGORITHMS, source_notice: 'backend 表示真实基准；derived_mock 表示由基准确定性派生；estimated_mock 表示估算数据。' }
+  const payload = { run_id: props.runId || 'unassigned', exported_at: new Date().toISOString(), contains_real_data: hasRealData.value, metrics: EVALUATION_METRICS.map((metric) => ({ ...metric, times: evaluationTimes(points.value), algorithms: comparison.value[metric.key] })), algorithms: METRICS_ALGORITHMS, source_notice: '仅包含相同配置下由后端仿真实际返回的算法评估数据；missing 表示该算法尚未运行。' }
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -80,13 +83,14 @@ watch(() => props.timeseries, renderCharts, { deep: true })
             <div v-for="(metric, index) in EVALUATION_METRICS" :key="metric.key" class="right-sidebar__metric" :style="{ top: `${layout.metrics[index].titleTop}px` }">
               <h3>{{ metric.title }}</h3>
               <div class="right-sidebar__legend">
-                <span v-for="algorithm in METRICS_ALGORITHMS" :key="algorithm.id" :title="algorithm.label"><i :style="{ background: algorithm.color }" />{{ algorithm.shortLabel }}</span>
+                <span v-for="algorithm in METRICS_ALGORITHMS" :key="algorithm.id" :class="{ 'is-pending': !algorithmHasData(algorithm.id) }" :title="algorithm.label"><i :style="{ background: algorithm.color }" />{{ algorithm.shortLabel }}<em v-if="!algorithmHasData(algorithm.id)">待运行</em></span>
               </div>
               <div :ref="(el) => setChartRef(metric.key, el)" class="right-sidebar__chart" />
             </div>
 
-            <div v-if="timeseriesLoading && !hasRealData" class="right-sidebar__source-note">演示曲线加载中 · 等待真实时序</div>
-            <div v-else-if="!hasRealData" class="right-sidebar__source-note">当前为确定性演示曲线</div>
+            <div v-if="timeseriesLoading && !hasRealData" class="right-sidebar__source-note">等待真实仿真评估时序</div>
+            <div v-else-if="!hasRealData" class="right-sidebar__source-note">尚无相同配置的真实算法结果</div>
+            <div v-else class="right-sidebar__source-note">仅显示相同配置的真实后端结果</div>
             <button type="button" class="right-sidebar__export" @click="handleExport">导出当前场景管控评估结果</button>
           </div>
         </div>
@@ -109,6 +113,8 @@ watch(() => props.timeseries, renderCharts, { deep: true })
 .right-sidebar__legend { height: 25px; display: flex; align-items: center; gap: 12px; padding-left: 8px; }
 .right-sidebar__legend span { display: flex; align-items: center; gap: 5px; color: rgba(190,216,233,.75); font-size: 10px; white-space: nowrap; }
 .right-sidebar__legend i { width: 14px; height: 3px; border-radius: 2px; box-shadow: 0 0 5px currentColor; }
+.right-sidebar__legend span.is-pending { opacity: .48; }
+.right-sidebar__legend em { color: #7e9bb0; font-size: 8px; font-style: normal; }
 .right-sidebar__chart { width: 100%; height: 161px; pointer-events: auto; }
 .right-sidebar__source-note { position: absolute; z-index: 5; left: 40px; top: 770px; width: 355px; color: rgba(141,190,220,.65); font-size: 9px; text-align: right; }
 .right-sidebar__export { position: absolute; z-index: 6; left: 40px; top: 786px; width: 355px; height: 38px; border: 1px solid #52c2fa; clip-path: polygon(6px 0,100% 0,100% 100%,0 100%,0 7px); background: linear-gradient(180deg,#2e519e,#3c8de7); box-shadow: inset 0 1px 0 rgba(173,235,255,.55); color: #eefaff; font: 800 17px/1 'PingFang SC','Microsoft YaHei',sans-serif; text-shadow: 0 1px 3px rgba(0,25,64,.65); cursor: pointer; pointer-events: auto; transition: filter .2s ease,transform .2s ease; }

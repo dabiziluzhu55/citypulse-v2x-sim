@@ -21,12 +21,12 @@ export const SCENARIO_MODE_OPTIONS = [
   {
     label: '雄安20路口路网',
     value: 'xiongan_20',
-    backendIntersectionId: 'demo_2',
-    source: 'compatibility_preset',
   },
+  { label: '东部密集路口场景', value: 'east_dense' },
+  { label: '西部密集路口场景', value: 'west_dense' },
 ] as const
 
-export type ScenarioModeId = (typeof SCENARIO_MODE_OPTIONS)[number]['value']
+export type ScenarioModeId = string
 
 export const SIMULATION_TIME_OPTIONS = [
   { label: '7:00-7:15', value: 'morning_0700', flowMode: 'morning_peak', windowStartSeconds: 0, durationSeconds: 900 },
@@ -57,7 +57,7 @@ export const SIMULATION_TIME_OPTIONS = [
 
 export type SimulationTimePresetId = (typeof SIMULATION_TIME_OPTIONS)[number]['value']
 
-export const FLOW_SCALE_OPTIONS = [0.8, 1.0, 1.2, 1.5] as const
+export const DEFAULT_PLAYBACK_SPEED_OPTIONS = [1, 1.25, 1.5, 2, 3, 5] as const
 
 export const DURATION_OPTIONS = [
   { label: '10min', value: 600 },
@@ -125,7 +125,7 @@ export const DISTURBANCE_CHOICE_OPTIONS: SelectOption<DisturbanceType | 'none'>[
   { label: '无扰动', value: 'none' },
 ]
 
-export const FLOW_SCALE_SELECT_OPTIONS = FLOW_SCALE_OPTIONS.map((value) => ({
+export const PLAYBACK_SPEED_SELECT_OPTIONS = DEFAULT_PLAYBACK_SPEED_OPTIONS.map((value) => ({
   label: `${value}x`,
   value,
 }))

@@ -6,7 +6,9 @@ const MIN_RENDER_RADIUS_METERS = 420
 const MAX_RENDER_RADIUS_METERS = 1_650
 const CAMERA_RANGE_FACTOR = 1.2
 const EXIT_RADIUS_HYSTERESIS_METERS = 80
-const MISSING_SNAPSHOT_GRACE = 3
+// Keep a vehicle alive through short WebSocket gaps and camera-boundary jitter.
+// At the configured 200 ms snapshot cadence this is roughly 2.4 seconds.
+export const MISSING_SNAPSHOT_GRACE = 12
 
 export const MAX_VISIBLE_VEHICLES = 450
 

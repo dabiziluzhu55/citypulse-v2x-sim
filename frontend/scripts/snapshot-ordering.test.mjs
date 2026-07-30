@@ -21,7 +21,9 @@ test('accepts only monotonic snapshots for the active session', () => {
   assert.equal(shouldApplySimulationSnapshot(current, snapshot(13, 2.6, 'RUNNING', 'old-session'), 'session-1'), false)
 })
 
-test('accepts a terminal state published at the same sequence and time', () => {
+test('accepts playback state transitions published at the same sequence and time', () => {
   const current = snapshot(40, 8, 'RUNNING')
+  assert.equal(shouldApplySimulationSnapshot(current, snapshot(40, 8, 'PAUSED'), 'session-1'), true)
+  assert.equal(shouldApplySimulationSnapshot(snapshot(40, 8, 'PAUSED'), snapshot(40, 8, 'RUNNING'), 'session-1'), true)
   assert.equal(shouldApplySimulationSnapshot(current, snapshot(40, 8, 'COMPLETED'), 'session-1'), true)
 })

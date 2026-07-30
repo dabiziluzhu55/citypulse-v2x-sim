@@ -64,14 +64,15 @@ def test_reject_invalid_playback_speed() -> None:
         )
 
 
-def test_reject_unknown_scenario_preset() -> None:
-    with pytest.raises(ValidationError):
-        StartSimulationRequest(
-            scenario_preset_id="demo_2_single",
-            period="morning_peak",
-            duration_seconds=600,
-            control_mode="fixed",
-        )
+def test_accept_demo_2_single_scenario_preset() -> None:
+    request = StartSimulationRequest(
+        scenario_preset_id="demo_2_single",
+        period="morning_peak",
+        duration_seconds=600,
+        control_mode="fixed",
+    )
+
+    assert request.scenario_preset_id == "demo_2_single"
 
 
 @pytest.mark.parametrize("control_mode", ["algorithm", "ippo", "unknown"])

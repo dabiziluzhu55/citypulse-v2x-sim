@@ -8,6 +8,12 @@ export interface ApiRequestConfig {
   timeoutMs?: number
 }
 
+export interface ApiBlobResponse {
+  data: Blob
+  status: number
+  headers: Headers
+}
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 
@@ -50,8 +56,16 @@ async function request<T>(
     if (!response.ok) {
       let detail = `${response.status} ${response.statusText}`
       try {
-        const payload = await response.json() as { detail?: string }
-        detail = payload.detail || detail
+        const payload = await response.json() as {
+          detail?: string | { code?: string; message?: string }
+        }
+        if (typeof payload.detail === 'string') {
+          detail = payload.detail
+        } else if (payload.detail?.message) {
+          detail = payload.detail.code
+            ? `${payload.detail.code}: ${payload.detail.message}`
+            : payload.detail.message
+        }
       } catch {
         // The status text remains the most useful fallback for non-JSON errors.
       }
@@ -83,12 +97,65 @@ async function request<T>(
   }
 }
 
+async function requestBlob(
+  path: string,
+  init: RequestInit,
+  config?: ApiRequestConfig,
+): Promise<ApiBlobResponse> {
+  const controller = new AbortController()
+  const timeoutMs = config?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(buildUrl(path, config), {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/zip',
+        'Content-Type': 'application/json',
+        ...init.headers,
+      },
+    })
+    if (!response.ok) {
+      let detail = `${response.status} ${response.statusText}`
+      try {
+        const payload = await response.json() as {
+          detail?: string | { code?: string; message?: string }
+        }
+        if (typeof payload.detail === 'string') detail = payload.detail
+        else if (payload.detail?.message) {
+          detail = payload.detail.code
+            ? `${payload.detail.code}: ${payload.detail.message}`
+            : payload.detail.message
+        }
+      } catch {
+        // Keep the HTTP status fallback for non-JSON responses.
+      }
+      throw new Error(detail)
+    }
+    return { data: await response.blob(), status: response.status, headers: response.headers }
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === 'AbortError') {
+      throw new Error(`请求超时（${timeoutMs}ms）：${path}`)
+    }
+    if (cause instanceof TypeError) throw new Error(`无法连接后端服务：${path}`)
+    throw cause
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
 export const apiClient = {
   get<T>(path: string, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
     return request<T>(path, undefined, config)
   },
   post<T>(path: string, payload: unknown, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
     return request<T>(path, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }, config)
+  },
+  postBlob(path: string, payload: unknown, config?: ApiRequestConfig): Promise<ApiBlobResponse> {
+    return requestBlob(path, {
       method: 'POST',
       body: JSON.stringify(payload),
     }, config)
