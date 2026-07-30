@@ -83,13 +83,92 @@ def _evaluate(
     error = prediction - actual
     absolute = np.abs(error)
     denominator = np.abs(actual).sum()
-    nonzero = np.abs(actual) > 1e-9
+    # The target is an integer count.  Avoid turning float32 round-off around
+    # a zero count into an enormous MAPE term after de-normalization.
+    nonzero = np.abs(actual) >= 0.5
+    smape_denominator = np.abs(prediction) + np.abs(actual)
+    smape_terms = np.divide(
+        2.0 * absolute,
+        smape_denominator,
+        out=np.zeros_like(absolute, dtype=np.float64),
+        where=smape_denominator > 1e-9,
+    )
     return {
         "mae": float(absolute.mean()),
         "rmse": float(np.sqrt(np.square(error).mean())),
         "mape": float((absolute[nonzero] / np.abs(actual[nonzero])).mean()) if nonzero.any() else 0.0,
+        "smape": float(smape_terms.mean()),
         "wmape": float(absolute.sum() / denominator) if denominator > 1e-9 else 0.0,
     }
+
+
+def _build_model(
+    *, metadata: dict[str, object], stgcn_root: Path, dataset_dir: Path, device: torch.device, dropout: float
+) -> nn.Module:
+    models, utility = _import_stgcn(stgcn_root)
+    adjacency = np.load(dataset_dir / "adjacency.npz")["adjacency"].astype(np.float32)
+    gso = utility.calc_gso(sp.csc_matrix(adjacency), "sym_norm_lap")
+    gso = utility.calc_chebynet_gso(gso).toarray().astype(np.float32)
+    model_args = SimpleNamespace(
+        n_his=int(metadata["n_his"]), Kt=3, Ks=3, stblock_num=2,
+        act_func="glu", graph_conv_type="cheb_graph_conv",
+        gso=torch.from_numpy(gso).to(device), enable_bias=True, droprate=dropout,
+    )
+    blocks = [[len(metadata["features"])], [64, 16, 64], [64, 16, 64], [128, 128], [1]]
+    return models.STGCNChebGraphConv(model_args, blocks, int(metadata["lane_count"])).to(device)
+
+
+def _evaluate_splits(
+    *, model: nn.Module, dataset_dir: Path, horizon_step: int, batch_size: int,
+    device: torch.device, metadata: dict[str, object]
+) -> dict[str, dict[str, float]]:
+    normalization = metadata["normalization"]
+    mean, std = float(normalization["target_mean"]), float(normalization["target_std"])
+    return {
+        split: _evaluate(
+            model,
+            DataLoader(TensorDataset(*_load_split(dataset_dir / f"{split}.npz", horizon_step)), batch_size=batch_size),
+            device,
+            mean,
+            std,
+        )
+        for split in ("validation", "test_in_distribution", "test_extrapolation")
+    }
+
+
+def evaluate_checkpoint(args: argparse.Namespace) -> dict[str, object]:
+    metadata = json.loads((args.dataset_dir / "metadata.json").read_text(encoding="utf-8"))
+    if args.horizon_step != int(metadata["n_pred"]):
+        raise ValueError("STGCN evaluation must use the prepared final forecast horizon.")
+    device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
+    model = _build_model(
+        metadata=metadata, stgcn_root=args.stgcn_root, dataset_dir=args.dataset_dir,
+        device=device, dropout=args.dropout,
+    )
+    checkpoint = args.output_dir / "best.pt"
+    if not checkpoint.is_file():
+        raise FileNotFoundError(f"evaluate-only requires {checkpoint}")
+    saved = torch.load(checkpoint, map_location=device)
+    model.load_state_dict(saved["model"])
+    result: dict[str, object] = {
+        "model": "STGCN-Cheb direct forecast",
+        "horizon_steps": args.horizon_step,
+        "horizon_seconds": args.horizon_step * float(metadata["interval_seconds"]),
+        "best_epoch": int(saved["epoch"]),
+        "best_validation_mse": float(saved["validation_mse"]),
+        "normalization_fit_split": metadata["normalization"]["fit_split"],
+        "lane_count": int(metadata["lane_count"]),
+        **_evaluate_splits(
+            model=model, dataset_dir=args.dataset_dir, horizon_step=args.horizon_step,
+            batch_size=args.batch_size, device=device, metadata=metadata,
+        ),
+    }
+    metrics_path = args.output_dir / "metrics.json"
+    if metrics_path.is_file():
+        existing = json.loads(metrics_path.read_text(encoding="utf-8"))
+        result = {**existing, **result}
+    metrics_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    return result
 
 
 def train(args: argparse.Namespace) -> dict[str, object]:
@@ -100,18 +179,11 @@ def train(args: argparse.Namespace) -> dict[str, object]:
             "This direct STGCN run must use the prepared final horizon; "
             f"requested {args.horizon_step}, prepared n_pred={metadata['n_pred']}."
         )
-    models, utility = _import_stgcn(args.stgcn_root)
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
-    adjacency = np.load(args.dataset_dir / "adjacency.npz")["adjacency"].astype(np.float32)
-    gso = utility.calc_gso(sp.csc_matrix(adjacency), "sym_norm_lap")
-    gso = utility.calc_chebynet_gso(gso).toarray().astype(np.float32)
-    model_args = SimpleNamespace(
-        n_his=int(metadata["n_his"]), Kt=3, Ks=3, stblock_num=2,
-        act_func="glu", graph_conv_type="cheb_graph_conv",
-        gso=torch.from_numpy(gso).to(device), enable_bias=True, droprate=args.dropout,
+    model = _build_model(
+        metadata=metadata, stgcn_root=args.stgcn_root, dataset_dir=args.dataset_dir,
+        device=device, dropout=args.dropout,
     )
-    blocks = [[len(metadata["features"])], [64, 16, 64], [64, 16, 64], [128, 128], [1]]
-    model = models.STGCNChebGraphConv(model_args, blocks, int(metadata["lane_count"])).to(device)
     train_x, train_y = _load_split(args.dataset_dir / "train.npz", args.horizon_step)
     val_x, val_y = _load_split(args.dataset_dir / "validation.npz", args.horizon_step)
     train_loader = DataLoader(TensorDataset(train_x, train_y), batch_size=args.batch_size, shuffle=True)
@@ -191,19 +263,15 @@ def train(args: argparse.Namespace) -> dict[str, object]:
     saved = torch.load(checkpoint, map_location=device)
     model.load_state_dict(saved["model"])
     normalization = metadata["normalization"]
-    mean, std = float(normalization["target_mean"]), float(normalization["target_std"])
     result = {
         "model": "STGCN-Cheb direct forecast",
         "horizon_steps": args.horizon_step,
         "horizon_seconds": args.horizon_step * float(metadata["interval_seconds"]),
         "best_epoch": int(saved["epoch"]),
         "best_validation_mse": float(saved["validation_mse"]),
-        "validation": _evaluate(model, val_loader, device, mean, std),
-        "test_in_distribution": _evaluate(
-            model, DataLoader(TensorDataset(*_load_split(args.dataset_dir / "test_in_distribution.npz", args.horizon_step)), batch_size=args.batch_size), device, mean, std
-        ),
-        "test_extrapolation": _evaluate(
-            model, DataLoader(TensorDataset(*_load_split(args.dataset_dir / "test_extrapolation.npz", args.horizon_step)), batch_size=args.batch_size), device, mean, std
+        **_evaluate_splits(
+            model=model, dataset_dir=args.dataset_dir, horizon_step=args.horizon_step,
+            batch_size=args.batch_size, device=device, metadata=metadata,
         ),
         "normalization_fit_split": normalization["fit_split"],
         "lane_count": int(metadata["lane_count"]),
@@ -228,8 +296,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--horizon-step", type=int, default=12)
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--resume", action="store_true", help="resume from output-dir/last.pt")
+    parser.add_argument("--evaluate-only", action="store_true", help="recompute metrics from output-dir/best.pt without training")
     args = parser.parse_args(argv)
-    print(json.dumps(train(args), indent=2))
+    action = evaluate_checkpoint if args.evaluate_only else train
+    print(json.dumps(action(args), indent=2))
 
 
 if __name__ == "__main__":

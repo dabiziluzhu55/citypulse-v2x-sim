@@ -24,7 +24,7 @@ SPLIT_LABELS = {
 
 
 def _metrics(row: dict[str, object]) -> dict[str, float]:
-    return {name: float(row[name]) for name in ("mae", "rmse", "mape", "wmape")}
+    return {name: float(row[name]) for name in ("mae", "rmse", "mape", "smape", "wmape")}
 
 
 def build_rows(
@@ -82,18 +82,19 @@ def write_results(rows: list[dict[str, object]], *, csv_path: Path, markdown_pat
             [
                 f"## {SPLIT_LABELS[split]}",
                 "",
-                "| Method | MAE | RMSE | WMAPE |",
-                "| --- | ---: | ---: | ---: |",
+                "| Method | MAE | RMSE | sMAPE | WMAPE |",
+                "| --- | ---: | ---: | ---: | ---: |",
             ]
         )
         for row in (item for item in rows if item["split"] == split):
             lines.append(
-                f"| {row['model']} | {row['mae']:.3f} | {row['rmse']:.3f} | {float(row['wmape']):.2%} |"
+                f"| {row['model']} | {row['mae']:.3f} | {row['rmse']:.3f} | "
+                f"{float(row['smape']):.2%} | {float(row['wmape']):.2%} |"
             )
         lines.append("")
     lines.extend(
         [
-            "Note: raw MAPE is preserved in the CSV but not highlighted here because targets near zero make it unstable; use MAE, RMSE, and WMAPE for comparison.",
+            "Note: sMAPE is reported for zero-safe percentage comparison. MAPE excludes true vehicle counts below 0.5 after de-normalization and remains supplementary; use MAE, RMSE, sMAPE, and WMAPE for comparison.",
             "",
         ]
     )

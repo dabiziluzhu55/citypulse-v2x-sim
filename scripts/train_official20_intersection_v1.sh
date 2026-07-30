@@ -22,6 +22,35 @@ export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
 export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 require_file() { [[ -s "$1" ]] || { echo "missing or empty: $1" >&2; exit 2; }; }
+metrics_have_smape() {
+  [[ -s "$1" ]] || return 1
+  "$PYTHON" - "$1" <<'PY'
+import json
+import sys
+
+try:
+    payload = json.load(open(sys.argv[1], encoding="utf-8"))
+    required = ("validation", "test_in_distribution", "test_extrapolation")
+    ok = all(isinstance(payload.get(split), dict) and "smape" in payload[split] for split in required)
+except (OSError, ValueError, TypeError):
+    ok = False
+raise SystemExit(0 if ok else 1)
+PY
+}
+baseline_metrics_have_smape() {
+  [[ -s "$1" ]] || return 1
+  "$PYTHON" - "$1" <<'PY'
+import json
+import sys
+
+try:
+    payload = json.load(open(sys.argv[1], encoding="utf-8"))
+    ok = isinstance(payload, list) and bool(payload) and all("smape" in row for row in payload)
+except (OSError, ValueError, TypeError):
+    ok = False
+raise SystemExit(0 if ok else 1)
+PY
+}
 require_file "$MANIFEST_TSV"
 require_file "$ADJACENCY"
 [[ -d "$RAW_DIR" ]] || { echo "missing raw directory: $RAW_DIR" >&2; exit 2; }
@@ -86,33 +115,47 @@ if [[ ! -s "$FORMAL_DIR/tensors/metadata.json" ]]; then
     --feature vehicle_count --feature halting_count --feature mean_speed --feature occupancy \
     --n-his 12 --n-pred 12
 fi
-if [[ ! -s "$FORMAL_DIR/baseline_metrics_three.json" ]]; then
+if ! baseline_metrics_have_smape "$FORMAL_DIR/baseline_metrics_three.json"; then
   "$PYTHON" -m algorithms.prediction.evaluate_stage1_baselines \
     --dataset-dir "$FORMAL_DIR/tensors" --output "$FORMAL_DIR/baseline_metrics_three.csv"
 fi
 
 xgb_pid=""
-if [[ ! -s "$FORMAL_DIR/xgb/metrics.json" ]]; then
-  if [[ -e "$FORMAL_DIR/xgb/model.json" || -e "$FORMAL_DIR/xgb.log" ]]; then
+if ! metrics_have_smape "$FORMAL_DIR/xgb/metrics.json"; then
+  if [[ -s "$FORMAL_DIR/xgb/model.json" ]]; then
+    "$PYTHON" -m algorithms.prediction.train_xgboost_stage1 \
+      --dataset-dir "$FORMAL_DIR/tensors" --output-dir "$FORMAL_DIR/xgb" \
+      --evaluate-only
+  elif [[ -e "$FORMAL_DIR/xgb.log" ]]; then
     echo "partial XGBoost artefacts found; refuse to overwrite them" >&2
     exit 2
+  else
+    "$PYTHON" -m algorithms.prediction.train_xgboost_stage1 \
+      --dataset-dir "$FORMAL_DIR/tensors" --output-dir "$FORMAL_DIR/xgb" \
+      --max-train-rows 250000 --n-estimators 300 --n-jobs 8 \
+      > "$FORMAL_DIR/xgb.log" 2>&1 &
+    xgb_pid=$!
   fi
-  "$PYTHON" -m algorithms.prediction.train_xgboost_stage1 \
-    --dataset-dir "$FORMAL_DIR/tensors" --output-dir "$FORMAL_DIR/xgb" \
-    --max-train-rows 250000 --n-estimators 300 --n-jobs 8 \
-    > "$FORMAL_DIR/xgb.log" 2>&1 &
-  xgb_pid=$!
 fi
 
-if [[ ! -s "$FORMAL_DIR/stgcn/metrics.json" ]]; then
-  stgcn_args=()
-  if [[ -e "$FORMAL_DIR/stgcn" ]]; then
-    stgcn_args+=(--resume)
+if ! metrics_have_smape "$FORMAL_DIR/stgcn/metrics.json"; then
+  if [[ -s "$FORMAL_DIR/stgcn/best.pt" ]]; then
+    CUDA_VISIBLE_DEVICES="$GPU_ID" "$PYTHON" -m algorithms.prediction.train_stgcn_stage1 \
+      --dataset-dir "$FORMAL_DIR/tensors" --stgcn-root "$STGCN_DIR" \
+      --output-dir "$FORMAL_DIR/stgcn" --batch-size 32 --horizon-step 12 --evaluate-only
+  else
+    stgcn_args=()
+    if [[ -e "$FORMAL_DIR/stgcn/last.pt" ]]; then
+      stgcn_args+=(--resume)
+    elif [[ -d "$FORMAL_DIR/stgcn" ]] && [[ -n "$(find "$FORMAL_DIR/stgcn" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+      echo "partial STGCN artefacts found without last.pt; refuse to overwrite them" >&2
+      exit 2
+    fi
+    CUDA_VISIBLE_DEVICES="$GPU_ID" "$PYTHON" -m algorithms.prediction.train_stgcn_stage1 \
+      --dataset-dir "$FORMAL_DIR/tensors" --stgcn-root "$STGCN_DIR" \
+      --output-dir "$FORMAL_DIR/stgcn" --epochs "$EPOCHS" --patience "$PATIENCE" \
+      --batch-size 32 --seed 42 --horizon-step 12 "${stgcn_args[@]}"
   fi
-  CUDA_VISIBLE_DEVICES="$GPU_ID" "$PYTHON" -m algorithms.prediction.train_stgcn_stage1 \
-    --dataset-dir "$FORMAL_DIR/tensors" --stgcn-root "$STGCN_DIR" \
-    --output-dir "$FORMAL_DIR/stgcn" --epochs "$EPOCHS" --patience "$PATIENCE" \
-    --batch-size 32 --seed 42 --horizon-step 12 "${stgcn_args[@]}"
 fi
 if [[ -n "$xgb_pid" ]]; then
   wait "$xgb_pid"

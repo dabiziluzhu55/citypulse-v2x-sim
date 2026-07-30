@@ -42,13 +42,64 @@ def _predict(model, x: np.ndarray, *, chunk_rows: int = 100_000) -> np.ndarray:
 def _metrics(prediction: np.ndarray, actual: np.ndarray) -> dict[str, float]:
     error = prediction - actual
     absolute = np.abs(error)
-    nonzero = np.abs(actual) > 1e-9
+    # Counts that are exactly zero can acquire float32 round-off after
+    # de-normalization.  Mask on the original count scale for MAPE instead of
+    # treating numerical residue as a real denominator.
+    nonzero = np.abs(actual) >= 0.5
+    smape_denominator = np.abs(prediction) + np.abs(actual)
+    smape_terms = np.divide(
+        2.0 * absolute,
+        smape_denominator,
+        out=np.zeros_like(absolute, dtype=np.float64),
+        where=smape_denominator > 1e-9,
+    )
     return {
         "mae": float(absolute.mean()),
         "rmse": float(np.sqrt(np.square(error).mean())),
         "mape": float((absolute[nonzero] / np.abs(actual[nonzero])).mean()) if nonzero.any() else 0.0,
+        "smape": float(smape_terms.mean()),
         "wmape": float(absolute.sum() / np.abs(actual).sum()),
     }
+
+
+def _evaluate_model(model, dataset_dir: Path, horizon_step: int) -> dict[str, object]:
+    metadata = json.loads((dataset_dir / "metadata.json").read_text(encoding="utf-8"))
+    if horizon_step != int(metadata["n_pred"]):
+        raise ValueError("XGBoost baseline must use the prepared final forecast horizon.")
+    normalization = metadata["normalization"]
+    mean, std = float(normalization["target_mean"]), float(normalization["target_std"])
+    result: dict[str, object] = {
+        "model": "XGBoost multivariate lane-history baseline",
+        "features": metadata["features"],
+        "horizon_steps": horizon_step,
+        "horizon_seconds": horizon_step * float(metadata["interval_seconds"]),
+    }
+    for split in ("validation", "test_in_distribution", "test_extrapolation"):
+        data = np.load(dataset_dir / f"{split}.npz")
+        actual = data["y"][:, horizon_step - 1, :] * std + mean
+        prediction = _predict(model, data["x"]) * std + mean
+        result[split] = _metrics(prediction, actual)
+    return result
+
+
+def evaluate_checkpoint(args: argparse.Namespace) -> dict[str, object]:
+    try:
+        from xgboost import XGBRegressor
+    except ImportError as exc:
+        raise RuntimeError("xgboost is required; install it in the v2x-ai-py310 environment.") from exc
+
+    model_path = args.output_dir / "model.json"
+    if not model_path.is_file():
+        raise FileNotFoundError(f"evaluate-only requires {model_path}")
+    model = XGBRegressor()
+    model.load_model(model_path)
+    result = _evaluate_model(model, args.dataset_dir, args.horizon_step)
+    existing_metrics = args.output_dir / "metrics.json"
+    if existing_metrics.is_file():
+        existing = json.loads(existing_metrics.read_text(encoding="utf-8"))
+        result = {**existing, **result}
+    existing_metrics.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    return result
 
 
 def train(args: argparse.Namespace) -> dict[str, object]:
@@ -71,21 +122,12 @@ def train(args: argparse.Namespace) -> dict[str, object]:
     model.fit(x_train, y_train, verbose=False)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     model.save_model(args.output_dir / "model.json")
-    normalization = metadata["normalization"]
-    mean, std = float(normalization["target_mean"]), float(normalization["target_std"])
-    result: dict[str, object] = {
-        "model": "XGBoost multivariate lane-history baseline", "features": metadata["features"],
-        "horizon_steps": args.horizon_step, "horizon_seconds": args.horizon_step * float(metadata["interval_seconds"]),
-        "train_rows": int(train_x.shape[0] * train_x.shape[3]), "sampled_train_rows": int(len(y_train)),
-        "input_columns": int(x_train.shape[1]),
-    }
-    # Correct row counts after sampling and evaluate every split without materializing flattened tensors.
-    result["sampled_train_rows"] = int(len(y_train))
-    for split in ("validation", "test_in_distribution", "test_extrapolation"):
-        data = np.load(args.dataset_dir / f"{split}.npz")
-        actual = data["y"][:, args.horizon_step - 1, :] * std + mean
-        prediction = _predict(model, data["x"]) * std + mean
-        result[split] = _metrics(prediction, actual)
+    result = _evaluate_model(model, args.dataset_dir, args.horizon_step)
+    result.update(
+        train_rows=int(train_x.shape[0] * train_x.shape[3]),
+        sampled_train_rows=int(len(y_train)),
+        input_columns=int(x_train.shape[1]),
+    )
     (args.output_dir / "metrics.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     return result
 
@@ -103,8 +145,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--colsample-bytree", type=float, default=0.8)
     parser.add_argument("--n-jobs", type=int, default=8)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--evaluate-only", action="store_true", help="recompute metrics from output-dir/model.json without training")
     args = parser.parse_args(argv)
-    print(json.dumps(train(args), indent=2))
+    action = evaluate_checkpoint if args.evaluate_only else train
+    print(json.dumps(action(args), indent=2))
 
 
 if __name__ == "__main__":

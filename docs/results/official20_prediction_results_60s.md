@@ -1,35 +1,40 @@
-# Official-20 intersection prediction: comparable 60-second results
+# 官方 20 路口预测：统一 60 秒结果
 
-All methods predict `vehicle_count` 60 seconds ahead on the same 20 intersections and episode splits.
+所有方法均在相同的 20 个路口、相同 episode 划分上预测未来 60 秒的 `vehicle_count`。
 
-## Validation
+| 指标 | 说明 |
+| --- | --- |
+| MAE / RMSE | 原始车辆数尺度的误差 |
+| MAPE | 仅对反归一化后 `vehicle_count >= 0.5` 的目标计算，避免零流量的浮点残差作为分母 |
+| sMAPE | 零安全的逐样本百分比误差 |
+| WMAPE | 总绝对误差与总真实流量之比 |
 
-| Method | MAE | RMSE | WMAPE |
-| --- | ---: | ---: | ---: |
-| persistence | 4.545 | 6.044 | 21.33% |
-| moving_average | 4.410 | 5.955 | 20.69% |
-| historical_average | 9.934 | 14.362 | 46.62% |
-| XGBoost | 3.538 | 4.763 | 16.60% |
-| STGCN | 3.123 | 4.288 | 14.65% |
+## 验证集
 
-## Test (ID)
+| 方法 | MAE | RMSE | sMAPE | WMAPE |
+| --- | ---: | ---: | ---: | ---: |
+| persistence | 4.545 | 6.044 | 35.82% | 21.33% |
+| moving_average | 4.410 | 5.955 | 33.11% | 20.69% |
+| historical_average | 9.934 | 14.362 | 52.79% | 46.62% |
+| XGBoost | 3.538 | 4.763 | 26.88% | 16.60% |
+| STGCN | **3.123** | **4.288** | **24.38%** | **14.65%** |
 
-| Method | MAE | RMSE | WMAPE |
-| --- | ---: | ---: | ---: |
-| persistence | 4.561 | 6.040 | 21.48% |
-| moving_average | 4.438 | 5.989 | 20.90% |
-| historical_average | 10.015 | 14.708 | 47.16% |
-| XGBoost | 3.545 | 4.737 | 16.69% |
-| STGCN | 3.169 | 4.351 | 14.92% |
+## ID 测试集
 
-## Test (OOD)
+| 方法 | MAE | RMSE | sMAPE | WMAPE |
+| --- | ---: | ---: | ---: | ---: |
+| persistence | 4.561 | 6.040 | 36.18% | 21.48% |
+| moving_average | 4.438 | 5.989 | 33.36% | 20.90% |
+| historical_average | 10.015 | 14.708 | 53.10% | 47.16% |
+| XGBoost | 3.545 | 4.737 | 27.04% | 16.69% |
+| STGCN | **3.169** | **4.351** | **24.63%** | **14.92%** |
 
-| Method | MAE | RMSE | WMAPE |
-| --- | ---: | ---: | ---: |
-| persistence | 4.480 | 6.033 | 21.29% |
-| moving_average | 4.328 | 5.922 | 20.56% |
-| historical_average | 12.624 | 18.637 | 59.98% |
-| XGBoost | 3.792 | 5.099 | 18.02% |
-| STGCN | 3.722 | 5.108 | 17.68% |
+## OOD 测试集
 
-Note: raw MAPE is preserved in the CSV but not highlighted here because targets near zero make it unstable; use MAE, RMSE, and WMAPE for comparison.
+| 方法 | MAE | RMSE | sMAPE | WMAPE |
+| --- | ---: | ---: | ---: | ---: |
+| persistence | 4.480 | 6.033 | 38.81% | 21.29% |
+| moving_average | 4.328 | 5.922 | 36.05% | 20.56% |
+| historical_average | 12.624 | 18.637 | 64.18% | 59.98% |
+| XGBoost | 3.792 | **5.099** | 31.41% | 18.02% |
+| STGCN | **3.722** | 5.108 | **30.00%** | **17.68%** |

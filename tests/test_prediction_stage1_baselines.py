@@ -3,7 +3,7 @@ import json
 
 import numpy as np
 
-from algorithms.prediction.evaluate_stage1_baselines import evaluate
+from algorithms.prediction.evaluate_stage1_baselines import _metrics, evaluate
 
 
 def _write_split(path, x, y):
@@ -44,7 +44,18 @@ def test_stage1_baselines_are_training_only_and_use_the_history_window(tmp_path)
     assert by_model["persistence"]["mae"] == 2.0
     assert by_model["moving_average"]["mae"] == 3.0
     assert by_model["historical_average"]["mae"] == 2.0
+    assert by_model["persistence"]["smape"] == 0.4
     with output.open(encoding="utf-8", newline="") as handle:
         assert {row["model"] for row in csv.DictReader(handle)} == {
             "persistence", "moving_average", "historical_average",
         }
+
+
+def test_metrics_do_not_treat_zero_count_roundoff_as_mape_denominator():
+    metrics = _metrics(
+        np.asarray([2.0], dtype=np.float32),
+        np.asarray([1e-7], dtype=np.float32),
+    )
+
+    assert metrics["mape"] == 0.0
+    assert metrics["smape"] > 1.9

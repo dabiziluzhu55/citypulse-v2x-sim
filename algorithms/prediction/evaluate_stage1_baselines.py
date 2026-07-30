@@ -15,11 +15,22 @@ def _metrics(prediction: np.ndarray, actual: np.ndarray) -> dict[str, float]:
     error = prediction - actual
     absolute = np.abs(error)
     denominator = np.abs(actual).sum()
-    nonzero = np.abs(actual) > 1e-9
+    # ``vehicle_count`` is integer-valued before normalization.  A 0 count
+    # can become a tiny non-zero value after the float32 normalize/de-normalize
+    # round trip, so use the count scale rather than a numerical epsilon.
+    nonzero = np.abs(actual) >= 0.5
+    smape_denominator = np.abs(prediction) + np.abs(actual)
+    smape_terms = np.divide(
+        2.0 * absolute,
+        smape_denominator,
+        out=np.zeros_like(absolute, dtype=np.float64),
+        where=smape_denominator > 1e-9,
+    )
     return {
         "mae": float(absolute.mean()),
         "rmse": float(np.sqrt(np.square(error).mean())),
         "mape": float((absolute[nonzero] / np.abs(actual[nonzero])).mean()) if nonzero.any() else 0.0,
+        "smape": float(smape_terms.mean()),
         "wmape": float(absolute.sum() / denominator) if denominator > 1e-9 else 0.0,
     }
 
