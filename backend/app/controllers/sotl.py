@@ -17,6 +17,7 @@ DEFAULT_DECISION_INTERVAL = 5.0
 _TRANSITION_STAGES = frozenset({"YELLOW", "CLEARANCE"})
 
 
+# SOTL算法的对外入口，仿真每步调用compute_actions方法，传入observation，返回actions
 class SOTLController:
     """SOTL：非当前相位维护请求积分κ，阈值触发切换，并保护接近停止线的车队"""
 
@@ -148,18 +149,21 @@ def _sotl_decide(
     stage_elapsed = float(i_obs.get("stage_elapsed", 0.0))
     lanes_obs: dict[str, Any] = i_obs.get("lanes", {})
 
+    # 如果当前阶段是过渡阶段或存在待切换相位，则不进行切换
     if stage in _TRANSITION_STAGES or pending_phase is not None:
         runtime.last_stage = stage
         return None
-
+    # 如果当前阶段不是绿色阶段，则不进行切换
     if stage != "GREEN":
         runtime.last_stage = stage
         return None
-
+    # 刚变绿的相位，积分清零
     if runtime.last_stage in _TRANSITION_STAGES or runtime.last_stage is None:
         runtime.kappa[current_phase] = 0.0
     runtime.last_stage = stage
 
+    # 计算积分K
+    # 积分K=车辆数*时间间隔
     dt = decision_interval
     for phase_id in ix.phase_order:
         if phase_id == current_phase:
@@ -170,13 +174,14 @@ def _sotl_decide(
             lanes_obs,
         )
         runtime.kappa[phase_id] += vehicle_count * dt
-
+    # 如果当前阶段绿灯时间小于最小绿灯时间，则不进行切换
     if stage_elapsed + 1e-9 < minimum_green:
         return None
-
+    # 如果所有相位的积分K都小于阈值，则不进行切换
     if not any(runtime.kappa[p] >= threshold for p in ix.phase_order):
         return None
 
+    # 选择目标相位
     max_kappa = max(runtime.kappa[p] for p in ix.phase_order)
     tied = [p for p in ix.phase_order if runtime.kappa[p] == max_kappa]
     target_phase = _pick_cyclic_after_current(
@@ -184,10 +189,10 @@ def _sotl_decide(
         current_phase,
         tied,
     )
-
+    # 如果目标相位与当前相位相同，则不进行切换
     if target_phase == current_phase:
         return None
-
+    # 车队保护，少于mu的车辆接近停止线，不进行切换
     if _platoon_blocks_switch(
         ix,
         current_phase,
