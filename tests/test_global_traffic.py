@@ -9,8 +9,10 @@ from pathlib import Path
 from simulation.sumo.artifacts import GeneratedArtifactLayout
 from simulation.sumo.build_traffic import (
     CountLocation,
+    SampledFlow,
     _allocate_vehicle_mix,
     _inspect_route_network,
+    _od_report,
     _validate_route_sampler,
     build_traffic_scenarios,
 )
@@ -270,6 +272,12 @@ def _write_demand(
                         "bus": 0.10,
                         "truck": 0.05,
                     },
+                },
+                "od_zones": {
+                    f"zone_{index}": [intersection_id]
+                    for index, intersection_id in enumerate(
+                        intersection_ids, start=1
+                    )
                 },
                 "intersections": intersections,
             }
@@ -716,6 +724,77 @@ class GlobalTrafficTests(unittest.TestCase):
             )
             self.assertEqual(actual_pcu, float(target))
 
+    def test_od_uses_only_route_endpoints_and_excludes_diagonal(self):
+        profiles = load_vehicle_profiles(PROFILES)
+        locations = {
+            ("origin_in", "origin_out"): CountLocation(
+                "demo_1", "east", "through", ("origin_in", "origin_out")
+            ),
+            ("middle_in", "middle_out"): CountLocation(
+                "demo_2", "east", "through", ("middle_in", "middle_out")
+            ),
+            ("destination_in", "destination_out"): CountLocation(
+                "demo_3",
+                "east",
+                "through",
+                ("destination_in", "destination_out"),
+            ),
+            ("same_zone_in", "same_zone_out"): CountLocation(
+                "demo_8", "east", "through", ("same_zone_in", "same_zone_out")
+            ),
+        }
+        flows = (
+            SampledFlow(
+                "cross_three_zones",
+                "official_passenger",
+                0,
+                900,
+                3,
+                (
+                    "origin_in",
+                    "origin_out",
+                    "middle_in",
+                    "middle_out",
+                    "destination_in",
+                    "destination_out",
+                ),
+            ),
+            SampledFlow(
+                "within_zone_1",
+                "official_electric_bicycle",
+                0,
+                900,
+                4,
+                (
+                    "origin_in",
+                    "origin_out",
+                    "same_zone_in",
+                    "same_zone_out",
+                ),
+            ),
+        )
+        report = _od_report(
+            "morning_peak",
+            flows,
+            profiles,
+            locations,
+            {
+                "zone_1": ("demo_1", "demo_8"),
+                "zone_2": ("demo_2",),
+                "zone_3": ("demo_3",),
+            },
+        )
+
+        self.assertEqual(
+            report["matrix_pcu"],
+            [[0.0, 0.0, 3.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+        )
+        self.assertEqual(report["matrix_vehicle_count"][0][2], 3)
+        self.assertEqual(report["total_sampled_pcu"], 5.0)
+        self.assertEqual(report["interzonal_pcu"], 3.0)
+        self.assertEqual(report["excluded_intra_zone_pcu"], 2.0)
+        self.assertEqual(report["excluded_intra_zone_vehicle_count"], 4)
+
     def test_global_build_uses_one_route_to_satisfy_two_intersections(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -822,6 +901,26 @@ class GlobalTrafficTests(unittest.TestCase):
             )
             self.assertTrue(report["passed"])
             self.assertEqual(report["total_absolute_error_pcu"], 0)
+            od_report = json.loads(
+                (generated / scenario["od_report"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                result["od_zones"],
+                {
+                    "zone_1": ["demo_a"],
+                    "zone_2": ["demo_b"],
+                },
+            )
+            self.assertEqual(od_report["matrix_pcu"], [[0.0, 10.0], [0.0, 0.0]])
+            self.assertEqual(od_report["interzonal_pcu"], 10.0)
+            self.assertEqual(od_report["total_sampled_pcu"], 10.0)
+            self.assertEqual(od_report["excluded_intra_zone_pcu"], 0.0)
+            self.assertEqual(scenario["od_interzonal_pcu"], 10.0)
+            od_csv = (generated / scenario["od_matrix_csv"]).read_text(
+                encoding="utf-8-sig"
+            )
+            self.assertIn("origin_zone/destination_zone,zone_1,zone_2", od_csv)
+            self.assertIn("zone_1,0,10", od_csv)
             self.assertTrue(any(item["count"] == "0" for item in fake.count_relations))
             self.assertTrue(
                 any(command[0] == "fake-sumo" for command in fake.commands)

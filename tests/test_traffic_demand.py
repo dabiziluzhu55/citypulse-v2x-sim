@@ -250,6 +250,48 @@ def demo_9_manifest():
 
 
 class TrafficDemandTests(unittest.TestCase):
+    def test_official_od_zones_cover_every_intersection_once(self):
+        configuration = load_traffic_demands(DEMANDS)
+        self.assertEqual(
+            configuration.od_zones,
+            {
+                "zone_1": ("demo_1", "demo_8", "demo_10"),
+                "zone_2": ("demo_2", "demo_4"),
+                "zone_3": ("demo_3", "demo_5", "demo_6", "demo_9"),
+                "zone_4": ("demo_7",),
+                "zone_5": ("demo_11", "demo_12"),
+                "zone_6": ("demo_13",),
+                "zone_7": ("demo_14", "demo_15", "demo_19"),
+                "zone_8": ("demo_16",),
+                "zone_9": ("demo_17", "demo_18", "demo_20"),
+            },
+        )
+        assigned = [
+            intersection_id
+            for intersection_ids in configuration.od_zones.values()
+            for intersection_id in intersection_ids
+        ]
+        self.assertEqual(len(assigned), 20)
+        self.assertEqual(set(assigned), set(configuration.intersections))
+
+    def test_od_zone_duplicate_assignment_is_rejected(self):
+        raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
+        raw["od_zones"]["zone_2"].append("demo_1")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "duplicate-od-zone.json"
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            with self.assertRaisesRegex(TrafficDemandError, "multiple OD zones"):
+                load_traffic_demands(path)
+
+    def test_od_zones_must_cover_every_intersection(self):
+        raw = json.loads(DEMANDS.read_text(encoding="utf-8"))
+        raw["od_zones"]["zone_1"].remove("demo_1")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "incomplete-od-zones.json"
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            with self.assertRaisesRegex(TrafficDemandError, "do not cover"):
+                load_traffic_demands(path)
+
     def test_official_intervals_and_totals(self):
         demo_1 = load_traffic_demands(DEMANDS).intersections["demo_1"]
         self.assertEqual(

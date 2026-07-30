@@ -12,6 +12,17 @@
       "truck": 0.05
     }
   },
+  "od_zones": {
+    "zone_1": ["demo_1", "demo_8", "demo_10"],
+    "zone_2": ["demo_2", "demo_4"],
+    "zone_3": ["demo_3", "demo_5", "demo_6", "demo_9"],
+    "zone_4": ["demo_7"],
+    "zone_5": ["demo_11", "demo_12"],
+    "zone_6": ["demo_13"],
+    "zone_7": ["demo_14", "demo_15", "demo_19"],
+    "zone_8": ["demo_16"],
+    "zone_9": ["demo_17", "demo_18", "demo_20"]
+  },
   "intersections": {
     "demo_1": {
       "approaches": {
