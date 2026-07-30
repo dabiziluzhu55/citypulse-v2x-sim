@@ -90,6 +90,7 @@ class TrafficDemandConfiguration:
     unit: str
     interval_seconds: int
     vehicle_mix: VehicleMix
+    od_zones: Mapping[str, Tuple[str, ...]]
     intersections: Mapping[str, IntersectionDemand]
 
 
@@ -425,6 +426,55 @@ def load_traffic_demands(path: Path) -> TrafficDemandConfiguration:
     }
     if not intersections:
         raise TrafficDemandError("No official traffic demands are configured.")
+    raw_od_zones = raw.get("od_zones")
+    if raw_od_zones is None:
+        # Compatibility for synthetic and legacy schema-v2 demand files.
+        od_zones = {
+            f"zone_{index}": (intersection_id,)
+            for index, intersection_id in enumerate(intersections, start=1)
+        }
+    else:
+        if not isinstance(raw_od_zones, Mapping) or not raw_od_zones:
+            raise TrafficDemandError("od_zones must be a non-empty object.")
+        od_zones = {}
+        assigned_intersections: Dict[str, str] = {}
+        for raw_zone_id, raw_intersection_ids in raw_od_zones.items():
+            zone_id = str(raw_zone_id).strip()
+            if not zone_id:
+                raise TrafficDemandError("od_zones contains an empty zone ID.")
+            if not isinstance(raw_intersection_ids, list) or not raw_intersection_ids:
+                raise TrafficDemandError(
+                    f"od_zones/{zone_id} must be a non-empty array of intersection IDs."
+                )
+            intersection_ids = tuple(str(item) for item in raw_intersection_ids)
+            if any(not item for item in intersection_ids):
+                raise TrafficDemandError(
+                    f"od_zones/{zone_id} contains an empty intersection ID."
+                )
+            if len(set(intersection_ids)) != len(intersection_ids):
+                raise TrafficDemandError(
+                    f"od_zones/{zone_id} contains duplicate intersection IDs."
+                )
+            for intersection_id in intersection_ids:
+                if intersection_id not in intersections:
+                    raise TrafficDemandError(
+                        f"od_zones/{zone_id} references unknown intersection "
+                        f"{intersection_id!r}."
+                    )
+                existing = assigned_intersections.get(intersection_id)
+                if existing is not None:
+                    raise TrafficDemandError(
+                        f"Intersection {intersection_id!r} belongs to multiple OD "
+                        f"zones: {existing!r} and {zone_id!r}."
+                    )
+                assigned_intersections[intersection_id] = zone_id
+            od_zones[zone_id] = intersection_ids
+        missing_zone_assignments = set(intersections) - set(assigned_intersections)
+        if missing_zone_assignments:
+            raise TrafficDemandError(
+                "OD zones do not cover configured intersections: "
+                f"{sorted(missing_zone_assignments)}"
+            )
     for direction in ("upstream", "downstream"):
         configured: Dict[str, Tuple[str, str]] = {}
         for intersection_id, demand in intersections.items():
@@ -442,5 +492,6 @@ def load_traffic_demands(path: Path) -> TrafficDemandConfiguration:
         unit="pcu",
         interval_seconds=interval_seconds,
         vehicle_mix=VehicleMix(basis="vehicle_count", shares=shares),
+        od_zones=od_zones,
         intersections=intersections,
     )

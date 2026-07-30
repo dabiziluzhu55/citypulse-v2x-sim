@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from simulation.sumo.vehicle import build_vehicle_type_metadata
 from simulation.sumo.vehicle_profiles import (
     VehicleProfileError,
     load_vehicle_profiles,
@@ -28,6 +29,32 @@ class VehicleProfileTests(unittest.TestCase):
         profiles = load_vehicle_profiles(PROFILES)
         self.assertEqual(profiles["bus"].pcu_factor, 2.0)
         self.assertEqual(profiles["truck"].pcu_factor, 2.5)
+
+    def test_electric_bicycle_profile_reaches_algorithm_metadata(self):
+        profiles = load_vehicle_profiles(PROFILES)
+        electric_bicycle = profiles["electric_bicycle"]
+        self.assertEqual(electric_bicycle.pcu_factor, 0.5)
+        self.assertEqual(electric_bicycle.v_class, "bicycle")
+        self.assertEqual(electric_bicycle.powertrain, "electric")
+        self.assertEqual(electric_bicycle.emission_class, "HBEFA3/zero")
+        self.assertEqual(electric_bicycle.max_speed_mps, 6.94)
+        self.assertEqual(
+            electric_bicycle.sumo_attributes("official_electric_bicycle")[
+                "vClass"
+            ],
+            "bicycle",
+        )
+
+        metadata = build_vehicle_type_metadata(
+            {"official_electric_bicycle": "electric_bicycle"}, profiles
+        )["official_electric_bicycle"]
+        self.assertEqual(metadata.profile_id, "electric_bicycle")
+        self.assertEqual(metadata.pcu_factor, 0.5)
+        self.assertEqual(metadata.vehicle_class, "bicycle")
+        self.assertEqual(metadata.powertrain, "electric")
+        self.assertEqual(metadata.emission_class, "HBEFA3/zero")
+        self.assertEqual(metadata.length_m, 1.8)
+        self.assertEqual(metadata.max_speed_mps, 6.94)
 
     def test_invalid_profile_is_rejected(self):
         raw = json.loads(PROFILES.read_text(encoding="utf-8"))
