@@ -91,6 +91,22 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
       "max_speed_mps": 13.9,
       "fuel_density_mg_per_ml": 745.0,
       "hard_braking_threshold_mps2": -3.0
+    },
+    "official_electric_bicycle": {
+      "type_id": "official_electric_bicycle",
+      "profile_id": "electric_bicycle",
+      "pcu_factor": 0.5,
+      "vehicle_class": "bicycle",
+      "powertrain": "electric",
+      "emission_class": "HBEFA3/zero",
+      "accel_mps2": 1.5,
+      "decel_mps2": 3.0,
+      "length_m": 1.8,
+      "width_m": 0.65,
+      "min_gap_m": 0.5,
+      "max_speed_mps": 6.94,
+      "fuel_density_mg_per_ml": 1.0,
+      "hard_braking_threshold_mps2": -2.0
     }
   },
   "edge_lanes": {
@@ -115,7 +131,7 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
         "speed_limit_mps": 5.5,
         "allowed_vehicle_classes": ["bicycle"],
         "disallowed_vehicle_classes": [],
-        "allowed_vehicle_type_ids": []
+        "allowed_vehicle_type_ids": ["official_electric_bicycle"]
       }
     ]
   },

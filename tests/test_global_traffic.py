@@ -264,7 +264,12 @@ def _write_demand(
                 "interval_seconds": 900,
                 "vehicle_mix": {
                     "basis": "vehicle_count",
-                    "shares": {"passenger": 0.85, "bus": 0.10, "truck": 0.05},
+                    "shares": {
+                        "passenger": 0.80,
+                        "electric_bicycle": 0.05,
+                        "bus": 0.10,
+                        "truck": 0.05,
+                    },
                 },
                 "intersections": intersections,
             }
@@ -672,18 +677,44 @@ class GlobalTrafficTests(unittest.TestCase):
                 )
 
     def test_half_pcu_vehicle_mix_is_exact_and_deterministic(self):
-        demand = load_traffic_demands(
+        official_path = (
             ROOT / "data" / "maps" / "sumo" / "official_traffic_demands.json"
         )
+        demand = load_traffic_demands(official_path)
         profiles = load_vehicle_profiles(PROFILES)
         self.assertEqual(
             _allocate_vehicle_mix(100, demand.vehicle_mix.shares, profiles),
-            {"bus": 9, "passenger": 72, "truck": 4},
+            {
+                "bus": 9,
+                "electric_bicycle": 4,
+                "passenger": 70,
+                "truck": 4,
+            },
         )
         self.assertEqual(
-            9 * 2.0 + 72 * 1.0 + 4 * 2.5,
+            9 * 2.0 + 4 * 0.5 + 70 * 1.0 + 4 * 2.5,
             100,
         )
+
+        raw = json.loads(official_path.read_text(encoding="utf-8"))
+        official_targets = {
+            int(target)
+            for intersection in raw["intersections"].values()
+            for period in intersection["periods"]
+            for interval in period["intervals"]
+            for approach in interval["volumes"].values()
+            for target in approach.values()
+        }
+        self.assertTrue(official_targets)
+        for target in official_targets:
+            allocation = _allocate_vehicle_mix(
+                target, demand.vehicle_mix.shares, profiles
+            )
+            actual_pcu = sum(
+                allocation[profile_id] * profiles[profile_id].pcu_factor
+                for profile_id in allocation
+            )
+            self.assertEqual(actual_pcu, float(target))
 
     def test_global_build_uses_one_route_to_satisfy_two_intersections(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -763,7 +794,14 @@ class GlobalTrafficTests(unittest.TestCase):
                 },
             )
             route_root = ET.parse(generated / scenario["route_file"]).getroot()
-            self.assertEqual(len(route_root.findall("vType")), 3)
+            self.assertEqual(len(route_root.findall("vType")), 4)
+            electric_type = route_root.find(
+                "vType[@id='official_electric_bicycle']"
+            )
+            self.assertIsNotNone(electric_type)
+            self.assertEqual(electric_type.get("vClass"), "bicycle")
+            self.assertEqual(electric_type.get("emissionClass"), "HBEFA3/zero")
+            self.assertEqual(electric_type.get("maxSpeed"), "6.94")
             self.assertTrue(route_root.findall("flow"))
             self.assertTrue(
                 all(
@@ -787,6 +825,18 @@ class GlobalTrafficTests(unittest.TestCase):
             self.assertTrue(any(item["count"] == "0" for item in fake.count_relations))
             self.assertTrue(
                 any(command[0] == "fake-sumo" for command in fake.commands)
+            )
+            sampler_commands = [
+                command
+                for command in fake.commands
+                if len(command) > 1 and command[1] == "fake-routeSampler.py"
+            ]
+            self.assertTrue(
+                any(
+                    command[command.index("--prefix") + 1]
+                    == "electric_bicycle_"
+                    for command in sampler_commands
+                )
             )
 
     def test_route_sampler_retries_after_seed_42_quality_failure(self):

@@ -6,7 +6,8 @@
   "vehicle_mix": {
     "basis": "vehicle_count",
     "shares": {
-      "passenger": 0.85,
+      "passenger": 0.80,
+      "electric_bicycle": 0.05,
       "bus": 0.10,
       "truck": 0.05
     }

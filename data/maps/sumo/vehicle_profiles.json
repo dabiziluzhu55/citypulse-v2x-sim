@@ -16,6 +16,21 @@
       "fuel_density_mg_per_ml": 745.0,
       "hard_braking_threshold_mps2": -3.0
     },
+    "electric_bicycle": {
+      "pcu_factor": 0.5,
+      "v_class": "bicycle",
+      "powertrain": "electric",
+      "emission_class": "HBEFA3/zero",
+      "accel_mps2": 1.5,
+      "decel_mps2": 3.0,
+      "length_m": 1.8,
+      "width_m": 0.65,
+      "min_gap_m": 0.5,
+      "max_speed_mps": 6.94,
+      "sigma": 0.7,
+      "fuel_density_mg_per_ml": 1.0,
+      "hard_braking_threshold_mps2": -2.0
+    },
     "bus": {
       "pcu_factor": 2.0,
       "v_class": "bus",

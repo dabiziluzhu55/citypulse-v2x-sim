@@ -153,6 +153,22 @@ def vehicle_types():
             fuel_density_mg_per_ml=832.0,
             hard_braking_threshold_mps2=-2.5,
         ),
+        "official_electric_bicycle": VehicleTypeMetadata(
+            type_id="official_electric_bicycle",
+            profile_id="electric_bicycle",
+            pcu_factor=0.5,
+            vehicle_class="bicycle",
+            powertrain="electric",
+            emission_class="HBEFA3/zero",
+            accel_mps2=1.5,
+            decel_mps2=3.0,
+            length_m=1.8,
+            width_m=0.65,
+            min_gap_m=0.5,
+            max_speed_mps=6.94,
+            fuel_density_mg_per_ml=1.0,
+            hard_braking_threshold_mps2=-2.0,
+        ),
         "official_passenger": VehicleTypeMetadata(
             type_id="official_passenger",
             profile_id="passenger",
@@ -339,25 +355,39 @@ class AlgorithmMetadataTests(unittest.TestCase):
         bicycle_lane = metadata.edge_lanes["mixed"][0]
         self.assertEqual(bicycle_lane.lane_id, "mixed_0")
         self.assertEqual(bicycle_lane.allowed_vehicle_classes, ("bicycle",))
-        self.assertEqual(bicycle_lane.allowed_vehicle_type_ids, ())
+        self.assertEqual(
+            bicycle_lane.allowed_vehicle_type_ids,
+            ("official_electric_bicycle",),
+        )
+
+        electric_bicycle = metadata.vehicle_types["official_electric_bicycle"]
+        self.assertEqual(electric_bicycle.profile_id, "electric_bicycle")
+        self.assertEqual(electric_bicycle.pcu_factor, 0.5)
+        self.assertEqual(electric_bicycle.vehicle_class, "bicycle")
+        self.assertEqual(electric_bicycle.powertrain, "electric")
 
         default_lane = metadata.edge_lanes["north_in"][0]
         self.assertEqual(
             default_lane.allowed_vehicle_type_ids,
-            ("official_bus", "official_passenger", "official_truck"),
+            (
+                "official_bus",
+                "official_electric_bicycle",
+                "official_passenger",
+                "official_truck",
+            ),
         )
 
         blocked_lane = metadata.edge_lanes["branch_in"][0]
         self.assertEqual(blocked_lane.disallowed_vehicle_classes, ("passenger",))
         self.assertEqual(
             blocked_lane.allowed_vehicle_type_ids,
-            ("official_bus", "official_truck"),
+            ("official_bus", "official_electric_bicycle", "official_truck"),
         )
         self.assertEqual(
             metadata.intersections["demo_2"]
             .lanes["branch_in_0"]
             .allowed_vehicle_type_ids,
-            ("official_bus", "official_truck"),
+            ("official_bus", "official_electric_bicycle", "official_truck"),
         )
 
 
