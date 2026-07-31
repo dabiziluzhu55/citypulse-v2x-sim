@@ -22,6 +22,8 @@ from .events import (
     EventValidationError,
     LaneClosureEvent,
     LaneTarget,
+    MajorEventClosingEvent,
+    MajorEventOpeningEvent,
     SpeedLimitEvent,
 )
 from .external_policy import HttpAlgorithmClient
@@ -136,7 +138,13 @@ class IntersectionCapability:
 @dataclass(frozen=True)
 class SimulationCatalog:
     intersections: Mapping[str, IntersectionCapability]
-    event_types: tuple[str, ...] = ("lane_closure", "speed_limit", "accident")
+    event_types: tuple[str, ...] = (
+        "lane_closure",
+        "speed_limit",
+        "accident",
+        "major_event_opening",
+        "major_event_closing",
+    )
     flow_multiplier_min: float = 0.1
     flow_multiplier_max: float = 5.0
     playback_speeds: tuple[float, ...] = PLAYBACK_SPEEDS
@@ -539,8 +547,13 @@ class SimulationManager:
             if not event.event_id or event.event_id in event_ids:
                 raise EventValidationError("Initial event IDs must be non-empty and unique.")
             event_ids.add(event.event_id)
-            if set((event.lane_id,) if isinstance(event, AccidentEvent) else event.lane_ids) - lane_ids:
+            event_lanes = _config_event_lanes(event)
+            if event_lanes - lane_ids:
                 raise EventValidationError(f"Initial event {event.event_id} targets unknown lanes.")
+            if isinstance(event, (MajorEventOpeningEvent, MajorEventClosingEvent)) and event.vehicle_count <= 0:
+                raise EventValidationError(
+                    f"Initial event {event.event_id} vehicle_count must be positive."
+                )
             if duration is not None and event.end_seconds > duration + 1e-9:
                 raise EventValidationError(f"Initial event {event.event_id} exceeds duration.")
 
@@ -1104,20 +1117,45 @@ class SimulationManager:
 
 
 def _lane_targets(traci, selected_manifest) -> Mapping[str, LaneTarget]:
-    result = {}
+    result: dict[str, LaneTarget] = {}
+    roles: dict[str, set[str]] = {}
     for item in selected_manifest.values():
         for connection in item["connections"]:
-            for edge_key, lane_key in (("from_edge", "from_lane"), ("to_edge", "to_lane")):
+            for role, edge_key, lane_key in (
+                ("incoming", "from_edge", "from_lane"),
+                ("outgoing", "to_edge", "to_lane"),
+            ):
                 edge_id = str(connection[edge_key])
                 lane_index = int(connection[lane_key])
                 lane_id = f"{edge_id}_{lane_index}"
+                roles.setdefault(lane_id, set()).add(role)
                 result[lane_id] = LaneTarget(
                     lane_id=lane_id,
                     edge_id=edge_id,
                     lane_index=lane_index,
                     length=float(traci.lane.getLength(lane_id)),
                 )
+    for lane_id, target in tuple(result.items()):
+        lane_roles = roles[lane_id]
+        role = next(iter(lane_roles)) if len(lane_roles) == 1 else "both"
+        result[lane_id] = LaneTarget(
+            lane_id=target.lane_id,
+            edge_id=target.edge_id,
+            lane_index=target.lane_index,
+            length=target.length,
+            role=role,
+        )
     return result
+
+
+def _config_event_lanes(event: DisturbanceEvent) -> set[str]:
+    if isinstance(event, AccidentEvent):
+        return {event.lane_id}
+    if isinstance(event, MajorEventOpeningEvent):
+        return {event.venue_lane_id, *event.source_lane_ids}
+    if isinstance(event, MajorEventClosingEvent):
+        return {event.venue_lane_id, *event.destination_lane_ids}
+    return set(event.lane_ids)
 
 
 def _format_clock(seconds: float) -> str:

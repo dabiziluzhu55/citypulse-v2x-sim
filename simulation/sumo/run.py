@@ -707,7 +707,14 @@ def _parse_origins(values: Sequence[str]) -> Mapping[str, tuple[str, ...]]:
 def _load_events(path: Path | None):
     if path is None:
         return ()
-    from .events import AccidentEvent, LaneClosureEvent, SpeedLimitEvent
+    from .events import (
+        AccidentEvent,
+        DEFAULT_ACTIVITY_VEHICLE_TYPE_ID,
+        LaneClosureEvent,
+        MajorEventClosingEvent,
+        MajorEventOpeningEvent,
+        SpeedLimitEvent,
+    )
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -742,6 +749,41 @@ def _load_events(path: Path | None):
                     **common,
                     lane_id=str(item["lane_id"]),
                     position_ratio=float(item["position_ratio"]),
+                )
+            )
+        elif event_type == "major_event_opening":
+            result.append(
+                MajorEventOpeningEvent(
+                    **common,
+                    venue_lane_id=str(item["venue_lane_id"]),
+                    vehicle_count=int(item["vehicle_count"]),
+                    source_lane_ids=tuple(
+                        str(value) for value in item.get("source_lane_ids", ())
+                    ),
+                    vehicle_type_id=str(
+                        item.get(
+                            "vehicle_type_id",
+                            DEFAULT_ACTIVITY_VEHICLE_TYPE_ID,
+                        )
+                    ),
+                )
+            )
+        elif event_type == "major_event_closing":
+            result.append(
+                MajorEventClosingEvent(
+                    **common,
+                    venue_lane_id=str(item["venue_lane_id"]),
+                    vehicle_count=int(item["vehicle_count"]),
+                    destination_lane_ids=tuple(
+                        str(value)
+                        for value in item.get("destination_lane_ids", ())
+                    ),
+                    vehicle_type_id=str(
+                        item.get(
+                            "vehicle_type_id",
+                            DEFAULT_ACTIVITY_VEHICLE_TYPE_ID,
+                        )
+                    ),
                 )
             )
         else:

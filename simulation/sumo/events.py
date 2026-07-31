@@ -7,6 +7,8 @@ from enum import Enum
 from typing import Mapping
 
 
+DEFAULT_ACTIVITY_VEHICLE_TYPE_ID = "citypulse_event_passenger"
+
 BLOCKED_VEHICLE_CLASSES = (
     "private",
     "passenger",
@@ -40,6 +42,7 @@ class LaneTarget:
     edge_id: str
     lane_index: int
     length: float
+    role: str = ""
 
 
 @dataclass(frozen=True)
@@ -71,7 +74,37 @@ class AccidentEvent:
     event_type: str = "accident"
 
 
-DisturbanceEvent = LaneClosureEvent | SpeedLimitEvent | AccidentEvent
+@dataclass(frozen=True)
+class MajorEventOpeningEvent:
+    event_id: str
+    start_seconds: float
+    end_seconds: float
+    venue_lane_id: str
+    vehicle_count: int
+    source_lane_ids: tuple[str, ...] = ()
+    vehicle_type_id: str = DEFAULT_ACTIVITY_VEHICLE_TYPE_ID
+    event_type: str = "major_event_opening"
+
+
+@dataclass(frozen=True)
+class MajorEventClosingEvent:
+    event_id: str
+    start_seconds: float
+    end_seconds: float
+    venue_lane_id: str
+    vehicle_count: int
+    destination_lane_ids: tuple[str, ...] = ()
+    vehicle_type_id: str = DEFAULT_ACTIVITY_VEHICLE_TYPE_ID
+    event_type: str = "major_event_closing"
+
+
+DisturbanceEvent = (
+    LaneClosureEvent
+    | SpeedLimitEvent
+    | AccidentEvent
+    | MajorEventOpeningEvent
+    | MajorEventClosingEvent
+)
 
 
 @dataclass(frozen=True)
@@ -92,12 +125,27 @@ class _LaneBaseline:
     max_speed: float
 
 
+@dataclass(frozen=True)
+class _ActivityRoute:
+    route_id: str
+    depart_lane_index: int
+
+
+@dataclass
+class _ActivityRuntime:
+    routes: tuple[_ActivityRoute, ...]
+    unreachable_route_count: int
+    next_vehicle_index: int = 0
+    spawned_vehicle_count: int = 0
+
+
 @dataclass
 class _EventRuntime:
     event: DisturbanceEvent
     state: EventState = EventState.SCHEDULED
     error: str | None = None
     vehicle_id: str | None = None
+    activity: _ActivityRuntime | None = None
 
 
 def _overlaps(first: DisturbanceEvent, second: DisturbanceEvent) -> bool:
@@ -107,7 +155,19 @@ def _overlaps(first: DisturbanceEvent, second: DisturbanceEvent) -> bool:
 def _event_lanes(event: DisturbanceEvent) -> tuple[str, ...]:
     if isinstance(event, AccidentEvent):
         return (event.lane_id,)
+    if isinstance(event, MajorEventOpeningEvent):
+        return (event.venue_lane_id, *event.source_lane_ids)
+    if isinstance(event, MajorEventClosingEvent):
+        return (event.venue_lane_id, *event.destination_lane_ids)
     return event.lane_ids
+
+
+def _is_activity_event(event: DisturbanceEvent) -> bool:
+    return isinstance(event, (MajorEventOpeningEvent, MajorEventClosingEvent))
+
+
+def _sanitized_id(value: str) -> str:
+    return "".join(character if character.isalnum() or character in "_.-" else "_" for character in value)
 
 
 class DisturbanceScheduler:
@@ -147,6 +207,9 @@ class DisturbanceScheduler:
     def tick(self, current_time: float) -> None:
         now = float(current_time)
         for runtime in tuple(self._events.values()):
+            if runtime.state == EventState.ACTIVE and _is_activity_event(runtime.event):
+                self._best_effort_tick_activity(runtime, now)
+        for runtime in tuple(self._events.values()):
             if runtime.state == EventState.ACTIVE and now + 1e-9 >= runtime.event.end_seconds:
                 self._deactivate(runtime)
                 if runtime.state != EventState.FAILED:
@@ -158,6 +221,8 @@ class DisturbanceScheduler:
                 and now < runtime.event.end_seconds
             ):
                 self._activate(runtime, now)
+                if runtime.state == EventState.ACTIVE and _is_activity_event(runtime.event):
+                    self._best_effort_tick_activity(runtime, now)
 
     def snapshots(self) -> tuple[EventSnapshot, ...]:
         values = []
@@ -166,6 +231,20 @@ class DisturbanceScheduler:
             raw = asdict(runtime.event)
             for key in ("event_id", "event_type", "start_seconds", "end_seconds"):
                 raw.pop(key, None)
+            if _is_activity_event(runtime.event):
+                activity = runtime.activity
+                raw.update(
+                    {
+                        "spawned_vehicle_count": (
+                            activity.spawned_vehicle_count if activity else 0
+                        ),
+                        "planned_vehicle_count": runtime.event.vehicle_count,
+                        "reachable_route_count": len(activity.routes) if activity else 0,
+                        "unreachable_route_count": (
+                            activity.unreachable_route_count if activity else 0
+                        ),
+                    }
+                )
             values.append(
                 EventSnapshot(
                     event_id=runtime.event.event_id,
@@ -198,7 +277,9 @@ class DisturbanceScheduler:
         if event.end_seconds <= current_time + 1e-9:
             raise EventValidationError("Event has already ended.")
         lanes = _event_lanes(event)
-        if not lanes or len(lanes) != len(set(lanes)):
+        if isinstance(event, (MajorEventOpeningEvent, MajorEventClosingEvent)):
+            self._validate_activity_event(event, lanes)
+        elif not lanes or len(lanes) != len(set(lanes)):
             raise EventValidationError("Event lanes must be non-empty and unique.")
         unknown = set(lanes) - set(self.lane_targets)
         if unknown:
@@ -227,6 +308,29 @@ class DisturbanceScheduler:
                         "An accident cannot overlap another accident or closure on the same lane."
                     )
 
+    def _validate_activity_event(
+        self,
+        event: MajorEventOpeningEvent | MajorEventClosingEvent,
+        lanes: tuple[str, ...],
+    ) -> None:
+        if event.vehicle_count <= 0:
+            raise EventValidationError("Activity vehicle_count must be positive.")
+        if not event.vehicle_type_id:
+            raise EventValidationError("Activity vehicle_type_id cannot be empty.")
+        if not event.venue_lane_id:
+            raise EventValidationError("Activity venue_lane_id cannot be empty.")
+        explicit_lanes = (
+            event.source_lane_ids
+            if isinstance(event, MajorEventOpeningEvent)
+            else event.destination_lane_ids
+        )
+        if len(explicit_lanes) != len(set(explicit_lanes)):
+            raise EventValidationError("Activity endpoint lanes must be unique.")
+        if event.venue_lane_id in set(explicit_lanes):
+            raise EventValidationError("Activity endpoint lanes cannot include the venue lane.")
+        if len(lanes) != len(set(lanes)):
+            raise EventValidationError("Event lanes must be non-empty and unique.")
+
     def _baseline(self, lane_id: str) -> _LaneBaseline:
         if lane_id not in self._baselines:
             self._baselines[lane_id] = _LaneBaseline(
@@ -243,8 +347,10 @@ class DisturbanceScheduler:
                 self._activate_closure(event)
             elif isinstance(event, SpeedLimitEvent):
                 self._activate_speed_limit(event)
-            else:
+            elif isinstance(event, AccidentEvent):
                 self._activate_accident(runtime, event, current_time)
+            elif _is_activity_event(event):
+                self._activate_activity(runtime, event, current_time)
             runtime.state = EventState.ACTIVE
         except Exception as exc:
             runtime.error = str(exc)
@@ -320,6 +426,145 @@ class DisturbanceScheduler:
                 pass
             raise
         runtime.vehicle_id = vehicle_id
+
+    def _activate_activity(
+        self,
+        runtime: _EventRuntime,
+        event: MajorEventOpeningEvent | MajorEventClosingEvent,
+        current_time: float,
+    ) -> None:
+        route_specs = []
+        unreachable = 0
+        route_ids: dict[str, int] = {}
+        for source_lane_id, destination_lane_id in self._activity_lane_pairs(event):
+            source = self.lane_targets[source_lane_id]
+            destination = self.lane_targets[destination_lane_id]
+            route_edges = self._activity_route_edges(
+                source.edge_id,
+                destination.edge_id,
+                event.vehicle_type_id,
+                current_time,
+            )
+            if not route_edges:
+                unreachable += 1
+                continue
+            base_route_id = (
+                f"event_route_{event.event_id}_"
+                f"{_sanitized_id(source.edge_id)}_{_sanitized_id(destination.edge_id)}"
+            )
+            route_ids[base_route_id] = route_ids.get(base_route_id, 0) + 1
+            route_id = (
+                base_route_id
+                if route_ids[base_route_id] == 1
+                else f"{base_route_id}_{route_ids[base_route_id]}"
+            )
+            route_specs.append((route_id, tuple(route_edges), source.lane_index))
+        if not route_specs:
+            raise EventValidationError("Activity event has no reachable routes.")
+        if self._activity_has_explicit_endpoints(event) and unreachable:
+            raise EventValidationError("Activity event has unreachable explicit routes.")
+        routes = []
+        for route_id, route_edges, depart_lane_index in route_specs:
+            self.traci.route.add(route_id, list(route_edges))
+            routes.append(
+                _ActivityRoute(
+                    route_id=route_id,
+                    depart_lane_index=depart_lane_index,
+                )
+            )
+        runtime.activity = _ActivityRuntime(
+            routes=tuple(routes),
+            unreachable_route_count=unreachable,
+        )
+
+    def _activity_lane_pairs(
+        self,
+        event: MajorEventOpeningEvent | MajorEventClosingEvent,
+    ) -> tuple[tuple[str, str], ...]:
+        if isinstance(event, MajorEventOpeningEvent):
+            sources = event.source_lane_ids or self._default_activity_lanes(
+                {"incoming", "both", ""},
+                event.venue_lane_id,
+            )
+            return tuple((source, event.venue_lane_id) for source in sources)
+        destinations = event.destination_lane_ids or self._default_activity_lanes(
+            {"outgoing", "both", ""},
+            event.venue_lane_id,
+        )
+        return tuple((event.venue_lane_id, destination) for destination in destinations)
+
+    def _default_activity_lanes(
+        self,
+        roles: set[str],
+        venue_lane_id: str,
+    ) -> tuple[str, ...]:
+        return tuple(
+            lane_id
+            for lane_id, target in sorted(self.lane_targets.items())
+            if lane_id != venue_lane_id and target.role in roles
+        )
+
+    def _activity_has_explicit_endpoints(
+        self,
+        event: MajorEventOpeningEvent | MajorEventClosingEvent,
+    ) -> bool:
+        if isinstance(event, MajorEventOpeningEvent):
+            return bool(event.source_lane_ids)
+        return bool(event.destination_lane_ids)
+
+    def _activity_route_edges(
+        self,
+        source_edge_id: str,
+        destination_edge_id: str,
+        vehicle_type_id: str,
+        current_time: float,
+    ) -> tuple[str, ...]:
+        if source_edge_id == destination_edge_id:
+            return (source_edge_id,)
+        route = self.traci.simulation.findRoute(
+            source_edge_id,
+            destination_edge_id,
+            vType=vehicle_type_id,
+            depart=current_time,
+        )
+        edges = tuple(str(edge) for edge in getattr(route, "edges", ()))
+        return edges
+
+    def _tick_activity(self, runtime: _EventRuntime, current_time: float) -> None:
+        activity = runtime.activity
+        event = runtime.event
+        if activity is None or not _is_activity_event(event):
+            return
+        interval = (event.end_seconds - event.start_seconds) / event.vehicle_count
+        while activity.next_vehicle_index < event.vehicle_count:
+            vehicle_index = activity.next_vehicle_index
+            depart_time = event.start_seconds + (vehicle_index + 0.5) * interval
+            if depart_time > current_time + 1e-9:
+                break
+            route = activity.routes[vehicle_index % len(activity.routes)]
+            vehicle_id = f"event_vehicle_{event.event_id}_{vehicle_index + 1:06d}"
+            self.traci.vehicle.add(
+                vehicle_id,
+                route.route_id,
+                typeID=event.vehicle_type_id,
+                depart="now",
+                departLane=str(route.depart_lane_index),
+                departPos="base",
+                departSpeed="max",
+            )
+            activity.next_vehicle_index += 1
+            activity.spawned_vehicle_count += 1
+
+    def _best_effort_tick_activity(
+        self,
+        runtime: _EventRuntime,
+        current_time: float,
+    ) -> None:
+        try:
+            self._tick_activity(runtime, current_time)
+        except Exception as exc:
+            runtime.error = str(exc)
+            runtime.state = EventState.FAILED
 
     def _deactivate(self, runtime: _EventRuntime) -> None:
         event = runtime.event

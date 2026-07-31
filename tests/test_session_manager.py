@@ -5,6 +5,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from simulation.sumo.events import EventValidationError, MajorEventOpeningEvent
 from simulation.sumo.artifacts import GeneratedArtifactLayout
 from simulation.sumo.session import (
     SessionBusyError,
@@ -101,6 +102,19 @@ class SessionManagerTests(unittest.TestCase):
                 replace(base, ai_observer_module="algorithms.ai_observer_example"),
                 replace(
                     base,
+                    initial_events=(
+                        MajorEventOpeningEvent(
+                            "opening",
+                            1,
+                            2,
+                            "out_0",
+                            5,
+                            source_lane_ids=("in_0",),
+                        ),
+                    ),
+                ),
+                replace(
+                    base,
                     control_mode="algorithm",
                     algorithm_transport="http",
                     algorithm_endpoint="http://127.0.0.1:8001",
@@ -130,6 +144,24 @@ class SessionManagerTests(unittest.TestCase):
             for config in invalid:
                 with self.assertRaises(ScenarioCompilationError):
                     manager._validate_config(config)
+            with self.assertRaises(EventValidationError):
+                manager._validate_config(
+                    replace(
+                        base,
+                        initial_events=(
+                            MajorEventOpeningEvent("unknown", 1, 2, "missing_0", 5),
+                        ),
+                    )
+                )
+            with self.assertRaises(EventValidationError):
+                manager._validate_config(
+                    replace(
+                        base,
+                        initial_events=(
+                            MajorEventOpeningEvent("bad_count", 1, 2, "out_0", 0),
+                        ),
+                    )
+                )
 
     def test_playback_speed_scales_wall_clock_delay(self):
         self.assertAlmostEqual(_playback_delay_seconds(0.05, 1.0, 0.01), 0.04)
@@ -146,6 +178,8 @@ class SessionManagerTests(unittest.TestCase):
                 catalog.playback_speeds,
                 (1.0, 1.25, 1.5, 2.0, 3.0, 5.0),
             )
+            self.assertIn("major_event_opening", catalog.event_types)
+            self.assertIn("major_event_closing", catalog.event_types)
             self.assertEqual(intersection.periods, ("morning_peak",))
             self.assertEqual(intersection.origins[0].origin_id, "north")
             west = next(item for item in intersection.origins if item.origin_id == "west")
