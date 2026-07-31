@@ -111,5 +111,29 @@ export function validateIntersectionManifest(manifest) {
       }
     }
   }
+  for (const connection of manifest.connections ?? []) {
+    if (!connection.viaLaneId) continue
+    if (!Array.isArray(connection.viaPoints) || connection.viaPoints.length < 2) {
+      errors.push(`connection ${connection.tlsId}:${connection.linkIndex} has no internal lane path`)
+    }
+    if (!Array.isArray(connection.renderPoints) || connection.renderPoints.length < 2) {
+      errors.push(`connection ${connection.tlsId}:${connection.linkIndex} has no visual turn path`)
+    }
+    if (!Array.isArray(connection.viaSegments) || connection.viaSegments.length === 0) {
+      errors.push(`connection ${connection.tlsId}:${connection.linkIndex} has no internal lane segments`)
+      continue
+    }
+    if (connection.viaSegments[0]?.laneId !== connection.viaLaneId) {
+      errors.push(`connection ${connection.tlsId}:${connection.linkIndex} first segment does not match viaLaneId`)
+    }
+    for (const segment of connection.viaSegments) {
+      if (!segment.laneId || !Array.isArray(segment.points) || segment.points.length < 2) {
+        errors.push(`connection ${connection.tlsId}:${connection.linkIndex} has an invalid source segment`)
+      }
+      if (!Array.isArray(segment.renderPoints) || segment.renderPoints.length < 2) {
+        errors.push(`connection ${connection.tlsId}:${connection.linkIndex} has an invalid visual segment`)
+      }
+    }
+  }
   return errors
 }

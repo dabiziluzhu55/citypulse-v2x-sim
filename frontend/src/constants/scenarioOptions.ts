@@ -21,23 +21,88 @@ export const SCENARIO_MODE_OPTIONS = [
   {
     label: '雄安20路口路网',
     value: 'xiongan_20',
-    backendIntersectionId: 'demo_2',
-    source: 'compatibility_preset',
   },
+  { label: '东部密集路口场景', value: 'east_dense' },
+  { label: '西部密集路口场景', value: 'west_dense' },
 ] as const
 
-export type ScenarioModeId = (typeof SCENARIO_MODE_OPTIONS)[number]['value']
+export type ScenarioModeId = string
 
 export const SIMULATION_TIME_OPTIONS = [
-  { label: '7:00-7:15', value: 'morning_15', flowMode: 'morning_peak', windowStartSeconds: 0, durationSeconds: 900 },
-  { label: '7:15-7:30', value: 'morning_30', flowMode: 'morning_peak', windowStartSeconds: 900, durationSeconds: 900 },
-  { label: '17:00-17:15', value: 'evening_15', flowMode: 'evening_peak', windowStartSeconds: 0, durationSeconds: 900 },
-  { label: '平峰15分钟', value: 'off_peak_15', flowMode: 'flat', windowStartSeconds: 0, durationSeconds: 900 },
+  { label: '7:00-7:15', value: 'morning_0700', flowMode: 'morning_peak', windowStartSeconds: 0, durationSeconds: 900 },
+  { label: '7:15-7:30', value: 'morning_0715', flowMode: 'morning_peak', windowStartSeconds: 900, durationSeconds: 900 },
+  { label: '7:30-7:45', value: 'morning_0730', flowMode: 'morning_peak', windowStartSeconds: 1800, durationSeconds: 900 },
+  { label: '7:45-8:00', value: 'morning_0745', flowMode: 'morning_peak', windowStartSeconds: 2700, durationSeconds: 900 },
+  { label: '8:00-8:15', value: 'morning_0800', flowMode: 'morning_peak', windowStartSeconds: 3600, durationSeconds: 900 },
+  { label: '8:15-8:30', value: 'morning_0815', flowMode: 'morning_peak', windowStartSeconds: 4500, durationSeconds: 900 },
+  { label: '8:30-8:45', value: 'morning_0830', flowMode: 'morning_peak', windowStartSeconds: 5400, durationSeconds: 900 },
+  { label: '8:45-9:00', value: 'morning_0845', flowMode: 'morning_peak', windowStartSeconds: 6300, durationSeconds: 900 },
+  { label: '14:30-14:45', value: 'off_peak_1430', flowMode: 'flat', windowStartSeconds: 0, durationSeconds: 900 },
+  { label: '14:45-15:00', value: 'off_peak_1445', flowMode: 'flat', windowStartSeconds: 900, durationSeconds: 900 },
+  { label: '15:00-15:15', value: 'off_peak_1500', flowMode: 'flat', windowStartSeconds: 1800, durationSeconds: 900 },
+  { label: '15:15-15:30', value: 'off_peak_1515', flowMode: 'flat', windowStartSeconds: 2700, durationSeconds: 900 },
+  { label: '15:30-15:45', value: 'off_peak_1530', flowMode: 'flat', windowStartSeconds: 3600, durationSeconds: 900 },
+  { label: '15:45-16:00', value: 'off_peak_1545', flowMode: 'flat', windowStartSeconds: 4500, durationSeconds: 900 },
+  { label: '16:00-16:15', value: 'off_peak_1600', flowMode: 'flat', windowStartSeconds: 5400, durationSeconds: 900 },
+  { label: '16:15-16:30', value: 'off_peak_1615', flowMode: 'flat', windowStartSeconds: 6300, durationSeconds: 900 },
+  { label: '17:30-17:45', value: 'evening_1730', flowMode: 'evening_peak', windowStartSeconds: 0, durationSeconds: 900 },
+  { label: '17:45-18:00', value: 'evening_1745', flowMode: 'evening_peak', windowStartSeconds: 900, durationSeconds: 900 },
+  { label: '18:00-18:15', value: 'evening_1800', flowMode: 'evening_peak', windowStartSeconds: 1800, durationSeconds: 900 },
+  { label: '18:15-18:30', value: 'evening_1815', flowMode: 'evening_peak', windowStartSeconds: 2700, durationSeconds: 900 },
+  { label: '18:30-18:45', value: 'evening_1830', flowMode: 'evening_peak', windowStartSeconds: 3600, durationSeconds: 900 },
+  { label: '18:45-19:00', value: 'evening_1845', flowMode: 'evening_peak', windowStartSeconds: 4500, durationSeconds: 900 },
+  { label: '19:00-19:15', value: 'evening_1900', flowMode: 'evening_peak', windowStartSeconds: 5400, durationSeconds: 900 },
+  { label: '19:15-19:30', value: 'evening_1915', flowMode: 'evening_peak', windowStartSeconds: 6300, durationSeconds: 900 },
 ] as const
 
 export type SimulationTimePresetId = (typeof SIMULATION_TIME_OPTIONS)[number]['value']
 
-export const FLOW_SCALE_OPTIONS = [0.8, 1.0, 1.2, 1.5] as const
+export interface SimulationPeriodRange {
+  start: string
+  end: string
+}
+
+export const SIMULATION_PERIOD_RANGES: Record<TrafficFlowMode, SimulationPeriodRange> = {
+  morning_peak: { start: '07:00', end: '09:00' },
+  flat: { start: '14:30', end: '16:30' },
+  evening_peak: { start: '17:30', end: '19:30' },
+}
+
+export function clockTimeToMinutes(value: string): number {
+  const match = /^(\d{2}):(\d{2})$/.exec(value)
+  if (!match) return Number.NaN
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours > 23 || minutes > 59) return Number.NaN
+  return hours * 60 + minutes
+}
+
+export function simulationTimeWindow(
+  flowMode: TrafficFlowMode,
+  start: string,
+  end: string,
+): { windowStartSeconds: number; durationSeconds: number } {
+  const range = SIMULATION_PERIOD_RANGES[flowMode]
+  const rangeStart = clockTimeToMinutes(range.start)
+  const rangeEnd = clockTimeToMinutes(range.end)
+  const startMinutes = clockTimeToMinutes(start)
+  const endMinutes = clockTimeToMinutes(end)
+  if (
+    !Number.isFinite(startMinutes)
+    || !Number.isFinite(endMinutes)
+    || startMinutes < rangeStart
+    || endMinutes > rangeEnd
+    || endMinutes <= startMinutes
+  ) {
+    throw new Error(`Simulation time must stay within ${range.start}-${range.end}`)
+  }
+  return {
+    windowStartSeconds: (startMinutes - rangeStart) * 60,
+    durationSeconds: (endMinutes - startMinutes) * 60,
+  }
+}
+
+export const DEFAULT_PLAYBACK_SPEED_OPTIONS = [1, 1.25, 1.5, 2, 3, 5] as const
 
 export const DURATION_OPTIONS = [
   { label: '10min', value: 600 },
@@ -105,7 +170,7 @@ export const DISTURBANCE_CHOICE_OPTIONS: SelectOption<DisturbanceType | 'none'>[
   { label: '无扰动', value: 'none' },
 ]
 
-export const FLOW_SCALE_SELECT_OPTIONS = FLOW_SCALE_OPTIONS.map((value) => ({
+export const PLAYBACK_SPEED_SELECT_OPTIONS = DEFAULT_PLAYBACK_SPEED_OPTIONS.map((value) => ({
   label: `${value}x`,
   value,
 }))

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CenterCommunicationPanel from '../components/dashboard/CenterCommunicationPanel.vue'
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
@@ -7,12 +7,14 @@ import { useDashboardOverlay } from '../composables/useDashboardOverlay'
 import { useOptionalAppMapView } from '../composables/useAppMapView'
 import { useSimulationStore } from '../composables/useSimulationStore'
 import { useSnapshotMetrics } from '../composables/useSnapshotMetrics'
+import { useEvaluationComparison } from '../composables/useEvaluationComparison'
 import { useHealth } from '../composables/useHealth'
 import { useCatalog } from '../composables/useCatalog'
 import { useActiveIntersectionScene } from '../composables/useActiveIntersectionScene'
 import { CESIUM_CAMERA_PRESETS } from '../constants/mapDefaults'
 import type { CesiumCameraPresetId, MapDimension } from '../types/map'
 import type { StartSimulationRequest } from '../types/simulation'
+import { formatIntersectionLabel } from '../utils/intersectionLabels'
 import { detectMap3dCapability } from '../mapv/map3dCapabilities'
 
 const mapView = useOptionalAppMapView()
@@ -54,20 +56,39 @@ const {
   restoredSession,
   sessionIntersectionId,
   activeControlMode,
+  activePlaybackSpeed,
+  achievedPlaybackSpeed,
   launchRun,
+  pauseRun,
+  resumeRun,
+  changePlaybackSpeed,
   stopRun,
   markRestoredSessionHandled,
 } = useSimulationStore()
 const isSimulationActive = computed(() => (
-  state.value === 'STARTING'
+  (!!sessionId.value && !state.value)
+  || state.value === 'STARTING'
   || state.value === 'RUNNING'
+  || state.value === 'PAUSED'
   || state.value === 'STOPPING'
 ))
 
 const { ready: healthReady, statusLabel: healthLabel } = useHealth()
 
-const { timeseries, logEntries } = useSnapshotMetrics(sessionId, snapshot)
+const { logEntries } = useSnapshotMetrics(sessionId, snapshot, wsConnected)
+const {
+  timeseries,
+  activeFingerprint,
+  hasActiveComparisonData,
+  beginRun: beginComparisonRun,
+  resetForConfiguration,
+} = useEvaluationComparison(sessionId, snapshot)
 const { communicationPanelOpen, closeCommunicationPanel } = useDashboardOverlay()
+interface ConfigurationChangeRequest {
+  fingerprint: string
+  apply: () => void
+}
+const pendingConfigChange = ref<ConfigurationChangeRequest | null>(null)
 
 watch(
   [snapshot, restoredSession],
@@ -75,13 +96,12 @@ watch(
     if (
       !shouldRestore
       || !nextSnapshot
-      || !['STARTING', 'RUNNING', 'STOPPING'].includes(nextSnapshot.state)
+      || !['STARTING', 'RUNNING', 'PAUSED', 'STOPPING'].includes(nextSnapshot.state)
     ) return
 
     const intersectionId = sessionIntersectionId.value
       || Object.keys(nextSnapshot.intersections)[0]
     if (intersectionId) selectIntersection(intersectionId)
-    mapView?.setCameraPreset('intersection')
     setMapDimension('3d')
     markRestoredSessionHandled()
   },
@@ -89,7 +109,10 @@ watch(
 )
 
 function handleOverlayKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && communicationPanelOpen.value) {
+  if (event.key !== 'Escape') return
+  if (pendingConfigChange.value) {
+    pendingConfigChange.value = null
+  } else if (communicationPanelOpen.value) {
     closeCommunicationPanel()
   }
 }
@@ -104,12 +127,30 @@ onBeforeUnmount(() => {
 })
 
 async function handleStart(payload: StartSimulationRequest) {
-  const intersectionId = payload.intersection_ids[0]
-  if (intersectionId) selectIntersection(intersectionId)
-  mapView?.setCameraPreset('intersection')
   setMapDimension('3d')
-  await launchRun(payload)
+  const result = await launchRun(payload, activeIntersectionId.value)
+  if (result) beginComparisonRun(result.session_id, payload, activeIntersectionId.value)
 }
+
+function handleConfigChangeRequested(request: ConfigurationChangeRequest) {
+  pendingConfigChange.value = request
+}
+
+function cancelConfigChange() {
+  pendingConfigChange.value = null
+}
+
+function confirmConfigChange() {
+  const request = pendingConfigChange.value
+  if (!request) return
+  request.apply()
+  resetForConfiguration(request.fingerprint)
+  pendingConfigChange.value = null
+}
+
+async function handlePause() { await pauseRun() }
+async function handleResume() { await resumeRun() }
+async function handlePlaybackSpeed(value: number) { await changePlaybackSpeed(value) }
 
 async function handleStop() {
   await stopRun()
@@ -133,7 +174,7 @@ async function handleStop() {
             :key="item.intersection_id"
             :value="item.intersection_id"
           >
-            {{ item.intersection_id }} · {{ item.simulatable ? '可仿真' : '仅查看' }}
+            {{ formatIntersectionLabel(item.intersection_id) }}
           </option>
         </select>
         <i :class="`is-${sceneStatus}`" aria-hidden="true" />
@@ -188,14 +229,41 @@ async function handleStop() {
         :status-error="statusError"
         :ws-connected="wsConnected"
         :active-control-mode="activeControlMode"
+        :active-playback-speed="activePlaybackSpeed"
+        :achieved-playback-speed="achievedPlaybackSpeed"
+        :active-comparison-fingerprint="activeFingerprint"
+        :has-active-comparison-data="hasActiveComparisonData"
         :health-ready="healthReady"
         :health-label="healthLabel"
         @start="handleStart"
+        @pause="handlePause"
+        @resume="handleResume"
+        @playback-speed="handlePlaybackSpeed"
         @stop="handleStop"
+        @config-change-requested="handleConfigChangeRequested"
       />
     </div>
 
     <div class="dashboard-column center" />
+
+    <Transition name="config-notice">
+      <div v-if="pendingConfigChange" class="config-change-dialog">
+        <button
+          type="button"
+          class="config-change-dialog__backdrop"
+          aria-label="取消参数变更"
+          @click="cancelConfigChange"
+        />
+        <div class="config-change-notice" role="dialog" aria-modal="true" aria-labelledby="config-change-title">
+          <div id="config-change-title" class="config-change-notice__title"><i aria-hidden="true" />参数变更确认</div>
+          <p>当前参数与右侧算法对比基线不一致。继续后将清空右侧已有算法曲线，再使用新参数开始对比。</p>
+          <div class="config-change-notice__actions">
+            <button type="button" @click="cancelConfigChange">取消</button>
+            <button type="button" class="is-primary" @click="confirmConfigChange">确认并清空</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <Transition name="communication-overlay">
       <div
@@ -240,14 +308,72 @@ async function handleStop() {
 </template>
 
 <style scoped>
+.config-change-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 11;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.config-change-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(1, 10, 24, .48);
+  cursor: default;
+}
+.config-change-notice {
+  position: relative;
+  width: min(345px, calc(100vw - 32px));
+  min-height: 141px;
+  padding: 24px 30px 22px;
+  border: 1px solid rgba(49, 173, 255, .72);
+  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0 calc(100% - 12px), 0 12px);
+  background: linear-gradient(180deg, rgba(6, 43, 82, .98), rgba(2, 19, 44, .98));
+  box-shadow: inset 0 0 30px rgba(33, 139, 255, .12), 0 0 22px rgba(33, 139, 255, .28);
+  color: #edf9ff;
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  pointer-events: auto;
+}
+.config-change-notice::before,
+.config-change-notice::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 95px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #52c2fa);
+  box-shadow: 0 0 8px #21e6ff;
+}
+.config-change-notice::before { left: 0; }
+.config-change-notice::after { right: 0; transform: scaleX(-1); }
+.config-change-notice__title { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 18px; font-weight: 700; }
+.config-change-notice__title i { width: 5px; height: 18px; background: #21e6ff; box-shadow: 0 0 8px #21e6ff; }
+.config-change-notice p { margin: 18px 0 0; color: #bcdced; font-size: 14px; line-height: 1.6; text-align: center; }
+.config-change-notice__actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 22px; }
+.config-change-notice__actions button {
+  min-width: 92px; height: 34px; border: 1px solid rgba(82,194,250,.55); border-radius: 4px;
+  background: rgba(4,49,91,.82); color: #d7efff; font: 600 13px/1 inherit; cursor: pointer;
+}
+.config-change-notice__actions button:hover, .config-change-notice__actions button:focus-visible { border-color: #52c2fa; outline: none; filter: brightness(1.14); }
+.config-change-notice__actions button.is-primary { background: linear-gradient(180deg,#2e519e,#3c8de7); color: #fff; }
+.config-notice-enter-active,
+.config-notice-leave-active { transition: opacity .18s ease; }
+.config-notice-enter-active .config-change-notice,
+.config-notice-leave-active .config-change-notice { transition: opacity .18s ease, transform .18s ease; }
+.config-notice-enter-from,
+.config-notice-leave-to { opacity: 0; }
+.config-notice-enter-from .config-change-notice,
+.config-notice-leave-to .config-change-notice { opacity: 0; transform: translateY(12px) scale(.97); }
+
 .communication-overlay {
   position: fixed;
   inset: var(--dashboard-top-offset) 0 var(--dashboard-bottom-offset);
   z-index: 9;
   display: grid;
-  place-items: end center;
-  padding: 24px max(calc(var(--dashboard-right-width) + 36px), 24px) 42px
-    max(calc(var(--dashboard-left-width) + 36px), 24px);
+  place-items: center;
+  padding: 24px;
   pointer-events: none;
 }
 
@@ -255,7 +381,7 @@ async function handleStop() {
   position: absolute;
   inset: 0;
   border: 0;
-  background: radial-gradient(circle at 50% 72%, rgba(8, 35, 68, 0.2), transparent 42%);
+  background: rgba(1, 10, 24, .34);
   cursor: default;
   pointer-events: auto;
 }
@@ -263,22 +389,8 @@ async function handleStop() {
 .communication-overlay__panel {
   position: relative;
   z-index: 1;
-  width: min(760px, 100%);
+  width: min(1000px, 100%);
   pointer-events: auto;
-}
-
-.communication-overlay__panel::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -28px;
-  width: 170px;
-  height: 28px;
-  background: linear-gradient(180deg, rgba(33, 230, 255, 0.2), transparent);
-  clip-path: polygon(37% 0, 63% 0, 100% 100%, 0 100%);
-  transform: translateX(-50%);
-  opacity: 0.66;
-  pointer-events: none;
 }
 
 .communication-overlay-enter-active,

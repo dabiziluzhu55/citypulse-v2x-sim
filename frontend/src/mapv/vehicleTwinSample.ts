@@ -36,13 +36,16 @@ export function createVehicleTwinSample(
   time: number,
   profile: VehicleModelProfile,
   vehicleHeading: number,
+  positionIsModelCenter = false,
 ): VehicleTwinSample {
   const color = VEHICLE_COLORS[hashVehicleId(vehicle.vehicle_id) % VEHICLE_COLORS.length]
-  const center = moveFromFrontBumperToModelCenter(
-    { longitude, latitude },
-    vehicleHeading,
-    profile.targetLengthMeters / 2,
-  )
+  const center = positionIsModelCenter
+    ? { longitude, latitude }
+    : moveFromFrontBumperToModelCenter(
+      { longitude, latitude },
+      vehicleHeading,
+      profile.targetLengthMeters / 2,
+    )
   return {
     id: vehicle.vehicle_id,
     point: [center.longitude, center.latitude, VEHICLE_MODEL_BASE_Z],

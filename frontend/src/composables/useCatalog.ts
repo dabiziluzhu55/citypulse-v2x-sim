@@ -31,9 +31,8 @@ export function useCatalog(intersectionId: Ref<string> | string = DEFAULT_INTERS
   const periods = computed<string[]>(() => intersection.value?.periods ?? [])
   const controlModes = computed<string[]>(() => catalog.value?.control_modes ?? ['fixed'])
   const origins = computed(() => intersection.value?.origins ?? [])
-  const flowMultiplierRange = computed(
-    () => catalog.value?.flow_multiplier ?? { min: 0.1, max: 5 },
-  )
+  const scenarioPresets = computed(() => catalog.value?.scenario_presets ?? [])
+  const playbackSpeeds = computed(() => catalog.value?.playback_speeds ?? [1])
 
   async function load() {
     loading.value = true
@@ -55,7 +54,8 @@ export function useCatalog(intersectionId: Ref<string> | string = DEFAULT_INTERS
     periods,
     controlModes,
     origins,
-    flowMultiplierRange,
+    scenarioPresets,
+    playbackSpeeds,
     supportedIntersectionIds,
     isIntersectionSupported,
     loading,

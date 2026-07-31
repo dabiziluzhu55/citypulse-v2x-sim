@@ -4,11 +4,20 @@ import test from 'node:test'
 
 import {
   MAX_VISIBLE_VEHICLES,
+  MISSING_SNAPSHOT_GRACE,
   resolveVehicleRenderRadius,
   selectVisibleVehicles,
   StableVehicleSelector,
 } from '../src/mapv/vehicleVisibility.ts'
 import { createVehicleTwinSample } from '../src/mapv/vehicleTwinSample.ts'
+import {
+  isVehicleAnimationActive,
+  VehiclePresentationClock,
+} from '../src/mapv/vehiclePresentationClock.ts'
+import {
+  interpolateVehicleTwinSample,
+  VehicleMotionBuffer,
+} from '../src/mapv/vehicleMotionBuffer.ts'
 import { VEHICLE_MODEL_BASE_Z } from '../src/mapv/sceneElevation.ts'
 import {
   moveFromFrontBumperToModelCenter,
@@ -20,6 +29,7 @@ import {
 import {
   createIntersectionLaneHeadingResolver,
   createIntersectionLanePoseResolver,
+  mapSourceProgressToRenderDistance,
 } from '../src/mapv/realistic/intersectionLaneHeading.ts'
 import { samplePolyline } from '../src/mapv/realistic/intersectionRoadGeometry.ts'
 import {
@@ -31,6 +41,117 @@ import {
   CAR_MODEL_PROFILE,
   resolveVehicleModelProfile,
 } from '../src/mapv/vehicleModelProfiles.ts'
+
+test('keeps Twin presentation timestamps monotonic across repeated frames', () => {
+  const clock = new VehiclePresentationClock()
+  assert.equal(clock.next(1_000), 1_000)
+  assert.equal(clock.next(1_000), 1_001)
+  assert.equal(clock.next(900), 1_002)
+  clock.reset()
+  assert.equal(clock.next(500), 500)
+})
+
+test('runs the single motion output clock only while simulation time advances', () => {
+  assert.equal(isVehicleAnimationActive('RUNNING'), true)
+  assert.equal(isVehicleAnimationActive('STARTING'), true)
+  assert.equal(isVehicleAnimationActive('STOPPING'), true)
+  assert.equal(isVehicleAnimationActive('PAUSED'), false)
+  assert.equal(isVehicleAnimationActive('COMPLETED'), false)
+})
+
+function motionSample(id, x, direction = 0) {
+  return {
+    id,
+    point: [x, 39, 1.1],
+    dir: direction,
+    time: 0,
+    modelType: 3,
+    scale: [1, 1, 1],
+    color: '#fff',
+  }
+}
+
+test('resamples genuine source frames into continuous moving output', () => {
+  const buffer = new VehicleMotionBuffer()
+  for (let index = 0; index <= 3; index += 1) {
+    buffer.push({
+      sequence: index,
+      elapsedSeconds: index * 0.2,
+      arrivalTimeMs: index * 200,
+      samples: [motionSample('car', index * 2)],
+    })
+  }
+  const first = buffer.sample(600)
+  const second = buffer.sample(700)
+  buffer.push({
+    sequence: 4,
+    elapsedSeconds: 0.8,
+    arrivalTimeMs: 800,
+    samples: [motionSample('car', 8)],
+  })
+  const third = buffer.sample(800)
+  assert.ok(first && second && third)
+  const firstStep = second[0].point[0] - first[0].point[0]
+  const secondStep = third[0].point[0] - second[0].point[0]
+  assert.ok(firstStep > 0.5)
+  assert.ok(secondStep > 0.5)
+  assert.ok(Math.abs(firstStep - secondStep) < 0.2)
+})
+
+test('continues output after consumed source frames are pruned', () => {
+  const buffer = new VehicleMotionBuffer()
+  for (let index = 0; index <= 3; index += 1) {
+    buffer.push({
+      sequence: index,
+      elapsedSeconds: index * 0.2,
+      arrivalTimeMs: index * 200,
+      samples: [motionSample('car', index * 2)],
+    })
+  }
+  let previousX = Number.NEGATIVE_INFINITY
+  for (let wallTimeMs = 600; wallTimeMs <= 2_000; wallTimeMs += 100) {
+    if (wallTimeMs >= 800 && wallTimeMs % 200 === 0) {
+      const sequence = wallTimeMs / 200
+      buffer.push({
+        sequence,
+        elapsedSeconds: sequence * 0.2,
+        arrivalTimeMs: wallTimeMs,
+        samples: [motionSample('car', sequence * 2)],
+      })
+    }
+    const samples = buffer.sample(wallTimeMs)
+    assert.ok(samples, `missing resampled output at ${wallTimeMs}ms`)
+    assert.ok(samples[0].point[0] >= previousX)
+    previousX = samples[0].point[0]
+  }
+})
+
+test('retains vehicle samples through short empty source gaps', () => {
+  const buffer = new VehicleMotionBuffer()
+  buffer.push({ sequence: 1, elapsedSeconds: 0, arrivalTimeMs: 0, samples: [motionSample('held', 0)] })
+  buffer.push({ sequence: 2, elapsedSeconds: 0.5, arrivalTimeMs: 500, samples: [motionSample('held', 1)] })
+  buffer.push({ sequence: 3, elapsedSeconds: 1, arrivalTimeMs: 1000, samples: [] })
+  buffer.push({ sequence: 4, elapsedSeconds: 1.4, arrivalTimeMs: 1400, samples: [] })
+  const held = buffer.sample(1400)
+  assert.ok(held?.some((sample) => sample.id === 'held'))
+  buffer.push({ sequence: 5, elapsedSeconds: 2, arrivalTimeMs: 2000, samples: [] })
+  buffer.push({ sequence: 6, elapsedSeconds: 2.5, arrivalTimeMs: 2500, samples: [] })
+  let expired = null
+  for (let wallTime = 1600; wallTime <= 5000; wallTime += 100) {
+    expired = buffer.sample(wallTime)
+  }
+  assert.ok(expired && !expired.some((sample) => sample.id === 'held'))
+})
+
+test('interpolates heading through the shortest turn instead of spinning backwards', () => {
+  const degrees = (value) => value * Math.PI / 180
+  const sample = interpolateVehicleTwinSample(
+    motionSample('turning', 0, degrees(350)),
+    motionSample('turning', 1, degrees(10)),
+    0.5,
+  )
+  assert.ok(Math.abs(sample.dir - Math.PI * 2) < 1e-9)
+})
 
 function vehicle(id, longitude, latitude) {
   return {
@@ -101,17 +222,41 @@ test('retains selected vehicle ids across distance-order jitter', () => {
   )
 })
 
-test('keeps missing vehicles for three snapshots before removal', () => {
+test('keeps missing vehicles through short stream dropouts before removal', () => {
   const selector = new StableVehicleSelector()
   const center = [116, 39]
   selector.select([vehicle('held', 116.001, 39)], (coordinate) => [...coordinate], center, 500, 's:1')
-  for (let sequence = 2; sequence <= 4; sequence += 1) {
+  for (let sequence = 2; sequence <= MISSING_SNAPSHOT_GRACE + 1; sequence += 1) {
     assert.equal(
       selector.select([], (coordinate) => [...coordinate], center, 500, `s:${sequence}`).length,
       1,
     )
   }
-  assert.equal(selector.select([], (coordinate) => [...coordinate], center, 500, 's:5').length, 0)
+  assert.equal(
+    selector.select([], (coordinate) => [...coordinate], center, 500, `s:${MISSING_SNAPSHOT_GRACE + 2}`).length,
+    0,
+  )
+})
+
+test('does not age a retained vehicle on repeated viewport refreshes', () => {
+  const selector = new StableVehicleSelector()
+  const center = [116, 39]
+  selector.select([vehicle('held', 116.001, 39)], (coordinate) => [...coordinate], center, 500, 's:1')
+  for (let index = 0; index < MISSING_SNAPSHOT_GRACE * 2; index += 1) {
+    assert.equal(selector.select([], (coordinate) => [...coordinate], center, 500, 's:1').length, 1)
+  }
+  assert.equal(selector.select([], (coordinate) => [...coordinate], center, 500, 's:2').length, 1)
+})
+
+test('uses exit-radius hysteresis to absorb camera-boundary jitter', () => {
+  const selector = new StableVehicleSelector()
+  const center = [116, 39]
+  const entry = selector.select([vehicle('edge', 116.00535, 39)], (coordinate) => [...coordinate], center, 500, 's:1')
+  assert.equal(entry.length, 1)
+  const retained = selector.select([vehicle('edge', 116.0072, 39)], (coordinate) => [...coordinate], center, 500, 's:2')
+  assert.equal(retained.length, 1)
+  const removed = selector.select([vehicle('edge', 116.0083, 39)], (coordinate) => [...coordinate], center, 500, 's:3')
+  assert.equal(removed.length, 0)
 })
 
 test('converts SUMO headings to map headings and unwraps across north', () => {
@@ -215,6 +360,137 @@ test('snaps a SUMO vehicle position onto the rebuilt visual lane', async () => {
   assert.ok(Math.hypot(local[0] - expected[0], local[1] - expected[1]) < 0.2)
 })
 
+test('keeps an internal SUMO turn lane on its visual connection curve', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
+    'utf8',
+  ))
+  const connection = manifest.connections.find((item) => item.direction === 'l' && item.viaPoints?.length >= 4)
+  assert.ok(connection)
+  const sourcePoint = samplePolyline(connection.viaPoints, 0.5)
+  const coordinate = unprojectWebMercatorToBd09([
+    manifest.origin.webMercator[0] + sourcePoint[0],
+    manifest.origin.webMercator[1] + sourcePoint[1],
+  ])
+  const resolver = createIntersectionLanePoseResolver(manifest, projectSimulationCoordinateToBaiduMap)
+  const frontPose = resolver(connection.viaLaneId, coordinate)
+  const centerPose = resolver(connection.viaLaneId, coordinate, CAR_MODEL_PROFILE.targetLengthMeters / 2)
+  assert.ok(frontPose)
+  assert.ok(centerPose)
+  assert.equal(centerPose.modelCenterResolved, true)
+  const front = projectBd09ToWebMercator([frontPose.longitude, frontPose.latitude])
+  const center = projectBd09ToWebMercator([centerPose.longitude, centerPose.latitude])
+  const offset = Math.hypot(front[0] - center[0], front[1] - center[1])
+  assert.ok(offset > 2 && offset < 4.5, `unexpected curved center offset ${offset}`)
+  assert.ok(Number.isFinite(centerPose.heading))
+})
+
+test('keeps model centers continuous across every realistic lane boundary', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
+    'utf8',
+  ))
+  const resolver = createIntersectionLanePoseResolver(manifest, projectSimulationCoordinateToBaiduMap)
+  const toCoordinate = (point) => unprojectWebMercatorToBd09([
+    manifest.origin.webMercator[0] + point[0],
+    manifest.origin.webMercator[1] + point[1],
+  ])
+  const distance = (left, right) => {
+    const a = projectBd09ToWebMercator([left.longitude, left.latitude])
+    const b = projectBd09ToWebMercator([right.longitude, right.latitude])
+    return Math.hypot(a[0] - b[0], a[1] - b[1]) / manifest.horizontalScale
+  }
+
+  for (const offsetMeters of [2.5, 4.5, 5]) {
+    for (const connection of manifest.connections) {
+      const fromEdge = manifest.edges.find((edge) => edge.id === connection.fromEdge)
+      const toEdge = manifest.edges.find((edge) => edge.id === connection.toEdge)
+      const fromLane = fromEdge.lanes.find((lane) => lane.index === connection.fromLane)
+      const toLane = toEdge.lanes.find((lane) => lane.index === connection.toLane)
+      let previousLaneId = fromLane.id
+      let previousPose = resolver(
+        fromLane.id,
+        toCoordinate(fromLane.points.at(-1)),
+        offsetMeters,
+      )
+      assert.ok(previousPose)
+      for (const segment of connection.viaSegments) {
+        const nextPose = resolver(
+          segment.laneId,
+          toCoordinate(segment.points[0]),
+          offsetMeters,
+          previousLaneId,
+          previousPose.trackKey,
+        )
+        assert.ok(nextPose)
+        assert.ok(
+          distance(previousPose, nextPose) < 0.15,
+          `${connection.linkIndex}:${segment.laneId} entry center is discontinuous`,
+        )
+        previousLaneId = segment.laneId
+        previousPose = resolver(
+          segment.laneId,
+          toCoordinate(segment.points.at(-1)),
+          offsetMeters,
+          previousLaneId,
+          nextPose.trackKey,
+        )
+        assert.ok(previousPose)
+      }
+      const outgoingPose = resolver(
+        toLane.id,
+        toCoordinate(toLane.points[0]),
+        offsetMeters,
+        previousLaneId,
+        previousPose.trackKey,
+      )
+      assert.ok(outgoingPose)
+      assert.ok(
+        distance(previousPose, outgoingPose) < 0.15,
+        `${connection.linkIndex}:${toLane.id} exit center is discontinuous`,
+      )
+    }
+  }
+})
+
+test('smoothly absorbs visual path length differences away from lane boundaries', () => {
+  for (const [sourceLength, renderLength] of [[10, 8.4], [10, 9.3], [10, 10.8]]) {
+    const epsilon = 1e-5
+    const startSlope = (
+      mapSourceProgressToRenderDistance(epsilon, sourceLength, renderLength)
+      - mapSourceProgressToRenderDistance(0, sourceLength, renderLength)
+    ) / (epsilon * sourceLength)
+    const endSlope = (
+      mapSourceProgressToRenderDistance(1, sourceLength, renderLength)
+      - mapSourceProgressToRenderDistance(1 - epsilon, sourceLength, renderLength)
+    ) / (epsilon * sourceLength)
+    assert.ok(Math.abs(startSlope - 1) < 0.001)
+    assert.ok(Math.abs(endSlope - 1) < 0.001)
+    const distances = Array.from({ length: 101 }, (_, index) => (
+      mapSourceProgressToRenderDistance(index / 100, sourceLength, renderLength)
+    ))
+    assert.ok(distances.every((distance, index) => index === 0 || distance >= distances[index - 1]))
+  }
+})
+
+test('uses the visual lane tangent as the moving turn heading', () => {
+  const previous = resolveStableVehicleHeading({
+    sumoAngleDegrees: 90,
+    speedMetersPerSecond: 8,
+    current: { longitude: 116, latitude: 39 },
+    timeSeconds: 0,
+  }, null)
+  const turning = resolveStableVehicleHeading({
+    sumoAngleDegrees: 90,
+    speedMetersPerSecond: 8,
+    current: { longitude: 116.00001, latitude: 39 },
+    timeSeconds: 1,
+    laneHeading: Math.PI / 2,
+  }, previous.state)
+
+  assert.ok(Math.abs(shortestAngleDelta(turning.heading, Math.PI / 2)) < 1e-9)
+})
+
 test('moves the model center behind the front bumper in cardinal directions', () => {
   const point = { longitude: 116, latitude: 39 }
   const north = moveFromFrontBumperToModelCenter(point, sumoAngleToMapHeading(0), 2.5)
@@ -253,4 +529,19 @@ test('creates the point-based payload required by MapV Twin interpolation', () =
   assert.ok(sample.point[2] > 1.04)
   assert.equal('lng' in sample, false)
   assert.equal('lat' in sample, false)
+})
+
+test('does not apply a second bumper offset to a lane-resolved model center', () => {
+  const sample = createVehicleTwinSample(
+    vehicle('vehicle-centered', 116.501, 39.801),
+    116.501,
+    39.801,
+    1_234,
+    CAR_MODEL_PROFILE,
+    Math.PI / 3,
+    true,
+  )
+
+  assert.equal(sample.point[0], 116.501)
+  assert.equal(sample.point[1], 39.801)
 })

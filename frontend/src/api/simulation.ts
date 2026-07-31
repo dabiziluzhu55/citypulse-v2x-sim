@@ -2,6 +2,7 @@ import { apiClient } from './client'
 import type {
   DisturbanceEventPayload,
   SimulationSnapshot,
+  SimulationPlaybackResponse,
   StartSimulationRequest,
   StartSimulationResponse,
   StopSimulationResponse,
@@ -23,6 +24,33 @@ export async function stopSimulation(sessionId: string): Promise<StopSimulationR
   const { data } = await apiClient.post<StopSimulationResponse>(
     `/simulations/${sessionId}/stop`,
     {},
+  )
+  return data
+}
+
+export async function pauseSimulation(sessionId: string): Promise<SimulationPlaybackResponse> {
+  const { data } = await apiClient.post<SimulationPlaybackResponse>(
+    `/simulations/${sessionId}/pause`,
+    {},
+  )
+  return data
+}
+
+export async function resumeSimulation(sessionId: string): Promise<SimulationPlaybackResponse> {
+  const { data } = await apiClient.post<SimulationPlaybackResponse>(
+    `/simulations/${sessionId}/resume`,
+    {},
+  )
+  return data
+}
+
+export async function setSimulationPlaybackSpeed(
+  sessionId: string,
+  playbackSpeed: number,
+): Promise<SimulationPlaybackResponse> {
+  const { data } = await apiClient.post<SimulationPlaybackResponse>(
+    `/simulations/${sessionId}/playback-speed`,
+    { playback_speed: playbackSpeed },
   )
   return data
 }

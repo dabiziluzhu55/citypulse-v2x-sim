@@ -1,6 +1,13 @@
 import type { Engine } from '@baidumap/mapv-three'
 import * as THREE from 'three'
 import type { RoadCoordinateProjector } from '../roadGeometry'
+import {
+  ROAD_ASPHALT_COLOR,
+  ROAD_CURB_COLOR,
+  ROAD_JUNCTION_COLOR,
+  ROAD_SIDEWALK_COLOR,
+  createAsphaltMaterial,
+} from '../roadAppearance'
 import { REALISTIC_INTERSECTION_SURFACE_Z } from '../sceneElevation'
 import {
   loadIntersectionManifest,
@@ -11,7 +18,6 @@ import {
 } from './intersectionManifest'
 import {
   buildIntersectionApproachGeometry,
-  CROSSWALK_STRIPE_WIDTH_METERS,
   pointAndTangent,
   SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS,
   signalPoleBase,
@@ -48,10 +54,10 @@ export interface RealisticSignalRuntimeState {
 }
 
 const COLORS = {
-  asphalt: 0x515454,
-  junction: 0x494c4c,
-  sidewalk: 0x969994,
-  curb: 0xc8c8c1,
+  asphalt: ROAD_ASPHALT_COLOR,
+  junction: ROAD_JUNCTION_COLOR,
+  sidewalk: ROAD_SIDEWALK_COLOR,
+  curb: ROAD_CURB_COLOR,
   bicycle: 0x655f55,
   marking: 0xf0eee3,
   yellow: 0xe1b63c,
@@ -72,28 +78,6 @@ function createCanvasTexture(
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.anisotropy = 8
-  return texture
-}
-
-function makeAsphaltTexture(seedValue: number): THREE.CanvasTexture {
-  const texture = createCanvasTexture(256, 256, (context) => {
-    context.fillStyle = '#444747'
-    context.fillRect(0, 0, 256, 256)
-    let seed = Math.max(1, seedValue)
-    for (let index = 0; index < 5200; index += 1) {
-      seed = (seed * 16807) % 2147483647
-      const x = seed % 256
-      seed = (seed * 16807) % 2147483647
-      const y = seed % 256
-      seed = (seed * 16807) % 2147483647
-      const shade = 46 + (seed % 35)
-      context.fillStyle = `rgba(${shade},${shade},${shade},0.32)`
-      context.fillRect(x, y, 1, 1)
-    }
-  })
-  texture.wrapS = THREE.RepeatWrapping
-  texture.wrapT = THREE.RepeatWrapping
-  texture.repeat.set(0.65, 0.65)
   return texture
 }
 
@@ -280,15 +264,10 @@ class RealisticIntersectionObject {
 
   private buildRoads(): void {
     const scale = this.horizontalScale
-    const asphaltTexture = makeAsphaltTexture(
+    const asphalt = createAsphaltMaterial(
       this.manifest.intersectionId.split('').reduce((sum, value) => sum + value.charCodeAt(0), 1),
+      COLORS.asphalt,
     )
-    const asphalt = new THREE.MeshStandardMaterial({
-      color: COLORS.asphalt,
-      map: asphaltTexture,
-      roughness: 0.94,
-      metalness: 0.02,
-    })
     const sidewalk = new THREE.MeshStandardMaterial({ color: COLORS.sidewalk, roughness: 0.92 })
     const curb = new THREE.MeshStandardMaterial({ color: COLORS.curb, roughness: 0.84 })
     const bicycle = new THREE.MeshStandardMaterial({ color: COLORS.bicycle, roughness: 0.9 })
@@ -346,18 +325,18 @@ class RealisticIntersectionObject {
     for (const edge of this.manifest.edges.filter((candidate) => candidate.incoming)) {
       const approach = buildIntersectionApproachGeometry(edge, scale, this.manifest.edges)
       if (!approach) continue
-      const { tangent, normal, stopLineCenter, halfWidth, crosswalkHalfWidth } = approach
+      const { tangent, normal, stopLineCenter, halfWidth } = approach
       this.group.add(lineMesh(
         [stopLineCenter[0] - normal[0] * halfWidth, stopLineCenter[1] - normal[1] * halfWidth],
         [stopLineCenter[0] + normal[0] * halfWidth, stopLineCenter[1] + normal[1] * halfWidth],
         0.42 * scale,
         white,
       ))
-      for (const stripeCenter of approach.crosswalkCenters) {
+      for (const bar of approach.crosswalkBars) {
         this.group.add(lineMesh(
-          [stripeCenter[0] - normal[0] * crosswalkHalfWidth, stripeCenter[1] - normal[1] * crosswalkHalfWidth],
-          [stripeCenter[0] + normal[0] * crosswalkHalfWidth, stripeCenter[1] + normal[1] * crosswalkHalfWidth],
-          CROSSWALK_STRIPE_WIDTH_METERS * scale,
+          [bar.center[0] - tangent[0] * bar.length / 2, bar.center[1] - tangent[1] * bar.length / 2],
+          [bar.center[0] + tangent[0] * bar.length / 2, bar.center[1] + tangent[1] * bar.length / 2],
+          bar.width,
           white,
         ))
       }

@@ -5,8 +5,8 @@ import { projectBd09ToWebMercator, wgs84ToBd09 } from '../src/mapv/sceneCoordina
 import { cropPolylineToRadius, validateIntersectionManifest } from './realistic-intersection-core.mjs'
 import {
   buildIntersectionApproachGeometry,
+  CROSSWALK_DEPTH_METERS,
   CROSSWALK_FIRST_CENTER_METERS,
-  CROSSWALK_STRIPE_COUNT,
   CROSSWALK_STRIPE_WIDTH_METERS,
   SIGNAL_POLE_LATERAL_CLEARANCE_METERS,
   SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS,
@@ -75,6 +75,31 @@ test('all realistic intersections have a matching environment bundle', async () 
   }
 })
 
+test('intersection detail models require a browser-ready placement contract', () => {
+  const environment = parseIntersectionEnvironmentManifest({
+    schemaVersion: 1,
+    intersectionId: 'demo_2',
+    detailModel: {
+      url: '/assets/intersection-pack/demo_2-detail.glb',
+      position: [116.126756, 38.99115, 0],
+      rotation: [Math.PI / 2, 0, 0],
+      scale: 1,
+    },
+  }, 'demo_2')
+
+  assert.equal(environment.detailModel.url, '/assets/intersection-pack/demo_2-detail.glb')
+  assert.deepEqual(environment.detailModel.position, [116.126756, 38.99115, 0])
+  assert.throws(() => parseIntersectionEnvironmentManifest({
+    schemaVersion: 1,
+    intersectionId: 'demo_2',
+    detailModel: {
+      url: '/assets/intersection-pack/raw.max',
+      position: [116.126756, 38.99115],
+      scale: 0,
+    },
+  }), /detail model is incomplete/)
+})
+
 test('anchors stop lines at lane ends and places crosswalks after them', async () => {
   const manifest = JSON.parse(await readFile(
     new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
@@ -91,17 +116,18 @@ test('anchors stop lines at lane ends and places crosswalks after them', async (
       ) / manifest.horizontalScale
       assert.ok(Math.abs(distanceMeters - STOP_LINE_CENTER_OFFSET_METERS) < 0.01)
     }
-    const firstCrosswalk = approach.crosswalkCenters[0]
+    const firstCrosswalk = approach.crosswalkBars[0].center
     const along = (
       (firstCrosswalk[0] - approach.stopLineCenter[0]) * approach.tangent[0]
       + (firstCrosswalk[1] - approach.stopLineCenter[1]) * approach.tangent[1]
     ) / manifest.horizontalScale
     assert.ok(Math.abs(along - CROSSWALK_FIRST_CENTER_METERS) < 0.01)
     assert.ok(along > 0)
-    assert.equal(approach.crosswalkCenters.length, CROSSWALK_STRIPE_COUNT)
-    assert.ok(Math.abs(
-      along - CROSSWALK_STRIPE_WIDTH_METERS / 2 - 1.2
-    ) < 0.01)
+    assert.ok(approach.crosswalkBars.length >= 4)
+    assert.ok(approach.crosswalkBars.every((bar) => (
+      Math.abs(bar.length / manifest.horizontalScale - CROSSWALK_DEPTH_METERS) < 0.01
+      && Math.abs(bar.width / manifest.horizontalScale - CROSSWALK_STRIPE_WIDTH_METERS) < 0.01
+    )))
   }
 })
 
@@ -135,7 +161,7 @@ test('demo_2 rebuilds non-overlapping uniform lane cross sections with lane sema
   }
 })
 
-test('crosswalks span paired carriageways without fixed lateral overhang', async () => {
+test('crosswalk bars fill paired carriageways without becoming curb-to-curb lines', async () => {
   const manifest = JSON.parse(await readFile(
     new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
     'utf8',
@@ -144,6 +170,8 @@ test('crosswalks span paired carriageways without fixed lateral overhang', async
     const approach = buildIntersectionApproachGeometry(edge, manifest.horizontalScale, manifest.edges)
     assert.ok(approach)
     assert.ok(approach.crosswalkHalfWidth >= approach.halfWidth)
+    assert.ok(approach.crosswalkBars.length >= 4)
+    assert.ok(approach.crosswalkBars.every((bar) => bar.length < approach.crosswalkHalfWidth * 2))
     const pole = signalPoleBase(approach, manifest.horizontalScale)
     const poleProjection = pole[0] * approach.normal[0] + pole[1] * approach.normal[1]
     const lateralClearance = Math.abs(poleProjection - approach.outerBoundaryProjection)
@@ -156,6 +184,30 @@ test('crosswalks span paired carriageways without fixed lateral overhang', async
     assert.ok(Math.abs(longitudinalSetback - SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS) < 0.01)
     assert.ok(lateralClearance >= 0.75)
   }
+})
+
+test('crosswalk orientation follows the rebuilt road centerline instead of one skewed lane', () => {
+  const edge = {
+    id: 'incoming',
+    incoming: true,
+    centerline: [[-30, 0], [0, 0]],
+    lanes: [
+      { id: 'incoming_0', index: 0, kind: 'driving', width: 3.35, speed: 13.9, points: [[-30, -3.35], [-1, -3.35], [0, -3]] },
+      { id: 'incoming_1', index: 1, kind: 'driving', width: 3.35, speed: 13.9, points: [[-30, 0], [0, 0]] },
+      { id: 'incoming_2', index: 2, kind: 'driving', width: 3.35, speed: 13.9, points: [[-30, 3.35], [-1, 3.35], [0, 3]] },
+    ],
+  }
+  const approach = buildIntersectionApproachGeometry(edge, 1, [edge])
+
+  assert.ok(approach)
+  assert.ok(Math.abs(approach.tangent[0] - 1) < 1e-9)
+  assert.ok(Math.abs(approach.tangent[1]) < 1e-9)
+  const first = approach.crosswalkCenters[0]
+  const last = approach.crosswalkCenters.at(-1)
+  assert.ok(Math.abs(first[0] - last[0]) < 1e-9)
+  assert.ok(last[1] > first[1])
+  assert.ok(approach.crosswalkBars.every((bar) => bar.length === CROSSWALK_DEPTH_METERS))
+  assert.ok(approach.crosswalkBars.every((bar) => bar.width === CROSSWALK_STRIPE_WIDTH_METERS))
 })
 
 test('demo_2 lanes align with the authoritative WGS84 road export', async () => {
@@ -202,4 +254,39 @@ test('demo_2 keeps the exact TLS link contract used by the simulator', async () 
     Array.from({ length: 15 }, (_, index) => index),
   )
   assert.equal(manifest.phaseTemplates['1']['317'].green, 'GGGrrggrrrgGgGG')
+  assert.ok(manifest.connections.every((item) => item.viaLaneId?.startsWith(':317_')))
+  assert.ok(manifest.connections.every((item) => item.viaPoints?.length >= 2))
+  assert.ok(manifest.connections.every((item) => item.renderPoints?.length >= 2))
+  assert.ok(manifest.connections.every((item) => item.viaSegments?.length >= 1))
+  assert.deepEqual(
+    manifest.connections.find((item) => item.linkIndex === 3).viaSegments.map((item) => item.laneId),
+    [':317_3_0', ':317_15_0'],
+  )
+  assert.deepEqual(
+    manifest.connections.find((item) => item.linkIndex === 4).viaSegments.map((item) => item.laneId),
+    [':317_3_1', ':317_15_1'],
+  )
+  assert.deepEqual(
+    manifest.connections.find((item) => item.linkIndex === 12).viaSegments.map((item) => item.laneId),
+    [':317_12_0', ':317_16_0'],
+  )
+})
+
+test('demo_2 visual turn segments do not stretch SUMO speed into a jump', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
+    'utf8',
+  ))
+  const length = (points) => points.slice(1).reduce((total, point, index) => (
+    total + Math.hypot(point[0] - points[index][0], point[1] - points[index][1])
+  ), 0)
+  for (const connection of manifest.connections) {
+    for (const segment of connection.viaSegments) {
+      const ratio = length(segment.renderPoints) / length(segment.points)
+      assert.ok(
+        ratio > 0.82 && ratio < 1.08,
+        `${connection.linkIndex}:${segment.laneId} visual/source ratio is ${ratio.toFixed(3)}`,
+      )
+    }
+  }
 })

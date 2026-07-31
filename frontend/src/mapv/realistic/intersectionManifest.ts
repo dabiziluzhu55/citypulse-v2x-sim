@@ -30,6 +30,14 @@ export interface RealisticConnection {
   toLane: number
   direction: 's' | 'l' | 'r' | 't'
   directionLabel: string
+  viaLaneId?: string
+  viaPoints?: Point2[]
+  renderPoints?: Point2[]
+  viaSegments?: Array<{
+    laneId: string
+    points: Point2[]
+    renderPoints: Point2[]
+  }>
 }
 
 export interface RealisticPhase {

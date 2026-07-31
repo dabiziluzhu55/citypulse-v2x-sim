@@ -1,4 +1,10 @@
-import type { MapGeoJsonResponse } from '../types/map'
+import type { GeoJsonFeature, MapGeoJsonResponse } from '../types/map'
+import {
+  buildCrosswalkBarProjections,
+  CROSSWALK_CENTER_OFFSET_METERS,
+  CROSSWALK_DEPTH_METERS,
+  CROSSWALK_STRIPE_WIDTH_METERS,
+} from './crosswalkGeometry.ts'
 import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates.ts'
 
 export type Coordinate = [number, number]
@@ -60,6 +66,11 @@ const MITER_LIMIT = 2.5
 const PAIR_ENDPOINT_TOLERANCE_METERS = 24
 const JUNCTION_CLUSTER_RADIUS_METERS = 24
 const DIRECTION_DEDUP_DOT = Math.cos(12 * Math.PI / 180)
+
+export interface RoadExclusionZone {
+  center: Coordinate
+  radiusMeters: number
+}
 
 function length(point: LocalPoint): number {
   return Math.hypot(point[0], point[1])
@@ -132,6 +143,101 @@ function asLine(coordinates: unknown): Coordinate[] | null {
     if (Math.hypot(dx, dy) >= MIN_SEGMENT_METERS) result.push(point)
   }
   return result.length >= 2 ? result : null
+}
+
+function clipLineOutsideCircle(
+  coordinates: Coordinate[],
+  center: Coordinate,
+  radiusMeters: number,
+): Coordinate[][] {
+  const latitudeScale = METERS_PER_DEGREE_LATITUDE
+  const longitudeScale = Math.cos(center[1] * Math.PI / 180) * latitudeScale
+  const local = coordinates.map(([longitude, latitude]) => ([
+    (longitude - center[0]) * longitudeScale,
+    (latitude - center[1]) * latitudeScale,
+  ] as LocalPoint))
+  const fragments: Coordinate[][] = []
+  let current: Coordinate[] = []
+  const flush = () => {
+    if (current.length >= 2) fragments.push(current)
+    current = []
+  }
+  const interpolate = (start: Coordinate, end: Coordinate, ratio: number): Coordinate => ([
+    start[0] + (end[0] - start[0]) * ratio,
+    start[1] + (end[1] - start[1]) * ratio,
+  ])
+
+  for (let index = 0; index < coordinates.length - 1; index += 1) {
+    const start = local[index]
+    const end = local[index + 1]
+    const dx = end[0] - start[0]
+    const dy = end[1] - start[1]
+    const a = dx * dx + dy * dy
+    const b = 2 * (start[0] * dx + start[1] * dy)
+    const c = start[0] * start[0] + start[1] * start[1] - radiusMeters * radiusMeters
+    const discriminant = b * b - 4 * a * c
+    const breaks = [0, 1]
+    if (a > 1e-9 && discriminant > 0) {
+      const root = Math.sqrt(discriminant)
+      const first = (-b - root) / (2 * a)
+      const second = (-b + root) / (2 * a)
+      if (first > 1e-9 && first < 1 - 1e-9) breaks.push(first)
+      if (second > 1e-9 && second < 1 - 1e-9) breaks.push(second)
+    }
+    breaks.sort((left, right) => left - right)
+    for (let part = 0; part < breaks.length - 1; part += 1) {
+      const from = breaks[part]
+      const to = breaks[part + 1]
+      const middle = (from + to) / 2
+      const middleX = start[0] + dx * middle
+      const middleY = start[1] + dy * middle
+      if (Math.hypot(middleX, middleY) < radiusMeters) {
+        flush()
+        continue
+      }
+      const fromPoint = interpolate(coordinates[index], coordinates[index + 1], from)
+      const toPoint = interpolate(coordinates[index], coordinates[index + 1], to)
+      const previous = current.at(-1)
+      if (!previous || Math.hypot(
+        (previous[0] - fromPoint[0]) * longitudeScale,
+        (previous[1] - fromPoint[1]) * latitudeScale,
+      ) > 0.05) {
+        flush()
+        current.push(fromPoint)
+      }
+      current.push(toPoint)
+    }
+  }
+  flush()
+  return fragments
+}
+
+export function excludeRoadCore(
+  response: MapGeoJsonResponse,
+  zone: RoadExclusionZone | null,
+): MapGeoJsonResponse {
+  if (!zone || zone.radiusMeters <= 0) return response
+  const features = response.geojson.features.flatMap((feature): GeoJsonFeature[] => {
+    if (feature.geometry.type !== 'LineString') return [feature]
+    const coordinates = asLine(feature.geometry.coordinates)
+    if (!coordinates) return []
+    return clipLineOutsideCircle(coordinates, zone.center, zone.radiusMeters).map((fragment, index) => ({
+      ...feature,
+      properties: {
+        ...feature.properties,
+        realistic_core_excluded: true,
+        clip_fragment: index,
+      },
+      geometry: { type: 'LineString', coordinates: fragment },
+    }))
+  })
+  return {
+    ...response,
+    geojson: {
+      ...response.geojson,
+      features,
+    },
+  }
 }
 
 function offsetLine(line: LocalPoint[], offset: number): LocalPoint[] {
@@ -421,13 +527,19 @@ function addJunctionGeometry(
         { ...approach.road.properties, generated_layer: 'stop-line', junction_index: junctionIndex },
         projector,
       ))
-      for (let stripeIndex = 0; stripeIndex < 5; stripeIndex += 1) {
-        const stripeCenter = add(approach.point, scale(approach.outward, 2.4 + stripeIndex * 0.9))
+      const across: LocalPoint = [-approach.outward[1], approach.outward[0]]
+      const crossingCenter = add(
+        approach.point,
+        scale(approach.outward, CROSSWALK_CENTER_OFFSET_METERS),
+      )
+      const barOffsets = buildCrosswalkBarProjections(-approach.road.width / 2, approach.road.width / 2)
+      for (const [stripeIndex, lateralOffset] of barOffsets.entries()) {
+        const stripeCenter = add(crossingCenter, scale(across, lateralOffset))
         data.crosswalkStripes.push(rectangleFeature(
           stripeCenter,
           approach.outward,
-          0.45,
-          approach.road.width,
+          CROSSWALK_DEPTH_METERS,
+          CROSSWALK_STRIPE_WIDTH_METERS,
           origin,
           0.28,
           {
@@ -435,6 +547,10 @@ function addJunctionGeometry(
             generated_layer: 'crosswalk-stripe',
             junction_index: junctionIndex,
             stripe_index: stripeIndex,
+            bar_length_m: CROSSWALK_DEPTH_METERS,
+            bar_width_m: CROSSWALK_STRIPE_WIDTH_METERS,
+            road_tangent: [...approach.outward],
+            distribution_axis: [...across],
           },
           projector,
         ))

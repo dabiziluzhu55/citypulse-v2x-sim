@@ -24,14 +24,17 @@ export interface CatalogIntersection {
   lanes: CatalogLane[]
 }
 
-export interface FlowMultiplierRange {
-  min: number
-  max: number
+export interface CatalogScenarioPreset {
+  preset_id: string
+  label: string
+  intersection_ids: string[]
+  map_template: string
 }
 
 export interface CatalogResponse {
   intersections: CatalogIntersection[]
+  scenario_presets: CatalogScenarioPreset[]
   event_types: string[]
   control_modes: string[]
-  flow_multiplier: FlowMultiplierRange
+  playback_speeds: number[]
 }

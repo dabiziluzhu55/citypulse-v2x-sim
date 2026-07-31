@@ -6,6 +6,7 @@ const TRAJECTORY_FALLBACK_ERROR_RADIANS = Math.PI / 4
 const STOP_SPEED_MPS = 0.35
 const START_SPEED_MPS = 0.8
 const MAX_TURN_RATE_RADIANS_PER_SECOND = 2.5
+const MAX_LANE_TURN_RATE_RADIANS_PER_SECOND = 6
 
 export interface GeographicPoint {
   longitude: number
@@ -112,14 +113,21 @@ export function resolveStableVehicleHeading(
     ? input.speedMetersPerSecond > STOP_SPEED_MPS && movementHeading != null
     : input.speedMetersPerSecond >= START_SPEED_MPS && movementHeading != null
   let target = previous.reliableHeading
-  if (moving && movementHeading != null) {
-    target = Math.abs(shortestAngleDelta(sumoHeading, movementHeading)) > TRAJECTORY_FALLBACK_ERROR_RADIANS
-      ? movementHeading
-      : sumoHeading
+  if (moving) {
+    if (input.laneHeading != null) {
+      target = input.laneHeading
+    } else if (movementHeading != null) {
+      target = Math.abs(shortestAngleDelta(sumoHeading, movementHeading)) > TRAJECTORY_FALLBACK_ERROR_RADIANS
+        ? movementHeading
+        : sumoHeading
+    }
   }
 
   const elapsed = Math.max(0, input.timeSeconds - previous.timeSeconds)
-  const maxTurn = Math.max(0.08, elapsed * MAX_TURN_RATE_RADIANS_PER_SECOND)
+  const turnRate = input.laneHeading == null
+    ? MAX_TURN_RATE_RADIANS_PER_SECOND
+    : MAX_LANE_TURN_RATE_RADIANS_PER_SECOND
+  const maxTurn = Math.max(0.08, elapsed * turnRate)
   const delta = shortestAngleDelta(previous.heading, target)
   const heading = moving
     ? previous.heading + Math.max(-maxTurn, Math.min(maxTurn, delta))
