@@ -297,3 +297,6 @@ session 的 `planned_vehicle_count` 校准。开场事件把 `source_lane_ids` �
 `venue_lane_id` 所在的场馆接驳道路；散场事件从 `venue_lane_id` 向 `destination_lane_ids`
 扩散。`vehicle_count` 会在事件时间窗内均匀投放，实时 snapshot 的车辆数会包含这些临时注入车辆。
 如果不显式提供来源或去向 lane，运行时会从本次选中路口的 incoming/outgoing lane 中自动选择可达路线。
+活动车辆统一在路线首边的 50% 位置生成，并在末边的 50% 位置到达并移除。如果事件 lane
+所在道路具有构建阶段识别出的两段结构，运行时会复用 `traffic_manifest.json` 中的端点延长映射，
+把首边或末边移到远离路口的路段；事件 JSON 仍填写路口清单中提供的 lane ID。

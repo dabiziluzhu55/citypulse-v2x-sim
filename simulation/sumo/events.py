@@ -128,7 +128,8 @@ class _LaneBaseline:
 @dataclass(frozen=True)
 class _ActivityRoute:
     route_id: str
-    depart_lane_index: int
+    depart_position: float
+    arrival_position: float
 
 
 @dataclass
@@ -176,10 +177,15 @@ class DisturbanceScheduler:
         traci,
         lane_targets: Mapping[str, LaneTarget],
         duration_seconds: float,
+        *,
+        upstream_extensions: Mapping[str, str] | None = None,
+        downstream_extensions: Mapping[str, str] | None = None,
     ) -> None:
         self.traci = traci
         self.lane_targets = dict(lane_targets)
         self.duration_seconds = float(duration_seconds)
+        self.upstream_extensions = dict(upstream_extensions or {})
+        self.downstream_extensions = dict(downstream_extensions or {})
         self._events: dict[str, _EventRuntime] = {}
         self._baselines: dict[str, _LaneBaseline] = {}
         self._closures: dict[str, set[str]] = {}
@@ -439,9 +445,11 @@ class DisturbanceScheduler:
         for source_lane_id, destination_lane_id in self._activity_lane_pairs(event):
             source = self.lane_targets[source_lane_id]
             destination = self.lane_targets[destination_lane_id]
+            source_edge_id = self._activity_endpoint_edge(source)
+            destination_edge_id = self._activity_endpoint_edge(destination)
             route_edges = self._activity_route_edges(
-                source.edge_id,
-                destination.edge_id,
+                source_edge_id,
+                destination_edge_id,
                 event.vehicle_type_id,
                 current_time,
             )
@@ -450,7 +458,7 @@ class DisturbanceScheduler:
                 continue
             base_route_id = (
                 f"event_route_{event.event_id}_"
-                f"{_sanitized_id(source.edge_id)}_{_sanitized_id(destination.edge_id)}"
+                f"{_sanitized_id(source_edge_id)}_{_sanitized_id(destination_edge_id)}"
             )
             route_ids[base_route_id] = route_ids.get(base_route_id, 0) + 1
             route_id = (
@@ -458,18 +466,26 @@ class DisturbanceScheduler:
                 if route_ids[base_route_id] == 1
                 else f"{base_route_id}_{route_ids[base_route_id]}"
             )
-            route_specs.append((route_id, tuple(route_edges), source.lane_index))
+            route_specs.append(
+                (
+                    route_id,
+                    tuple(route_edges),
+                    self._activity_edge_midpoint(source_edge_id),
+                    self._activity_edge_midpoint(destination_edge_id),
+                )
+            )
         if not route_specs:
             raise EventValidationError("Activity event has no reachable routes.")
         if self._activity_has_explicit_endpoints(event) and unreachable:
             raise EventValidationError("Activity event has unreachable explicit routes.")
         routes = []
-        for route_id, route_edges, depart_lane_index in route_specs:
+        for route_id, route_edges, depart_position, arrival_position in route_specs:
             self.traci.route.add(route_id, list(route_edges))
             routes.append(
                 _ActivityRoute(
                     route_id=route_id,
-                    depart_lane_index=depart_lane_index,
+                    depart_position=depart_position,
+                    arrival_position=arrival_position,
                 )
             )
         runtime.activity = _ActivityRuntime(
@@ -498,10 +514,11 @@ class DisturbanceScheduler:
         roles: set[str],
         venue_lane_id: str,
     ) -> tuple[str, ...]:
+        venue_edge_id = self.lane_targets[venue_lane_id].edge_id
         return tuple(
             lane_id
             for lane_id, target in sorted(self.lane_targets.items())
-            if lane_id != venue_lane_id and target.role in roles
+            if target.edge_id != venue_edge_id and target.role in roles
         )
 
     def _activity_has_explicit_endpoints(
@@ -511,6 +528,32 @@ class DisturbanceScheduler:
         if isinstance(event, MajorEventOpeningEvent):
             return bool(event.source_lane_ids)
         return bool(event.destination_lane_ids)
+
+    def _activity_endpoint_edge(self, target: LaneTarget) -> str:
+        if target.role == "incoming":
+            return self.upstream_extensions.get(target.edge_id, target.edge_id)
+        if target.role == "outgoing":
+            return self.downstream_extensions.get(target.edge_id, target.edge_id)
+        upstream = self.upstream_extensions.get(target.edge_id)
+        downstream = self.downstream_extensions.get(target.edge_id)
+        if upstream is not None and downstream is None:
+            return upstream
+        if downstream is not None and upstream is None:
+            return downstream
+        return target.edge_id
+
+    def _activity_edge_midpoint(self, edge_id: str) -> float:
+        lane_count = int(self.traci.edge.getLaneNumber(edge_id))
+        lengths = [
+            float(self.traci.lane.getLength(f"{edge_id}_{lane_index}"))
+            for lane_index in range(lane_count)
+        ]
+        positive_lengths = [length for length in lengths if length > 0]
+        if not positive_lengths:
+            raise EventValidationError(
+                f"Activity endpoint edge {edge_id!r} has no positive lane length."
+            )
+        return min(positive_lengths) * 0.5
 
     def _activity_route_edges(
         self,
@@ -548,9 +591,10 @@ class DisturbanceScheduler:
                 route.route_id,
                 typeID=event.vehicle_type_id,
                 depart="now",
-                departLane=str(route.depart_lane_index),
-                departPos="base",
+                departLane="best",
+                departPos=f"{route.depart_position:g}",
                 departSpeed="max",
+                arrivalPos=f"{route.arrival_position:g}",
             )
             activity.next_vehicle_index += 1
             activity.spawned_vehicle_count += 1

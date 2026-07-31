@@ -33,6 +33,12 @@ class FakeLane:
     def getAllowed(self, lane): return self.allowed[lane]
     def getDisallowed(self, lane): return self.disallowed[lane]
     def getMaxSpeed(self, lane): return self.speeds[lane]
+    def getLength(self, lane):
+        return {
+            "far_source_0": 200.0,
+            "far_venue_0": 300.0,
+            "far_dest_0": 400.0,
+        }.get(lane, 100.0)
     def setAllowed(self, lane, values): self.allowed[lane] = list(values); self.disallowed[lane] = []
     def setDisallowed(self, lane, values):
         if self.fail_disallowed or lane == self.fail_lane: raise RuntimeError("permission failure")
@@ -65,12 +71,17 @@ class FakeSimulation:
         return FakeRouteResult((source_edge, destination_edge))
 
 
+class FakeEdge:
+    def getLaneNumber(self, edge_id): return 1
+
+
 class FakeTraci:
     def __init__(self):
         self.lane = FakeLane()
         self.route = FakeRoute()
         self.vehicle = FakeVehicle()
         self.simulation = FakeSimulation()
+        self.edge = FakeEdge()
 
 
 class DisturbanceEventTests(unittest.TestCase):
@@ -174,7 +185,15 @@ class DisturbanceEventTests(unittest.TestCase):
         )
         self.assertEqual(
             traci.vehicle.vehicles["event_vehicle_show_000001"]["departLane"],
-            "0",
+            "best",
+        )
+        self.assertEqual(
+            traci.vehicle.vehicles["event_vehicle_show_000001"]["departPos"],
+            "50",
+        )
+        self.assertEqual(
+            traci.vehicle.vehicles["event_vehicle_show_000001"]["arrivalPos"],
+            "50",
         )
 
         scheduler.tick(5)
@@ -211,6 +230,78 @@ class DisturbanceEventTests(unittest.TestCase):
                 for vehicle in traci.vehicle.vehicles.values()
             )
         )
+
+    def test_activity_uses_remote_segments_and_their_midpoints(self):
+        traci = FakeTraci()
+        scheduler = DisturbanceScheduler(
+            traci,
+            {
+                "source_0": LaneTarget(
+                    "source_0", "source_edge", 0, 100.0, "incoming"
+                ),
+                "venue_0": LaneTarget(
+                    "venue_0", "venue_edge", 0, 100.0, "incoming"
+                ),
+                "dest_0": LaneTarget(
+                    "dest_0", "dest_edge", 0, 100.0, "outgoing"
+                ),
+            },
+            100.0,
+            upstream_extensions={
+                "source_edge": "far_source",
+                "venue_edge": "far_venue",
+            },
+            downstream_extensions={"dest_edge": "far_dest"},
+        )
+        scheduler.schedule(
+            MajorEventOpeningEvent(
+                "remote_open",
+                1,
+                2,
+                "venue_0",
+                1,
+                source_lane_ids=("source_0",),
+            )
+        )
+        scheduler.schedule(
+            MajorEventClosingEvent(
+                "remote_close",
+                2,
+                3,
+                "venue_0",
+                1,
+                destination_lane_ids=("dest_0",),
+            )
+        )
+
+        scheduler.tick(1.5)
+        opening = traci.vehicle.vehicles["event_vehicle_remote_open_000001"]
+        self.assertEqual(
+            traci.route.routes[opening["route_id"]], ["far_source", "far_venue"]
+        )
+        self.assertEqual(opening["departPos"], "100")
+        self.assertEqual(opening["arrivalPos"], "150")
+
+        scheduler.tick(2.5)
+        closing = traci.vehicle.vehicles["event_vehicle_remote_close_000001"]
+        self.assertEqual(
+            traci.route.routes[closing["route_id"]], ["far_venue", "far_dest"]
+        )
+        self.assertEqual(closing["departPos"], "150")
+        self.assertEqual(closing["arrivalPos"], "200")
+
+    def test_activity_default_endpoints_exclude_other_lanes_on_venue_edge(self):
+        traci, scheduler = self.make_scheduler()
+        scheduler.lane_targets["venue_sibling_0"] = LaneTarget(
+            "venue_sibling_0", "venue_edge", 1, 100.0, "incoming"
+        )
+        scheduler.schedule(MajorEventOpeningEvent("default_open", 1, 2, "venue_0", 1))
+
+        scheduler.tick(1.5)
+
+        routes = tuple(traci.route.routes.values())
+        self.assertTrue(routes)
+        self.assertTrue(all(route[0] != "venue_edge" for route in routes))
 
     def test_activity_event_cancel_stops_future_spawns(self):
         traci, scheduler = self.make_scheduler()

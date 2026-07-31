@@ -670,6 +670,18 @@ class SimulationManager:
             selected_manifest = _select_program_manifests(
                 selected_manifest, programs
             )
+            traffic_manifest = _read_json(
+                GeneratedArtifactLayout(self.generated_dir).traffic_manifest
+            )
+            endpoint_policy = traffic_manifest.get("route_endpoint_policy", {})
+            if not isinstance(endpoint_policy, Mapping):
+                endpoint_policy = {}
+            upstream_extensions = endpoint_policy.get("upstream_extensions", {})
+            if not isinstance(upstream_extensions, Mapping):
+                upstream_extensions = {}
+            downstream_extensions = endpoint_policy.get("downstream_extensions", {})
+            if not isinstance(downstream_extensions, Mapping):
+                downstream_extensions = {}
             command = [
                 sumolib.checkBinary("sumo-gui" if config.gui else "sumo"),
                 "--configuration-file",
@@ -699,7 +711,11 @@ class SimulationManager:
             lane_change_guard = StoppedLaneChangeGuard(traci, vehicle_tracker)
             lane_targets = _lane_targets(traci, selected_manifest)
             scheduler = DisturbanceScheduler(
-                traci, lane_targets, scenario.duration_seconds
+                traci,
+                lane_targets,
+                scenario.duration_seconds,
+                upstream_extensions=upstream_extensions,
+                downstream_extensions=downstream_extensions,
             )
             for event in config.initial_events:
                 scheduler.schedule(event)
