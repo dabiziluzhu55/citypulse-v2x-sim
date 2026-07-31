@@ -1,11 +1,12 @@
 import type { DisturbanceTargetPayload, StartSimulationRequest } from '../types/simulation'
+import type { BackendControlMode } from '../constants/simulationOptions'
 
 export interface ScenarioPayloadInput {
   scenarioPresetId: string
   period: string
   windowStartSeconds: number
   durationSeconds: number
-  controlMode: string
+  controlMode: BackendControlMode
   playbackSpeed: number
   disturbance: 'lane_closure' | 'speed_limit' | 'accident' | 'none'
   intersectionId?: string

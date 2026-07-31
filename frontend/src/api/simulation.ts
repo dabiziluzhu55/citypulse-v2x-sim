@@ -8,10 +8,17 @@ import type {
   StopSimulationResponse,
 } from '../types/simulation'
 
+const SIMULATION_START_TIMEOUT_MS = 90_000
+const SIMULATION_CONTROL_TIMEOUT_MS = 30_000
+
 export async function startSimulation(
   payload: StartSimulationRequest,
 ): Promise<StartSimulationResponse> {
-  const { data } = await apiClient.post<StartSimulationResponse>('/simulations', payload)
+  const { data } = await apiClient.post<StartSimulationResponse>(
+    '/simulations',
+    payload,
+    { timeoutMs: SIMULATION_START_TIMEOUT_MS },
+  )
   return data
 }
 
@@ -24,6 +31,7 @@ export async function stopSimulation(sessionId: string): Promise<StopSimulationR
   const { data } = await apiClient.post<StopSimulationResponse>(
     `/simulations/${sessionId}/stop`,
     {},
+    { timeoutMs: SIMULATION_CONTROL_TIMEOUT_MS },
   )
   return data
 }
@@ -32,6 +40,7 @@ export async function pauseSimulation(sessionId: string): Promise<SimulationPlay
   const { data } = await apiClient.post<SimulationPlaybackResponse>(
     `/simulations/${sessionId}/pause`,
     {},
+    { timeoutMs: SIMULATION_CONTROL_TIMEOUT_MS },
   )
   return data
 }
@@ -40,6 +49,7 @@ export async function resumeSimulation(sessionId: string): Promise<SimulationPla
   const { data } = await apiClient.post<SimulationPlaybackResponse>(
     `/simulations/${sessionId}/resume`,
     {},
+    { timeoutMs: SIMULATION_CONTROL_TIMEOUT_MS },
   )
   return data
 }
@@ -51,6 +61,7 @@ export async function setSimulationPlaybackSpeed(
   const { data } = await apiClient.post<SimulationPlaybackResponse>(
     `/simulations/${sessionId}/playback-speed`,
     { playback_speed: playbackSpeed },
+    { timeoutMs: SIMULATION_CONTROL_TIMEOUT_MS },
   )
   return data
 }
@@ -62,6 +73,7 @@ export async function addSimulationEvent(
   const { data } = await apiClient.post<{ event_id: string }>(
     `/simulations/${sessionId}/events`,
     event,
+    { timeoutMs: SIMULATION_CONTROL_TIMEOUT_MS },
   )
   return data
 }
@@ -70,5 +82,8 @@ export async function cancelSimulationEvent(
   sessionId: string,
   eventId: string,
 ): Promise<void> {
-  await apiClient.delete(`/simulations/${sessionId}/events/${eventId}`)
+  await apiClient.delete(
+    `/simulations/${sessionId}/events/${eventId}`,
+    { timeoutMs: SIMULATION_CONTROL_TIMEOUT_MS },
+  )
 }

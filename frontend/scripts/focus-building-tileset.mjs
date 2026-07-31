@@ -192,6 +192,17 @@ function boxFromBounds({ min, max }) {
   return [center[0], center[1], center[2], half[0], 0, 0, 0, half[1], 0, 0, 0, Math.max(half[2], 0.5)]
 }
 
+function tileBoxIntersectsFocus(child, focusBounds) {
+  const box = child?.boundingVolume?.box
+  if (!Array.isArray(box) || box.length !== 12) return true
+  const extentX = Math.abs(box[3]) + Math.abs(box[6]) + Math.abs(box[9])
+  const extentY = Math.abs(box[4]) + Math.abs(box[7]) + Math.abs(box[10])
+  return box[0] + extentX >= focusBounds.west
+    && box[0] - extentX <= focusBounds.east
+    && box[1] + extentY >= focusBounds.south
+    && box[1] - extentY <= focusBounds.north
+}
+
 export async function buildFocusedTileset({
   sourceDirectory,
   outputDirectory,
@@ -219,13 +230,14 @@ export async function buildFocusedTileset({
   await mkdir(path.join(outputDirectory, 'tiles'), { recursive: true })
 
   for (const file of files) {
+    const uri = `tiles/${file}`
+    const sourceChild = childrenByUri.get(uri)
+    if (sourceChild && !tileBoxIntersectsFocus(sourceChild, focusBounds)) continue
     const input = await readFile(path.join(tileDirectory, file))
     sourceBytes += input.length
     const result = sliceGlbToBounds(input, focusBounds)
     if (!result) continue
-    const uri = `tiles/${file}`
     await writeFile(path.join(outputDirectory, uri), result.glb)
-    const sourceChild = childrenByUri.get(uri)
     outputChildren.push({
       id: sourceChild?.id ?? path.basename(file, '.glb'),
       boundingVolume: { box: boxFromBounds(result.bounds) },

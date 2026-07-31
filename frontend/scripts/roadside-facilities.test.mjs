@@ -127,9 +127,6 @@ test('renders one facility group and updates signal colors without rebuilding it
   }
 
   for (const name of [
-    'street-lamp-arms',
-    'street-lamp-housings',
-    'street-lamp-lenses',
     'traffic-signal-arms',
     'traffic-signal-backs',
     'roadside-camera-brackets',
@@ -137,6 +134,9 @@ test('renders one facility group and updates signal colors without rebuilding it
     'roadside-control-cabinets',
   ]) {
     assert.ok(group.getObjectByName(name), `missing ${name}`)
+  }
+  for (const name of ['street-lamp-arms', 'street-lamp-housings', 'street-lamp-lenses']) {
+    assert.equal(group.getObjectByName(name), undefined, `legacy procedural lamp ${name} must be removed`)
   }
   const poles = group.getObjectByName('street-poles')
   assert.equal(poles.material.type, 'MeshStandardMaterial')

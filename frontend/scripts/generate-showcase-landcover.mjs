@@ -2,9 +2,20 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 const GREEN_TAGS = {
-  landuse: new Set(['forest', 'grass', 'flowerbed']),
-  leisure: new Set(['park', 'garden']),
-  natural: new Set(['wood', 'grassland']),
+  landuse: new Set([
+    'allotments',
+    'cemetery',
+    'farmland',
+    'forest',
+    'grass',
+    'meadow',
+    'orchard',
+    'plant_nursery',
+    'recreation_ground',
+    'village_green',
+  ]),
+  leisure: new Set(['garden', 'golf_course', 'park', 'pitch']),
+  natural: new Set(['grassland', 'heath', 'scrub', 'wetland', 'wood']),
 }
 const URBAN_LANDUSE = new Set(['residential', 'construction', 'commercial', 'industrial', 'retail'])
 
@@ -28,7 +39,13 @@ function polygonIntersectsBounds(coordinates, bounds) {
 }
 
 function landcoverKind(tags) {
-  if (tags.natural === 'water' || tags.water || tags.waterway === 'basin') return 'water'
+  if (
+    tags.natural === 'water'
+    || tags.water
+    || tags.waterway === 'riverbank'
+    || tags.landuse === 'basin'
+    || tags.landuse === 'reservoir'
+  ) return 'water'
   if (Object.entries(GREEN_TAGS).some(([key, values]) => values.has(tags[key]))) return 'green'
   return URBAN_LANDUSE.has(tags.landuse) ? 'urban' : null
 }
@@ -90,12 +107,16 @@ export function extractOsmLandcover(osmXml, bounds) {
       { numeric: true },
     ))
   }
-  return {
-    green: collection(features.green),
-    water: collection(features.water),
-    urban: collection(features.urban),
-    buildings: collection(features.buildings),
+  const metadata = {
+    source: 'OpenStreetMap closed ways',
+    bounds: [bounds.west, bounds.south, bounds.east, bounds.north],
   }
+  return Object.fromEntries(
+    Object.entries(features).map(([kind, items]) => [kind, {
+      ...collection(items),
+      metadata: { ...metadata, kind, featureCount: items.length },
+    }]),
+  )
 }
 
 async function main() {
@@ -122,6 +143,10 @@ async function main() {
   console.log(`Generated landcover: ${result.green.features.length} green, ${result.water.features.length} water, ${result.urban.features.length} urban, ${result.buildings.features.length} buildings`)
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === fileURLToPath(new URL(`file:///${process.argv[1].replace(/\\/g, '/')}`))) {
+if (
+  process.argv[1]
+  && process.argv[1] !== '-'
+  && fileURLToPath(import.meta.url) === fileURLToPath(new URL(`file:///${process.argv[1].replace(/\\/g, '/')}`))
+) {
   await main()
 }

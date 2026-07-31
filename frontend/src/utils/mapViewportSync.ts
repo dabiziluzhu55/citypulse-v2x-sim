@@ -14,6 +14,7 @@ export interface ApplyViewportOptions {
   duration?: number
   cameraPreset?: CesiumCameraPreset
   force?: boolean
+  complete?: () => void
 }
 
 const DEFAULT_CAMERA_PRESET = resolveCesiumCameraPreset(DEFAULT_CESIUM_CAMERA_PRESET_ID)
