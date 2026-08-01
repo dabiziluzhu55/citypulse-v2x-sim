@@ -297,6 +297,17 @@ def compile_session_scenario(
     ET.SubElement(time_node, "step-length", {"value": _format_number(step_length)})
     processing = ET.SubElement(config_root, "processing")
     ET.SubElement(processing, "time-to-teleport", {"value": "-1"})
+    output = ET.SubElement(config_root, "output")
+    ET.SubElement(
+        output,
+        "tripinfo-output",
+        {"value": str((session_dir / "tripinfo.xml").resolve())},
+    )
+    ET.SubElement(
+        output,
+        "tripinfo-output.write-unfinished",
+        {"value": "true"},
+    )
     sumocfg = session_dir / "session.sumocfg"
     ET.indent(config_root, space="  ")
     ET.ElementTree(config_root).write(sumocfg, encoding="utf-8", xml_declaration=True)

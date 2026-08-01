@@ -13,6 +13,11 @@ dist/
 # RL checkpoints
 algorithms/rl/checkpoints/
 
+# IPPO generated experiment artifacts
+algorithms/ippo/runs/
+algorithms/ippo/checkpoints/
+algorithms/ippo/*.pt
+
 # IDE
 .idea/
 .vscode/

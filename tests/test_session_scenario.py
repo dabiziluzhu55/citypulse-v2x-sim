@@ -78,6 +78,29 @@ def write_fixture(root: Path):
 
 
 class SessionScenarioTests(unittest.TestCase):
+    def test_writes_tripinfo_for_completed_and_unfinished_vehicles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compiled = compile_session_scenario(
+                "tripinfo-session",
+                ["demo_2"],
+                "morning_peak",
+                generated_dir=write_fixture(root),
+                session_root=root / "sessions",
+            )
+
+            config = ET.parse(compiled.sumocfg).getroot()
+            output = config.find("output")
+            self.assertIsNotNone(output)
+            self.assertEqual(
+                output.find("tripinfo-output").get("value"),
+                str((compiled.directory / "tripinfo.xml").resolve()),
+            )
+            self.assertEqual(
+                output.find("tripinfo-output.write-unfinished").get("value"),
+                "true",
+            )
+
     def test_intersection_selection_does_not_filter_or_duplicate_global_traffic(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
