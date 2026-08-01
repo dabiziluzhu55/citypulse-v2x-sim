@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
-  "generatedAt": "2026-07-29T01:28:22.267Z",
-  "sourceSha256": "099bec4845a014c7d9b53cc902ea4803a4539dc946b73e5f90e5c9f83dad20e5",
+  "generatedAt": "2026-07-30T16:50:47.863Z",
+  "sourceSha256": "493108a5f29a64b1bff31f57ae415e7c87e817878d92bd88c7ad482d45079de8",
   "intersections": [
     {
       "intersectionId": "demo_1",
@@ -12,7 +12,7 @@
       "longitude": 116.10226663297253,
       "latitude": 39.00465074763003,
       "horizontalScale": 1.286844155512418,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_1/manifest.json"
     },
     {
@@ -24,7 +24,7 @@
       "longitude": 116.12675965447777,
       "latitude": 38.99114715117407,
       "horizontalScale": 1.2865986009638224,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_2/manifest.json"
     },
     {
@@ -36,7 +36,7 @@
       "longitude": 116.07027241525815,
       "latitude": 38.97680025459062,
       "horizontalScale": 1.2863378924456101,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_3/manifest.json"
     },
     {
@@ -48,7 +48,7 @@
       "longitude": 116.1255620109444,
       "latitude": 38.98582386570558,
       "horizontalScale": 1.286501845697153,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_4/manifest.json"
     },
     {
@@ -60,7 +60,7 @@
       "longitude": 116.09068035919238,
       "latitude": 38.99231994691652,
       "horizontalScale": 1.2866199209790221,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_5/manifest.json"
     },
     {
@@ -72,7 +72,7 @@
       "longitude": 116.09011436816664,
       "latitude": 38.98367933020957,
       "horizontalScale": 1.2864628741800834,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_6/manifest.json"
     },
     {
@@ -84,7 +84,7 @@
       "longitude": 116.17430501605378,
       "latitude": 39.03967144709492,
       "horizontalScale": 1.2874817556064442,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_7/manifest.json"
     },
     {
@@ -96,7 +96,7 @@
       "longitude": 116.11790768069226,
       "latitude": 39.01999504707965,
       "horizontalScale": 1.2871233826931008,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_8/manifest.json"
     },
     {
@@ -108,7 +108,7 @@
       "longitude": 116.09952185774969,
       "latitude": 38.98402142723796,
       "horizontalScale": 1.286469090650582,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_9/manifest.json"
     },
     {
@@ -120,7 +120,7 @@
       "longitude": 116.14677475468618,
       "latitude": 39.01899784214636,
       "horizontalScale": 1.2871052296158856,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_10/manifest.json"
     },
     {
@@ -132,7 +132,7 @@
       "longitude": 115.84048543525937,
       "latitude": 39.069587277958085,
       "horizontalScale": 1.288027296409214,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_11/manifest.json"
     },
     {
@@ -144,7 +144,7 @@
       "longitude": 115.84084676241758,
       "latitude": 39.06119998268326,
       "horizontalScale": 1.2878742648406627,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_12/manifest.json"
     },
     {
@@ -156,7 +156,7 @@
       "longitude": 115.90459978716477,
       "latitude": 39.07338819537085,
       "horizontalScale": 1.2880966676442336,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_13/manifest.json"
     },
     {
@@ -168,7 +168,7 @@
       "longitude": 115.91790845273727,
       "latitude": 39.049874797372325,
       "horizontalScale": 1.2876677310575344,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_14/manifest.json"
     },
     {
@@ -180,7 +180,7 @@
       "longitude": 115.92139069725552,
       "latitude": 39.04982675218359,
       "horizontalScale": 1.2876668551210602,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_15/manifest.json"
     },
     {
@@ -192,7 +192,7 @@
       "longitude": 115.94381787827305,
       "latitude": 39.06083206086729,
       "horizontalScale": 1.2878675533361155,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_16/manifest.json"
     },
     {
@@ -204,7 +204,7 @@
       "longitude": 115.91002243682276,
       "latitude": 39.06021687838958,
       "horizontalScale": 1.2878563316616232,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_17/manifest.json"
     },
     {
@@ -213,10 +213,10 @@
       "tlsIds": [
         "4409"
       ],
-      "longitude": 115.91653276980023,
-      "latitude": 39.06913222796351,
-      "horizontalScale": 1.2880189920897473,
-      "radiusMeters": 140,
+      "longitude": 115.91641959445278,
+      "latitude": 39.06908969159511,
+      "horizontalScale": 1.2880182158427054,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_18/manifest.json"
     },
     {
@@ -228,7 +228,7 @@
       "longitude": 115.91713911613819,
       "latitude": 39.051529714619285,
       "horizontalScale": 1.2876979039827885,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_19/manifest.json"
     },
     {
@@ -240,7 +240,7 @@
       "longitude": 115.9069186942489,
       "latitude": 39.066230224288574,
       "horizontalScale": 1.287966037139592,
-      "radiusMeters": 140,
+      "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_20/manifest.json"
     }
   ]

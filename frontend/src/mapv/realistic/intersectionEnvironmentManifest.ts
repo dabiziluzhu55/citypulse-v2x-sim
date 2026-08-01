@@ -5,12 +5,31 @@ export interface IntersectionEnvironmentManifest {
   schemaVersion: 1
   intersectionId: string
   facilitiesUrl?: string
+  buildingTilesetUrl?: string
+  streetlight?: {
+    modelUrl: string
+    heightMeters: number
+  }
   vegetation?: {
     manifestUrl: string
     modelUrl: string
   }
   geojson?: ShowcaseGeoJsonLayerUrls
   detailModel?: ShowcaseLandmark
+}
+
+function parseStreetlight(value: unknown): IntersectionEnvironmentManifest['streetlight'] {
+  if (value == null) return undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Streetlight configuration must be an object')
+  }
+  const source = value as Record<string, unknown>
+  const modelUrl = optionalString(source.modelUrl)
+  const heightMeters = Number(source.heightMeters)
+  if (!modelUrl || !Number.isFinite(heightMeters) || heightMeters <= 0) {
+    throw new Error('Streetlight configuration is incomplete')
+  }
+  return { modelUrl, heightMeters }
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -60,6 +79,8 @@ export function parseIntersectionEnvironmentManifest(
   }
   return {
     ...(source as unknown as IntersectionEnvironmentManifest),
+    buildingTilesetUrl: optionalString(source.buildingTilesetUrl),
+    streetlight: parseStreetlight(source.streetlight),
     detailModel: parseDetailModel(source.detailModel),
   }
 }

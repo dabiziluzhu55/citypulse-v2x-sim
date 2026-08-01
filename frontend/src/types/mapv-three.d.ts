@@ -37,6 +37,8 @@ declare module '@baidumap/mapv-three' {
     lineWidth: number
     dataSource: GeoJSONDataSource | null
     position: { z: number }
+    material: import('three').Material
+    renderOrder: number
   }
 
   export class Polygon {
@@ -75,6 +77,14 @@ declare module '@baidumap/mapv-three' {
     dataSource: GeoJSONDataSource | null
     model: import('three').Object3D | null
     position: { z: number }
+  }
+
+  export class EffectPoint {
+    constructor(options?: Record<string, unknown>)
+    dataSource: GeoJSONDataSource | null
+    material: import('three').Material & { keepSize?: boolean }
+    position: { z: number }
+    renderOrder: number
   }
 
   export class WaterMaterial {

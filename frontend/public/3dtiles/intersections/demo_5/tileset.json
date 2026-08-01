@@ -1,0 +1,3960 @@
+{
+  "asset": {
+    "version": "1.1",
+    "tilesetVersion": "1.0.0",
+    "gltfUpAxis": "Z"
+  },
+  "geometricError": 1300,
+  "root": {
+    "boundingVolume": {
+      "box": [
+        15169.9921875,
+        856.3105087280273,
+        44.50071408483382,
+        713.8916015625,
+        0,
+        0,
+        0,
+        673.2098770141602,
+        0,
+        0,
+        0,
+        44.500704982548996
+      ]
+    },
+    "geometricError": 1300,
+    "refine": "REPLACE",
+    "transform": [
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      12909434.218928564,
+      4720675.675280593,
+      0,
+      1
+    ],
+    "children": [
+      {
+        "id": "tile_facade_110",
+        "boundingVolume": {
+          "box": [
+            15170.05224609375,
+            979.4032440185547,
+            4.500904506349798,
+            682.17041015625,
+            0,
+            0,
+            0,
+            530.3722686767578,
+            0,
+            0,
+            0,
+            4.500895077085261
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_110.glb"
+        }
+      },
+      {
+        "id": "tile_facade_111",
+        "boundingVolume": {
+          "box": [
+            14819.779296875,
+            296.21966552734375,
+            4.000004740266377,
+            216.32421875,
+            0,
+            0,
+            0,
+            109.60858154296875,
+            0,
+            0,
+            0,
+            3.999994782896465
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_111.glb"
+        }
+      },
+      {
+        "id": "tile_facade_127",
+        "boundingVolume": {
+          "box": [
+            15145.1962890625,
+            976.1637115478516,
+            4.500891820900051,
+            633.0068359375,
+            0,
+            0,
+            0,
+            546.0684661865234,
+            0,
+            0,
+            0,
+            4.500882013328464
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_127.glb"
+        }
+      },
+      {
+        "id": "tile_facade_128",
+        "boundingVolume": {
+          "box": [
+            15153.8935546875,
+            328.62603759765625,
+            4.500637233917132,
+            663.189453125,
+            0,
+            0,
+            0,
+            109.3984375,
+            0,
+            0,
+            0,
+            4.500627338226423
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_128.glb"
+        }
+      },
+      {
+        "id": "tile_facade_144",
+        "boundingVolume": {
+          "box": [
+            15134.828125,
+            943.0972290039062,
+            4.500906518220745,
+            646.974609375,
+            0,
+            0,
+            0,
+            571.3301391601562,
+            0,
+            0,
+            0,
+            4.500896879911579
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_144.glb"
+        }
+      },
+      {
+        "id": "tile_facade_145",
+        "boundingVolume": {
+          "box": [
+            15073.17919921875,
+            322.29815673828125,
+            4.500673689667565,
+            558.87646484375,
+            0,
+            0,
+            0,
+            64.26220703125,
+            0,
+            0,
+            0,
+            4.500664315398353
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_145.glb"
+        }
+      },
+      {
+        "id": "tile_facade_161",
+        "boundingVolume": {
+          "box": [
+            15133.2490234375,
+            980.7487182617188,
+            4.500903727293007,
+            656.3759765625,
+            0,
+            0,
+            0,
+            544.0243530273438,
+            0,
+            0,
+            0,
+            4.5008939487934185
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_161.glb"
+        }
+      },
+      {
+        "id": "tile_facade_162",
+        "boundingVolume": {
+          "box": [
+            14794.86328125,
+            310.4032440185547,
+            4.500674184382206,
+            242.896484375,
+            0,
+            0,
+            0,
+            93.29386901855469,
+            0,
+            0,
+            0,
+            4.500664774358029
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_162.glb"
+        }
+      },
+      {
+        "id": "tile_facade_178",
+        "boundingVolume": {
+          "box": [
+            15133.74267578125,
+            973.0069427490234,
+            4.500722090881482,
+            629.29541015625,
+            0,
+            0,
+            0,
+            541.5223541259766,
+            0,
+            0,
+            0,
+            4.500712235290393
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_178.glb"
+        }
+      },
+      {
+        "id": "tile_facade_179",
+        "boundingVolume": {
+          "box": [
+            15104.87890625,
+            271.30089569091797,
+            4.000004678537152,
+            588.509765625,
+            0,
+            0,
+            0,
+            31.749977111816406,
+            0,
+            0,
+            0,
+            3.9999953214628476
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_179.glb"
+        }
+      },
+      {
+        "id": "tile_facade_195",
+        "boundingVolume": {
+          "box": [
+            15128.705078125,
+            963.5003662109375,
+            4.5009456654247515,
+            646.1181640625,
+            0,
+            0,
+            0,
+            554.4017333984375,
+            0,
+            0,
+            0,
+            4.500935934001518
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_195.glb"
+        }
+      },
+      {
+        "id": "tile_facade_196",
+        "boundingVolume": {
+          "box": [
+            15197.0625,
+            326.3397521972656,
+            4.000005119041816,
+            600.255859375,
+            0,
+            0,
+            0,
+            100.48995971679688,
+            0,
+            0,
+            0,
+            3.999994880958184
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_196.glb"
+        }
+      },
+      {
+        "id": "tile_facade_212",
+        "boundingVolume": {
+          "box": [
+            15135.57275390625,
+            1004.9497375488281,
+            4.500892187927093,
+            644.50927734375,
+            0,
+            0,
+            0,
+            524.5706481933594,
+            0,
+            0,
+            0,
+            4.500882599975739
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_212.glb"
+        }
+      },
+      {
+        "id": "tile_facade_213",
+        "boundingVolume": {
+          "box": [
+            15163.564453125,
+            258.5658416748047,
+            4.500662179831124,
+            520.609375,
+            0,
+            0,
+            0,
+            58.64808654785156,
+            0,
+            0,
+            0,
+            4.500651983376883
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_213.glb"
+        }
+      },
+      {
+        "id": "tile_facade_229",
+        "boundingVolume": {
+          "box": [
+            15206.876953125,
+            989.1002960205078,
+            4.500784497695349,
+            635.44140625,
+            0,
+            0,
+            0,
+            515.7806854248047,
+            0,
+            0,
+            0,
+            4.500774759811975
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_229.glb"
+        }
+      },
+      {
+        "id": "tile_facade_230",
+        "boundingVolume": {
+          "box": [
+            15184.673828125,
+            356.42478942871094,
+            4.000005079100902,
+            555.056640625,
+            0,
+            0,
+            0,
+            78.14436340332031,
+            0,
+            0,
+            0,
+            3.9999949208990984
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_230.glb"
+        }
+      },
+      {
+        "id": "tile_facade_246",
+        "boundingVolume": {
+          "box": [
+            15145.61767578125,
+            1074.2584838867188,
+            4.500720329643173,
+            668.01123046875,
+            0,
+            0,
+            0,
+            439.82281494140625,
+            0,
+            0,
+            0,
+            4.500711135505753
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_246.glb"
+        }
+      },
+      {
+        "id": "tile_facade_247",
+        "boundingVolume": {
+          "box": [
+            15136.59423828125,
+            375.7085418701172,
+            4.000005011875601,
+            501.05126953125,
+            0,
+            0,
+            0,
+            61.19483947753906,
+            0,
+            0,
+            0,
+            3.9999949881243992
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_247.glb"
+        }
+      },
+      {
+        "id": "tile_facade_25",
+        "boundingVolume": {
+          "box": [
+            15157.8330078125,
+            968.4366149902344,
+            4.500814902007278,
+            649.666015625,
+            0,
+            0,
+            0,
+            535.4599914550781,
+            0,
+            0,
+            0,
+            4.500805390656296
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_25.glb"
+        }
+      },
+      {
+        "id": "tile_facade_26",
+        "boundingVolume": {
+          "box": [
+            15154.38330078125,
+            351.98133850097656,
+            4.500690548590683,
+            596.29833984375,
+            0,
+            0,
+            0,
+            86.82142639160156,
+            0,
+            0,
+            0,
+            4.5006808350763094
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_26.glb"
+        }
+      },
+      {
+        "id": "tile_facade_263",
+        "boundingVolume": {
+          "box": [
+            15151.75537109375,
+            1010.6990661621094,
+            4.500809613111414,
+            695.65478515625,
+            0,
+            0,
+            0,
+            505.7037658691406,
+            0,
+            0,
+            0,
+            4.500800189134679
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_263.glb"
+        }
+      },
+      {
+        "id": "tile_facade_264",
+        "boundingVolume": {
+          "box": [
+            15212.0126953125,
+            317.10755920410156,
+            4.000005344575129,
+            579.923828125,
+            0,
+            0,
+            0,
+            106.48701477050781,
+            0,
+            0,
+            0,
+            3.9999956090991873
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_264.glb"
+        }
+      },
+      {
+        "id": "tile_facade_280",
+        "boundingVolume": {
+          "box": [
+            15130.63525390625,
+            962.6357574462891,
+            4.500895759791092,
+            653.87548828125,
+            0,
+            0,
+            0,
+            525.8238372802734,
+            0,
+            0,
+            0,
+            4.500886657506271
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_280.glb"
+        }
+      },
+      {
+        "id": "tile_facade_281",
+        "boundingVolume": {
+          "box": [
+            15192.49951171875,
+            328.3545227050781,
+            4.000005259943464,
+            625.78759765625,
+            0,
+            0,
+            0,
+            90.38803100585938,
+            0,
+            0,
+            0,
+            3.9999956937308525
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_281.glb"
+        }
+      },
+      {
+        "id": "tile_facade_297",
+        "boundingVolume": {
+          "box": [
+            15136.82568359375,
+            979.2024383544922,
+            4.500775946421982,
+            596.34716796875,
+            0,
+            0,
+            0,
+            535.5233917236328,
+            0,
+            0,
+            0,
+            4.500766144947647
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_297.glb"
+        }
+      },
+      {
+        "id": "tile_facade_298",
+        "boundingVolume": {
+          "box": [
+            15101.451171875,
+            360.0652618408203,
+            4.000005080091341,
+            462.478515625,
+            0,
+            0,
+            0,
+            58.15843200683594,
+            0,
+            0,
+            0,
+            3.9999949199086586
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_298.glb"
+        }
+      },
+      {
+        "id": "tile_facade_314",
+        "boundingVolume": {
+          "box": [
+            15146.24609375,
+            952.1641387939453,
+            4.50094455857834,
+            666.7255859375,
+            0,
+            0,
+            0,
+            531.6399383544922,
+            0,
+            0,
+            0,
+            4.500935133499297
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_314.glb"
+        }
+      },
+      {
+        "id": "tile_facade_315",
+        "boundingVolume": {
+          "box": [
+            15324.2998046875,
+            352.11131286621094,
+            4.000005360075193,
+            504.638671875,
+            0,
+            0,
+            0,
+            80.78684997558594,
+            0,
+            0,
+            0,
+            3.9999946399248074
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_315.glb"
+        }
+      },
+      {
+        "id": "tile_facade_331",
+        "boundingVolume": {
+          "box": [
+            15151.6484375,
+            981.0273895263672,
+            4.500904908985376,
+            667.142578125,
+            0,
+            0,
+            0,
+            546.2595977783203,
+            0,
+            0,
+            0,
+            4.500895628123999
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_331.glb"
+        }
+      },
+      {
+        "id": "tile_facade_332",
+        "boundingVolume": {
+          "box": [
+            15130.09814453125,
+            326.0610656738281,
+            4.000004948138667,
+            608.25634765625,
+            0,
+            0,
+            0,
+            110.90432739257812,
+            0,
+            0,
+            0,
+            3.999995051861333
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_332.glb"
+        }
+      },
+      {
+        "id": "tile_facade_340",
+        "boundingVolume": {
+          "box": [
+            14754.337890625,
+            716.5823211669922,
+            18.500630613450994,
+            57.08203125,
+            0,
+            0,
+            0,
+            295.2241973876953,
+            0,
+            0,
+            0,
+            18.50062060725213
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_340.glb"
+        }
+      },
+      {
+        "id": "tile_facade_344",
+        "boundingVolume": {
+          "box": [
+            14853.58642578125,
+            684.8705444335938,
+            12.50075129835568,
+            48.42626953125,
+            0,
+            0,
+            0,
+            18.00872802734375,
+            0,
+            0,
+            0,
+            12.500740248275179
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_344.glb"
+        }
+      },
+      {
+        "id": "tile_facade_346",
+        "boundingVolume": {
+          "box": [
+            15460.3896484375,
+            701.891845703125,
+            8.500770870617544,
+            62.9140625,
+            0,
+            0,
+            0,
+            22.10247802734375,
+            0,
+            0,
+            0,
+            8.500758822985972
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_346.glb"
+        }
+      },
+      {
+        "id": "tile_facade_347",
+        "boundingVolume": {
+          "box": [
+            14842.8203125,
+            632.4978637695312,
+            12.500750211658215,
+            50.16796875,
+            0,
+            0,
+            0,
+            18.34393310546875,
+            0,
+            0,
+            0,
+            12.500739427624012
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_347.glb"
+        }
+      },
+      {
+        "id": "tile_facade_349",
+        "boundingVolume": {
+          "box": [
+            14706.29931640625,
+            461.5180969238281,
+            18.50062707693769,
+            23.06298828125,
+            0,
+            0,
+            0,
+            8.048553466796875,
+            0,
+            0,
+            0,
+            18.500616514370904
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_349.glb"
+        }
+      },
+      {
+        "id": "tile_facade_351",
+        "boundingVolume": {
+          "box": [
+            14937.4765625,
+            843.4526062011719,
+            30.50071666582062,
+            49.1103515625,
+            0,
+            0,
+            0,
+            13.795623779296875,
+            0,
+            0,
+            0,
+            30.50070621625946
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_351.glb"
+        }
+      },
+      {
+        "id": "tile_facade_355",
+        "boundingVolume": {
+          "box": [
+            14901.99658203125,
+            804.5270690917969,
+            12.500742716277273,
+            83.98095703125,
+            0,
+            0,
+            0,
+            15.613372802734375,
+            0,
+            0,
+            0,
+            12.500731664215891
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_355.glb"
+        }
+      },
+      {
+        "id": "tile_facade_356",
+        "boundingVolume": {
+          "box": [
+            14933.38818359375,
+            764.6780700683594,
+            12.5007463246734,
+            47.55712890625,
+            0,
+            0,
+            0,
+            15.949493408203125,
+            0,
+            0,
+            0,
+            12.500735685214295
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_356.glb"
+        }
+      },
+      {
+        "id": "tile_facade_357",
+        "boundingVolume": {
+          "box": [
+            15326.9365234375,
+            508.2601013183594,
+            12.500826161518034,
+            104.517578125,
+            0,
+            0,
+            0,
+            26.783355712890625,
+            0,
+            0,
+            0,
+            12.500814158306184
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_357.glb"
+        }
+      },
+      {
+        "id": "tile_facade_358",
+        "boundingVolume": {
+          "box": [
+            14710.43310546875,
+            570.1060485839844,
+            17.99998200286609,
+            8.91162109375,
+            0,
+            0,
+            0,
+            15.266387939453125,
+            0,
+            0,
+            0,
+            17.999972220766722
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_358.glb"
+        }
+      },
+      {
+        "id": "tile_facade_359",
+        "boundingVolume": {
+          "box": [
+            14754.75830078125,
+            817.9285278320312,
+            12.500666261957576,
+            14.56201171875,
+            0,
+            0,
+            0,
+            23.85693359375,
+            0,
+            0,
+            0,
+            12.500655530644963
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_359.glb"
+        }
+      },
+      {
+        "id": "tile_facade_366",
+        "boundingVolume": {
+          "box": [
+            14706.71435546875,
+            526.350341796875,
+            6.000001454547601,
+            15.75244140625,
+            0,
+            0,
+            0,
+            13.31549072265625,
+            0,
+            0,
+            0,
+            5.999990916057868
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_366.glb"
+        }
+      },
+      {
+        "id": "tile_facade_367",
+        "boundingVolume": {
+          "box": [
+            15171.078125,
+            619.0166015625,
+            12.50072647524621,
+            328.4541015625,
+            0,
+            0,
+            0,
+            127.96435546875,
+            0,
+            0,
+            0,
+            12.500715480320196
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_367.glb"
+        }
+      },
+      {
+        "id": "tile_facade_368",
+        "boundingVolume": {
+          "box": [
+            15305.79833984375,
+            564.8109436035156,
+            12.50082712568883,
+            69.99169921875,
+            0,
+            0,
+            0,
+            26.349884033203125,
+            0,
+            0,
+            0,
+            12.500815101484022
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_368.glb"
+        }
+      },
+      {
+        "id": "tile_facade_369",
+        "boundingVolume": {
+          "box": [
+            15102.67578125,
+            683.8989868164062,
+            12.500745638246826,
+            193.9306640625,
+            0,
+            0,
+            0,
+            85.68878173828125,
+            0,
+            0,
+            0,
+            12.500734464292236
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_369.glb"
+        }
+      },
+      {
+        "id": "tile_facade_370",
+        "boundingVolume": {
+          "box": [
+            15504.6845703125,
+            846.2237854003906,
+            6.500741871297578,
+            99.369140625,
+            0,
+            0,
+            0,
+            21.120025634765625,
+            0,
+            0,
+            0,
+            6.500729648172637
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_370.glb"
+        }
+      },
+      {
+        "id": "tile_facade_371",
+        "boundingVolume": {
+          "box": [
+            14850.94091796875,
+            791.3494873046875,
+            12.500886412693944,
+            127.88232421875,
+            0,
+            0,
+            0,
+            93.7337646484375,
+            0,
+            0,
+            0,
+            12.500875977442774
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_371.glb"
+        }
+      },
+      {
+        "id": "tile_facade_373",
+        "boundingVolume": {
+          "box": [
+            15015.3564453125,
+            656.8298950195312,
+            12.500820381646008,
+            266.7998046875,
+            0,
+            0,
+            0,
+            135.9232177734375,
+            0,
+            0,
+            0,
+            12.500810401435047
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_373.glb"
+        }
+      },
+      {
+        "id": "tile_facade_377",
+        "boundingVolume": {
+          "box": [
+            15201.810546875,
+            807.8988342285156,
+            7.9999985016133905,
+            22.7412109375,
+            0,
+            0,
+            0,
+            9.414581298828125,
+            0,
+            0,
+            0,
+            7.999987193271863
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_377.glb"
+        }
+      },
+      {
+        "id": "tile_facade_380",
+        "boundingVolume": {
+          "box": [
+            14663.45068359375,
+            1033.0995483398438,
+            10.500786156278537,
+            20.20556640625,
+            0,
+            0,
+            0,
+            21.20428466796875,
+            0,
+            0,
+            0,
+            10.500775962251737
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_380.glb"
+        }
+      },
+      {
+        "id": "tile_facade_382",
+        "boundingVolume": {
+          "box": [
+            15305.59912109375,
+            558.753173828125,
+            6.500722388550457,
+            226.28759765625,
+            0,
+            0,
+            0,
+            344.022705078125,
+            0,
+            0,
+            0,
+            6.500710983947101
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_382.glb"
+        }
+      },
+      {
+        "id": "tile_facade_383",
+        "boundingVolume": {
+          "box": [
+            15569.23046875,
+            619.1797485351562,
+            44.500715774789114,
+            30.619140625,
+            0,
+            0,
+            0,
+            14.20208740234375,
+            0,
+            0,
+            0,
+            44.5007032925937
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_383.glb"
+        }
+      },
+      {
+        "id": "tile_facade_385",
+        "boundingVolume": {
+          "box": [
+            15245.2021484375,
+            440.9777526855469,
+            40.50076876313187,
+            39.6142578125,
+            0,
+            0,
+            0,
+            19.060028076171875,
+            0,
+            0,
+            0,
+            40.50075711577438
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_385.glb"
+        }
+      },
+      {
+        "id": "tile_facade_386",
+        "boundingVolume": {
+          "box": [
+            14774.1240234375,
+            740.151611328125,
+            12.500683380480496,
+            29.9521484375,
+            0,
+            0,
+            0,
+            20.4818115234375,
+            0,
+            0,
+            0,
+            12.500672744397434
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_386.glb"
+        }
+      },
+      {
+        "id": "tile_facade_388",
+        "boundingVolume": {
+          "box": [
+            14843.1982421875,
+            865.4951782226562,
+            8.500725539124232,
+            32.3828125,
+            0,
+            0,
+            0,
+            9.7239990234375,
+            0,
+            0,
+            0,
+            8.500714509093541
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_388.glb"
+        }
+      },
+      {
+        "id": "tile_facade_389",
+        "boundingVolume": {
+          "box": [
+            15096.78857421875,
+            682.7146606445312,
+            12.500818906430595,
+            282.81201171875,
+            0,
+            0,
+            0,
+            103.50811767578125,
+            0,
+            0,
+            0,
+            12.500808061953194
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_389.glb"
+        }
+      },
+      {
+        "id": "tile_facade_396",
+        "boundingVolume": {
+          "box": [
+            15103.4755859375,
+            670.369140625,
+            6.500711993367531,
+            566.1728515625,
+            0,
+            0,
+            0,
+            469.804931640625,
+            0,
+            0,
+            0,
+            6.500702305643699
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_396.glb"
+        }
+      },
+      {
+        "id": "tile_facade_397",
+        "boundingVolume": {
+          "box": [
+            14739.1298828125,
+            948.5807495117188,
+            6.0000014028487385,
+            16.6064453125,
+            0,
+            0,
+            0,
+            7.75103759765625,
+            0,
+            0,
+            0,
+            5.99999096775673
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_397.glb"
+        }
+      },
+      {
+        "id": "tile_facade_398",
+        "boundingVolume": {
+          "box": [
+            15176.97998046875,
+            580.0083312988281,
+            12.500826698391393,
+            186.99365234375,
+            0,
+            0,
+            0,
+            121.78591918945312,
+            0,
+            0,
+            0,
+            12.500815528781459
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_398.glb"
+        }
+      },
+      {
+        "id": "tile_facade_400",
+        "boundingVolume": {
+          "box": [
+            15595.62109375,
+            526.0186920166016,
+            17.99998145870586,
+            66.4052734375,
+            0,
+            0,
+            0,
+            220.21372985839844,
+            0,
+            0,
+            0,
+            17.999968950229686
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_400.glb"
+        }
+      },
+      {
+        "id": "tile_facade_403",
+        "boundingVolume": {
+          "box": [
+            15138.52490234375,
+            752.4570007324219,
+            12.500762858211147,
+            138.31201171875,
+            0,
+            0,
+            0,
+            53.182952880859375,
+            0,
+            0,
+            0,
+            12.500751576603307
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_403.glb"
+        }
+      },
+      {
+        "id": "tile_facade_405",
+        "boundingVolume": {
+          "box": [
+            15238.1962890625,
+            633.6604156494141,
+            6.500731776552584,
+            448.6650390625,
+            0,
+            0,
+            0,
+            296.5996551513672,
+            0,
+            0,
+            0,
+            6.500720669431303
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_405.glb"
+        }
+      },
+      {
+        "id": "tile_facade_406",
+        "boundingVolume": {
+          "box": [
+            14985.353515625,
+            943.8283386230469,
+            6.500736098055313,
+            453.7490234375,
+            0,
+            0,
+            0,
+            408.2926330566406,
+            0,
+            0,
+            0,
+            6.500726838346054
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_406.glb"
+        }
+      },
+      {
+        "id": "tile_facade_409",
+        "boundingVolume": {
+          "box": [
+            15707.708984375,
+            759.5603637695312,
+            6.500757125198561,
+            33.48046875,
+            0,
+            0,
+            0,
+            9.095703125,
+            0,
+            0,
+            0,
+            6.500743004501146
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_409.glb"
+        }
+      },
+      {
+        "id": "tile_facade_414",
+        "boundingVolume": {
+          "box": [
+            15253.21826171875,
+            794.7791137695312,
+            8.500751823558858,
+            27.24462890625,
+            0,
+            0,
+            0,
+            17.71136474609375,
+            0,
+            0,
+            0,
+            8.500739723072002
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_414.glb"
+        }
+      },
+      {
+        "id": "tile_facade_415",
+        "boundingVolume": {
+          "box": [
+            15575.6162109375,
+            685.7047729492188,
+            8.500765668823988,
+            43.2685546875,
+            0,
+            0,
+            0,
+            22.85400390625,
+            0,
+            0,
+            0,
+            8.500752580687731
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_415.glb"
+        }
+      },
+      {
+        "id": "tile_facade_418",
+        "boundingVolume": {
+          "box": [
+            14959.8955078125,
+            671.3705139160156,
+            18.50064400491192,
+            324.671875,
+            0,
+            0,
+            0,
+            400.1066589355469,
+            0,
+            0,
+            0,
+            18.500633918672065
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_418.glb"
+        }
+      },
+      {
+        "id": "tile_facade_419",
+        "boundingVolume": {
+          "box": [
+            15076.662109375,
+            555.6913909912109,
+            18.500870833528097,
+            417.30078125,
+            0,
+            0,
+            0,
+            273.10926818847656,
+            0,
+            0,
+            0,
+            18.500861039030497
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_419.glb"
+        }
+      },
+      {
+        "id": "tile_facade_42",
+        "boundingVolume": {
+          "box": [
+            15181.93359375,
+            995.3773651123047,
+            4.500787837208918,
+            699.7744140625,
+            0,
+            0,
+            0,
+            522.0255889892578,
+            0,
+            0,
+            0,
+            4.500778096018621
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_42.glb"
+        }
+      },
+      {
+        "id": "tile_facade_423",
+        "boundingVolume": {
+          "box": [
+            15004.84814453125,
+            984.8035278320312,
+            6.500742869721307,
+            399.60693359375,
+            0,
+            0,
+            0,
+            129.32635498046875,
+            0,
+            0,
+            0,
+            6.500732464446173
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_423.glb"
+        }
+      },
+      {
+        "id": "tile_facade_427",
+        "boundingVolume": {
+          "box": [
+            15225.0458984375,
+            222.61097717285156,
+            40.50060133536499,
+            51.1591796875,
+            0,
+            0,
+            0,
+            8.051345825195312,
+            0,
+            0,
+            0,
+            40.500588850181884
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_427.glb"
+        }
+      },
+      {
+        "id": "tile_facade_43",
+        "boundingVolume": {
+          "box": [
+            15207.44873046875,
+            326.4357604980469,
+            4.000005070471161,
+            610.25927734375,
+            0,
+            0,
+            0,
+            88.61343383789062,
+            0,
+            0,
+            0,
+            3.999994929528839
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_43.glb"
+        }
+      },
+      {
+        "id": "tile_facade_450",
+        "boundingVolume": {
+          "box": [
+            14959.98046875,
+            644.1552886962891,
+            6.500914459620162,
+            238.6591796875,
+            0,
+            0,
+            0,
+            251.9116668701172,
+            0,
+            0,
+            0,
+            6.5009041973012245
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_450.glb"
+        }
+      },
+      {
+        "id": "tile_facade_452",
+        "boundingVolume": {
+          "box": [
+            15052.83984375,
+            826.2304992675781,
+            30.500856212071085,
+            48.177734375,
+            0,
+            0,
+            0,
+            15.110260009765625,
+            0,
+            0,
+            0,
+            30.500845142909384
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_452.glb"
+        }
+      },
+      {
+        "id": "tile_facade_464",
+        "boundingVolume": {
+          "box": [
+            15231.142578125,
+            948.3670654296875,
+            18.500739246117973,
+            652.7412109375,
+            0,
+            0,
+            0,
+            331.8797607421875,
+            0,
+            0,
+            0,
+            18.500729412329292
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_464.glb"
+        }
+      },
+      {
+        "id": "tile_facade_468",
+        "boundingVolume": {
+          "box": [
+            15206.65625,
+            435.23661041259766,
+            18.500762404371926,
+            485.384765625,
+            0,
+            0,
+            0,
+            226.64778900146484,
+            0,
+            0,
+            0,
+            18.500752030442527
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_468.glb"
+        }
+      },
+      {
+        "id": "tile_facade_479",
+        "boundingVolume": {
+          "box": [
+            15307.05810546875,
+            510.72631072998047,
+            6.5007809018538865,
+            558.10205078125,
+            0,
+            0,
+            0,
+            327.4000930786133,
+            0,
+            0,
+            0,
+            6.5007707262589065
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_479.glb"
+        }
+      },
+      {
+        "id": "tile_facade_508",
+        "boundingVolume": {
+          "box": [
+            15607.228515625,
+            655.8665466308594,
+            2.00001010665801,
+            4.1728515625,
+            0,
+            0,
+            0,
+            7.843536376953125,
+            0,
+            0,
+            0,
+            1.9999965690622048
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_508.glb"
+        }
+      },
+      {
+        "id": "tile_facade_519",
+        "boundingVolume": {
+          "box": [
+            15703.55224609375,
+            439.4861068725586,
+            18.5007487858652,
+            103.78466796875,
+            0,
+            0,
+            0,
+            190.25919342041016,
+            0,
+            0,
+            0,
+            18.50073513137113
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_519.glb"
+        }
+      },
+      {
+        "id": "tile_facade_531",
+        "boundingVolume": {
+          "box": [
+            14746.154296875,
+            258.85987091064453,
+            6.000001132450507,
+            10.451171875,
+            0,
+            0,
+            0,
+            9.099845886230469,
+            0,
+            0,
+            0,
+            5.999991238154962
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_531.glb"
+        }
+      },
+      {
+        "id": "tile_facade_537",
+        "boundingVolume": {
+          "box": [
+            14560.81640625,
+            1280.6607666015625,
+            6.500886411943156,
+            15.857421875,
+            0,
+            0,
+            0,
+            30.616943359375,
+            0,
+            0,
+            0,
+            6.500876931867879
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_537.glb"
+        }
+      },
+      {
+        "id": "tile_facade_538",
+        "boundingVolume": {
+          "box": [
+            15773.93505859375,
+            813.7153930664062,
+            6.5007572341583,
+            35.84228515625,
+            0,
+            0,
+            0,
+            10.32977294921875,
+            0,
+            0,
+            0,
+            6.5007438492157235
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_538.glb"
+        }
+      },
+      {
+        "id": "tile_facade_552",
+        "boundingVolume": {
+          "box": [
+            14755.615234375,
+            216.41519165039062,
+            6.000001474371402,
+            7.1298828125,
+            0,
+            0,
+            0,
+            7.6379241943359375,
+            0,
+            0,
+            0,
+            5.999990896234067
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_552.glb"
+        }
+      },
+      {
+        "id": "tile_facade_558",
+        "boundingVolume": {
+          "box": [
+            15054.14013671875,
+            863.4064025878906,
+            17.999981930126978,
+            465.96923828125,
+            0,
+            0,
+            0,
+            499.1720886230469,
+            0,
+            0,
+            0,
+            17.999972293505834
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_558.glb"
+        }
+      },
+      {
+        "id": "tile_facade_565",
+        "boundingVolume": {
+          "box": [
+            15461.046875,
+            636.9856872558594,
+            8.500760603534218,
+            51.2099609375,
+            0,
+            0,
+            0,
+            17.242767333984375,
+            0,
+            0,
+            0,
+            8.500748109234337
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_565.glb"
+        }
+      },
+      {
+        "id": "tile_facade_567",
+        "boundingVolume": {
+          "box": [
+            15221.8642578125,
+            534.8877563476562,
+            6.5007283688146345,
+            492.6640625,
+            0,
+            0,
+            0,
+            289.50726318359375,
+            0,
+            0,
+            0,
+            6.500718355123354
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_567.glb"
+        }
+      },
+      {
+        "id": "tile_facade_59",
+        "boundingVolume": {
+          "box": [
+            15140.3359375,
+            972.9485015869141,
+            4.500743740670259,
+            667.6298828125,
+            0,
+            0,
+            0,
+            537.0671234130859,
+            0,
+            0,
+            0,
+            4.50073445452017
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_59.glb"
+        }
+      },
+      {
+        "id": "tile_facade_60",
+        "boundingVolume": {
+          "box": [
+            15053.150390625,
+            299.5577850341797,
+            4.000004942815394,
+            520.0751953125,
+            0,
+            0,
+            0,
+            31.641159057617188,
+            0,
+            0,
+            0,
+            3.9999950571846057
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_60.glb"
+        }
+      },
+      {
+        "id": "tile_facade_632",
+        "boundingVolume": {
+          "box": [
+            15430.6669921875,
+            220.16609954833984,
+            2.0000095848668025,
+            4.666015625,
+            0,
+            0,
+            0,
+            10.555793762207031,
+            0,
+            0,
+            0,
+            1.9999966140162542
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_632.glb"
+        }
+      },
+      {
+        "id": "tile_facade_638",
+        "boundingVolume": {
+          "box": [
+            14933.2451171875,
+            514.9334411621094,
+            2.0000081847947513,
+            9.4970703125,
+            0,
+            0,
+            0,
+            9.534088134765625,
+            0,
+            0,
+            0,
+            1.999997060413989
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_638.glb"
+        }
+      },
+      {
+        "id": "tile_facade_669",
+        "boundingVolume": {
+          "box": [
+            15634.3984375,
+            584.5963745117188,
+            17.999981727170507,
+            7.4580078125,
+            0,
+            0,
+            0,
+            12.08770751953125,
+            0,
+            0,
+            0,
+            17.99996868176504
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_669.glb"
+        }
+      },
+      {
+        "id": "tile_facade_670",
+        "boundingVolume": {
+          "box": [
+            14830.146484375,
+            353.8631134033203,
+            18.50065169507434,
+            33.5048828125,
+            0,
+            0,
+            0,
+            54.94517517089844,
+            0,
+            0,
+            0,
+            18.500641487298708
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_670.glb"
+        }
+      },
+      {
+        "id": "tile_facade_671",
+        "boundingVolume": {
+          "box": [
+            15624.951171875,
+            399.3026885986328,
+            17.999981727495197,
+            6.046875,
+            0,
+            0,
+            0,
+            11.551681518554688,
+            0,
+            0,
+            0,
+            17.99996868144035
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_671.glb"
+        }
+      },
+      {
+        "id": "tile_facade_676",
+        "boundingVolume": {
+          "box": [
+            14792.09228515625,
+            443.2520446777344,
+            17.999982279654887,
+            10.68701171875,
+            0,
+            0,
+            0,
+            32.379852294921875,
+            0,
+            0,
+            0,
+            17.999971943977926
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_676.glb"
+        }
+      },
+      {
+        "id": "tile_facade_681",
+        "boundingVolume": {
+          "box": [
+            15643.462890625,
+            521.5114898681641,
+            17.999981918709636,
+            22.7353515625,
+            0,
+            0,
+            0,
+            11.156906127929688,
+            0,
+            0,
+            0,
+            17.99996849022591
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_681.glb"
+        }
+      },
+      {
+        "id": "tile_facade_682",
+        "boundingVolume": {
+          "box": [
+            15561.89697265625,
+            835.4964904785156,
+            17.999982198986345,
+            8.26123046875,
+            0,
+            0,
+            0,
+            4.531463623046875,
+            0,
+            0,
+            0,
+            17.999968209949202
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_682.glb"
+        }
+      },
+      {
+        "id": "tile_facade_684",
+        "boundingVolume": {
+          "box": [
+            14692.82666015625,
+            810.3062438964844,
+            18.50068580812149,
+            20.50634765625,
+            0,
+            0,
+            0,
+            180.72738647460938,
+            0,
+            0,
+            0,
+            18.50067603880234
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_684.glb"
+        }
+      },
+      {
+        "id": "tile_facade_716",
+        "boundingVolume": {
+          "box": [
+            15096.96533203125,
+            755.3199005126953,
+            18.500649733303362,
+            549.04638671875,
+            0,
+            0,
+            0,
+            496.4902801513672,
+            0,
+            0,
+            0,
+            18.50063963437242
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_716.glb"
+        }
+      },
+      {
+        "id": "tile_facade_718",
+        "boundingVolume": {
+          "box": [
+            14886.79052734375,
+            638.8491744995117,
+            18.500703150125446,
+            263.66845703125,
+            0,
+            0,
+            0,
+            452.7309036254883,
+            0,
+            0,
+            0,
+            18.500693029073773
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_718.glb"
+        }
+      },
+      {
+        "id": "tile_facade_719",
+        "boundingVolume": {
+          "box": [
+            14810.9482421875,
+            247.65573120117188,
+            17.999982455441568,
+            13.4736328125,
+            0,
+            0,
+            0,
+            6.34912109375,
+            0,
+            0,
+            0,
+            17.999971768191244
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_719.glb"
+        }
+      },
+      {
+        "id": "tile_facade_725",
+        "boundingVolume": {
+          "box": [
+            15182.26513671875,
+            910.97021484375,
+            6.500739894230719,
+            600.83837890625,
+            0,
+            0,
+            0,
+            164.6654052734375,
+            0,
+            0,
+            0,
+            6.500729717890863
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_725.glb"
+        }
+      },
+      {
+        "id": "tile_facade_739",
+        "boundingVolume": {
+          "box": [
+            15660.95263671875,
+            763.7852172851562,
+            6.0000037196978155,
+            12.97216796875,
+            0,
+            0,
+            0,
+            7.49468994140625,
+            0,
+            0,
+            0,
+            5.99998960458197
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_739.glb"
+        }
+      },
+      {
+        "id": "tile_facade_76",
+        "boundingVolume": {
+          "box": [
+            15144.93408203125,
+            1025.4695739746094,
+            4.500734352588097,
+            628.86572265625,
+            0,
+            0,
+            0,
+            486.0827941894531,
+            0,
+            0,
+            0,
+            4.500724769116005
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_76.glb"
+        }
+      },
+      {
+        "id": "tile_facade_767",
+        "boundingVolume": {
+          "box": [
+            15418.39990234375,
+            661.2921752929688,
+            2.000009429973943,
+            25.35205078125,
+            0,
+            0,
+            0,
+            6.06866455078125,
+            0,
+            0,
+            0,
+            1.9999967689091136
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_767.glb"
+        }
+      },
+      {
+        "id": "tile_facade_77",
+        "boundingVolume": {
+          "box": [
+            15389.42724609375,
+            327.90594482421875,
+            4.000005866289939,
+            387.36474609375,
+            0,
+            0,
+            0,
+            92.64764404296875,
+            0,
+            0,
+            0,
+            3.9999950873843773
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_77.glb"
+        }
+      },
+      {
+        "id": "tile_facade_8",
+        "boundingVolume": {
+          "box": [
+            15158.744140625,
+            1003.9050903320312,
+            4.500800727596925,
+            652.4833984375,
+            0,
+            0,
+            0,
+            500.63690185546875,
+            0,
+            0,
+            0,
+            4.500790954837157
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_8.glb"
+        }
+      },
+      {
+        "id": "tile_facade_9",
+        "boundingVolume": {
+          "box": [
+            15056.23974609375,
+            321.18092346191406,
+            4.000004537453606,
+            520.72705078125,
+            0,
+            0,
+            0,
+            100.85771179199219,
+            0,
+            0,
+            0,
+            3.999994985709236
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_9.glb"
+        }
+      },
+      {
+        "id": "tile_facade_93",
+        "boundingVolume": {
+          "box": [
+            15165.19189453125,
+            972.2079315185547,
+            4.500761860482271,
+            656.63330078125,
+            0,
+            0,
+            0,
+            546.7641143798828,
+            0,
+            0,
+            0,
+            4.500752574332182
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_93.glb"
+        }
+      },
+      {
+        "id": "tile_facade_94",
+        "boundingVolume": {
+          "box": [
+            15216.45849609375,
+            334.2562255859375,
+            4.50065217238307,
+            586.23779296875,
+            0,
+            0,
+            0,
+            81.3885498046875,
+            0,
+            0,
+            0,
+            4.500641963664293
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_facade_94.glb"
+        }
+      },
+      {
+        "id": "tile_roof_0",
+        "boundingVolume": {
+          "box": [
+            15109.841796875,
+            931.9498291015625,
+            16.015310049057007,
+            564.8662109375,
+            0,
+            0,
+            0,
+            590.280517578125,
+            0,
+            0,
+            0,
+            8.055059671401978
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_0.glb"
+        }
+      },
+      {
+        "id": "tile_roof_10",
+        "boundingVolume": {
+          "box": [
+            15212.330078125,
+            700.2161254882812,
+            21.9901385307312,
+            609.4755859375,
+            0,
+            0,
+            0,
+            435.05621337890625,
+            0,
+            0,
+            0,
+            14.022629261016846
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_10.glb"
+        }
+      },
+      {
+        "id": "tile_roof_100",
+        "boundingVolume": {
+          "box": [
+            15152.1123046875,
+            814.3214416503906,
+            21.99677324295044,
+            666.1552734375,
+            0,
+            0,
+            0,
+            543.0575866699219,
+            0,
+            0,
+            0,
+            14.017863750457764
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_100.glb"
+        }
+      },
+      {
+        "id": "tile_roof_102",
+        "boundingVolume": {
+          "box": [
+            15210.85595703125,
+            777.5000457763672,
+            12.004148721694946,
+            503.64208984375,
+            0,
+            0,
+            0,
+            496.2066192626953,
+            0,
+            0,
+            0,
+            4.041917562484741
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_102.glb"
+        }
+      },
+      {
+        "id": "tile_roof_104",
+        "boundingVolume": {
+          "box": [
+            15179.9140625,
+            872.52685546875,
+            8.000003576278687,
+            701.7734375,
+            0,
+            0,
+            0,
+            590.978759765625,
+            0,
+            0,
+            0,
+            0.5
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_104.glb"
+        }
+      },
+      {
+        "id": "tile_roof_106",
+        "boundingVolume": {
+          "box": [
+            15195.9814453125,
+            896.8480072021484,
+            44.017120361328125,
+            617.580078125,
+            0,
+            0,
+            0,
+            609.6473541259766,
+            0,
+            0,
+            0,
+            36.039756774902344
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_106.glb"
+        }
+      },
+      {
+        "id": "tile_roof_108",
+        "boundingVolume": {
+          "box": [
+            15243.22265625,
+            892.663330078125,
+            22.024439573287964,
+            489.9306640625,
+            0,
+            0,
+            0,
+            610.0811767578125,
+            0,
+            0,
+            0,
+            14.049153566360474
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_108.glb"
+        }
+      },
+      {
+        "id": "tile_roof_110",
+        "boundingVolume": {
+          "box": [
+            15180.8466796875,
+            914.073486328125,
+            21.97490882873535,
+            666.5439453125,
+            0,
+            0,
+            0,
+            590.8057861328125,
+            0,
+            0,
+            0,
+            14.042867660522461
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_110.glb"
+        }
+      },
+      {
+        "id": "tile_roof_112",
+        "boundingVolume": {
+          "box": [
+            15150.5244140625,
+            853.9359359741211,
+            44.00743103027344,
+            537.0498046875,
+            0,
+            0,
+            0,
+            670.8353042602539,
+            0,
+            0,
+            0,
+            36.066062927246094
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_112.glb"
+        }
+      },
+      {
+        "id": "tile_roof_114",
+        "boundingVolume": {
+          "box": [
+            15137.8486328125,
+            763.9292373657227,
+            14.029721856117249,
+            600.2890625,
+            0,
+            0,
+            0,
+            554.3189315795898,
+            0,
+            0,
+            0,
+            10.036671042442322
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_114.glb"
+        }
+      },
+      {
+        "id": "tile_roof_116",
+        "boundingVolume": {
+          "box": [
+            15110.08837890625,
+            878.4452362060547,
+            33.99400568008423,
+            625.58251953125,
+            0,
+            0,
+            0,
+            637.1386260986328,
+            0,
+            0,
+            0,
+            26.061631679534912
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_116.glb"
+        }
+      },
+      {
+        "id": "tile_roof_118",
+        "boundingVolume": {
+          "box": [
+            15168.31298828125,
+            883.3577117919922,
+            21.991888284683228,
+            627.19580078125,
+            0,
+            0,
+            0,
+            646.1608428955078,
+            0,
+            0,
+            0,
+            14.0717294216156
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_118.glb"
+        }
+      },
+      {
+        "id": "tile_roof_12",
+        "boundingVolume": {
+          "box": [
+            15117.37548828125,
+            932.4027252197266,
+            21.960030794143677,
+            569.45654296875,
+            0,
+            0,
+            0,
+            572.0594329833984,
+            0,
+            0,
+            0,
+            14.055769681930542
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_12.glb"
+        }
+      },
+      {
+        "id": "tile_roof_120",
+        "boundingVolume": {
+          "box": [
+            15235.98583984375,
+            897.7464141845703,
+            21.993456602096558,
+            647.80908203125,
+            0,
+            0,
+            0,
+            591.9414520263672,
+            0,
+            0,
+            0,
+            14.072209596633911
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_120.glb"
+        }
+      },
+      {
+        "id": "tile_roof_122",
+        "boundingVolume": {
+          "box": [
+            15175.3818359375,
+            837.9179763793945,
+            22.001078128814697,
+            642.306640625,
+            0,
+            0,
+            0,
+            588.691032409668,
+            0,
+            0,
+            0,
+            14.03794240951538
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_122.glb"
+        }
+      },
+      {
+        "id": "tile_roof_124",
+        "boundingVolume": {
+          "box": [
+            15130.34033203125,
+            856.3483657836914,
+            21.989410400390625,
+            652.73388671875,
+            0,
+            0,
+            0,
+            661.0528793334961,
+            0,
+            0,
+            0,
+            14.048851013183594
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_124.glb"
+        }
+      },
+      {
+        "id": "tile_roof_126",
+        "boundingVolume": {
+          "box": [
+            15131.0732421875,
+            885.4047088623047,
+            21.99133586883545,
+            647.521484375,
+            0,
+            0,
+            0,
+            604.3656768798828,
+            0,
+            0,
+            0,
+            14.042160987854004
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_126.glb"
+        }
+      },
+      {
+        "id": "tile_roof_128",
+        "boundingVolume": {
+          "box": [
+            15149.13232421875,
+            805.3504028320312,
+            21.98587656021118,
+            669.63818359375,
+            0,
+            0,
+            0,
+            588.2410278320312,
+            0,
+            0,
+            0,
+            14.026402950286865
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_128.glb"
+        }
+      },
+      {
+        "id": "tile_roof_130",
+        "boundingVolume": {
+          "box": [
+            15169.337890625,
+            779.5436706542969,
+            16.01543378829956,
+            640.0625,
+            0,
+            0,
+            0,
+            596.2174377441406,
+            0,
+            0,
+            0,
+            8.03890085220337
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_130.glb"
+        }
+      },
+      {
+        "id": "tile_roof_132",
+        "boundingVolume": {
+          "box": [
+            15137.9111328125,
+            824.9806289672852,
+            22.00007390975952,
+            619.0673828125,
+            0,
+            0,
+            0,
+            616.3918075561523,
+            0,
+            0,
+            0,
+            14.046888828277588
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_132.glb"
+        }
+      },
+      {
+        "id": "tile_roof_134",
+        "boundingVolume": {
+          "box": [
+            15212.88671875,
+            929.426025390625,
+            47.993088483810425,
+            629.4111328125,
+            0,
+            0,
+            0,
+            456.1063232421875,
+            0,
+            0,
+            0,
+            40.0544273853302
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_134.glb"
+        }
+      },
+      {
+        "id": "tile_roof_136",
+        "boundingVolume": {
+          "box": [
+            15150.49365234375,
+            909.2709197998047,
+            15.98822569847107,
+            582.69873046875,
+            0,
+            0,
+            0,
+            573.4142608642578,
+            0,
+            0,
+            0,
+            8.051111459732056
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_136.glb"
+        }
+      },
+      {
+        "id": "tile_roof_138",
+        "boundingVolume": {
+          "box": [
+            15114.41943359375,
+            832.036262512207,
+            21.983534574508667,
+            641.71044921875,
+            0,
+            0,
+            0,
+            592.4853439331055,
+            0,
+            0,
+            0,
+            14.043450593948364
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_138.glb"
+        }
+      },
+      {
+        "id": "tile_roof_14",
+        "boundingVolume": {
+          "box": [
+            15257.666015625,
+            943.61181640625,
+            16.03265142440796,
+            534.60546875,
+            0,
+            0,
+            0,
+            517.1029052734375,
+            0,
+            0,
+            0,
+            8.058598041534424
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_14.glb"
+        }
+      },
+      {
+        "id": "tile_roof_140",
+        "boundingVolume": {
+          "box": [
+            15229.5419921875,
+            826.7751693725586,
+            9.993547439575195,
+            635.5888671875,
+            0,
+            0,
+            0,
+            620.1998062133789,
+            0,
+            0,
+            0,
+            2.0668411254882812
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_140.glb"
+        }
+      },
+      {
+        "id": "tile_roof_142",
+        "boundingVolume": {
+          "box": [
+            15169.873046875,
+            894.7665252685547,
+            21.97997236251831,
+            682.330078125,
+            0,
+            0,
+            0,
+            603.0124053955078,
+            0,
+            0,
+            0,
+            14.042629718780518
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_142.glb"
+        }
+      },
+      {
+        "id": "tile_roof_144",
+        "boundingVolume": {
+          "box": [
+            15231.89501953125,
+            800.6266326904297,
+            21.999228477478027,
+            577.31103515625,
+            0,
+            0,
+            0,
+            498.7198028564453,
+            0,
+            0,
+            0,
+            14.039010047912598
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_144.glb"
+        }
+      },
+      {
+        "id": "tile_roof_146",
+        "boundingVolume": {
+          "box": [
+            15113.6025390625,
+            907.5516815185547,
+            7.999998092651367,
+            620.9658203125,
+            0,
+            0,
+            0,
+            603.2957305908203,
+            0,
+            0,
+            0,
+            0.5
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_146.glb"
+        }
+      },
+      {
+        "id": "tile_roof_148",
+        "boundingVolume": {
+          "box": [
+            15071.59716796875,
+            1017.4931640625,
+            34.00846719741821,
+            594.83740234375,
+            0,
+            0,
+            0,
+            496.58642578125,
+            0,
+            0,
+            0,
+            26.073148250579834
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_148.glb"
+        }
+      },
+      {
+        "id": "tile_roof_2",
+        "boundingVolume": {
+          "box": [
+            15141.4853515625,
+            824.3389587402344,
+            21.98709011077881,
+            633.318359375,
+            0,
+            0,
+            0,
+            598.4891662597656,
+            0,
+            0,
+            0,
+            14.030072212219238
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_2.glb"
+        }
+      },
+      {
+        "id": "tile_roof_20",
+        "boundingVolume": {
+          "box": [
+            15154.84912109375,
+            1011.3128204345703,
+            9.998090744018555,
+            643.84912109375,
+            0,
+            0,
+            0,
+            503.2146453857422,
+            0,
+            0,
+            0,
+            2.0372514724731445
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_20.glb"
+        }
+      },
+      {
+        "id": "tile_roof_21",
+        "boundingVolume": {
+          "box": [
+            15188.51708984375,
+            311.59962463378906,
+            7.999998092651367,
+            588.25537109375,
+            0,
+            0,
+            0,
+            76.34132385253906,
+            0,
+            0,
+            0,
+            0.5
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_21.glb"
+        }
+      },
+      {
+        "id": "tile_roof_30",
+        "boundingVolume": {
+          "box": [
+            15154.26513671875,
+            981.2860260009766,
+            8.002945303916931,
+            653.68017578125,
+            0,
+            0,
+            0,
+            536.6143646240234,
+            0,
+            0,
+            0,
+            4.016623139381409
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_30.glb"
+        }
+      },
+      {
+        "id": "tile_roof_31",
+        "boundingVolume": {
+          "box": [
+            15169.09423828125,
+            332.16172790527344,
+            7.9981300830841064,
+            633.58154296875,
+            0,
+            0,
+            0,
+            94.19523620605469,
+            0,
+            0,
+            0,
+            0.5
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_31.glb"
+        }
+      },
+      {
+        "id": "tile_roof_36",
+        "boundingVolume": {
+          "box": [
+            15204.9921875,
+            888.9652709960938,
+            21.99123454093933,
+            575.375,
+            0,
+            0,
+            0,
+            621.0486450195312,
+            0,
+            0,
+            0,
+            14.050597429275513
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_36.glb"
+        }
+      },
+      {
+        "id": "tile_roof_38",
+        "boundingVolume": {
+          "box": [
+            15208.88720703125,
+            975.0016326904297,
+            20.021889209747314,
+            604.06494140625,
+            0,
+            0,
+            0,
+            525.3974151611328,
+            0,
+            0,
+            0,
+            12.058303356170654
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_38.glb"
+        }
+      },
+      {
+        "id": "tile_roof_4",
+        "boundingVolume": {
+          "box": [
+            15180.14990234375,
+            806.8377914428711,
+            14.026306748390198,
+            648.76806640625,
+            0,
+            0,
+            0,
+            551.7713394165039,
+            0,
+            0,
+            0,
+            10.03288209438324
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_4.glb"
+        }
+      },
+      {
+        "id": "tile_roof_44",
+        "boundingVolume": {
+          "box": [
+            15139.10986328125,
+            980.3536682128906,
+            10.000165224075317,
+            658.49365234375,
+            0,
+            0,
+            0,
+            521.9534606933594,
+            0,
+            0,
+            0,
+            2.0343759059906006
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_44.glb"
+        }
+      },
+      {
+        "id": "tile_roof_45",
+        "boundingVolume": {
+          "box": [
+            15205.58544921875,
+            326.0608673095703,
+            9.99379849433899,
+            484.26416015625,
+            0,
+            0,
+            0,
+            110.90412902832031,
+            0,
+            0,
+            0,
+            2.0177743434906006
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_45.glb"
+        }
+      },
+      {
+        "id": "tile_roof_54",
+        "boundingVolume": {
+          "box": [
+            15154.59130859375,
+            976.3644866943359,
+            6.001914858818054,
+            659.01806640625,
+            0,
+            0,
+            0,
+            550.9206695556641,
+            0,
+            0,
+            0,
+            2.038967251777649
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_54.glb"
+        }
+      },
+      {
+        "id": "tile_roof_55",
+        "boundingVolume": {
+          "box": [
+            15171.8330078125,
+            319.36009216308594,
+            9.991370916366577,
+            619.8662109375,
+            0,
+            0,
+            0,
+            119.44233703613281,
+            0,
+            0,
+            0,
+            2.0214121341705322
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_55.glb"
+        }
+      },
+      {
+        "id": "tile_roof_6",
+        "boundingVolume": {
+          "box": [
+            15060.32568359375,
+            904.8009643554688,
+            16.008068084716797,
+            569.26025390625,
+            0,
+            0,
+            0,
+            484.17828369140625,
+            0,
+            0,
+            0,
+            8.059654235839844
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_6.glb"
+        }
+      },
+      {
+        "id": "tile_roof_64",
+        "boundingVolume": {
+          "box": [
+            15128.97021484375,
+            981.4877319335938,
+            9.987150192260742,
+            646.08349609375,
+            0,
+            0,
+            0,
+            537.4824829101562,
+            0,
+            0,
+            0,
+            2.0354080200195312
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_64.glb"
+        }
+      },
+      {
+        "id": "tile_roof_65",
+        "boundingVolume": {
+          "box": [
+            15115.66748046875,
+            323.40071868896484,
+            9.992624759674072,
+            624.96337890625,
+            0,
+            0,
+            0,
+            114.62345123291016,
+            0,
+            0,
+            0,
+            2.0173325538635254
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_65.glb"
+        }
+      },
+      {
+        "id": "tile_roof_70",
+        "boundingVolume": {
+          "box": [
+            15119.7392578125,
+            903.8134002685547,
+            15.992401838302612,
+            637.580078125,
+            0,
+            0,
+            0,
+            471.2766876220703,
+            0,
+            0,
+            0,
+            8.025410890579224
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_70.glb"
+        }
+      },
+      {
+        "id": "tile_roof_72",
+        "boundingVolume": {
+          "box": [
+            15262.0927734375,
+            867.7815704345703,
+            16.000284433364868,
+            547.6552734375,
+            0,
+            0,
+            0,
+            653.0510711669922,
+            0,
+            0,
+            0,
+            8.028754949569702
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_72.glb"
+        }
+      },
+      {
+        "id": "tile_roof_78",
+        "boundingVolume": {
+          "box": [
+            15138.47021484375,
+            976.7408142089844,
+            9.986883401870728,
+            661.59716796875,
+            0,
+            0,
+            0,
+            541.8168029785156,
+            0,
+            0,
+            0,
+            2.027661085128784
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_78.glb"
+        }
+      },
+      {
+        "id": "tile_roof_79",
+        "boundingVolume": {
+          "box": [
+            15140.9345703125,
+            317.56646728515625,
+            9.993916273117065,
+            624.5654296875,
+            0,
+            0,
+            0,
+            117.00225830078125,
+            0,
+            0,
+            0,
+            2.0204689502716064
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_79.glb"
+        }
+      },
+      {
+        "id": "tile_roof_8",
+        "boundingVolume": {
+          "box": [
+            15098.822265625,
+            818.8866271972656,
+            21.973602771759033,
+            563.6005859375,
+            0,
+            0,
+            0,
+            557.0246276855469,
+            0,
+            0,
+            0,
+            14.031165599822998
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_8.glb"
+        }
+      },
+      {
+        "id": "tile_roof_84",
+        "boundingVolume": {
+          "box": [
+            15170.96826171875,
+            887.0432891845703,
+            22.025137662887573,
+            570.66552734375,
+            0,
+            0,
+            0,
+            529.4084930419922,
+            0,
+            0,
+            0,
+            14.048527956008911
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_84.glb"
+        }
+      },
+      {
+        "id": "tile_roof_86",
+        "boundingVolume": {
+          "box": [
+            15085.6552734375,
+            840.4383697509766,
+            21.988117218017578,
+            629.552734375,
+            0,
+            0,
+            0,
+            522.9051361083984,
+            0,
+            0,
+            0,
+            14.022819519042969
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_86.glb"
+        }
+      },
+      {
+        "id": "tile_roof_88",
+        "boundingVolume": {
+          "box": [
+            15140.3935546875,
+            877.6903991699219,
+            22.006285429000854,
+            537.7998046875,
+            0,
+            0,
+            0,
+            618.8607482910156,
+            0,
+            0,
+            0,
+            14.052186250686646
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_88.glb"
+        }
+      },
+      {
+        "id": "tile_roof_94",
+        "boundingVolume": {
+          "box": [
+            15110.87353515625,
+            980.6318359375,
+            7.999998569488525,
+            629.00830078125,
+            0,
+            0,
+            0,
+            543.907470703125,
+            0,
+            0,
+            0,
+            0.5
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_94.glb"
+        }
+      },
+      {
+        "id": "tile_roof_95",
+        "boundingVolume": {
+          "box": [
+            15187.57421875,
+            304.1188201904297,
+            7.999999523162842,
+            629.4892578125,
+            0,
+            0,
+            0,
+            117.50773620605469,
+            0,
+            0,
+            0,
+            0.5
+          ]
+        },
+        "geometricError": 0,
+        "refine": "REPLACE",
+        "content": {
+          "uri": "tiles/tile_roof_95.glb"
+        }
+      }
+    ]
+  }
+}

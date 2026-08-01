@@ -1,12 +1,14 @@
 import type { Engine } from '@baidumap/mapv-three'
 import {
   BoxGeometry,
+  Box3,
   BufferGeometry,
   Color,
   CylinderGeometry,
   Group,
   InstancedMesh,
   Material,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -14,7 +16,11 @@ import {
   Shape,
   ShapeGeometry,
   SphereGeometry,
+  SRGBColorSpace,
+  Texture,
+  Vector3,
 } from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import type { RoadCoordinateProjector } from '../roadGeometry'
 import {
   resolveSignalColor,
@@ -46,16 +52,46 @@ export class RoadsideFacilityRenderer {
   private readonly engine: Engine
   private readonly projector: RoadCoordinateProjector
   private readonly transform = new Object3D()
+  private readonly streetlightMatrix = new Matrix4()
   private group: Group | null = null
   private furnitureGroup: Group | null = null
   private legacySignalGroup: Group | null = null
   private legacyMarkingGroup: Group | null = null
   private manifest: SceneFacilityManifest | null = null
   private signalLenses: Record<SignalColor, InstancedMesh> | null = null
+  private streetlightSource: Group | null = null
+  private streetlightKey = ''
 
   constructor(engine: Engine, projector: RoadCoordinateProjector) {
     this.engine = engine
     this.projector = projector
+  }
+
+  async prepareStreetlight(modelUrl: string, heightMeters: number): Promise<void> {
+    const key = `${modelUrl}:${heightMeters}`
+    if (this.streetlightSource && this.streetlightKey === key) return
+    const gltf = await new GLTFLoader().loadAsync(modelUrl)
+    const bounds = new Box3().setFromObject(gltf.scene)
+    const size = bounds.getSize(new Vector3())
+    if (!Number.isFinite(size.y) || size.y <= 1e-6) {
+      this.disposeSource(gltf.scene)
+      throw new Error('Streetlight model has no measurable height')
+    }
+    const translated = new Group()
+    translated.add(gltf.scene)
+    translated.position.set(
+      -(bounds.min.x + bounds.max.x) / 2,
+      -bounds.min.y,
+      -(bounds.min.z + bounds.max.z) / 2,
+    )
+    const normalized = new Group()
+    normalized.add(translated)
+    normalized.rotation.x = Math.PI / 2
+    normalized.scale.setScalar(heightMeters / size.y)
+    normalized.updateMatrixWorld(true)
+    this.clearStreetlightSource()
+    this.streetlightSource = normalized
+    this.streetlightKey = key
   }
 
   render(manifest: SceneFacilityManifest): void {
@@ -70,34 +106,20 @@ export class RoadsideFacilityRenderer {
     legacyMarkingGroup.name = 'legacy-road-markings'
     group.add(furnitureGroup, legacySignalGroup, legacyMarkingGroup)
 
-    const furniturePolePoints = [
-      ...manifest.lamps.map((point) => ({ point, height: 6 })),
-      ...manifest.cameras.map((point) => ({ point, height: 5.2 })),
-    ]
+    const furniturePolePoints = manifest.cameras.map((point) => ({ point, height: 5.2 }))
     furnitureGroup.add(this.poleMesh('street-poles', furniturePolePoints))
     legacySignalGroup.add(this.poleMesh(
       'traffic-signal-poles',
       manifest.signals.map((point) => ({ point, height: 5.2 })),
     ))
 
+    this.streetlightMeshes(manifest.lamps).forEach((mesh) => furnitureGroup.add(mesh))
     furnitureGroup.add(this.facilityMesh(
-      'street-lamp-arms',
-      new BoxGeometry(0.18, 1.7, 0.18).translate(0, -0.75, 5.96),
-      '#7f91a0',
+      'streetlight-emissive-lenses',
+      new BoxGeometry(0.52, 0.86, 0.08).translate(0, -1.52, 7.18),
+      '#fff2c2',
       manifest.lamps,
-    ))
-    furnitureGroup.add(this.facilityMesh(
-      'street-lamp-housings',
-      new BoxGeometry(0.56, 0.82, 0.24).translate(0, -1.55, 5.92),
-      '#536472',
-      manifest.lamps,
-    ))
-    furnitureGroup.add(this.facilityMesh(
-      'street-lamp-lenses',
-      new BoxGeometry(0.38, 0.08, 0.12).translate(0, -1.98, 5.86),
-      '#ffe4a1',
-      manifest.lamps,
-      '#ffd77a',
+      '#ffd36a',
     ))
     legacySignalGroup.add(this.facilityMesh(
       'traffic-signal-arms',
@@ -196,6 +218,7 @@ export class RoadsideFacilityRenderer {
 
   destroy(): void {
     this.clear()
+    this.clearStreetlightSource()
   }
 
   clearScene(): void {
@@ -258,6 +281,52 @@ export class RoadsideFacilityRenderer {
     mesh.name = name
     points.forEach((point, index) => mesh.setMatrixAt(index, this.matrix(point)))
     return mesh
+  }
+
+  private streetlightMeshes(points: SceneFacilityPoint[]): InstancedMesh[] {
+    if (!this.streetlightSource || points.length === 0) return []
+    this.streetlightSource.updateMatrixWorld(true)
+    const result: InstancedMesh[] = []
+    this.streetlightSource.traverse((candidate) => {
+      if (!(candidate instanceof Mesh)) return
+      const sourceMaterials = Array.isArray(candidate.material) ? candidate.material : [candidate.material]
+      const clonedMaterials = sourceMaterials.map((sourceMaterial) => {
+        const material = sourceMaterial.clone()
+        if (material instanceof MeshStandardMaterial) {
+          material.roughness = Math.min(0.58, Math.max(0.32, material.roughness))
+          material.metalness = Math.min(0.62, Math.max(0.18, material.metalness))
+          material.color.multiplyScalar(1.28)
+          material.emissive.set('#111820')
+          material.emissiveIntensity = 0.2
+          for (const texture of [material.map, material.normalMap, material.metalnessMap, material.roughnessMap]) {
+            if (!texture) continue
+            texture.anisotropy = Math.max(texture.anisotropy, 8)
+            if (texture === material.map) texture.colorSpace = SRGBColorSpace
+            texture.needsUpdate = true
+          }
+          material.needsUpdate = true
+        }
+        return material
+      })
+      const mesh = new InstancedMesh(
+        candidate.geometry.clone(),
+        Array.isArray(candidate.material) ? clonedMaterials : clonedMaterials[0],
+        points.length,
+      )
+      mesh.name = `streetlight-model-${candidate.name || result.length}`
+      points.forEach((point, index) => {
+        this.streetlightMatrix.copy(this.matrix(point, 0.08)).multiply(candidate.matrixWorld)
+        mesh.setMatrixAt(index, this.streetlightMatrix)
+      })
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      mesh.computeBoundingBox()
+      mesh.computeBoundingSphere()
+      mesh.frustumCulled = false
+      result.push(mesh)
+    })
+    return result
   }
 
   private signalLens(
@@ -342,5 +411,32 @@ export class RoadsideFacilityRenderer {
     this.legacyMarkingGroup = null
     this.manifest = null
     this.signalLenses = null
+  }
+
+  private clearStreetlightSource(): void {
+    if (!this.streetlightSource) return
+    this.disposeSource(this.streetlightSource)
+    this.streetlightSource = null
+    this.streetlightKey = ''
+  }
+
+  private disposeSource(object: Object3D): void {
+    const geometries = new Set<BufferGeometry>()
+    const materials = new Set<Material>()
+    const textures = new Set<Texture>()
+    object.traverse((candidate) => {
+      if (!(candidate instanceof Mesh)) return
+      geometries.add(candidate.geometry)
+      const sourceMaterials = Array.isArray(candidate.material) ? candidate.material : [candidate.material]
+      sourceMaterials.forEach((material) => {
+        materials.add(material)
+        Object.values(material).forEach((value) => {
+          if (value instanceof Texture) textures.add(value)
+        })
+      })
+    })
+    geometries.forEach((geometry) => geometry.dispose())
+    materials.forEach((material) => material.dispose())
+    textures.forEach((texture) => texture.dispose())
   }
 }

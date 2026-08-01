@@ -47,6 +47,12 @@ export interface IntersectionApproachGeometry {
   outerBoundaryProjection: number
   crosswalkCenters: Point2[]
   crosswalkBars: CrosswalkBar[]
+  setbackMeters: number
+}
+
+export interface PositionedIntersectionApproach {
+  edge: RealisticRoadEdge
+  geometry: IntersectionApproachGeometry
 }
 
 export function signalPoleBase(
@@ -164,22 +170,19 @@ export function buildIntersectionApproachGeometry(
   lanesOrEdge: RealisticLane[] | RealisticRoadEdge,
   horizontalScale: number,
   allEdges: RealisticRoadEdge[] = [],
+  setbackMeters = 0,
 ): IntersectionApproachGeometry | null {
   const edge = Array.isArray(lanesOrEdge) ? null : lanesOrEdge
   const lanes = (Array.isArray(lanesOrEdge) ? lanesOrEdge : lanesOrEdge.lanes)
     .filter((lane) => lane.kind !== 'pedestrian' && lane.kind !== 'bicycle')
   if (lanes.length === 0) return null
-  const stopOffset = STOP_LINE_CENTER_OFFSET_METERS * horizontalScale
+  const stopOffset = (STOP_LINE_CENTER_OFFSET_METERS + setbackMeters) * horizontalScale
   const sampled = lanes.map((lane) => ({ lane, ...pointAndTangent(lane, stopOffset, true) }))
   const tangent = referenceTangent(edge, sampled, stopOffset, true)
   const normal: Point2 = [-tangent[1], tangent[0]]
   const projected = sampled.map(({ point }) => point[0] * normal[0] + point[1] * normal[1])
   const min = Math.min(...projected.map((value, index) => value - lanes[index].width / 2))
   const max = Math.max(...projected.map((value, index) => value + lanes[index].width / 2))
-  const crossingIntervals = projected.map((value, index) => ({
-    minimum: value - lanes[index].width / 2,
-    maximum: value + lanes[index].width / 2,
-  }))
   const centerAlong = (min + max) / 2
   const center = sampled[Math.floor(sampled.length / 2)].point
   const centerProjection = center[0] * normal[0] + center[1] * normal[1]
@@ -195,10 +198,6 @@ export function buildIntersectionApproachGeometry(
       const projection = sample.point[0] * normal[0] + sample.point[1] * normal[1]
       crossingMin = Math.min(crossingMin, projection - lane.width / 2)
       crossingMax = Math.max(crossingMax, projection + lane.width / 2)
-      crossingIntervals.push({
-        minimum: projection - lane.width / 2,
-        maximum: projection + lane.width / 2,
-      })
     }
     const companion = companionForApproach(
       edge,
@@ -214,10 +213,6 @@ export function buildIntersectionApproachGeometry(
         const projection = sample.point[0] * normal[0] + sample.point[1] * normal[1]
         crossingMin = Math.min(crossingMin, projection - lane.width / 2)
         crossingMax = Math.max(crossingMax, projection + lane.width / 2)
-        crossingIntervals.push({
-          minimum: projection - lane.width / 2,
-          maximum: projection + lane.width / 2,
-        })
       }
     }
   }
@@ -231,20 +226,7 @@ export function buildIntersectionApproachGeometry(
     crosswalkBase[1] + tangent[1] * CROSSWALK_FIRST_CENTER_METERS * horizontalScale,
   ]
   const barWidth = CROSSWALK_STRIPE_WIDTH_METERS * horizontalScale
-  const mergedIntervals = crossingIntervals
-    .sort((left, right) => left.minimum - right.minimum)
-    .reduce<Array<{ minimum: number; maximum: number }>>((result, interval) => {
-      const previous = result.at(-1)
-      if (!previous || interval.minimum > previous.maximum + 0.2 * horizontalScale) {
-        result.push({ ...interval })
-      } else {
-        previous.maximum = Math.max(previous.maximum, interval.maximum)
-      }
-      return result
-    }, [])
-  const projections = mergedIntervals.flatMap((interval) => (
-    buildCrosswalkBarProjections(interval.minimum, interval.maximum, horizontalScale)
-  ))
+  const projections = buildCrosswalkBarProjections(crossingMin, crossingMax, horizontalScale)
   const crosswalkBars = projections.map((projection): CrosswalkBar => {
     const lateralOffset = projection - crossingCenterAlong
     return {
@@ -271,5 +253,100 @@ export function buildIntersectionApproachGeometry(
     outerBoundaryProjection: outerSide > 0 ? crossingMax : crossingMin,
     crosswalkCenters,
     crosswalkBars,
+    setbackMeters,
   }
+}
+
+function crosswalkCenter(approach: IntersectionApproachGeometry): Point2 {
+  const centers = approach.crosswalkCenters
+  return centers[Math.floor(centers.length / 2)] ?? approach.stopLineCenter
+}
+
+function projectionRadius(
+  approach: IntersectionApproachGeometry,
+  axis: Point2,
+  horizontalScale: number,
+): number {
+  const tangentProjection = Math.abs(approach.tangent[0] * axis[0] + approach.tangent[1] * axis[1])
+  const normalProjection = Math.abs(approach.normal[0] * axis[0] + approach.normal[1] * axis[1])
+  return tangentProjection * CROSSWALK_DEPTH_METERS * horizontalScale / 2
+    + normalProjection * approach.crosswalkHalfWidth
+}
+
+export function crosswalksOverlap(
+  left: IntersectionApproachGeometry,
+  right: IntersectionApproachGeometry,
+  horizontalScale: number,
+): boolean {
+  const leftCenter = crosswalkCenter(left)
+  const rightCenter = crosswalkCenter(right)
+  const delta: Point2 = [rightCenter[0] - leftCenter[0], rightCenter[1] - leftCenter[1]]
+  const axes = [left.tangent, left.normal, right.tangent, right.normal]
+  const clearance = 0.65 * horizontalScale
+  return axes.every((axis) => {
+    const separation = Math.abs(delta[0] * axis[0] + delta[1] * axis[1])
+    return separation <= projectionRadius(left, axis, horizontalScale)
+      + projectionRadius(right, axis, horizontalScale)
+      + clearance
+  })
+}
+
+export function buildCollisionFreeIntersectionApproaches(
+  edges: RealisticRoadEdge[],
+  horizontalScale: number,
+): PositionedIntersectionApproach[] {
+  const incomingCandidates = edges
+    .filter((edge) => edge.incoming && edge.incident !== false)
+    .sort((left, right) => left.id.localeCompare(right.id))
+  const incoming: RealisticRoadEdge[] = []
+  const initialGeometry: IntersectionApproachGeometry[] = []
+  for (const edge of incomingCandidates) {
+    const geometry = buildIntersectionApproachGeometry(edge, horizontalScale, edges)
+    if (!geometry) continue
+    const duplicateIndex = initialGeometry.findIndex((candidate) => {
+      const headingDot = candidate.tangent[0] * geometry.tangent[0]
+        + candidate.tangent[1] * geometry.tangent[1]
+      return headingDot > 0.96
+        && Math.hypot(
+          candidate.stopLineCenter[0] - geometry.stopLineCenter[0],
+          candidate.stopLineCenter[1] - geometry.stopLineCenter[1],
+        ) < 12 * horizontalScale
+    })
+    if (duplicateIndex < 0) {
+      incoming.push(edge)
+      initialGeometry.push(geometry)
+    } else if (edge.lanes.length > incoming[duplicateIndex].lanes.length) {
+      incoming[duplicateIndex] = edge
+      initialGeometry[duplicateIndex] = geometry
+    }
+  }
+  const setbacks = incoming.map(() => 0)
+  let approaches: Array<IntersectionApproachGeometry | null> = initialGeometry
+
+  for (let iteration = 0; iteration < 24; iteration += 1) {
+    const colliding = new Set<number>()
+    for (let left = 0; left < approaches.length; left += 1) {
+      if (!approaches[left]) continue
+      for (let right = left + 1; right < approaches.length; right += 1) {
+        if (!approaches[right]) continue
+        if (crosswalksOverlap(approaches[left]!, approaches[right]!, horizontalScale)) {
+          colliding.add(left)
+          colliding.add(right)
+        }
+      }
+    }
+    if (colliding.size === 0) break
+    for (const index of colliding) setbacks[index] += 1.5
+    approaches = incoming.map((edge, index) => buildIntersectionApproachGeometry(
+      edge,
+      horizontalScale,
+      edges,
+      setbacks[index],
+    ))
+  }
+
+  return incoming.flatMap((edge, index) => {
+    const geometry = approaches[index]
+    return geometry ? [{ edge, geometry }] : []
+  })
 }

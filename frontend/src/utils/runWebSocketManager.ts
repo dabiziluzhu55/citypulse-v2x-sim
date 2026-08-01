@@ -4,6 +4,7 @@ type MessageHandler = (message: SimulationWsMessage) => void
 
 let socket: WebSocket | null = null
 let currentSessionId = ''
+let currentStreamUrl = ''
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 const MAX_RECONNECT_DELAY_MS = 30_000
@@ -11,14 +12,29 @@ let shouldReconnect = false
 const handlers = new Set<MessageHandler>()
 const connectionListeners = new Set<(connected: boolean) => void>()
 
-function buildStreamUrl(sessionId: string): string {
-  const configuredUrl = import.meta.env.VITE_TRAFFIC_WS_URL?.trim()
-  if (configuredUrl) {
-    return configuredUrl.replace('{session_id}', encodeURIComponent(sessionId))
+interface StreamLocation {
+  protocol: string
+  host: string
+  origin: string
+}
+
+export function resolveSimulationStreamUrl(
+  sessionId: string,
+  backendStreamUrl = '',
+  location: StreamLocation = window.location,
+): string {
+  const configuredUrl = import.meta.env?.VITE_TRAFFIC_WS_URL?.trim() ?? ''
+  const candidate = (backendStreamUrl.trim() || configuredUrl)
+    .replace('{session_id}', encodeURIComponent(sessionId))
+  if (candidate) {
+    const url = new URL(candidate, location.origin)
+    if (url.protocol === 'http:') url.protocol = 'ws:'
+    if (url.protocol === 'https:') url.protocol = 'wss:'
+    return url.toString()
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const host = window.location.host
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = location.host
   return `${protocol}//${host}/api/v1/simulations/${encodeURIComponent(sessionId)}/stream`
 }
 
@@ -55,7 +71,7 @@ function scheduleReconnect() {
   reconnectAttempts += 1
   const delay = Math.min(3_000 * 2 ** (reconnectAttempts - 1), MAX_RECONNECT_DELAY_MS)
   reconnectTimer = setTimeout(() => {
-    connectSimulationStream(currentSessionId)
+    connectSimulationStream(currentSessionId, currentStreamUrl)
   }, delay)
 }
 
@@ -67,26 +83,35 @@ function isSimulationMessage(payload: unknown): payload is SimulationWsMessage {
   return type === 'snapshot' || type === 'heartbeat'
 }
 
-export function connectSimulationStream(sessionId: string) {
+export function connectSimulationStream(sessionId: string, backendStreamUrl = '') {
   if (!sessionId) {
     shouldReconnect = false
     clearReconnectTimer()
     closeSocket()
     currentSessionId = ''
+    currentStreamUrl = ''
     notifyConnection(false)
     return
   }
 
-  if (sessionId === currentSessionId && socket && socket.readyState === WebSocket.OPEN) {
+  const nextStreamUrl = backendStreamUrl.trim()
+    || (sessionId === currentSessionId ? currentStreamUrl : '')
+  if (
+    sessionId === currentSessionId
+    && nextStreamUrl === currentStreamUrl
+    && socket
+    && socket.readyState === WebSocket.OPEN
+  ) {
     return
   }
 
   shouldReconnect = true
   currentSessionId = sessionId
+  currentStreamUrl = nextStreamUrl
   closeSocket()
 
   try {
-    socket = new WebSocket(buildStreamUrl(sessionId))
+    socket = new WebSocket(resolveSimulationStreamUrl(sessionId, currentStreamUrl))
   } catch {
     notifyConnection(false)
     scheduleReconnect()

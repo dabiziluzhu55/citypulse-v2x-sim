@@ -183,10 +183,12 @@ test('camera targets are translated once in Xiongan demo mode', () => {
 })
 
 test('3D camera presets stay inside the focused desktop scene', () => {
-  assert.equal(mapDefaults.DEFAULT_CESIUM_CAMERA_HEIGHT, 1100)
+  assert.equal(mapDefaults.DEFAULT_CESIUM_CAMERA_HEIGHT, 1800)
   assert.equal(mapDefaults.BAIDU_3D_MIN_RANGE, 100)
-  assert.equal(mapDefaults.BAIDU_3D_MAX_RANGE, 1400)
-  assert.ok(mapDefaults.CESIUM_CAMERA_PRESETS.every((preset) => preset.height <= 1400))
+  assert.equal(mapDefaults.BAIDU_3D_MAX_RANGE, 3200)
+  assert.ok(mapDefaults.CESIUM_CAMERA_PRESETS.every(
+    (preset) => preset.height <= mapDefaults.BAIDU_3D_MAX_RANGE,
+  ))
   assert.ok(mapDefaults.resolveCesiumCameraPreset('road-cruise').pitchDegrees <= -60)
   assert.ok(mapDefaults.resolveCesiumCameraPreset('intersection').pitchDegrees <= -55)
 })

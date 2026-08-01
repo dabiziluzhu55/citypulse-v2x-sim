@@ -17,10 +17,11 @@ import {
   type RealisticIntersectionManifest,
 } from './intersectionManifest'
 import {
-  buildIntersectionApproachGeometry,
+  buildCollisionFreeIntersectionApproaches,
   pointAndTangent,
   SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS,
   signalPoleBase,
+  type PositionedIntersectionApproach,
 } from './intersectionApproachGeometry'
 import {
   edgeCenterline,
@@ -219,8 +220,13 @@ class RealisticIntersectionObject {
   readonly group = new THREE.Group()
   private readonly signalHeads: SignalHeadMaterials[] = []
   private readonly glowTexture = makeGlowTexture()
+  private readonly approaches: PositionedIntersectionApproach[]
 
   constructor(readonly manifest: RealisticIntersectionManifest) {
+    this.approaches = buildCollisionFreeIntersectionApproaches(
+      manifest.edges,
+      manifest.horizontalScale ?? 1,
+    )
     this.group.name = `realistic-intersection:${manifest.intersectionId}`
     this.group.renderOrder = 30
     this.buildRoads()
@@ -322,9 +328,7 @@ class RealisticIntersectionObject {
     this.group.add(polygonMesh(expandPolygon(apronPoints, 0.18 * scale), curb, -0.032, 27))
     this.group.add(polygonMesh(apronPoints, junctionMaterial, 0.012, 29))
 
-    for (const edge of this.manifest.edges.filter((candidate) => candidate.incoming)) {
-      const approach = buildIntersectionApproachGeometry(edge, scale, this.manifest.edges)
-      if (!approach) continue
+    for (const { edge, geometry: approach } of this.approaches) {
       const { tangent, normal, stopLineCenter, halfWidth } = approach
       this.group.add(lineMesh(
         [stopLineCenter[0] - normal[0] * halfWidth, stopLineCenter[1] - normal[1] * halfWidth],
@@ -372,11 +376,9 @@ class RealisticIntersectionObject {
     const poleMaterial = new THREE.MeshStandardMaterial({ color: COLORS.pole, roughness: 0.34, metalness: 0.72 })
     const housingMaterial = new THREE.MeshStandardMaterial({ color: 0x101416, roughness: 0.42, metalness: 0.24 })
     const visorMaterial = new THREE.MeshStandardMaterial({ color: 0x07090a, roughness: 0.5 })
-    for (const edge of this.manifest.edges.filter((candidate) => candidate.incoming)) {
+    for (const { edge, geometry: approach } of this.approaches) {
       const controlled = this.manifest.connections.filter((item) => item.fromEdge === edge.id)
       if (controlled.length === 0) continue
-      const approach = buildIntersectionApproachGeometry(edge, scale, this.manifest.edges)
-      if (!approach) continue
       const { tangent, normal, stopLineCenter: center, laneSamples: samples, outerSide: side } = approach
       const poleBase = signalPoleBase(approach, scale)
       const pole = verticalCylinder(0.17 * scale, 6.2, poleMaterial)

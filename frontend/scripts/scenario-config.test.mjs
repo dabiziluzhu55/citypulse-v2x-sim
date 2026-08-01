@@ -87,6 +87,21 @@ test('builds the backend v2 preset request without removed legacy fields', () =>
   assert.equal(payload.control_mode, 'sotl')
   assert.equal(payload.playback_speed, 1.5)
   assert.equal(payload.disturbance_targets[0].intersection_id, 'demo_2')
+  assert.deepEqual(Object.keys(payload).sort(), [
+    'control_mode',
+    'disturbance_targets',
+    'duration_seconds',
+    'gui',
+    'origins',
+    'period',
+    'playback_speed',
+    'realtime',
+    'scenario_preset_id',
+    'seed',
+    'snapshot_interval_seconds',
+    'step_length',
+    'window_start_seconds',
+  ])
   assert.equal('intersection_ids' in payload, false)
   assert.equal('flow_multiplier' in payload, false)
   assert.equal('initial_events' in payload, false)

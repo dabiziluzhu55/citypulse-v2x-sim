@@ -9,9 +9,10 @@ import {
   type ScenarioModeId,
 } from '../constants/scenarioOptions'
 import {
-  DASHBOARD_CONTROL_MODES,
   SIMULATION_SNAPSHOT_INTERVAL_MS,
-  isBackendControlMode,
+  SUPPORTED_BACKEND_CONTROL_MODES,
+  requireAvailableControlMode,
+  resolveDashboardControlModes,
 } from '../constants/simulationOptions'
 import type { CatalogIntersection, CatalogScenarioPreset } from '../types/catalog'
 import type { StartSimulationRequest } from '../types/simulation'
@@ -46,7 +47,7 @@ export interface ScenarioConfigExport {
     scenario: 'catalog' | 'compatibility_preset'
     disturbance: 'catalog'
     time: 'local_range'
-    algorithm: 'backend' | 'mock_preview'
+    algorithm: 'backend'
   }
 }
 
@@ -80,6 +81,7 @@ export function buildSimulationPayload(
   periods: string[],
   scenarioPresets: CatalogScenarioPreset[] = [],
   supportedIntersectionIds: string[] = [],
+  controlModes: string[] = [...SUPPORTED_BACKEND_CONTROL_MODES],
 ): StartSimulationRequest {
   const simulatableIntersection = requireSimulatableIntersection(intersection)
   const time = simulationTimeWindow(
@@ -101,12 +103,13 @@ export function buildSimulationPayload(
     ))
     if (invalid.length > 0) throw new Error(`扰动路口不可用于当前场景：${invalid.join(', ')}`)
   }
+  const controlMode = requireAvailableControlMode(config.control_mode, controlModes)
   return buildStartSimulationRequest({
     scenarioPresetId: config.scenario_preset_id,
     period: resolvePeriod(config, periods),
     windowStartSeconds: time.windowStartSeconds,
     durationSeconds: time.durationSeconds,
-    controlMode: isBackendControlMode(config.control_mode) ? config.control_mode : 'fixed',
+    controlMode,
     playbackSpeed: config.playback_speed,
     disturbance: config.disturbance,
     disturbanceIntersectionIds,
@@ -132,6 +135,7 @@ export function useCompactScenarioConfig(
   scenarioPresets: Ref<CatalogScenarioPreset[]>,
   playbackSpeeds: Ref<number[]>,
   supportedIntersectionIds: Ref<string[]>,
+  controlModes: Ref<string[]>,
 ) {
   const config = ref<CompactScenarioConfig>(defaultCompactConfig())
   const activeTimeRange = computed(() => SIMULATION_PERIOD_RANGES[config.value.flow_mode])
@@ -185,6 +189,16 @@ export function useCompactScenarioConfig(
     { immediate: true },
   )
 
+  watch(
+    controlModes,
+    (modes) => {
+      const supported: string[] = resolveDashboardControlModes(modes).map((item) => item.value)
+      if (supported.length === 0 || supported.includes(config.value.control_mode)) return
+      config.value.control_mode = supported.includes('fixed') ? 'fixed' : supported[0]
+    },
+    { immediate: true },
+  )
+
   const labels = computed(() => ({
     scenario: scenarioPresets.value.find((item) => item.preset_id === config.value.scenario_preset_id)?.label
       ?? SCENARIO_MODE_OPTIONS.find((item) => item.value === config.value.scenario_preset_id)?.label
@@ -205,6 +219,7 @@ export function useCompactScenarioConfig(
       periods.value,
       scenarioPresets.value,
       supportedIntersectionIds.value,
+      controlModes.value,
     )
   }
 
@@ -227,7 +242,10 @@ export function useCompactScenarioConfig(
     if (typeof scenarioPresetId !== 'string' || !supportedPresetIds.includes(scenarioPresetId)) throw new Error('场景模式不受支持')
     if (!TRAFFIC_FLOW_MODE_OPTIONS.some((item) => item.value === flowMode)) throw new Error('交通流模式不受支持')
     if (!DISTURBANCE_CHOICE_OPTIONS.some((item) => item.value === disturbance)) throw new Error('扰动事件不受支持')
-    if (typeof controlMode === 'string' && !DASHBOARD_CONTROL_MODES.some((item) => item.value === controlMode)) throw new Error('管控算法不受支持')
+    const supportedControlModes: string[] = resolveDashboardControlModes(controlModes.value)
+      .map((item) => item.value)
+    if (supportedControlModes.length === 0) throw new Error('后端未提供可运行的管控算法')
+    if (typeof controlMode === 'string' && !supportedControlModes.includes(controlMode)) throw new Error('管控算法不受支持')
 
     const mode = flowMode as TrafficFlowMode
     const legacyTimes = legacyPresetTimes(candidate.time_preset)
@@ -254,7 +272,9 @@ export function useCompactScenarioConfig(
       playback_speed: typeof playbackSpeed === 'number' && playbackSpeeds.value.includes(playbackSpeed)
         ? playbackSpeed
         : 1,
-      control_mode: typeof controlMode === 'string' ? controlMode : 'fixed',
+      control_mode: typeof controlMode === 'string'
+        ? controlMode
+        : supportedControlModes.includes('fixed') ? 'fixed' : supportedControlModes[0],
     }
   }
 
@@ -279,7 +299,7 @@ export function useCompactScenarioConfig(
         scenario: 'catalog',
         disturbance: 'catalog',
         time: 'local_range',
-        algorithm: isBackendControlMode(config.value.control_mode) ? 'backend' : 'mock_preview',
+        algorithm: 'backend',
       },
     }
   }

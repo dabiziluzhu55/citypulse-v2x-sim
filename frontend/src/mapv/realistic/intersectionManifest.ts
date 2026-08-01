@@ -16,6 +16,7 @@ export interface RealisticLane {
 export interface RealisticRoadEdge {
   id: string
   incoming: boolean
+  incident?: boolean
   centerline?: Point2[]
   roadWidth?: number
   lanes: RealisticLane[]

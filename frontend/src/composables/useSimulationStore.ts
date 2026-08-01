@@ -45,6 +45,7 @@ interface StoredSimulationContext {
   scenarioPresetId: string
   controlMode: string
   playbackSpeed: number
+  websocketUrl: string
 }
 
 function readStoredSimulationContext(): StoredSimulationContext | null {
@@ -65,6 +66,7 @@ function readStoredSimulationContext(): StoredSimulationContext | null {
         scenarioPresetId: typeof parsed.scenarioPresetId === 'string' ? parsed.scenarioPresetId : '',
         controlMode: parsed.controlMode,
         playbackSpeed: typeof parsed.playbackSpeed === 'number' ? parsed.playbackSpeed : 1,
+        websocketUrl: typeof parsed.websocketUrl === 'string' ? parsed.websocketUrl : '',
       }
     }
   } catch {
@@ -99,6 +101,9 @@ const activeControlMode = ref(
 )
 const activePlaybackSpeed = ref(
   storedContext?.sessionId === sessionId.value ? storedContext.playbackSpeed : 1,
+)
+const activeWebsocketUrl = ref(
+  storedContext?.sessionId === sessionId.value ? storedContext.websocketUrl : '',
 )
 const achievedPlaybackSpeed = ref<number | null>(null)
 
@@ -157,6 +162,7 @@ function applySnapshot(next: SimulationSnapshot) {
     connectSimulationStream('')
     activeScenarioPresetId.value = ''
     activePlaybackSpeed.value = 1
+    activeWebsocketUrl.value = ''
     restoredSession.value = false
   }
 }
@@ -188,7 +194,7 @@ async function pollOnce() {
       return
     }
     const message = err instanceof Error ? err.message : '获取仿真状态失败'
-    if (restoredSession.value && isMissingSessionError(message)) {
+    if (isMissingSessionError(message)) {
       stopPolling()
       localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
       localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
@@ -200,8 +206,9 @@ async function pollOnce() {
       activeScenarioPresetId.value = ''
       activeControlMode.value = ''
       activePlaybackSpeed.value = 1
+      activeWebsocketUrl.value = ''
       restoredSession.value = false
-      statusError.value = '上次仿真会话已失效，请重新启动仿真'
+      statusError.value = '仿真会话已失效，请重新启动仿真'
       return
     }
     statusError.value = message
@@ -230,6 +237,7 @@ function bindSession(
     scenarioPresetId: string
     controlMode: string
     playbackSpeed: number
+    websocketUrl: string
   },
 ) {
   sessionId.value = nextSessionId
@@ -241,12 +249,14 @@ function bindSession(
       activeScenarioPresetId.value = context.scenarioPresetId
       activeControlMode.value = context.controlMode
       activePlaybackSpeed.value = context.playbackSpeed
+      activeWebsocketUrl.value = context.websocketUrl
       localStorage.setItem(ACTIVE_SIMULATION_CONTEXT_KEY, JSON.stringify({
         sessionId: nextSessionId,
         focusIntersectionId: context.focusIntersectionId,
         scenarioPresetId: context.scenarioPresetId,
         controlMode: context.controlMode,
         playbackSpeed: context.playbackSpeed,
+        websocketUrl: context.websocketUrl,
       }))
     }
   } else {
@@ -256,11 +266,12 @@ function bindSession(
     activeScenarioPresetId.value = ''
     activeControlMode.value = ''
     activePlaybackSpeed.value = 1
+    activeWebsocketUrl.value = ''
   }
   snapshot.value = null
   resetPlaybackRateTracking()
   statusError.value = null
-  connectSimulationStream(nextSessionId)
+  connectSimulationStream(nextSessionId, activeWebsocketUrl.value)
   startPolling()
 }
 
@@ -285,7 +296,7 @@ function ensureInitialized() {
   })
 
   if (sessionId.value) {
-    connectSimulationStream(sessionId.value)
+    connectSimulationStream(sessionId.value, activeWebsocketUrl.value)
     startPolling()
   }
 }
@@ -303,6 +314,7 @@ async function launchRun(
       scenarioPresetId: result.scenario_preset_id ?? payload.scenario_preset_id,
       controlMode: payload.control_mode,
       playbackSpeed: payload.playback_speed ?? 1,
+      websocketUrl: result.websocket_url,
     })
     lastMessage.value = `仿真已启动，状态：${result.state}`
     return result

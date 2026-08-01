@@ -5,13 +5,31 @@ import { nextTick, ref } from 'vue'
 
 import { useSnapshotMetrics } from '../src/composables/useSnapshotMetrics.ts'
 import { buildAlgorithmMetricSeries } from '../src/constants/metricsEvaluation.ts'
-import { isBackendControlMode } from '../src/constants/simulationOptions.ts'
+import {
+  isBackendControlMode,
+  requireAvailableControlMode,
+  resolveDashboardControlModes,
+} from '../src/constants/simulationOptions.ts'
 
-test('max_pressure is sent to the backend while preview algorithms keep their fallback', () => {
+test('only the three implemented backend algorithms are exposed', () => {
   assert.equal(isBackendControlMode('fixed'), true)
   assert.equal(isBackendControlMode('max_pressure'), true)
+  assert.equal(isBackendControlMode('sotl'), true)
   assert.equal(isBackendControlMode('ippo'), false)
   assert.equal(isBackendControlMode('multi_agent_rl'), false)
+  assert.deepEqual(
+    resolveDashboardControlModes(['sotl', 'ippo', 'fixed']).map((item) => item.value),
+    ['fixed', 'sotl'],
+  )
+  assert.equal(requireAvailableControlMode('sotl', ['fixed', 'sotl']), 'sotl')
+  assert.throws(
+    () => requireAvailableControlMode('sotl', ['fixed']),
+    /后端未提供管控算法：sotl/,
+  )
+  assert.throws(
+    () => requireAvailableControlMode('ippo', ['fixed', 'ippo']),
+    /后端未提供管控算法：ippo/,
+  )
 })
 
 test('the running backend algorithm owns the real metric series', () => {
@@ -28,7 +46,8 @@ test('the running backend algorithm owns the real metric series', () => {
   const series = buildAlgorithmMetricSeries(points, 'waiting')
 
   assert.equal(series.find((item) => item.id === 'max_pressure')?.source, 'backend')
-  assert.equal(series.find((item) => item.id === 'fixed')?.source, 'derived_mock')
+  assert.equal(series.find((item) => item.id === 'fixed')?.source, 'missing')
+  assert.equal(series.find((item) => item.id === 'sotl')?.source, 'missing')
   assert.deepEqual(series.find((item) => item.id === 'max_pressure')?.values, [12.5])
 })
 

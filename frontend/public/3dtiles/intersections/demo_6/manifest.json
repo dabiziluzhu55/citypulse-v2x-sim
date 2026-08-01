@@ -1,0 +1,13 @@
+{
+  "source": "xiongan-webmercator",
+  "center_wgs84": [
+    116.09011436816664,
+    38.98367933020957
+  ],
+  "radius_m": 650,
+  "source_tile_count": 977,
+  "output_tile_count": 156,
+  "triangle_count": 18633,
+  "source_bytes": 57643412,
+  "output_bytes": 6294424
+}

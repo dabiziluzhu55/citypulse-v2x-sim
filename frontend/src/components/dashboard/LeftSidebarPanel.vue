@@ -87,6 +87,7 @@ const {
   scenarioPresets,
   playbackSpeeds,
   supportedIntersectionIds,
+  controlModes,
 )
 const fileInput = ref<HTMLInputElement | null>(null)
 const feedback = ref<string | null>(null)
@@ -104,6 +105,15 @@ const disturbanceIntersectionOptions = computed(() => {
   return preset.intersection_ids
     .filter((id) => supported.has(id))
     .map((id) => ({ label: formatIntersectionLabel(id), value: id }))
+})
+const controlModeOptions = computed(() => resolveDashboardControlModes(controlModes.value))
+const controlModeUnavailableMessage = computed(() => {
+  if (catalogLoading.value) return ''
+  if (controlModeOptions.value.length === 0) return '后端未提供可运行的管控算法'
+  if (!controlModeOptions.value.some((item) => item.value === config.value.control_mode)) {
+    return `后端未提供当前管控算法：${config.value.control_mode}`
+  }
+  return ''
 })
 const fields = computed(() => [
   { key: 'scenario', label: '场景模式', options: scenarioOptions.value },
@@ -134,6 +144,7 @@ const canStart = computed(() => (
   && !catalogLoading.value
   && isIntersectionSupported.value
   && !presetUnavailableMessage.value
+  && !controlModeUnavailableMessage.value
   && !props.starting
   && !isSessionActive.value
 ))
@@ -150,8 +161,8 @@ const statusMessage = computed(() => feedback.value
   || catalogError.value
   || unsupportedMessage.value
   || presetUnavailableMessage.value
+  || controlModeUnavailableMessage.value
   || (!props.healthReady ? props.healthLabel : ''))
-const controlModeOptions = computed(() => resolveDashboardControlModes(controlModes.value))
 const playbackSpeedOptions = computed(() => playbackSpeeds.value.map((value) => ({ label: `${value}x`, value })))
 const stateLabel = computed(() => props.state ?? (props.healthReady ? 'READY' : 'OFFLINE'))
 const officialTimeLabel = computed(() => {
@@ -175,6 +186,7 @@ const startTitle = computed(() => {
   if (catalogLoading.value) return '正在读取真实仿真路口目录'
   if (unsupportedMessage.value) return unsupportedMessage.value
   if (presetUnavailableMessage.value) return presetUnavailableMessage.value
+  if (controlModeUnavailableMessage.value) return controlModeUnavailableMessage.value
   if (!props.healthReady) return props.healthLabel
   if (isSessionActive.value) return '当前仿真尚未结束'
   return '开始仿真'

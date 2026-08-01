@@ -1,7 +1,7 @@
 export const TARGET_TLS_ID = '317'
 export const TARGET_INTERSECTION_ID = 'demo_2'
 export const TARGET_EDGE_IDS = ['-56734', '-51425', '-57228', '-56736', '-57229', '-45801']
-export const REBUILD_RADIUS_METERS = 140
+export const REBUILD_RADIUS_METERS = 520
 
 export function parseShape(value) {
   if (typeof value !== 'string' || value.length === 0) return []
@@ -14,40 +14,58 @@ export function parseShape(value) {
   })
 }
 
-function pointOnRadius(a, b, radius) {
+function segmentRadiusIntersections(a, b, radius) {
   const dx = b[0] - a[0]
   const dy = b[1] - a[1]
   const aa = dx * dx + dy * dy
+  if (aa <= 1e-12) return []
   const bb = 2 * (a[0] * dx + a[1] * dy)
   const cc = a[0] * a[0] + a[1] * a[1] - radius * radius
-  const discriminant = Math.max(0, bb * bb - 4 * aa * cc)
-  const roots = [
-    (-bb - Math.sqrt(discriminant)) / (2 * aa),
-    (-bb + Math.sqrt(discriminant)) / (2 * aa),
-  ]
-  const t = roots.find((candidate) => candidate >= 0 && candidate <= 1) ?? 0
-  return [a[0] + dx * t, a[1] + dy * t]
+  const discriminant = bb * bb - 4 * aa * cc
+  if (discriminant <= 0) return []
+  const root = Math.sqrt(discriminant)
+  return [(-bb - root) / (2 * aa), (-bb + root) / (2 * aa)]
+    .filter((candidate) => candidate > 1e-9 && candidate < 1 - 1e-9)
+    .sort((left, right) => left - right)
 }
 
 export function cropPolylineToRadius(points, radius) {
   if (points.length < 2) return points
-  const result = []
-  const inside = (point) => Math.hypot(point[0], point[1]) <= radius + 1e-6
+  const fragments = []
+  let current = []
+  const pointAt = (a, b, ratio) => [
+    a[0] + (b[0] - a[0]) * ratio,
+    a[1] + (b[1] - a[1]) * ratio,
+  ]
+  const append = (point) => {
+    const previous = current.at(-1)
+    if (!previous || Math.hypot(point[0] - previous[0], point[1] - previous[1]) > 0.001) {
+      current.push(point)
+    }
+  }
+  const flush = () => {
+    if (current.length >= 2) fragments.push(current)
+    current = []
+  }
 
   for (let index = 0; index < points.length - 1; index += 1) {
     const start = points[index]
     const end = points[index + 1]
-    const startInside = inside(start)
-    const endInside = inside(end)
-    if (startInside && result.length === 0) result.push(start)
-    if (startInside !== endInside) result.push(pointOnRadius(start, end, radius))
-    if (endInside) result.push(end)
+    const breaks = [0, ...segmentRadiusIntersections(start, end, radius), 1]
+    for (let part = 0; part < breaks.length - 1; part += 1) {
+      const from = breaks[part]
+      const to = breaks[part + 1]
+      const middle = pointAt(start, end, (from + to) / 2)
+      if (Math.hypot(middle[0], middle[1]) > radius + 1e-6) {
+        flush()
+        continue
+      }
+      append(pointAt(start, end, from))
+      append(pointAt(start, end, to))
+    }
   }
-  return result.filter((point, index) => {
-    if (index === 0) return true
-    const previous = result[index - 1]
-    return Math.hypot(point[0] - previous[0], point[1] - previous[1]) > 0.001
-  })
+  flush()
+  return fragments.sort((left, right) => right.length - left.length)[0] ?? []
 }
 
 export function toLocalShape(shape, origin) {
