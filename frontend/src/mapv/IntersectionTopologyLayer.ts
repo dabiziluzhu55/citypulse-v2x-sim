@@ -12,6 +12,7 @@ import {
 } from './intersectionTopologyRoutes'
 import { formatIntersectionLabel } from '../utils/intersectionLabels'
 import { distanceMeters as geographicDistanceMeters } from './vehicleVisibility'
+import { topologyFlowHeight } from './topologyFlowElevation'
 
 interface RenderMaterialOwner {
   material?: THREE.Material
@@ -20,7 +21,8 @@ interface RenderMaterialOwner {
 
 interface TopologyRouteEntry {
   id: string
-  feature: Record<string, unknown>
+  baseFeature: Record<string, unknown>
+  flowFeature: Record<string, unknown>
   samples: Array<[number, number]>
 }
 
@@ -63,8 +65,8 @@ function configureOverlayMaterial(layer: unknown, opacity: number): void {
   owner.material.blending = THREE.AdditiveBlending
   owner.material.side = THREE.DoubleSide
   owner.material.polygonOffset = true
-  owner.material.polygonOffsetFactor = -2
-  owner.material.polygonOffsetUnits = -2
+  owner.material.polygonOffsetFactor = -6
+  owner.material.polygonOffsetUnits = -6
 }
 
 export class IntersectionTopologyLayer {
@@ -114,8 +116,8 @@ export class IntersectionTopologyLayer {
     }))
     configureOverlayMaterial(this.baseLine, 0.24)
     configureOverlayMaterial(this.flowLine, 0.9)
-    this.baseLine.renderOrder = 18
-    this.flowLine.renderOrder = 19
+    this.baseLine.renderOrder = 34
+    this.flowLine.renderOrder = 35
 
     this.markers = engine.add(new mapvthree.EffectModelPoint({
       normalize: true,
@@ -190,15 +192,15 @@ export class IntersectionTopologyLayer {
       },
       properties: { intersection_id: node.intersectionId },
     }))
+    this.nodes = nodes
     this.routeEntries = links.map((link) => this.routeEntry(routesById.get(link.id)!, link.distanceMeters))
-    const lineFeatures = this.routeEntries.map((entry) => entry.feature)
+    const baseFeatures = this.routeEntries.map((entry) => entry.baseFeature)
+    const flowFeatures = this.routeEntries.map((entry) => entry.flowFeature)
     const points = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: pointFeatures })
-    const lines = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: lineFeatures })
     this.markers.dataSource = points
     this.waves.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: pointFeatures })
-    this.baseLine.dataSource = lines
-    this.flowLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: lineFeatures })
-    this.nodes = nodes
+    this.baseLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: baseFeatures })
+    this.flowLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: flowFeatures })
     this.visibleRouteKey = this.routeEntries.map((entry) => entry.id).join('|')
     this.visibleRouteCount = this.routeEntries.length
     this.refreshViewport()
@@ -220,12 +222,16 @@ export class IntersectionTopologyLayer {
       )))
     const key = visible.map((entry) => entry.id).join('|')
     if (key === this.visibleRouteKey) return
-    const collection = {
+    const baseCollection = {
       type: 'FeatureCollection',
-      features: visible.map((entry) => entry.feature),
+      features: visible.map((entry) => entry.baseFeature),
     }
-    this.baseLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON(collection)
-    this.flowLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON(collection)
+    const flowCollection = {
+      type: 'FeatureCollection',
+      features: visible.map((entry) => entry.flowFeature),
+    }
+    this.baseLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON(baseCollection)
+    this.flowLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON(flowCollection)
     this.visibleRouteKey = key
     this.visibleRouteCount = visible.length
     this.engine.requestRender()
@@ -288,25 +294,41 @@ export class IntersectionTopologyLayer {
   }
 
   private routeEntry(route: IntersectionTopologyRoute, directDistanceMeters: number): TopologyRouteEntry {
-    const projected = route.coordinates.map(([longitude, latitude]) => (
-      this.projector([longitude, latitude, 0.32])
-    ))
+    const baseProjected = route.coordinates.map(([longitude, latitude]) => this.projector([
+      longitude,
+      latitude,
+      topologyFlowHeight([longitude, latitude], this.nodes, 'base'),
+    ]))
+    const flowProjected = route.coordinates.map(([longitude, latitude]) => this.projector([
+      longitude,
+      latitude,
+      topologyFlowHeight([longitude, latitude], this.nodes, 'flow'),
+    ]))
+    const properties = {
+      topology_id: route.routeId,
+      distance_m: Math.round(directDistanceMeters),
+      route_length_m: Math.round(route.lengthMeters),
+    }
     return {
       id: route.routeId,
-      feature: {
+      baseFeature: {
         type: 'Feature',
         geometry: {
           type: 'LineString',
-          coordinates: projected,
+          coordinates: baseProjected,
         },
-        properties: {
-          topology_id: route.routeId,
-          distance_m: Math.round(directDistanceMeters),
-          route_length_m: Math.round(route.lengthMeters),
-        },
+        properties,
       },
-      samples: projected
-        .filter((_, index) => index % 8 === 0 || index === projected.length - 1)
+      flowFeature: {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: flowProjected,
+        },
+        properties,
+      },
+      samples: baseProjected
+        .filter((_, index) => index % 8 === 0 || index === baseProjected.length - 1)
         .map((coordinate) => [coordinate[0], coordinate[1]]),
     }
   }

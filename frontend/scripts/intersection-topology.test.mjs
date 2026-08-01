@@ -26,6 +26,7 @@ test('loads all twenty realistic intersection markers from the frontend catalog'
   assert.equal(nodes.length, 20)
   assert.equal(nodes[0].intersectionId, 'demo_1')
   assert.equal(nodes.at(-1).intersectionId, 'demo_20')
+  assert.ok(nodes.every((node) => node.radiusMeters === 520))
 })
 
 test('connects every intersection without producing all-pairs visual noise', () => {

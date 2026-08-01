@@ -18,6 +18,7 @@
     "generate:intersection-environments": "node scripts/generate-intersection-environments.mjs",
     "generate:showcase-landcover": "node scripts/generate-showcase-landcover.mjs",
     "audit:intersections": "node scripts/audit-intersection-environments.mjs --output=reports/intersection-environment-audit.json",
+    "audit:road-continuity": "node scripts/audit-road-continuity.mjs --output=reports/road-continuity-audit.json",
     "test:roadside-facilities": "node --test scripts/roadside-facilities.test.mjs",
     "test:showcase-layers": "node --test scripts/showcase-layers.test.mjs",
     "test:vegetation": "node --test scripts/vegetation.test.mjs",

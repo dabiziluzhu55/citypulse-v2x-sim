@@ -244,6 +244,25 @@ function polygonMesh(points: Point2[], material: THREE.Material, z: number, rend
   return mesh
 }
 
+function addRoadJointMeshes(
+  group: THREE.Group,
+  manifest: RealisticIntersectionManifest,
+  materials: { sidewalk?: THREE.Material; curb?: THREE.Material; asphalt: THREE.Material },
+): boolean {
+  const joints = manifest.roadJoints ?? []
+  if (joints.length === 0) return false
+  for (const joint of joints) {
+    if (materials.sidewalk) {
+      group.add(polygonMesh(joint.polygons.sidewalk, materials.sidewalk, -0.072, 26))
+    }
+    if (materials.curb) {
+      group.add(polygonMesh(joint.polygons.curb, materials.curb, -0.032, 27))
+    }
+    group.add(polygonMesh(joint.polygons.asphalt, materials.asphalt, 0.014, 29))
+  }
+  return true
+}
+
 function verticalCylinder(radius: number, height: number, material: THREE.Material) {
   const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 1.04, height, 16), material)
   mesh.rotation.x = Math.PI / 2
@@ -416,12 +435,14 @@ class RealisticIntersectionObject {
       addPolylineSegments(this.group, offsetPolyline(centerline, -roadWidth / 2), 0.12 * scale, white, false)
     }
 
-    const apronPoints = junctionApronPoints(this.manifest.junctionShape, this.manifest.edges)
-    const junctionMaterial = asphalt.clone()
-    junctionMaterial.color.setHex(COLORS.junction)
-    this.group.add(polygonMesh(expandPolygon(apronPoints, 3.18 * scale), sidewalk, -0.072, 26))
-    this.group.add(polygonMesh(expandPolygon(apronPoints, 0.18 * scale), curb, -0.032, 27))
-    this.group.add(polygonMesh(apronPoints, junctionMaterial, 0.012, 29))
+    if (!addRoadJointMeshes(this.group, this.manifest, { sidewalk, curb, asphalt })) {
+      const apronPoints = junctionApronPoints(this.manifest.junctionShape, this.manifest.edges)
+      const junctionMaterial = asphalt.clone()
+      junctionMaterial.color.setHex(COLORS.junction)
+      this.group.add(polygonMesh(expandPolygon(apronPoints, 3.18 * scale), sidewalk, -0.072, 26))
+      this.group.add(polygonMesh(expandPolygon(apronPoints, 0.18 * scale), curb, -0.032, 27))
+      this.group.add(polygonMesh(apronPoints, junctionMaterial, 0.012, 29))
+    }
 
     for (const { edge, geometry: approach } of this.approaches) {
       const { tangent, normal, stopLineCenter, halfWidth } = approach
@@ -568,8 +589,6 @@ class RealisticIntersectionOverviewObject {
       manifest.intersectionId.split('').reduce((sum, value) => sum + value.charCodeAt(0), 1),
       COLORS.asphalt,
     )
-    const junction = asphalt.clone()
-    junction.color.setHex(COLORS.junction)
     this.group.name = `realistic-intersection-overview:${manifest.intersectionId}`
     this.group.renderOrder = 24
     for (const edge of manifest.edges) {
@@ -585,13 +604,16 @@ class RealisticIntersectionOverviewObject {
         24,
       )
     }
-    const apron = polygonMesh(
-      junctionApronPoints(manifest.junctionShape, manifest.edges),
-      junction,
-      0.012,
-      25,
-    )
-    this.group.add(apron)
+    if (!addRoadJointMeshes(this.group, manifest, { asphalt })) {
+      const junction = asphalt.clone()
+      junction.color.setHex(COLORS.junction)
+      this.group.add(polygonMesh(
+        junctionApronPoints(manifest.junctionShape, manifest.edges),
+        junction,
+        0.012,
+        25,
+      ))
+    }
   }
 
   dispose(): void {
@@ -614,6 +636,7 @@ export class MapvRealisticIntersectionLayer {
   private readonly manifests = new Map<string, RealisticIntersectionManifest>()
   private readonly manifestRequests = new Map<string, Promise<RealisticIntersectionManifest>>()
   private readonly detailRequests = new Map<string, Promise<RealisticIntersectionManifest>>()
+  private readonly pendingActivations = new Set<string>()
   private readonly lodById = new Map<string, IntersectionRoadLod>()
   private lastViewport: IntersectionViewport | null = null
   private activeId: string | null = null
@@ -758,8 +781,14 @@ export class MapvRealisticIntersectionLayer {
   }
 
   async switchTo(intersectionId: string): Promise<RealisticIntersectionManifest> {
-    await this.prepare(intersectionId)
-    return this.activate(intersectionId)
+    this.pendingActivations.add(intersectionId)
+    try {
+      await this.prepare(intersectionId)
+      return this.activate(intersectionId)
+    } finally {
+      this.pendingActivations.delete(intersectionId)
+      this.trimCache()
+    }
   }
 
   updateSignals(intersections: RealisticSignalRuntimeState[] | null): void {
@@ -789,6 +818,7 @@ export class MapvRealisticIntersectionLayer {
     this.manifests.clear()
     this.manifestRequests.clear()
     this.detailRequests.clear()
+    this.pendingActivations.clear()
     this.lodById.clear()
     this.lastViewport = null
     this.activeId = null
@@ -832,7 +862,12 @@ export class MapvRealisticIntersectionLayer {
 
   private trimCache(): void {
     const candidates = [...this.cache.entries()]
-      .filter(([id]) => id !== this.activeId && this.lodById.get(id) !== 'full')
+      .filter(([id]) => (
+        id !== this.activeId
+        && !this.pendingActivations.has(id)
+        && !this.detailRequests.has(id)
+        && this.lodById.get(id) !== 'full'
+      ))
       .sort((left, right) => left[1].usedAt - right[1].usedAt)
     while (this.cache.size > this.cacheLimit && candidates.length > 0) {
       const [id, cached] = candidates.shift()!

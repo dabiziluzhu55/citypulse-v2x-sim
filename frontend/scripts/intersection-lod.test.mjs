@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 import {
@@ -56,4 +57,15 @@ test('uses fifteen percent hysteresis around road detail boundaries', () => {
     active: false,
     previous: 'medium',
   }), 'overview')
+})
+
+test('protects a road detail object until its intersection activation finishes', async () => {
+  const source = await readFile(
+    new URL('../src/mapv/realistic/MapvRealisticIntersectionLayer.ts', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /private readonly pendingActivations = new Set<string>\(\)/)
+  assert.match(source, /this\.pendingActivations\.add\(intersectionId\)/)
+  assert.match(source, /!this\.pendingActivations\.has\(id\)/)
+  assert.match(source, /!this\.detailRequests\.has\(id\)/)
 })

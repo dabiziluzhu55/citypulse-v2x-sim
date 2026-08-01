@@ -2,6 +2,7 @@ export interface IntersectionTopologyNode {
   intersectionId: string
   longitude: number
   latitude: number
+  radiusMeters: number
 }
 
 export interface IntersectionTopologyLink {
@@ -17,6 +18,7 @@ interface IntersectionCatalogPayload {
     intersectionId: string
     longitude: number
     latitude: number
+    radiusMeters?: number
   }>
 }
 
@@ -49,6 +51,9 @@ export function parseIntersectionTopologyCatalog(value: unknown): IntersectionTo
       intersectionId: entry.intersectionId,
       longitude: entry.longitude,
       latitude: entry.latitude,
+      radiusMeters: isFiniteCoordinate(entry.radiusMeters) && entry.radiusMeters > 0
+        ? entry.radiusMeters
+        : 520,
     }
   })
   if (new Set(nodes.map((node) => node.intersectionId)).size !== nodes.length) {

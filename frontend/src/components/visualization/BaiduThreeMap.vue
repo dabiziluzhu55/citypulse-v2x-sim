@@ -55,6 +55,11 @@ import {
 } from '../../mapv/staticRoadTileset'
 import type { MapGeoJsonResponse } from '../../types/map'
 import { detectMap3dCapability } from '../../mapv/map3dCapabilities'
+import {
+  cameraFlightWatchdogDelay,
+  createCameraFlightGuard,
+  type CameraFlightGuard,
+} from '../../utils/cameraFlightGuard'
 
 const emit = defineEmits<{
   fatal: [cause: unknown]
@@ -110,6 +115,7 @@ let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
 let cameraFlightRevision = 0
 let cameraFlightActive = false
+let cameraFlightGuard: CameraFlightGuard | null = null
 let lastRoadLodRefreshAt = 0
 let lastEmptyVehicleWarningSequence = -25
 let sceneSwitchRevision = 0
@@ -358,8 +364,6 @@ async function switchRealisticIntersection(intersectionId: string): Promise<void
         },
       },
     )
-    await switchIntersectionEnvironment(intersectionId, revision)
-    if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return
     realisticIntersectionLayer.activate(intersectionId)
     refreshIntersectionRoadLod(true)
     realisticDetailReady = true
@@ -370,6 +374,10 @@ async function switchRealisticIntersection(intersectionId: string): Promise<void
     realisticIntersectionLayer.updateSignals(trafficView.value?.intersections ?? null)
     resourcesReady = true
     completeSwitch()
+    void switchIntersectionEnvironment(intersectionId, revision).catch((cause: unknown) => {
+      if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return
+      console.warn(`[intersection-environment] ${intersectionId} optional resources failed`, cause)
+    })
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') return
     realisticDetailReady = realisticIntersectionLayer.activeIntersectionId !== null
@@ -726,17 +734,33 @@ async function initMap(): Promise<void> {
     flyTo: (target, options) => {
       if (options.force || !interacting.value) {
         const revision = ++cameraFlightRevision
+        cameraFlightGuard?.cancel()
         cameraFlightActive = options.duration > 0
         if (cameraFlightActive && engine) engine.controller.enabled = false
-        engine?.map.flyTo(placeBaiduCameraTarget(target, scenePlacement), {
-          ...options,
-          complete: () => {
-            if (revision !== cameraFlightRevision) return
-            cameraFlightActive = false
-            enableCameraInteraction()
-            refreshIntersectionRoadLod(true)
-            options.complete()
+        const placedTarget = placeBaiduCameraTarget(target, scenePlacement)
+        const finishFlight = () => {
+          if (revision !== cameraFlightRevision) return
+          cameraFlightGuard = null
+          cameraFlightActive = false
+          enableCameraInteraction()
+          refreshIntersectionRoadLod(true)
+          options.complete()
+        }
+        cameraFlightGuard = createCameraFlightGuard({
+          timeoutMs: cameraFlightWatchdogDelay(options.duration),
+          onTimeout: () => {
+            if (revision !== cameraFlightRevision || !engine) return
+            engine.map.flyTo(placedTarget, {
+              ...options,
+              duration: 0,
+              complete: () => undefined,
+            })
           },
+          onComplete: finishFlight,
+        })
+        engine?.map.flyTo(placedTarget, {
+          ...options,
+          complete: cameraFlightGuard.complete,
         })
       }
     },
@@ -772,6 +796,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleDocumentVisibility)
+  cameraFlightGuard?.cancel()
+  cameraFlightGuard = null
+  cameraFlightRevision += 1
+  cameraFlightActive = false
   mapView.unregisterThreeMap()
   unbindContainerInteraction(containerRef.value)
   containerRef.value?.removeEventListener('webglcontextlost', handleWebglContextLost, true)

@@ -3,9 +3,11 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { setTimeout as delay } from 'node:timers/promises'
 import { XMLParser } from 'fast-xml-parser'
 import { projectBd09ToWebMercator, wgs84ToBd09 } from '../src/mapv/sceneCoordinates.ts'
 import { rebuildRoadEdgeGeometry } from '../src/mapv/realistic/intersectionRoadGeometry.ts'
+import { buildRoadJoints } from '../src/mapv/realistic/intersectionRoadJoints.ts'
 import {
   REBUILD_RADIUS_METERS,
   cropPolylineToRadius,
@@ -36,6 +38,19 @@ function asArray(value) {
 
 function roundShape(shape) {
   return shape.map(([x, y]) => [Number(x.toFixed(3)), Number(y.toFixed(3))])
+}
+
+async function writeFileWithRetry(target, content, attempts = 5) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await writeFile(target, content, 'utf8')
+      return
+    } catch (cause) {
+      const code = cause instanceof Error && 'code' in cause ? cause.code : ''
+      if (!['UNKNOWN', 'EBUSY', 'EPERM'].includes(String(code)) || attempt === attempts) throw cause
+      await delay(80 * attempt)
+    }
+  }
 }
 
 function polylineLength(points) {
@@ -265,6 +280,8 @@ for (const intersectionId of availableIntersectionIds) {
   const sumoOrigin = [Number(junction.x), Number(junction.y)]
   const renderedEdges = edges.map((edge) => ({
     id: String(edge.id),
+    fromJunction: String(edge.from),
+    toJunction: String(edge.to),
     incoming: String(edge.to) === junctionId,
     incident: String(edge.from) === junctionId || String(edge.to) === junctionId,
     lanes: asArray(edge.lane).map((lane) => ({
@@ -503,16 +520,62 @@ for (const item of pending) {
     connection.renderPoints = roundShape(joinPolylines(renderSegments))
   }
 
+  const renderedEdgeMap = new Map(manifest.edges.map((edge) => [edge.id, edge]))
+  const endpoints = manifest.edges.flatMap((edge) => {
+    const centerline = edge.centerline ?? []
+    if (centerline.length < 2) return []
+    const candidates = [
+      { edgeId: edge.id, junctionId: edge.fromJunction, endpoint: 'start', point: centerline[0] },
+      { edgeId: edge.id, junctionId: edge.toJunction, endpoint: 'end', point: centerline.at(-1) },
+    ]
+    return candidates
+      .filter((candidate) => (
+        candidate.junctionId
+        && Math.hypot(candidate.point[0], candidate.point[1]) < manifest.radiusSceneUnits * 0.995
+      ))
+      .map(({ point: _point, ...candidate }) => candidate)
+  })
+  const jointConnections = networkConnections.flatMap((connection) => {
+    const fromEdge = renderedEdgeMap.get(String(connection.from))
+    const toEdge = renderedEdgeMap.get(String(connection.to))
+    if (!fromEdge || !toEdge || fromEdge.toJunction !== toEdge.fromJunction) return []
+    return [{
+      junctionId: fromEdge.toJunction,
+      fromEdge: fromEdge.id,
+      toEdge: toEdge.id,
+    }]
+  })
+  manifest.roadJoints = buildRoadJoints({
+    edges: manifest.edges,
+    endpoints,
+    connections: jointConnections,
+    primaryJunctionId: manifest.junctionId,
+    primaryJunctionShape: manifest.junctionShape,
+    horizontalScale: manifest.horizontalScale,
+    maximumSecondaryGapMeters: 20,
+    overlapMeters: 0.5,
+  }).map((joint) => ({
+    ...joint,
+    polygons: {
+      sidewalk: roundShape(joint.polygons.sidewalk),
+      curb: roundShape(joint.polygons.curb),
+      asphalt: roundShape(joint.polygons.asphalt),
+    },
+  }))
+  manifest.edges.forEach((edge) => {
+    delete edge.fromJunction
+    delete edge.toJunction
+  })
+
   const errors = validateIntersectionManifest(manifest)
   if (errors.length > 0) {
     throw new Error(`${manifest.intersectionId} manifest is invalid:\n- ${errors.join('\n- ')}`)
   }
   const intersectionDirectory = path.resolve(outputDirectory, manifest.intersectionId)
   await mkdir(intersectionDirectory, { recursive: true })
-  await writeFile(
+  await writeFileWithRetry(
     path.resolve(intersectionDirectory, 'manifest.json'),
     `${JSON.stringify(manifest, null, 2)}\n`,
-    'utf8',
   )
   catalog.intersections.push({
     intersectionId: manifest.intersectionId,
@@ -528,9 +591,8 @@ for (const item of pending) {
 
 catalog.intersections.sort((left, right) => numericDemoOrder(left.intersectionId, right.intersectionId))
 
-await writeFile(
+await writeFileWithRetry(
   path.resolve(outputDirectory, 'catalog.json'),
   `${JSON.stringify(catalog, null, 2)}\n`,
-  'utf8',
 )
 console.log(`Updated ${pending.length} projection-correct intersections; catalog contains ${catalog.intersections.length}`)
