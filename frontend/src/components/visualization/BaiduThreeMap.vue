@@ -110,6 +110,7 @@ let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
 let cameraFlightRevision = 0
 let cameraFlightActive = false
+let lastRoadLodRefreshAt = 0
 let lastEmptyVehicleWarningSequence = -25
 let sceneSwitchRevision = 0
 let documentVisible = typeof document === 'undefined' || !document.hidden
@@ -165,6 +166,16 @@ function enableCameraInteraction(): void {
   roadTileset?.releaseCameraViewport()
 }
 
+function refreshIntersectionRoadLod(force = false): void {
+  if (!realisticIntersectionLayer) return
+  const now = performance.now()
+  if (!force && now - lastRoadLodRefreshAt < 100) return
+  lastRoadLodRefreshAt = now
+  realisticIntersectionLayer.refreshViewport()
+  intersectionTopologyLayer?.refreshViewport()
+  syncAnimationLoop()
+}
+
 function markInteracting(): void {
   if (cameraFlightActive) return
   if (!interacting.value) {
@@ -174,12 +185,14 @@ function markInteracting(): void {
   }
   interacting.value = true
   enableCameraInteraction()
+  refreshIntersectionRoadLod()
   if (interactionEndTimer) clearTimeout(interactionEndTimer)
   interactionEndTimer = setTimeout(() => {
     interacting.value = false
     if (buildingTileset) buildingTileset.errorTarget = BUILDING_IDLE_ERROR_TARGET
     vegetationRenderer?.setInteractionActive(false)
     roadsideFacilityRenderer?.refreshViewport()
+    refreshIntersectionRoadLod(true)
     const stats = vehicleRenderer?.refreshViewport()
     if (stats) updateVehicleRenderStats(stats)
     engine?.requestRender()
@@ -348,6 +361,7 @@ async function switchRealisticIntersection(intersectionId: string): Promise<void
     await switchIntersectionEnvironment(intersectionId, revision)
     if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return
     realisticIntersectionLayer.activate(intersectionId)
+    refreshIntersectionRoadLod(true)
     realisticDetailReady = true
     vehicleRenderer?.setLaneHeadingResolver(createIntersectionLaneHeadingResolver(manifest))
     vehicleRenderer?.setLanePoseResolver(createIntersectionLanePoseResolver(manifest, coordinateProjector))
@@ -655,6 +669,7 @@ async function initMap(): Promise<void> {
       applyGlobalNavigationBounds(nodes)
       void prepareAllIntersectionLandcover(nodes.map((node) => node.intersectionId))
       void realisticIntersectionLayer?.prepareOverview(nodes.map((node) => node.intersectionId))
+        .then(() => refreshIntersectionRoadLod(true))
         .catch((cause: unknown) => console.warn('[intersection-overview] failed to load', cause))
       intersectionTopologyLayer?.setActiveIntersection(activeIntersectionId.value)
       syncAnimationLoop()
@@ -719,6 +734,7 @@ async function initMap(): Promise<void> {
             if (revision !== cameraFlightRevision) return
             cameraFlightActive = false
             enableCameraInteraction()
+            refreshIntersectionRoadLod(true)
             options.complete()
           },
         })
@@ -730,6 +746,7 @@ async function initMap(): Promise<void> {
           points.map((point) => placeBaiduCameraTarget(point, scenePlacement)),
           options,
         )
+        refreshIntersectionRoadLod(true)
       }
     },
     setRangeLimits: (minimum, maximum) => {

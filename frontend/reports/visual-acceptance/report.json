@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-01T13:25:00.000Z",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "acceptancePolicy": {
+    "nearView": "approximately 900 meter oblique intersection view",
+    "topView": "elevated approach and Baidu base-road transition view",
+    "maximumVisibleRoadBreakPixels": 3,
+    "buildingPolicy": "local 3D Tiles only; sparse source coverage is reported and never fabricated",
+    "roadPolicy": "local road patches remain visible; Baidu base roads bridge long-distance and short-source transitions"
+  },
+  "uiContract": {
+    "disturbanceTypes": [
+      "construction_lane_occupation",
+      "road_speed_limit",
+      "large_event_departure",
+      "large_event_arrival",
+      "traffic_accident"
+    ],
+    "playbackRates": [1, 1.25, 1.5, 2, 3, 5],
+    "algorithms": ["fixed", "max_pressure", "sotl"],
+    "disturbanceScreenshot": "ui-disturbance-five-types.jpg",
+    "rateAndAlgorithmsScreenshot": "ui-rate-algorithms.jpg",
+    "status": "pass"
+  },
+  "topologyRoutes": {
+    "asset": "../../public/intersections/v3/topology-routes.json",
+    "schemaVersion": 1,
+    "sourceSha256": "493108a5f29a64b1bff31f57ae415e7c87e817878d92bd88c7ad482d45079de8",
+    "routeCount": 26,
+    "coordinateCount": 7200,
+    "heightAboveRoadMeters": 0.32,
+    "depthTest": true,
+    "straightLineFallback": false,
+    "liveCapture": {
+      "status": "blocked",
+      "reason": "The backend is offline and the schema_version 3 traffic artifact is unavailable; no fake simulation state was used."
+    }
+  },
+  "intersections": [
+    {"id":"demo_1","near":"near/demo_1.jpg","top":"top/demo_1.jpg","buildingCoverage":"dense","roadTransition":"local-overlap","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_2","near":"near/demo_2.jpg","top":"top/demo_2.jpg","buildingCoverage":"sparse-source","roadTransition":"local-overlap","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_3","near":"near/demo_3.jpg","top":"top/demo_3.jpg","buildingCoverage":"moderate","roadTransition":"local-overlap","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_4","near":"near/demo_4.jpg","top":"top/demo_4.jpg","buildingCoverage":"moderate","roadTransition":"local-overlap","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_5","near":"near/demo_5.jpg","top":"top/demo_5.jpg","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_6","near":"near/demo_6.jpg","top":"top/demo_6.jpg","buildingCoverage":"dense","roadTransition":"local-overlap","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_7","near":"near/demo_7.jpg","top":"top/demo_7.jpg","buildingCoverage":"sparse-source","roadTransition":"local-overlap","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_8","near":"near/demo_8.jpg","top":"top/demo_8.jpg","buildingCoverage":"sparse-source","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_9","near":"near/demo_9.jpg","top":"top/demo_9.jpg","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_10","near":"near/demo_10.jpg","top":"top/demo_10.jpg","buildingCoverage":"moderate","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_11","near":"near/demo_11.jpg","top":"top/demo_11.jpg","buildingCoverage":"sparse-source","roadTransition":"local-overlap","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_12","near":"near/demo_12.jpg","top":"top/demo_12.jpg","buildingCoverage":"moderate","roadTransition":"local-overlap","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_13","near":"near/demo_13.jpg","top":"top/demo_13.jpg","buildingCoverage":"sparse-source","roadTransition":"local-overlap","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_14","near":"near/demo_14.jpg","top":"top/demo_14.jpg","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_15","near":"near/demo_15.jpg","top":"top/demo_15.jpg","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_16","near":"near/demo_16.jpg","top":"top/demo_16.jpg","buildingCoverage":"moderate","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_17","near":"near/demo_17.jpg","top":"top/demo_17.jpg","buildingCoverage":"moderate","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_18","near":"near/demo_18.jpg","top":"top/demo_18.jpg","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_19","near":"near/demo_19.jpg","top":"top/demo_19.jpg","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"},
+    {"id":"demo_20","near":"near/demo_20.jpg","top":"top/demo_20.jpg","buildingCoverage":"moderate","roadTransition":"baidu-base-dependent","roadPatch":"visible","visibleRoadBreak":"pass"}
+  ],
+  "summary": {
+    "checked": 20,
+    "passed": 20,
+    "failed": 0,
+    "sparseBuildingSources": ["demo_2", "demo_7", "demo_8", "demo_11", "demo_13"],
+    "baiduRoadDependent": ["demo_5", "demo_8", "demo_9", "demo_10", "demo_14", "demo_15", "demo_16", "demo_17", "demo_18", "demo_19", "demo_20"],
+    "nonBlockingObservations": [
+      "Dark distant land-cover bands remain visible in some elevated views, especially demo_17 and demo_19; local road geometry stays continuous across them.",
+      "Live flow-light imagery cannot be produced truthfully while the backend and schema_version 3 traffic artifact are unavailable."
+    ],
+    "nearContactSheet": "near-contact-sheet.jpg",
+    "topContactSheet": "top-contact-sheet.jpg",
+    "overview": "scene-overview.jpg",
+    "yizhuangComparison": "yizhuang-comparison.jpg"
+  }
+}

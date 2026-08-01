@@ -6,11 +6,22 @@ import {
   loadIntersectionTopologyCatalog,
   type IntersectionTopologyNode,
 } from './intersectionTopology'
+import {
+  loadIntersectionTopologyRoutes,
+  type IntersectionTopologyRoute,
+} from './intersectionTopologyRoutes'
 import { formatIntersectionLabel } from '../utils/intersectionLabels'
+import { distanceMeters as geographicDistanceMeters } from './vehicleVisibility'
 
 interface RenderMaterialOwner {
   material?: THREE.Material
   renderOrder?: number
+}
+
+interface TopologyRouteEntry {
+  id: string
+  feature: Record<string, unknown>
+  samples: Array<[number, number]>
 }
 
 function createMarkerModel(color: number, emissive: number): THREE.Group {
@@ -47,10 +58,13 @@ function configureOverlayMaterial(layer: unknown, opacity: number): void {
   if (!owner.material) return
   owner.material.transparent = true
   owner.material.opacity = opacity
-  owner.material.depthTest = false
+  owner.material.depthTest = true
   owner.material.depthWrite = false
   owner.material.blending = THREE.AdditiveBlending
   owner.material.side = THREE.DoubleSide
+  owner.material.polygonOffset = true
+  owner.material.polygonOffsetFactor = -2
+  owner.material.polygonOffsetUnits = -2
 }
 
 export class IntersectionTopologyLayer {
@@ -63,6 +77,9 @@ export class IntersectionTopologyLayer {
   private readonly markerModel = createMarkerModel(0x087ae8, 0x00aef0)
   private readonly activeMarkerModel = createMarkerModel(0x08a7f0, 0x00f5dc)
   private nodes: IntersectionTopologyNode[] = []
+  private routeEntries: TopologyRouteEntry[] = []
+  private visibleRouteKey = ''
+  private visibleRouteCount = 0
 
   constructor(
     private readonly engine: mapvthree.Engine,
@@ -70,33 +87,35 @@ export class IntersectionTopologyLayer {
   ) {
     this.baseLine = engine.add(new mapvthree.Polyline({
       flat: true,
-      isCurve: true,
-      color: new THREE.Color(0.02, 0.42, 1.8),
-      lineWidth: 2,
+      isCurve: false,
+      color: new THREE.Color('#087dff'),
+      lineWidth: 4,
       keepSize: true,
       transparent: true,
-      opacity: 0.28,
-      height: 5,
+      opacity: 0.24,
+      height: 0,
     }))
     this.flowLine = engine.add(new mapvthree.Polyline({
       flat: true,
-      isCurve: true,
-      color: new THREE.Color(0.08, 1.5, 4.8),
-      lineWidth: 3,
+      isCurve: false,
+      color: new THREE.Color('#00d9ff'),
+      lineWidth: 2,
       keepSize: true,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.9,
       enableAnimation: true,
-      enableAnimationChaos: true,
+      enableAnimationChaos: false,
       animationInterval: 2,
       animationTailType: 1,
       animationTailRatio: 0.16,
-      animationSpeed: 1,
+      animationSpeed: 0.85,
       animationIdle: 1_600,
-      height: 7,
+      height: 0,
     }))
-    configureOverlayMaterial(this.baseLine, 0.28)
-    configureOverlayMaterial(this.flowLine, 0.72)
+    configureOverlayMaterial(this.baseLine, 0.24)
+    configureOverlayMaterial(this.flowLine, 0.9)
+    this.baseLine.renderOrder = 18
+    this.flowLine.renderOrder = 19
 
     this.markers = engine.add(new mapvthree.EffectModelPoint({
       normalize: true,
@@ -146,12 +165,23 @@ export class IntersectionTopologyLayer {
   }
 
   get animationActive(): boolean {
-    return this.nodes.length > 0
+    return this.nodes.length > 0 && this.visibleRouteCount > 0
   }
 
-  async load(url = '/intersections/v3/catalog.json'): Promise<IntersectionTopologyNode[]> {
-    const nodes = await loadIntersectionTopologyCatalog(url)
+  async load(
+    url = '/intersections/v3/catalog.json',
+    routeUrl = '/intersections/v3/topology-routes.json',
+  ): Promise<IntersectionTopologyNode[]> {
+    const [nodes, routeManifest] = await Promise.all([
+      loadIntersectionTopologyCatalog(url),
+      loadIntersectionTopologyRoutes(routeUrl),
+    ])
     const links = buildIntersectionTopologyLinks(nodes)
+    const routesById = new Map(routeManifest.routes.map((route) => [route.routeId, route]))
+    const missingRoutes = links.filter((link) => !routesById.has(link.id))
+    if (missingRoutes.length > 0) {
+      throw new Error(`Intersection topology routes are missing: ${missingRoutes.map((link) => link.id).join(', ')}`)
+    }
     const pointFeatures = nodes.map((node) => ({
       type: 'Feature',
       geometry: {
@@ -160,20 +190,8 @@ export class IntersectionTopologyLayer {
       },
       properties: { intersection_id: node.intersectionId },
     }))
-    const lineFeatures = links.map((link) => ({
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: [
-          this.projector([link.from.longitude, link.from.latitude, 7]),
-          this.projector([link.to.longitude, link.to.latitude, 7]),
-        ],
-      },
-      properties: {
-        topology_id: link.id,
-        distance_m: Math.round(link.distanceMeters),
-      },
-    }))
+    this.routeEntries = links.map((link) => this.routeEntry(routesById.get(link.id)!, link.distanceMeters))
+    const lineFeatures = this.routeEntries.map((entry) => entry.feature)
     const points = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: pointFeatures })
     const lines = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: lineFeatures })
     this.markers.dataSource = points
@@ -181,8 +199,36 @@ export class IntersectionTopologyLayer {
     this.baseLine.dataSource = lines
     this.flowLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: lineFeatures })
     this.nodes = nodes
+    this.visibleRouteKey = this.routeEntries.map((entry) => entry.id).join('|')
+    this.visibleRouteCount = this.routeEntries.length
+    this.refreshViewport()
     this.engine.requestRender()
     return nodes
+  }
+
+  refreshViewport(
+    center: readonly number[] = this.engine.map.getCenter(),
+    rangeMeters = this.engine.map.getRange(),
+  ): void {
+    if (center.length < 2 || this.routeEntries.length === 0) return
+    const finiteRange = Number.isFinite(rangeMeters) ? Math.max(0, rangeMeters) : Number.POSITIVE_INFINITY
+    const visibleRadius = Math.max(4_500, finiteRange * 1.6)
+    const visible = finiteRange >= 12_000
+      ? this.routeEntries
+      : this.routeEntries.filter((entry) => entry.samples.some((sample) => (
+        geographicDistanceMeters(center, sample) <= visibleRadius
+      )))
+    const key = visible.map((entry) => entry.id).join('|')
+    if (key === this.visibleRouteKey) return
+    const collection = {
+      type: 'FeatureCollection',
+      features: visible.map((entry) => entry.feature),
+    }
+    this.baseLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON(collection)
+    this.flowLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON(collection)
+    this.visibleRouteKey = key
+    this.visibleRouteCount = visible.length
+    this.engine.requestRender()
   }
 
   setActiveIntersection(intersectionId: string): void {
@@ -236,5 +282,32 @@ export class IntersectionTopologyLayer {
     disposeMarkerModel(this.markerModel)
     disposeMarkerModel(this.activeMarkerModel)
     this.nodes = []
+    this.routeEntries = []
+    this.visibleRouteKey = ''
+    this.visibleRouteCount = 0
+  }
+
+  private routeEntry(route: IntersectionTopologyRoute, directDistanceMeters: number): TopologyRouteEntry {
+    const projected = route.coordinates.map(([longitude, latitude]) => (
+      this.projector([longitude, latitude, 0.32])
+    ))
+    return {
+      id: route.routeId,
+      feature: {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: projected,
+        },
+        properties: {
+          topology_id: route.routeId,
+          distance_m: Math.round(directDistanceMeters),
+          route_length_m: Math.round(route.lengthMeters),
+        },
+      },
+      samples: projected
+        .filter((_, index) => index % 8 === 0 || index === projected.length - 1)
+        .map((coordinate) => [coordinate[0], coordinate[1]]),
+    }
   }
 }

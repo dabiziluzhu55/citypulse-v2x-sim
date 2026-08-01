@@ -14,6 +14,7 @@
     "generate:scene-facilities": "node scripts/generate-scene-facilities.mjs",
     "generate:scene-vegetation": "node scripts/generate-scene-vegetation.mjs",
     "generate:intersection-demo": "node scripts/generate-realistic-intersection.mjs",
+    "generate:topology-routes": "node scripts/generate-topology-routes.mjs",
     "generate:intersection-environments": "node scripts/generate-intersection-environments.mjs",
     "generate:showcase-landcover": "node scripts/generate-showcase-landcover.mjs",
     "audit:intersections": "node scripts/audit-intersection-environments.mjs --output=reports/intersection-environment-audit.json",

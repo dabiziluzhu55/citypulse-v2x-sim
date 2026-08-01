@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  DEFAULT_PLAYBACK_SPEED_OPTIONS,
   DISTURBANCE_EVENT_OPTIONS,
+  resolveCatalogEventTypes,
+  resolveCatalogPlaybackSpeeds,
   SIMULATION_TIME_OPTIONS,
   simulationTimeWindow,
 } from '../src/constants/scenarioOptions.ts'
@@ -19,6 +22,10 @@ import {
   findRunnableScenarioPreset,
   missingPresetIntersectionIds,
 } from '../src/composables/catalogCapabilities.ts'
+import {
+  SUPPORTED_BACKEND_CONTROL_MODES,
+  resolveCatalogControlModes,
+} from '../src/constants/simulationOptions.ts'
 
 const EXPECTED_LABELS = {
   morning_peak: [
@@ -75,11 +82,19 @@ test('formats demo labels without changing backend ids', () => {
 test('exposes exactly five disturbance presets backed by supported event types', () => {
   assert.deepEqual(
     DISTURBANCE_EVENT_OPTIONS.map((item) => item.label),
-    ['施工占道', '大型活动散场', '大型活动开场', '交通事故', '道路限速'],
+    ['施工占道', '道路限速', '大型活动散场', '大型活动开场', '交通事故'],
   )
   assert.ok(DISTURBANCE_EVENT_OPTIONS.every((item) => (
     ['lane_closure', 'speed_limit', 'accident'].includes(item.eventType)
   )))
+})
+
+test('uses the main backend catalog contract while the catalog is offline', () => {
+  assert.deepEqual(resolveCatalogControlModes(null), [...SUPPORTED_BACKEND_CONTROL_MODES])
+  assert.deepEqual(resolveCatalogPlaybackSpeeds(undefined), [...DEFAULT_PLAYBACK_SPEED_OPTIONS])
+  assert.deepEqual(resolveCatalogEventTypes(null), ['lane_closure', 'speed_limit', 'accident'])
+  assert.deepEqual(resolveCatalogControlModes(['fixed']), ['fixed'])
+  assert.deepEqual(resolveCatalogPlaybackSpeeds([1, 2]), [1, 2])
 })
 
 test('builds the backend v2 preset request without removed legacy fields', () => {

@@ -1,6 +1,13 @@
 import { computed, onMounted, ref, type Ref } from 'vue'
 import { fetchCatalog } from '../api/catalog'
-import { DEFAULT_INTERSECTION_ID } from '../constants/simulationOptions'
+import {
+  resolveCatalogEventTypes,
+  resolveCatalogPlaybackSpeeds,
+} from '../constants/scenarioOptions'
+import {
+  DEFAULT_INTERSECTION_ID,
+  resolveCatalogControlModes,
+} from '../constants/simulationOptions'
 import type { CatalogIntersection, CatalogResponse } from '../types/catalog'
 import { catalogSupportsIntersection, findCatalogIntersection } from './catalogCapabilities'
 
@@ -29,10 +36,11 @@ export function useCatalog(intersectionId: Ref<string> | string = DEFAULT_INTERS
   ))
 
   const periods = computed<string[]>(() => intersection.value?.periods ?? [])
-  const controlModes = computed<string[]>(() => catalog.value?.control_modes ?? ['fixed'])
+  const controlModes = computed<string[]>(() => resolveCatalogControlModes(catalog.value?.control_modes))
   const origins = computed(() => intersection.value?.origins ?? [])
   const scenarioPresets = computed(() => catalog.value?.scenario_presets ?? [])
-  const playbackSpeeds = computed(() => catalog.value?.playback_speeds ?? [1])
+  const playbackSpeeds = computed(() => resolveCatalogPlaybackSpeeds(catalog.value?.playback_speeds))
+  const eventTypes = computed(() => resolveCatalogEventTypes(catalog.value?.event_types))
 
   async function load() {
     loading.value = true
@@ -56,6 +64,7 @@ export function useCatalog(intersectionId: Ref<string> | string = DEFAULT_INTERS
     origins,
     scenarioPresets,
     playbackSpeeds,
+    eventTypes,
     supportedIntersectionIds,
     isIntersectionSupported,
     loading,

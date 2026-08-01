@@ -26,6 +26,10 @@ export const DASHBOARD_CONTROL_MODES = [
   { value: 'sotl', label: CONTROL_MODE_LABELS.sotl, backendSupported: true },
 ] as const
 
+export function resolveCatalogControlModes(controlModes: string[] | null | undefined): string[] {
+  return controlModes == null ? [...SUPPORTED_BACKEND_CONTROL_MODES] : [...controlModes]
+}
+
 export function resolveDashboardControlModes(controlModes: string[]) {
   const catalogModes = new Set(controlModes)
   return DASHBOARD_CONTROL_MODES.filter((item) => catalogModes.has(item.value))

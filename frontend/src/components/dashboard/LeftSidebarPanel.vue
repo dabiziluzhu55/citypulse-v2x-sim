@@ -73,6 +73,7 @@ const {
   controlModes,
   scenarioPresets,
   playbackSpeeds,
+  eventTypes,
   supportedIntersectionIds,
   loading: catalogLoading,
   error: catalogError,
@@ -130,6 +131,10 @@ const disturbanceIntersectionOptions = computed(() => {
     .map((id) => ({ label: formatIntersectionLabel(id), value: id }))
 })
 const selectedDisturbanceIntersectionCount = computed(() => disturbanceDraft.value.intersectionIds.length)
+const availableDisturbanceEventOptions = computed(() => DISTURBANCE_EVENT_OPTIONS.map((option) => ({
+  ...option,
+  disabled: !eventTypes.value.includes(option.eventType),
+})))
 const controlModeOptions = computed(() => resolveDashboardControlModes(controlModes.value))
 const controlModeUnavailableMessage = computed(() => {
   if (catalogLoading.value) return ''
@@ -198,13 +203,7 @@ const activeVehicleLabel = computed(() => props.snapshot?.metrics.active_vehicle
 const algorithmLabel = computed(() => resolveControlModeLabel(
   props.activeControlMode || config.value.control_mode,
 ))
-const achievedPlaybackLabel = computed(() => {
-  if (!isSessionActive.value || props.achievedPlaybackSpeed == null) return ''
-  return `实${props.achievedPlaybackSpeed.toFixed(1)}×`
-})
-const playbackSpeedTitle = computed(() => achievedPlaybackLabel.value
-  ? `播放倍率：目标 ${config.value.playback_speed}×，实际 ${props.achievedPlaybackSpeed?.toFixed(2)}×`
-  : `播放倍率：目标 ${config.value.playback_speed}×`)
+const playbackSpeedTitle = computed(() => `播放倍率：${config.value.playback_speed}×`)
 const startTitle = computed(() => {
   if (catalogLoading.value) return '正在读取真实仿真路口目录'
   if (unsupportedMessage.value) return unsupportedMessage.value
@@ -353,10 +352,21 @@ function clearDisturbanceIntersections(): void {
   disturbanceDraft.value.intersectionIds = []
 }
 
+function selectDisturbanceType(presetId: DisturbancePresetId): void {
+  const option = availableDisturbanceEventOptions.value.find((item) => item.value === presetId)
+  if (!option || option.disabled) return
+  disturbanceDraft.value.presetId = presetId
+  disturbanceFormError.value = ''
+}
+
 function saveDisturbanceEvent(): void {
   const option = DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === disturbanceDraft.value.presetId)
   if (!option) {
     disturbanceFormError.value = '请选择扰动事件类型'
+    return
+  }
+  if (!eventTypes.value.includes(option.eventType)) {
+    disturbanceFormError.value = `后端未提供事件类型：${option.label}`
     return
   }
   if (disturbanceDraft.value.intersectionIds.length === 0) {
@@ -644,7 +654,6 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
             :aria-label="playbackSpeedTitle"
           >
             <span>×{{ config.playback_speed }}</span>
-            <small v-if="achievedPlaybackLabel">{{ achievedPlaybackLabel }}</small>
           </button>
           <template #dropdown>
             <el-dropdown-menu aria-label="仿真播放倍速">
@@ -720,19 +729,22 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
           </div>
 
           <div class="disturbance-modal__form">
-            <div class="disturbance-modal__event-settings">
-            <label>
+            <div class="disturbance-modal__event-type">
               <span>事件类型</span>
-              <el-select v-model="disturbanceDraft.presetId" popper-class="disturbance-modal-select-popper">
-                <el-option
-                  v-for="option in DISTURBANCE_EVENT_OPTIONS"
+              <div role="radiogroup" aria-label="扰动事件类型">
+                <button
+                  v-for="option in availableDisturbanceEventOptions"
                   :key="option.value"
-                  :label="option.label"
-                  :value="option.value"
-                />
-              </el-select>
-            </label>
-
+                  type="button"
+                  role="radio"
+                  :aria-checked="disturbanceDraft.presetId === option.value"
+                  :class="{ 'is-selected': disturbanceDraft.presetId === option.value }"
+                  :disabled="option.disabled"
+                  @click="selectDisturbanceType(option.value)"
+                >{{ option.label }}</button>
+              </div>
+            </div>
+            <div class="disturbance-modal__event-settings">
             <label>
               <span>开始时间</span>
               <el-time-select
@@ -1255,9 +1267,39 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .disturbance-modal__event-row button:last-child { color: #ff9eaa; font-size: 20px; }
 .disturbance-modal__form { display: grid; gap: 20px; padding: 20px 22px 10px; }
 .disturbance-modal__form label { display: block; }
+.disturbance-modal__event-type > span,
+.disturbance-modal__event-settings label > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #a8cfe4;
+  font-size: 12px;
+}
+.disturbance-modal__event-type > div {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+.disturbance-modal__event-type button {
+  min-width: 0;
+  height: 38px;
+  padding: 0 5px;
+  border: 1px solid rgba(82, 194, 250, .25);
+  border-radius: 4px;
+  background: #08223d;
+  color: #b9d9ea;
+  font: 600 12px/1.2 inherit;
+  cursor: pointer;
+}
+.disturbance-modal__event-type button.is-selected {
+  border-color: #52c2fa;
+  background: #17649a;
+  color: #fff;
+  box-shadow: inset 0 0 12px rgba(74, 210, 255, .16), 0 0 8px rgba(27, 126, 242, .2);
+}
+.disturbance-modal__event-type button:disabled { opacity: .38; cursor: not-allowed; }
 .disturbance-modal__event-settings {
   display: grid;
-  grid-template-columns: minmax(180px, 1.5fr) repeat(2, minmax(130px, 1fr));
+  grid-template-columns: repeat(2, minmax(130px, 1fr));
   gap: 12px;
 }
 .disturbance-modal__form :deep(.el-select),
@@ -1333,16 +1375,9 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   background: #2675c8;
   color: #fff;
 }
-:global(.disturbance-modal-select-popper.el-popper) {
-  border-color: rgba(82, 194, 250, .55) !important;
-  background: #071d34 !important;
-}
-:global(.disturbance-modal-select-popper .el-select-dropdown__item) { color: #bcdcec; }
-:global(.disturbance-modal-select-popper .el-select-dropdown__item.is-hovering) { background: #123b60; color: #fff; }
-
 @media (max-width: 560px) {
   .disturbance-modal__event-settings { grid-template-columns: 1fr 1fr; }
-  .disturbance-modal__event-settings label:first-child { grid-column: 1 / -1; }
+  .disturbance-modal__event-type > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .disturbance-modal__intersections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

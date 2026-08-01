@@ -24,7 +24,10 @@ function createCanvasTexture(
   draw(context)
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
-  texture.anisotropy = 8
+  texture.anisotropy = 16
+  texture.minFilter = THREE.LinearMipmapLinearFilter
+  texture.magFilter = THREE.LinearFilter
+  texture.generateMipmaps = true
   return texture
 }
 
@@ -59,5 +62,8 @@ export function createAsphaltMaterial(
     map: createAsphaltTexture(seedValue),
     roughness: ROAD_ASPHALT_ROUGHNESS,
     metalness: ROAD_ASPHALT_METALNESS,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   })
 }
