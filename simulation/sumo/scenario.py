@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
+from .events import DEFAULT_ACTIVITY_VEHICLE_TYPE_ID
 from .vehicle_profiles import VehicleProfile, VehicleProfileError, parse_vehicle_profiles
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -299,6 +300,21 @@ def compile_session_scenario(
             "color": "255,0,0",
             "length": "5",
             "maxSpeed": "1",
+        },
+    )
+    ET.SubElement(
+        route_root,
+        "vType",
+        {
+            "id": DEFAULT_ACTIVITY_VEHICLE_TYPE_ID,
+            "vClass": "passenger",
+            "color": "255,128,0",
+            "length": "5",
+            "maxSpeed": "13.9",
+            "accel": "2.6",
+            "decel": "4.5",
+            "sigma": "0.5",
+            "minGap": "2.5",
         },
     )
     for candidate in sorted(candidates, key=lambda item: (item.begin, item.flow_id)):

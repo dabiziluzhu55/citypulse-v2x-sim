@@ -164,6 +164,9 @@ class SessionScenarioTests(unittest.TestCase):
             )
             route_root = ET.parse(compiled.route_file).getroot()
             self.assertEqual([item.tag for item in route_root][:2], ["vType", "vType"])
+            activity_type = route_root.find("vType[@id='citypulse_event_passenger']")
+            self.assertIsNotNone(activity_type)
+            self.assertEqual(activity_type.get("color"), "255,128,0")
             flows = route_root.findall("flow")
             self.assertEqual(
                 [flow.get("id") for flow in flows],

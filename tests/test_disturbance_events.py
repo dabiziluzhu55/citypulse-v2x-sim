@@ -2,29 +2,43 @@ import unittest
 
 from simulation.sumo.events import (
     AccidentEvent,
-    CollisionBlockageEvent,
     DisturbanceScheduler,
     EventState,
     EventValidationError,
     LaneClosureEvent,
     LaneTarget,
-    QueueSpillbackEvent,
+    MajorEventClosingEvent,
+    MajorEventOpeningEvent,
     SpeedLimitEvent,
-    StoppedVehicleEvent,
 )
 
 
 class FakeLane:
     def __init__(self):
-        self.allowed = {"edge_0": [], "edge_1": []}
-        self.disallowed = {"edge_0": [], "edge_1": []}
-        self.speeds = {"edge_0": 13.9, "edge_1": 13.9}
+        lane_ids = (
+            "edge_0",
+            "edge_1",
+            "source_0",
+            "source_1",
+            "venue_0",
+            "dest_0",
+            "dest_1",
+        )
+        self.allowed = {lane_id: [] for lane_id in lane_ids}
+        self.disallowed = {lane_id: [] for lane_id in lane_ids}
+        self.speeds = {lane_id: 13.9 for lane_id in lane_ids}
         self.fail_disallowed = False
         self.fail_lane = None
 
     def getAllowed(self, lane): return self.allowed[lane]
     def getDisallowed(self, lane): return self.disallowed[lane]
     def getMaxSpeed(self, lane): return self.speeds[lane]
+    def getLength(self, lane):
+        return {
+            "far_source_0": 200.0,
+            "far_venue_0": 300.0,
+            "far_dest_0": 400.0,
+        }.get(lane, 100.0)
     def setAllowed(self, lane, values): self.allowed[lane] = list(values); self.disallowed[lane] = []
     def setDisallowed(self, lane, values):
         if self.fail_disallowed or lane == self.fail_lane: raise RuntimeError("permission failure")
@@ -38,25 +52,27 @@ class FakeRoute:
 
 
 class FakeVehicle:
-    def __init__(self):
-        self.vehicles = {}
-        self.stops = {}
-        self.lanes = {}
-        self.positions = {}
-        self.resumed = []
-        self.lane_changes = []
-        self.moves = []
-        self.speeds = []
-    def add(self, vehicle_id, route_id, **kwargs): self.vehicles[vehicle_id] = kwargs
+    def __init__(self): self.vehicles = {}; self.stops = {}
+    def add(self, vehicle_id, route_id, **kwargs): self.vehicles[vehicle_id] = {"route_id": route_id, **kwargs}
     def setStop(self, vehicle_id, edge_id, **kwargs): self.stops[vehicle_id] = (edge_id, kwargs)
-    def setSpeed(self, vehicle_id, speed): self.speeds.append((vehicle_id, speed))
-    def changeLane(self, vehicle_id, lane_index, duration): self.lane_changes.append((vehicle_id, lane_index, duration))
-    def moveTo(self, vehicle_id, lane_id, position): self.moves.append((vehicle_id, lane_id, position)); self.lanes[vehicle_id] = lane_id
     def getIDList(self): return list(self.vehicles)
-    def getLaneID(self, vehicle_id): return self.lanes.get(vehicle_id, "")
-    def getLanePosition(self, vehicle_id): return self.positions[vehicle_id]
     def remove(self, vehicle_id): self.vehicles.pop(vehicle_id, None)
-    def resume(self, vehicle_id): self.resumed.append(vehicle_id)
+
+
+class FakeRouteResult:
+    def __init__(self, edges): self.edges = edges
+
+
+class FakeSimulation:
+    def __init__(self): self.unreachable = set()
+    def findRoute(self, source_edge, destination_edge, **kwargs):
+        if (source_edge, destination_edge) in self.unreachable:
+            return FakeRouteResult(())
+        return FakeRouteResult((source_edge, destination_edge))
+
+
+class FakeEdge:
+    def getLaneNumber(self, edge_id): return 1
 
 
 class FakeTraci:
@@ -64,6 +80,8 @@ class FakeTraci:
         self.lane = FakeLane()
         self.route = FakeRoute()
         self.vehicle = FakeVehicle()
+        self.simulation = FakeSimulation()
+        self.edge = FakeEdge()
 
 
 class DisturbanceEventTests(unittest.TestCase):
@@ -74,6 +92,11 @@ class DisturbanceEventTests(unittest.TestCase):
             {
                 "edge_0": LaneTarget("edge_0", "edge", 0, 100.0),
                 "edge_1": LaneTarget("edge_1", "edge", 1, 100.0),
+                "source_0": LaneTarget("source_0", "source_edge_0", 0, 100.0, "incoming"),
+                "source_1": LaneTarget("source_1", "source_edge_1", 0, 100.0, "incoming"),
+                "venue_0": LaneTarget("venue_0", "venue_edge", 0, 100.0, "outgoing"),
+                "dest_0": LaneTarget("dest_0", "dest_edge_0", 0, 100.0, "outgoing"),
+                "dest_1": LaneTarget("dest_1", "dest_edge_1", 0, 100.0, "outgoing"),
             },
             100.0,
         )
@@ -103,124 +126,15 @@ class DisturbanceEventTests(unittest.TestCase):
         scheduler.tick(8)
         self.assertNotIn("passenger", traci.lane.disallowed["edge_0"])
 
-    def test_accident_freezes_existing_vehicle_and_restores_it(self):
+    def test_accident_vehicle_is_visible_and_removed(self):
         traci, scheduler = self.make_scheduler()
-        traci.vehicle.vehicles["live_vehicle"] = {}
-        traci.vehicle.lanes["live_vehicle"] = "edge_0"
-        traci.vehicle.positions["live_vehicle"] = 10.0
         scheduler.schedule(AccidentEvent("crash", 1, 5, "edge_0", 0.5))
         scheduler.tick(1)
+        self.assertIn("event_vehicle_crash", traci.vehicle.vehicles)
+        self.assertAlmostEqual(traci.vehicle.stops["event_vehicle_crash"][1]["pos"], 50.0)
+        scheduler.tick(5)
         self.assertNotIn("event_vehicle_crash", traci.vehicle.vehicles)
-        self.assertIn(("live_vehicle", 0.0), traci.vehicle.speeds)
-        scheduler.tick(5)
-        self.assertIn(("live_vehicle", -1), traci.vehicle.speeds)
         self.assertEqual(scheduler.snapshots()[0].state, EventState.COMPLETED.value)
-
-    def test_accident_waits_for_a_later_existing_vehicle(self):
-        traci, scheduler = self.make_scheduler()
-        scheduler.schedule(AccidentEvent("crash", 1, 5, "edge_0", 0.5))
-        scheduler.tick(1)
-
-        self.assertEqual(scheduler.snapshots()[0].state, EventState.ACTIVE.value)
-        self.assertIsNone(scheduler.snapshots()[0].error)
-        traci.vehicle.vehicles["later_vehicle"] = {}
-        traci.vehicle.lanes["later_vehicle"] = "edge_0"
-        traci.vehicle.positions["later_vehicle"] = 10.0
-        scheduler.tick(2)
-
-        self.assertIn(("later_vehicle", 0.0), traci.vehicle.speeds)
-
-
-    def test_accident_can_reduce_lane_capacity_when_configured(self):
-        traci, scheduler = self.make_scheduler()
-        scheduler.schedule(AccidentEvent("crash", 1, 5, "edge_0", 0.5, max_speed=0.1))
-        scheduler.tick(1)
-        self.assertEqual(traci.lane.speeds["edge_0"], 0.1)
-        scheduler.tick(5)
-        self.assertEqual(traci.lane.speeds["edge_0"], 13.9)
-
-    def test_stopped_vehicle_uses_blocking_vehicle_mechanism(self):
-        traci, scheduler = self.make_scheduler()
-        traci.vehicle.vehicles["live_vehicle"] = {}
-        traci.vehicle.lanes["live_vehicle"] = "edge_0"
-        traci.vehicle.positions["live_vehicle"] = 10.0
-        scheduler.schedule(StoppedVehicleEvent("stalled", 1, 5, "edge_0", 0.25))
-        scheduler.tick(1)
-        self.assertNotIn("event_vehicle_stalled", traci.vehicle.vehicles)
-        self.assertAlmostEqual(traci.vehicle.stops["live_vehicle"][1]["pos"], 25.0)
-        self.assertEqual(scheduler.snapshots()[0].event_type, "stopped_vehicle")
-        scheduler.tick(5)
-        self.assertIn("live_vehicle", traci.vehicle.resumed)
-
-    def test_stopped_vehicle_fails_when_no_existing_vehicle_is_available(self):
-        traci, scheduler = self.make_scheduler()
-        scheduler.schedule(StoppedVehicleEvent("stalled", 1, 5, "edge_0", 0.25))
-        scheduler.tick(1)
-        snapshot = scheduler.snapshots()[0]
-        self.assertEqual(snapshot.state, EventState.FAILED.value)
-        self.assertIn("No live vehicle", snapshot.error)
-
-    def test_collision_blockage_can_block_multiple_lanes(self):
-        traci, scheduler = self.make_scheduler()
-        scheduler.schedule(
-            CollisionBlockageEvent("collision", 1, 5, ("edge_0", "edge_1"), 0.5)
-        )
-        scheduler.tick(1)
-        self.assertIn("event_vehicle_collision_0", traci.vehicle.vehicles)
-        self.assertIn("event_vehicle_collision_1", traci.vehicle.vehicles)
-        scheduler.tick(5)
-        self.assertNotIn("event_vehicle_collision_0", traci.vehicle.vehicles)
-        self.assertNotIn("event_vehicle_collision_1", traci.vehicle.vehicles)
-
-    def test_queue_spillback_blocks_downstream_lanes_but_labels_upstream_lanes(self):
-        traci, scheduler = self.make_scheduler()
-        traci.vehicle.vehicles["downstream_vehicle"] = {}
-        traci.vehicle.lanes["downstream_vehicle"] = "edge_1"
-        traci.vehicle.positions["downstream_vehicle"] = 10.0
-        scheduler.schedule(
-            QueueSpillbackEvent(
-                "spillback",
-                1,
-                5,
-                lane_ids=("edge_0",),
-                blocked_lane_ids=("edge_1",),
-                position_ratio=0.8,
-            )
-        )
-        scheduler.tick(1)
-
-        self.assertNotIn("event_vehicle_spillback", traci.vehicle.vehicles)
-        self.assertEqual(
-            traci.vehicle.stops["downstream_vehicle"][0],
-            "edge",
-        )
-        self.assertEqual(
-            traci.vehicle.stops["downstream_vehicle"][1]["laneIndex"],
-            1,
-        )
-        snapshot = scheduler.snapshots()[0]
-        self.assertEqual(snapshot.event_type, "queue_spillback")
-        self.assertEqual(snapshot.details["lane_ids"], ("edge_0",))
-        self.assertEqual(snapshot.details["blocked_lane_ids"], ("edge_1",))
-
-    def test_queue_spillback_can_reduce_downstream_capacity(self):
-        traci, scheduler = self.make_scheduler()
-        scheduler.schedule(
-            QueueSpillbackEvent(
-                "spillback",
-                1,
-                5,
-                lane_ids=("edge_0",),
-                blocked_lane_ids=("edge_1",),
-                max_speed=0.1,
-            )
-        )
-        scheduler.tick(1)
-        self.assertEqual(traci.lane.speeds["edge_1"], 0.1)
-        self.assertNotIn("event_vehicle_spillback", traci.vehicle.vehicles)
-
-        scheduler.tick(5)
-        self.assertEqual(traci.lane.speeds["edge_1"], 13.9)
 
     def test_accident_and_closure_overlap_is_rejected(self):
         _, scheduler = self.make_scheduler()
@@ -244,6 +158,204 @@ class DisturbanceEventTests(unittest.TestCase):
         scheduler.tick(1)
         self.assertEqual(scheduler.snapshots()[0].state, EventState.FAILED.value)
         self.assertNotIn("passenger", traci.lane.disallowed["edge_0"])
+
+    def test_major_event_opening_spawns_evenly_from_sources_to_venue(self):
+        traci, scheduler = self.make_scheduler()
+        scheduler.schedule(
+            MajorEventOpeningEvent(
+                "show",
+                1,
+                5,
+                "venue_0",
+                4,
+                source_lane_ids=("source_0", "source_1"),
+            )
+        )
+        scheduler.tick(1)
+        self.assertEqual(traci.vehicle.vehicles, {})
+
+        scheduler.tick(2.6)
+        self.assertEqual(
+            sorted(traci.vehicle.vehicles),
+            ["event_vehicle_show_000001", "event_vehicle_show_000002"],
+        )
+        self.assertEqual(
+            traci.route.routes["event_route_show_source_edge_0_venue_edge"],
+            ["source_edge_0", "venue_edge"],
+        )
+        self.assertEqual(
+            traci.vehicle.vehicles["event_vehicle_show_000001"]["departLane"],
+            "best",
+        )
+        self.assertEqual(
+            traci.vehicle.vehicles["event_vehicle_show_000001"]["departPos"],
+            "50",
+        )
+        self.assertEqual(
+            traci.vehicle.vehicles["event_vehicle_show_000001"]["arrivalPos"],
+            "50",
+        )
+
+        scheduler.tick(5)
+        self.assertEqual(len(traci.vehicle.vehicles), 4)
+        snapshot = scheduler.snapshots()[0]
+        self.assertEqual(snapshot.state, EventState.COMPLETED.value)
+        self.assertEqual(snapshot.details["spawned_vehicle_count"], 4)
+        self.assertEqual(snapshot.details["planned_vehicle_count"], 4)
+        self.assertEqual(snapshot.details["reachable_route_count"], 2)
+        self.assertEqual(snapshot.details["unreachable_route_count"], 0)
+
+    def test_major_event_closing_spawns_from_venue_to_destinations(self):
+        traci, scheduler = self.make_scheduler()
+        scheduler.schedule(
+            MajorEventClosingEvent(
+                "close",
+                1,
+                3,
+                "venue_0",
+                2,
+                destination_lane_ids=("dest_0", "dest_1"),
+            )
+        )
+        scheduler.tick(1.5)
+        scheduler.tick(3)
+        self.assertEqual(len(traci.vehicle.vehicles), 2)
+        self.assertEqual(
+            traci.route.routes["event_route_close_venue_edge_dest_edge_0"],
+            ["venue_edge", "dest_edge_0"],
+        )
+        self.assertTrue(
+            all(
+                vehicle["route_id"].startswith("event_route_close_venue_edge_dest_edge_")
+                for vehicle in traci.vehicle.vehicles.values()
+            )
+        )
+
+    def test_activity_uses_remote_segments_and_their_midpoints(self):
+        traci = FakeTraci()
+        scheduler = DisturbanceScheduler(
+            traci,
+            {
+                "source_0": LaneTarget(
+                    "source_0", "source_edge", 0, 100.0, "incoming"
+                ),
+                "venue_0": LaneTarget(
+                    "venue_0", "venue_edge", 0, 100.0, "incoming"
+                ),
+                "dest_0": LaneTarget(
+                    "dest_0", "dest_edge", 0, 100.0, "outgoing"
+                ),
+            },
+            100.0,
+            upstream_extensions={
+                "source_edge": "far_source",
+                "venue_edge": "far_venue",
+            },
+            downstream_extensions={"dest_edge": "far_dest"},
+        )
+        scheduler.schedule(
+            MajorEventOpeningEvent(
+                "remote_open",
+                1,
+                2,
+                "venue_0",
+                1,
+                source_lane_ids=("source_0",),
+            )
+        )
+        scheduler.schedule(
+            MajorEventClosingEvent(
+                "remote_close",
+                2,
+                3,
+                "venue_0",
+                1,
+                destination_lane_ids=("dest_0",),
+            )
+        )
+
+        scheduler.tick(1.5)
+        opening = traci.vehicle.vehicles["event_vehicle_remote_open_000001"]
+        self.assertEqual(
+            traci.route.routes[opening["route_id"]], ["far_source", "far_venue"]
+        )
+        self.assertEqual(opening["departPos"], "100")
+        self.assertEqual(opening["arrivalPos"], "150")
+
+        scheduler.tick(2.5)
+        closing = traci.vehicle.vehicles["event_vehicle_remote_close_000001"]
+        self.assertEqual(
+            traci.route.routes[closing["route_id"]], ["far_venue", "far_dest"]
+        )
+        self.assertEqual(closing["departPos"], "150")
+        self.assertEqual(closing["arrivalPos"], "200")
+
+    def test_activity_default_endpoints_exclude_other_lanes_on_venue_edge(self):
+        traci, scheduler = self.make_scheduler()
+        scheduler.lane_targets["venue_sibling_0"] = LaneTarget(
+            "venue_sibling_0", "venue_edge", 1, 100.0, "incoming"
+        )
+        scheduler.schedule(MajorEventOpeningEvent("default_open", 1, 2, "venue_0", 1))
+
+        scheduler.tick(1.5)
+
+        routes = tuple(traci.route.routes.values())
+        self.assertTrue(routes)
+        self.assertTrue(all(route[0] != "venue_edge" for route in routes))
+
+    def test_activity_event_cancel_stops_future_spawns(self):
+        traci, scheduler = self.make_scheduler()
+        scheduler.schedule(
+            MajorEventOpeningEvent(
+                "cancelled_show",
+                1,
+                5,
+                "venue_0",
+                4,
+                source_lane_ids=("source_0",),
+            )
+        )
+        scheduler.tick(1.6)
+        scheduler.cancel("cancelled_show")
+        scheduler.tick(5)
+        self.assertEqual(sorted(traci.vehicle.vehicles), ["event_vehicle_cancelled_show_000001"])
+        self.assertEqual(scheduler.snapshots()[0].state, EventState.CANCELLED.value)
+
+    def test_activity_event_validation_rejects_bad_inputs(self):
+        _, scheduler = self.make_scheduler()
+        with self.assertRaisesRegex(EventValidationError, "vehicle_count"):
+            scheduler.schedule(MajorEventOpeningEvent("bad_count", 1, 2, "venue_0", 0))
+        with self.assertRaisesRegex(EventValidationError, "Unknown event lanes"):
+            scheduler.schedule(MajorEventOpeningEvent("bad_venue", 1, 2, "missing", 1))
+        with self.assertRaisesRegex(EventValidationError, "unique"):
+            scheduler.schedule(
+                MajorEventOpeningEvent(
+                    "dup",
+                    1,
+                    2,
+                    "venue_0",
+                    1,
+                    source_lane_ids=("source_0", "source_0"),
+                )
+            )
+
+    def test_activity_event_without_reachable_routes_fails_on_activation(self):
+        traci, scheduler = self.make_scheduler()
+        traci.simulation.unreachable.add(("source_edge_0", "venue_edge"))
+        scheduler.schedule(
+            MajorEventOpeningEvent(
+                "blocked_show",
+                1,
+                2,
+                "venue_0",
+                1,
+                source_lane_ids=("source_0",),
+            )
+        )
+        scheduler.tick(1)
+        snapshot = scheduler.snapshots()[0]
+        self.assertEqual(snapshot.state, EventState.FAILED.value)
+        self.assertIn("reachable", snapshot.error)
 
 
 if __name__ == "__main__":

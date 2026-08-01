@@ -138,7 +138,13 @@ finally:
 事件时间均相对本轮开始，可放入 `initial_events`，也可运行中添加：
 
 ```python
-from simulation.sumo import AccidentEvent, LaneClosureEvent, SpeedLimitEvent
+from simulation.sumo import (
+    AccidentEvent,
+    LaneClosureEvent,
+    MajorEventClosingEvent,
+    MajorEventOpeningEvent,
+    SpeedLimitEvent,
+)
 
 manager.add_event(
     session_id,
@@ -169,6 +175,30 @@ manager.add_event(
         end_seconds=420,
         lane_id="-56734_0",
         position_ratio=0.6,
+    ),
+)
+
+manager.add_event(
+    session_id,
+    MajorEventOpeningEvent(
+        event_id="concert-opening-1",
+        start_seconds=500,
+        end_seconds=900,
+        venue_lane_id="-56734_0",
+        source_lane_ids=("-56735_0", "-56736_0"),
+        vehicle_count=180,
+    ),
+)
+
+manager.add_event(
+    session_id,
+    MajorEventClosingEvent(
+        event_id="concert-closing-1",
+        start_seconds=1800,
+        end_seconds=2400,
+        venue_lane_id="-56734_0",
+        destination_lane_ids=("-56735_0", "-56736_0"),
+        vehicle_count=220,
     ),
 )
 ```
@@ -237,7 +267,36 @@ python -m simulation.sumo.run --mode fixed --gui \
       "end_seconds": 420,
       "lane_id": "-56734_0",
       "position_ratio": 0.6
+    },
+    {
+      "event_type": "major_event_opening",
+      "event_id": "concert-opening-1",
+      "start_seconds": 500,
+      "end_seconds": 900,
+      "venue_lane_id": "-56734_0",
+      "source_lane_ids": ["-56735_0", "-56736_0"],
+      "vehicle_count": 180
+    },
+    {
+      "event_type": "major_event_closing",
+      "event_id": "concert-closing-1",
+      "start_seconds": 1800,
+      "end_seconds": 2400,
+      "venue_lane_id": "-56734_0",
+      "destination_lane_ids": ["-56735_0", "-56736_0"],
+      "vehicle_count": 220
     }
   ]
 }
 ```
+
+### 大型活动开场/散场
+
+`major_event_opening` 和 `major_event_closing` 是额外扰动车流，不写入官方车流文件，也不计入
+session 的 `planned_vehicle_count` 校准。开场事件把 `source_lane_ids` 的车辆注入到
+`venue_lane_id` 所在的场馆接驳道路；散场事件从 `venue_lane_id` 向 `destination_lane_ids`
+扩散。`vehicle_count` 会在事件时间窗内均匀投放，实时 snapshot 的车辆数会包含这些临时注入车辆。
+如果不显式提供来源或去向 lane，运行时会从本次选中路口的 incoming/outgoing lane 中自动选择可达路线。
+活动车辆统一在路线首边的 50% 位置生成，并在末边的 50% 位置到达并移除。如果事件 lane
+所在道路具有构建阶段识别出的两段结构，运行时会复用 `traffic_manifest.json` 中的端点延长映射，
+把首边或末边移到远离路口的路段；事件 JSON 仍填写路口清单中提供的 lane ID。
