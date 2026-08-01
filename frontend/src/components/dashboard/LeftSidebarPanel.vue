@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
-  DISTURBANCE_CHOICE_OPTIONS,
+  DISTURBANCE_EVENT_OPTIONS,
   SIMULATION_PERIOD_RANGES,
   TRAFFIC_FLOW_MODE_OPTIONS,
+  clockTimeToMinutes,
+  type DisturbancePresetId,
 } from '../../constants/scenarioOptions'
 import { resolveControlModeLabel, resolveDashboardControlModes } from '../../constants/simulationOptions'
 import { exportScenarioArchive } from '../../api/scenario'
 import {
   useCompactScenarioConfig,
   type CompactScenarioConfig,
+  type CompactDisturbanceEvent,
 } from '../../composables/useCompactScenarioConfig'
 import {
   comparisonChangeRequiresConfirmation,
@@ -30,6 +33,7 @@ import LeftSidebarSectionHeader from './LeftSidebarSectionHeader.vue'
 import { LEFT_SIDEBAR_DESIGN_HEIGHT, LEFT_SIDEBAR_DESIGN_WIDTH, LEFT_SIDEBAR_REFERENCE_LAYOUT } from '../../constants/leftSidebarLayout'
 import type { SimulationSnapshot, SimulationState, StartSimulationRequest } from '../../types/simulation'
 import { formatIntersectionLabel } from '../../utils/intersectionLabels'
+import { loadIntersectionTopologyCatalog } from '../../mapv/intersectionTopology'
 
 const props = defineProps<{
   sessionId: string
@@ -80,7 +84,7 @@ const {
   activeTimeRange,
   buildPayload,
   buildPayloadFor,
-  parseImportedConfig,
+  buildExport,
 } = useCompactScenarioConfig(
   intersection,
   periods,
@@ -89,10 +93,24 @@ const {
   supportedIntersectionIds,
   controlModes,
 )
-const fileInput = ref<HTMLInputElement | null>(null)
 const feedback = ref<string | null>(null)
 const multiplierOpen = ref(false)
 const exporting = ref(false)
+const disturbanceModalOpen = ref(false)
+const editingDisturbanceId = ref<string | null>(null)
+const disturbanceFormError = ref('')
+const disturbanceDraft = ref<{
+  presetId: DisturbancePresetId
+  intersectionIds: string[]
+  startTime: string
+  endTime: string
+}>({
+  presetId: DISTURBANCE_EVENT_OPTIONS[0].value,
+  intersectionIds: [],
+  startTime: SIMULATION_PERIOD_RANGES.morning_peak.start,
+  endTime: SIMULATION_PERIOD_RANGES.morning_peak.end,
+})
+const localIntersectionIds = ref<string[]>([])
 const scenarioOptions = computed(() => scenarioPresets.value.map((item) => ({
   label: item.label,
   value: item.preset_id,
@@ -100,12 +118,18 @@ const scenarioOptions = computed(() => scenarioPresets.value.map((item) => ({
 })))
 const disturbanceIntersectionOptions = computed(() => {
   const preset = selectedPreset.value
-  if (!preset) return []
-  const supported = new Set(supportedIntersectionIds.value)
-  return preset.intersection_ids
+  const candidateIds = preset?.intersection_ids
+    ?? (config.value.scenario_preset_id === 'xiongan_20' ? localIntersectionIds.value : [])
+  const supported = new Set(
+    supportedIntersectionIds.value.length > 0
+      ? supportedIntersectionIds.value
+      : localIntersectionIds.value,
+  )
+  return candidateIds
     .filter((id) => supported.has(id))
     .map((id) => ({ label: formatIntersectionLabel(id), value: id }))
 })
+const selectedDisturbanceIntersectionCount = computed(() => disturbanceDraft.value.intersectionIds.length)
 const controlModeOptions = computed(() => resolveDashboardControlModes(controlModes.value))
 const controlModeUnavailableMessage = computed(() => {
   if (catalogLoading.value) return ''
@@ -117,7 +141,6 @@ const controlModeUnavailableMessage = computed(() => {
 })
 const fields = computed(() => [
   { key: 'scenario', label: '场景模式', options: scenarioOptions.value },
-  { key: 'disturbance', label: '扰动事件', options: DISTURBANCE_CHOICE_OPTIONS },
   { key: 'flow', label: '交通流模式', options: TRAFFIC_FLOW_MODE_OPTIONS },
 ])
 const isSessionActive = computed(() => props.starting || (
@@ -192,6 +215,12 @@ const startTitle = computed(() => {
   return '开始仿真'
 })
 
+onMounted(() => {
+  void loadIntersectionTopologyCatalog().then((nodes) => {
+    localIntersectionIds.value = nodes.map((node) => node.intersectionId)
+  }).catch((cause: unknown) => console.warn('[scenario-config] local intersection catalog unavailable', cause))
+})
+
 watch(
   [catalog, activeIntersectionId, () => config.value.scenario_preset_id],
   ([nextCatalog, intersectionId, presetId]) => {
@@ -236,9 +265,8 @@ watch(
   },
 )
 
-function fieldModel(key: string): 'scenario_preset_id' | 'disturbance' | 'flow_mode' {
+function fieldModel(key: string): 'scenario_preset_id' | 'flow_mode' {
   if (key === 'scenario') return 'scenario_preset_id'
-  if (key === 'disturbance') return 'disturbance'
   return 'flow_mode'
 }
 
@@ -252,6 +280,11 @@ function requestConfiguration(next: CompactScenarioConfig, onApplied?: () => voi
   try {
     fingerprint = createScenarioFingerprint(buildPayloadFor(next), activeIntersectionId.value)
   } catch (error) {
+    if (!props.healthReady || !intersection.value) {
+      applyConfiguration(next, onApplied)
+      feedback.value = '扰动草稿已保存，后端恢复后可启动仿真'
+      return
+    }
     feedback.value = error instanceof Error ? error.message : '无法校验配置参数'
     return
   }
@@ -277,35 +310,148 @@ function requestFieldChange(key: string, value: unknown): void {
     const range = SIMULATION_PERIOD_RANGES[next.flow_mode]
     next.simulation_start_time = range.start
     next.simulation_end_time = range.end
-  }
-  if (model === 'disturbance') {
-    if (value === 'none') next.disturbance_intersection_ids = []
-    else if (next.disturbance_intersection_ids.length === 0) {
-      next.disturbance_intersection_ids = disturbanceIntersectionOptions.value.slice(0, 1).map((item) => item.value)
-    }
+    next.disturbance_events = next.disturbance_events.map((event) => ({
+      ...event,
+      start_time: range.start,
+      end_time: range.end,
+    }))
   }
   requestConfiguration(next)
 }
 
-function requestDisturbanceIntersections(value: string[]): void {
-  requestConfiguration({ ...config.value, disturbance_intersection_ids: value })
+function disturbanceEventLabel(event: CompactDisturbanceEvent): string {
+  return DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === event.preset_id)?.label
+    ?? event.event_type
+}
+
+function openDisturbanceModal(event?: CompactDisturbanceEvent): void {
+  if (isSessionActive.value) return
+  editingDisturbanceId.value = event?.event_id ?? null
+  disturbanceDraft.value = {
+    presetId: event?.preset_id ?? DISTURBANCE_EVENT_OPTIONS[0].value,
+    intersectionIds: event
+      ? [...event.intersection_ids]
+      : disturbanceIntersectionOptions.value.slice(0, 1).map((item) => item.value),
+    startTime: event?.start_time ?? config.value.simulation_start_time,
+    endTime: event?.end_time ?? config.value.simulation_end_time,
+  }
+  disturbanceFormError.value = ''
+  disturbanceModalOpen.value = true
+}
+
+function closeDisturbanceModal(): void {
+  disturbanceModalOpen.value = false
+  editingDisturbanceId.value = null
+  disturbanceFormError.value = ''
+}
+
+function selectAllDisturbanceIntersections(): void {
+  disturbanceDraft.value.intersectionIds = disturbanceIntersectionOptions.value.map((item) => item.value)
+}
+
+function clearDisturbanceIntersections(): void {
+  disturbanceDraft.value.intersectionIds = []
+}
+
+function saveDisturbanceEvent(): void {
+  const option = DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === disturbanceDraft.value.presetId)
+  if (!option) {
+    disturbanceFormError.value = '请选择扰动事件类型'
+    return
+  }
+  if (disturbanceDraft.value.intersectionIds.length === 0) {
+    disturbanceFormError.value = '请选择至少一个路口'
+    return
+  }
+  const outerStart = clockTimeToMinutes(config.value.simulation_start_time)
+  const outerEnd = clockTimeToMinutes(config.value.simulation_end_time)
+  const eventStart = clockTimeToMinutes(disturbanceDraft.value.startTime)
+  const eventEnd = clockTimeToMinutes(disturbanceDraft.value.endTime)
+  if (
+    !Number.isFinite(eventStart)
+    || !Number.isFinite(eventEnd)
+    || eventStart < outerStart
+    || eventStart >= eventEnd
+    || eventEnd > outerEnd
+  ) {
+    disturbanceFormError.value = `事件时间必须位于 ${config.value.simulation_start_time}-${config.value.simulation_end_time} 内`
+    return
+  }
+  const eventId = editingDisturbanceId.value
+    ?? `ui_${option.value}_${Date.now()}_${config.value.disturbance_events.length + 1}`
+  const nextEvent: CompactDisturbanceEvent = {
+    event_id: eventId,
+    preset_id: option.value,
+    event_type: option.eventType,
+    intersection_ids: [...new Set(disturbanceDraft.value.intersectionIds)],
+    start_time: disturbanceDraft.value.startTime,
+    end_time: disturbanceDraft.value.endTime,
+  }
+  const existingIndex = config.value.disturbance_events.findIndex((event) => event.event_id === eventId)
+  const disturbanceEvents = config.value.disturbance_events.map((event) => ({
+    ...event,
+    intersection_ids: [...event.intersection_ids],
+  }))
+  if (existingIndex >= 0) disturbanceEvents.splice(existingIndex, 1, nextEvent)
+  else disturbanceEvents.push(nextEvent)
+  requestConfiguration(
+    { ...config.value, disturbance_events: disturbanceEvents },
+    closeDisturbanceModal,
+  )
+}
+
+function removeDisturbanceEvent(eventId: string): void {
+  requestConfiguration({
+    ...config.value,
+    disturbance_events: config.value.disturbance_events.filter((event) => event.event_id !== eventId),
+  })
+  if (editingDisturbanceId.value === eventId) {
+    editingDisturbanceId.value = null
+    disturbanceDraft.value = {
+      presetId: DISTURBANCE_EVENT_OPTIONS[0].value,
+      intersectionIds: disturbanceIntersectionOptions.value.slice(0, 1).map((item) => item.value),
+      startTime: config.value.simulation_start_time,
+      endTime: config.value.simulation_end_time,
+    }
+  }
 }
 
 function requestTimeChange(key: 'simulation_start_time' | 'simulation_end_time', value: string): void {
-  requestConfiguration({ ...config.value, [key]: value })
+  const next = { ...config.value, [key]: value }
+  const outerStart = key === 'simulation_start_time' ? value : next.simulation_start_time
+  const outerEnd = key === 'simulation_end_time' ? value : next.simulation_end_time
+  const outerStartMinutes = clockTimeToMinutes(outerStart)
+  const outerEndMinutes = clockTimeToMinutes(outerEnd)
+  next.disturbance_events = next.disturbance_events.map((event) => {
+    let startTime = clockTimeToMinutes(event.start_time) < outerStartMinutes
+      ? outerStart
+      : event.start_time
+    let endTime = clockTimeToMinutes(event.end_time) > outerEndMinutes
+      ? outerEnd
+      : event.end_time
+    if (clockTimeToMinutes(startTime) >= clockTimeToMinutes(endTime)) {
+      startTime = outerStart
+      endTime = outerEnd
+    }
+    return { ...event, start_time: startTime, end_time: endTime }
+  })
+  requestConfiguration(next)
 }
 
-function openFilePicker() { fileInput.value?.click() }
-async function importConfig(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+function saveConfig() {
   try {
-    const next = parseImportedConfig(JSON.parse(await file.text()))
-    requestConfiguration(next, () => { feedback.value = '配置参数已载入' })
+    const blob = new Blob([JSON.stringify(buildExport(), null, 2)], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${config.value.scenario_preset_id}-scene-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+    document.body.append(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+    feedback.value = '仿真场景配置已保存'
   }
-  catch (error) { feedback.value = error instanceof Error ? error.message : '配置导入失败' }
-  finally { input.value = '' }
+  catch (error) { feedback.value = error instanceof Error ? error.message : '场景保存失败' }
 }
 async function exportConfig() {
   if (presetUnavailableMessage.value) {
@@ -319,8 +465,10 @@ async function exportConfig() {
     const link = document.createElement('a')
     link.href = url
     link.download = filename ?? `${config.value.scenario_preset_id}-${Date.now()}.zip`
+    document.body.append(link)
     link.click()
-    URL.revokeObjectURL(url)
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
     feedback.value = 'SUMO仿真场景ZIP已导出'
   } catch (error) {
     feedback.value = error instanceof Error ? error.message : '场景导出失败'
@@ -393,35 +541,25 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
         </el-select>
       </label>
 
-      <label
-        class="left-sidebar__field left-sidebar__field--targets"
+      <div
+        class="left-sidebar__disturbance"
         :style="{
-          left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.disturbanceTargets.left}px`,
+          left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[2].left}px`,
           top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.disturbanceTargets.top}px`,
-          width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.disturbanceTargets.width}px`,
+          width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.timeRange.width}px`,
         }"
       >
-        <span class="left-sidebar__field-label">扰动路口</span>
-        <el-select
-          :model-value="config.disturbance_intersection_ids"
-          :disabled="isSessionActive || config.disturbance === 'none' || disturbanceIntersectionOptions.length === 0"
-          multiple
-          collapse-tags
-          collapse-tags-tooltip
-          :max-collapse-tags="1"
-          class="left-sidebar__select"
-          popper-class="left-sidebar-select-popper"
-          placeholder="请选择路口"
-          @change="requestDisturbanceIntersections($event as string[])"
+        <span class="left-sidebar__field-label">扰动事件</span>
+        <button
+          type="button"
+          class="left-sidebar__disturbance-button"
+          :disabled="isSessionActive || disturbanceIntersectionOptions.length === 0"
+          @click="openDisturbanceModal()"
         >
-          <el-option
-            v-for="option in disturbanceIntersectionOptions"
-            :key="option.value"
-            :label="option.label"
-            :value="option.value"
-          />
-        </el-select>
-      </label>
+          <span>{{ config.disturbance_events.length > 0 ? `已配置 ${config.disturbance_events.length} 项` : '新增扰动事件' }}</span>
+          <i aria-hidden="true">+</i>
+        </button>
+      </div>
 
       <label
         class="left-sidebar__field left-sidebar__field--time"
@@ -462,8 +600,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
       </div>
 
       <div class="left-sidebar__file-actions">
-        <input ref="fileInput" type="file" accept="application/json,.json" @change="importConfig" />
-        <button type="button" @click="openFilePicker">上传配置参数</button>
+        <button type="button" :disabled="!!presetUnavailableMessage" @click="saveConfig">保存仿真场景</button>
         <button type="button" :disabled="exporting || !!presetUnavailableMessage" @click="exportConfig">{{ exporting ? '导出中…' : '导出当前仿真场景' }}</button>
       </div>
 
@@ -544,6 +681,107 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
         </dl>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="disturbanceModalOpen"
+        class="disturbance-modal"
+        role="presentation"
+        @mousedown.self="closeDisturbanceModal"
+      >
+        <section
+          class="disturbance-modal__dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="disturbance-modal-title"
+        >
+          <header class="disturbance-modal__header">
+            <div>
+              <small>SCENARIO EVENT</small>
+              <h2 id="disturbance-modal-title">{{ editingDisturbanceId ? '编辑扰动事件' : '新增扰动事件' }}</h2>
+            </div>
+            <button type="button" aria-label="关闭" title="关闭" @click="closeDisturbanceModal">×</button>
+          </header>
+
+          <div v-if="config.disturbance_events.length > 0" class="disturbance-modal__configured">
+            <span>已配置事件</span>
+            <div
+              v-for="event in config.disturbance_events"
+              :key="event.event_id"
+              class="disturbance-modal__event-row"
+              :class="{ 'is-editing': editingDisturbanceId === event.event_id }"
+            >
+              <button type="button" @click="openDisturbanceModal(event)">
+                <strong>{{ disturbanceEventLabel(event) }}</strong>
+                <small>{{ event.start_time }}-{{ event.end_time }} · {{ event.intersection_ids.map(formatIntersectionLabel).join('、') }}</small>
+              </button>
+              <button type="button" aria-label="删除扰动事件" title="删除" @click="removeDisturbanceEvent(event.event_id)">×</button>
+            </div>
+          </div>
+
+          <div class="disturbance-modal__form">
+            <div class="disturbance-modal__event-settings">
+            <label>
+              <span>事件类型</span>
+              <el-select v-model="disturbanceDraft.presetId" popper-class="disturbance-modal-select-popper">
+                <el-option
+                  v-for="option in DISTURBANCE_EVENT_OPTIONS"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+            </label>
+
+            <label>
+              <span>开始时间</span>
+              <el-time-select
+                v-model="disturbanceDraft.startTime"
+                :start="config.simulation_start_time"
+                step="00:01"
+                :end="config.simulation_end_time"
+                :max-time="disturbanceDraft.endTime"
+                placeholder="开始时间"
+              />
+            </label>
+
+            <label>
+              <span>结束时间</span>
+              <el-time-select
+                v-model="disturbanceDraft.endTime"
+                :start="config.simulation_start_time"
+                step="00:01"
+                :end="config.simulation_end_time"
+                :min-time="disturbanceDraft.startTime"
+                placeholder="结束时间"
+              />
+            </label>
+            </div>
+
+            <fieldset>
+              <div class="disturbance-modal__intersection-tools">
+                <legend>影响路口 · 已选 {{ selectedDisturbanceIntersectionCount }}</legend>
+                <button type="button" @click="selectAllDisturbanceIntersections">全选</button>
+                <button type="button" @click="clearDisturbanceIntersections">清空</button>
+              </div>
+              <el-checkbox-group v-model="disturbanceDraft.intersectionIds" class="disturbance-modal__intersections">
+                <el-checkbox
+                  v-for="option in disturbanceIntersectionOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >{{ option.label }}</el-checkbox>
+              </el-checkbox-group>
+            </fieldset>
+          </div>
+
+          <p v-if="disturbanceFormError" class="disturbance-modal__error">{{ disturbanceFormError }}</p>
+          <footer class="disturbance-modal__footer">
+            <button type="button" @click="closeDisturbanceModal">取消</button>
+            <button type="button" class="is-primary" @click="saveDisturbanceEvent">{{ editingDisturbanceId ? '保存修改' : '添加事件' }}</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -650,6 +888,45 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   background: rgba(20, 103, 169, .42);
   color: #effaff;
 }
+.left-sidebar__disturbance {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.left-sidebar__disturbance-button {
+  width: 100%;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border: 1px solid rgba(27, 126, 242, .45);
+  border-radius: 5px;
+  background: linear-gradient(90deg, #043563, #03315b);
+  color: #fff;
+  font: 600 15px/1 inherit;
+  cursor: pointer;
+}
+.left-sidebar__disturbance-button i {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(82, 194, 250, .65);
+  border-radius: 50%;
+  color: #ffe47a;
+  font-size: 17px;
+  font-style: normal;
+}
+.left-sidebar__disturbance-button:hover:not(:disabled),
+.left-sidebar__disturbance-button:focus-visible {
+  border-color: #52c2fa;
+  box-shadow: 0 0 8px rgba(33, 230, 255, .24);
+  outline: none;
+}
+.left-sidebar__disturbance-button:disabled { opacity: .46; cursor: not-allowed; }
 .left-sidebar__time-range {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr);
@@ -889,6 +1166,185 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__runtime dl div { min-width: 0; }
 .left-sidebar__runtime dt { color: #668fa9; font-size: 9px; white-space: nowrap; }
 .left-sidebar__runtime dd { margin: 3px 0 0; overflow: hidden; color: #eefaff; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+
+.disturbance-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 8, 20, .7);
+  backdrop-filter: blur(5px);
+}
+.disturbance-modal__dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  overflow: auto;
+  border: 1px solid rgba(82, 194, 250, .68);
+  border-radius: 6px;
+  background: #061a31;
+  box-shadow: 0 18px 54px rgba(0, 6, 18, .7), inset 0 0 28px rgba(33, 139, 255, .08);
+  color: #eaf8ff;
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+.disturbance-modal__header {
+  height: 74px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 22px;
+  border-bottom: 1px solid rgba(82, 194, 250, .22);
+  background: #08223e;
+}
+.disturbance-modal__header small { color: #68cfee; font-size: 9px; }
+.disturbance-modal__header h2 { margin: 4px 0 0; font-size: 19px; letter-spacing: 0; }
+.disturbance-modal__header > button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #a8d6ee;
+  font-size: 25px;
+  cursor: pointer;
+}
+.disturbance-modal__configured { padding: 18px 22px 0; }
+.disturbance-modal__configured > span,
+.disturbance-modal__form label > span,
+.disturbance-modal__form legend {
+  display: block;
+  margin-bottom: 8px;
+  color: #9fc9df;
+  font-size: 12px;
+}
+.disturbance-modal__event-row {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: stretch;
+  margin-top: 6px;
+  border: 1px solid rgba(82, 194, 250, .2);
+  border-radius: 4px;
+  background: #08223d;
+}
+.disturbance-modal__event-row.is-editing { border-color: #52c2fa; }
+.disturbance-modal__event-row button {
+  border: 0;
+  background: transparent;
+  color: #eaf8ff;
+  cursor: pointer;
+}
+.disturbance-modal__event-row button:first-child {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  text-align: left;
+}
+.disturbance-modal__event-row strong { flex: 0 0 auto; font-size: 13px; }
+.disturbance-modal__event-row small {
+  min-width: 0;
+  overflow: hidden;
+  color: #84b8d5;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.disturbance-modal__event-row button:last-child { color: #ff9eaa; font-size: 20px; }
+.disturbance-modal__form { display: grid; gap: 20px; padding: 20px 22px 10px; }
+.disturbance-modal__form label { display: block; }
+.disturbance-modal__event-settings {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(2, minmax(130px, 1fr));
+  gap: 12px;
+}
+.disturbance-modal__form :deep(.el-select),
+.disturbance-modal__form :deep(.el-time-select) { width: 100%; }
+.disturbance-modal__form :deep(.el-select__wrapper) {
+  min-height: 40px;
+  border: 1px solid rgba(82, 194, 250, .38);
+  border-radius: 4px;
+  background: #092846;
+  box-shadow: none;
+}
+.disturbance-modal__form :deep(.el-select__selected-item) { color: #fff; }
+.disturbance-modal__form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.disturbance-modal__intersection-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.disturbance-modal__intersection-tools legend { margin: 0 auto 0 0; }
+.disturbance-modal__intersection-tools button {
+  min-width: 52px;
+  height: 28px;
+  border: 1px solid rgba(82, 194, 250, .34);
+  border-radius: 4px;
+  background: #092846;
+  color: #bfe8f8;
+  cursor: pointer;
+}
+.disturbance-modal__intersections {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.disturbance-modal__intersections :deep(.el-checkbox) {
+  height: 34px;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 0 9px;
+  border: 1px solid rgba(82, 194, 250, .2);
+  border-radius: 4px;
+  background: #08223d;
+}
+.disturbance-modal__intersections :deep(.el-checkbox.is-checked) {
+  border-color: #52c2fa;
+  background: #17649a;
+  box-shadow: inset 0 0 12px rgba(74, 210, 255, .15);
+}
+.disturbance-modal__intersections :deep(.el-checkbox__input) { display: none; }
+.disturbance-modal__intersections :deep(.el-checkbox__label) { padding-left: 0; }
+.disturbance-modal__intersections :deep(.el-checkbox__label) { color: #cce9f7; font-size: 12px; }
+.disturbance-modal__intersections :deep(.el-checkbox__input.is-checked + .el-checkbox__label) { color: #fff; }
+.disturbance-modal__error { margin: 0 22px; color: #ff9eaa; font-size: 12px; }
+.disturbance-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 22px 22px;
+}
+.disturbance-modal__footer button {
+  min-width: 92px;
+  height: 36px;
+  border: 1px solid rgba(82, 194, 250, .42);
+  border-radius: 4px;
+  background: #0a2947;
+  color: #cae7f5;
+  font: 600 13px/1 inherit;
+  cursor: pointer;
+}
+.disturbance-modal__footer button.is-primary {
+  border-color: #52c2fa;
+  background: #2675c8;
+  color: #fff;
+}
+:global(.disturbance-modal-select-popper.el-popper) {
+  border-color: rgba(82, 194, 250, .55) !important;
+  background: #071d34 !important;
+}
+:global(.disturbance-modal-select-popper .el-select-dropdown__item) { color: #bcdcec; }
+:global(.disturbance-modal-select-popper .el-select-dropdown__item.is-hovering) { background: #123b60; color: #fff; }
+
+@media (max-width: 560px) {
+  .disturbance-modal__event-settings { grid-template-columns: 1fr 1fr; }
+  .disturbance-modal__event-settings label:first-child { grid-column: 1 / -1; }
+  .disturbance-modal__intersections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .left-sidebar__algorithm-item,

@@ -8,6 +8,7 @@ import {
   reprojectGlb,
 } from './reproject-building-tileset.mjs'
 import { sliceGlbToBounds } from './focus-building-tileset.mjs'
+import { createBaiduBaseDisplayOptions } from '../src/mapv/baiduDarkStyle.ts'
 
 const tileset = JSON.parse(readFileSync(
   new URL('../public/3dtiles/xiongan/tileset.json', import.meta.url),
@@ -16,6 +17,28 @@ const tileset = JSON.parse(readFileSync(
 const sampleGlb = readFileSync(
   new URL('../public/3dtiles/xiongan/tiles/tile_facade_0.glb', import.meta.url),
 )
+const baiduThreeMapSource = readFileSync(
+  new URL('../src/components/visualization/BaiduThreeMap.vue', import.meta.url),
+  'utf8',
+)
+
+test('keeps Baidu roads and base landcover while native buildings stay disabled', () => {
+  assert.deepEqual(createBaiduBaseDisplayOptions(true), {
+    base: true,
+    link: true,
+    building: false,
+    poi: false,
+    flat: true,
+  })
+  assert.equal(createBaiduBaseDisplayOptions(false).building, false)
+})
+
+test('keeps one global local building source while all intersection roads stay prepared', () => {
+  assert.match(baiduThreeMapSource, /\/3dtiles\/xiongan-webmercator\/tileset\.json/)
+  assert.doesNotMatch(baiduThreeMapSource, /switchBuildingTileset/)
+  assert.match(baiduThreeMapSource, /prepareOverview\(nodes\.map/)
+  assert.match(baiduThreeMapSource, /cacheBytes: BUILDING_CACHE_BYTES/)
+})
 
 test('building projection maps the ECEF root to a local BD-09 WebMercator origin', () => {
   const project = createBuildingProjector(tileset.root.transform, 'wgs84')

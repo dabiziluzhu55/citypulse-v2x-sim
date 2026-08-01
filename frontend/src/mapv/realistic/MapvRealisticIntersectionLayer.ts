@@ -48,6 +48,11 @@ interface CachedIntersection {
   usedAt: number
 }
 
+interface CachedOverviewIntersection {
+  manifest: RealisticIntersectionManifest
+  object: RealisticIntersectionOverviewObject
+}
+
 export interface RealisticSignalRuntimeState {
   intersection_id: string
   current_phase: number
@@ -460,10 +465,55 @@ class RealisticIntersectionObject {
   }
 }
 
+class RealisticIntersectionOverviewObject {
+  readonly group = new THREE.Group()
+
+  constructor(readonly manifest: RealisticIntersectionManifest) {
+    const scale = manifest.horizontalScale ?? 1
+    const asphalt = createAsphaltMaterial(
+      manifest.intersectionId.split('').reduce((sum, value) => sum + value.charCodeAt(0), 1),
+      COLORS.asphalt,
+    )
+    const junction = asphalt.clone()
+    junction.color.setHex(COLORS.junction)
+    this.group.name = `realistic-intersection-overview:${manifest.intersectionId}`
+    this.group.renderOrder = 24
+    for (const edge of manifest.edges) {
+      const mesh = new THREE.Mesh(
+        stripGeometry(edgeCenterline(edge), edgeRoadWidth(edge) + 0.04 * scale, 0, scale),
+        asphalt,
+      )
+      mesh.renderOrder = 24
+      this.group.add(mesh)
+    }
+    const apron = polygonMesh(
+      junctionApronPoints(manifest.junctionShape, manifest.edges),
+      junction,
+      0.012,
+      25,
+    )
+    this.group.add(apron)
+  }
+
+  dispose(): void {
+    const materials = new Set<THREE.Material>()
+    this.group.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return
+      object.geometry.dispose()
+      const values = Array.isArray(object.material) ? object.material : [object.material]
+      values.forEach((material) => materials.add(material))
+    })
+    materials.forEach((material) => material.dispose())
+    this.group.clear()
+  }
+}
+
 export class MapvRealisticIntersectionLayer {
   private readonly cache = new Map<string, CachedIntersection>()
+  private readonly overviewCache = new Map<string, CachedOverviewIntersection>()
+  private readonly manifests = new Map<string, RealisticIntersectionManifest>()
+  private readonly manifestRequests = new Map<string, Promise<RealisticIntersectionManifest>>()
   private activeId: string | null = null
-  private requestVersion = 0
 
   constructor(
     private readonly engine: Engine,
@@ -475,29 +525,35 @@ export class MapvRealisticIntersectionLayer {
     return this.activeId
   }
 
+  async prepareOverview(intersectionIds: string[]): Promise<void> {
+    const queue = [...new Set(intersectionIds)]
+    const worker = async () => {
+      while (queue.length > 0) {
+        const intersectionId = queue.shift()
+        if (!intersectionId || this.overviewCache.has(intersectionId)) continue
+        const manifest = await this.loadManifest(intersectionId)
+        const object = new RealisticIntersectionOverviewObject(manifest)
+        this.placeAtIntersection(object.group, manifest)
+        object.group.visible = intersectionId !== this.activeId
+        this.engine.add(object.group)
+        this.overviewCache.set(intersectionId, { manifest, object })
+        this.engine.requestRender()
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker))
+  }
+
   async prepare(intersectionId: string): Promise<RealisticIntersectionManifest> {
-    const version = ++this.requestVersion
     let cached = this.cache.get(intersectionId)
     if (!cached) {
-      const manifest = await loadIntersectionManifest(realisticIntersectionAssetUrl(intersectionId))
-      if (version !== this.requestVersion) throw new DOMException('Stale intersection request', 'AbortError')
+      const manifest = await this.loadManifest(intersectionId)
       const object = new RealisticIntersectionObject(manifest)
-      const projected = this.projector([manifest.origin.longitude, manifest.origin.latitude, 0])
-      const geographicPosition = projected[2] == null
-        ? [projected[0], projected[1]]
-        : [projected[0], projected[1], projected[2]]
-      const scenePosition = this.engine.map.projectArrayCoordinate(geographicPosition)
-      object.group.position.set(
-        scenePosition[0],
-        scenePosition[1],
-        (scenePosition[2] ?? 0) + REALISTIC_INTERSECTION_SURFACE_Z,
-      )
+      this.placeAtIntersection(object.group, manifest)
       object.group.visible = false
       this.engine.add(object.group)
       cached = { manifest, object, usedAt: performance.now() }
       this.cache.set(intersectionId, cached)
     }
-    if (version !== this.requestVersion) throw new DOMException('Stale intersection request', 'AbortError')
     cached.usedAt = performance.now()
     return cached.manifest
   }
@@ -507,7 +563,13 @@ export class MapvRealisticIntersectionLayer {
     if (!cached) throw new Error(`Intersection ${intersectionId} has not been prepared`)
     const previous = this.activeId ? this.cache.get(this.activeId) : null
     cached.object.group.visible = true
-    if (previous && previous !== cached) previous.object.group.visible = false
+    const nextOverview = this.overviewCache.get(intersectionId)
+    if (nextOverview) nextOverview.object.group.visible = false
+    if (previous && previous !== cached) {
+      previous.object.group.visible = false
+      const previousOverview = this.activeId ? this.overviewCache.get(this.activeId) : null
+      if (previousOverview) previousOverview.object.group.visible = true
+    }
     this.activeId = intersectionId
     this.trimCache()
     this.engine.requestRender()
@@ -520,21 +582,63 @@ export class MapvRealisticIntersectionLayer {
   }
 
   updateSignals(intersections: RealisticSignalRuntimeState[] | null): void {
-    if (!this.activeId) return
-    const cached = this.cache.get(this.activeId)
-    const runtime = intersections?.find((item) => item.intersection_id === this.activeId) ?? null
-    cached?.object.updateSignalState(runtime)
+    for (const [intersectionId, cached] of this.cache) {
+      const runtime = intersections?.find((item) => item.intersection_id === intersectionId) ?? null
+      cached.object.updateSignalState(runtime)
+    }
     this.engine.requestRender()
   }
 
   destroy(): void {
-    this.requestVersion += 1
     for (const cached of this.cache.values()) {
       this.engine.remove(cached.object.group)
       cached.object.dispose()
     }
+    for (const cached of this.overviewCache.values()) {
+      this.engine.remove(cached.object.group)
+      cached.object.dispose()
+    }
     this.cache.clear()
+    this.overviewCache.clear()
+    this.manifests.clear()
+    this.manifestRequests.clear()
     this.activeId = null
+  }
+
+  private async loadManifest(intersectionId: string): Promise<RealisticIntersectionManifest> {
+    const cached = this.manifests.get(intersectionId)
+    if (cached) return cached
+    let request = this.manifestRequests.get(intersectionId)
+    if (!request) {
+      request = loadIntersectionManifest(realisticIntersectionAssetUrl(intersectionId))
+        .then((manifest) => {
+          this.manifests.set(intersectionId, manifest)
+          this.manifestRequests.delete(intersectionId)
+          return manifest
+        })
+        .catch((cause) => {
+          this.manifestRequests.delete(intersectionId)
+          throw cause
+        })
+      this.manifestRequests.set(intersectionId, request)
+    }
+    return request
+  }
+
+  private placeAtIntersection(
+    group: THREE.Group,
+    manifest: RealisticIntersectionManifest,
+  ): void {
+    const projected = this.projector([manifest.origin.longitude, manifest.origin.latitude, 0])
+    const geographicPosition = projected[2] == null
+      ? [projected[0], projected[1]]
+      : [projected[0], projected[1], projected[2]]
+    const scenePosition = this.engine.map.projectArrayCoordinate(geographicPosition)
+    group.position.set(
+      scenePosition[0],
+      scenePosition[1],
+      (scenePosition[2] ?? 0) + REALISTIC_INTERSECTION_SURFACE_Z,
+    )
   }
 
   private trimCache(): void {

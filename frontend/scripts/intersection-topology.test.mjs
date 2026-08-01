@@ -5,6 +5,7 @@ import test from 'node:test'
 import {
   buildIntersectionTopologyLinks,
   intersectionTopologyBounds,
+  intersectionTopologyMaxRange,
   parseIntersectionTopologyCatalog,
 } from '../src/mapv/intersectionTopology.ts'
 
@@ -44,4 +45,14 @@ test('builds one padded navigation bound that contains every demo', () => {
     && node.latitude > south
     && node.latitude < north
   )))
+})
+
+test('computes a viewport-aware range that can frame all twenty intersections', () => {
+  const nodes = parseIntersectionTopologyCatalog(catalog)
+  const desktopRange = intersectionTopologyMaxRange(nodes, 16 / 9)
+  const narrowRange = intersectionTopologyMaxRange(nodes, 3 / 4)
+
+  assert.ok(desktopRange >= 35_000 && desktopRange <= 48_000)
+  assert.ok(narrowRange >= desktopRange)
+  assert.ok(narrowRange <= 48_000)
 })

@@ -1,4 +1,4 @@
-import { access, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -89,8 +89,9 @@ export async function auditIntersectionEnvironments() {
       : 0
     if (boundaryRadii.length < 2) errors.push('fewer than two roads reach the scene boundary')
     if (minimumBoundaryOverlap < 4) errors.push('road transition overlap is below 4 meters')
+    else if (minimumBoundaryOverlap < 15) warnings.push('local road transition is below the 15 meter visual target; Baidu base road is required')
     const coverage = buildingCoverage(building.triangle_count)
-    if (coverage === 'sparse-source') warnings.push('local building source is sparse; use Baidu building fallback')
+    if (coverage === 'sparse-source') warnings.push('local building source is sparse; Baidu building fallback stays disabled')
     if (green.features.length === 0) warnings.push('no local OSM green polygon; use Baidu green base layer')
     if (water.features.length === 0) warnings.push('no local OSM water polygon; use Baidu water base layer')
     rows.push({
@@ -114,6 +115,10 @@ export async function auditIntersectionEnvironments() {
       roads: {
         boundaryEdges: boundaryRadii.length,
         minimumBoundaryOverlapMeters: Number(minimumBoundaryOverlap.toFixed(1)),
+        frontendPatchVisible: boundaryRadii.length >= 2,
+        continuityClassification: minimumBoundaryOverlap >= 15
+          ? 'local-overlap'
+          : 'baidu-base-dependent',
       },
       errors,
       warnings,
@@ -124,9 +129,9 @@ export async function auditIntersectionEnvironments() {
     generatedAt: new Date().toISOString(),
     reference: 'huiyan-fe/mapv-three-showcases/src/pages/yizhuang',
     policy: {
-      buildings: 'focused local 3D Tiles with Baidu building fallback',
+      buildings: 'one global local 3D Tiles source; Baidu native buildings disabled; sparse source areas are never fabricated',
       landcover: 'local OSM polygons over the global Baidu green/water base',
-      roads: `Baidu continuous road base with ${ROAD_TRANSITION_OVERLAP_METERS}m local transition`,
+      roads: `all local patches stay visible; Baidu continuous road base bridges patches; ${ROAD_TRANSITION_OVERLAP_METERS}m generation target and 15m visual warning threshold`,
     },
     intersections: rows,
     summary: {
@@ -134,6 +139,8 @@ export async function auditIntersectionEnvironments() {
       warning: rows.filter((row) => row.status === 'warning').length,
       error: rows.filter((row) => row.status === 'error').length,
       sparseBuildingSources: rows.filter((row) => row.buildings.coverage === 'sparse-source')
+        .map((row) => row.intersectionId),
+      baiduRoadDependent: rows.filter((row) => row.roads.continuityClassification === 'baidu-base-dependent')
         .map((row) => row.intersectionId),
     },
   }
@@ -158,6 +165,7 @@ async function main() {
   const outputArgument = process.argv.find((argument) => argument.startsWith('--output='))
   if (outputArgument) {
     const output = path.resolve(frontendDirectory, outputArgument.slice('--output='.length))
+    await mkdir(path.dirname(output), { recursive: true })
     await writeFile(output, `${JSON.stringify(report, null, 2)}\n`)
     console.log(`Wrote ${output}`)
   }

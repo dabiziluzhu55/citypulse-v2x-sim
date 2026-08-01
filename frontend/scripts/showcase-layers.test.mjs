@@ -23,11 +23,12 @@ const response = (features = roadGeoJson.features) => ({
   geojson: { ...roadGeoJson, features },
 })
 
-test('keeps Baidu roads, green, water, and fallback buildings visible', () => {
+test('keeps Baidu roads, green, and water visible while native buildings stay hidden', () => {
   const styleByFeature = new Map(BAIDU_DARK_BASE_STYLE.map((entry) => [entry.featureType, entry]))
-  for (const featureType of ['water', 'green', 'road', 'building']) {
+  for (const featureType of ['water', 'green', 'road']) {
     assert.equal(styleByFeature.get(featureType)?.stylers.visibility, 'on')
   }
+  assert.equal(styleByFeature.get('building')?.stylers.visibility, 'off')
 })
 
 test('projects every coordinate depth while preserving properties', () => {

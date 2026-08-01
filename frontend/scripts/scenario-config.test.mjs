@@ -2,11 +2,17 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  DISTURBANCE_EVENT_OPTIONS,
   SIMULATION_TIME_OPTIONS,
   simulationTimeWindow,
 } from '../src/constants/scenarioOptions.ts'
 import { formatIntersectionLabel } from '../src/utils/intersectionLabels.ts'
 import { buildStartSimulationRequest } from '../src/utils/scenarioPayload.ts'
+import { buildDisturbanceWarningAggregates } from '../src/utils/disturbanceWarnings.ts'
+import {
+  SCENARIO_CONFIG_EXPORT_VERSION,
+  resolveImportedDisturbanceTimes,
+} from '../src/utils/scenarioConfigMigration.ts'
 import {
   catalogSupportsScenarioPreset,
   catalogSupportsScenarioPresetForIntersection,
@@ -61,9 +67,19 @@ test('converts arbitrary clock ranges inside each official period', () => {
 })
 
 test('formats demo labels without changing backend ids', () => {
-  assert.equal(formatIntersectionLabel('demo_2'), 'demo2')
-  assert.equal(formatIntersectionLabel('demo_20'), 'demo20')
+  assert.equal(formatIntersectionLabel('demo_2'), '路口2')
+  assert.equal(formatIntersectionLabel('demo_20'), '路口20')
   assert.equal(formatIntersectionLabel('custom'), 'custom')
+})
+
+test('exposes exactly five disturbance presets backed by supported event types', () => {
+  assert.deepEqual(
+    DISTURBANCE_EVENT_OPTIONS.map((item) => item.label),
+    ['施工占道', '大型活动散场', '大型活动开场', '交通事故', '道路限速'],
+  )
+  assert.ok(DISTURBANCE_EVENT_OPTIONS.every((item) => (
+    ['lane_closure', 'speed_limit', 'accident'].includes(item.eventType)
+  )))
 })
 
 test('builds the backend v2 preset request without removed legacy fields', () => {
@@ -125,6 +141,94 @@ test('builds one unique disturbance target for every selected intersection', () 
     ['demo_3', 'demo_5'],
   )
   assert.equal(new Set(payload.disturbance_targets.map((target) => target.event_id)).size, 2)
+})
+
+test('flattens multiple configured events into unique backend disturbance targets', () => {
+  const payload = buildStartSimulationRequest({
+    scenarioPresetId: 'east_dense',
+    period: 'morning_peak',
+    windowStartSeconds: 0,
+    durationSeconds: 600,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    disturbanceEvents: [
+      { eventId: 'construction', eventType: 'lane_closure', intersectionIds: ['demo_1', 'demo_2'] },
+      { eventId: 'arrival', eventType: 'speed_limit', intersectionIds: ['demo_2'] },
+      { eventId: 'incident', eventType: 'accident', intersectionIds: ['demo_3'] },
+    ],
+    snapshotIntervalSeconds: 0.2,
+  })
+  assert.deepEqual(
+    payload.disturbance_targets.map((target) => target.event_type),
+    ['lane_closure', 'lane_closure', 'speed_limit', 'accident'],
+  )
+  assert.deepEqual(
+    payload.disturbance_targets.map((target) => target.intersection_id),
+    ['demo_1', 'demo_2', 'demo_2', 'demo_3'],
+  )
+  assert.equal(new Set(payload.disturbance_targets.map((target) => target.event_id)).size, 4)
+})
+
+test('uses each configured event time and rejects an event outside the simulation window', () => {
+  const input = {
+    scenarioPresetId: 'xiongan_20',
+    period: 'morning_peak',
+    windowStartSeconds: 0,
+    durationSeconds: 900,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    disturbanceEvents: [{
+      eventId: 'timed',
+      eventType: 'accident',
+      intersectionIds: ['demo_1'],
+      startSeconds: 120,
+      endSeconds: 480,
+    }],
+    snapshotIntervalSeconds: 0.2,
+  }
+  const payload = buildStartSimulationRequest(input)
+  assert.equal(payload.disturbance_targets[0].start_seconds, 120)
+  assert.equal(payload.disturbance_targets[0].end_seconds, 480)
+  assert.throws(() => buildStartSimulationRequest({
+    ...input,
+    disturbanceEvents: [{ ...input.disturbanceEvents[0], endSeconds: 901 }],
+  }), /simulation window/)
+})
+
+test('aggregates multiple warnings per intersection and tracks active/completed state', () => {
+  const nodes = [
+    { intersectionId: 'demo_1', longitude: 116.1, latitude: 39 },
+    { intersectionId: 'demo_2', longitude: 116.2, latitude: 39.1 },
+  ]
+  const events = [
+    {
+      event_id: 'one', preset_id: 'construction', event_type: 'lane_closure',
+      intersection_ids: ['demo_1'], start_time: '07:10', end_time: '07:20',
+    },
+    {
+      event_id: 'two', preset_id: 'accident', event_type: 'accident',
+      intersection_ids: ['demo_1', 'demo_2'], start_time: '07:15', end_time: '07:30',
+    },
+  ]
+  const active = buildDisturbanceWarningAggregates(nodes, events, '07:00', 16 * 60)
+  assert.equal(active.find((item) => item.intersectionId === 'demo_1').events.length, 2)
+  assert.equal(active.find((item) => item.intersectionId === 'demo_1').status, 'active')
+  const completed = buildDisturbanceWarningAggregates(nodes, events, '07:00', 31 * 60)
+  assert.ok(completed.every((item) => item.status === 'completed'))
+})
+
+test('migrates v4 events to the outer window and exports v5 scene configuration', () => {
+  assert.deepEqual(resolveImportedDisturbanceTimes({}, '07:10', '07:40'), {
+    startTime: '07:10',
+    endTime: '07:40',
+  })
+  assert.deepEqual(resolveImportedDisturbanceTimes({
+    start_time: '07:15', end_time: '07:25',
+  }, '07:10', '07:40'), {
+    startTime: '07:15',
+    endTime: '07:25',
+  })
+  assert.equal(SCENARIO_CONFIG_EXPORT_VERSION, 5)
 })
 
 test('marks a scenario unavailable until every preset intersection is in the catalog', () => {

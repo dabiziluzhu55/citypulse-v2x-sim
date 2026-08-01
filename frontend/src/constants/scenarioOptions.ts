@@ -165,6 +165,25 @@ export const DISTURBANCE_TYPE_OPTIONS: SelectOption<DisturbanceType>[] = [
   { label: '交通事故', value: 'accident' },
 ]
 
+export type DisturbancePresetId =
+  | 'construction'
+  | 'event_departure'
+  | 'event_arrival'
+  | 'accident'
+  | 'speed_limit'
+
+export interface DisturbanceEventOption extends SelectOption<DisturbancePresetId> {
+  eventType: DisturbanceType
+}
+
+export const DISTURBANCE_EVENT_OPTIONS: DisturbanceEventOption[] = [
+  { label: '施工占道', value: 'construction', eventType: 'lane_closure' },
+  { label: '大型活动散场', value: 'event_departure', eventType: 'lane_closure' },
+  { label: '大型活动开场', value: 'event_arrival', eventType: 'speed_limit' },
+  { label: '交通事故', value: 'accident', eventType: 'accident' },
+  { label: '道路限速', value: 'speed_limit', eventType: 'speed_limit' },
+]
+
 export const DISTURBANCE_CHOICE_OPTIONS: SelectOption<DisturbanceType | 'none'>[] = [
   ...DISTURBANCE_TYPE_OPTIONS,
   { label: '无扰动', value: 'none' },

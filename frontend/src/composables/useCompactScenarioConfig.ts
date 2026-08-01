@@ -1,10 +1,11 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import {
-  DISTURBANCE_CHOICE_OPTIONS,
+  DISTURBANCE_EVENT_OPTIONS,
   SCENARIO_MODE_OPTIONS,
   SIMULATION_PERIOD_RANGES,
   SIMULATION_TIME_OPTIONS,
   TRAFFIC_FLOW_MODE_OPTIONS,
+  clockTimeToMinutes,
   simulationTimeWindow,
   type ScenarioModeId,
 } from '../constants/scenarioOptions'
@@ -16,23 +17,32 @@ import {
 } from '../constants/simulationOptions'
 import type { CatalogIntersection, CatalogScenarioPreset } from '../types/catalog'
 import type { StartSimulationRequest } from '../types/simulation'
-import type { DisturbanceType, TrafficFlowMode } from '../types/scenario'
+import type { TrafficFlowMode } from '../types/scenario'
 import { requireSimulatableIntersection } from './catalogCapabilities'
 import { buildStartSimulationRequest } from '../utils/scenarioPayload'
+import {
+  SCENARIO_CONFIG_EXPORT_VERSION,
+  resolveImportedDisturbanceTimes,
+} from '../utils/scenarioConfigMigration'
+import {
+  publishScenarioDraft,
+  type ScenarioDraftDisturbanceEvent,
+} from './useScenarioDraftStore'
 
 export interface CompactScenarioConfig {
   scenario_preset_id: ScenarioModeId
   flow_mode: TrafficFlowMode
-  disturbance: DisturbanceType | 'none'
-  disturbance_intersection_ids: string[]
+  disturbance_events: CompactDisturbanceEvent[]
   simulation_start_time: string
   simulation_end_time: string
   playback_speed: number
   control_mode: string
 }
 
+export type CompactDisturbanceEvent = ScenarioDraftDisturbanceEvent
+
 export interface ScenarioConfigExport {
-  version: 3
+  version: typeof SCENARIO_CONFIG_EXPORT_VERSION
   exported_at: string
   ui_config: CompactScenarioConfig
   display: {
@@ -61,8 +71,7 @@ function defaultCompactConfig(): CompactScenarioConfig {
   return {
     scenario_preset_id: 'xiongan_20',
     flow_mode: 'morning_peak',
-    disturbance: 'lane_closure',
-    disturbance_intersection_ids: ['demo_2'],
+    disturbance_events: [],
     simulation_start_time: SIMULATION_PERIOD_RANGES.morning_peak.start,
     simulation_end_time: SIMULATION_PERIOD_RANGES.morning_peak.end,
     playback_speed: 1,
@@ -93,16 +102,37 @@ export function buildSimulationPayload(
   const supported = new Set(supportedIntersectionIds.length
     ? supportedIntersectionIds
     : [simulatableIntersection.intersection_id])
-  const disturbanceIntersectionIds = [...new Set(config.disturbance_intersection_ids)]
-  if (config.disturbance !== 'none') {
-    if (disturbanceIntersectionIds.length === 0) {
-      throw new Error('请选择至少一个扰动路口')
-    }
-    const invalid = disturbanceIntersectionIds.filter((id) => (
+  const disturbanceEvents = config.disturbance_events.map((event) => {
+    const option = DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === event.preset_id)
+    if (!option || option.eventType !== event.event_type) throw new Error('扰动事件不受支持')
+    const intersectionIds = [...new Set(event.intersection_ids)]
+    if (intersectionIds.length === 0) throw new Error('请选择至少一个扰动路口')
+    const invalid = intersectionIds.filter((id) => (
       !supported.has(id) || (preset && !preset.intersection_ids.includes(id))
     ))
     if (invalid.length > 0) throw new Error(`扰动路口不可用于当前场景：${invalid.join(', ')}`)
-  }
+    const outerStartMinutes = clockTimeToMinutes(config.simulation_start_time)
+    const eventStartMinutes = clockTimeToMinutes(event.start_time)
+    const eventEndMinutes = clockTimeToMinutes(event.end_time)
+    const startSeconds = (eventStartMinutes - outerStartMinutes) * 60
+    const endSeconds = (eventEndMinutes - outerStartMinutes) * 60
+    if (
+      !Number.isFinite(startSeconds)
+      || !Number.isFinite(endSeconds)
+      || startSeconds < 0
+      || startSeconds >= endSeconds
+      || endSeconds > time.durationSeconds
+    ) {
+      throw new Error(`扰动事件“${option.label}”必须位于仿真时间内`)
+    }
+    return {
+      eventId: event.event_id,
+      eventType: event.event_type,
+      intersectionIds,
+      startSeconds,
+      endSeconds,
+    }
+  })
   const controlMode = requireAvailableControlMode(config.control_mode, controlModes)
   return buildStartSimulationRequest({
     scenarioPresetId: config.scenario_preset_id,
@@ -111,8 +141,7 @@ export function buildSimulationPayload(
     durationSeconds: time.durationSeconds,
     controlMode,
     playbackSpeed: config.playback_speed,
-    disturbance: config.disturbance,
-    disturbanceIntersectionIds,
+    disturbanceEvents,
     snapshotIntervalSeconds: SIMULATION_SNAPSHOT_INTERVAL_MS / 1_000,
   })
 }
@@ -141,11 +170,26 @@ export function useCompactScenarioConfig(
   const activeTimeRange = computed(() => SIMULATION_PERIOD_RANGES[config.value.flow_mode])
 
   watch(
+    config,
+    (value) => publishScenarioDraft({
+      disturbanceEvents: value.disturbance_events,
+      simulationStartTime: value.simulation_start_time,
+      simulationEndTime: value.simulation_end_time,
+    }),
+    { deep: true, immediate: true },
+  )
+
+  watch(
     () => config.value.flow_mode,
     (mode) => {
       const range = SIMULATION_PERIOD_RANGES[mode]
       config.value.simulation_start_time = range.start
       config.value.simulation_end_time = range.end
+      config.value.disturbance_events = config.value.disturbance_events.map((event) => ({
+        ...event,
+        start_time: range.start,
+        end_time: range.end,
+      }))
     },
   )
 
@@ -160,21 +204,18 @@ export function useCompactScenarioConfig(
   )
 
   watch(
-    [() => config.value.scenario_preset_id, scenarioPresets, supportedIntersectionIds, intersection],
-    ([presetId, presets, supportedIds, activeIntersection]) => {
+    [() => config.value.scenario_preset_id, scenarioPresets, supportedIntersectionIds],
+    ([presetId, presets, supportedIds]) => {
       const preset = presets.find((item) => item.preset_id === presetId)
       if (!preset) return
       const supported = new Set(supportedIds)
       const available = preset.intersection_ids.filter((id) => supported.has(id))
-      const retained = config.value.disturbance_intersection_ids.filter((id) => available.includes(id))
-      if (retained.length > 0 || config.value.disturbance === 'none') {
-        config.value.disturbance_intersection_ids = retained
-        return
-      }
-      const activeId = activeIntersection?.intersection_id
-      config.value.disturbance_intersection_ids = activeId && available.includes(activeId)
-        ? [activeId]
-        : available.slice(0, 1)
+      config.value.disturbance_events = config.value.disturbance_events
+        .map((event) => ({
+          ...event,
+          intersection_ids: event.intersection_ids.filter((id) => available.includes(id)),
+        }))
+        .filter((event) => event.intersection_ids.length > 0)
     },
     { immediate: true },
   )
@@ -203,7 +244,12 @@ export function useCompactScenarioConfig(
     scenario: scenarioPresets.value.find((item) => item.preset_id === config.value.scenario_preset_id)?.label
       ?? SCENARIO_MODE_OPTIONS.find((item) => item.value === config.value.scenario_preset_id)?.label
       ?? config.value.scenario_preset_id,
-    disturbance: DISTURBANCE_CHOICE_OPTIONS.find((item) => item.value === config.value.disturbance)?.label ?? config.value.disturbance,
+    disturbance: config.value.disturbance_events.length === 0
+      ? '无扰动'
+      : config.value.disturbance_events.length === 1
+        ? DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === config.value.disturbance_events[0].preset_id)?.label
+          ?? config.value.disturbance_events[0].event_type
+        : `${DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === config.value.disturbance_events[0].preset_id)?.label ?? '扰动事件'}等${config.value.disturbance_events.length}项`,
     flow: TRAFFIC_FLOW_MODE_OPTIONS.find((item) => item.value === config.value.flow_mode)?.label ?? config.value.flow_mode,
     time: `${config.value.simulation_start_time}-${config.value.simulation_end_time}`,
   }))
@@ -232,7 +278,6 @@ export function useCompactScenarioConfig(
     const candidate = isRecord(input.ui_config) ? input.ui_config : input
     const scenarioPresetId = candidate.scenario_preset_id ?? candidate.scenario_mode
     const flowMode = candidate.flow_mode
-    const disturbance = candidate.disturbance
     const playbackSpeed = candidate.playback_speed ?? candidate.flow_scale
     const controlMode = candidate.control_mode
 
@@ -241,7 +286,6 @@ export function useCompactScenarioConfig(
       : SCENARIO_MODE_OPTIONS.map((item) => item.value)
     if (typeof scenarioPresetId !== 'string' || !supportedPresetIds.includes(scenarioPresetId)) throw new Error('场景模式不受支持')
     if (!TRAFFIC_FLOW_MODE_OPTIONS.some((item) => item.value === flowMode)) throw new Error('交通流模式不受支持')
-    if (!DISTURBANCE_CHOICE_OPTIONS.some((item) => item.value === disturbance)) throw new Error('扰动事件不受支持')
     const supportedControlModes: string[] = resolveDashboardControlModes(controlModes.value)
       .map((item) => item.value)
     if (supportedControlModes.length === 0) throw new Error('后端未提供可运行的管控算法')
@@ -258,15 +302,45 @@ export function useCompactScenarioConfig(
       : legacyTimes?.end ?? range.end
     simulationTimeWindow(mode, startTime, endTime)
 
-    const disturbanceIds = Array.isArray(candidate.disturbance_intersection_ids)
+    const fallbackIntersectionIds = Array.isArray(candidate.disturbance_intersection_ids)
       ? candidate.disturbance_intersection_ids.filter((value): value is string => typeof value === 'string')
       : intersection.value?.intersection_id ? [intersection.value.intersection_id] : []
+    let disturbanceEvents: CompactDisturbanceEvent[] = []
+    if (Array.isArray(candidate.disturbance_events)) {
+      disturbanceEvents = candidate.disturbance_events.map((value, index) => {
+        if (!isRecord(value)) throw new Error('扰动事件格式无效')
+        const preset = DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === value.preset_id)
+        if (!preset) throw new Error('扰动事件不受支持')
+        const intersectionIds = Array.isArray(value.intersection_ids)
+          ? value.intersection_ids.filter((id): id is string => typeof id === 'string')
+          : []
+        const importedTimes = resolveImportedDisturbanceTimes(value, startTime, endTime)
+        return {
+          event_id: typeof value.event_id === 'string' ? value.event_id : `ui_import_${index + 1}`,
+          preset_id: preset.value,
+          event_type: preset.eventType,
+          intersection_ids: intersectionIds,
+          start_time: importedTimes.startTime,
+          end_time: importedTimes.endTime,
+        }
+      })
+    } else if (typeof candidate.disturbance === 'string' && candidate.disturbance !== 'none') {
+      const legacyPreset = DISTURBANCE_EVENT_OPTIONS.find((item) => item.eventType === candidate.disturbance)
+      if (!legacyPreset) throw new Error('扰动事件不受支持')
+      disturbanceEvents = [{
+        event_id: 'ui_import_1',
+        preset_id: legacyPreset.value,
+        event_type: legacyPreset.eventType,
+        intersection_ids: fallbackIntersectionIds,
+        start_time: startTime,
+        end_time: endTime,
+      }]
+    }
 
     return {
       scenario_preset_id: scenarioPresetId,
       flow_mode: mode,
-      disturbance: disturbance as DisturbanceType | 'none',
-      disturbance_intersection_ids: disturbanceIds,
+      disturbance_events: disturbanceEvents,
       simulation_start_time: startTime,
       simulation_end_time: endTime,
       playback_speed: typeof playbackSpeed === 'number' && playbackSpeeds.value.includes(playbackSpeed)
@@ -284,7 +358,7 @@ export function useCompactScenarioConfig(
 
   function buildExport(): ScenarioConfigExport {
     return {
-      version: 3,
+      version: SCENARIO_CONFIG_EXPORT_VERSION,
       exported_at: new Date().toISOString(),
       ui_config: { ...config.value },
       display: {

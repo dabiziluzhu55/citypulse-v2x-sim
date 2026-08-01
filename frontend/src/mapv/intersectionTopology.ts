@@ -103,20 +103,37 @@ export function buildIntersectionTopologyLinks(
 
 export function intersectionTopologyBounds(
   nodes: IntersectionTopologyNode[],
-  paddingMeters = 2_500,
+  paddingRatio = 0.075,
 ): [number, number, number, number] | null {
   if (!nodes.length) return null
   const south = Math.min(...nodes.map((node) => node.latitude))
   const north = Math.max(...nodes.map((node) => node.latitude))
   const west = Math.min(...nodes.map((node) => node.longitude))
   const east = Math.max(...nodes.map((node) => node.longitude))
-  const centerLatitude = (south + north) / 2
-  const latitudePadding = paddingMeters / 110_900
-  const longitudePadding = latitudePadding / Math.max(0.2, Math.cos(centerLatitude * Math.PI / 180))
+  const latitudePadding = Math.max(0.001, (north - south) * paddingRatio)
+  const longitudePadding = Math.max(0.001, (east - west) * paddingRatio)
   return [
     west - longitudePadding,
     south - latitudePadding,
     east + longitudePadding,
     north + latitudePadding,
   ]
+}
+
+export function intersectionTopologyMaxRange(
+  nodes: IntersectionTopologyNode[],
+  aspectRatio = 16 / 9,
+  verticalFieldOfViewDegrees = 45,
+): number {
+  const bounds = intersectionTopologyBounds(nodes)
+  if (!bounds) return 3_200
+  const [west, south, east, north] = bounds
+  const centerLatitude = (south + north) / 2 * Math.PI / 180
+  const widthMeters = (east - west) * 111_320 * Math.cos(centerLatitude)
+  const heightMeters = (north - south) * 111_320
+  const diagonalMeters = Math.hypot(widthMeters, heightMeters)
+  const halfFov = verticalFieldOfViewDegrees * Math.PI / 360
+  const narrowViewportFactor = Math.max(1, (16 / 9) / Math.max(0.5, aspectRatio))
+  const requiredRange = diagonalMeters / 2 / Math.tan(halfFov) * narrowViewportFactor
+  return Math.min(48_000, Math.max(3_200, Math.ceil(requiredRange / 100) * 100))
 }

@@ -6,6 +6,7 @@ import {
   loadIntersectionTopologyCatalog,
   type IntersectionTopologyNode,
 } from './intersectionTopology'
+import { formatIntersectionLabel } from '../utils/intersectionLabels'
 
 interface RenderMaterialOwner {
   material?: THREE.Material
@@ -58,6 +59,7 @@ export class IntersectionTopologyLayer {
   private readonly markers: mapvthree.EffectModelPoint
   private readonly activeMarker: mapvthree.EffectModelPoint
   private readonly waves: mapvthree.EffectPoint
+  private readonly labels: mapvthree.Text
   private readonly markerModel = createMarkerModel(0x087ae8, 0x00aef0)
   private readonly activeMarkerModel = createMarkerModel(0x08a7f0, 0x00f5dc)
   private nodes: IntersectionTopologyNode[] = []
@@ -131,6 +133,16 @@ export class IntersectionTopologyLayer {
       duration: 2_000,
     }))
     this.waves.position.z = 2
+
+    this.labels = engine.add(new mapvthree.Text({
+      fillStyle: '#bff5ff',
+      strokeStyle: '#071626',
+      lineWidth: 3,
+      fontSize: 12,
+      flat: false,
+      keepSize: true,
+    }))
+    this.labels.renderOrder = 45
   }
 
   get animationActive(): boolean {
@@ -188,6 +200,23 @@ export class IntersectionTopologyLayer {
         }],
       })
       : null
+    if (node) {
+      const labelSource = mapvthree.GeoJSONDataSource.fromGeoJSON({
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: this.projector([node.longitude, node.latitude, 32]),
+          },
+          properties: { label: formatIntersectionLabel(node.intersectionId) },
+        }],
+      })
+      labelSource.defineAttribute('text', 'label')
+      this.labels.dataSource = labelSource
+    } else {
+      this.labels.dataSource = null
+    }
     this.engine.requestRender()
   }
 
@@ -197,11 +226,13 @@ export class IntersectionTopologyLayer {
     this.markers.dataSource?.clear()
     this.activeMarker.dataSource?.clear()
     this.waves.dataSource?.clear()
+    this.labels.dataSource?.clear()
     this.engine.remove(this.baseLine)
     this.engine.remove(this.flowLine)
     this.engine.remove(this.markers)
     this.engine.remove(this.activeMarker)
     this.engine.remove(this.waves)
+    this.engine.remove(this.labels)
     disposeMarkerModel(this.markerModel)
     disposeMarkerModel(this.activeMarkerModel)
     this.nodes = []
