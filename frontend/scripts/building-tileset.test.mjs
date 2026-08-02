@@ -36,7 +36,8 @@ test('keeps Baidu roads and base landcover while native buildings stay disabled'
 test('keeps one global local building source while all intersection roads stay prepared', () => {
   assert.match(baiduThreeMapSource, /\/3dtiles\/xiongan-webmercator\/tileset\.json/)
   assert.doesNotMatch(baiduThreeMapSource, /switchBuildingTileset/)
-  assert.match(baiduThreeMapSource, /prepareOverview\(nodes\.map/)
+  assert.match(baiduThreeMapSource, /prepareOverview\(intersectionIds\)/)
+  assert.match(baiduThreeMapSource, /validateGlobalBuildingSource/)
   assert.match(baiduThreeMapSource, /cacheBytes: BUILDING_CACHE_BYTES/)
 })
 

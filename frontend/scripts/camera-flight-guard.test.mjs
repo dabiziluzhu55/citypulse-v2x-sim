@@ -57,20 +57,23 @@ test('cancelled camera flight guard cannot complete a stale transaction', async 
   assert.equal(completions, 0)
 })
 
-test('optional intersection environment cannot block realistic road activation', async () => {
+test('initial presentation waits for facilities while optional environment layers fail safely', async () => {
   const source = await readFile(
     new URL('../src/components/visualization/BaiduThreeMap.vue', import.meta.url),
     'utf8',
   )
   const activateAt = source.indexOf('realisticIntersectionLayer.activate(intersectionId)')
-  const readyAt = source.indexOf('resourcesReady = true', activateAt)
-  const optionalEnvironmentAt = source.indexOf(
-    'void switchIntersectionEnvironment(intersectionId, revision).catch',
-    readyAt,
+  const environmentAwaitAt = source.indexOf(
+    'await switchIntersectionEnvironment(intersectionId, revision)',
+    activateAt,
+  )
+  const environmentReadyAt = source.indexOf('initialEnvironmentReady = true', environmentAwaitAt)
+  const optionalLandcoverCatchAt = source.indexOf(
+    'ensureIntersectionLandcover(intersectionId, environment).catch',
   )
 
   assert.ok(activateAt >= 0)
-  assert.ok(readyAt > activateAt)
-  assert.ok(optionalEnvironmentAt > readyAt)
-  assert.doesNotMatch(source, /await switchIntersectionEnvironment\(intersectionId, revision\)/)
+  assert.ok(environmentAwaitAt > activateAt)
+  assert.ok(environmentReadyAt > environmentAwaitAt)
+  assert.ok(optionalLandcoverCatchAt > environmentAwaitAt)
 })

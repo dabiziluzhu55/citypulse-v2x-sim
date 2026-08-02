@@ -72,20 +72,22 @@ export class RoadsideFacilityRenderer {
   private streetlightSource: Group | null = null
   private streetlightKey = ''
   private realisticDetailActive = false
-  private readonly streetlightModelYawOffsetRadians: number
+  private streetlightModelYawOffsetRadians = 0
 
   constructor(
     engine: Engine,
     projector: RoadCoordinateProjector,
-    streetlightModelYawOffsetRadians = 0,
   ) {
     this.engine = engine
     this.projector = projector
-    this.streetlightModelYawOffsetRadians = streetlightModelYawOffsetRadians
   }
 
-  async prepareStreetlight(modelUrl: string, heightMeters: number): Promise<void> {
-    const key = `${modelUrl}:${heightMeters}`
+  async prepareStreetlight(
+    modelUrl: string,
+    heightMeters: number,
+    modelYawDegrees = 0,
+  ): Promise<void> {
+    const key = `${modelUrl}:${heightMeters}:${modelYawDegrees}`
     if (this.streetlightSource && this.streetlightKey === key) return
     const gltf = await new GLTFLoader().loadAsync(modelUrl)
     const bounds = new Box3().setFromObject(gltf.scene)
@@ -109,6 +111,7 @@ export class RoadsideFacilityRenderer {
     this.clearStreetlightSource()
     this.streetlightSource = normalized
     this.streetlightKey = key
+    this.streetlightModelYawOffsetRadians = modelYawDegrees * Math.PI / 180
   }
 
   render(manifest: SceneFacilityManifest): void {

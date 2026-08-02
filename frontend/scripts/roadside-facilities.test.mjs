@@ -173,12 +173,12 @@ test('places street lamps on both sides near each controlled approach', () => {
 })
 
 test('preserves opposite roadside headings and applies one model yaw calibration', () => {
-  const yaw = 12 * Math.PI / 180
+  const yaw = Math.PI
   const first = resolveStreetlightHeading({ heading: 0 }, yaw)
   const opposite = resolveStreetlightHeading({ heading: Math.PI }, yaw)
   const delta = Math.abs(((opposite - first + Math.PI * 3) % (Math.PI * 2)) - Math.PI)
 
-  assert.ok(Math.abs(first - yaw) < 1e-12)
+  assert.ok(Math.abs(Math.abs(first) - Math.PI) < 1e-12)
   assert.ok(Math.abs(delta - Math.PI) < 1e-12)
 })
 

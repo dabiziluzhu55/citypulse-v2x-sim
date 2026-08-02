@@ -49,7 +49,7 @@ export function classifyMap3dFailure(cause: unknown): Map3dFailure {
   if (/webgl|graphics context|图形上下文/i.test(detail)) {
     return {
       code: 'webgl',
-      message: '当前浏览器的WebGL环境不可用，已保留2D地图',
+      message: '当前浏览器的 WebGL 环境不可用，可重试或返回 2D 地图',
       detail,
     }
   }
@@ -65,14 +65,14 @@ export function classifyMap3dFailure(cause: unknown): Map3dFailure {
   if (/3d tiles|tileset|\.glb|manifest|模型|设施|资产/i.test(detail)) {
     return {
       code: 'scene-assets',
-      message: '三维场景资产加载失败，已保留2D地图',
+      message: '三维场景资产加载失败，可重试或返回 2D 地图',
       detail,
     }
   }
 
   return {
     code: 'unknown',
-    message: '三维地图暂时无法显示，已自动切换到2D地图',
+    message: '三维地图暂时无法显示，可重试或返回 2D 地图',
     detail,
   }
 }

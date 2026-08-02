@@ -40,6 +40,12 @@ async function missingFiles(paths) {
 }
 
 export async function auditIntersectionEnvironments() {
+  const globalBuildingManifest = await readJson(path.join(
+    publicDirectory,
+    '3dtiles',
+    'xiongan-webmercator',
+    'manifest.json',
+  ))
   const rows = []
   for (let index = 1; index <= INTERSECTION_COUNT; index += 1) {
     const intersectionId = `demo_${index}`
@@ -79,6 +85,9 @@ export async function auditIntersectionEnvironments() {
     }
     if (environment.geojson?.water !== `/intersections/v3/${intersectionId}/water.geojson`) {
       errors.push('intersection water layer is not configured')
+    }
+    if (environment.streetlight?.modelYawDegrees !== 180) {
+      errors.push('streetlight model yaw calibration must be 180 degrees')
     }
     const radii = scene.edges.map((edge) => edgeRadiusMeters(edge, scene.horizontalScale))
     const boundaryRadii = radii.filter((radius) => radius >= scene.radiusMeters - 15)
@@ -132,6 +141,14 @@ export async function auditIntersectionEnvironments() {
       buildings: 'one global local 3D Tiles source; Baidu native buildings disabled; sparse source areas are never fabricated',
       landcover: 'local OSM polygons over the global Baidu green/water base',
       roads: `all local patches stay visible; Baidu continuous road base bridges patches; ${ROAD_TRANSITION_OVERLAP_METERS}m generation target and 15m visual warning threshold`,
+    },
+    globalBuildingSource: {
+      url: '/3dtiles/xiongan-webmercator/tileset.json',
+      scope: 'global',
+      sourceTiles: globalBuildingManifest.source_tile_count,
+      outputTiles: globalBuildingManifest.output_tile_count,
+      vertices: globalBuildingManifest.vertex_count,
+      baiduBuildings: false,
     },
     intersections: rows,
     summary: {

@@ -4,7 +4,8 @@
   "facilitiesUrl": "/intersections/v3/demo_5/facilities.json",
   "streetlight": {
     "modelUrl": "/assets/roadside/streetlight.glb",
-    "heightMeters": 7.5
+    "heightMeters": 7.5,
+    "modelYawDegrees": 180
   },
   "buildingTilesetUrl": "/3dtiles/intersections/demo_5/tileset.json",
   "geojson": {
