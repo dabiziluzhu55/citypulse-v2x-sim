@@ -10,6 +10,7 @@ from .events import (
     SpeedLimitEvent,
 )
 from .session import PLAYBACK_SPEEDS, SimulationConfig, SimulationManager
+from .distributed import RedisSimulationManager, RedisUnavailableError
 
 __all__ = [
     "AccidentEvent",
@@ -17,6 +18,8 @@ __all__ = [
     "MajorEventClosingEvent",
     "MajorEventOpeningEvent",
     "PLAYBACK_SPEEDS",
+    "RedisSimulationManager",
+    "RedisUnavailableError",
     "SafePhaseController",
     "SignalStage",
     "SimulationConfig",

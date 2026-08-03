@@ -1060,6 +1060,16 @@ class SimulationManager:
             first = False
             try:
                 if command.name == "stop":
+                    if record.snapshot.state != "STOPPING":
+                        sequence += 1
+                        self._publish(
+                            record,
+                            replace(
+                                record.snapshot,
+                                state="STOPPING",
+                                sequence=sequence,
+                            ),
+                        )
                     stop = True
                 elif command.name == "pause":
                     if not record.paused:

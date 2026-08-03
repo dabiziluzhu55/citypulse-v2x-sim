@@ -3,6 +3,11 @@
 本接口供后端进程直接调用。后端不得直接调用 TraCI；`SimulationManager` 的 worker
 线程是唯一 TraCI 所有者。当前一次只允许一个活动会话。
 
+需要并行运行多个会话时使用 `RedisSimulationManager`。它保持相同的会话控制接口，
+通过 Redis/Celery 将每个 TraCI 会话放入独立进程，部署方法见
+[`distributed_simulation.md`](distributed_simulation.md)。分布式会话增加 `QUEUED`
+状态，并且只支持无界面的 `sumo`。
+
 ## 查询能力
 
 ```python
