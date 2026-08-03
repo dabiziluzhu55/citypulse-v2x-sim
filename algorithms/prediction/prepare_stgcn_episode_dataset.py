@@ -18,7 +18,6 @@ from pathlib import Path
 import numpy as np
 
 from .dataset import load_lane_series
-from .export_stgcn_dataset import build_lane_adjacency
 
 
 @dataclass(frozen=True)
@@ -131,11 +130,22 @@ def prepare_episode_dataset(
         split_files[split] = {"path": str(destination), "samples": len(x)}
 
     if adjacency_path is None:
+        # SciPy is only required when a network must be converted into a new
+        # graph.  Precomputed official20 graphs keep dataset preparation
+        # portable in lightweight evaluation environments.
+        from .export_stgcn_dataset import build_lane_adjacency
+
         adjacency = build_lane_adjacency(lanes, net_path)
     else:
-        adjacency = np.load(adjacency_path)["adjacency"].astype(np.float32)
+        adjacency_archive = np.load(adjacency_path)
+        adjacency = adjacency_archive["adjacency"].astype(np.float32)
         if adjacency.shape != (len(lanes), len(lanes)):
             raise ValueError(f"adjacency shape {adjacency.shape} does not match {len(lanes)} nodes")
+        if "nodes" in adjacency_archive and tuple(adjacency_archive["nodes"].tolist()) != lanes:
+            raise ValueError(
+                "adjacency node order differs from the filtered snapshot lanes; "
+                "regenerate the graph or use its matching lane filter."
+            )
     np.savez_compressed(output_dir / "adjacency.npz", adjacency=adjacency)
     metadata = {
         "manifest": str(manifest_path.resolve()),

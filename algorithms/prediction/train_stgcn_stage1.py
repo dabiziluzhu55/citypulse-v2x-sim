@@ -79,7 +79,10 @@ def _evaluate(
             predictions.append(output * std + mean)
             actuals.append(y.numpy() * std + mean)
     prediction = np.concatenate(predictions)
-    actual = np.concatenate(actuals)
+    # ``vehicle_count`` is integer-valued in SUMO.  Restore the target on its
+    # native scale before percentage metrics so a normalized true zero cannot
+    # become a floating-point residue.
+    actual = np.rint(np.concatenate(actuals))
     error = prediction - actual
     absolute = np.abs(error)
     denominator = np.abs(actual).sum()

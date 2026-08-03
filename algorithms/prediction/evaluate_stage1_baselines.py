@@ -39,6 +39,18 @@ def _raw(values: np.ndarray, mean: float, std: float) -> np.ndarray:
     return values.astype(np.float64) * std + mean
 
 
+def _target_counts(values: np.ndarray, mean: float, std: float) -> np.ndarray:
+    """Restore the integer SUMO vehicle-count target exactly.
+
+    Tensor normalization stores float32 values.  Reversing a true zero through
+    float64 arithmetic can yield a tiny negative residual, which makes sMAPE
+    silently treat a zero-flow sample as non-zero.  The source target is an
+    integer count, so round only the ground truth; predictions remain real.
+    """
+
+    return np.rint(_raw(values, mean, std))
+
+
 def evaluate(dataset_dir: Path, output: Path) -> list[dict[str, object]]:
     metadata = json.loads((dataset_dir / "metadata.json").read_text(encoding="utf-8"))
     normalization = metadata["normalization"]
@@ -55,7 +67,7 @@ def evaluate(dataset_dir: Path, output: Path) -> list[dict[str, object]]:
     for split in ("validation", "test_in_distribution", "test_extrapolation"):
         data = np.load(dataset_dir / f"{split}.npz")
         for horizon in (1, 6, 12):
-            actual = _raw(data["y"][:, horizon - 1, :], mean, std)
+            actual = _target_counts(data["y"][:, horizon - 1, :], mean, std)
             candidates = {
                 "persistence": data["x"][:, target_feature_index, -1, :],
                 # The model's input window contains the preceding 60 seconds
