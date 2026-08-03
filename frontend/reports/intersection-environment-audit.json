@@ -1,0 +1,636 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-02T09:24:13.601Z",
+  "reference": "huiyan-fe/mapv-three-showcases/src/pages/yizhuang",
+  "policy": {
+    "buildings": "one global local 3D Tiles source; Baidu native buildings disabled; sparse source areas are never fabricated",
+    "landcover": "local OSM polygons over the global Baidu green/water base",
+    "roads": "all local patches stay visible; Baidu continuous road base bridges patches; 22m generation target and 15m visual warning threshold"
+  },
+  "globalBuildingSource": {
+    "url": "/3dtiles/xiongan-webmercator/tileset.json",
+    "scope": "global",
+    "sourceTiles": 977,
+    "outputTiles": 977,
+    "vertices": 5072230,
+    "baiduBuildings": false
+  },
+  "intersections": [
+    {
+      "intersectionId": "demo_1",
+      "status": "warning",
+      "buildings": {
+        "coverage": "dense",
+        "tiles": 157,
+        "triangles": 11453,
+        "bytes": 6436388
+      },
+      "landcover": {
+        "greenFeatures": 0,
+        "waterFeatures": 0,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 222,
+        "cameras": 4
+      },
+      "roads": {
+        "boundaryEdges": 21,
+        "minimumBoundaryOverlapMeters": 16.7,
+        "frontendPatchVisible": true,
+        "continuityClassification": "local-overlap"
+      },
+      "errors": [],
+      "warnings": [
+        "no local OSM green polygon; use Baidu green base layer",
+        "no local OSM water polygon; use Baidu water base layer"
+      ]
+    },
+    {
+      "intersectionId": "demo_2",
+      "status": "warning",
+      "buildings": {
+        "coverage": "sparse-source",
+        "tiles": 84,
+        "triangles": 2698,
+        "bytes": 3731792
+      },
+      "landcover": {
+        "greenFeatures": 0,
+        "waterFeatures": 0,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 160,
+        "cameras": 3
+      },
+      "roads": {
+        "boundaryEdges": 7,
+        "minimumBoundaryOverlapMeters": 22,
+        "frontendPatchVisible": true,
+        "continuityClassification": "local-overlap"
+      },
+      "errors": [],
+      "warnings": [
+        "local building source is sparse; Baidu building fallback stays disabled",
+        "no local OSM green polygon; use Baidu green base layer",
+        "no local OSM water polygon; use Baidu water base layer"
+      ]
+    },
+    {
+      "intersectionId": "demo_3",
+      "status": "warning",
+      "buildings": {
+        "coverage": "moderate",
+        "tiles": 92,
+        "triangles": 5314,
+        "bytes": 6278352
+      },
+      "landcover": {
+        "greenFeatures": 0,
+        "waterFeatures": 0,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 112,
+        "cameras": 4
+      },
+      "roads": {
+        "boundaryEdges": 8,
+        "minimumBoundaryOverlapMeters": 22,
+        "frontendPatchVisible": true,
+        "continuityClassification": "local-overlap"
+      },
+      "errors": [],
+      "warnings": [
+        "no local OSM green polygon; use Baidu green base layer",
+        "no local OSM water polygon; use Baidu water base layer"
+      ]
+    },
+    {
+      "intersectionId": "demo_4",
+      "status": "warning",
+      "buildings": {
+        "coverage": "moderate",
+        "tiles": 82,
+        "triangles": 5688,
+        "bytes": 3298136
+      },
+      "landcover": {
+        "greenFeatures": 0,
+        "waterFeatures": 0,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 152,
+        "cameras": 3
+      },
+      "roads": {
+        "boundaryEdges": 8,
+        "minimumBoundaryOverlapMeters": 22,
+        "frontendPatchVisible": true,
+        "continuityClassification": "local-overlap"
+      },
+      "errors": [],
+      "warnings": [
+        "no local OSM green polygon; use Baidu green base layer",
+        "no local OSM water polygon; use Baidu water base layer"
+      ]
+    },
+    {
+      "intersectionId": "demo_5",
+      "status": "warning",
+      "buildings": {
+        "coverage": "dense",
+        "tiles": 163,
+        "triangles": 19778,
+        "bytes": 8509920
+      },
+      "landcover": {
+        "greenFeatures": 0,
+        "waterFeatures": 1,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 308,
+        "cameras": 3
+      },
+      "roads": {
+        "boundaryEdges": 38,
+        "minimumBoundaryOverlapMeters": 8,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required",
+        "no local OSM green polygon; use Baidu green base layer"
+      ]
+    },
+    {
+      "intersectionId": "demo_6",
+      "status": "ready",
+      "buildings": {
+        "coverage": "dense",
+        "tiles": 156,
+        "triangles": 18633,
+        "bytes": 6294424
+      },
+      "landcover": {
+        "greenFeatures": 1,
+        "waterFeatures": 1,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 248,
+        "cameras": 4
+      },
+      "roads": {
+        "boundaryEdges": 16,
+        "minimumBoundaryOverlapMeters": 22,
+        "frontendPatchVisible": true,
+        "continuityClassification": "local-overlap"
+      },
+      "errors": [],
+      "warnings": []
+    },
+    {
+      "intersectionId": "demo_7",
+      "status": "warning",
+      "buildings": {
+        "coverage": "sparse-source",
+        "tiles": 57,
+        "triangles": 1712,
+        "bytes": 2315200
+      },
+      "landcover": {
+        "greenFeatures": 1,
+        "waterFeatures": 1,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 159,
+        "cameras": 3
+      },
+      "roads": {
+        "boundaryEdges": 12,
+        "minimumBoundaryOverlapMeters": 22,
+        "frontendPatchVisible": true,
+        "continuityClassification": "local-overlap"
+      },
+      "errors": [],
+      "warnings": [
+        "local building source is sparse; Baidu building fallback stays disabled"
+      ]
+    },
+    {
+      "intersectionId": "demo_8",
+      "status": "warning",
+      "buildings": {
+        "coverage": "sparse-source",
+        "tiles": 27,
+        "triangles": 432,
+        "bytes": 1568808
+      },
+      "landcover": {
+        "greenFeatures": 0,
+        "waterFeatures": 0,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 170,
+        "cameras": 4
+      },
+      "roads": {
+        "boundaryEdges": 11,
+        "minimumBoundaryOverlapMeters": 9.6,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required",
+        "local building source is sparse; Baidu building fallback stays disabled",
+        "no local OSM green polygon; use Baidu green base layer",
+        "no local OSM water polygon; use Baidu water base layer"
+      ]
+    },
+    {
+      "intersectionId": "demo_9",
+      "status": "warning",
+      "buildings": {
+        "coverage": "dense",
+        "tiles": 165,
+        "triangles": 22050,
+        "bytes": 6029324
+      },
+      "landcover": {
+        "greenFeatures": 0,
+        "waterFeatures": 1,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 275,
+        "cameras": 5
+      },
+      "roads": {
+        "boundaryEdges": 25,
+        "minimumBoundaryOverlapMeters": 7.6,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required",
+        "no local OSM green polygon; use Baidu green base layer"
+      ]
+    },
+    {
+      "intersectionId": "demo_10",
+      "status": "warning",
+      "buildings": {
+        "coverage": "moderate",
+        "tiles": 65,
+        "triangles": 5753,
+        "bytes": 2464128
+      },
+      "landcover": {
+        "greenFeatures": 0,
+        "waterFeatures": 2,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 365,
+        "cameras": 3
+      },
+      "roads": {
+        "boundaryEdges": 33,
+        "minimumBoundaryOverlapMeters": 10.9,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required",
+        "no local OSM green polygon; use Baidu green base layer"
+      ]
+    },
+    {
+      "intersectionId": "demo_11",
+      "status": "warning",
+      "buildings": {
+        "coverage": "sparse-source",
+        "tiles": 100,
+        "triangles": 2155,
+        "bytes": 4815288
+      },
+      "landcover": {
+        "greenFeatures": 0,
+        "waterFeatures": 0,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 238,
+        "cameras": 4
+      },
+      "roads": {
+        "boundaryEdges": 10,
+        "minimumBoundaryOverlapMeters": 22,
+        "frontendPatchVisible": true,
+        "continuityClassification": "local-overlap"
+      },
+      "errors": [],
+      "warnings": [
+        "local building source is sparse; Baidu building fallback stays disabled",
+        "no local OSM green polygon; use Baidu green base layer",
+        "no local OSM water polygon; use Baidu water base layer"
+      ]
+    },
+    {
+      "intersectionId": "demo_12",
+      "status": "warning",
+      "buildings": {
+        "coverage": "moderate",
+        "tiles": 172,
+        "triangles": 6157,
+        "bytes": 10204240
+      },
+      "landcover": {
+        "greenFeatures": 1,
+        "waterFeatures": 0,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 287,
+        "cameras": 4
+      },
+      "roads": {
+        "boundaryEdges": 18,
+        "minimumBoundaryOverlapMeters": 22,
+        "frontendPatchVisible": true,
+        "continuityClassification": "local-overlap"
+      },
+      "errors": [],
+      "warnings": [
+        "no local OSM water polygon; use Baidu water base layer"
+      ]
+    },
+    {
+      "intersectionId": "demo_13",
+      "status": "warning",
+      "buildings": {
+        "coverage": "sparse-source",
+        "tiles": 72,
+        "triangles": 1973,
+        "bytes": 3769208
+      },
+      "landcover": {
+        "greenFeatures": 4,
+        "waterFeatures": 3,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 185,
+        "cameras": 2
+      },
+      "roads": {
+        "boundaryEdges": 13,
+        "minimumBoundaryOverlapMeters": 22,
+        "frontendPatchVisible": true,
+        "continuityClassification": "local-overlap"
+      },
+      "errors": [],
+      "warnings": [
+        "local building source is sparse; Baidu building fallback stays disabled"
+      ]
+    },
+    {
+      "intersectionId": "demo_14",
+      "status": "warning",
+      "buildings": {
+        "coverage": "dense",
+        "tiles": 127,
+        "triangles": 8117,
+        "bytes": 7647808
+      },
+      "landcover": {
+        "greenFeatures": 3,
+        "waterFeatures": 3,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 413,
+        "cameras": 3
+      },
+      "roads": {
+        "boundaryEdges": 38,
+        "minimumBoundaryOverlapMeters": 7.9,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required"
+      ]
+    },
+    {
+      "intersectionId": "demo_15",
+      "status": "warning",
+      "buildings": {
+        "coverage": "dense",
+        "tiles": 136,
+        "triangles": 9294,
+        "bytes": 7478404
+      },
+      "landcover": {
+        "greenFeatures": 3,
+        "waterFeatures": 3,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 414,
+        "cameras": 4
+      },
+      "roads": {
+        "boundaryEdges": 31,
+        "minimumBoundaryOverlapMeters": 8.5,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required"
+      ]
+    },
+    {
+      "intersectionId": "demo_16",
+      "status": "warning",
+      "buildings": {
+        "coverage": "moderate",
+        "tiles": 83,
+        "triangles": 7131,
+        "bytes": 3297276
+      },
+      "landcover": {
+        "greenFeatures": 4,
+        "waterFeatures": 1,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 367,
+        "cameras": 4
+      },
+      "roads": {
+        "boundaryEdges": 34,
+        "minimumBoundaryOverlapMeters": 7.1,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required"
+      ]
+    },
+    {
+      "intersectionId": "demo_17",
+      "status": "warning",
+      "buildings": {
+        "coverage": "moderate",
+        "tiles": 98,
+        "triangles": 5375,
+        "bytes": 3067464
+      },
+      "landcover": {
+        "greenFeatures": 5,
+        "waterFeatures": 7,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 425,
+        "cameras": 3
+      },
+      "roads": {
+        "boundaryEdges": 55,
+        "minimumBoundaryOverlapMeters": 11.8,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required"
+      ]
+    },
+    {
+      "intersectionId": "demo_18",
+      "status": "warning",
+      "buildings": {
+        "coverage": "dense",
+        "tiles": 137,
+        "triangles": 8054,
+        "bytes": 6491108
+      },
+      "landcover": {
+        "greenFeatures": 5,
+        "waterFeatures": 3,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 456,
+        "cameras": 5
+      },
+      "roads": {
+        "boundaryEdges": 42,
+        "minimumBoundaryOverlapMeters": 13.2,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required"
+      ]
+    },
+    {
+      "intersectionId": "demo_19",
+      "status": "warning",
+      "buildings": {
+        "coverage": "dense",
+        "tiles": 137,
+        "triangles": 9728,
+        "bytes": 9033992
+      },
+      "landcover": {
+        "greenFeatures": 4,
+        "waterFeatures": 3,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 413,
+        "cameras": 4
+      },
+      "roads": {
+        "boundaryEdges": 45,
+        "minimumBoundaryOverlapMeters": 7.6,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required"
+      ]
+    },
+    {
+      "intersectionId": "demo_20",
+      "status": "warning",
+      "buildings": {
+        "coverage": "moderate",
+        "tiles": 137,
+        "triangles": 5306,
+        "bytes": 6454024
+      },
+      "landcover": {
+        "greenFeatures": 6,
+        "waterFeatures": 6,
+        "fallback": "Baidu vector base map"
+      },
+      "facilities": {
+        "lamps": 356,
+        "cameras": 4
+      },
+      "roads": {
+        "boundaryEdges": 34,
+        "minimumBoundaryOverlapMeters": 10,
+        "frontendPatchVisible": true,
+        "continuityClassification": "baidu-base-dependent"
+      },
+      "errors": [],
+      "warnings": [
+        "local road transition is below the 15 meter visual target; Baidu base road is required"
+      ]
+    }
+  ],
+  "summary": {
+    "ready": 1,
+    "warning": 19,
+    "error": 0,
+    "sparseBuildingSources": [
+      "demo_2",
+      "demo_7",
+      "demo_8",
+      "demo_11",
+      "demo_13"
+    ],
+    "baiduRoadDependent": [
+      "demo_5",
+      "demo_8",
+      "demo_9",
+      "demo_10",
+      "demo_14",
+      "demo_15",
+      "demo_16",
+      "demo_17",
+      "demo_18",
+      "demo_19",
+      "demo_20"
+    ]
+  }
+}

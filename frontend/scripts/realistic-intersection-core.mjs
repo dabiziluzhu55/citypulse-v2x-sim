@@ -118,6 +118,27 @@ export function validateIntersectionManifest(manifest) {
       }
     }
   }
+  for (const joint of manifest.roadJoints ?? []) {
+    if (!joint.jointId || !joint.junctionId) errors.push('road joint ids are required')
+    if (!['continuation', 'junction'].includes(joint.kind)) {
+      errors.push(`road joint ${joint.jointId} has unsupported kind ${joint.kind}`)
+    }
+    if (!Array.isArray(joint.connectedEdgeIds) || joint.connectedEdgeIds.length < 2) {
+      errors.push(`road joint ${joint.jointId} must connect at least two edges`)
+    }
+    if (!Number.isFinite(joint.maxGapMeters) || joint.maxGapMeters < 0) {
+      errors.push(`road joint ${joint.jointId} has invalid maxGapMeters`)
+    }
+    if (!Number.isFinite(joint.overlapMeters) || joint.overlapMeters < 0.5) {
+      errors.push(`road joint ${joint.jointId} must overlap road caps by at least 0.5 m`)
+    }
+    for (const layer of ['sidewalk', 'curb', 'asphalt']) {
+      const polygon = joint.polygons?.[layer]
+      if (!Array.isArray(polygon) || polygon.length < 3) {
+        errors.push(`road joint ${joint.jointId} has an invalid ${layer} polygon`)
+      }
+    }
+  }
   for (const tlsId of tlsIds) {
     const links = (manifest.connections ?? []).filter((item) => item.tlsId === tlsId)
     const maxLink = Math.max(-1, ...links.map((item) => item.linkIndex))

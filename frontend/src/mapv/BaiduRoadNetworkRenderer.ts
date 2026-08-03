@@ -16,8 +16,8 @@ import {
 } from '../constants/cesiumTrafficVisualization'
 import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates'
 import type { RoadCoordinateProjector } from './roadGeometry'
+import { BAIDU_ROAD_SURFACE_Z } from './sceneElevation'
 
-const ROAD_SURFACE_HEIGHT_METERS = 0.25
 const ROAD_EDGE_HEIGHT_METERS = 0.35
 const ROAD_CENTERLINE_HEIGHT_METERS = 0.45
 
@@ -150,7 +150,7 @@ export class BaiduRoadNetworkRenderer {
     const addLine = (coordinates: number[][]) => {
       const width = Math.round(resolveRoadWidthMeters(properties) * 2) / 2
       const bucket = surfaceBuckets.get(width) ?? []
-      bucket.push(createLineFeature(coordinates, properties, ROAD_SURFACE_HEIGHT_METERS, this.projector))
+      bucket.push(createLineFeature(coordinates, properties, BAIDU_ROAD_SURFACE_Z, this.projector))
       surfaceBuckets.set(width, bucket)
       edgeLines.push(createLineFeature(coordinates, properties, ROAD_EDGE_HEIGHT_METERS, this.projector))
       centerLines.push(createLineFeature(coordinates, properties, ROAD_CENTERLINE_HEIGHT_METERS, this.projector))

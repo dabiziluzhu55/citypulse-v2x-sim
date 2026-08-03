@@ -9,6 +9,7 @@ export interface IntersectionEnvironmentManifest {
   streetlight?: {
     modelUrl: string
     heightMeters: number
+    modelYawDegrees?: number
   }
   vegetation?: {
     manifestUrl: string
@@ -26,10 +27,22 @@ function parseStreetlight(value: unknown): IntersectionEnvironmentManifest['stre
   const source = value as Record<string, unknown>
   const modelUrl = optionalString(source.modelUrl)
   const heightMeters = Number(source.heightMeters)
-  if (!modelUrl || !Number.isFinite(heightMeters) || heightMeters <= 0) {
+  const modelYawDegrees = source.modelYawDegrees == null
+    ? undefined
+    : Number(source.modelYawDegrees)
+  if (
+    !modelUrl
+    || !Number.isFinite(heightMeters)
+    || heightMeters <= 0
+    || (source.modelYawDegrees != null && !Number.isFinite(modelYawDegrees))
+  ) {
     throw new Error('Streetlight configuration is incomplete')
   }
-  return { modelUrl, heightMeters }
+  return {
+    modelUrl,
+    heightMeters,
+    ...(modelYawDegrees == null ? {} : { modelYawDegrees }),
+  }
 }
 
 function optionalString(value: unknown): string | undefined {

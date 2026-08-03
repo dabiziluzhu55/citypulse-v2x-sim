@@ -48,6 +48,16 @@ const INACTIVE_SIGNAL_COLORS: Record<SignalColor, Color> = {
   green: new Color('#092b1b'),
 }
 
+const TWO_PI = Math.PI * 2
+
+export function resolveStreetlightHeading(
+  point: Pick<SceneFacilityPoint, 'heading'>,
+  modelYawOffsetRadians = 0,
+): number {
+  const heading = point.heading + modelYawOffsetRadians
+  return ((heading + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI
+}
+
 export class RoadsideFacilityRenderer {
   private readonly engine: Engine
   private readonly projector: RoadCoordinateProjector
@@ -61,14 +71,23 @@ export class RoadsideFacilityRenderer {
   private signalLenses: Record<SignalColor, InstancedMesh> | null = null
   private streetlightSource: Group | null = null
   private streetlightKey = ''
+  private realisticDetailActive = false
+  private streetlightModelYawOffsetRadians = 0
 
-  constructor(engine: Engine, projector: RoadCoordinateProjector) {
+  constructor(
+    engine: Engine,
+    projector: RoadCoordinateProjector,
+  ) {
     this.engine = engine
     this.projector = projector
   }
 
-  async prepareStreetlight(modelUrl: string, heightMeters: number): Promise<void> {
-    const key = `${modelUrl}:${heightMeters}`
+  async prepareStreetlight(
+    modelUrl: string,
+    heightMeters: number,
+    modelYawDegrees = 0,
+  ): Promise<void> {
+    const key = `${modelUrl}:${heightMeters}:${modelYawDegrees}`
     if (this.streetlightSource && this.streetlightKey === key) return
     const gltf = await new GLTFLoader().loadAsync(modelUrl)
     const bounds = new Box3().setFromObject(gltf.scene)
@@ -92,6 +111,7 @@ export class RoadsideFacilityRenderer {
     this.clearStreetlightSource()
     this.streetlightSource = normalized
     this.streetlightKey = key
+    this.streetlightModelYawOffsetRadians = modelYawDegrees * Math.PI / 180
   }
 
   render(manifest: SceneFacilityManifest): void {
@@ -180,6 +200,7 @@ export class RoadsideFacilityRenderer {
     this.legacyMarkingGroup = legacyMarkingGroup
     this.manifest = manifest
     this.updateSignals(null)
+    this.refreshViewport()
   }
 
   updateSignals(intersections: SignalRuntimeState[] | null): void {
@@ -208,12 +229,21 @@ export class RoadsideFacilityRenderer {
   }
 
   setRealisticDetailActive(active: boolean): void {
+    this.realisticDetailActive = active
     if (!this.group) return
-    this.group.visible = true
-    if (this.furnitureGroup) this.furnitureGroup.visible = true
-    if (this.legacySignalGroup) this.legacySignalGroup.visible = !active
-    if (this.legacyMarkingGroup) this.legacyMarkingGroup.visible = !active
+    this.refreshViewport()
     this.engine.requestRender()
+  }
+
+  refreshViewport(): void {
+    if (!this.group) return
+    const map = this.engine.map as typeof this.engine.map & { getRange?: () => number }
+    const range = typeof map.getRange === 'function' ? map.getRange() : 0
+    const showFacilities = !Number.isFinite(range) || range <= 6_000
+    this.group.visible = showFacilities
+    if (this.furnitureGroup) this.furnitureGroup.visible = showFacilities
+    if (this.legacySignalGroup) this.legacySignalGroup.visible = showFacilities && !this.realisticDetailActive
+    if (this.legacyMarkingGroup) this.legacyMarkingGroup.visible = showFacilities && !this.realisticDetailActive
   }
 
   destroy(): void {
@@ -315,7 +345,11 @@ export class RoadsideFacilityRenderer {
       )
       mesh.name = `streetlight-model-${candidate.name || result.length}`
       points.forEach((point, index) => {
-        this.streetlightMatrix.copy(this.matrix(point, 0.08)).multiply(candidate.matrixWorld)
+        const headingOffset = resolveStreetlightHeading(
+          point,
+          this.streetlightModelYawOffsetRadians,
+        ) - point.heading
+        this.streetlightMatrix.copy(this.matrix(point, 0.08, [1, 1, 1], headingOffset)).multiply(candidate.matrixWorld)
         mesh.setMatrixAt(index, this.streetlightMatrix)
       })
       mesh.instanceMatrix.needsUpdate = true

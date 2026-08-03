@@ -41,11 +41,21 @@ export function provideAppMapView() {
 
   function setDimension(next: MapDimension) {
     dimension.value = next
+    if (next === '3d' && cameraPreset.value === 'overview') {
+      mode.value = 'explore'
+      anchorId.value = null
+      viewport.value = { kind: 'bounds', bounds: XIONGAN_MAP_BOUNDS }
+    }
     applyViewport({ duration: 0 })
   }
 
   function setCameraPreset(next: CesiumCameraPresetId) {
     cameraPreset.value = next
+    if (next === 'overview') {
+      mode.value = 'explore'
+      anchorId.value = null
+      viewport.value = { kind: 'bounds', bounds: XIONGAN_MAP_BOUNDS }
+    }
     applyViewport()
   }
 
@@ -59,8 +69,8 @@ export function provideAppMapView() {
     if (threeMap) {
       const preset = resolveCesiumCameraPreset(cameraPreset.value)
       threeMap.setRangeLimits?.(
-        preset.minimumZoomDistance ?? BAIDU_3D_MIN_RANGE,
-        preset.maximumZoomDistance ?? BAIDU_3D_MAX_RANGE,
+        BAIDU_3D_MIN_RANGE,
+        BAIDU_3D_MAX_RANGE,
       )
       if (viewport.value.kind === 'bounds') {
         const [minLon, minLat, maxLon, maxLat] = viewport.value.bounds

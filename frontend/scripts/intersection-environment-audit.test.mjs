@@ -9,5 +9,9 @@ test('audits all intersection assets and preserves road transition overlap', asy
   assert.equal(report.summary.error, 0)
   assert.ok(report.summary.sparseBuildingSources.length > 0)
   assert.ok(report.intersections.every((row) => row.roads.minimumBoundaryOverlapMeters >= 4))
+  assert.ok(report.intersections.every((row) => row.roads.frontendPatchVisible))
+  assert.ok(report.intersections.every((row) => (
+    ['local-overlap', 'baidu-base-dependent'].includes(row.roads.continuityClassification)
+  )))
   assert.ok(report.intersections.every((row) => row.facilities.lamps > 0))
 })

@@ -287,6 +287,7 @@ for (let index = 1; index <= 20; index += 1) {
     streetlight: {
       modelUrl: '/assets/roadside/streetlight.glb',
       heightMeters: 7.5,
+      modelYawDegrees: 180,
     },
     buildingTilesetUrl: `/3dtiles/intersections/${id}/tileset.json`,
     geojson: {

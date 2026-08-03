@@ -20,8 +20,8 @@ export const DEFAULT_MAP_ZOOM = 14
 
 /** 桌面 3D 场景保持在有道路与建筑内容的有效观察范围内。 */
 export const DEFAULT_CESIUM_CAMERA_HEIGHT = 1800
-export const BAIDU_3D_MIN_RANGE = 100
-export const BAIDU_3D_MAX_RANGE = 3200
+export const BAIDU_3D_MIN_RANGE = 80
+export const BAIDU_3D_MAX_RANGE = 48_000
 
 export const DEFAULT_CESIUM_CAMERA_PRESET_ID: CesiumCameraPresetId = 'overview'
 
@@ -80,8 +80,8 @@ export const CESIUM_CAMERA_PRESETS: CesiumCameraPreset[] = [
     headingDegrees: 40,
     rangeMultiplier: 0.45,
     localViewRadiusMeters: 750,
-    minimumZoomDistance: 90,
-    maximumZoomDistance: 1200,
+    minimumZoomDistance: BAIDU_3D_MIN_RANGE,
+    maximumZoomDistance: BAIDU_3D_MAX_RANGE,
   },
 ]
 
@@ -119,7 +119,7 @@ export const XIONGAN_3DTILES_CALIBRATION: TilesetCalibration = {
  * [minLon, minLat, maxLon, maxLat]
  */
 export const XIONGAN_MAP_BOUNDS: [number, number, number, number] = [
-  115.936, 38.951, 116.026, 39.019,
+  115.8154, 38.9695, 116.1994, 39.0807,
 ]
 
 export type RoadVisualLevel = 'arterial' | 'secondary' | 'connector'
