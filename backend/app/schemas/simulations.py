@@ -109,12 +109,33 @@ class MetricsResponse(BaseModel):
 
     episode_id: str
     algorithm: str
-    avg_waiting_time: float = 0.0
-    avg_travel_time: float = 0.0
-    avg_queue_length: float = 0.0
-    throughput: float = 0.0
-    fuel_consumption: float = 0.0
-    avg_decision_latency_ms: float = 0.0
+    avg_waiting_time: float | None = None
+    avg_travel_time: float | None = None
+    avg_queue_length: float | None = None
+    throughput: float | None = None
+    fuel_consumption: float | None = None
+    avg_decision_latency_ms: float | None = None
     departed: int = 0
     arrived: int = 0
+    completion_rate: float | None = None
+    metric_sources: dict[str, str] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
     finished: bool = False
+
+
+class SimulationSessionSummary(BaseModel):
+    session_id: str
+    state: str
+    control_mode: str
+    scenario_preset_id: str
+    progress: float = 0.0
+    created_at: str
+    updated_at: str
+    metrics_status: str | None = None
+
+
+class SimulationSessionListResponse(BaseModel):
+    items: list[SimulationSessionSummary]
+    total: int
+    offset: int = 0
+    limit: int = 50

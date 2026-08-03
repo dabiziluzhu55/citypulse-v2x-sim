@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     sumo_session_root: str = "outputs/sessions"
     sumo_scenario_export_dir: str = "outputs/scenario_exports"
 
+    # local=进程内 SimulationManager；redis=RedisSimulationManager 多会话并发
+    simulation_manager_mode: str = "local"
+
+    # 与 SUMO worker 共享的 Redis 会话状态（仅 redis 模式）
+    citypulse_redis_state_url: str = "redis://127.0.0.1:6380/1"
+    citypulse_redis_key_prefix: str = "citypulse"
+    citypulse_session_ttl_seconds: int = 86400
+    citypulse_command_timeout_seconds: float = 30.0
+    citypulse_worker_heartbeat_ttl_seconds: int = 15
+
     default_intersection_id: str = "demo_2"
     default_map_radius_meters: float = 600.0
     default_snapshot_interval_seconds: float = 0.2
@@ -47,6 +57,7 @@ class Settings(BaseSettings):
     # 启用模式白名单（逗号分隔）；必须是 registry 子集。空字符串表示启用注册表全部模式。
     enabled_control_modes_csv: str = ""
 
+    # SUMO worker 回调 backend 内部算法协议的可达基址（多机部署时必须改成外部可达 URL）
     algorithm_base_url: str = "http://127.0.0.1:8000"
     algorithm_timeout: float = 2.0
     decision_interval: float = 5.0
@@ -77,6 +88,27 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.frontend_origins.split(",") if origin.strip()]
+
+    @property
+    def backend_redis_key_prefix(self) -> str:
+        """Backend 元数据独立命名空间，避免与 simulation Redis key 冲突。"""
+        return f"{self.citypulse_redis_key_prefix.rstrip(':')}:backend"
+
+    @property
+    def is_redis_mode(self) -> bool:
+        return self.simulation_manager_mode.strip().lower() == "redis"
+
+    @property
+    def is_local_mode(self) -> bool:
+        return self.simulation_manager_mode.strip().lower() == "local"
+
+    def normalized_manager_mode(self) -> str:
+        mode = self.simulation_manager_mode.strip().lower()
+        if mode not in {"local", "redis"}:
+            raise ValueError(
+                f"simulation_manager_mode must be 'local' or 'redis', got {mode!r}"
+            )
+        return mode
 
     def enabled_control_modes(self) -> tuple[str, ...]:
         from ..controllers.registry import list_control_modes, validate_enabled_modes
@@ -123,6 +155,7 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
-    # 启动时校验白名单合法性
+    # 启动时校验白名单与运行模式合法性
     settings.enabled_control_modes()
+    settings.normalized_manager_mode()
     return settings

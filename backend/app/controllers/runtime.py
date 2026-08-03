@@ -29,12 +29,17 @@ class _ActiveEpisode:
 class CompletedAlgorithmResult:
     episode_id: str
     algorithm: str
-    avg_decision_latency_ms: float
+    avg_decision_latency_ms: Optional[float]
     finished_at: float
 
 
 class AlgorithmRuntimeStore:
-    """线程安全的算法会话表（SUMO worker线程会同步POST/step）"""
+    """线程安全的算法会话表（SUMO worker线程会同步POST/step）
+
+    按episode_id隔离多会话；同一进程内并发安全
+    状态保存在进程内存，不支持跨Uvicorn worker共享
+    部署时使用 ``--workers 1``（健康检查也会提示）
+    """
 
     def __init__(self, *, max_completed: int = MAX_COMPLETED_RESULTS) -> None:
         self._lock = threading.RLock()
@@ -93,7 +98,7 @@ class AlgorithmRuntimeStore:
         }
 
     def finish_episode(self, algorithm: str, body: dict[str, Any]) -> dict[str, Any]:
-        """幂等结束：释放控制器，写入有界 completed 结果。"""
+        """幂等结束：释放控制器，写入有界completed结果"""
         episode_id = str(body.get("episode_id", ""))
         with self._lock:
             episode = self._active.get(episode_id)
@@ -155,7 +160,7 @@ class AlgorithmRuntimeStore:
             )
             logger.info("算法会话中止清理: episode=%s", episode_id)
 
-    def get_decision_latency_ms(self, episode_id: str) -> float:
+    def get_decision_latency_ms(self, episode_id: str) -> Optional[float]:
         with self._lock:
             episode = self._active.get(episode_id)
             if episode is not None:
@@ -163,7 +168,7 @@ class AlgorithmRuntimeStore:
             completed = self._completed.get(episode_id)
             if completed is not None:
                 return completed.avg_decision_latency_ms
-            return 0.0
+            return None
 
     def get_active_metrics(self, episode_id: str) -> Optional[dict[str, Any]]:
         with self._lock:
@@ -214,7 +219,7 @@ class AlgorithmRuntimeStore:
             self._completed.popitem(last=False)
 
 
-def _avg(samples: list[float]) -> float:
+def _avg(samples: list[float]) -> Optional[float]:
     if not samples:
-        return 0.0
+        return None
     return sum(samples) / len(samples)

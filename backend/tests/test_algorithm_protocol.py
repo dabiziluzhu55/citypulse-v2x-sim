@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.controllers.max_pressure import MaxPressureController
@@ -513,32 +514,39 @@ def test_downstream_movement_weighted_queue() -> None:
 
 def test_metrics_collector_tracks_arrival() -> None:
     collector = MetricsCollector(algorithm="max_pressure")
+    collector.set_powertrain_by_type({"passenger": "gasoline"})
     collector._observe(
         sim_time=10.0,
         vehicles={
             "v1": {
                 "waiting": 3.0,
-                "time_loss": 1.0,
                 "distance": 50.0,
                 "fuel_ml": 10.0,
+                "type_id": "passenger",
             }
         },
-        lane_halting=[2.0],
+        incoming_halting=[2.0],
     )
     collector._observe(
         sim_time=20.0,
         vehicles={},
-        lane_halting=[1.0],
+        incoming_halting=[1.0],
     )
     collector._total_departed = 1
     collector._total_arrived = 1
     collector._final_sim_time = 20.0
+    live = collector.result(finished=False, decision_latency_ms=1.0)
+    assert live.arrived == 1
+    assert live.avg_travel_time_s == 10.0
+    assert live.avg_waiting_time_s == 3.0
+    assert live.avg_queue_length_veh == 1.5
+
     collector._finished = True
-    result = collector.result(finished=True)
-    assert result.arrived == 1
-    assert result.avg_travel_time_s == 10.0
-    assert result.avg_waiting_time_s == 3.0
-    assert result.avg_queue_length_veh == 1.5
+    final = collector.result(finished=True, decision_latency_ms=1.0)
+    assert final.avg_travel_time_s is None
+    assert final.avg_waiting_time_s is None
+    assert final.avg_queue_length_veh == 1.5
+    assert final.throughput_veh_per_h == pytest.approx(180.0)
 
 
 def test_internal_algorithm_protocol_endpoints(

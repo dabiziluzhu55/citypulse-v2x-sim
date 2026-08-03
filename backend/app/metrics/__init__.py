@@ -3,10 +3,12 @@
 from .collector import MetricsCollector, TrafficMetricsCollector
 from .models import EvalResult
 from .session_hub import SessionMetricsHub
+from .tripinfo import apply_tripinfo_completed_metrics
 
 __all__ = [
     "EvalResult",
     "MetricsCollector",
     "SessionMetricsHub",
     "TrafficMetricsCollector",
+    "apply_tripinfo_completed_metrics",
 ]

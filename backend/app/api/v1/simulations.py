@@ -7,13 +7,14 @@ import logging
 from datetime import datetime, timezone
 from queue import Empty
 
-from fastapi import APIRouter, Depends, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, Query, Response, WebSocket, WebSocketDisconnect, status
 
 from ...schemas.events import EventCreatedResponse, EventRequest
 from ...schemas.simulations import (
     MetricsResponse,
     SetPlaybackSpeedRequest,
     SimulationPlaybackResponse,
+    SimulationSessionListResponse,
     SimulationStatusResponse,
     StartSimulationRequest,
     StartSimulationResponse,
@@ -24,6 +25,17 @@ from ..deps import get_simulation_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.get("/simulations", response_model=SimulationSessionListResponse)
+def list_simulations(
+    state: str | None = Query(default=None, description="按状态筛选，例如 QUEUED/RUNNING"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    service: SimulationService = Depends(get_simulation_service),
+) -> SimulationSessionListResponse:
+    payload = service.list_sessions(state=state, offset=offset, limit=limit)
+    return SimulationSessionListResponse(**payload)
 
 
 @router.post(
@@ -148,15 +160,32 @@ def cancel_simulation_event(
 async def simulation_stream(websocket: WebSocket, session_id: str) -> None:
     await websocket.accept()
     app = websocket.app
-    if not app.state.artifacts_ready or not app.state.sumo_home_configured:
+    mode = getattr(app.state, "simulation_manager_mode", "local")
+    if not app.state.artifacts_ready:
+        await websocket.close(code=1011)
+        return
+    if mode == "local" and not app.state.sumo_home_configured:
+        await websocket.close(code=1011)
+        return
+    if not getattr(app.state, "simulation_manager_ready", False):
+        await websocket.close(code=1011)
+        return
+    if app.state.simulation_service is None:
         await websocket.close(code=1011)
         return
 
     service: SimulationService = app.state.simulation_service
-    subscription = service.subscribe(session_id)
+    try:
+        subscription = service.subscribe(session_id)
+    except Exception:
+        logger.exception("WebSocket subscribe failed for session %s", session_id)
+        await websocket.close(code=1011)
+        return
+
     logger.info("WebSocket connected for session %s", session_id)
 
     try:
+        # 支持从 QUEUED 一直推送到终态
         initial_snapshot = subscription.get(timeout=2.0)
         await websocket.send_json(
             {

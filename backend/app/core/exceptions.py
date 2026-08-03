@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from simulation.sumo.distributed import RedisUnavailableError
 from simulation.sumo.events import EventValidationError
 from simulation.sumo.scenario import ScenarioCompilationError
 from simulation.sumo.session import SessionBusyError, SessionError, UnknownSessionError
@@ -44,6 +45,24 @@ class SumoHomeUnavailableError(AppError):
         )
 
 
+class RedisUnavailableAppError(AppError):
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(
+            code="REDIS_UNAVAILABLE",
+            message=message or "Redis session store is unavailable.",
+            status_code=503,
+        )
+
+
+class SimulationManagerNotReadyError(AppError):
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(
+            code="SIMULATION_MANAGER_NOT_READY",
+            message=message or "Simulation manager is not ready.",
+            status_code=503,
+        )
+
+
 def error_payload(code: str, message: str, **extra: Any) -> dict[str, Any]:
     detail: dict[str, Any] = {"code": code, "message": message}
     detail.update(extra)
@@ -70,6 +89,15 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=404,
             content=error_payload("UNKNOWN_SESSION", str(exc)),
+        )
+
+    @app.exception_handler(RedisUnavailableError)
+    async def handle_redis_unavailable(
+        _: Request, exc: RedisUnavailableError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content=error_payload("REDIS_UNAVAILABLE", str(exc)),
         )
 
     @app.exception_handler(ScenarioCompilationError)
