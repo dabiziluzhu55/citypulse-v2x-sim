@@ -13,6 +13,8 @@ from urllib.parse import urljoin
 from simulation.sumo import (
     AccidentEvent,
     LaneClosureEvent,
+    MajorEventClosingEvent,
+    MajorEventOpeningEvent,
     SimulationConfig,
     SpeedLimitEvent,
 )
@@ -28,6 +30,8 @@ from ..schemas.events import (
     AccidentRequest,
     EventRequest,
     LaneClosureRequest,
+    MajorEventClosingRequest,
+    MajorEventOpeningRequest,
     SpeedLimitRequest,
 )
 from ..scenario.presets import list_scenario_presets, supported_intersection_ids
@@ -598,6 +602,10 @@ class SimulationService:
     def _event_lane_ids(event: DisturbanceEvent) -> Iterable[str]:
         if isinstance(event, AccidentEvent):
             return (event.lane_id,)
+        if isinstance(event, MajorEventOpeningEvent):
+            return (event.venue_lane_id, *event.source_lane_ids)
+        if isinstance(event, MajorEventClosingEvent):
+            return (event.venue_lane_id, *event.destination_lane_ids)
         return event.lane_ids
 
     @staticmethod
@@ -624,6 +632,62 @@ class SimulationService:
                 end_seconds=request.end_seconds,
                 lane_id=request.lane_id,
                 position_ratio=request.position_ratio,
+            )
+        if isinstance(request, MajorEventOpeningRequest):
+            if request.start_seconds >= request.end_seconds:
+                raise AppError(
+                    code="INVALID_EVENT",
+                    message="start_seconds must be < end_seconds.",
+                    status_code=422,
+                )
+            if request.vehicle_count <= 0:
+                raise AppError(
+                    code="INVALID_EVENT",
+                    message="vehicle_count must be > 0.",
+                    status_code=422,
+                )
+            if not request.vehicle_type_id.strip():
+                raise AppError(
+                    code="INVALID_EVENT",
+                    message="vehicle_type_id cannot be empty.",
+                    status_code=422,
+                )
+            return MajorEventOpeningEvent(
+                event_id=request.event_id,
+                start_seconds=request.start_seconds,
+                end_seconds=request.end_seconds,
+                venue_lane_id=request.venue_lane_id,
+                vehicle_count=int(request.vehicle_count),
+                source_lane_ids=tuple(request.source_lane_ids),
+                vehicle_type_id=request.vehicle_type_id,
+            )
+        if isinstance(request, MajorEventClosingRequest):
+            if request.start_seconds >= request.end_seconds:
+                raise AppError(
+                    code="INVALID_EVENT",
+                    message="start_seconds must be < end_seconds.",
+                    status_code=422,
+                )
+            if request.vehicle_count <= 0:
+                raise AppError(
+                    code="INVALID_EVENT",
+                    message="vehicle_count must be > 0.",
+                    status_code=422,
+                )
+            if not request.vehicle_type_id.strip():
+                raise AppError(
+                    code="INVALID_EVENT",
+                    message="vehicle_type_id cannot be empty.",
+                    status_code=422,
+                )
+            return MajorEventClosingEvent(
+                event_id=request.event_id,
+                start_seconds=request.start_seconds,
+                end_seconds=request.end_seconds,
+                venue_lane_id=request.venue_lane_id,
+                vehicle_count=int(request.vehicle_count),
+                destination_lane_ids=tuple(request.destination_lane_ids),
+                vehicle_type_id=request.vehicle_type_id,
             )
         raise AppError(
             code="INVALID_EVENT",
