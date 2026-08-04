@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
 import os
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +95,7 @@ def _run_scenario(
     period: str,
     checkpoint: Path,
     action_interval: float,
+    workers: int = 1,
 ) -> tuple[list[dict], list[dict]]:
     intersections = SCENARIO_PRESET_REGISTRY[scenario].intersection_ids
     jobs = [
@@ -108,7 +111,24 @@ def _run_scenario(
         for method in ("fixed", "model")
         for seed in seeds
     ]
-    results = [_run_evaluation(job) for job in jobs]
+    context = multiprocessing.get_context("spawn")
+    results: list[dict] = []
+    with ProcessPoolExecutor(
+        max_workers=min(workers, len(jobs)), mp_context=context
+    ) as executor:
+        futures = {executor.submit(_run_evaluation, job): job for job in jobs}
+        for future in as_completed(futures):
+            job = futures[future]
+            try:
+                row = future.result()
+            except BaseException as exc:
+                row = {
+                    "status": "failed",
+                    "method": job["method"],
+                    "seed": job["seed"],
+                    "error": f"worker process {type(exc).__name__}: {exc}",
+                }
+            results.append(row)
     failures = [row for row in results if row.get("status") != "complete"]
     if failures:
         raise RuntimeError(f"{scenario}: failed runs: {failures}")
@@ -185,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=REPO_ROOT / "algorithms" / "ippo" / "gate_outputs",
     )
+    parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args(argv)
 
     checkpoint = args.checkpoint or (
@@ -217,6 +238,7 @@ def main(argv: list[str] | None = None) -> int:
             period=args.period,
             checkpoint=checkpoint,
             action_interval=args.action_interval,
+            workers=args.workers,
         )
         report["scenarios"][scenario] = {
             "verdicts": _verdicts(scenario, fixed_rows, model_rows),
