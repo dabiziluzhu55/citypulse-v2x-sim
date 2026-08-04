@@ -30,3 +30,9 @@ data/maps/sumo/generated/network/
 data/maps/sumo/generated/reports/
 data/maps/sumo/generated/signals/
 *.bak
+
+# Local run artifacts & backups (kept on disk, not committed)
+.codex-backups/
+algorithms/coslight/runs/
+algorithms/ippo/runs/
+algorithms/ippo/checkpoints/
