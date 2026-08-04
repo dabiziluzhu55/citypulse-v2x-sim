@@ -807,22 +807,46 @@ class ScenarioPreset:
     label: str
     intersection_ids: tuple[str, ...]
     map_template: str
-    description: str
 
-SCENARIO_PRESETS = {
+SCENARIO_PRESET_REGISTRY = {
     "xiongan_20": ScenarioPreset(
-        "xiongan_20", "雄安20路口路网", tuple(f"demo_{i}" for i in range(1, 21)),
-        "TotalMap_20", "全量 20 路口（= 现有默认行为）"),
+        preset_id="xiongan_20", label="雄安20路口路网",
+        intersection_ids=tuple(f"demo_{i}" for i in range(1, 21)),
+        map_template="xiongan20"),
     "east_dense": ScenarioPreset(
-        "east_dense", "东部密集路口场景", ("demo_3", "demo_5", "demo_6", "demo_9"),
-        "TotalMap_20", "雄安东部典型密集路口场景"),
+        preset_id="east_dense", label="东部密集路口场景",
+        intersection_ids=("demo_3", "demo_5", "demo_6", "demo_9"),
+        map_template="east_dense"),
     "west_dense": ScenarioPreset(
-        "west_dense", "西部密集路口场景", ("demo_14", "demo_15", "demo_19"),
-        "TotalMap_20", "雄安西部密集路口场景"),
+        preset_id="west_dense", label="西部密集路口场景",
+        intersection_ids=("demo_14", "demo_15", "demo_19"),
+        map_template="west_dense"),
 }
+
+SCENARIO_PRESETS = SCENARIO_PRESET_REGISTRY  # evaluate 侧别名
+ALL_DEMO_INTERSECTION_IDS = tuple(f"demo_{i}" for i in range(1, 21))
+
+def list_scenario_presets() -> list[ScenarioPreset]:
+    return [SCENARIO_PRESET_REGISTRY[k] for k in sorted(SCENARIO_PRESET_REGISTRY)]
+
+def require_scenario_preset(preset_id: str) -> ScenarioPreset:
+    preset = SCENARIO_PRESET_REGISTRY.get(preset_id)
+    if preset is None:
+        raise ValueError(f"scenario_preset_id must be one of {sorted(SCENARIO_PRESET_REGISTRY)}, got {preset_id!r}")
+    return preset
+
+def supported_intersection_ids() -> tuple[str, ...]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for preset in list_scenario_presets():
+        for intersection_id in preset.intersection_ids:
+            if intersection_id not in seen:
+                seen.add(intersection_id)
+                ordered.append(intersection_id)
+    return tuple(ordered)
 ```
 
-- 中立模块由 **backend 与 evaluate 共同导入**（单一事实源，不复制两份）：backend `app/scenario/presets.py` 改为透传 `from config.scenario_presets import SCENARIO_PRESETS`（保持既有 backend 导出名不变），evaluate 直接导入同一模块；新增一致性测试 `test_scenario_presets.py`，断言 backend 导出与 `config/scenario_presets.py` 完全一致（`preset_id / label / intersection_ids / map_template`）。
+- 中立模块由 **backend 与 evaluate 共同导入**（单一事实源，不复制两份）：backend `app/scenario/presets.py` 改为透传 `from config.scenario_presets import ALL_DEMO_INTERSECTION_IDS, ScenarioPreset, SCENARIO_PRESET_REGISTRY, list_scenario_presets, require_scenario_preset, supported_intersection_ids`（保持既有 backend 导出名 `SCENARIO_PRESET_REGISTRY` 等不变），evaluate 直接导入同一模块；新增一致性测试 `test_scenario_presets.py`，断言 backend 导出的注册表对象与 `config.scenario_presets.SCENARIO_PRESET_REGISTRY` 为同一对象（`is`），字段 `preset_id / label / intersection_ids / map_template` 完全一致。
 - **算法无关**：`ScenarioPreset` / `ResolvedScenarioScope`（§7.2）不依赖任何具体算法；CoSLight、IPPO、MAPPO 及未来算法均可复用「preset 路口跑算法 + 其余路口 SUMO 内置固定配时」机制，各算法 evaluate 入口接入方式见 §7.2「跨算法接入」。
 
 ### 7.2 CLI 与解析规则
