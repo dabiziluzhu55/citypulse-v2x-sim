@@ -34,6 +34,10 @@ path_entries = [
 os.environ["PATH"] = os.pathsep.join([*path_entries, sumo_bin])
 
 from algorithms.coslight import controller  # noqa: E402
+from algorithms.coslight.scope_cli import (  # noqa: E402
+    build_scope_block, parse_intersections, resolve_scope,
+)
+from config.scenario_presets import SCENARIO_PRESET_REGISTRY  # noqa: E402
 from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
 from simulation.sumo.tripinfo import (  # noqa: E402
     parse_tripinfo_diagnostics,
@@ -187,6 +191,23 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
     else:
         os.environ.pop("COSLIGHT_V2X_LOG", None)
         os.environ.pop("COSLIGHT_V2X_RUN_ID", None)
+    if request.get("v2x_collab"):
+        os.environ["COSLIGHT_V2X_COLLAB"] = "1"
+        os.environ["COSLIGHT_V2X_COLLAB_MODE"] = str(request["v2x_collab_mode"])
+        os.environ["COSLIGHT_V2X_GUIDANCE_MODE"] = str(
+            request["v2x_guidance_mode"])
+        os.environ["COSLIGHT_V2X_SCOPE_SOURCE"] = str(request["scope_source"])
+        os.environ["COSLIGHT_V2X_SCOPE_PRESET_ID"] = str(
+            request.get("scope_preset_id") or "")
+        os.environ["COSLIGHT_V2X_SCOPE_MANAGED_IDS"] = ",".join(
+            str(iid) for iid in request["scope_managed_ids"])
+    else:
+        for key in (
+            "COSLIGHT_V2X_COLLAB", "COSLIGHT_V2X_COLLAB_MODE",
+            "COSLIGHT_V2X_GUIDANCE_MODE", "COSLIGHT_V2X_SCOPE_SOURCE",
+            "COSLIGHT_V2X_SCOPE_PRESET_ID", "COSLIGHT_V2X_SCOPE_MANAGED_IDS",
+        ):
+            os.environ.pop(key, None)
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ["MKL_NUM_THREADS"] = "1"
     torch.set_num_threads(1)
@@ -229,6 +250,12 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
         )
         if method != "fixed":
             result["signal_execution"] = controller.signal_execution_diagnostics()
+        if request.get("v2x_collab"):
+            from algorithms.v2x.adapters.coslight import last_collab_summary
+            collab_summary = last_collab_summary()
+            if collab_summary is not None:
+                result["collab"] = collab_summary.get("collab")
+                result["scope"] = collab_summary.get("scope")
         return result
     except BaseException as exc:
         if session_id is not None:
@@ -350,7 +377,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--episodes", type=int, default=4, help="episodes per method")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--duration", type=int, default=300)
-    parser.add_argument("--intersections", type=int, default=20)
+    scope_group = parser.add_mutually_exclusive_group()
+    scope_group.add_argument(
+        "--scenario-preset",
+        choices=sorted(SCENARIO_PRESET_REGISTRY),
+        help="Select a predefined algorithm/collaboration intersection scope. "
+             "Does not change the SUMO network or traffic demand.")
+    scope_group.add_argument(
+        "--intersections", type=parse_intersections, default=None,
+        help="Comma-separated demo_N ids, or a single integer N for demo_1..N")
     parser.add_argument("--period", default="off_peak")
     parser.add_argument("--seed", type=int, default=10000)
     parser.add_argument("--policy-seed", type=int, default=42)
@@ -410,13 +445,22 @@ def main(argv: list[str] | None = None) -> int:
         "--v2x-log", type=Path, help="V2X shadow-mode 日志路径（JSONL）"
     )
     parser.add_argument(
+        "--v2x-collab", action="store_true",
+        help="启用车路云协同决策层（shadow 闭环；隐含启动 hub 与内存记录器）")
+    parser.add_argument(
+        "--v2x-collab-mode", choices=("off", "shadow", "active"),
+        default="shadow", help="默认 shadow；active 在 v1 运行时不可用")
+    parser.add_argument(
+        "--v2x-guidance-mode", choices=("threshold", "full", "disabled"),
+        default="threshold", help="RSI 发射模式（默认 threshold）")
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path(__file__).with_name("runs") / "evaluation.json",
     )
     args = parser.parse_args(argv)
 
-    for name in ("episodes", "workers", "duration", "intersections", "top_k"):
+    for name in ("episodes", "workers", "duration", "top_k"):
         _positive(parser, name, getattr(args, name))
     if not math.isfinite(args.max_green_factor) or args.max_green_factor < 0:
         parser.error("max-green-factor must be finite and non-negative")
@@ -435,8 +479,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(
             "switch-logit-margin must be -inf or finite and non-negative"
         )
-    if args.intersections > len(DEFAULT_INTERSECTIONS):
-        parser.error(f"intersections must be <= {len(DEFAULT_INTERSECTIONS)}")
+    if args.v2x_collab and args.v2x_collab_mode == "active":
+        parser.error(
+            "--v2x-collab-mode active is unavailable in v1 (spec §4.1); "
+            "use shadow or off")
     methods = tuple(dict.fromkeys(args.methods))
     checkpoint = args.checkpoint.expanduser().resolve() if args.checkpoint else None
     if MODEL_METHODS.intersection(methods):
@@ -472,7 +518,8 @@ def main(argv: list[str] | None = None) -> int:
     if output.is_dir():
         parser.error(f"output must be a JSON file path, got directory: {output}")
 
-    intersections = DEFAULT_INTERSECTIONS[: args.intersections]
+    scope = resolve_scope(args.scenario_preset, args.intersections)
+    intersections = scope.managed_ids
     seeds = tuple(range(args.seed + 1, args.seed + args.episodes + 1))
     jobs = [
         {
@@ -507,6 +554,14 @@ def main(argv: list[str] | None = None) -> int:
             "cloud_hold_cooldown": args.cloud_hold_cooldown,
             "checkpoint": str(checkpoint) if method in MODEL_METHODS else "",
             "v2x_log": str(args.v2x_log) if args.v2x_log else "",
+            "v2x_collab": args.v2x_collab,
+            "v2x_collab_mode": (
+                args.v2x_collab_mode if args.v2x_collab else "shadow"),
+            "v2x_guidance_mode": (
+                args.v2x_guidance_mode if args.v2x_collab else "threshold"),
+            "scope_source": scope.source,
+            "scope_preset_id": scope.preset_id,
+            "scope_managed_ids": list(intersections),
         }
         for method in methods
         for seed in seeds
@@ -598,6 +653,10 @@ def main(argv: list[str] | None = None) -> int:
             "cloud_platoon_lag_s": args.cloud_platoon_lag,
             "cloud_hold_cooldown_s": args.cloud_hold_cooldown,
             "checkpoint": str(checkpoint) if checkpoint else None,
+            "scope": build_scope_block(scope, DEFAULT_INTERSECTIONS),
+            "v2x_collab": args.v2x_collab,
+            "v2x_collab_mode": args.v2x_collab_mode,
+            "v2x_guidance_mode": args.v2x_guidance_mode,
         },
         "summary": _summarize(rows),
         "runs": rows,
