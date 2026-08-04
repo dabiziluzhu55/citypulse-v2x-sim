@@ -117,7 +117,8 @@ def test_episode_summary_rates_and_scope():
     hub = _FakeHub()
     hub.sent_records = [
         {"message_id": "m-signal-1", "message_type": "SIGNAL_CONTROL",
-         "frame_id": "ep1:step:000010", "source_id": "demo_3"},
+         "frame_id": "ep1:step:000010", "source_id": "cloud",
+         "destination": "demo_3"},
         {"message_id": "rsi-1", "message_type": "RSI",
          "frame_id": "ep1:step:000010", "source_id": "cloud"},
     ]

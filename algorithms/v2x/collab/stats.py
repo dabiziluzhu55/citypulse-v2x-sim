@@ -149,8 +149,9 @@ def build_collab_summary(
     # ---- 完整性审计（§5.4） ----
     arbitration_refs = {
         (rec["frame_id"], rec["intersection_id"]) for rec in arbitrations}
+    # SIGNAL_CONTROL 的 source 是 cloud、destination 才是路口（与 arbitration_refs 对齐）
     signal_event_refs = {
-        (rec["frame_id"], rec["source_id"]) for rec in hub.sent_records
+        (rec["frame_id"], rec["destination"]) for rec in hub.sent_records
         if rec["message_type"] == "SIGNAL_CONTROL"}
     missing_signal_event_refs = (
         len(arbitration_refs - signal_event_refs)
