@@ -5153,7 +5153,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 **Files:**
 - Create: `algorithms/v2x/collab/tests/test_integration.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/test_integration.py`：
 
@@ -5308,21 +5308,21 @@ def test_summary_rebuild_matches_runtime():
     }
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_integration.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError` / 断言失败逐步修正）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 - 本任务无新业务代码；若断言失败，修复点在 engine/stats/records（不绕过消息投递、不关闭审计）。注意 `test_collab_rsi_exactly_one_message_and_terminal_delivery` 依赖去重/冷却：三帧同一建议（delta=0、reason 相同、valid_until 未到、冷却未到）→ 第 2/3 帧 `SUPPRESSED_DUPLICATE`，只有第 1 帧发布。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab -q --tb=short'`
 Expected: PASS（collab 全量）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/collab/tests/test_integration.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/collab/tests/test_integration.py
@@ -5333,12 +5333,12 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 
 ## Task 18: 收尾 — 全量回归 + spec 自审 + 提交计划
 
-- [ ] **Step 1: 全量回归**
+- [x] **Step 1: 全量回归**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && export PYTHONPATH=/usr/share/sumo/tools && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x algorithms/coslight backend/tests -q --tb=short'`
 Expected: 全绿（v2x 既有 ≈69 + collab 新增 + coslight 既有 ≈98 + 新增；不把具体数量作为长期断言，验收契约 = 零失败、退出码 0）
 
-- [ ] **Step 2: 20 路口 smoke（服务器手动验收，§6.4）**
+- [x] **Step 2: 20 路口 smoke（服务器手动验收，§6.4）**
 
 ```bash
 cd /home/kemove/devdata1/gsb/citypulse-v2x-sim
@@ -5366,7 +5366,11 @@ export PYTHONPATH=/usr/share/sumo/tools
 - `integrity` 全 0；`simulation/sumo/` 零修改（`git -C simulation/sumo status` 干净）；
 - east_dense：scope 块 `algorithm_controlled=4 / fixed=16 / managed_ids=[demo_3,demo_5,demo_6,demo_9]`；未选路口无 SignalProposal/arbitration/RSI 候选、不出现在 `actions.signals`；`traffic_metrics.network_wide` 覆盖 20 路口（该块在 evaluate 顶层 report 中，与 collab 分块并存）。
 
-- [ ] **Step 3: spec 自审（逐节核对）**
+**验收结果（2026-08-05，服务器手动验收）：**
+- xiongan_20 全网络 smoke 通过：status=complete、shadow、20 路口、`baseline_signal_slots=80`、`decision_record_coverage=1.0`、`selectable_output_rate=1.0`、integrity 全 0、`published=0 → network_delivery_rate=null`；JSONL 含 MAP/BSM/INTENT/SPaT/RSM/SIGNAL_CONTROL + episode 记录；`simulation/sumo/` 零修改。
+- east_dense smoke **未执行**（客观限制）：现有 checkpoint `gate_v17_20260804_200223.pt` 为 20-TLS 模型（num_agents=20/act_dim=4/top_k=5），与 east_dense 的 4 个算法路口不匹配；需先用 4-TLS checkpoint 或训练脚本生成匹配模型后方可手动验收该场景，验收点见上文列表。
+
+- [x] **Step 3: spec 自审（逐节核对）**
 
 对照 `docs/superpowers/specs/2026-08-05-coslight-vrc-collaboration-design.md` 逐节确认：
 
@@ -5385,14 +5389,14 @@ export PYTHONPATH=/usr/share/sumo/tools
 | §8 附录枚举/语义 | Task 3、9、11（枚举值、valid_from<=now<valid_until、RSI source_id="cloud"、SIGNAL_CONTROL 仅 ingest_actions） |
 
 自审清单（逐项打勾）：
-- [ ] 无占位符/`TODO`/`FIXME`/`pass` 占位（`grep -n "TODO\\|FIXME\\|placeholder" docs/superpowers/plans/2026-08-05-coslight-vrc-collaboration.md` 为空）；
-- [ ] 类型/方法名与 spec 一致（`SignalProposal` 字段、`CollabTickResult`、`GUIDANCE_FUNNEL_STAGES`、`scope_block`）；
-- [ ] `algorithms/v2x/collab` 无 torch/SUMO 依赖（`grep -rn "import torch\\|import sumo" algorithms/v2x/collab` 为空）；
-- [ ] `simulation/sumo/` 无修改（`git -C simulation/sumo diff --stat` 为空）；
-- [ ] `GuidancePolicyConfig` 默认值与 spec §3.7 一致（Task 3 修正项）；
-- [ ] `collab_managed_ids == algorithm_controlled_ids == resolved_scope.managed_ids`（Task 14/15 单一 scope 来源）。
+- [x] 无占位符/`TODO`/`FIXME`/`pass` 占位（`grep -n "TODO\\|FIXME\\|placeholder" docs/superpowers/plans/2026-08-05-coslight-vrc-collaboration.md` 为空）；
+- [x] 类型/方法名与 spec 一致（`SignalProposal` 字段、`CollabTickResult`、`GUIDANCE_FUNNEL_STAGES`、`scope_block`）；
+- [x] `algorithms/v2x/collab` 无 torch/SUMO 依赖（`grep -rn "import torch\\|import sumo" algorithms/v2x/collab` 为空）；
+- [x] `simulation/sumo/` 无修改（`git -C simulation/sumo diff --stat` 为空）；
+- [x] `GuidancePolicyConfig` 默认值与 spec §3.7 一致（Task 3 修正项）；
+- [x] `collab_managed_ids == algorithm_controlled_ids == resolved_scope.managed_ids`（Task 14/15 单一 scope 来源）。
 
-- [ ] **Step 4: 同步计划 + spec 到服务器并提交**
+- [x] **Step 4: 同步计划 + spec 到服务器并提交**
 
 ```bash
 scp -P 24 docs/superpowers/plans/2026-08-05-coslight-vrc-collaboration.md \
