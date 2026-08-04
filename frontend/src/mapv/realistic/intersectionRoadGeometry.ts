@@ -163,7 +163,7 @@ export function convexHull(points: Point2[]): Point2[] {
 
 export function junctionApronPoints(junctionShape: Point2[], edges: RealisticRoadEdge[]): Point2[] {
   const boundary = [...junctionShape]
-  for (const edge of edges) {
+  for (const edge of edges.filter((candidate) => candidate.incident !== false)) {
     const centerline = edgeCenterline(edge)
     if (centerline.length < 2) continue
     const endpointIndex = edge.incoming ? centerline.length - 1 : 0

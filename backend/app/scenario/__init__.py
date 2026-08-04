@@ -1,4 +1,4 @@
-"""场景预设与启动请求解析。"""
+"""场景预设与启动请求解析"""
 
 from .presets import (
     SCENARIO_PRESET_REGISTRY,

@@ -5,6 +5,8 @@ import {
   DEFAULT_CESIUM_CAMERA_PRESET_ID,
   DEFAULT_MAP_CENTER,
   DEFAULT_MAP_ZOOM,
+  BAIDU_3D_MAX_RANGE,
+  BAIDU_3D_MIN_RANGE,
   resolveCesiumCameraPreset,
   resolveTemplateMapViewport,
   XIONGAN_MAP_BOUNDS,
@@ -18,6 +20,10 @@ import {
   type StoredMapViewport,
 } from '../utils/mapViewportSync'
 import { wgs84ToBd09 } from '../mapv/sceneCoordinates'
+import {
+  createIntersectionFocusTransaction,
+  type IntersectionFocusOptions,
+} from '../utils/intersectionFocus'
 
 export function provideAppMapView() {
   const mode = ref<AppMapMode>('explore')
@@ -35,11 +41,21 @@ export function provideAppMapView() {
 
   function setDimension(next: MapDimension) {
     dimension.value = next
+    if (next === '3d' && cameraPreset.value === 'overview') {
+      mode.value = 'explore'
+      anchorId.value = null
+      viewport.value = { kind: 'bounds', bounds: XIONGAN_MAP_BOUNDS }
+    }
     applyViewport({ duration: 0 })
   }
 
   function setCameraPreset(next: CesiumCameraPresetId) {
     cameraPreset.value = next
+    if (next === 'overview') {
+      mode.value = 'explore'
+      anchorId.value = null
+      viewport.value = { kind: 'bounds', bounds: XIONGAN_MAP_BOUNDS }
+    }
     applyViewport()
   }
 
@@ -53,8 +69,8 @@ export function provideAppMapView() {
     if (threeMap) {
       const preset = resolveCesiumCameraPreset(cameraPreset.value)
       threeMap.setRangeLimits?.(
-        preset.minimumZoomDistance ?? 100,
-        preset.maximumZoomDistance ?? 1400,
+        BAIDU_3D_MIN_RANGE,
+        BAIDU_3D_MAX_RANGE,
       )
       if (viewport.value.kind === 'bounds') {
         const [minLon, minLat, maxLon, maxLat] = viewport.value.bounds
@@ -62,7 +78,7 @@ export function provideAppMapView() {
         const [bdMaxLon, bdMaxLat] = wgs84ToBd09(maxLon, maxLat)
         threeMap.setViewport(
           [[bdMinLon, bdMinLat, 0], [bdMaxLon, bdMaxLat, 0]],
-          { range: 2200, force: options.force },
+          { range: BAIDU_3D_MAX_RANGE, force: options.force },
         )
       } else {
         const [bdLon, bdLat] = wgs84ToBd09(viewport.value.center[0], viewport.value.center[1])
@@ -73,7 +89,7 @@ export function provideAppMapView() {
             pitch: Math.abs(preset.pitchDegrees),
             range: preset.height,
             duration: options.duration ?? 0,
-            complete: () => undefined,
+            complete: options.complete ?? (() => undefined),
             force: options.force,
           },
         )
@@ -141,15 +157,15 @@ export function provideAppMapView() {
   function focusIntersection(
     center: [number, number],
     intersectionId: string,
-    options: { force?: boolean; duration?: number } = {},
+    options: IntersectionFocusOptions = {},
   ) {
-    const nextAnchorId = `intersection:${intersectionId}`
-    if (anchorId.value === nextAnchorId && !options.force) return
+    const transaction = createIntersectionFocusTransaction(center, intersectionId, options)
+    if (anchorId.value === transaction.anchorId && !options.force) return
     mode.value = 'anchored'
-    anchorId.value = nextAnchorId
-    cameraPreset.value = 'intersection'
-    viewport.value = { kind: 'center', center, zoom: 19 }
-    applyViewport({ force: options.force, duration: options.duration ?? 900 })
+    anchorId.value = transaction.anchorId
+    cameraPreset.value = transaction.cameraPreset
+    viewport.value = transaction.viewport
+    applyViewport(transaction.applyOptions)
   }
 
   function fitBounds(bounds: [number, number, number, number], nextAnchorId?: string) {

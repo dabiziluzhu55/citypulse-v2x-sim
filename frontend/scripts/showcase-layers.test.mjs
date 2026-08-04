@@ -7,6 +7,7 @@ import {
   projectFeatureCollection,
 } from '../src/mapv/showcaseLayers/showcaseLayerData.ts'
 import { buildDetailedRoadData } from '../src/mapv/roadGeometry.ts'
+import { BAIDU_DARK_BASE_STYLE } from '../src/mapv/baiduDarkStyle.ts'
 import { extractOsmLandcover } from './generate-showcase-landcover.mjs'
 
 const roadGeoJson = JSON.parse(await readFile(
@@ -20,6 +21,14 @@ const response = (features = roadGeoJson.features) => ({
   radius_m: 600,
   bounds: { west: 116.1, south: 38.9, east: 116.2, north: 39.1 },
   geojson: { ...roadGeoJson, features },
+})
+
+test('keeps Baidu roads, green, and water visible while native buildings stay hidden', () => {
+  const styleByFeature = new Map(BAIDU_DARK_BASE_STYLE.map((entry) => [entry.featureType, entry]))
+  for (const featureType of ['water', 'green', 'road']) {
+    assert.equal(styleByFeature.get(featureType)?.stylers.visibility, 'on')
+  }
+  assert.equal(styleByFeature.get('building')?.stylers.visibility, 'off')
 })
 
 test('projects every coordinate depth while preserving properties', () => {

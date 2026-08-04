@@ -1,3 +1,5 @@
+import type { BackendControlMode } from '../constants/simulationOptions'
+
 export type SimulationState =
   | 'STARTING'
   | 'RUNNING'
@@ -53,7 +55,7 @@ export interface StartSimulationRequest {
   origins: Record<string, string[]>
   window_start_seconds: number
   duration_seconds: number
-  control_mode: string
+  control_mode: BackendControlMode
   seed: number
   step_length: number
   realtime: boolean

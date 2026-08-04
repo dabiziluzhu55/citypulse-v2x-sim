@@ -2,8 +2,14 @@
   "schemaVersion": 1,
   "intersectionId": "demo_16",
   "facilitiesUrl": "/intersections/v3/demo_16/facilities.json",
-  "vegetation": {
-    "manifestUrl": "/intersections/v3/demo_16/vegetation.json",
-    "modelUrl": "/assets/plants/low-poly-plants.glb"
+  "streetlight": {
+    "modelUrl": "/assets/roadside/streetlight.glb",
+    "heightMeters": 7.5,
+    "modelYawDegrees": 180
+  },
+  "buildingTilesetUrl": "/3dtiles/intersections/demo_16/tileset.json",
+  "geojson": {
+    "green": "/intersections/v3/demo_16/green.geojson",
+    "water": "/intersections/v3/demo_16/water.geojson"
   }
 }

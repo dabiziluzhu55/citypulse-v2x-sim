@@ -7,9 +7,17 @@ import {
   createScenarioFingerprint,
 } from '../src/composables/useEvaluationComparison.ts'
 import {
+  METRICS_ALGORITHMS,
   buildAlgorithmMetricSeries,
   evaluationTimes,
 } from '../src/constants/metricsEvaluation.ts'
+
+test('uses concrete algorithm names in the evaluation legend', () => {
+  assert.deepEqual(
+    METRICS_ALGORITHMS.map((item) => item.shortLabel),
+    ['固定配时', 'Max Pressure', 'SOTL'],
+  )
+})
 
 test('prompts only when an accepted comparison with data would change', () => {
   assert.equal(comparisonChangeRequiresConfirmation('same', 'same', true), false)

@@ -5,6 +5,8 @@ import { projectBd09ToWebMercator, wgs84ToBd09 } from '../src/mapv/sceneCoordina
 import { cropPolylineToRadius, validateIntersectionManifest } from './realistic-intersection-core.mjs'
 import {
   buildIntersectionApproachGeometry,
+  buildCollisionFreeIntersectionApproaches,
+  crosswalksOverlap,
   CROSSWALK_DEPTH_METERS,
   CROSSWALK_FIRST_CENTER_METERS,
   CROSSWALK_STRIPE_WIDTH_METERS,
@@ -51,6 +53,14 @@ test('catalog contains 20 projection-correct realistic intersections', async () 
     assert.equal(manifest.intersectionId, entry.intersectionId)
     assert.ok(manifest.horizontalScale > 1.28 && manifest.horizontalScale < 1.30)
     assert.ok(manifest.connections.length > 0)
+    assert.ok(manifest.roadJoints?.length > 0, `${entry.intersectionId} requires topology road joints`)
+    assert.ok(manifest.roadJoints.some((joint) => joint.junctionId === manifest.junctionId))
+    assert.ok(manifest.roadJoints.every((joint) => joint.overlapMeters >= 0.5))
+    assert.equal(manifest.radiusMeters, 520)
+    const maximumRoadRadius = Math.max(...manifest.edges.flatMap((edge) => (
+      edge.lanes.flatMap((lane) => lane.points.map((point) => Math.hypot(...point)))
+    ))) / manifest.horizontalScale
+    assert.ok(maximumRoadRadius >= 130, `${entry.intersectionId} road coverage is too short`)
     assert.ok(manifest.edges.some((edge) => edge.incoming))
     assert.ok(manifest.edges.some((edge) => !edge.incoming))
   }
@@ -60,18 +70,35 @@ test('all realistic intersections have a matching environment bundle', async () 
   for (let index = 1; index <= 20; index += 1) {
     const id = `demo_${index}`
     const directory = new URL(`../public/intersections/v3/${id}/`, import.meta.url)
-    const [environmentSource, facilitiesSource, vegetationSource] = await Promise.all([
+    const [environmentSource, facilitiesSource, vegetationSource, greenSource, waterSource, buildingSource] = await Promise.all([
       readFile(new URL('environment.json', directory), 'utf8'),
       readFile(new URL('facilities.json', directory), 'utf8'),
       readFile(new URL('vegetation.json', directory), 'utf8'),
+      readFile(new URL('green.geojson', directory), 'utf8'),
+      readFile(new URL('water.geojson', directory), 'utf8'),
+      readFile(new URL(`../public/3dtiles/intersections/${id}/manifest.json`, import.meta.url), 'utf8'),
     ])
     const environment = parseIntersectionEnvironmentManifest(JSON.parse(environmentSource), id)
     const facilities = JSON.parse(facilitiesSource)
     const vegetation = JSON.parse(vegetationSource)
+    const green = JSON.parse(greenSource)
+    const water = JSON.parse(waterSource)
+    const buildings = JSON.parse(buildingSource)
     assert.equal(environment.intersectionId, id)
     assert.equal(facilities.intersectionId, id)
     assert.ok(facilities.lamps.length > 0, `${id} requires roadside lamps`)
-    assert.ok(vegetation.items.length > 0, `${id} requires vegetation`)
+    assert.equal(vegetation.items.length, 0, `${id} procedural vegetation must stay disabled`)
+    assert.equal(environment.streetlight.modelUrl, '/assets/roadside/streetlight.glb')
+    assert.equal(environment.streetlight.modelYawDegrees, 180)
+    assert.equal(environment.buildingTilesetUrl, `/3dtiles/intersections/${id}/tileset.json`)
+    assert.equal(environment.geojson.green, `/intersections/v3/${id}/green.geojson`)
+    assert.equal(environment.geojson.water, `/intersections/v3/${id}/water.geojson`)
+    assert.ok(Array.isArray(green.features))
+    assert.ok(Array.isArray(water.features))
+    assert.ok(green.features.every((feature) => feature.properties?.kind !== 'green-ground'))
+    assert.equal(green.metadata.fallback, 'Baidu vector base map')
+    assert.equal(water.metadata.fallback, 'Baidu vector base map')
+    assert.ok(buildings.output_tile_count > 0, `${id} requires focused buildings`)
   }
 })
 
@@ -161,7 +188,7 @@ test('demo_2 rebuilds non-overlapping uniform lane cross sections with lane sema
   }
 })
 
-test('crosswalk bars fill paired carriageways without becoming curb-to-curb lines', async () => {
+test('crosswalk bars span paired carriageways continuously without median gaps', async () => {
   const manifest = JSON.parse(await readFile(
     new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
     'utf8',
@@ -172,6 +199,11 @@ test('crosswalk bars fill paired carriageways without becoming curb-to-curb line
     assert.ok(approach.crosswalkHalfWidth >= approach.halfWidth)
     assert.ok(approach.crosswalkBars.length >= 4)
     assert.ok(approach.crosswalkBars.every((bar) => bar.length < approach.crosswalkHalfWidth * 2))
+    const projections = approach.crosswalkCenters
+      .map((point) => point[0] * approach.normal[0] + point[1] * approach.normal[1])
+      .sort((left, right) => left - right)
+    const maximumGap = Math.max(...projections.slice(1).map((value, index) => value - projections[index]))
+    assert.ok(maximumGap / manifest.horizontalScale <= 0.91)
     const pole = signalPoleBase(approach, manifest.horizontalScale)
     const poleProjection = pole[0] * approach.normal[0] + pole[1] * approach.normal[1]
     const lateralClearance = Math.abs(poleProjection - approach.outerBoundaryProjection)
@@ -183,6 +215,30 @@ test('crosswalk bars fill paired carriageways without becoming curb-to-curb line
     assert.ok(Math.abs(lateralClearance - SIGNAL_POLE_LATERAL_CLEARANCE_METERS) < 0.01)
     assert.ok(Math.abs(longitudinalSetback - SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS) < 0.01)
     assert.ok(lateralClearance >= 0.75)
+  }
+})
+
+test('all compact intersections move crosswalks outward until their footprints no longer overlap', async () => {
+  for (let index = 1; index <= 20; index += 1) {
+    const id = `demo_${index}`
+    const manifest = JSON.parse(await readFile(
+      new URL(`../public/intersections/v3/${id}/manifest.json`, import.meta.url),
+      'utf8',
+    ))
+    const approaches = buildCollisionFreeIntersectionApproaches(manifest.edges, manifest.horizontalScale)
+    for (let left = 0; left < approaches.length; left += 1) {
+      for (let right = left + 1; right < approaches.length; right += 1) {
+        assert.equal(
+          crosswalksOverlap(
+            approaches[left].geometry,
+            approaches[right].geometry,
+            manifest.horizontalScale,
+          ),
+          false,
+          `${id} ${approaches[left].edge.id}/${approaches[right].edge.id}`,
+        )
+      }
+    }
   }
 })
 

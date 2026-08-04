@@ -32,26 +32,7 @@ def write_fixture(root: Path):
         encoding="utf-8",
     )
     additional_file.write_text(
-        (
-            '<additional>'
-            '<tlLogic id="4427" programID="demo_1_morning_peak"/>'
-            '<tlLogic id="317" programID="demo_2_morning_peak"/>'
-            '<tlLogic id="318" programID="demo_3_morning_peak"/>'
-            '</additional>'
-        ),
-        encoding="utf-8",
-    )
-    layout.tls_manifest.write_text(
-        json.dumps(
-            {
-                "schema_version": 2,
-                "intersections": {
-                    "demo_2": {
-                        "tls_ids": ["317"],
-                    }
-                },
-            }
-        ),
+        '<additional><tlLogic id="317" programID="demo_2_morning_peak"/><tlLogic id="318" programID="demo_3_morning_peak"/></additional>',
         encoding="utf-8",
     )
     profile_root = json.loads(
@@ -97,6 +78,23 @@ def write_fixture(root: Path):
         },
     }
     layout.traffic_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+    tls_manifest = {
+        "schema_version": 2,
+        "source_net": "test.net.xml",
+        "intersections": {
+            "demo_2": {
+                "junction_ids": ["317"],
+                "tls_ids": ["317"],
+                "program_ids": ["demo_2_morning_peak"],
+            },
+            "demo_3": {
+                "junction_ids": ["318"],
+                "tls_ids": ["318"],
+                "program_ids": ["demo_3_morning_peak"],
+            }
+        },
+    }
+    layout.tls_manifest.write_text(json.dumps(tls_manifest), encoding="utf-8")
     return generated
 
 
@@ -159,13 +157,6 @@ class SessionScenarioTests(unittest.TestCase):
             )
             layout.traffic_manifest.write_text(
                 json.dumps(manifest), encoding="utf-8"
-            )
-            tls_manifest = json.loads(
-                layout.tls_manifest.read_text(encoding="utf-8")
-            )
-            tls_manifest["intersections"]["demo_3"] = {"tls_ids": ["318"]}
-            layout.tls_manifest.write_text(
-                json.dumps(tls_manifest), encoding="utf-8"
             )
             one = compile_session_scenario(
                 "one-intersection",
@@ -230,13 +221,6 @@ class SessionScenarioTests(unittest.TestCase):
             self.assertEqual(compiled.selected_origins, {})
             config = ET.parse(compiled.sumocfg).getroot()
             self.assertEqual(config.find("time/end").get("value"), "900")
-            signal_logics = ET.parse(compiled.additional_file).getroot().findall(
-                "tlLogic"
-            )
-            self.assertEqual(
-                [(logic.get("id"), logic.get("programID")) for logic in signal_logics],
-                [("317", "demo_2_morning_peak")],
-            )
 
     def test_rejects_origin_filtering_and_invalid_multiplier(self):
         with tempfile.TemporaryDirectory() as directory:

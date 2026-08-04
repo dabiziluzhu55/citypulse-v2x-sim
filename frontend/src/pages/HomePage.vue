@@ -22,7 +22,12 @@ const mapDimension = computed(() => mapView?.dimension.value ?? '2d')
 const cameraPreset = computed(() => mapView?.cameraPreset.value ?? 'overview')
 const cameraPresets = CESIUM_CAMERA_PRESETS
 const map3dCapability = detectMap3dCapability()
-const { activeIntersectionId, sceneStatus, selectIntersection } = useActiveIntersectionScene()
+const {
+  activeIntersectionId,
+  committedIntersectionId,
+  sceneStatus,
+  selectIntersection,
+} = useActiveIntersectionScene()
 const { catalog } = useCatalog(activeIntersectionId)
 const localIntersectionOptions = Array.from({ length: 20 }, (_, index) => ({
   intersection_id: `demo_${index + 1}`,
@@ -40,6 +45,10 @@ function setMapDimension(next: MapDimension) {
 }
 
 function setCameraPreset(next: CesiumCameraPresetId) {
+  if (
+    sceneStatus.value !== 'ready'
+    || committedIntersectionId.value !== activeIntersectionId.value
+  ) return
   mapView?.setCameraPreset(next)
 }
 
@@ -209,6 +218,7 @@ async function handleStop() {
           type="button"
           class="map-dimension-toggle__btn map-camera-toggle__btn"
           :class="{ active: cameraPreset === preset.id }"
+          :disabled="sceneStatus !== 'ready' || committedIntersectionId !== activeIntersectionId"
           :title="`${preset.label}：${preset.description}`"
           @click="setCameraPreset(preset.id)"
         >

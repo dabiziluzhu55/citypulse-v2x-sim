@@ -3,7 +3,10 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { Color } from 'three'
 
-import { RoadsideFacilityRenderer } from '../src/mapv/showcaseLayers/RoadsideFacilityRenderer.ts'
+import {
+  RoadsideFacilityRenderer,
+  resolveStreetlightHeading,
+} from '../src/mapv/showcaseLayers/RoadsideFacilityRenderer.ts'
 import { snapshotToTrafficView } from '../src/utils/trafficStateMerge.ts'
 import {
   buildSceneFacilityManifest,
@@ -127,9 +130,6 @@ test('renders one facility group and updates signal colors without rebuilding it
   }
 
   for (const name of [
-    'street-lamp-arms',
-    'street-lamp-housings',
-    'street-lamp-lenses',
     'traffic-signal-arms',
     'traffic-signal-backs',
     'roadside-camera-brackets',
@@ -137,6 +137,9 @@ test('renders one facility group and updates signal colors without rebuilding it
     'roadside-control-cabinets',
   ]) {
     assert.ok(group.getObjectByName(name), `missing ${name}`)
+  }
+  for (const name of ['street-lamp-arms', 'street-lamp-housings', 'street-lamp-lenses']) {
+    assert.equal(group.getObjectByName(name), undefined, `legacy procedural lamp ${name} must be removed`)
   }
   const poles = group.getObjectByName('street-poles')
   assert.equal(poles.material.type, 'MeshStandardMaterial')
@@ -167,6 +170,16 @@ test('places street lamps on both sides near each controlled approach', () => {
     assert.ok(lamps.some((lamp) => lamp.id.endsWith(':-1')))
     assert.ok(lamps.some((lamp) => lamp.id.endsWith(':1')))
   }
+})
+
+test('preserves opposite roadside headings and applies one model yaw calibration', () => {
+  const yaw = Math.PI
+  const first = resolveStreetlightHeading({ heading: 0 }, yaw)
+  const opposite = resolveStreetlightHeading({ heading: Math.PI }, yaw)
+  const delta = Math.abs(((opposite - first + Math.PI * 3) % (Math.PI * 2)) - Math.PI)
+
+  assert.ok(Math.abs(Math.abs(first) - Math.PI) < 1e-12)
+  assert.ok(Math.abs(delta - Math.PI) < 1e-12)
 })
 
 test('preserves the backend signal stage for traffic-light rendering', () => {

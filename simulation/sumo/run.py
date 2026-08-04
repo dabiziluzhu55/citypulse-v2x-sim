@@ -709,14 +709,12 @@ def _load_events(path: Path | None):
         return ()
     from .events import (
         AccidentEvent,
-        CollisionBlockageEvent,
         DEFAULT_ACTIVITY_VEHICLE_TYPE_ID,
         LaneClosureEvent,
         MajorEventClosingEvent,
         MajorEventOpeningEvent,
-        QueueSpillbackEvent,
         SpeedLimitEvent,
-        StoppedVehicleEvent,    )
+    )
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -735,10 +733,9 @@ def _load_events(path: Path | None):
                 LaneClosureEvent(
                     **common,
                     lane_ids=tuple(str(value) for value in item["lane_ids"]),
-                    max_speed=_optional_event_float(item, "max_speed"),
                 )
             )
-        elif event_type in {"speed_limit", "speed_restriction"}:
+        elif event_type == "speed_limit":
             result.append(
                 SpeedLimitEvent(
                     **common,
@@ -752,44 +749,6 @@ def _load_events(path: Path | None):
                     **common,
                     lane_id=str(item["lane_id"]),
                     position_ratio=float(item["position_ratio"]),
-                    max_speed=_optional_event_float(item, "max_speed"),
-                )
-            )
-        elif event_type == "stopped_vehicle":
-            result.append(
-                StoppedVehicleEvent(
-                    **common,
-                    lane_id=str(item["lane_id"]),
-                    position_ratio=float(item.get("position_ratio", 0.5)),
-                    vehicle_type=str(
-                        item.get("vehicle_type", "citypulse_disturbance_vehicle")
-                    ),
-                )
-            )
-        elif event_type == "collision_blockage":
-            result.append(
-                CollisionBlockageEvent(
-                    **common,
-                    lane_ids=tuple(str(value) for value in item["lane_ids"]),
-                    position_ratio=float(item.get("position_ratio", 0.5)),
-                    vehicle_type=str(
-                        item.get("vehicle_type", "citypulse_disturbance_vehicle")
-                    ),
-                )
-            )
-        elif event_type in {"queue_spillback", "queue_blockage"}:
-            result.append(
-                QueueSpillbackEvent(
-                    **common,
-                    lane_ids=tuple(str(value) for value in item["lane_ids"]),
-                    blocked_lane_ids=tuple(
-                        str(value) for value in item["blocked_lane_ids"]
-                    ),
-                    max_speed=_optional_event_float(item, "max_speed"),
-                    position_ratio=float(item.get("position_ratio", 0.5)),
-                    vehicle_type=str(
-                        item.get("vehicle_type", "citypulse_disturbance_vehicle")
-                    ),
                 )
             )
         elif event_type == "major_event_opening":
@@ -832,19 +791,13 @@ def _load_events(path: Path | None):
     return tuple(result)
 
 
-def _optional_event_float(item: Mapping[str, object], field: str) -> float | None:
-    value = item.get(field)
-    return None if value in {None, ""} else float(value)
-
-
 def run(args: argparse.Namespace) -> None:
     from .session import SimulationConfig, SimulationManager
 
     manager = SimulationManager()
     duration = args.duration if args.duration is not None else args.end
-    intersection_ids = tuple(args.intersection or manager.catalog().intersections)
     config = SimulationConfig(
-        intersection_ids=intersection_ids,
+        intersection_ids=tuple(args.intersection),
         period=args.period,
         origins=_parse_origins(args.origin),
         window_start_seconds=args.window_start,
@@ -894,12 +847,7 @@ def run(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("fixed", "algorithm"), default="fixed")
-    parser.add_argument(
-        "--intersection",
-        nargs="+",
-        default=None,
-        help="Controlled intersections; default uses every intersection in the global scenario.",
-    )
+    parser.add_argument("--intersection", nargs="+", default=["demo_2"])
     parser.add_argument(
         "--period",
         choices=("morning_peak", "off_peak", "evening_peak"),

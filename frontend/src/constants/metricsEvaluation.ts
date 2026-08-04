@@ -1,9 +1,9 @@
 import type { AlgorithmMetricSeries, MetricsTimeseriesPoint } from '../types/metrics'
 
 export const METRICS_ALGORITHMS = [
-  { id: 'fixed', shortLabel: '算法1', label: '固定配时算法', color: '#4F8CFF' },
-  { id: 'max_pressure', shortLabel: '算法2', label: 'Max Pressure算法', color: '#55E69A' },
-  { id: 'sotl', shortLabel: '算法3', label: 'SOTL自组织信号算法', color: '#FFD665' },
+  { id: 'fixed', shortLabel: '固定配时', label: '固定配时算法', color: '#4F8CFF' },
+  { id: 'max_pressure', shortLabel: 'Max Pressure', label: 'Max Pressure算法', color: '#55E69A' },
+  { id: 'sotl', shortLabel: 'SOTL', label: 'SOTL自组织信号算法', color: '#FFD665' },
 ] as const
 
 export type EvaluationMetricKey = 'queue' | 'waiting' | 'fuel'

@@ -1,4 +1,4 @@
-"""场景导出接口：编译 SUMO 配置并打包下载。"""
+"""场景导出接口：编译SUMO配置并打包下载"""
 
 from __future__ import annotations
 

@@ -1,7 +1,8 @@
-"""内部算法协议与 Max Pressure / 指标采集单元测试。"""
+"""内部算法协议与Max Pressure / 指标采集单元测试"""
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.controllers.max_pressure import MaxPressureController
@@ -51,7 +52,7 @@ def _metadata(*, permissive_weight: float = 0.5) -> dict:
 
 
 def _shared_lane_metadata() -> dict:
-    """单进口道含直行+左转两个 movement。"""
+    """单进口道含直行+左转两个movement"""
     return {
         "episode_id": "ep-shared",
         "intersections": {
@@ -97,7 +98,7 @@ def _shared_lane_metadata() -> dict:
 
 
 def _downstream_chain_metadata() -> dict:
-    """出口车道有后续受控 movement，用于测试转向加权下游队列。"""
+    """出口车道有后续受控movement，用于测试转向加权下游队列"""
     return {
         "episode_id": "ep-chain",
         "intersections": {
@@ -282,7 +283,7 @@ def test_vehicle_route_identifies_turn_on_shared_lane() -> None:
     )
     assert queues["conn_through"] == 2.0
     assert queues["conn_left"] == 1.0
-    # 直行排队更多，应优先相位 1（验证路径识别而非简单选相位 2）
+    # 直行排队更多，应优先相位1（验证路径识别而非简单选相位2）
     assert controller.compute_actions(observation)["ix_shared"] == 1
 
 
@@ -513,32 +514,39 @@ def test_downstream_movement_weighted_queue() -> None:
 
 def test_metrics_collector_tracks_arrival() -> None:
     collector = MetricsCollector(algorithm="max_pressure")
+    collector.set_powertrain_by_type({"passenger": "gasoline"})
     collector._observe(
         sim_time=10.0,
         vehicles={
             "v1": {
                 "waiting": 3.0,
-                "time_loss": 1.0,
                 "distance": 50.0,
                 "fuel_ml": 10.0,
+                "type_id": "passenger",
             }
         },
-        lane_halting=[2.0],
+        incoming_halting=[2.0],
     )
     collector._observe(
         sim_time=20.0,
         vehicles={},
-        lane_halting=[1.0],
+        incoming_halting=[1.0],
     )
     collector._total_departed = 1
     collector._total_arrived = 1
     collector._final_sim_time = 20.0
+    live = collector.result(finished=False, decision_latency_ms=1.0)
+    assert live.arrived == 1
+    assert live.avg_travel_time_s == 10.0
+    assert live.avg_waiting_time_s == 3.0
+    assert live.avg_queue_length_veh == 1.5
+
     collector._finished = True
-    result = collector.result(finished=True)
-    assert result.arrived == 1
-    assert result.avg_travel_time_s == 10.0
-    assert result.avg_waiting_time_s == 3.0
-    assert result.avg_queue_length_veh == 1.5
+    final = collector.result(finished=True, decision_latency_ms=1.0)
+    assert final.avg_travel_time_s is None
+    assert final.avg_waiting_time_s is None
+    assert final.avg_queue_length_veh == 1.5
+    assert final.throughput_veh_per_h == pytest.approx(180.0)
 
 
 def test_internal_algorithm_protocol_endpoints(

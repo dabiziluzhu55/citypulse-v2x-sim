@@ -1,4 +1,4 @@
-"""Gershenson SOTL-phase / platoon 控制器单元测试。"""
+"""Gershenson SOTL-phase / platoon控制器单元测试"""
 
 from __future__ import annotations
 

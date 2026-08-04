@@ -134,15 +134,7 @@ async def finish(body: Dict[str, Any]) -> Dict[str, Any]:
     _get_collector().on_finish(body)
     _last_result = _get_collector().result()
 
-    logger.info(
-        "指标: 行程=%.1fs 等待=%.1fs 排队=%.2f 吞吐=%.1f/h 延迟=%.3fms 油耗=%.2f",
-        _last_result.avg_travel_time_s,
-        _last_result.avg_waiting_time_s,
-        _last_result.avg_queue_length_veh,
-        _last_result.throughput_veh_per_h,
-        _last_result.avg_decision_latency_ms,
-        _last_result.fuel_intensity_L_per_100km,
-    )
+    logger.info("评价指标: %s", _last_result.to_dict())
 
     _controller = None
     _current_episode_id = None

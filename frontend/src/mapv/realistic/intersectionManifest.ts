@@ -16,9 +16,25 @@ export interface RealisticLane {
 export interface RealisticRoadEdge {
   id: string
   incoming: boolean
+  incident?: boolean
   centerline?: Point2[]
   roadWidth?: number
   lanes: RealisticLane[]
+}
+
+export interface RealisticRoadJoint {
+  jointId: string
+  junctionId: string
+  kind: 'continuation' | 'junction'
+  connectedEdgeIds: string[]
+  maxGapMeters: number
+  overlapMeters: number
+  source: 'sumo_topology'
+  polygons: {
+    sidewalk: Point2[]
+    curb: Point2[]
+    asphalt: Point2[]
+  }
 }
 
 export interface RealisticConnection {
@@ -78,6 +94,7 @@ export interface RealisticIntersectionManifest {
   }
   junctionShape: Point2[]
   edges: RealisticRoadEdge[]
+  roadJoints?: RealisticRoadJoint[]
   connections: RealisticConnection[]
   phases: RealisticPhase[]
   phaseTemplates?: RealisticPhaseTemplates
@@ -107,6 +124,17 @@ export async function loadIntersectionManifest(
     || value.renderCoordinateSystem !== 'LOCAL_BD09_WEB_MERCATOR_METERS, Z-up'
   )) {
     throw new Error('Intersection asset coordinate contract is incompatible')
+  }
+  for (const joint of value.roadJoints ?? []) {
+    if (
+      !joint.jointId
+      || !joint.junctionId
+      || !['continuation', 'junction'].includes(joint.kind)
+      || joint.connectedEdgeIds.length < 2
+      || !Object.values(joint.polygons).every((points) => Array.isArray(points) && points.length >= 3)
+    ) {
+      throw new Error(`Intersection road joint ${joint.jointId || '<unknown>'} is invalid`)
+    }
   }
   return value
 }
