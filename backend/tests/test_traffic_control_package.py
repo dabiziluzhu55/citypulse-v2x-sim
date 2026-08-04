@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -101,56 +102,17 @@ def _max_pressure_metadata() -> dict:
 
 
 def _ippo_metadata() -> dict:
-    intersections = {}
-    for index in range(1, 21):
-        iid = f"demo_{index}"
-        phases = {}
-        connections = []
-        incoming = []
-        outgoing = []
-        lanes = {}
-        for phase in range(4):
-            conn_id = f"{iid}_c{phase}"
-            in_lane = f"{iid}_in_{phase}"
-            out_lane = f"{iid}_out_{phase}"
-            incoming.append(in_lane)
-            outgoing.append(out_lane)
-            lanes[in_lane] = {
-                "edge_id": f"{iid}_in_e{phase}",
-                "length_m": 150.0,
-                "speed_limit_mps": 15.0,
-            }
-            lanes[out_lane] = {
-                "edge_id": f"{iid}_out_e{phase}",
-                "length_m": 150.0,
-                "speed_limit_mps": 15.0,
-            }
-            connections.append(
-                {
-                    "connection_id": conn_id,
-                    "from_lane": in_lane,
-                    "to_lane": out_lane,
-                }
-            )
-            phases[str(phase)] = {
-                "green_seconds": 30.0,
-                "connection_priorities": {conn_id: "protected"},
-            }
-        intersections[iid] = {
-            "intersection_id": iid,
-            "phase_order": [0, 1, 2, 3],
-            "incoming_lanes": incoming,
-            "outgoing_lanes": outgoing,
-            "lanes": lanes,
-            "connections": connections,
-            "phases": phases,
-        }
-    return {
-        "episode_id": "ep-ippo",
-        "decision_interval": 5.0,
-        "minimum_green": 5.0,
-        "intersections": intersections,
-    }
+    """Real xiongan20 initialize metadata (contract-v2 fingerprint source)."""
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "algorithms"
+        / "ippo"
+        / "regression_golden"
+        / "metadata_xiongan20.json"
+    )
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _make_service(**settings_kwargs: object) -> SimulationService:
@@ -225,14 +187,22 @@ def test_four_control_modes_registered() -> None:
 
 
 def test_registry_import_does_not_load_torch() -> None:
+    before_ippo = {
+        name
+        for name in sys.modules
+        if name == "traffic_control.ippo" or name.startswith("traffic_control.ippo.")
+    }
     before = {name for name in sys.modules if name == "torch" or name.startswith("torch.")}
     importlib.reload(importlib.import_module("traffic_control.registry"))
     importlib.reload(importlib.import_module("backend.app.controllers.registry"))
+    after_ippo = {
+        name
+        for name in sys.modules
+        if name == "traffic_control.ippo" or name.startswith("traffic_control.ippo.")
+    }
     after = {name for name in sys.modules if name == "torch" or name.startswith("torch.")}
-    # 允许环境里已有 torch，但 registry 路径不得新增 torch 依赖链
-    assert "traffic_control.ippo" not in sys.modules
-    assert "traffic_control.ippo.controller" not in sys.modules
-    assert "traffic_control.ippo.model" not in sys.modules
+    # 允许环境里已有 torch/ippo（其它测试文件可能先导入），但 registry 路径不得新增依赖链
+    assert after_ippo == before_ippo
     assert after == before or "torch" in before
 
 

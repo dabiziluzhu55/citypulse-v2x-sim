@@ -16,6 +16,12 @@ import numpy as np
 import torch
 
 from traffic_control.ippo.model import IPPONetwork, PHASE_FEATURES
+from traffic_control.ippo.contract import (
+    intersection_fingerprint_from_index,
+    load_contract,
+    validate_contract,
+)
+from traffic_control.ippo.identity import IDENTITY_SLOT_IDS, identity_slots_for
 from traffic_control.protocol import finish_response, initialize_response, step_response
 
 logger = logging.getLogger(__name__)
@@ -204,10 +210,12 @@ class StateBuilder:
     def __init__(self, metadata: Mapping[str, Any]) -> None:
         raw = metadata.get("intersections", {})
         self.intersection_ids = tuple(sorted(raw, key=_intersection_sort_key))
+        slot_indices = identity_slots_for(self.intersection_ids)
         self._agent_indices = {
             intersection_id: index
             for index, intersection_id in enumerate(self.intersection_ids)
         }
+        self._slot_indices = dict(zip(self.intersection_ids, slot_indices))
         self._indices = {
             intersection_id: _build_index(raw[intersection_id])
             for intersection_id in self.intersection_ids
@@ -217,7 +225,14 @@ class StateBuilder:
     def max_state_dim(self) -> int:
         if not self.intersection_ids:
             return 0
-        return MAX_PHASES + 1 + len(self.intersection_ids) + 5 * MAX_LANES + 3
+        return MAX_PHASES + 1 + len(IDENTITY_SLOT_IDS) + 5 * MAX_LANES + 3
+
+    def get_fingerprint(self, intersection_id: str) -> dict[str, Any]:
+        """Topology fingerprint of one controlled intersection (contract v2)."""
+        index = self._indices.get(intersection_id)
+        if index is None:
+            raise ValueError(f"Unknown controlled intersection: {intersection_id}")
+        return intersection_fingerprint_from_index(index)
 
     @property
     def max_phases(self) -> int:
@@ -452,8 +467,8 @@ class StateBuilder:
             [np.clip(elapsed / MAX_STAGE_ELAPSED, 0.0, 1.0)], dtype=np.float32
         )
 
-        identity = np.zeros(len(self.intersection_ids), dtype=np.float32)
-        identity[self._agent_indices[intersection_id]] = 1.0
+        identity = np.zeros(len(IDENTITY_SLOT_IDS), dtype=np.float32)
+        identity[self._slot_indices[intersection_id]] = 1.0
 
         lane_features: List[np.ndarray] = []
         lanes = intersection.get("lanes", {})
@@ -568,34 +583,7 @@ def load_checkpoint_metadata(path: str | os.PathLike[str]) -> dict:
     return checkpoint
 
 
-def _validate_checkpoint(
-    checkpoint: Mapping[str, Any],
-    intersection_ids: Sequence[str],
-    obs_dim: int,
-    act_dim: int,
-    action_interval: float,
-) -> None:
-    if checkpoint.get("model_version") != MODEL_VERSION:
-        raise ValueError(
-            f"Checkpoint version {checkpoint.get('model_version')!r} is not {MODEL_VERSION!r}."
-        )
-    saved_ids = tuple(str(value) for value in checkpoint.get("intersection_ids", ()))
-    if saved_ids != tuple(intersection_ids):
-        raise ValueError(
-            f"Checkpoint intersection_ids mismatch: saved={saved_ids}, current={tuple(intersection_ids)}"
-        )
-    if int(checkpoint.get("obs_dim", -1)) != obs_dim:
-        raise ValueError("Checkpoint observation dimension does not match current metadata.")
-    if int(checkpoint.get("act_dim", -1)) != act_dim:
-        raise ValueError("Checkpoint action dimension does not match current metadata.")
-    if abs(float(checkpoint["action_interval"]) - action_interval) > 1e-9:
-        raise ValueError(
-            "Checkpoint action interval does not match the current IPPO configuration."
-        )
-    if checkpoint.get("phase_feature_schema") != PHASE_FEATURE_SCHEMA:
-        raise ValueError("Checkpoint phase feature schema does not match current IPPO.")
-    if abs(float(checkpoint.get("max_green_factor", -1.0)) - _max_green_factor) > 1e-9:
-        raise ValueError("Checkpoint maximum-green configuration does not match current IPPO.")
+
 
 def _eligible_for_decision(
     intersection: Mapping[str, Any], simulation_time: float, last_decision: float
@@ -747,8 +735,22 @@ def initialize(payload: dict) -> dict:
         _effective_demand_enabled = bool(
             checkpoint.get("effective_demand_enabled", True)
         )
-        _validate_checkpoint(
-            checkpoint, _intersection_ids, _obs_dim, _act_dim, _action_interval
+        _contract_version, contract_view = load_contract(model_path, checkpoint)
+        live_fingerprints = {
+            intersection_id: _state_builder.get_fingerprint(intersection_id)
+            for intersection_id in _intersection_ids
+        }
+        validate_contract(
+            contract_view,
+            intersection_ids=_intersection_ids,
+            fingerprints=live_fingerprints,
+            obs_dim=_obs_dim,
+            act_dim=_act_dim,
+            action_interval=_action_interval,
+            max_green_factor=_max_green_factor,
+            phase_feature_schema=PHASE_FEATURE_SCHEMA,
+            effective_demand_enabled=_effective_demand_enabled,
+            model_version=MODEL_VERSION,
         )
         _model = IPPONetwork(_obs_dim, _act_dim)
         _model.load_state_dict(checkpoint["model_state_dict"])
