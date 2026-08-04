@@ -89,6 +89,11 @@ def build_arm_plan(
     }
 
 
+def effective_worker_count(workers: int, episodes: int) -> int:
+    """train.py 内部 worker 上限为 min(workers, episodes)，转换元数据必须一致。"""
+    return min(int(workers), int(episodes))
+
+
 def arm_config(
     arm: str, *, intersections: int, adjacency: str | None = None
 ) -> MAPPOConfig:
@@ -270,13 +275,14 @@ def _run_arm(
     final_checkpoint = out / f"{arm}_ep{episodes:03d}.pt"
     diagnostics_path = out / f"{arm}_diagnostics.json"
     spec = ARM_SPECS[arm]
+    effective_workers = effective_worker_count(workers, episodes)
     convert_shared_init_to_checkpoint(
         init_path,
         str(init_checkpoint),
         arm=arm,
         intersections=intersections,
         adjacency=None if not spec["needs_adjacency"] else adjacency_path,
-        training_workers=workers,
+        training_workers=effective_workers,
         episode_duration_s=float(duration),
         training_periods=(period,),
     )
@@ -294,7 +300,10 @@ def _run_arm(
         diagnostics_path=str(diagnostics_path),
         adjacency=adjacency_path,
     )
-    return int(train_main(argv))
+    try:
+        return int(train_main(argv))
+    except SystemExit as exc:  # argparse parser.error / explicit quit
+        return int(exc.code or 1)
 
 
 def load_diagnostics(path: str | Path) -> dict[str, object]:

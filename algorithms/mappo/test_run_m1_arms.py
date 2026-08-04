@@ -15,6 +15,7 @@ from algorithms.mappo.run_m1_arms import (
     arm_config,
     build_arm_plan,
     convert_shared_init_to_checkpoint,
+    effective_worker_count,
     load_diagnostics,
 )
 from algorithms.mappo.shared_init import create_shared_init, load_shared_init
@@ -118,3 +119,7 @@ def test_load_diagnostics_parses_json(tmp_path: Path) -> None:
     path = tmp_path / "diag.json"
     path.write_text(__import__("json").dumps(payload), encoding="utf-8")
     assert load_diagnostics(path) == payload
+def test_effective_worker_count_caps_at_episodes() -> None:
+    assert effective_worker_count(8, 2) == 2
+    assert effective_worker_count(8, 32) == 8
+    assert effective_worker_count(2, 2) == 2
