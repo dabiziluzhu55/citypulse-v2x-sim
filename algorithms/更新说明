@@ -1,0 +1,50 @@
+# algorithms 更新说明
+
+> 本文档汇总 `algorithms/` 目录的阶段性更新，按主题分组记录。最新变更条目放在最上方；各子模块的详细说明见对应 README 与说明文档。
+
+## 更新记录（2026-08-05）
+
+### 新增两个安全评价指标
+
+评价模块在原有六项指标基础上新增两项按受控路口通行次数归一化的安全指标，形成当前八项统计口径：
+
+- 严重冲突暴露率（`severe_conflict_exposure_per_10000`，次/万次受控路口通行）；
+- 紧急制动暴露率（`emergency_braking_exposure_per_1000`，次/千次受控路口通行）。
+
+两项指标共用同一路口区域、0.2s 观察频率和受控路口通行分母，不能比较原始事件总数；数据不完整时返回 `N/A`。评价器同时新增决策延迟 p95（`decision_latency_p95_ms`）。详见 `algorithms/evaluation/更新说明.md`。
+
+### V2X 车路云协同模块
+
+新增 `algorithms/v2x/` 车路云协同（VRC）决策层：
+
+- 消息层：BSM / INTENT / SPaT / MAP / RSM 五类消息，以及通信延迟、丢包模型（V2XHub）；
+- 端—边—云：EdgeAggregator（路口级不可变 EdgeSnapshot）→ CloudStateStore（新鲜度视图）→ CloudRulePolicy；
+- 决策输出：信号规则族 C（排队/到达基线 + INTENT 前视）、RSI 阈值触发车辆引导、ActionArbiter（off / shadow / active）；
+- 协同模式：shadow 模式下不改变算法原始动作，仅记录建议与比较指标；可一键切换 active。
+
+### 算法专门跑典型场景
+
+新增中性场景预设注册表 `config/scenario_presets.py`（backend 与 evaluate 共用单一事实源）：
+
+- `xiongan_20`：demo_1 ~ demo_20 全量 20 路口；
+- `east_dense`：demo_3、demo_5、demo_6、demo_9 东部密集路口；
+- `west_dense`：demo_14、demo_15、demo_19 西部密集路口。
+
+算法控制范围与协同 managed 范围通过 `--scenario-preset` 统一解析（与 `--intersections` 互斥），其余路口保持 SUMO 内置固定配时；预设只改变算法/协同作用范围，不切换 SUMO 路网与 OD 需求。
+
+### MAPPO 优化（M0 审计 + M1 三臂）
+
+- M0：决策延迟 p95、单侧 UCB95、IPPO v8 10-seed 基线冻结、vanilla MAPPO 诊断、三 arm 共享初始化工件、pre-registration manifest；
+- M1：`cooperative_m1_v1` 模型版本（AgentConditionedCritic）、per-agent local GAE + 邻域 credit 组件、M1-0 scalar team value 控制组、M1-A / M1-B 两候选 arm 训练入口；
+- 训练基础设施：并行资源门禁（`mappo/resource_gate.py`）、ep32 硬门禁与选臂（`mappo/ep32_gate.py`）。
+
+### 其他更新
+
+- MaxPressure 控制器接入统一评价管线（八项指标口径）；
+- 事件检测（`event_detection/`）、官方 20 路口 60s 流量预测（`prediction/`，STGCN + sMAPE）等模块持续演进。
+
+## 使用提示
+
+- 评价口径变更不修改 SUMO 路网、配时与仿真核心，算法侧统一遵守八项指标定义；
+- 运行典型场景：`--scenario-preset east_dense`（详见 `config/scenario_presets.py`）；
+- V2X 协同建议在 shadow 模式下的展示必须标记“未执行”，不能与已应用控制混淆。
