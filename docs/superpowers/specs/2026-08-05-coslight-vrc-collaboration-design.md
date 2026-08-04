@@ -356,12 +356,14 @@ candidate = (
     vehicle.v2x_enabled
     and bsm 新鲜（bsm_delivered_at ≥ now − freshness_thresholds_s["bsm"]）
     and vehicle.next_signal is not None
+    and vehicle.next_signal.intersection_id in managed_ids   # 场景范围门禁（§7.3）
     and vehicle.distance_to_signal_m is not None
     and vehicle.distance_to_signal_m <= guidance_horizon_m
 )
 ```
 
 - 非机动车/非网联车永不进入；
+- 驶向**非算法管理路口**的车（`next_signal ∉ managed_ids`）不产生 RSI 候选，漏斗原因 `next_signal_not_managed`；
 - 候选数（`in_horizon_candidates`）单独统计；**网络 delivery rate 的分母必须是 published，不是 candidates**。
 
 ### 3.2 速度建议（v1 只做"当前绿窗追赶"，两阶段：raw 生成 → 发射判定）
@@ -461,7 +463,7 @@ connected_seen → fresh_bsm → next_signal_known → distance_known
 → in_horizon_candidates → raw_proposals → threshold_passed → dedup_passed → cooldown_passed → published
 ```
 
-过滤原因：`stale_bsm / missing_spat / missing_map / movement_unknown / next_served_green_unknown / not_in_guidance_horizon / no_action_needed / duplicate_guidance / cooldown_active / invalid_target_speed / invalid_target_lane`（另加 lane 分量：`lane_adjacency_unknown / lane_queue_stale / lane_queue_missing`）。
+过滤原因：`stale_bsm / missing_spat / missing_map / movement_unknown / next_served_green_unknown / next_signal_not_managed / not_in_guidance_horizon / no_action_needed / duplicate_guidance / cooldown_active / invalid_target_speed / invalid_target_lane`（另加 lane 分量：`lane_adjacency_unknown / lane_queue_stale / lane_queue_missing`）。
 
 网络层：`published / delivered / network_dropped / episode_ended`（`message_dropped` 不是策略原因）。
 
@@ -705,6 +707,8 @@ network_delivery_rate    = delivered / published
 
 ```
 evaluate.py 新增：
+  --scenario-preset {xiongan_20,east_dense,west_dense}   # 标准场景入口（§7）
+  --intersections demo_3,demo_5,...                     # 专家覆盖入口；单个整数 N 兼容为 demo_1..N（§7.2）
   --v2x-collab                              # 启用协同层（隐含启动 hub）
   --v2x-collab-mode {off,shadow,active}     # 默认 shadow；active → 运行时 ActiveModeUnavailableError
   --v2x-guidance-mode {threshold,full,disabled}   # 默认 threshold
@@ -759,6 +763,13 @@ CompositeSink(
 
 `selectable_output_rate > 0` 不作通用硬门槛（除非固定 seed/fixture 已证明必然具备有效输入）。
 
+东部典型场景 smoke（`--methods model --scenario-preset east_dense --v2x-collab`）：
+
+- 验证 §7.5 清单 1~11：`demo_3/5/6/9` 算法 + 其余 16 路口固定配时；
+- 未选路口无 SignalProposal / arbitration / RSI 候选、不出现在 `actions.signals`；
+- `scope` 块记录 `algorithm_controlled=4 / fixed=16 / managed_ids`；
+- `traffic_metrics.network_wide` 仍覆盖 20 路口。
+
 ### 6.5 产出物
 
 - 本 spec；随后 writing-plans 产出实现计划；
@@ -766,7 +777,92 @@ CompositeSink(
 
 ---
 
-## 7. 附录
+## 7. 场景预设与路口范围
+
+### 7.1 注册表（单一事实源）
+
+新增纯 Python 模块 `algorithms/coslight/scenario_presets.py`（无依赖）：
+
+```python
+@dataclass(frozen=True, slots=True)
+class ScenarioPreset:
+    preset_id: str
+    label: str
+    intersection_ids: tuple[str, ...]
+    description: str
+
+SCENARIO_PRESETS = {
+    "xiongan_20": ScenarioPreset(
+        "xiongan_20", "雄安20路口路网", tuple(f"demo_{i}" for i in range(1, 21)),
+        "全量 20 路口（= 现有默认行为）"),
+    "east_dense": ScenarioPreset(
+        "east_dense", "东部密集路口场景", ("demo_3", "demo_5", "demo_6", "demo_9"),
+        "雄安东部典型密集路口场景"),
+    "west_dense": ScenarioPreset(
+        "west_dense", "西部密集路口场景", ("demo_14", "demo_15", "demo_19"),
+        "雄安西部密集路口场景"),
+}
+```
+
+- 与 `backend/app/scenario/presets.py` 的**一致性**：本轮 evaluate 侧内置同注册表（不依赖 backend）；新增一致性测试 `test_scenario_presets.py`，断言 evaluate 注册表与 backend 注册表的 `preset_id / intersection_ids` 完全一致；后续再迁移到中立模块（如 `config/scenario_presets.py`）由 backend 与 evaluate 共同导入。
+
+### 7.2 CLI 与解析规则
+
+```text
+--scenario-preset {xiongan_20,east_dense,west_dense}   # 标准入口
+--intersections demo_3,demo_5,demo_6,demo_9            # 专家覆盖入口（逗号分隔 ID）
+两者互斥（argparse mutually exclusive group），同时传入 → 参数冲突报错
+
+解析规则：
+  指定 --scenario-preset → 从注册表解析路口集合
+  指定 --intersections   → 使用自定义路口集合；单个整数 N 兼容为 demo_1..N（保持 gate_experiment.sh 等旧调用可用）
+  两者都未指定           → 沿用现有默认（demo_1..20，等价 xiongan_20 范围）
+```
+
+- 帮助文案：`Select a predefined algorithm/collaboration intersection scope. Does not change the SUMO network or traffic demand.`
+- 启动校验：preset/显式 ID 解析出的每个路口必须存在于 initialize catalog，否则**立即报错**；非法 `--scenario-preset` 由 argparse choices 拒绝。
+
+### 7.3 语义（v1 冻结）
+
+- **`collab_managed_ids == algorithm_controlled_ids == preset.intersection_ids`**；v1 不允许两套范围独立配置（未来研究需要时再开放 `--v2x-collab-intersections`）；
+- 未选路口：不创建 controller、不产生 SignalProposal、不进 arbitration、不产生 RSI 候选、不出现在 `actions.signals`；由 SUMO 网络内置固定配时 program 自动运行（机制已验证：algorithm 模式下 controllers 只覆盖 selected intersections，TotalMap_20 含全部 20 路口及各自固定 program）；
+- preset 不改变：网络文件、OD 需求、period、fixed program、仿真时长（`map_template` 不切网，v1 不做 C）；
+- 候选门禁：RSI 只面向 `next_signal ∈ managed_ids` 的网联车（§3.1）。
+
+### 7.4 指标与输出
+
+- summary 新增 `scope` 块：
+
+```json
+{
+  "scope": {
+    "preset": "east_dense",
+    "registered_intersections": 20,
+    "algorithm_controlled_intersections": 4,
+    "fixed_intersections": 16,
+    "managed_ids": ["demo_3", "demo_5", "demo_6", "demo_9"]
+  }
+}
+```
+
+- **collab 指标分母 = managed scope**：`baseline_signal_slots = managed 路口数 × 有 baseline 动作的帧数`；decision coverage / selectable / agreement / switch / arbitration / validation / managed RSI 候选均只算 managed 路口；
+- **交通指标双报告**：`traffic_metrics.network_wide`（现有全网络指标，20 路口 tripinfo 口径）+ `traffic_metrics.managed_scope`（途经 managed 路口的行程子集；实现细节：按 tripinfo 途经 managed 路口过滤，数据不足时退化为逐路口等待统计），避免只报局部改善而漏掉外围拥堵转移。
+
+### 7.5 验证清单
+
+1. `east_dense` 精确解析为 `demo_3/5/6/9`（`west_dense` 为 `demo_14/15/19`，`xiongan_20` 为 1..20）；
+2. preset 中路口不存在于 initialize → 启动立即报错；
+3. `--scenario-preset` 与 `--intersections` 同时传入 → 参数冲突；
+4. controller 只为 managed 路口创建；
+5. collab proposal/arbitration 只出现 managed 路口；
+6. RSI 目标车辆 `next_signal` 必须 ∈ managed_ids；
+7. 其他路口不出现在 `actions.signals`；
+8. summary 正确记录 `algorithm_controlled / fixed_intersections`；
+9. shadow 下 managed 路口 applied == baseline（规范化一致）；
+10. 全网 traffic metrics 仍覆盖 20 个路口；
+11. evaluate 注册表与 backend 注册表一致性测试通过。
+
+## 8. 附录
 
 ### 7.1 枚举总表
 
