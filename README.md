@@ -1,55 +1,110 @@
 # CityPulse V2X Sim
 
-SUMO+CARLA联合仿真与交通协同管控平台。
+基于SUMO的交通管控仿真平台,前端选算法,后端编排会话,SUMO Worker执行仿真并本地加载管控算法
 
-## 目录结构
+## 目录
 
 | 目录 | 说明 |
 |------|------|
-| `simulation/` | 仿真基础设施：SUMO、CARLA、联合同步、地图工具 |
-| `algorithms/` | 算法组协作边界；正式算法由算法组独立维护 |
-| `backend/` | FastAPI后端（待实现） |
-| `frontend/` | Vue 前端（待实现） |
-| `data/maps/` | 示例地图数据 |
-| `configs/` | 全局配置 |
-| `scripts/` | 一键运行脚本（待补充） |
-| `docs/` | 项目文档 |
+| `frontend/` | Vue前端,通过REST/WebSocket调用后端 |
+| `backend/` | FastAPI后端,不直接调用仿真TraCI |
+| `simulation/` | SUMO/TraCI仿真内核与分布式Worker |
+| `traffic_control/` | 产品管控算法包，目前包括(fixed/sotl/max_pressure/ippo) |
+| `algorithms/` | 算法组训练与实验代码,不参与项目的部署 |
+| `data/maps/` | 地图与SUMO生成产物 |
+| `docs/` | 详细文档 |
 
-## 架构说明
+## 项目架构
 
-**仿真与算法分离**：`simulation/` 独占 SUMO/TraCI；Max Pressure、IPPO 和多路口
-强化学习通过 HTTP/JSON 协议 2.0 接收路口、单车及油耗状态，并返回官方目标相位、
-单车目标速度和换道请求。
+```text
+前端 --HTTP/WS--> 后端 --配置/队列--> SUMO Worker
+                                      ├─ simulation(TraCI)
+                                      └─ importlib加载 traffic_control.*
+```
+
+- 前端只传业务名`control_mode`,不直接调用算法、SUMO
+- 后端根据`traffic_control.registry`写成`SimulationConfig`(如`algorithm_module=traffic_control.sotl`)
+- 仿真端只认`fixed`或`algorithm`,本地算法由`algorithm_module`动态加载
+- IPPO等含torch的推理只在SUMO Worker进程内运行,Backend启动不导入torch
+
+### 管控模式
+
+| control_mode | 说明 |
+|--------------|------|
+| `fixed` | SUMO固定配时 |
+| `sotl` | SOTL,本地Protocol 2.0 |
+| `max_pressure` | Max Pressure,本地Protocol 2.0 |
+| `ippo` | 部署版IPPO,仅`xiongan_20`,默认加载包内checkpoint |
 
 ## 快速开始
 
-### SUMO 官方信号仿真
+### 1. 构建路网与车流
 
 ```bash
-export SUMO_HOME=/path/to/sumo
-cd /home/kemove/devdata1/zrl/citypulse-v2x-sim
+export SUMO_HOME=/usr/share/sumo
+cd /path/to/citypulse-v2x-sim
 python -m simulation.sumo.build_tls
-python -m simulation.sumo.run --gui --realtime --mode fixed \
+python -m simulation.sumo.build_traffic
+```
+
+### 2. 安装依赖
+
+```bash
+pip install -r backend/requirements.txt
+pip install -r requirements.txt          # SUMO Worker(含torch等)
+```
+
+### 3. 启动Backend(local调试)
+
+```bash
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+前端:
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+浏览器打开前端后选择场景与`control_mode`即可启动仿真
+
+### 4. 仅CLI跑SUMO
+
+```bash
+python -m simulation.sumo.run --mode fixed --intersection demo_2 --period morning_peak
+python -m simulation.sumo.run --mode algorithm \
+  --algorithm-transport local \
+  --algorithm-module traffic_control.sotl \
   --intersection demo_2 --period morning_peak
 ```
 
-构建命令还会使用 SUMO routeSampler 联合拟合 20 个路口，生成早高峰、平峰和晚高峰
-3 个全局真实车流场景，并按最终车流的起止区域生成对应的九区域 OD PCU 矩阵。
-数据口径、总量校验和场景切换见 [docs/traffic_demand.md](docs/traffic_demand.md)。
-
-后端可调用的会话、时间窗口、局部管控范围、交通倍率和扰动事件接口见
-[docs/simulation_core_api.md](docs/simulation_core_api.md)。
-
-### CARLA+SUMO联合仿真
+### 5. 多会话(redis模式)
 
 ```bash
-export SUMO_HOME=/path/to/sumo
-export CARLA_ROOT=/path/to/CARLA_0.9.16
-# 先启动 CARLA 服务端
-python simulation/carla_sumo/run_synchronization.py --sumo-gui
+docker compose -f compose.redis.yml up -d
+# Backend设 SIMULATION_MANAGER_MODE=redis
+celery -A simulation.sumo.distributed.celery_app:app worker \
+  --queues citypulse-sumo --pool prefork --concurrency 4
 ```
 
-环境依赖见 [docs/setup.md](docs/setup.md)，官方信号数据结构、派生产物和算法接口见
-[docs/signal_control.md](docs/signal_control.md)。
+Worker使用prefork,一子进程同时只跑一个SUMO会话;与后端Backend共享`generated`与`outputs/sessions`
 
-算法组只需阅读 [docs/algorithm_interface.md](docs/algorithm_interface.md)。
+## 容器化部署
+
+| 容器 | 内容 |
+|------|------|
+| frontend | 静态资源/Nginx |
+| backend | FastAPI,无SUMO/无torch |
+| sumo-worker | `simulation`+`traffic_control`+SUMO(+torch) |
+| redis | 队列与会话状态 |
+
+`traffic_control`不是独立服务,由Worker进程内加载
+
+## 文档
+
+- 后端接口与配置:[backend/README.md](backend/README.md)
+- 仿真核心API:[docs/simulation_core_api.md](docs/simulation_core_api.md)
+- 分布式Worker:[docs/distributed_simulation.md](docs/distributed_simulation.md)
+- 算法协议2.0:[docs/algorithm_interface.md](docs/algorithm_interface.md)
+- 车流与OD:[docs/traffic_demand.md](docs/traffic_demand.md)
+- 环境依赖:[docs/setup.md](docs/setup.md)
