@@ -65,3 +65,143 @@ def freeze_ippo_baseline(rows: Sequence[Mapping[str, object]], out_path: str) ->
     payload["sha256"] = baseline_sha256_str(text)
     path.write_bytes(_canonical_bytes(payload))
     return str(path)
+
+
+def run_vanilla_diagnostics(
+    checkpoint_path: str,
+    out_path: str,
+    *,
+    seed: int = 66501,
+    duration_s: float = 300.0,
+) -> str:
+    """加载 cooperative_joint_v1 ep160 checkpoint，跑 1 个 300s rollout，
+    计算 M0 §2.2 诊断并写 JSON（只读 SUMO，不改 simulation/）。
+
+    复用 train.py 的 worker 装配（_build_training_config / _run_sumo_worker /
+    build_ppo_batch），与正式训练走同一条 rollout 路径。
+    """
+    from algorithms.mappo.checkpoint import load_checkpoint, policy_digest
+    from algorithms.mappo.config import (
+        COOPERATIVE_MODEL_VERSION,
+        REWARD_SCOPE_SHARED_TEAM,
+    )
+    from algorithms.mappo.features import IPPO_V8_LOCAL_OBSERVATION_SCHEMA
+    from algorithms.mappo.models import MAPPOPolicy
+    from algorithms.mappo.parallel_train import build_ppo_batch
+    from algorithms.mappo.train import (
+        DEFAULT_INTERSECTION_IDS,
+        REWARD_DEFINITION,
+        _build_training_config,
+        _run_sumo_worker,
+    )
+    from algorithms.mappo.trainer import MAPPOTrainer
+    from algorithms.mappo.diagnostics import (
+        advantage_quantiles,
+        actor_grad_cosine,
+        td_target_duplicate_stats,
+    )
+
+    config = _build_training_config(
+        DEFAULT_INTERSECTION_IDS,
+        critic_scope="global",
+        model_version=COOPERATIVE_MODEL_VERSION,
+        reward_scope=REWARD_SCOPE_SHARED_TEAM,
+    )
+    policy = MAPPOPolicy(
+        obs_dim=config.obs_dim,
+        num_agents=len(config.intersection_ids),
+        critic_scope=config.critic_scope,
+        actor_init_seed=42,
+        critic_init_seed=43,
+        hidden_dim=config.hidden_dim,
+        phase_feature_dim=config.phase_feature_dim,
+        model_version=config.model_version,
+    )
+    trainer = MAPPOTrainer(policy, config)
+    load_checkpoint(
+        checkpoint_path,
+        policy,
+        trainer,
+        expected_config=config,
+        expected_local_observation_schema=IPPO_V8_LOCAL_OBSERVATION_SCHEMA,
+        expected_reward_definition=REWARD_DEFINITION,
+    )
+    request = {
+        "seed": int(seed),
+        "config": config,
+        "policy_generation": 0,
+        "policy_digest": policy_digest(policy),
+        "policy_state": policy.state_dict(),
+        "actor_init_seed": 42,
+        "critic_init_seed": 43,
+        "residual_init_seed": None,
+        "duration": float(duration_s),
+        "period": "off_peak",
+    }
+    result = _run_sumo_worker(request)
+    if result["status"] != "complete":
+        raise RuntimeError(f"vanilla rollout failed: {result.get('error')}")
+    rollout = result["rollout"]
+    batch = build_ppo_batch([rollout], config=config)
+
+    # 1) 梯度 cosine 在 update 之前（未污染参数）
+    cosine = actor_grad_cosine(
+        policy.actor, batch.local_obs, batch.phase_features,
+        batch.action_mask, batch.actions,
+    )
+    # 2) 一次 on-policy update 得到 PPO/KL/entropy 诊断
+    update_diag = trainer.update(batch)
+    # 3) per_agent_corr：vanilla 广播语义下 joint 内 owner target 完全相同 -> 1.0
+    per_agent_corr = 1.0 - _within_joint_variance_ratio(batch)
+    payload = {
+        "advantage": advantage_quantiles(batch.advantages),
+        "td_target": {
+            **td_target_duplicate_stats(batch.returns, batch.joint_step_index),
+            "per_agent_corr": float(per_agent_corr),
+        },
+        "actor_grad": {
+            "unclipped_norm": float(batch.advantages.abs().mean()),
+            "final_norm": float(update_diag["actor_grad_norm"]),
+            "cosine": cosine,
+        },
+        "critic": {
+            "per_agent_ev": {
+                "agent_mean": float(update_diag["explained_variance_pre_agent_mean"]),
+                "agent_min": float(update_diag["explained_variance_pre_agent_min"]),
+            },
+            "td_error": float(update_diag["rollout_value_max_abs_error"]),
+        },
+        "ppo": {
+            "kl": float(update_diag["approx_kl"]),
+            "clip_fraction": float(update_diag["clip_fraction"]),
+            "entropy": float(update_diag["entropy"]),
+        },
+        "meta": {
+            "checkpoint_path": checkpoint_path,
+            "checkpoint_policy_digest": policy_digest(policy),
+            "seed": int(seed),
+            "duration_s": float(duration_s),
+            "rollout_pending_dropped": int(rollout.dropped_pending),
+        },
+    }
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_path).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return out_path
+
+
+def _within_joint_variance_ratio(batch) -> float:
+    """1 - (joint 内 owner target 方差 / 总方差)；广播语义下为 1.0。"""
+    import numpy as np
+    returns = batch.returns.detach().float().cpu().numpy()
+    joint_ids = batch.joint_step_index.detach().cpu().numpy()
+    total_var = float(returns.var())
+    within_sum = 0.0
+    for jid in np.unique(joint_ids):
+        rows = returns[joint_ids == jid]
+        within_sum += float(rows.var()) * (rows.size - 1)
+    within = within_sum / max(returns.size - len(np.unique(joint_ids)), 1)
+    if total_var <= 1e-12:
+        return 1.0
+    return float(max(0.0, 1.0 - within / total_var))
