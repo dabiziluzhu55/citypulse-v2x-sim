@@ -222,6 +222,7 @@ class JointExecutionAlignedRollout:
         num_agents: int,
         *,
         require_shared_values: bool = True,
+        team_value_mode: str = "scalar",
         expected_state_schema: str = CENTRALIZED_STATE_SCHEMA,
     ) -> None:
         try:
@@ -237,6 +238,9 @@ class JointExecutionAlignedRollout:
         self._require_shared_values = _boolean_flag(
             require_shared_values, "require_shared_values"
         )
+        self._team_value_mode = str(team_value_mode)
+        if self._team_value_mode not in {"scalar", "mean_of_values"}:
+            raise ValueError("team_value_mode must be scalar or mean_of_values")
         self._expected_state_schema = schema
         self._children = tuple(
             ExecutionAlignedRollout() for _ in range(self._num_agents)
@@ -313,6 +317,7 @@ class JointExecutionAlignedRollout:
         team_reward: float,
         team_raw_reward: float,
         window_end_s: float,
+        raw_local_rewards: Sequence[float] | None = None,
         *,
         terminated: bool = False,
         truncated: bool = False,
@@ -348,6 +353,22 @@ class JointExecutionAlignedRollout:
             terminal_flag,
             truncation_flag,
         ) = prepared
+
+        raw_local = (
+            tuple(float(value) for value in raw_local_rewards)
+            if raw_local_rewards is not None
+            else ()
+        )
+        if raw_local and len(raw_local) != self._num_agents:
+            raise ValueError("raw_local_rewards must match agent count")
+        local_clipped = (
+            tuple(
+                float(np.clip(value, REWARD_MIN, REWARD_MAX))
+                for value in raw_local
+            )
+            if raw_local
+            else ()
+        )
 
         pending = self._pending
         for child in self._children:
@@ -392,6 +413,9 @@ class JointExecutionAlignedRollout:
             ),
             agent_transitions=completed,
             require_shared_values=self._require_shared_values,
+            raw_local_rewards=raw_local,
+            local_rewards=local_clipped,
+            team_value_mode=self._team_value_mode,
             state_schema=self._expected_state_schema,
         )
         self._pending = None

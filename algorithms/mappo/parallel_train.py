@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 import torch
 
 from algorithms.mappo.config import (
+    COOPERATIVE_M1_MODEL_VERSION,
     JOINT_STEP_SCHEMA,
     MAPPOConfig,
     REWARD_SCOPE_LOCAL,
@@ -46,13 +49,18 @@ class WorkerRollout:
 
 
 def build_ppo_batch(
-    workers: Iterable[WorkerRollout], *, config: MAPPOConfig
+    workers: Iterable[WorkerRollout],
+    *,
+    config: MAPPOConfig,
+    adjacency: np.ndarray | None = None,
 ) -> PPOBatch:
     """Merge workers without mixing legacy and cooperative objectives."""
 
     worker_values = tuple(workers)
     if not worker_values:
         raise ValueError("cannot build PPO batch from no workers")
+    if config.model_version == COOPERATIVE_M1_MODEL_VERSION:
+        return _build_m1_batch(worker_values, config, adjacency=adjacency)
     if config.reward_scope == REWARD_SCOPE_SHARED_TEAM:
         flattened = _build_shared_team_rows(worker_values, config)
     else:
@@ -259,6 +267,7 @@ def _pack_ppo_batch(
     ordered_returns: list[float],
     joint_step_indices: list[int],
     component_advantages: dict[str, list[float]] | None = None,
+    old_values: list[float] | None = None,
 ) -> PPOBatch:
     component_tensors = None
     if component_advantages is not None:
@@ -302,7 +311,12 @@ def _pack_ppo_batch(
             [item.log_prob for item in ordered_transitions], dtype=torch.float32
         ),
         old_values=torch.tensor(
-            [item.value for item in ordered_transitions], dtype=torch.float32
+            (
+                [item.value for item in ordered_transitions]
+                if old_values is None
+                else old_values
+            ),
+            dtype=torch.float32,
         ),
         advantages=torch.tensor(ordered_advantages, dtype=torch.float32),
         returns=torch.tensor(ordered_returns, dtype=torch.float32),
@@ -427,6 +441,136 @@ def _build_m1_0_scalar_rows(
     return {"local": team_raw, "neighbor": team_raw, "team": team_raw}
 
 
+def load_intersection_adjacency_matrix(
+    path: str | Path, intersection_ids: Sequence[str]
+) -> np.ndarray:
+    """Load {edges: {id: [neighbor ids]}} into a symmetric 0/1 matrix."""
+
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    edges = data.get("edges")
+    if not isinstance(edges, Mapping):
+        raise BatchValidationError("adjacency file must contain an edges map")
+    ids = tuple(str(value) for value in intersection_ids)
+    matrix = np.zeros((len(ids), len(ids)), dtype=np.float32)
+    for index, node in enumerate(ids):
+        neighbors = edges.get(node, ())
+        if isinstance(neighbors, (str, bytes)) or not isinstance(
+            neighbors, Iterable
+        ):
+            raise BatchValidationError(
+                f"adjacency edges for {node} must be a list"
+            )
+        for neighbor in neighbors:
+            neighbor = str(neighbor)
+            if neighbor not in ids:
+                continue
+            column = ids.index(neighbor)
+            matrix[index, column] = 1.0
+            matrix[column, index] = 1.0
+    return matrix
+
+
+def _build_m1_batch(
+    workers: tuple[WorkerRollout, ...],
+    config: MAPPOConfig,
+    *,
+    adjacency: np.ndarray | None = None,
+) -> PPOBatch:
+    """Assemble M1 batches.
+
+    m1_0_scalar: scalar team GAE (mean-of-values) broadcast, no component
+      advantages; old_values are joint means so the m1_0_scalar joint
+      validation holds.
+    per_agent: raw local/neighbor/team components are handed to the trainer
+      mix_advantages; ordered advantages/returns use the local component
+      rows (returns = local_adv + value[owner]).
+    """
+    ordered_transitions: list[Transition] = []
+    ordered_advantages: list[float] = []
+    ordered_returns: list[float] = []
+    joint_step_indices: list[int] = []
+    component_advantages: dict[str, list[float]] | None = None
+    action_dimension: int | None = None
+    next_global_joint_index = 0
+    num_agents = len(config.intersection_ids)
+
+    if config.m1_target_mode == "m1_0_scalar":
+        timelines: list[tuple[JointTransition, ...]] = []
+        for worker in workers:
+            _validate_worker_objective(worker, config)
+            timeline = validate_joint_timeline(worker.transitions, config)
+            timelines.append(timeline)
+            comps = _build_m1_0_scalar_rows(timeline, config)
+            for timeline_index, joint in enumerate(timeline):
+                team_advantage = comps["team"][timeline_index * num_agents]
+                team_return = team_advantage + float(np.mean(joint.values))
+                for owner, transition in enumerate(joint.agent_transitions):
+                    action_dimension = _validate_flat_transition(
+                        transition,
+                        worker=worker,
+                        config=config,
+                        action_dimension=action_dimension,
+                    )
+                    ordered_transitions.append(transition)
+                    ordered_advantages.append(team_advantage)
+                    ordered_returns.append(team_return)
+                    joint_step_indices.append(next_global_joint_index)
+                next_global_joint_index += 1
+        old_values = [
+            float(np.mean(joint.values))
+            for timeline in timelines
+            for joint in timeline
+            for _ in joint.agent_transitions
+        ]
+        return _pack_ppo_batch(
+            ordered_transitions,
+            ordered_advantages,
+            ordered_returns,
+            joint_step_indices,
+            old_values=old_values,
+        )
+
+    if adjacency is None:
+        if config.m1_adjacency_path is None:
+            raise BatchValidationError(
+                "M1 per-agent arms require an adjacency matrix"
+            )
+        adjacency = load_intersection_adjacency_matrix(
+            config.m1_adjacency_path, config.intersection_ids
+        )
+    component_advantages = {"local": [], "neighbor": [], "team": []}
+    for worker in workers:
+        _validate_worker_objective(worker, config)
+        timeline = validate_joint_timeline(worker.transitions, config)
+        comps = _build_m1_components(timeline, config, adjacency)
+        for key in component_advantages:
+            component_advantages[key].extend(comps[key])
+        for timeline_index, joint in enumerate(timeline):
+            for owner, transition in enumerate(joint.agent_transitions):
+                action_dimension = _validate_flat_transition(
+                    transition,
+                    worker=worker,
+                    config=config,
+                    action_dimension=action_dimension,
+                )
+                row = timeline_index * num_agents + owner
+                local_advantage = comps["local"][row]
+                ordered_transitions.append(transition)
+                ordered_advantages.append(local_advantage)
+                ordered_returns.append(
+                    local_advantage + float(joint.values[owner])
+                )
+                joint_step_indices.append(next_global_joint_index)
+            next_global_joint_index += 1
+    return _pack_ppo_batch(
+        ordered_transitions,
+        ordered_advantages,
+        ordered_returns,
+        joint_step_indices,
+        component_advantages=component_advantages,
+    )
+
+
 def validate_joint_timeline(
     joint_transitions: Iterable[Any], config: MAPPOConfig
 ) -> tuple[JointTransition, ...]:
@@ -473,6 +617,9 @@ def validate_joint_timeline(
                 policy_generation=raw_joint.policy_generation,
                 agent_transitions=raw_joint.agent_transitions,
                 require_shared_values=raw_joint.require_shared_values,
+                raw_local_rewards=raw_joint.raw_local_rewards,
+                local_rewards=raw_joint.local_rewards,
+                team_value_mode=raw_joint.team_value_mode,
                 state_schema=raw_joint.state_schema,
             )
         except (TypeError, ValueError, RuntimeError) as error:

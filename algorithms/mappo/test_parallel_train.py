@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import pytest
 
 import numpy as np
+import torch
 
 from algorithms.mappo.config import (
+    COOPERATIVE_M1_MODEL_VERSION,
     JOINT_STEP_SCHEMA,
     REWARD_SCOPE_SHARED_TEAM,
     TEAM_REWARD_SCHEMA,
@@ -16,6 +19,8 @@ from algorithms.mappo.parallel_train import (
     BatchValidationError,
     _build_m1_components,
     _pack_ppo_batch,
+    build_ppo_batch,
+    load_intersection_adjacency_matrix,
     CentralUpdateCoordinator,
     WorkerRollout,
     validate_worker_batch,
@@ -420,3 +425,201 @@ def test_pack_ppo_batch_carries_component_advantages():
     assert batch.component_advantages["local"].shape == (4,)
     assert batch.component_advantages["neighbor"].shape == (4,)
     assert batch.component_advantages["team"].shape == (4,)
+
+
+def _m1_state(offset: float = 0.0):
+    from algorithms.mappo.features import CentralizedState
+    return CentralizedState(
+        observations=np.full((2, 132), offset, dtype=np.float32),
+        agent_mask=np.array([True, True]),
+        intersection_ids=("demo_1", "demo_2"),
+        schema=CENTRALIZED_STATE_SCHEMA,
+    )
+
+
+def _m1_transition(
+    agent_index: int,
+    *,
+    value: float = 1.0,
+    reward: float = 0.0,
+    decision_time_s: float = 0.0,
+    applied_time_s: float = 0.0,
+    terminated: bool = False,
+    state_offset: float = 0.0,
+    next_state_offset: float = 0.0,
+) -> Transition:
+    return Transition(
+        local_obs=np.full(132, state_offset, dtype=np.float32),
+        phase_features=np.zeros((1, 11), dtype=np.float32),
+        action_mask=np.ones(1, dtype=bool),
+        global_state=_m1_state(state_offset),
+        agent_index=agent_index,
+        action=0,
+        requested_phase=0,
+        applied_phase=0,
+        log_prob=0.0,
+        value=value,
+        reward=reward,
+        decision_time_s=decision_time_s,
+        applied_time_s=applied_time_s,
+        policy_generation=0,
+        next_local_obs=np.full(132, next_state_offset, dtype=np.float32),
+        next_global_state=_m1_state(next_state_offset),
+        next_value=value,
+        terminated=terminated,
+        truncated=False,
+    )
+
+
+def _m1_joint(
+    joint_id: int,
+    local_rewards: tuple[float, float],
+    values: tuple[float, float] = (1.0, 2.0),
+    *,
+    state_offset: float,
+    next_state_offset: float,
+    terminated: bool = False,
+) -> JointTransition:
+    team = float(np.clip(np.mean(local_rewards), -3.0, 1.0))
+    clipped = tuple(float(np.clip(v, -3.0, 1.0)) for v in local_rewards)
+    return JointTransition(
+        joint_step_id=joint_id,
+        global_state=_m1_state(state_offset),
+        next_global_state=_m1_state(next_state_offset),
+        values=values,
+        next_values=values,
+        team_reward=team,
+        team_raw_reward=float(np.mean(local_rewards)),
+        window_start_s=state_offset,
+        window_end_s=next_state_offset,
+        terminated=terminated,
+        truncated=False,
+        policy_generation=0,
+        agent_transitions=(
+            _m1_transition(
+                0,
+                value=values[0],
+                reward=team,
+                decision_time_s=state_offset,
+                applied_time_s=state_offset + 0.1,
+                terminated=terminated,
+                state_offset=state_offset,
+                next_state_offset=next_state_offset,
+            ),
+            _m1_transition(
+                1,
+                value=values[1],
+                reward=team,
+                decision_time_s=state_offset,
+                applied_time_s=state_offset + 0.1,
+                terminated=terminated,
+                state_offset=state_offset,
+                next_state_offset=next_state_offset,
+            ),
+        ),
+        require_shared_values=False,
+        raw_local_rewards=local_rewards,
+        local_rewards=clipped,
+        team_value_mode="mean_of_values",
+    )
+
+
+def _m1_timeline() -> list[JointTransition]:
+    return [
+        _m1_joint(
+            0,
+            (1.0, -0.5),
+            state_offset=0.0,
+            next_state_offset=15.0,
+        ),
+        _m1_joint(
+            1,
+            (0.5, 0.25),
+            state_offset=15.0,
+            next_state_offset=30.0,
+            terminated=True,
+        ),
+    ]
+
+
+def _m1_worker(timeline: list[JointTransition], *, seed: int = 0) -> WorkerRollout:
+    return WorkerRollout(
+        seed=seed,
+        status="complete",
+        policy_generation=0,
+        policy_digest="policy-abc",
+        config_signature=CONFIG_SIGNATURE,
+        local_observation_schema=LOCAL_SCHEMA,
+        centralized_state_schema=CENTRALIZED_STATE_SCHEMA,
+        transitions=timeline,
+        pending_count=0,
+        invalid_reason=None,
+        error=None,
+        dropped_pending=0,
+        reward_scope=REWARD_SCOPE_SHARED_TEAM,
+        team_reward_schema=TEAM_REWARD_SCHEMA,
+        joint_step_schema=JOINT_STEP_SCHEMA,
+    )
+
+
+def test_build_batch_m1_components_end_to_end() -> None:
+    config = MAPPOConfig(
+        ("demo_1", "demo_2"),
+        critic_scope="global",
+        model_version=COOPERATIVE_M1_MODEL_VERSION,
+        reward_scope=REWARD_SCOPE_SHARED_TEAM,
+        critic_target_scope="team_return",
+        m1_target_mode="per_agent",
+        m1_arm="m1_b",
+        m1_local_weight=0.7,
+        m1_neighbor_weight=0.25,
+        m1_team_weight=0.05,
+        m1_adjacency_path="unused.json",
+    )
+    adjacency = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float32)
+    batch = build_ppo_batch(
+        [_m1_worker(_m1_timeline())], config=config, adjacency=adjacency
+    )
+    assert batch.component_advantages is not None
+    assert batch.component_advantages["local"].shape == (4,)
+    assert batch.component_advantages["neighbor"].shape == (4,)
+    assert batch.component_advantages["team"].shape == (4,)
+    assert batch.advantages.shape == (4,)
+    assert torch.equal(
+        batch.joint_step_index, torch.tensor([0, 0, 1, 1], dtype=torch.long)
+    )
+
+
+def test_build_batch_m1_0_scalar_end_to_end() -> None:
+    config = MAPPOConfig(
+        ("demo_1", "demo_2"),
+        critic_scope="global",
+        model_version=COOPERATIVE_M1_MODEL_VERSION,
+        reward_scope=REWARD_SCOPE_SHARED_TEAM,
+        critic_target_scope="team_return",
+        m1_target_mode="m1_0_scalar",
+        m1_arm="m1_0",
+    )
+    batch = build_ppo_batch([_m1_worker(_m1_timeline())], config=config)
+    assert batch.component_advantages is None
+    assert torch.allclose(
+        batch.advantages[:2], batch.advantages[:2][0].expand(2)
+    )
+    assert torch.allclose(
+        batch.advantages[2:], batch.advantages[2].expand(2)
+    )
+    assert torch.allclose(
+        batch.old_values, torch.full((4,), 1.5, dtype=torch.float32)
+    )
+
+
+def test_load_intersection_adjacency_matrix_symmetrizes(tmp_path) -> None:
+    path = tmp_path / "adjacency.json"
+    path.write_text(
+        json.dumps({"edges": {"demo_1": ["demo_2"], "demo_2": []}}),
+        encoding="utf-8",
+    )
+    matrix = load_intersection_adjacency_matrix(path, ("demo_1", "demo_2"))
+    assert matrix.shape == (2, 2)
+    assert matrix[0, 1] == 1.0 and matrix[1, 0] == 1.0
+    assert matrix[0, 0] == 0.0 and matrix[1, 1] == 0.0
