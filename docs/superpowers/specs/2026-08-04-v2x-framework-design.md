@@ -1,7 +1,7 @@
 # V2X 车路云协同消息框架设计（algorithms/v2x）
 
-- 日期：2026-08-04（v2：按 review 修正 P0-1..7 与 P1-1..10）
-- 状态：已评审，待实现
+- 日期：2026-08-04（v4：评审通过，设计冻结；含 P0/P1 修正 + 实现契约收口）
+- 状态：评审通过，设计冻结，待实现
 - 范围：`algorithms/v2x/` 独立纯 Python 框架 + coslight 最小接入闭环
 
 ## 1. 背景与目标
@@ -214,10 +214,10 @@ DEFAULT_V2X_CAPABILITY = {
 因此本轮实际主要走"配置文件/渗透率"分支；框架必须支持读取显式字段（前向兼容），
 但不得假设协议会提供。
 
-渗透率分配（**稳定哈希，不依赖遍历顺序**）：
+渗透率分配（**稳定哈希，不依赖遍历顺序**，复用 §8.2 的 `stable_hash01`）：
 
 ```python
-score = stable_hash(f"{capability_seed}|{vehicle_id}") / HASH_MAX
+score = stable_hash01(f"{capability_seed}|{vehicle_id}")
 v2x_enabled = score < penetration_rate
 ```
 
@@ -227,7 +227,7 @@ v2x_enabled = score < penetration_rate
 
 ## 8. V2XHub
 
-### 7.1 生命周期与两阶段 API
+### 8.1 生命周期与两阶段 API
 
 ```python
 # 生命周期（run_id/episode_id 由调用方提供）
@@ -250,13 +250,35 @@ hub.finish_episode(final_sim_time, drain_pending=False)
 hub.ingest_step_with_actions(payload, actions, intent_overrides=None)
 ```
 
-生命周期规则：
+生命周期状态机：
 
-- 未开始 episode 调用 `ingest_step`：报错（ValueError）；
-- 同一 episode 重复 `ingest_initialize`：报错；
-- `finish_episode` 后继续 ingest：报错；
-- 新 episode 开始时：sequence、调度器、实体、统计状态**全部重置**；
+```text
+CREATED
+   ↓ ingest_initialize
+ACTIVE
+   ↓ finish_episode
+FINISHED
+   ↓ ingest_initialize（新的 episode_id）
+ACTIVE
+   ↓ ...
+```
+
+规则：
+
+- `CREATED` 调用 `ingest_step` / `ingest_actions`：报错（ValueError）；
+- `ACTIVE` 重复 `ingest_initialize`：报错；
+- `FINISHED` 调用 `ingest_step` / `ingest_actions`：报错；
+- `FINISHED` 允许 `ingest_initialize` 开始新 episode，**新 episode_id 必须不同于刚结束的 episode**；
+- 新 episode 重置：实体、sequence、调度器、pending、帧索引、episode 统计；
+- sink 可继续追加写入同一个 JSONL（多 seed / 多 episode 的 evaluate runner 无需反复建文件）；
 - 第一次 `ingest_step` 必须满足 `step_sim_time >= initial_sim_time`（否则 ValueError）。
+
+运行结束：
+
+```python
+hub.close()
+# 语义：要求当前无 active episode → flush → close sink
+```
 
 帧 ID 规则：`{episode_id}:init`；step 帧 `{episode_id}:step:{frame_index:06d}`（1 起）。
 
@@ -286,7 +308,7 @@ hub.ingest_actions()
 RSI（仅 v2x_enabled 车，影子） / SignalControlEvent（影子，correlation_id = frame_id）
 ```
 
-### 7.2 通信延迟模型（离散事件时间）
+### 8.2 通信延迟模型（离散事件时间）
 
 - 基于 `heapq` 的待投递队列；`publish` 记录 `MESSAGE_SENT`，按链路延迟算
   `scheduled_delivery_at`，`advance(sim_time)` 投递并记录 `MESSAGE_DELIVERED` / `MESSAGE_DROPPED`；
@@ -299,17 +321,33 @@ RSI（仅 v2x_enabled 车，影子） / SignalControlEvent（影子，correlatio
 - 延迟配置：`default_latency_ms=20`、`uplink_latency_ms`/`downlink_latency_ms` 可选覆盖、
   `latency_jitter_ms=0`、`drop_rate=0`、`network_seed=0`（完整字段见 §6）；
 - v1 默认：固定 20ms + 零抖动 + 零丢包；接口保留抖动/丢包，供后续通信条件消融；
-- **网络随机性使用按消息确定的稳定随机值**（不依赖遍历顺序/状态式 RNG）：
+- **网络随机性使用按消息确定的稳定随机值**（不依赖遍历顺序/状态式 RNG）。
+  **随机键不使用 `message_id`**（含 run_id，会导致换 run_id 后配对实验的丢包/抖动结果改变），
+  而使用与日志唯一标识解耦的通信随机轨迹键：
 
   ```python
-  drop_score   = stable_hash01(f"{network_seed}|drop|{message_id}")
-  jitter_score = stable_hash01(f"{network_seed}|jitter|{message_id}")
+  network_event_key = f"{episode_id}|{source_id}|{message_type}|{sequence_no}"
+  # 配对实验中 episode_id 也不同的场景，由调用方额外指定 network_trace_id 作为轨迹标识
+
+  drop_score   = stable_hash01(f"{network_seed}|drop|{network_event_key}")
+  jitter_score = stable_hash01(f"{network_seed}|jitter|{network_event_key}")
   jitter_ms    = (2.0 * jitter_score - 1.0) * latency_jitter_ms
   latency_ms   = max(0.0, base_latency_ms + jitter_ms)
   network_dropped = drop_score < drop_rate
   ```
 
-  单测可逐条精确复现；增加实体不改变已有消息结果；
+  单测可逐条精确复现；增加实体不改变已有消息结果；同一 `network_seed` + 同一轨迹键
+  在任意 run_id 下结果一致（可配对实验）；
+- `stable_hash01` 统一定义为（**禁止 Python 内置 `hash()`**，其存在进程级随机化）：
+
+  ```python
+  def stable_hash01(value: str) -> float:
+      digest = hashlib.sha256(value.encode("utf-8")).digest()
+      integer = int.from_bytes(digest[:8], "big")
+      return integer / 2**64
+  ```
+
+  渗透率分配（§7）复用同一函数；
 - 链路映射：BSM / INTENT / SPaT / MAP / RSM = **uplink**；RSI / SignalControlEvent = **downlink**；
 - 所有时间用 `simulation_time`，不用墙钟；
 - **coslight 决策保持同步**（拿到 payload 直接算动作）；延迟模型做"投递簿记"——
@@ -317,14 +355,15 @@ RSI（仅 v2x_enabled 车，影子） / SignalControlEvent（影子，correlatio
 - 说明：v1 的投递时间是离散事件模型中的逻辑时间；subscriber 回调可能在下一个
   Protocol step 才被处理，但日志和延迟统计采用 `scheduled_delivery_at`。
 
-### 7.3 帧级关联
+### 8.3 帧级关联
 
 - 同一次 `ingest_step` 产生的上行消息共享 `frame_id`；
 - 该帧产生的 RSI / SignalControlEvent：`correlation_id = frame_id`；
 - 展示口径：**完整同帧消息关联链**（BSM×N + INTENT×N + SPaT×M + RSM×M → RSI×K + 事件×M），
-  按 `frame_id` 聚合；不声称"消息驱动决策"（见 §2.1 shadow-mode）。
+  按 `(run_id, frame_id)` 聚合（frame_id 不含 run_id，合并多运行日志时必须带 run_id）；
+  不声称"消息驱动决策"（见 §2.1 shadow-mode）。
 
-### 7.4 sequence_no 与投递质量检测
+### 8.4 sequence_no 与投递质量检测
 
 - `sequence_no` 按 `(run_id, episode_id, source_id, message_type)` 计数，每局重置；
 - 跳号检测在 episode 结束时按 stream 计算：
@@ -333,7 +372,7 @@ RSI（仅 v2x_enabled 车，影子） / SignalControlEvent（影子，correlatio
   - `duplicate_delivery_count`；
 - 不用"相邻投递序号差 != 1"作为唯一判据。
 
-### 7.5 周期调度（按来源实体 + 消息类型）
+### 8.5 周期调度（按来源实体 + 消息类型）
 
 ```python
 schedule_key = (episode_id, source_id, message_type)
@@ -350,7 +389,7 @@ schedule_key = (episode_id, source_id, message_type)
 6. 实体消失后不再发送，但本局历史 sequence **不复用**；
 7. `simulation_time` 倒退：v1 直接报错（ValueError），不做静默重置。
 
-### 7.6 override 解析
+### 8.6 override 解析
 
 - `hub.ingest_step(payload, intent_overrides={"vehicle_001": override_intent})`；
 - Hub 在发布前完成：先算 derived → 检查同帧 override → override 存在则不发布 derived →
@@ -358,7 +397,7 @@ schedule_key = (episode_id, source_id, message_type)
 - v1 不支持"消息已发布后再替换"；未来需要晚到 override 时引入
   `supersedes_message_id`，保留两条原始记录由回放层解析。
 
-### 7.7 finish_episode 双语义
+### 8.7 finish_episode 双语义
 
 ```python
 hub.finish_episode(final_sim_time: float, drain_pending: bool = False)
@@ -367,7 +406,8 @@ hub.finish_episode(final_sim_time: float, drain_pending: bool = False)
 - `drain_pending=False`（默认）：先处理 `scheduled_delivery_at <= final_sim_time` 的消息；
   其余 pending 标记 `dropped / drop_reason="episode_ended"`；**不得静默丢弃**；
 - `drain_pending=True`：将逻辑时间推进到最后一条 pending 的 `scheduled_delivery_at`，
-  处理全部**非网络随机丢包**消息；不产生 `episode_ended` 丢包；
+  **解析全部 pending 事件**：被网络模型判定丢包的消息写入 `dropped / network_drop` 记录，
+  其余消息正常投递；结束后 `pending=0`，且不产生 `episode_ended` 丢包；
 - coslight bridge 使用 `drain_pending=True`（零丢包配置下 `delivery_rate=1.0` 才成立）；
 - flush 日志并输出汇总。
 
@@ -417,7 +457,7 @@ def is_in_rsu_coverage(road_user, rsu, detection_radius_m=None) -> bool:
 
 ## 11. 日志 / 统计 / 回放
 
-### 10.1 接口契约
+### 11.1 接口契约
 
 ```python
 class MessageSink(Protocol):
@@ -437,7 +477,7 @@ hub.subscribe(message_type: type[V2XMessage], handler: Callable[[V2XMessage], No
   调用方构造 `MessageDraft`（只有业务 payload），Hub 负责 stamp
   `message_id/sequence_no/episode_id/frame_id/sim_time`；禁止外部伪造缺 ID 的 `V2XMessage`。
 
-### 10.2 JSONL 记录类型（每行一条记录，追加式）
+### 11.2 JSONL 记录类型（每行一条记录，追加式）
 
 ```jsonc
 {"record_type": "episode_start", "run_id": "...", "episode_id": "...",
@@ -457,7 +497,7 @@ hub.subscribe(message_type: type[V2XMessage], handler: Callable[[V2XMessage], No
 口径：`delivered_at = scheduled_delivery_at`；`actual_latency_ms = (delivered_at - sent_at) * 1000`；
 `processed_at = advance()` 实际处理该事件的仿真时间；episode 结束丢弃 `dropped_at = processed_at = final_sim_time`。
 
-### 10.3 统计口径（stats.py，结构化零分母）
+### 11.3 统计口径（stats.py，结构化零分母）
 
 - 通信：sent / delivered / dropped / pending、`delivery_rate`（sent=0 时 `null`）、
   latency mean/p50/p95/max（无已投递消息时 `null`），按消息类型/来源/目的地；
@@ -508,7 +548,7 @@ hub.subscribe(message_type: type[V2XMessage], handler: Callable[[V2XMessage], No
 
 ## 13. 测试与验收
 
-### 12.1 单测（algorithms/v2x/tests/，纯 Python）
+### 13.1 单测（algorithms/v2x/tests/，纯 Python）
 
 | 模块 | 覆盖 |
 |---|---|
@@ -523,7 +563,7 @@ hub.subscribe(message_type: type[V2XMessage], handler: Callable[[V2XMessage], No
 | logger/replay | 四类记录、summary/print |
 | stats | 渗透率、RSM 覆盖率（结构化 null）、RSI 漏斗（过滤原因）、控制事件计数、延迟按 scheduled 时间 |
 
-### 12.2 端到端验收
+### 13.2 端到端验收
 
 **A. 确定性最小闭环 fixture**（必须包含：≥2 个 RSU、1 辆网联机动车、1 辆非网联机动车、
 1 个非机动车、signal action、vehicle action）：
@@ -531,7 +571,8 @@ hub.subscribe(message_type: type[V2XMessage], handler: Callable[[V2XMessage], No
 1. 七类消息/事件（BSM/INTENT/SPaT/MAP/RSM/RSI/SignalControlEvent）全部生成；
 2. MAP 数 == 注册 RSU 数，`set(map.source_id) == expected_rsu_ids`；
 3. 每个 `(source, message_type)` 的 sequence 从 1 连续递增；
-4. 固定 20ms、零丢包、`drain_pending=True`：`delivery_rate=1.0`，所有 `actual_latency_ms=20`；
+4. 固定 20ms、零丢包、`drain_pending=True`：`delivery_rate=1.0`，所有 `actual_latency_ms=20`，
+  且 `summary["pending"] == 0`；
 5. `drain_pending=False` 时，仅 episode 结束边界消息允许 `drop_reason="episode_ended"`；
 6. RSI 只为 `v2x_enabled` 目标生成，但**原 `actions.vehicles` 不被过滤**；
 7. SignalControlEvent 数 == 有效 `actions.signals` 条目数；
@@ -545,7 +586,7 @@ hub.subscribe(message_type: type[V2XMessage], handler: Callable[[V2XMessage], No
 - MAP 数 == RSU 数；
 - 默认开关关闭时结果不变；V2X 开启后原始 actions 与关闭时完全一致。
 
-### 12.3 回归契约
+### 13.3 回归契约
 
 - 现有 `algorithms/coslight` 测试集**零失败**（当前基线 98 个，仅作说明不作固定断言）；
 - 新增 `algorithms/v2x` 测试集**零失败**；
