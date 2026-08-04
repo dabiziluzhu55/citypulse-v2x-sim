@@ -58,3 +58,6 @@ assets/preview/
 .playwright-cli/
 _sid.txt
 output/
+# IPPO regression/gate local artifacts (not committed)
+algorithms/ippo/regression_tmp/
+algorithms/ippo/gate_outputs/
