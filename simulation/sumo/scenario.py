@@ -149,6 +149,27 @@ def compile_session_scenario(
         raise ScenarioCompilationError(
             "traffic_manifest.json must use schema_version 3; rebuild official TLS."
         )
+    tls_manifest = _load_json(layout.tls_manifest, "TLS manifest")
+    if int(tls_manifest.get("schema_version", 0)) != 2:
+        raise ScenarioCompilationError(
+            "tls_manifest.json must use schema_version 2; rebuild official TLS."
+        )
+    tls_intersections = tls_manifest.get("intersections", {})
+    missing_tls_intersections = set(intersection_ids) - set(tls_intersections)
+    if missing_tls_intersections:
+        raise ScenarioCompilationError(
+            "TLS manifest does not include intersections: "
+            f"{sorted(missing_tls_intersections)}"
+        )
+    selected_tls_ids = {
+        str(tls_id)
+        for intersection_id in intersection_ids
+        for tls_id in tls_intersections[intersection_id].get("tls_ids", ())
+    }
+    if not selected_tls_ids:
+        raise ScenarioCompilationError(
+            "Selected intersections have no TLS IDs in the TLS manifest."
+        )
     scenarios = traffic_manifest.get("scenarios", {})
     try:
         vehicle_profiles = parse_vehicle_profiles(
@@ -250,6 +271,8 @@ def compile_session_scenario(
         if child.tag != "tlLogic":
             additional_root.append(copy.deepcopy(child))
             continue
+        if child.get("id") not in selected_tls_ids:
+            continue
         key = (child.get("id"), child.get("programID"))
         if key not in seen_logics:
             additional_root.append(copy.deepcopy(child))
@@ -259,6 +282,14 @@ def compile_session_scenario(
         raise ScenarioCompilationError("The selected time window contains no global traffic.")
     if not seen_logics:
         raise ScenarioCompilationError("Selected scenarios contain no signal programs.")
+    missing_signal_programs = selected_tls_ids - {
+        str(tls_id) for tls_id, _program_id in seen_logics
+    }
+    if missing_signal_programs:
+        raise ScenarioCompilationError(
+            "Selected TLS IDs have no signal program for the requested period: "
+            f"{sorted(missing_signal_programs)}"
+        )
     _allocate_counts(candidates)
     ET.SubElement(
         route_root,

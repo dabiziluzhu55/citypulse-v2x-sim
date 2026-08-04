@@ -5,10 +5,15 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.*
+!.env.example
 
 # Node
 node_modules/
 dist/
+.vite/
+coverage/
+*.tsbuildinfo
 
 # RL checkpoints
 algorithms/rl/checkpoints/
@@ -19,8 +24,9 @@ algorithms/rl/checkpoints/
 
 # OS
 .DS_Store
+Thumbs.db
 
-# Logs & outputs
+# Logs, outputs, and local verification artifacts
 *.log
 outputs/
 
@@ -29,6 +35,7 @@ data/maps/sumo/generated/manifests/
 data/maps/sumo/generated/network/
 data/maps/sumo/generated/reports/
 data/maps/sumo/generated/signals/
+data/maps/sumo/generated/traffic/
 *.bak
 
 # Local run artifacts & backups (kept on disk, not committed)
@@ -36,3 +43,13 @@ data/maps/sumo/generated/signals/
 algorithms/coslight/runs/
 algorithms/ippo/runs/
 algorithms/ippo/checkpoints/
+
+# Frontend UI capture artifacts
+current-ui*.png
+historical-ui-contact-sheet.jpg
+assets/preview/
+
+# Local browser and verification artifacts
+.playwright-cli/
+_sid.txt
+output/

@@ -1,0 +1,7 @@
+LOCAL EVALUATION ONLY
+
+Source: E:\city\model\gltf.rar / shapespark-low-poly-plants-kit.gltf
+License: No license statement was included in the downloaded archive.
+
+Do not redistribute or deploy this converted asset until usage rights have
+been confirmed. Runtime integration is disabled by default in .env.example.

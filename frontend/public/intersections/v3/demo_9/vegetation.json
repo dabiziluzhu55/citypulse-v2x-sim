@@ -1,0 +1,270 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "model": "low-poly-plants.glb",
+    "license": "unverified"
+  },
+  "cellSizeMeters": 300,
+  "items": [
+    {
+      "id": "tree:-50241:0",
+      "kind": "tree",
+      "variant": "Tree-01-1",
+      "position": [
+        116.10032577806292,
+        38.984887244036635,
+        0
+      ],
+      "heading": 1.44,
+      "scale": 1.18,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-50241:1",
+      "kind": "tree",
+      "variant": "Tree-03-2",
+      "position": [
+        116.10009077215885,
+        38.98440768839195,
+        0
+      ],
+      "heading": 0.31,
+      "scale": 1.19,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-50338:0",
+      "kind": "tree",
+      "variant": "Tree-03-2",
+      "position": [
+        116.0999267147147,
+        38.98405118305473,
+        0
+      ],
+      "heading": 5.31,
+      "scale": 1.18,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-50338:1",
+      "kind": "tree",
+      "variant": "Tree-01-1",
+      "position": [
+        116.10054081870663,
+        38.98387521859947,
+        0
+      ],
+      "heading": 2.36,
+      "scale": 1.26,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-50339:0",
+      "kind": "tree",
+      "variant": "Tree-02-1",
+      "position": [
+        116.09816135174974,
+        38.98387146741457,
+        0
+      ],
+      "heading": 2.32,
+      "scale": 1.26,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-50339:1",
+      "kind": "tree",
+      "variant": "Tree-01-2",
+      "position": [
+        116.09877725261961,
+        38.98404359539721,
+        0
+      ],
+      "heading": 0.35,
+      "scale": 1.2,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56369:0",
+      "kind": "tree",
+      "variant": "Tree-02-2",
+      "position": [
+        116.0995427844382,
+        38.98295527713066,
+        0
+      ],
+      "heading": 5.47,
+      "scale": 1.39,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56369:1",
+      "kind": "tree",
+      "variant": "Tree-03-1",
+      "position": [
+        116.09971888246241,
+        38.983455192514555,
+        0
+      ],
+      "heading": 2.12,
+      "scale": 1.2,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56370:0",
+      "kind": "tree",
+      "variant": "Tree-01-2",
+      "position": [
+        116.09946555129073,
+        38.98429986789854,
+        0
+      ],
+      "heading": 3.73,
+      "scale": 1.2999999999999998,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56370:1",
+      "kind": "tree",
+      "variant": "Tree-02-1",
+      "position": [
+        116.0997595467245,
+        38.984767728991606,
+        0
+      ],
+      "heading": 4.86,
+      "scale": 1.25,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56496:0",
+      "kind": "tree",
+      "variant": "Tree-01-1",
+      "position": [
+        116.09991436810087,
+        38.98414685016888,
+        0
+      ],
+      "heading": 0.56,
+      "scale": 1.26,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56496:1",
+      "kind": "tree",
+      "variant": "Tree-03-2",
+      "position": [
+        116.10012141342762,
+        38.984638900173145,
+        0
+      ],
+      "heading": 4.63,
+      "scale": 1.22,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56619:0",
+      "kind": "tree",
+      "variant": "Tree-01-2",
+      "position": [
+        116.10088240210455,
+        38.98388122714654,
+        0
+      ],
+      "heading": 1.43,
+      "scale": 1.3499999999999999,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56619:1",
+      "kind": "tree",
+      "variant": "Tree-02-1",
+      "position": [
+        116.10026829794919,
+        38.984057191257186,
+        0
+      ],
+      "heading": 0.16,
+      "scale": 1.2999999999999998,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56620:0",
+      "kind": "tree",
+      "variant": "Tree-01-2",
+      "position": [
+        116.09912589927157,
+        38.98393166130349,
+        0
+      ],
+      "heading": 3.63,
+      "scale": 1.3399999999999999,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56620:1",
+      "kind": "tree",
+      "variant": "Tree-02-1",
+      "position": [
+        116.09849060981124,
+        38.98405401395405,
+        0
+      ],
+      "heading": 3.08,
+      "scale": 1.19,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56715:0",
+      "kind": "tree",
+      "variant": "Tree-03-1",
+      "position": [
+        116.0993045211302,
+        38.98376899028477,
+        0
+      ],
+      "heading": 0.68,
+      "scale": 1.22,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-56715:1",
+      "kind": "tree",
+      "variant": "Tree-02-2",
+      "position": [
+        116.09958189477486,
+        38.98329634811803,
+        0
+      ],
+      "heading": 4.43,
+      "scale": 1.2999999999999998,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-57214:0",
+      "kind": "tree",
+      "variant": "Tree-01-2",
+      "position": [
+        116.09966736523633,
+        38.98500468871005,
+        0
+      ],
+      "heading": 4.97,
+      "scale": 1.16,
+      "cell": "demo_9:core"
+    },
+    {
+      "id": "tree:-57214:1",
+      "kind": "tree",
+      "variant": "Tree-02-1",
+      "position": [
+        116.09937356279575,
+        38.98453939751825,
+        0
+      ],
+      "heading": 6.14,
+      "scale": 1.21,
+      "cell": "demo_9:core"
+    }
+  ]
+}

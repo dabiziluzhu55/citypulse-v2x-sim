@@ -1,0 +1,21 @@
+export const BAIDU_DARK_BASE_STYLE = [
+  ['land', 'geometry', '#0c1823ff', 'on'],
+  ['water', 'geometry', '#153e52ff', 'on'],
+  ['green', 'geometry', '#173a32ff', 'on'],
+  ['manmade', 'geometry', '#111c28ff', 'on'],
+  ['road', 'geometry', '#202b37ff', 'on'],
+  ['road', 'geometry.stroke', '#314355ff', 'on'],
+  ['cityhighway', 'geometry', '#33485aff', 'on'],
+  ['cityhighway', 'geometry.stroke', '#496175ff', 'on'],
+  ['nationalway', 'geometry', '#2e4253ff', 'on'],
+  ['provincialway', 'geometry', '#293b4aff', 'on'],
+  ['tertiaryway', 'geometry', '#253542ff', 'on'],
+  ['fourlevelway', 'geometry', '#202e39ff', 'on'],
+  ['building', 'geometry', '#09122000', 'off'],
+  ['all', 'labels', '#00000000', 'off'],
+  ['poilabel', 'all', '#00000000', 'off'],
+].map(([featureType, elementType, color, visibility]) => ({
+  featureType,
+  elementType,
+  stylers: { color, visibility },
+}))
