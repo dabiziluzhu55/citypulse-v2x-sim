@@ -1,4 +1,4 @@
-"""Six official traffic-control metrics computed outside the simulator."""
+"""Traffic-control metrics computed outside the simulator."""
 
 from __future__ import annotations
 
@@ -30,6 +30,11 @@ class BenchmarkResult:
     throughput_veh_per_h: Optional[float] = None
     avg_decision_latency_ms: Optional[float] = None
     fuel_intensity_L_per_100km: Optional[float] = None
+    severe_conflict_exposure_per_10000: Optional[float] = None
+    emergency_braking_exposure_per_1000: Optional[float] = None
+    controlled_intersection_passages: int = 0
+    severe_conflict_events: int = 0
+    emergency_braking_events: int = 0
     avg_queue_per_step: List[float] = field(default_factory=list)
     metric_sources: Dict[str, str] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
@@ -46,6 +51,17 @@ class BenchmarkResult:
             "fuel_intensity_L_per_100km": _rounded(
                 self.fuel_intensity_L_per_100km, 2
             ),
+            "severe_conflict_exposure_per_10000": _rounded(
+                self.severe_conflict_exposure_per_10000, 2
+            ),
+            "emergency_braking_exposure_per_1000": _rounded(
+                self.emergency_braking_exposure_per_1000, 2
+            ),
+            "controlled_intersection_passages": (
+                self.controlled_intersection_passages
+            ),
+            "severe_conflict_events": self.severe_conflict_events,
+            "emergency_braking_events": self.emergency_braking_events,
             "departed": self.total_departed,
             "arrived": self.total_arrived,
             "metric_sources": dict(self.metric_sources),
@@ -324,7 +340,8 @@ def _format_metric(value: Optional[float], width: int, precision: int) -> str:
 def print_comparison_table(results: List[BenchmarkResult]) -> str:
     header = (
         f"{'算法':<20} {'行程(s)':>8} {'等待(s)':>8} {'排队':>6} "
-        f"{'吞吐':>8} {'延迟(ms)':>8} {'油耗':>8}"
+        f"{'路网吞吐':>8} {'延迟(ms)':>8} {'油耗':>8} "
+        f"{'严重冲突/万次':>12} {'紧急制动/千次':>12}"
     )
     lines = [header, "-" * len(header)]
     for result in results:
@@ -335,7 +352,9 @@ def print_comparison_table(results: List[BenchmarkResult]) -> str:
             f"{_format_metric(result.avg_queue_length_veh, 6, 2)} "
             f"{_format_metric(result.throughput_veh_per_h, 8, 1)} "
             f"{_format_metric(result.avg_decision_latency_ms, 8, 3)} "
-            f"{_format_metric(result.fuel_intensity_L_per_100km, 8, 2)}"
+            f"{_format_metric(result.fuel_intensity_L_per_100km, 8, 2)} "
+            f"{_format_metric(result.severe_conflict_exposure_per_10000, 12, 2)} "
+            f"{_format_metric(result.emergency_braking_exposure_per_1000, 12, 2)}"
         )
     return "\n".join(lines)
 
@@ -346,8 +365,8 @@ def _markdown_metric(value: Optional[float], precision: int) -> str:
 
 def print_markdown_table(results: List[BenchmarkResult]) -> str:
     lines = [
-        "| 算法 | 行程时间(s) | 等待时间(s) | 排队长度 | 吞吐量(veh/h) | 延迟(ms) | 油耗(L/100km) |",
-        "|------|------------|------------|---------|-------------|---------|--------------|",
+        "| 算法 | 行程时间(s) | 等待时间(s) | 排队长度 | 路网吞吐量(veh/h) | 延迟(ms) | 油耗(L/100km) | 严重冲突暴露率(次/万次通行) | 紧急制动暴露率(次/千次通行) |",
+        "|------|------------|------------|---------|-------------------|---------|--------------|------------------------------|------------------------------|",
     ]
     for result in results:
         lines.append(
@@ -357,6 +376,8 @@ def print_markdown_table(results: List[BenchmarkResult]) -> str:
             f"{_markdown_metric(result.avg_queue_length_veh, 2)} | "
             f"{_markdown_metric(result.throughput_veh_per_h, 1)} | "
             f"{_markdown_metric(result.avg_decision_latency_ms, 3)} | "
-            f"{_markdown_metric(result.fuel_intensity_L_per_100km, 2)} |"
+            f"{_markdown_metric(result.fuel_intensity_L_per_100km, 2)} | "
+            f"{_markdown_metric(result.severe_conflict_exposure_per_10000, 2)} | "
+            f"{_markdown_metric(result.emergency_braking_exposure_per_1000, 2)} |"
         )
     return "\n".join(lines)

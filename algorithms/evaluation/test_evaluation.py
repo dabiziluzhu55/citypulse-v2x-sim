@@ -47,6 +47,35 @@ def _vehicle(type_id, *, waiting, distance, fuel_ml):
     }
 
 
+def _safety_vehicle(
+    *, lane_id, lane_position, speed, hard_braking_total=0, distance_to_signal=20
+):
+    vehicle = _vehicle(
+        "passenger", waiting=0, distance=lane_position, fuel_ml=1
+    )
+    vehicle.update(
+        {
+            "motion": {"speed_mps": speed, "acceleration_mps2": 0.0},
+            "location": {
+                "lane_id": lane_id,
+                "lane_position_m": lane_position,
+            },
+            "next_signal": (
+                {
+                    "intersection_id": "i1",
+                    "distance_m": distance_to_signal,
+                }
+                if distance_to_signal is not None
+                else None
+            ),
+            "driving_events": {
+                "hard_braking_total": hard_braking_total,
+            },
+        }
+    )
+    return vehicle
+
+
 def _step(sim_time, vehicles, *, arrived=0, incoming_queue=4, outgoing_queue=99):
     return {
         "simulation_time": sim_time,
@@ -93,6 +122,118 @@ def test_live_collector_uses_incoming_lanes_and_matching_fuel_population():
 
     assert result.avg_queue_length_veh == pytest.approx(4.0)
     assert result.fuel_intensity_L_per_100km == pytest.approx(10.0)
+
+
+def test_live_collector_reports_exposure_normalized_safety_metrics():
+    metadata = _metadata()
+    metadata["vehicle_types"]["passenger"].update(
+        {"length_m": 5.0, "hard_braking_threshold_mps2": -3.0}
+    )
+    collector = HttpMetricsCollector("IPPO", fuel_telemetry_unit="protocol_ml")
+    collector.on_initialize(metadata)
+
+    # 10 m bumper gap and 5 m/s closing speed => TTC=2 s: one severe conflict.
+    collector.on_step(
+        _step(
+            1,
+            {
+                "leader": _safety_vehicle(
+                    lane_id="in_0", lane_position=80, speed=5
+                ),
+                "follower": _safety_vehicle(
+                    lane_id="in_0", lane_position=65, speed=10
+                ),
+            },
+        )
+    )
+    # The same pair remains unsafe, so it must not be counted again.  The
+    # follower's cumulative hard-braking counter increases once in the zone.
+    collector.on_step(
+        _step(
+            2,
+            {
+                "leader": _safety_vehicle(
+                    lane_id="in_0", lane_position=85, speed=5
+                ),
+                "follower": _safety_vehicle(
+                    lane_id="in_0",
+                    lane_position=72,
+                    speed=10,
+                    hard_braking_total=1,
+                ),
+            },
+        )
+    )
+    # Both vehicles leave the controlled incoming lane: two passage exposures.
+    collector.on_step(
+        _step(
+            3,
+            {
+                "leader": _safety_vehicle(
+                    lane_id="out_0",
+                    lane_position=5,
+                    speed=5,
+                    distance_to_signal=None,
+                ),
+                "follower": _safety_vehicle(
+                    lane_id="out_0",
+                    lane_position=1,
+                    speed=5,
+                    hard_braking_total=1,
+                    distance_to_signal=None,
+                ),
+            },
+        )
+    )
+    collector.on_finish(
+        {
+            "simulation_time": 3,
+            "departed_vehicles": 2,
+            "arrived_vehicles": 0,
+        }
+    )
+
+    result = collector.result()
+
+    assert result.controlled_intersection_passages == 2
+    assert result.severe_conflict_events == 1
+    assert result.emergency_braking_events == 1
+    assert result.severe_conflict_exposure_per_10000 == pytest.approx(5000.0)
+    assert result.emergency_braking_exposure_per_1000 == pytest.approx(500.0)
+    assert result.metric_sources["severe_conflict_exposure_per_10000"] == (
+        "protocol_ttc_drac_per_controlled_intersection_passage"
+    )
+
+
+def test_safety_metrics_are_na_without_complete_exposure_observation():
+    metadata = _metadata()
+    metadata["vehicle_types"]["passenger"].update({"length_m": 5.0})
+    collector = HttpMetricsCollector("IPPO", fuel_telemetry_unit="protocol_ml")
+    collector.on_initialize(metadata)
+    collector.on_step(
+        _step(
+            1,
+            {
+                "car": _safety_vehicle(
+                    lane_id="in_0", lane_position=20, speed=5
+                )
+            },
+        )
+    )
+    collector.on_finish(
+        {
+            "simulation_time": 1,
+            "departed_vehicles": 1,
+            "arrived_vehicles": 0,
+            "observer_frames": {"dropped": 1},
+        }
+    )
+
+    result = collector.result()
+
+    assert result.severe_conflict_exposure_per_10000 is None
+    assert result.emergency_braking_exposure_per_1000 is None
+    assert any("安全暴露率" in warning for warning in result.warnings)
 
 
 def test_live_collector_includes_all_fuel_powertrains_but_excludes_electric():
@@ -377,6 +518,9 @@ def test_tripinfo_missing_auxiliary_inputs_is_na_not_zero(tmp_path):
     assert result.fuel_intensity_L_per_100km is None
     table = print_comparison_table([result])
     assert "N/A" in table
+    assert "路网吞吐" in table
+    assert "严重冲突/万次" in table
+    assert "紧急制动/千次" in table
 
 
 def test_emission_parser_filters_electric_and_integrates_rate(tmp_path):
@@ -415,3 +559,91 @@ def test_emission_parser_filters_electric_and_integrates_rate(tmp_path):
 
     # 2 s × 745 mg/s / 745 mg/mL = 2 mL; 2 s × 10 m/s = 20 m.
     assert result.fuel_intensity_L_per_100km == pytest.approx(10.0)
+
+
+def _step_with_controlled_passage(sim_time, vehicles):
+    """One vehicle leaves incoming lane in_0 for non-incoming lane in_1 (passage)."""
+    return {
+        "simulation_time": sim_time,
+        "traffic": {"arrived_vehicles": 0},
+        "vehicles": {
+            "v1": {
+                "type_id": "passenger",
+                "location": {"lane_id": "in_1", "lane_position_m": 10.0},
+                "traffic": {"accumulated_waiting_time_s": 42.0},
+                "motion": {"speed_mps": 5.0},
+                "driving_events": {"hard_braking_total": 0},
+            }
+        },
+    }
+
+
+def test_safety_availability_zero_events_is_available():
+    collector = HttpMetricsCollector(algorithm="model")
+    metadata = _metadata()
+    # in_0 stays the controlled incoming lane; in_1 is a non-incoming lane the
+    # vehicle appears on after crossing the stop line (this triggers a passage).
+    metadata["intersections"]["i1"]["lanes"] = {
+        "in_0": {"length_m": 150.0},
+        "in_1": {"length_m": 150.0},
+    }
+    collector.on_initialize(metadata)
+    # First frame establishes previous_incoming on in_0; second frame crosses out.
+    collector.on_step(
+        {
+            "simulation_time": 1.0,
+            "traffic": {"arrived_vehicles": 0},
+            "vehicles": {
+                "v1": {
+                    "type_id": "passenger",
+                    "location": {"lane_id": "in_0", "lane_position_m": 10.0},
+                    "traffic": {"accumulated_waiting_time_s": 10.0},
+                    "motion": {"speed_mps": 5.0},
+                    "driving_events": {"hard_braking_total": 0},
+                }
+            },
+        }
+    )
+    collector.on_step(_step_with_controlled_passage(2.0, {}))
+    collector.on_finish(
+        {
+            "simulation_time": 60.0,
+            "departed_vehicles": 1,
+            "arrived_vehicles": 1,
+            "fuel_consumed_ml": 0.0,
+            "observer_frames": {"dropped": 0},
+        }
+    )
+    result = collector.result()
+    assert result.controlled_intersection_passages == 1
+    assert result.controlled_avg_waiting_time_s == 42.0
+    assert result.controlled_waiting_availability == {
+        "status": "available", "reason": None
+    }
+    assert result.severe_conflict_availability == {
+        "status": "available", "reason": None
+    }
+    assert result.emergency_braking_availability == {
+        "status": "available", "reason": None
+    }
+    assert result.severe_conflict_exposure_per_10000 == 0.0  # zero events, NOT None
+
+
+def test_safety_availability_missing_frames_is_unavailable():
+    collector = HttpMetricsCollector(algorithm="model")
+    metadata = _metadata()
+    collector.on_initialize(metadata)
+    collector.on_step(_step_with_controlled_passage(1.0, {}))
+    collector.on_finish(
+        {
+            "simulation_time": 60.0,
+            "departed_vehicles": 0,
+            "arrived_vehicles": 0,
+            "fuel_consumed_ml": 0.0,
+            "observer_frames": {"dropped": 3},
+        }
+    )
+    result = collector.result()
+    assert result.severe_conflict_availability["status"] == "unavailable"
+    assert result.emergency_braking_availability["status"] == "unavailable"
+    assert result.severe_conflict_exposure_per_10000 is None

@@ -52,6 +52,22 @@ logging.basicConfig(
 logger = logging.getLogger("ippo.evaluate_paired")
 
 METHODS = ("fixed", "random", "model")
+OFFICIAL_METRIC_NAMES = (
+    "avg_travel_time_s",
+    "avg_waiting_time_s",
+    "avg_queue_length_veh",
+    "throughput_veh_per_h",
+    "avg_decision_latency_ms",
+    "fuel_intensity_L_per_100km",
+    "severe_conflict_exposure_per_10000",
+    "emergency_braking_exposure_per_1000",
+)
+OPTIONAL_OFFICIAL_METRIC_NAMES = frozenset(
+    {
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000",
+    }
+)
 SUMMARY_METRICS = (
     "departed",
     "arrived",
@@ -87,6 +103,25 @@ def _validate_evaluation_seeds(metadata: Mapping[str, object], seeds: Sequence[i
     overlap = sorted(seed for seed in set(seeds) if low <= seed <= high)
     if overlap:
         raise ValueError(f"evaluation seeds overlap training seeds: {overlap}")
+
+
+def _missing_official_metrics(
+    method: str, official_metrics: Mapping[str, object] | None
+) -> tuple[list[str], list[str]]:
+    required = set(OFFICIAL_METRIC_NAMES) - OPTIONAL_OFFICIAL_METRIC_NAMES
+    if method == "fixed":
+        required.remove("avg_decision_latency_ms")
+    required_missing = sorted(
+        name
+        for name in required
+        if official_metrics is None or official_metrics.get(name) is None
+    )
+    optional_missing = sorted(
+        name
+        for name in OPTIONAL_OFFICIAL_METRIC_NAMES
+        if official_metrics is None or official_metrics.get(name) is None
+    )
+    return required_missing, optional_missing
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -146,6 +181,9 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
             minimum_green=5.0,
             seed=seed,
             step_length=0.05,
+            ai_observer_module="algorithms.evaluation.observer",
+            # Safety events need denser observations than queue/fuel metrics.
+            ai_frame_interval_seconds=0.2,
         )
         session_id = manager.start(config)
         snapshot = manager.wait(
@@ -157,6 +195,22 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
                 f"SUMO state={snapshot.state} error={snapshot.error or ''}".strip()
             )
         tripinfo_path = manager.session_root / session_id / "tripinfo.xml"
+        from algorithms.evaluation.runtime import last_result
+        from algorithms.evaluation.metrics import apply_tripinfo_completed_metrics
+
+        official = last_result(session_id)
+        if official is not None:
+            official = apply_tripinfo_completed_metrics(
+                official, str(tripinfo_path)
+            )
+        official_metrics = official.to_dict() if official is not None else None
+        required_missing, optional_missing = _missing_official_metrics(
+            method, official_metrics
+        )
+        if required_missing:
+            raise RuntimeError(
+                "missing official metrics: " + ", ".join(required_missing)
+            )
         result = {
             "status": "complete",
             "method": method,
@@ -165,6 +219,8 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
             "elapsed_s": time.monotonic() - started_at,
             **_snapshot_metrics(snapshot),
             **_parse_tripinfo(tripinfo_path),
+            "official_metrics": official_metrics,
+            "missing_official_metrics": optional_missing,
         }
         result["residual_mismatch"] = residual_mismatch(
             result["unfinished_trips"], result["remaining"]
@@ -187,15 +243,43 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
         }
 
 
-def _describe(values: Sequence[float]) -> dict:
-    array = np.asarray(values, dtype=np.float64)
+def _describe(values: Sequence[float | None]) -> dict:
+    available = [float(value) for value in values if value is not None]
+    if not available:
+        return {
+            "available_runs": 0,
+            "missing_runs": len(values),
+            "mean": None,
+            "std": None,
+            "median": None,
+            "min": None,
+            "max": None,
+        }
+    array = np.asarray(available, dtype=np.float64)
     return {
+        "available_runs": len(available),
+        "missing_runs": len(values) - len(available),
         "mean": float(array.mean()),
         "std": float(array.std()),
         "median": float(np.median(array)),
         "min": float(array.min()),
         "max": float(array.max()),
     }
+
+
+def _official_summary(rows: Sequence[Mapping[str, object]]) -> dict:
+    return {
+        name: _describe(
+            [
+                row.get("official_metrics", {}).get(name)
+                if isinstance(row.get("official_metrics"), Mapping)
+                else None
+                for row in rows
+            ]
+        )
+        for name in OFFICIAL_METRIC_NAMES
+    }
+
 
 
 def _summarize(rows: Sequence[Mapping[str, object]]) -> dict:
@@ -214,6 +298,7 @@ def _summarize(rows: Sequence[Mapping[str, object]]) -> dict:
                 for metric in SUMMARY_METRICS
                 if selected and all(metric in row for row in selected)
             },
+            "official_metrics": _official_summary(selected),
         }
         if method != "fixed":
             pairs = [

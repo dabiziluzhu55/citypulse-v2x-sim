@@ -1,4 +1,4 @@
-"""Protocol 2.0 live collector for the six official evaluation metrics.
+"""Protocol 2.0 live collector for traffic and safety evaluation metrics.
 
 The collector only consumes algorithm-side ``initialize``/``step``/``finish``
 payloads.  It never calls TraCI and does not require a SUMO-side code change.
@@ -13,6 +13,8 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
+
+from .safety import SafetyExposureTracker
 
 
 FUEL_POWERTRAINS = frozenset({"gasoline", "diesel", "hybrid"})
@@ -76,6 +78,15 @@ class EvalResult:
     throughput_veh_per_h: Optional[float] = None
     avg_decision_latency_ms: Optional[float] = None
     fuel_intensity_L_per_100km: Optional[float] = None
+    severe_conflict_exposure_per_10000: Optional[float] = None
+    emergency_braking_exposure_per_1000: Optional[float] = None
+    controlled_intersection_passages: int = 0
+    severe_conflict_events: int = 0
+    emergency_braking_events: int = 0
+    controlled_avg_waiting_time_s: Optional[float] = None
+    controlled_waiting_availability: Optional[Dict[str, Any]] = None
+    severe_conflict_availability: Optional[Dict[str, Any]] = None
+    emergency_braking_availability: Optional[Dict[str, Any]] = None
     departed: int = 0
     arrived: int = 0
     metric_sources: Dict[str, str] = field(default_factory=dict)
@@ -92,6 +103,35 @@ class EvalResult:
             ),
             "fuel_intensity_L_per_100km": _rounded(
                 self.fuel_intensity_L_per_100km, 2
+            ),
+            "severe_conflict_exposure_per_10000": _rounded(
+                self.severe_conflict_exposure_per_10000, 2
+            ),
+            "emergency_braking_exposure_per_1000": _rounded(
+                self.emergency_braking_exposure_per_1000, 2
+            ),
+            "controlled_intersection_passages": (
+                self.controlled_intersection_passages
+            ),
+            "severe_conflict_events": self.severe_conflict_events,
+            "emergency_braking_events": self.emergency_braking_events,
+            "controlled_avg_waiting_time_s": _rounded(
+                self.controlled_avg_waiting_time_s, 2
+            ),
+            "controlled_waiting_availability": (
+                None
+                if self.controlled_waiting_availability is None
+                else dict(self.controlled_waiting_availability)
+            ),
+            "severe_conflict_availability": (
+                None
+                if self.severe_conflict_availability is None
+                else dict(self.severe_conflict_availability)
+            ),
+            "emergency_braking_availability": (
+                None
+                if self.emergency_braking_availability is None
+                else dict(self.emergency_braking_availability)
             ),
             "departed": self.departed,
             "arrived": self.arrived,
@@ -131,6 +171,7 @@ class HttpMetricsCollector:
         self._total_arrived = 0
         self._final_sim_time = 0.0
         self._final_fuel_ml = 0.0
+        self._safety = SafetyExposureTracker()
         self._finished = False
 
     def _warn(self, message: str) -> None:
@@ -164,6 +205,7 @@ class HttpMetricsCollector:
         self._total_arrived = 0
         self._final_sim_time = 0.0
         self._final_fuel_ml = 0.0
+        self._safety.initialize(body)
         self._finished = False
 
         if not self._incoming_lanes:
@@ -254,6 +296,7 @@ class HttpMetricsCollector:
         previous_ids = set(self._active)
 
         self._record_queue(body)
+        self._safety.observe(current_vehicles)
 
         disappeared = previous_ids - current_ids
         interval_arrived = body.get("traffic", {}).get("arrived_vehicles")
@@ -353,8 +396,27 @@ class HttpMetricsCollector:
 
         return (total_fuel_ml / 1000.0) / (total_distance_m / 100000.0)
 
+    @staticmethod
+    def _availability(
+        *,
+        frames_complete: bool,
+        tracking_complete: bool,
+        passages: int,
+        metric_name: str,
+    ) -> Dict[str, Any]:
+        if not frames_complete:
+            return {"status": "unavailable", "reason": "observer frames dropped"}
+        if not tracking_complete:
+            return {"status": "unavailable", "reason": "tracking fields incomplete"}
+        if passages <= 0:
+            return {
+                "status": "unavailable",
+                "reason": "no controlled-intersection passages observed",
+            }
+        return {"status": "available", "reason": None}
+
     def result(self) -> EvalResult:
-        """Compute the six official metrics without changing their definitions."""
+        """Compute traffic and safety metrics without changing prior definitions."""
 
         result = EvalResult(
             algorithm=self._algorithm,
@@ -400,6 +462,75 @@ class HttpMetricsCollector:
                 if self._fuel_telemetry_unit == "legacy_ml_as_mg"
                 else "fuel_powertrain_vehicle_totals"
             )
+
+        result.controlled_intersection_passages = self._safety.passages
+        result.severe_conflict_events = self._safety.severe_conflicts
+        result.emergency_braking_events = self._safety.emergency_braking_events
+        safety_frames_complete = self._observer_frames_dropped == 0
+        if not safety_frames_complete:
+            self._warn("高频观察数据不完整，两项安全暴露率记为不可用。")
+        elif not self._safety.passage_tracking_complete:
+            self._warn("未完整观测受控路口通行次数，两项安全暴露率记为不可用。")
+        elif self._safety.passages <= 0:
+            self._warn("未观测到受控路口通行，安全暴露率记为不可用。")
+        else:
+            if self._safety.conflict_tracking_complete:
+                result.severe_conflict_exposure_per_10000 = (
+                    self._safety.severe_conflicts
+                    / self._safety.passages
+                    * 10000.0
+                )
+                result.metric_sources[
+                    "severe_conflict_exposure_per_10000"
+                ] = "protocol_ttc_drac_per_controlled_intersection_passage"
+            else:
+                self._warn("严重冲突观测字段不完整，该安全暴露率记为不可用。")
+            if self._safety.braking_tracking_complete:
+                result.emergency_braking_exposure_per_1000 = (
+                    self._safety.emergency_braking_events
+                    / self._safety.passages
+                    * 1000.0
+                )
+                result.metric_sources[
+                    "emergency_braking_exposure_per_1000"
+                ] = "protocol_hard_braking_per_controlled_intersection_passage"
+            else:
+                self._warn("紧急制动观测字段不完整，该安全暴露率记为不可用。")
+
+        if self._observer_frames_dropped:
+            result.controlled_avg_waiting_time_s = None
+            result.controlled_waiting_availability = {
+                "status": "unavailable", "reason": "observer frames dropped"
+            }
+        elif not self._safety.passage_waiting_complete:
+            result.controlled_avg_waiting_time_s = None
+            result.controlled_waiting_availability = {
+                "status": "unavailable", "reason": "passage waiting fields incomplete"
+            }
+        elif not self._safety.passage_waiting_samples:
+            result.controlled_avg_waiting_time_s = None
+            result.controlled_waiting_availability = {
+                "status": "unavailable", "reason": "no controlled passages observed"
+            }
+        else:
+            result.controlled_avg_waiting_time_s = sum(
+                self._safety.passage_waiting_samples
+            ) / len(self._safety.passage_waiting_samples)
+            result.controlled_waiting_availability = {
+                "status": "available", "reason": None
+            }
+        result.severe_conflict_availability = self._availability(
+            frames_complete=safety_frames_complete,
+            tracking_complete=self._safety.conflict_tracking_complete,
+            passages=self._safety.passages,
+            metric_name="severe_conflict_exposure_per_10000",
+        )
+        result.emergency_braking_availability = self._availability(
+            frames_complete=safety_frames_complete,
+            tracking_complete=self._safety.braking_tracking_complete,
+            passages=self._safety.passages,
+            metric_name="emergency_braking_exposure_per_1000",
+        )
 
         result.warnings = list(self._warnings)
         return result

@@ -10,7 +10,7 @@ import statistics
 import sys
 import time
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +40,57 @@ logger = logging.getLogger("eval")
 
 EVAL_SEEDS = (1042, 1142, 1242, 1342, 1442)
 DEFAULT_DURATION = 300
+OFFICIAL_METRIC_NAMES = (
+    "avg_travel_time_s",
+    "avg_waiting_time_s",
+    "avg_queue_length_veh",
+    "throughput_veh_per_h",
+    "avg_decision_latency_ms",
+    "fuel_intensity_L_per_100km",
+    "severe_conflict_exposure_per_10000",
+    "emergency_braking_exposure_per_1000",
+)
+OPTIONAL_OFFICIAL_METRIC_NAMES = frozenset(
+    {
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000",
+    }
+)
+
+
+def _missing_official_metrics(
+    official_metrics: Mapping[str, object] | None,
+) -> tuple[list[str], list[str]]:
+    required_missing = sorted(
+        name
+        for name in set(OFFICIAL_METRIC_NAMES) - OPTIONAL_OFFICIAL_METRIC_NAMES
+        if official_metrics is None or official_metrics.get(name) is None
+    )
+    optional_missing = sorted(
+        name
+        for name in OPTIONAL_OFFICIAL_METRIC_NAMES
+        if official_metrics is None or official_metrics.get(name) is None
+    )
+    return required_missing, optional_missing
+
+
+def _summarize_official(rows: list[dict]) -> dict:
+    summary = {}
+    for name in OFFICIAL_METRIC_NAMES:
+        values = [
+            float(row["official_metrics"][name])
+            for row in rows
+            if row.get("official_metrics", {}).get(name) is not None
+        ]
+        summary[name] = {
+            "available_runs": len(values),
+            "missing_runs": len(rows) - len(values),
+            "mean": round(statistics.fmean(values), 3) if values else None,
+            "std": round(statistics.pstdev(values), 3) if values else None,
+            "min": round(min(values), 3) if values else None,
+            "max": round(max(values), 3) if values else None,
+        }
+    return summary
 
 
 def _stop_timed_out_session(manager: SimulationManager, session_id: str | None) -> None:
@@ -96,6 +147,12 @@ def evaluate(
 
     os.environ["IPPO_MODEL_PATH"] = str(checkpoint)
     os.environ["IPPO_ACTION_INTERVAL"] = str(action_interval)
+    effective_demand_enabled = bool(
+        metadata.get("effective_demand_enabled", True)
+    )
+    os.environ["IPPO_EFFECTIVE_DEMAND"] = (
+        "on" if effective_demand_enabled else "off"
+    )
     results: list[dict] = []
 
     for seed in seeds:
@@ -113,29 +170,62 @@ def evaluate(
             minimum_green=5.0,
             seed=seed,
             step_length=0.05,
+            ai_observer_module="algorithms.evaluation.observer",
+            # Safety events need denser observations than queue/fuel metrics.
+            ai_frame_interval_seconds=0.2,
         )
         try:
             session_id = manager.start(config)
             snapshot = manager.wait(session_id, timeout=max(600, duration * 3))
             elapsed = time.time() - started_at
             if snapshot and snapshot.state == "COMPLETED" and snapshot.metrics:
+                from algorithms.evaluation.runtime import last_result
+                from algorithms.evaluation.metrics import (
+                    apply_tripinfo_completed_metrics,
+                )
+
+                official = last_result(session_id)
+                if official is not None:
+                    tripinfo_path = manager.session_root / session_id / "tripinfo.xml"
+                    official = apply_tripinfo_completed_metrics(
+                        official, str(tripinfo_path)
+                    )
+                official_metrics = (
+                    official.to_dict() if official is not None else None
+                )
+                required_missing, optional_missing = _missing_official_metrics(
+                    official_metrics
+                )
                 result = {
                     "seed": seed,
-                    "state": snapshot.state,
+                    "state": (
+                        snapshot.state
+                        if not required_missing
+                        else "INVALID_METRICS"
+                    ),
                     "departed": snapshot.metrics.departed_vehicles,
                     "arrived": snapshot.metrics.arrived_vehicles,
                     "waiting": snapshot.metrics.total_waiting_time,
                     "elapsed": round(elapsed, 1),
+                    "official_metrics": official_metrics,
+                    "missing_official_metrics": optional_missing,
                 }
+                if required_missing:
+                    result["error"] = (
+                        "missing official metrics: " + ", ".join(required_missing)
+                    )
                 results.append(result)
-                logger.info(
-                    "seed=%d dep=%d arr=%d wait=%.0f (%.1fs)",
-                    seed,
-                    result["departed"],
-                    result["arrived"],
-                    result["waiting"],
-                    elapsed,
-                )
+                if required_missing:
+                    logger.error("seed=%d INVALID: %s", seed, result["error"])
+                else:
+                    logger.info(
+                        "seed=%d dep=%d arr=%d wait=%.0f (%.1fs)",
+                        seed,
+                        result["departed"],
+                        result["arrived"],
+                        result["waiting"],
+                        elapsed,
+                    )
             else:
                 state = getattr(snapshot, "state", "NO_SNAPSHOT")
                 error = getattr(snapshot, "error", None) or f"terminal state={state}"
@@ -149,7 +239,11 @@ def evaluate(
             logger.exception("seed=%d evaluation failed", seed)
             results.append({"seed": seed, "state": "EXCEPTION", "error": str(exc)})
 
-    successes = [item for item in results if "arrived" in item]
+    successes = [
+        item
+        for item in results
+        if item.get("state") == "COMPLETED" and "arrived" in item
+    ]
     arrivals = [int(item["arrived"]) for item in successes]
     waits = [float(item["waiting"]) for item in successes]
     failures = len(results) - len(successes)
@@ -157,6 +251,7 @@ def evaluate(
         "status": "complete" if failures == 0 else "failed",
         "model": str(checkpoint),
         "checkpoint_version": metadata.get("model_version"),
+        "effective_demand_enabled": effective_demand_enabled,
         "evaluation_seeds": list(seeds),
         "duration_seconds": duration,
         "action_interval": action_interval,
@@ -167,6 +262,7 @@ def evaluate(
         "mean_waiting": round(statistics.fmean(waits), 1) if waits else None,
         "best_arrived": max(arrivals) if arrivals else None,
         "worst_arrived": min(arrivals) if arrivals else None,
+        "official_metrics_summary": _summarize_official(successes),
         "details": results,
     }
     return summary
