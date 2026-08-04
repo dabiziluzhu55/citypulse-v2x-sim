@@ -7,13 +7,18 @@ import pytest
 import torch
 
 from algorithms.mappo.config import (
+    COOPERATIVE_M1_MODEL_VERSION,
     COOPERATIVE_MODEL_VERSION,
     COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
     MAPPOConfig,
     REWARD_SCOPE_SHARED_TEAM,
 )
 from algorithms.mappo.models import MAPPOPolicy
-from algorithms.mappo.trainer import MAPPOTrainer, PPOBatch
+from algorithms.mappo.trainer import (
+    MAPPOTrainer,
+    PPOBatch,
+    _validate_cooperative_joint_rows,
+)
 
 
 def _policy_and_trainer() -> tuple[MAPPOPolicy, MAPPOTrainer]:
@@ -457,3 +462,51 @@ def test_owner_conditioned_cooperative_targets_may_differ_within_joint() -> None
     assert diagnostics["unique_joint_state_count"] == 2
     assert diagnostics["unique_critic_input_count"] == 4
     assert "joint_advantage_mean" not in diagnostics
+
+
+def _m1_policy() -> MAPPOPolicy:
+    return MAPPOPolicy(
+        obs_dim=8,
+        num_agents=2,
+        critic_scope="global",
+        actor_init_seed=1,
+        critic_init_seed=2,
+        model_version=COOPERATIVE_M1_MODEL_VERSION,
+    )
+
+
+def test_validate_joint_rows_per_agent_targets_allowed():
+    batch = _cooperative_batch(
+        _m1_policy(),
+        advantages=torch.tensor([0.1, -0.1, 0.3, -0.3]),
+        returns=torch.tensor([1.0, 2.0, 3.0, 4.0]),
+    )
+    out = _validate_cooperative_joint_rows(
+        batch, num_agents=2, target_mode="per_agent"
+    )
+    assert out is None
+
+
+def test_validate_joint_rows_m1_0_scalar_mode():
+    batch = replace(
+        _cooperative_batch(
+            _m1_policy(),
+            advantages=torch.tensor([0.5, 0.5, 0.5, 0.5]),
+            returns=torch.tensor([2.0, 2.0, 2.0, 2.0]),
+        ),
+        old_values=torch.tensor([0.7, 0.7, 0.7, 0.7]),
+    )
+    out = _validate_cooperative_joint_rows(
+        batch, num_agents=2, target_mode="m1_0_scalar"
+    )
+    assert out is not None
+    assert out.shape == (2,)
+
+
+def test_m1_old_values_per_agent_not_broadcast():
+    batch = _cooperative_batch(_m1_policy())
+    _validate_cooperative_joint_rows(
+        batch, num_agents=2, target_mode="per_agent"
+    )
+    joint_zero = batch.old_values[batch.joint_step_index == 0]
+    assert not torch.equal(joint_zero, joint_zero[0].expand(2))
