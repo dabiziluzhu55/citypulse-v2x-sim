@@ -147,6 +147,24 @@ def test_resolve_disturbance_targets_only(east_dense_catalog: SimulationCatalog)
     assert events[0].max_speed == 4.0
 
 
+
+
+def test_resolve_mappo_east_dense_zero_shot(
+    east_dense_catalog: SimulationCatalog,
+) -> None:
+    request = StartSimulationRequest(
+        scenario_preset_id="east_dense",
+        period="morning_peak",
+        duration_seconds=600,
+        control_mode="mappo",
+    )
+
+    resolved = resolve_start_simulation(request, east_dense_catalog)
+
+    assert resolved.control_mode == "mappo"
+    assert resolved.intersection_ids == ("demo_3", "demo_5", "demo_6", "demo_9")
+    assert resolved.model_alias == "mappo_cooperative_20tls_ep160"
+
 def test_backend_registry_is_same_object_as_config_module() -> None:
     from config.scenario_presets import SCENARIO_PRESET_REGISTRY as neutral
     from backend.app.scenario.presets import SCENARIO_PRESET_REGISTRY

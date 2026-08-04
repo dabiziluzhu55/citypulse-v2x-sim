@@ -164,9 +164,9 @@ def _resolved(
     )
 
 
-def test_four_control_modes_registered() -> None:
-    assert list_control_modes() == ["fixed", "max_pressure", "sotl", "ippo"]
-    assert list(TC_REGISTRY.keys()) == ["fixed", "max_pressure", "sotl", "ippo"]
+def test_five_control_modes_registered() -> None:
+    assert list_control_modes() == ["fixed", "max_pressure", "sotl", "ippo", "mappo"]
+    assert list(TC_REGISTRY.keys()) == ["fixed", "max_pressure", "sotl", "ippo", "mappo"]
     assert CONTROL_MODE_REGISTRY is TC_REGISTRY
 
     fixed = require_control_mode("fixed")
@@ -177,6 +177,7 @@ def test_four_control_modes_registered() -> None:
         ("sotl", "traffic_control.sotl"),
         ("max_pressure", "traffic_control.max_pressure"),
         ("ippo", "traffic_control.ippo"),
+        ("mappo", "traffic_control.mappo"),
     ):
         spec = require_control_mode(name)
         assert spec.kernel_mode == "algorithm"
@@ -220,6 +221,7 @@ def test_simulation_config_local_module_for_algorithms() -> None:
         ("sotl", "traffic_control.sotl"),
         ("max_pressure", "traffic_control.max_pressure"),
         ("ippo", "traffic_control.ippo"),
+        ("mappo", "traffic_control.mappo"),
     ):
         cfg = service._build_config(_resolved(control_mode=mode))
         assert cfg.control_mode == "algorithm"
@@ -518,6 +520,72 @@ def test_ippo_checkpoint_loads_and_is_deterministic(monkeypatch: pytest.MonkeyPa
     assert first["actions"]["vehicles"] == {}
     ippo.finish({"episode_id": metadata["episode_id"], "reason": "completed"})
 
+
+
+
+def test_mappo_checkpoint_loads_and_is_deterministic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MAPPO_MODEL_PATH", raising=False)
+    monkeypatch.delenv("MAPPO_MODEL_ALIAS", raising=False)
+    monkeypatch.setenv("MAPPO_MODE", "model")
+    import traffic_control.mappo as mappo
+    import traffic_control.mappo.controller as controller
+
+    importlib.reload(controller)
+    importlib.reload(mappo)
+
+    metadata = _ippo_metadata()
+    init = mappo.initialize(metadata)
+    assert init["ready"] is True
+    assert controller._loaded_model_path is not None
+    assert controller._loaded_model_path.endswith(
+        "mappo_cooperative_20tls_ep160.pt"
+    )
+
+    intersections = {}
+    for index in range(1, 21):
+        iid = f"demo_{index}"
+        lanes = {}
+        for phase in range(4):
+            lanes[f"{iid}_in_{phase}"] = {
+                "vehicle_count": 2 + phase,
+                "halting_count": 1,
+                "waiting_time": 10.0,
+                "mean_speed": 5.0,
+                "occupancy": 20.0,
+            }
+            lanes[f"{iid}_out_{phase}"] = {
+                "vehicle_count": 0,
+                "halting_count": 0,
+                "waiting_time": 0.0,
+                "mean_speed": 10.0,
+                "occupancy": 5.0,
+            }
+        intersections[iid] = {
+            "current_phase": 0,
+            "pending_phase": None,
+            "stage": "GREEN",
+            "stage_elapsed": 20.0,
+            "lanes": lanes,
+        }
+    step_body = {
+        "episode_id": metadata["episode_id"],
+        "step_id": 4,
+        "simulation_time": 20.0,
+        "intersections": intersections,
+        "vehicles": {},
+    }
+    first = mappo.step(step_body)
+    # 重置决策时钟后再次同观测，确定性模型应给出相同动作
+    controller._last_decision_times = {
+        iid: -1e9 for iid in controller._intersection_ids
+    }
+    second = mappo.step(step_body)
+    assert first["actions"]["signals"]
+    assert first["actions"]["signals"] == second["actions"]["signals"]
+    assert first["actions"]["vehicles"] == {}
+    mappo.finish({"episode_id": metadata["episode_id"], "reason": "completed"})
 
 def test_redis_codec_preserves_algorithm_transport_and_module() -> None:
     config = SimulationConfig(

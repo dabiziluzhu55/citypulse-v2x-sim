@@ -61,6 +61,13 @@ CONTROL_MODE_REGISTRY: dict[str, ControlModeSpec] = {
         algorithm_module="traffic_control.ippo",
         supported_presets=("xiongan_20", "east_dense", "west_dense"),
     ),
+    "mappo": ControlModeSpec(
+        name="mappo",
+        kernel_mode="algorithm",
+        algorithm_transport="local",
+        algorithm_module="traffic_control.mappo",
+        supported_presets=("xiongan_20", "east_dense", "west_dense"),
+    ),
 }
 
 

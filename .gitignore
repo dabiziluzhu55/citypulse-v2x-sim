@@ -67,3 +67,8 @@ algorithms/ippo/gate_outputs/
 
 # Experiment logs (remote scratch)
 logs/
+
+# M1/cooperative run artifacts (kept on disk, not committed)
+algorithms/mappo/runs/
+# Editor/merge backups
+*.orig

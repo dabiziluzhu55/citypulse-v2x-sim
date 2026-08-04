@@ -21,7 +21,7 @@ class StartSimulationRequest(BaseModel):
     control_mode: str = "fixed"
     model_alias: str | None = Field(
         default=None,
-        description="IPPO 模型别名；缺省按场景默认通用模型。仅 control_mode=ippo 时生效。",
+        description="模型别名；缺省按场景默认通用模型。仅 control_mode=ippo/mappo 时生效。",
     )
     seed: int = Field(default=42, ge=0)
     step_length: float = Field(default=0.05, gt=0.0)

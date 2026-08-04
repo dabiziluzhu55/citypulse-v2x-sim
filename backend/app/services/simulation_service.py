@@ -167,7 +167,10 @@ class SimulationService:
         if resolved.model_alias:
             # Celery prefork: 每个 worker 进程同一时刻只跑一个 SUMO 会话，
             # 进程级环境变量不会串到其他会话。
-            os.environ["IPPO_MODEL_ALIAS"] = resolved.model_alias
+            if resolved.control_mode == "mappo":
+                os.environ["MAPPO_MODEL_ALIAS"] = resolved.model_alias
+            else:
+                os.environ["IPPO_MODEL_ALIAS"] = resolved.model_alias
         logger.info(
             "启动仿真: mode=%s preset=%s intersections=%s period=%s control_mode=%s",
             self._settings.normalized_manager_mode(),
