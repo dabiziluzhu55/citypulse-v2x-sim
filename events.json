@@ -1,0 +1,20 @@
+{
+  "events": [
+    {
+      "event_type": "major_event_opening",
+      "event_id": "concert-opening-1",
+      "start_seconds": 60,
+      "end_seconds": 360,
+      "venue_lane_id": "-56734_1",
+      "vehicle_count": 120
+    },
+    {
+      "event_type": "major_event_closing",
+      "event_id": "concert-closing-1",
+      "start_seconds": 600,
+      "end_seconds": 1000,
+      "venue_lane_id": "-56734_1",
+      "vehicle_count": 160
+    }
+  ]
+}

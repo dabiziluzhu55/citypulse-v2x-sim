@@ -37,3 +37,9 @@ Content-Type: application/json
 
 两个接口成功后都返回最新 snapshot。会话不存在返回 `404`，会话已经结束返回 `409`，
 请求字段或倍速非法返回 `422`。前端不需要等待下一条 WebSocket 消息再更新按钮状态。
+
+## 扰动事件类型
+
+`POST /simulation/sessions/{id}/events` 应接受 catalog 中声明的全部事件类型：
+`lane_closure`、`speed_limit`、`accident`、`major_event_opening` 和 `major_event_closing`。
+其中大型活动开场/散场是运行时额外注入车流，不修改官方需求文件，也不计入 `planned_vehicle_count`。

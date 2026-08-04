@@ -4,7 +4,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from simulation.sumo.events import AccidentEvent, LaneClosureEvent, SpeedLimitEvent
+from simulation.sumo.events import (
+    AccidentEvent,
+    LaneClosureEvent,
+    MajorEventClosingEvent,
+    MajorEventOpeningEvent,
+    SpeedLimitEvent,
+)
 from simulation.sumo.run import _load_events, _parse_origins, parse_args
 
 
@@ -46,6 +52,8 @@ class SessionCliTests(unittest.TestCase):
                 {"event_type": "lane_closure", "event_id": "a", "start_seconds": 1, "end_seconds": 2, "lane_ids": ["edge_0"]},
                 {"event_type": "speed_limit", "event_id": "b", "start_seconds": 2, "end_seconds": 3, "lane_ids": ["edge_0"], "max_speed": 5},
                 {"event_type": "accident", "event_id": "c", "start_seconds": 3, "end_seconds": 4, "lane_id": "edge_0", "position_ratio": 0.5},
+                {"event_type": "major_event_opening", "event_id": "d", "start_seconds": 4, "end_seconds": 5, "venue_lane_id": "out_0", "source_lane_ids": ["in_0"], "vehicle_count": 10},
+                {"event_type": "major_event_closing", "event_id": "e", "start_seconds": 5, "end_seconds": 6, "venue_lane_id": "out_0", "destination_lane_ids": ["in_0"], "vehicle_count": 12},
             ]
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -55,6 +63,8 @@ class SessionCliTests(unittest.TestCase):
         self.assertIsInstance(events[0], LaneClosureEvent)
         self.assertIsInstance(events[1], SpeedLimitEvent)
         self.assertIsInstance(events[2], AccidentEvent)
+        self.assertIsInstance(events[3], MajorEventOpeningEvent)
+        self.assertIsInstance(events[4], MajorEventClosingEvent)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,11 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from simulation.sumo.artifacts import GeneratedArtifactLayout
-from simulation.sumo.scenario import ScenarioCompilationError, compile_session_scenario
+from simulation.sumo.scenario import (
+    ScenarioCompilationError,
+    compile_session_scenario,
+    load_compiled_scenario,
+)
 
 
 def write_fixture(root: Path):
@@ -78,6 +82,25 @@ def write_fixture(root: Path):
 
 
 class SessionScenarioTests(unittest.TestCase):
+    def test_loads_an_existing_compiled_scenario(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            generated = write_fixture(root)
+            compiled = compile_session_scenario(
+                "restored-session",
+                ["demo_2"],
+                "morning_peak",
+                duration_seconds=60,
+                generated_dir=generated,
+                session_root=root / "sessions",
+            )
+            restored = load_compiled_scenario(
+                compiled.session_id,
+                generated_dir=generated,
+                session_root=root / "sessions",
+            )
+            self.assertEqual(restored, compiled)
+
     def test_intersection_selection_does_not_filter_or_duplicate_global_traffic(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -138,6 +161,9 @@ class SessionScenarioTests(unittest.TestCase):
             )
             route_root = ET.parse(compiled.route_file).getroot()
             self.assertEqual([item.tag for item in route_root][:2], ["vType", "vType"])
+            activity_type = route_root.find("vType[@id='citypulse_event_passenger']")
+            self.assertIsNotNone(activity_type)
+            self.assertEqual(activity_type.get("color"), "255,128,0")
             flows = route_root.findall("flow")
             self.assertEqual(
                 [flow.get("id") for flow in flows],

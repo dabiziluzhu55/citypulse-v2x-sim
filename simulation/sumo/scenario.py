@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
+from .events import DEFAULT_ACTIVITY_VEHICLE_TYPE_ID
 from .vehicle_profiles import VehicleProfile, VehicleProfileError, parse_vehicle_profiles
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -270,6 +271,21 @@ def compile_session_scenario(
             "maxSpeed": "1",
         },
     )
+    ET.SubElement(
+        route_root,
+        "vType",
+        {
+            "id": DEFAULT_ACTIVITY_VEHICLE_TYPE_ID,
+            "vClass": "passenger",
+            "color": "255,128,0",
+            "length": "5",
+            "maxSpeed": "13.9",
+            "accel": "2.6",
+            "decel": "4.5",
+            "sigma": "0.5",
+            "minGap": "2.5",
+        },
+    )
     for candidate in sorted(candidates, key=lambda item: (item.begin, item.flow_id)):
         if candidate.count <= 0:
             continue
@@ -332,5 +348,85 @@ def compile_session_scenario(
         planned_vehicle_count=planned_count,
         selected_origins=normalized_origins,
         vehicle_type_profiles=vehicle_type_profiles,
+        vehicle_profiles=vehicle_profiles,
+    )
+
+
+def load_compiled_scenario(
+    session_id: str,
+    *,
+    generated_dir: Path = DEFAULT_GENERATED_DIR,
+    session_root: Path = DEFAULT_SESSION_ROOT,
+) -> CompiledScenario:
+    """Restore a scenario compiled by :func:`compile_session_scenario`."""
+
+    session_dir = session_root / session_id
+    manifest = _load_json(
+        session_dir / "session_manifest.json", "session manifest"
+    )
+    if int(manifest.get("schema_version", 0)) != 1:
+        raise ScenarioCompilationError(
+            f"Unsupported session manifest schema for {session_id!r}."
+        )
+    if str(manifest.get("session_id", "")) != session_id:
+        raise ScenarioCompilationError(
+            f"Session manifest ID does not match {session_id!r}."
+        )
+
+    layout = GeneratedArtifactLayout(generated_dir)
+    traffic_manifest = _load_json(layout.traffic_manifest, "traffic manifest")
+    try:
+        vehicle_profiles = parse_vehicle_profiles(
+            {
+                "schema_version": traffic_manifest.get(
+                    "vehicle_profile_schema_version", 0
+                ),
+                "profiles": traffic_manifest.get("vehicle_profiles", {}),
+            }
+        )
+    except VehicleProfileError as exc:
+        raise ScenarioCompilationError(
+            f"Traffic manifest has invalid vehicle profiles: {exc}"
+        ) from exc
+
+    sumocfg = session_dir / "session.sumocfg"
+    route_file = session_dir / "session.rou.xml"
+    additional_file = session_dir / "session.add.xml"
+    missing = [
+        str(path)
+        for path in (sumocfg, route_file, additional_file)
+        if not path.is_file()
+    ]
+    if missing:
+        raise ScenarioCompilationError(
+            f"Compiled session {session_id!r} is incomplete: {missing}"
+        )
+
+    raw_origins = manifest.get("origins", {})
+    raw_type_profiles = manifest.get("vehicle_type_profiles", {})
+    if not isinstance(raw_origins, Mapping) or not isinstance(
+        raw_type_profiles, Mapping
+    ):
+        raise ScenarioCompilationError(
+            f"Compiled session {session_id!r} has invalid metadata."
+        )
+    return CompiledScenario(
+        session_id=session_id,
+        directory=session_dir,
+        sumocfg=sumocfg,
+        route_file=route_file,
+        additional_file=additional_file,
+        period=str(manifest["period"]),
+        official_start_seconds=int(manifest["official_start_seconds"]),
+        window_start_seconds=float(manifest["window_start_seconds"]),
+        duration_seconds=float(manifest["duration_seconds"]),
+        planned_vehicle_count=int(manifest["planned_vehicle_count"]),
+        selected_origins={
+            str(key): tuple(str(value) for value in values)
+            for key, values in raw_origins.items()
+        },
+        vehicle_type_profiles={
+            str(key): str(value) for key, value in raw_type_profiles.items()
+        },
         vehicle_profiles=vehicle_profiles,
     )
