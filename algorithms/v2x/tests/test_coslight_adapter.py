@@ -4,7 +4,8 @@ import os
 from pathlib import Path
 import pytest
 from algorithms.v2x.adapters.coslight import (
-    bridge_initialize, bridge_step, bridge_finish, reset_bridge,
+    bridge_initialize, bridge_step, bridge_finish, last_collab_summary,
+    reset_bridge,
 )
 
 # 确定性 fixture：2 个 RSU、1 网联机动车、1 非网联机动车、1 非机动车
@@ -141,3 +142,59 @@ def test_summary_delivery_rate_one(log_path: Path):
     end = next(rec for rec in lines if rec.get("record_type") == "episode_end")
     assert end["summary"]["delivery"]["delivery_rate"] == 1.0
     assert end["summary"]["delivery"]["pending"] == 0
+
+
+
+def test_collab_enabled_without_log_runs_in_memory(monkeypatch):
+    from algorithms.v2x.adapters.coslight import last_collab_summary
+    monkeypatch.setenv("COSLIGHT_V2X_COLLAB", "1")
+    monkeypatch.setenv("COSLIGHT_V2X_COLLAB_MODE", "shadow")
+    monkeypatch.setenv("COSLIGHT_V2X_GUIDANCE_MODE", "threshold")
+    monkeypatch.setenv("COSLIGHT_V2X_SCOPE_SOURCE", "preset")
+    monkeypatch.setenv("COSLIGHT_V2X_SCOPE_PRESET_ID", "east_dense")
+    monkeypatch.setenv("COSLIGHT_V2X_SCOPE_MANAGED_IDS", "i1,i2")
+    monkeypatch.delenv("COSLIGHT_V2X_LOG", raising=False)
+    reset_bridge()
+    bridge_initialize(INIT)
+    bridge_step(STEP, ACTIONS)
+    bridge_finish(STEP["simulation_time"])
+    summary = last_collab_summary()
+    assert summary is not None
+    assert summary["collab"]["schema_version"] == "1.0"
+    assert summary["collab"]["decision_mode"] == "shadow"
+    assert summary["scope"]["source"] == "preset"
+    assert summary["scope"]["managed_ids"] == ["i1", "i2"]
+    # ACTIONS 只含 i1 信号 → 1 个 baseline slot
+    assert summary["collab"]["signal"]["baseline_signal_slots"] == 1
+    reset_bridge()
+
+
+def test_collab_scope_fail_fast_on_unknown_intersection(monkeypatch):
+    monkeypatch.setenv("COSLIGHT_V2X_COLLAB", "1")
+    monkeypatch.setenv("COSLIGHT_V2X_SCOPE_SOURCE", "custom")
+    monkeypatch.setenv("COSLIGHT_V2X_SCOPE_MANAGED_IDS", "i1,i9")
+    monkeypatch.delenv("COSLIGHT_V2X_LOG", raising=False)
+    reset_bridge()
+    with pytest.raises(ValueError, match="i9"):
+        bridge_initialize(INIT)
+    reset_bridge()
+
+
+def test_collab_disabled_guidance_strips_actions_vehicles(monkeypatch, tmp_path):
+    # collab 开启但 guidance=disabled：actions.vehicles 不再被 ingest_actions 转 RSI
+    log = tmp_path / "v2x-collab.jsonl"
+    monkeypatch.setenv("COSLIGHT_V2X_LOG", str(log))
+    monkeypatch.setenv("COSLIGHT_V2X_COLLAB", "1")
+    monkeypatch.setenv("COSLIGHT_V2X_COLLAB_MODE", "shadow")
+    monkeypatch.setenv("COSLIGHT_V2X_GUIDANCE_MODE", "disabled")
+    monkeypatch.setenv("COSLIGHT_V2X_SCOPE_SOURCE", "custom")
+    monkeypatch.setenv("COSLIGHT_V2X_SCOPE_MANAGED_IDS", "i1,i2")
+    reset_bridge()
+    bridge_initialize(INIT)
+    bridge_step(STEP, ACTIONS)
+    bridge_finish(STEP["simulation_time"])
+    lines = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()
+             if x.strip()]
+    rsi = [rec for rec in lines if rec.get("message", {}).get("message_type") == "RSI"]
+    assert rsi == []   # 不重复发射（engine guidance disabled + vehicles 已剥离）
+    reset_bridge()

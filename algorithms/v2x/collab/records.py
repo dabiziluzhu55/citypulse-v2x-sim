@@ -2,11 +2,32 @@
 """InMemoryRecordCollector + 五类协同记录构造（spec §1.7/§4.4/§5.1）。"""
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 from ..logger import LogRecord, MessageSink
 from .proposals import SignalProposal, VehicleGuidanceProposal
 from .snapshot import EdgeSnapshot
+
+
+class CompositeSink(MessageSink):
+    """required 必有（InMemoryRecordCollector）+ optional（JsonlSink）按序写入（spec §6.2）。"""
+
+    def __init__(self, required: Sequence[MessageSink] = (),
+                 optional: Sequence[Optional[MessageSink]] = ()) -> None:
+        self._sinks: list[MessageSink] = list(required)
+        self._sinks.extend(s for s in optional if s is not None)
+
+    def write(self, record: LogRecord) -> None:
+        for sink in self._sinks:
+            sink.write(record)
+
+    def flush(self) -> None:
+        for sink in self._sinks:
+            sink.flush()
+
+    def close(self) -> None:
+        for sink in self._sinks:
+            sink.close()
 
 
 class InMemoryRecordCollector(MessageSink):

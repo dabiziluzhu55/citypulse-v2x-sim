@@ -5,6 +5,9 @@ from __future__ import annotations
 import os
 from typing import Any, Mapping, Optional
 
+from config.scenario_presets import (
+    ALL_DEMO_INTERSECTION_IDS, ResolvedScenarioScope,
+)
 from ..config import V2XConfig
 from ..hub import V2XHub
 from ..logger import JSONLSink
@@ -18,6 +21,13 @@ from ..derive import (
     derive_turn_intent, derive_lane_change_intent, derive_estimated_arrival_s,
 )
 from ..messages import MessageDraft
+from ..collab.aggregator import EdgeAggregator
+from ..collab.arbiter import ActionArbiter
+from ..collab.engine import CollabDecisionEngine
+from ..collab.policy import CloudRulePolicy
+from ..collab.proposals import CollabConfig, DecisionMode, GuidanceEmissionMode
+from ..collab.records import CompositeSink, InMemoryRecordCollector
+from ..collab.state import CloudStateStore
 
 # 非机动车（无法通信，仅由 RSU 的 RSM 感知上报）
 NON_MOTOR_CLASSES = frozenset({"bicycle", "pedestrian"})
@@ -28,14 +38,51 @@ def _is_motor(vehicle_class: str) -> bool:
 
 
 _bridge: Optional["CoslightV2XBridge"] = None
+_last_collab_summary: Optional[dict] = None
+
+
+def _env_collab_enabled() -> bool:
+    return os.environ.get("COSLIGHT_V2X_COLLAB", "") == "1"
+
+
+def _env_collab_config() -> CollabConfig:
+    mode = DecisionMode(os.environ.get("COSLIGHT_V2X_COLLAB_MODE", "shadow"))
+    guidance = GuidanceEmissionMode(
+        os.environ.get("COSLIGHT_V2X_GUIDANCE_MODE", "threshold"))
+    return CollabConfig(decision_mode=mode, guidance_mode=guidance)
+
+
+def _env_scope() -> ResolvedScenarioScope:
+    source = os.environ.get("COSLIGHT_V2X_SCOPE_SOURCE", "default")
+    preset_id = os.environ.get("COSLIGHT_V2X_SCOPE_PRESET_ID") or None
+    raw_ids = os.environ.get("COSLIGHT_V2X_SCOPE_MANAGED_IDS", "")
+    managed = tuple(i for i in raw_ids.split(",") if i) if raw_ids         else ALL_DEMO_INTERSECTION_IDS
+    return ResolvedScenarioScope(source=source, preset_id=preset_id,
+                                 managed_ids=managed)
 
 
 class CoslightV2XBridge:
-    def __init__(self, log_path: str, config: Optional[V2XConfig] = None,
+    def __init__(self, log_path: Optional[str] = None,
+                 config: Optional[V2XConfig] = None,
                  run_id: str = "coslight") -> None:
         self.config = config or V2XConfig()
         self.run_id = run_id
-        self._hub = V2XHub(config=self.config, sink=JSONLSink(log_path))
+        self._collab_enabled = _env_collab_enabled()
+        if self._collab_enabled:
+            self._collector = InMemoryRecordCollector()
+            jsonl_sink = JSONLSink(log_path) if log_path else None
+            self._hub = V2XHub(
+                config=self.config,
+                sink=CompositeSink(required=[self._collector],
+                                   optional=[jsonl_sink]))
+        else:
+            self._collector = None
+            self._hub = V2XHub(
+                config=self.config,
+                sink=JSONLSink(log_path) if log_path else None)
+        self._engine: Optional[CollabDecisionEngine] = None
+        self._scope: Optional[ResolvedScenarioScope] = None
+        self._collab_summary: Optional[dict] = None
         self._capabilities: dict[str, VehicleCapability] = {}
         self._vehicle_class_by_type: dict[str, str] = {}
         self._init_payload: Optional[Mapping[str, Any]] = None
@@ -50,13 +97,33 @@ class CoslightV2XBridge:
             self._vehicle_class_by_type[str(type_id)] = str(
                 meta.get("vehicle_class") or meta.get("profile_id") or "unknown")
         hub = self._hub
+        if self._collab_enabled:
+            catalog = frozenset((payload.get("intersections") or {}).keys())
+            scope = _env_scope()
+            unknown = [iid for iid in scope.managed_ids if iid not in catalog]
+            if unknown:
+                raise ValueError(
+                    f"scope managed_ids not in initialize catalog: {sorted(unknown)}")
+            collab_config = _env_collab_config()
+            self._scope = scope
+            aggregator = EdgeAggregator(managed_ids=scope.managed_ids)
+            store = CloudStateStore(aggregator, collab_config.freshness)
+            policy = CloudRulePolicy(collab_config)
+            arbiter = ActionArbiter(
+                collab_config.decision_mode)  # ACTIVE → ActiveModeUnavailableError
+            self._engine = CollabDecisionEngine(
+                hub=self._hub, aggregator=aggregator, store=store,
+                policy=policy, arbiter=arbiter,
+                collector=self._collector, config=collab_config,
+                scope=scope, run_id=run_id, episode_id=episode_id,
+                registered_ids=tuple(sorted(catalog)))
         hub.ingest_initialize(
             payload, run_id=run_id, episode_id=episode_id,
             scenario=scenario, initial_sim_time=initial_sim_time)
         self._rsu_ids = set((payload.get("intersections") or {}).keys())
 
     def on_step(self, payload: Mapping[str, Any],
-                actions: Mapping[str, Any]) -> None:
+                actions: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
         sim_time = float(payload.get("simulation_time", 0.0))
         hub = self._hub
         frame = hub.ingest_step(payload)
@@ -136,13 +203,38 @@ class CoslightV2XBridge:
             if hub.should_send(hub._episode_id or "", rid, "RSM", sim_time):
                 hub.publish(rsm, frame_id=frame.frame_id)
                 hub.mark_sent(hub._episode_id or "", rid, "RSM", sim_time)
-        # --- 下行影子记录（SignalControlEvent + RSI，不改原始 actions）---
+        # --- 下行影子记录（collab 拥有 RSI 发射权；signal control 仍走 hub）---
+        if self._engine is not None:
+            result = self._engine.tick(
+                frame=frame, baseline_actions=raw_actions)
+            # 不把 actions.vehicles 转 RSI，避免重复发射（§3.5/§8.2）
+            actions_for_hub = {
+                key: value for key, value in result.protocol_actions.items()
+                if key != "vehicles"}
+            hub.ingest_actions(actions_for_hub, frame=frame)
+            return result.protocol_actions  # shadow == baseline；供未来 active 替换
         hub.ingest_actions(raw_actions, frame=frame)
+        return None
 
     def on_finish(self, final_sim_time: float) -> dict:
-        return self._hub.finish_episode(final_sim_time, drain_pending=True)
+        network_summary = self._hub.finish_episode(
+            final_sim_time, drain_pending=True)
+        if self._engine is not None:
+            catalog = tuple(sorted(
+                (self._init_payload or {}).get("intersections") or {}))
+            collab = self._engine.finalize_episode(
+                episode_id=self._hub._episode_id or "",
+                registered_ids=catalog)
+            merged = dict(network_summary)
+            merged["collab"] = collab["collab"]
+            merged["scope"] = collab["scope"]
+            self._collab_summary = merged
+            return merged
+        return network_summary
 
     def close(self) -> None:
+        if self._engine is not None:
+            self._engine.close()   # 不抢关共享 sink（spec §1.3）
         self._hub.close()
 
 
@@ -170,19 +262,20 @@ def hub_rsu(hub: V2XHub, rsu_id: str) -> RSU:
 
 
 def reset_bridge() -> None:
-    global _bridge
+    global _bridge, _last_collab_summary
     if _bridge is not None:
         try:
             _bridge.close()
         except Exception:
             pass
     _bridge = None
+    _last_collab_summary = None
 
 
 def _ensure_bridge() -> Optional[CoslightV2XBridge]:
     global _bridge
     log_path = os.environ.get("COSLIGHT_V2X_LOG")
-    if not log_path:
+    if not log_path and not _env_collab_enabled():
         return None
     if _bridge is None:
         _bridge = CoslightV2XBridge(
@@ -209,6 +302,7 @@ def bridge_step(payload: Mapping[str, Any],
 
 
 def bridge_finish(payload: Mapping[str, Any]) -> None:
+    global _last_collab_summary
     bridge = _ensure_bridge()
     if bridge is None:
         return
@@ -216,5 +310,12 @@ def bridge_finish(payload: Mapping[str, Any]) -> None:
         final_sim_time = float(payload.get("simulation_time", 0.0))
     else:
         final_sim_time = float(payload)
-    bridge.on_finish(final_sim_time)
+    summary = bridge.on_finish(final_sim_time)
     reset_bridge()
+    # reset 会清空 _last_collab_summary；这里在 reset 之后保存，保证可查询最近一次 episode
+    _last_collab_summary = summary
+
+
+def last_collab_summary() -> Optional[dict]:
+    """最近一次 episode 的合并 summary（network + collab + scope）；无则 None。"""
+    return _last_collab_summary
