@@ -146,6 +146,7 @@ class ConnectedVehicleState:
     approach_id: str | None
     speed_mps: float
     acceleration_mps2: float | None
+    next_signal_intersection_id: str | None   # 车辆下一路口（算法管理路口 ID，场景范围门禁 §7）
     distance_to_signal_m: float | None
     turn_intent: str | None
     turn_confidence: float
@@ -164,11 +165,16 @@ class EdgeSnapshot:
     stage_elapsed_s: float | None   # 直接取自 SPaT（冻结字段）；缺失时策略保守抑制
     remaining_time_s: float | None
     approaches: Mapping[str, ApproachState]
-    connected_vehicles: Mapping[str, ConnectedVehicleState]
+    connected_vehicles: Mapping[str, ConnectedVehicleState]   # 只含 v2x_enabled=True 的网联车
     last_delivery_at: Mapping[str, float | None]   # 各消息源最近投递 sim_time（纯事实）
     source_message_ids: tuple[str, ...]
     source_frame_ids: tuple[str, ...]
 ```
+
+聚合器语义（EdgeAggregator）：
+- 每次收到新 BSM 按 `next_signal` 更新车辆所属路口；车辆 `next_signal` 变化时从旧路口缓存移除并迁移到新路口；
+- `connected_vehicles` 只含 `v2x_enabled=True` 的网联车（非机动车/无 OBU 车辆永不进入，仅由 RSM 聚合为 lane/approach 观测）；
+- 每路口快照的 `connected_vehicles` 为该路口聚合结果，供 CloudStateStore 与 CloudRulePolicy 消费。
 
 静态上下文（MAP 投递后建立，保存在 CloudStateStore，不随帧复制）：
 
@@ -203,7 +209,7 @@ class CloudIntersectionView:
     stale: frozenset[str]       # 收到过但超过阈值
 ```
 
-- `freshness_thresholds_s = {"bsm": 10.0, "intent": 10.0, "spat": 10.0, "rsm": 10.0}`；
+- 新鲜度阈值统一由 `FreshnessConfig`（§1.6）提供，默认 `bsm_s = intent_s = spat_s = rsm_s = 10.0`；
 - MAP 是静态拓扑，**不按该阈值过期**；
 - BSM/INTENT 按车辆判断，SPaT/RSM 按路口判断。
 
@@ -211,14 +217,21 @@ class CloudIntersectionView:
 
 ```python
 @dataclass(frozen=True, slots=True)
+class FreshnessConfig:
+    bsm_s: float = 10.0
+    intent_s: float = 10.0
+    spat_s: float = 10.0
+    rsm_s: float = 10.0
+
+@dataclass(frozen=True, slots=True)
 class CollabConfig:
     decision_mode: DecisionMode = DecisionMode.SHADOW
     guidance_mode: GuidanceEmissionMode = GuidanceEmissionMode.THRESHOLD
-    freshness_thresholds_s: Mapping[str, float] = {"bsm": 10.0, "intent": 10.0, "spat": 10.0, "rsm": 10.0}
+    freshness: FreshnessConfig = field(default_factory=FreshnessConfig)
     log_edge_snapshot: bool = True
     log_arbitration_mode: Literal["all", "differences"] = "all"
-    signal_policy: SignalPolicyConfig = SignalPolicyConfig()
-    guidance_policy: GuidancePolicyConfig = GuidancePolicyConfig()
+    signal_policy: SignalPolicyConfig = field(default_factory=SignalPolicyConfig)
+    guidance_policy: GuidancePolicyConfig = field(default_factory=GuidancePolicyConfig)
 ```
 
 - 无 `enabled` 字段：**是否创建引擎 = 是否启用**；`DecisionMode.OFF` 仅显式消融（引擎存在但 tick 短路）；
@@ -353,17 +366,16 @@ class SignalPolicyConfig:
 
 ```python
 candidate = (
-    vehicle.v2x_enabled
-    and bsm 新鲜（bsm_delivered_at ≥ now − freshness_thresholds_s["bsm"]）
-    and vehicle.next_signal is not None
-    and vehicle.next_signal.intersection_id in managed_ids   # 场景范围门禁（§7.3）
+    bsm 新鲜（bsm_delivered_at ≥ now − freshness.bsm_s）     # connected_vehicles 已只含网联车
+    and vehicle.next_signal_intersection_id is not None
+    and vehicle.next_signal_intersection_id in scope.managed_ids   # 场景范围门禁（§7.3）
     and vehicle.distance_to_signal_m is not None
     and vehicle.distance_to_signal_m <= guidance_horizon_m
 )
 ```
 
-- 非机动车/非网联车永不进入；
-- 驶向**非算法管理路口**的车（`next_signal ∉ managed_ids`）不产生 RSI 候选，漏斗原因 `next_signal_not_managed`；
+- 非机动车/非网联车永不进入（`connected_vehicles` 已只含 v2x_enabled=True）；
+- 驶向**非算法管理路口**的车（`next_signal_intersection_id ∉ managed_ids`）不产生 RSI 候选，漏斗原因 `next_signal_not_managed`；
 - 候选数（`in_horizon_candidates`）单独统计；**网络 delivery rate 的分母必须是 published，不是 candidates**。
 
 ### 3.2 速度建议（v1 只做"当前绿窗追赶"，两阶段：raw 生成 → 发射判定）
@@ -459,13 +471,15 @@ class LastEmittedGuidanceState:
 策略层：
 
 ```text
-connected_seen → fresh_bsm → next_signal_known → distance_known
+connected_seen → fresh_bsm → next_signal_known → next_signal_managed → distance_known
 → in_horizon_candidates → raw_proposals → threshold_passed → dedup_passed → cooldown_passed → published
 ```
 
 过滤原因：`stale_bsm / missing_spat / missing_map / movement_unknown / next_served_green_unknown / next_signal_not_managed / not_in_guidance_horizon / no_action_needed / duplicate_guidance / cooldown_active / invalid_target_speed / invalid_target_lane`（另加 lane 分量：`lane_adjacency_unknown / lane_queue_stale / lane_queue_missing`）。
 
 网络层：`published / delivered / network_dropped / episode_ended`（`message_dropped` 不是策略原因）。
+
+`next_signal_not_managed = next_signal_known − next_signal_managed`；RSI 发布前**防御性双检** `next_signal_intersection_id ∈ scope.managed_ids`（即使候选筛选已通过，发布前仍校验，防止状态迁移竞态）。
 
 ### 3.7 GuidancePolicyConfig
 
@@ -606,10 +620,11 @@ signal_event_ref = (run_id, frame_id, intersection_id)
   },
   "guidance": {
     "connected_seen": 30, "fresh_bsm": 27,
-    "next_signal_known": 20, "distance_known": 18,
-    "in_horizon_candidates": 12, "raw_proposals": 5,
-    "threshold_passed": 3, "dedup_passed": 3, "cooldown_passed": 3,
-    "published": 2, "filter_reason_counts": {}
+    "next_signal_known": 25, "next_signal_managed": 8,
+    "distance_known": 7, "in_horizon_candidates": 5,
+    "raw_proposals": 3, "threshold_passed": 2,
+    "dedup_passed": 2, "cooldown_passed": 2,
+    "published": 1, "filter_reason_counts": {}
   }
 }
 ```
@@ -651,6 +666,8 @@ signal_event_ref = (run_id, frame_id, intersection_id)
   }
 }
 ```
+
+- 顶层另有 `scope` 块（§7.4）：`source / preset_id / registered_intersections / algorithm_controlled_intersections / fixed_intersections / managed_ids`。
 
 ### 5.3 指标定义与分母（冻结）
 
@@ -781,7 +798,7 @@ CompositeSink(
 
 ### 7.1 注册表（单一事实源）
 
-新增纯 Python 模块 `algorithms/coslight/scenario_presets.py`（无依赖）：
+新增**算法无关**的纯 Python 模块 `config/scenario_presets.py`（无依赖、不导入任何算法/后端代码）：
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -789,22 +806,24 @@ class ScenarioPreset:
     preset_id: str
     label: str
     intersection_ids: tuple[str, ...]
+    map_template: str
     description: str
 
 SCENARIO_PRESETS = {
     "xiongan_20": ScenarioPreset(
         "xiongan_20", "雄安20路口路网", tuple(f"demo_{i}" for i in range(1, 21)),
-        "全量 20 路口（= 现有默认行为）"),
+        "TotalMap_20", "全量 20 路口（= 现有默认行为）"),
     "east_dense": ScenarioPreset(
         "east_dense", "东部密集路口场景", ("demo_3", "demo_5", "demo_6", "demo_9"),
-        "雄安东部典型密集路口场景"),
+        "TotalMap_20", "雄安东部典型密集路口场景"),
     "west_dense": ScenarioPreset(
         "west_dense", "西部密集路口场景", ("demo_14", "demo_15", "demo_19"),
-        "雄安西部密集路口场景"),
+        "TotalMap_20", "雄安西部密集路口场景"),
 }
 ```
 
-- 与 `backend/app/scenario/presets.py` 的**一致性**：本轮 evaluate 侧内置同注册表（不依赖 backend）；新增一致性测试 `test_scenario_presets.py`，断言 evaluate 注册表与 backend 注册表的 `preset_id / intersection_ids` 完全一致；后续再迁移到中立模块（如 `config/scenario_presets.py`）由 backend 与 evaluate 共同导入。
+- 中立模块由 **backend 与 evaluate 共同导入**（单一事实源，不复制两份）：backend `app/scenario/presets.py` 改为透传 `from config.scenario_presets import SCENARIO_PRESETS`（保持既有 backend 导出名不变），evaluate 直接导入同一模块；新增一致性测试 `test_scenario_presets.py`，断言 backend 导出与 `config/scenario_presets.py` 完全一致（`preset_id / label / intersection_ids / map_template`）。
+- **算法无关**：`ScenarioPreset` / `ResolvedScenarioScope`（§7.2）不依赖任何具体算法；CoSLight、IPPO、MAPPO 及未来算法均可复用「preset 路口跑算法 + 其余路口 SUMO 内置固定配时」机制，各算法 evaluate 入口接入方式见 §7.2「跨算法接入」。
 
 ### 7.2 CLI 与解析规则
 
@@ -819,15 +838,33 @@ SCENARIO_PRESETS = {
   两者都未指定           → 沿用现有默认（demo_1..20，等价 xiongan_20 范围）
 ```
 
+解析产出（evaluate 与 backend 共享）：
+
+```python
+@dataclass(frozen=True, slots=True)
+class ResolvedScenarioScope:
+    source: Literal["preset", "custom", "default"]   # 本次范围来源
+    preset_id: str | None                            # source=preset 时非空
+    managed_ids: tuple[str, ...]                     # 算法控制 == 协同 managed 范围（§7.3）
+```
+
 - 帮助文案：`Select a predefined algorithm/collaboration intersection scope. Does not change the SUMO network or traffic demand.`
-- 启动校验：preset/显式 ID 解析出的每个路口必须存在于 initialize catalog，否则**立即报错**；非法 `--scenario-preset` 由 argparse choices 拒绝。
+- `--intersections` 解析规则：单个整数 N → `demo_1..N`（保序）；逗号列表 → 每个元素 `strip()` 后按序保留；空项、重复 ID、非 `demo_\d+` 格式 → **启动阶段报错**（重复 ID 报错而非静默去重，避免配置笔误被吞）。
+- 校验分两阶段：**CLI 阶段仅格式**（`--intersections` 格式、`--scenario-preset` 由 argparse choices 拒绝）；**`on_initialize` 阶段存在性 fail-fast**（解析出的每个路口必须存在于 initialize catalog，否则**立即报错**）。catalog **仅用于校验 scope 合法性，不能绕过 MAP 投递直接建立静态上下文**（静态上下文仍只能由已投递 MAP 构建）。
+
+跨算法接入：
+
+- **CoSLight**：`algorithms/coslight/evaluate.py` 现有 `--intersections`（整数 N）+ 本轮新增 `--scenario-preset`；
+- **IPPO**：`algorithms/ippo/evaluate_ckpt.py` 的 `intersection_ids` 来自 checkpoint 元数据（无 `--intersections` 参数）；preset 接入为后续任务：校验 `checkpoint 范围 ⊆ resolved_scope.managed_ids`，超范围报错；
+- **MAPPO**：不在本仓库（独立 patch/workspace）；接入时直接复用 `config/scenario_presets.py` + `ResolvedScenarioScope`，无需移动算法代码；
+- 机制本身**算法无关**：混合控制是 `SimulationConfig(intersection_ids, control_mode="algorithm")` 层语义，任何走该接口的算法都能获得「preset 路口算法控制 + 其余路口 SUMO 内置固定配时」。
 
 ### 7.3 语义（v1 冻结）
 
-- **`collab_managed_ids == algorithm_controlled_ids == preset.intersection_ids`**；v1 不允许两套范围独立配置（未来研究需要时再开放 `--v2x-collab-intersections`）；
+- **`collab_managed_ids == algorithm_controlled_ids == resolved_scope.managed_ids`**（`source=preset` 时即 `preset.intersection_ids`）；v1 不允许两套范围独立配置（未来研究需要时再开放 `--v2x-collab-intersections`）；
 - 未选路口：不创建 controller、不产生 SignalProposal、不进 arbitration、不产生 RSI 候选、不出现在 `actions.signals`；由 SUMO 网络内置固定配时 program 自动运行（机制已验证：algorithm 模式下 controllers 只覆盖 selected intersections，TotalMap_20 含全部 20 路口及各自固定 program）；
 - preset 不改变：网络文件、OD 需求、period、fixed program、仿真时长（`map_template` 不切网，v1 不做 C）；
-- 候选门禁：RSI 只面向 `next_signal ∈ managed_ids` 的网联车（§3.1）。
+- 候选门禁：RSI 只面向 `next_signal_intersection_id ∈ managed_ids` 的网联车（§3.1）；发布前防御性双检（§3.6）。
 
 ### 7.4 指标与输出
 
@@ -836,7 +873,8 @@ SCENARIO_PRESETS = {
 ```json
 {
   "scope": {
-    "preset": "east_dense",
+    "source": "preset",
+    "preset_id": "east_dense",
     "registered_intersections": 20,
     "algorithm_controlled_intersections": 4,
     "fixed_intersections": 16,
@@ -845,8 +883,14 @@ SCENARIO_PRESETS = {
 }
 ```
 
+- `fixed_intersections = len(registered_intersections) − len(managed_ids)`（动态计算，不硬编码）；
+
 - **collab 指标分母 = managed scope**：`baseline_signal_slots = managed 路口数 × 有 baseline 动作的帧数`；decision coverage / selectable / agreement / switch / arbitration / validation / managed RSI 候选均只算 managed 路口；
-- **交通指标双报告**：`traffic_metrics.network_wide`（现有全网络指标，20 路口 tripinfo 口径）+ `traffic_metrics.managed_scope`（途经 managed 路口的行程子集；实现细节：按 tripinfo 途经 managed 路口过滤，数据不足时退化为逐路口等待统计），避免只报局部改善而漏掉外围拥堵转移。
+- **交通指标三块报告**（口径不得互换）：
+  - `traffic_metrics.network_wide`：现有全网络指标（20 路口 tripinfo 口径）；
+  - `traffic_metrics.managed_trip_scope`：途经 managed 路口的行程子集（按 tripinfo 途经 managed 路口过滤；trip 数据不可得时 `available=false` + `unavailable_reason`，不静默退化）；
+  - `traffic_metrics.managed_intersections`：managed 路口本身的逐路口等待/排队统计；
+  避免只报局部改善而漏掉外围拥堵转移。
 
 ### 7.5 验证清单
 
@@ -855,16 +899,16 @@ SCENARIO_PRESETS = {
 3. `--scenario-preset` 与 `--intersections` 同时传入 → 参数冲突；
 4. controller 只为 managed 路口创建；
 5. collab proposal/arbitration 只出现 managed 路口；
-6. RSI 目标车辆 `next_signal` 必须 ∈ managed_ids；
+6. RSI 目标车辆 `next_signal_intersection_id` 必须 ∈ managed_ids；
 7. 其他路口不出现在 `actions.signals`；
-8. summary 正确记录 `algorithm_controlled / fixed_intersections`；
+8. summary 正确记录 `scope.source / scope.preset_id / algorithm_controlled / fixed_intersections`；
 9. shadow 下 managed 路口 applied == baseline（规范化一致）；
 10. 全网 traffic metrics 仍覆盖 20 个路口；
-11. evaluate 注册表与 backend 注册表一致性测试通过。
+11. `config/scenario_presets.py` 与 backend 导出的一致性测试通过（backend 为透传导入）。
 
 ## 8. 附录
 
-### 7.1 枚举总表
+### 8.1 枚举总表
 
 ```python
 class DecisionMode(str, Enum):      OFF / SHADOW / ACTIVE
@@ -881,7 +925,7 @@ class DecisionSource(str, Enum):    BASELINE / CLOUD / FALLBACK
 # selection_status: selected_baseline_shadow / selected_cloud / selected_fallback
 ```
 
-### 7.2 关键冻结语义速查
+### 8.2 关键冻结语义速查
 
 - `SPaT.next_stage_start_time` = **绝对仿真时刻**（`sim_time + remaining`），与 ETA 比较前必须换算 `time_to_next_green_s`；v1 不使用该分支；
 - `SPaT.stage_elapsed` 冻结字段直接透传为 `stage_elapsed_s`；
@@ -890,6 +934,6 @@ class DecisionSource(str, Enum):    BASELINE / CLOUD / FALLBACK
 - SIGNAL_CONTROL 只由 `ingest_actions()` 产生；信号建议不发布为 SIGNAL_CONTROL；
 - `collab_tick_stats` 不可关闭；`log_edge_snapshot` / `log_arbitration_mode` 可调。
 
-### 7.3 渗透率实验假设（待验证，非工程依据）
+### 8.3 渗透率实验假设（待验证，非工程依据）
 
 > 通过 5% / 20% / 50% / 80% 网联渗透率消融，检验 INTENT 前视修正在低渗透率下的有效性。
