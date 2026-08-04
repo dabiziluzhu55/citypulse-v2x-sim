@@ -145,3 +145,12 @@ def test_resolve_disturbance_targets_only(east_dense_catalog: SimulationCatalog)
     assert events[0].event_type == "speed_limit"
     assert events[0].lane_ids == ["-50_0"]
     assert events[0].max_speed == 4.0
+
+
+def test_backend_registry_is_same_object_as_config_module() -> None:
+    from config.scenario_presets import SCENARIO_PRESET_REGISTRY as neutral
+    from backend.app.scenario.presets import SCENARIO_PRESET_REGISTRY
+
+    assert SCENARIO_PRESET_REGISTRY is neutral
+    assert neutral["east_dense"].intersection_ids == ("demo_3", "demo_5", "demo_6", "demo_9")
+    assert neutral["east_dense"].map_template == "east_dense"
