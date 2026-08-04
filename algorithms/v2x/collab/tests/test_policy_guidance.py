@@ -222,6 +222,48 @@ def test_full_mode_bypasses_threshold_and_cooldown():
     outcome = _propose(policy, store, config=cfg)
     assert outcome.funnel_stage == "published"
     assert outcome.proposal.status is GuidanceDecisionStatus.PROPOSED
+    # FULL 诊断：按 THRESHOLD 规则该建议会被速度阈值抑制 → would_pass_threshold=False
+    assert outcome.would_pass_threshold is False
+    assert outcome.would_be_duplicate is None
+    assert outcome.would_be_in_cooldown is None
+
+
+def test_full_mode_diagnostics_when_threshold_would_pass():
+    # speed=8、distance=205 → raw=10.25、delta=2.25 ≥ trigger 2.0；FULL 发布，
+    # 诊断显示按 THRESHOLD 同样可达发射
+    store, policy = _setup(
+        vehicles=[_bsm("car1", speed=8.0, distance=205.0)],
+        intents=[_intent("car1", "through", 15.0)],
+    )
+    cfg = CollabConfig(guidance_mode=GuidanceEmissionMode.FULL)
+    outcome = _propose(policy, store, config=cfg)
+    assert outcome.funnel_stage == "published"
+    assert outcome.proposal.status is GuidanceDecisionStatus.PROPOSED
+    assert outcome.would_pass_threshold is True
+    assert outcome.would_be_duplicate is False
+    assert outcome.would_be_in_cooldown is False
+
+
+def test_full_mode_diagnostics_duplicate_under_threshold_rules():
+    # FULL 绕过去重/冷却直接发布，但诊断按 THRESHOLD 规则标记 duplicate
+    store, policy = _setup(
+        vehicles=[_bsm("car1", speed=8.0, distance=205.0)],
+        intents=[_intent("car1", "through", 15.0)],
+    )
+    cfg = CollabConfig(guidance_mode=GuidanceEmissionMode.FULL)
+    first = _propose(policy, store, config=cfg)
+    assert first.funnel_stage == "published"
+    last = LastEmittedGuidanceState(
+        target_speed_mps=first.proposal.target_speed_mps,
+        target_lane_id=None, target_lane_index=None,
+        emitted_at=5.0, valid_until=15.0, reason=first.proposal.reason,
+        emitted_message_id="rsi-1")
+    dup = _propose(policy, store, config=cfg, last_emitted=last)
+    assert dup.funnel_stage == "published"
+    assert dup.proposal.status is GuidanceDecisionStatus.PROPOSED
+    assert dup.would_pass_threshold is True
+    assert dup.would_be_duplicate is True
+    assert dup.would_be_in_cooldown is False
 
 
 def test_next_signal_not_managed_not_candidate():

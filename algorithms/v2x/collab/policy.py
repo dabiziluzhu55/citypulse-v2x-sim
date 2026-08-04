@@ -51,6 +51,9 @@ class GuidanceOutcome:
     proposal: VehicleGuidanceProposal | None
     funnel_stage: str          # 最高到达的漏斗阶段（§5.1）
     filter_reason: str | None  # 未 published 时的统计原因（§3.6）
+    would_pass_threshold: bool = True   # FULL 模式诊断：若按 THRESHOLD 是否可达发射
+    would_be_duplicate: bool | None = None
+    would_be_in_cooldown: bool | None = None
 
 
 
@@ -578,6 +581,21 @@ class CloudRulePolicy:
             return True
         return False
 
+    def missing_signal_proposal(
+        self, *, intersection_id: str, now: float, frame_id: str,
+        reason: str = "missing_map",
+    ) -> SignalProposal:
+        """engine 在 MAP 缺失时构造 MISSING_INPUT 信号建议（spec §2 状态表）。"""
+        return SignalProposal(
+            intersection_id=intersection_id,
+            status=SignalDecisionStatus.MISSING_INPUT,
+            candidate_action=None, proposed_action=None, current_action=None,
+            action_scores={}, reason=reason, confidence=0.0,
+            valid_from=now,
+            valid_until=now + self._config.signal_policy.proposal_ttl_s,
+            needs_transition=False, decision_frame_id=frame_id,
+            source_message_ids=(), source_frame_ids=())
+
     def propose_guidance(
         self, *, vehicle: ConnectedVehicleState, snapshot: EdgeSnapshot,
         static_context: IntersectionStaticContext, now: float, frame_id: str,
@@ -596,11 +614,13 @@ class CloudRulePolicy:
         lane_status, target_lane_id, target_lane_index, lane_reason = \
             self._lane_decision(vehicle, snapshot, static_context, now,
                                 policy, config.freshness)
-        # 阈值（仅 THRESHOLD；速度分量需要 delta ≥ trigger，车道分量天然过阈值）
+        # 速度分量阈值（THRESHOLD 生效；FULL 仅诊断）
+        speed_below_trigger = (
+            speed_status is GuidanceDecisionStatus.PROPOSED
+            and abs((target_speed_mps or 0.0) - vehicle.speed_mps)
+            < policy.speed_trigger_delta_mps)
         if (config.guidance_mode is GuidanceEmissionMode.THRESHOLD
-                and speed_status is GuidanceDecisionStatus.PROPOSED
-                and abs((target_speed_mps or 0.0) - vehicle.speed_mps)
-                < policy.speed_trigger_delta_mps):
+                and speed_below_trigger):
             speed_status = GuidanceDecisionStatus.SUPPRESSED_THRESHOLD
             speed_reason = "speed_below_trigger"
         overall = self._merge_guidance_status(speed_status, lane_status)
@@ -613,45 +633,100 @@ class CloudRulePolicy:
                 speed_status=speed_status, target_speed_mps=target_speed_mps,
                 lane_status=lane_status, target_lane_id=target_lane_id,
                 target_lane_index=target_lane_index, reason=reason)
-            return GuidanceOutcome(proposal, "raw_proposals", reason)
+            return GuidanceOutcome(proposal, "raw_proposals", reason,
+                                   would_pass_threshold=False,
+                                   would_be_duplicate=None,
+                                   would_be_in_cooldown=None)
         funnel_stage = "raw_proposals"
         reason = self._pick_guidance_reason(speed_reason, lane_reason)
-        if config.guidance_mode is GuidanceEmissionMode.THRESHOLD:
-            funnel_stage = "threshold_passed"
-            if last_emitted is not None and not self._should_resend(
-                    last_emitted, target_speed_mps, target_lane_id, reason,
-                    now, policy):
-                overall = GuidanceDecisionStatus.SUPPRESSED_DUPLICATE
+        # 去重/冷却判定（THRESHOLD 生效；FULL 按 THRESHOLD 规则诊断计算）
+        would_duplicate = False
+        would_cooldown = False
+        if last_emitted is not None and not self._should_resend(
+                last_emitted, target_speed_mps, target_lane_id, reason,
+                now, policy):
+            would_duplicate = True
+        elif last_emitted is not None and \
+                now < last_emitted.emitted_at + policy.minimum_resend_interval_s:
+            would_cooldown = True
+        if config.guidance_mode is GuidanceEmissionMode.FULL:
+            # FULL 绕过阈值/去重/冷却发布，但按 THRESHOLD 规则计算诊断三值
+            sim_speed_status = (
+                GuidanceDecisionStatus.SUPPRESSED_THRESHOLD
+                if speed_below_trigger else speed_status)
+            sim_overall = self._merge_guidance_status(
+                sim_speed_status, lane_status)
+            would_pass_threshold = (
+                sim_overall is GuidanceDecisionStatus.PROPOSED)
+            if would_pass_threshold:
                 return GuidanceOutcome(
                     self._build_guidance_proposal(
                         vehicle=vehicle, snapshot=snapshot, now=now,
-                        frame_id=frame_id, policy=policy, overall=overall,
-                        speed_status=speed_status, target_speed_mps=target_speed_mps,
+                        frame_id=frame_id, policy=policy,
+                        overall=GuidanceDecisionStatus.PROPOSED,
+                        speed_status=speed_status,
+                        target_speed_mps=target_speed_mps,
                         lane_status=lane_status, target_lane_id=target_lane_id,
-                        target_lane_index=target_lane_index,
-                        reason="duplicate_guidance"),
-                    "threshold_passed", "duplicate_guidance")
-            funnel_stage = "dedup_passed"
-            if last_emitted is not None and \
-                    now < last_emitted.emitted_at + policy.minimum_resend_interval_s:
-                overall = GuidanceDecisionStatus.SUPPRESSED_COOLDOWN
-                return GuidanceOutcome(
-                    self._build_guidance_proposal(
-                        vehicle=vehicle, snapshot=snapshot, now=now,
-                        frame_id=frame_id, policy=policy, overall=overall,
-                        speed_status=speed_status, target_speed_mps=target_speed_mps,
-                        lane_status=lane_status, target_lane_id=target_lane_id,
-                        target_lane_index=target_lane_index,
-                        reason="cooldown_active"),
-                    "dedup_passed", "cooldown_active")
-            funnel_stage = "cooldown_passed"
+                        target_lane_index=target_lane_index, reason=reason),
+                    "published", None,
+                    would_pass_threshold=True,
+                    would_be_duplicate=would_duplicate,
+                    would_be_in_cooldown=would_cooldown)
+            return GuidanceOutcome(
+                self._build_guidance_proposal(
+                    vehicle=vehicle, snapshot=snapshot, now=now,
+                    frame_id=frame_id, policy=policy,
+                    overall=GuidanceDecisionStatus.PROPOSED,
+                    speed_status=speed_status,
+                    target_speed_mps=target_speed_mps,
+                    lane_status=lane_status, target_lane_id=target_lane_id,
+                    target_lane_index=target_lane_index, reason=reason),
+                "published", None,
+                would_pass_threshold=False,
+                would_be_duplicate=None,
+                would_be_in_cooldown=None)
+        # THRESHOLD 模式
+        funnel_stage = "threshold_passed"
+        if would_duplicate:
+            overall = GuidanceDecisionStatus.SUPPRESSED_DUPLICATE
+            return GuidanceOutcome(
+                self._build_guidance_proposal(
+                    vehicle=vehicle, snapshot=snapshot, now=now,
+                    frame_id=frame_id, policy=policy, overall=overall,
+                    speed_status=speed_status, target_speed_mps=target_speed_mps,
+                    lane_status=lane_status, target_lane_id=target_lane_id,
+                    target_lane_index=target_lane_index,
+                    reason="duplicate_guidance"),
+                "threshold_passed", "duplicate_guidance",
+                would_pass_threshold=True,
+                would_be_duplicate=True,
+                would_be_in_cooldown=False)
+        funnel_stage = "dedup_passed"
+        if would_cooldown:
+            overall = GuidanceDecisionStatus.SUPPRESSED_COOLDOWN
+            return GuidanceOutcome(
+                self._build_guidance_proposal(
+                    vehicle=vehicle, snapshot=snapshot, now=now,
+                    frame_id=frame_id, policy=policy, overall=overall,
+                    speed_status=speed_status, target_speed_mps=target_speed_mps,
+                    lane_status=lane_status, target_lane_id=target_lane_id,
+                    target_lane_index=target_lane_index,
+                    reason="cooldown_active"),
+                "dedup_passed", "cooldown_active",
+                would_pass_threshold=True,
+                would_be_duplicate=False,
+                would_be_in_cooldown=True)
+        funnel_stage = "cooldown_passed"
         proposal = self._build_guidance_proposal(
             vehicle=vehicle, snapshot=snapshot, now=now, frame_id=frame_id,
             policy=policy, overall=GuidanceDecisionStatus.PROPOSED,
             speed_status=speed_status, target_speed_mps=target_speed_mps,
             lane_status=lane_status, target_lane_id=target_lane_id,
             target_lane_index=target_lane_index, reason=reason)
-        return GuidanceOutcome(proposal, "published", None)
+        return GuidanceOutcome(proposal, "published", None,
+                               would_pass_threshold=True,
+                               would_be_duplicate=False,
+                               would_be_in_cooldown=False)
 
     @staticmethod
     def _pick_guidance_reason(speed_reason: str, lane_reason: str) -> str:
