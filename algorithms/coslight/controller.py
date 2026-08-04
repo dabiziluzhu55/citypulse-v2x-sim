@@ -33,6 +33,31 @@ except ImportError:  # Direct ``algorithm_module=controller`` compatibility.
 
 logger = logging.getLogger(__name__)
 
+
+# --- V2X shadow-mode 惰性钩子（默认关闭；env COSLIGHT_V2X_LOG 开启）---
+def _v2x_initialize(payload: dict) -> None:
+    try:
+        from algorithms.v2x.adapters.coslight import bridge_initialize
+    except Exception:
+        return
+    bridge_initialize(payload)
+
+
+def _v2x_step(payload: dict, actions: dict) -> None:
+    try:
+        from algorithms.v2x.adapters.coslight import bridge_step
+    except Exception:
+        return
+    bridge_step(payload, actions)
+
+
+def _v2x_finish(payload: dict) -> None:
+    try:
+        from algorithms.v2x.adapters.coslight import bridge_finish
+    except Exception:
+        return
+    bridge_finish(payload)
+
 # Observation layout: phase one-hot + stage elapsed + fixed lane slots.
 MAX_PHASES = 8
 # The current 20-intersection production topology peaks at 32 observed lanes
@@ -1893,6 +1918,7 @@ def initialize(payload: dict) -> dict:
         ),
         _cloud_mode,
     )
+    _v2x_initialize(payload)
     return {
         "protocol_version": "2.0",
         "episode_id": payload["episode_id"],
@@ -3012,7 +3038,7 @@ def _configured_ppo_epochs() -> int:
     return epoch_count
 
 
-def step(payload: dict) -> dict:
+def _step_impl(payload: dict) -> dict:
     global _pending_transition, _last_joint_decision_time
     global _latest_observation_time
     global _terminal_bootstrap_values, _horizon_guard_active
@@ -3312,6 +3338,12 @@ def step(payload: dict) -> dict:
     }
 
 
+def step(payload: dict) -> dict:
+    result = _step_impl(payload)
+    _v2x_step(payload, result)
+    return result
+
+
 def finish(payload: dict) -> None:
     global _episode, _episode_trajectory, _pending_transition
     global _last_joint_decision_time
@@ -3323,6 +3355,7 @@ def finish(payload: dict) -> None:
     global _collected_rollout
 
     reset_lane_state()
+    _v2x_finish(payload)
     if _mode not in {"train", "collect"} or _model is None:
         return
 

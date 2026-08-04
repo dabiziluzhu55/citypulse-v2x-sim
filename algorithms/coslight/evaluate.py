@@ -180,6 +180,13 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
     else:
         os.environ.pop("COSLIGHT_MODEL_PATH", None)
     os.environ.pop("COSLIGHT_RESUME_PATH", None)
+    v2x_log = str(request.get("v2x_log") or "")
+    if v2x_log:
+        os.environ["COSLIGHT_V2X_LOG"] = v2x_log
+        os.environ["COSLIGHT_V2X_RUN_ID"] = f"{method}-{seed}"
+    else:
+        os.environ.pop("COSLIGHT_V2X_LOG", None)
+        os.environ.pop("COSLIGHT_V2X_RUN_ID", None)
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ["MKL_NUM_THREADS"] = "1"
     torch.set_num_threads(1)
@@ -400,6 +407,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cloud-hold-cooldown", type=float, default=0.0)
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument(
+        "--v2x-log", type=Path, help="V2X shadow-mode 日志路径（JSONL）"
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path(__file__).with_name("runs") / "evaluation.json",
@@ -496,6 +506,7 @@ def main(argv: list[str] | None = None) -> int:
             "cloud_platoon_lag": args.cloud_platoon_lag,
             "cloud_hold_cooldown": args.cloud_hold_cooldown,
             "checkpoint": str(checkpoint) if method in MODEL_METHODS else "",
+            "v2x_log": str(args.v2x_log) if args.v2x_log else "",
         }
         for method in methods
         for seed in seeds
