@@ -64,3 +64,6 @@ algorithms/ippo/gate_outputs/
 
 # Local rollback backups (not committed)
 .codex-backups/
+
+# Experiment logs (remote scratch)
+logs/
