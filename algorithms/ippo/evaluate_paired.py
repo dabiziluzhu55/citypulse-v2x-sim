@@ -359,6 +359,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--duration", type=int, default=300)
     parser.add_argument("--intersections", type=int, default=20)
+    parser.add_argument(
+        "--preset",
+        choices=("east_dense", "west_dense", "xiongan_20"),
+        default=None,
+        help="scenario preset; controlled IDs come from backend/app/scenario/presets.py",
+    )
+    parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        default=None,
+        help="explicit seed list (default: pre-registered 10 seeds for the gate)",
+    )
     parser.add_argument("--period", default="off_peak")
     parser.add_argument("--seed", type=int, default=10000)
     parser.add_argument("--action-interval", type=float, default=DEFAULT_ACTION_INTERVAL)
@@ -379,17 +392,26 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"intersections must be <= {len(DEFAULT_INTERSECTION_IDS)}")
 
     methods = tuple(dict.fromkeys(args.methods))
-    intersections = tuple(DEFAULT_INTERSECTION_IDS[: args.intersections])
+    if args.preset is not None:
+        from backend.app.scenario.presets import SCENARIO_PRESET_REGISTRY
+
+        intersections = SCENARIO_PRESET_REGISTRY[args.preset].intersection_ids
+    else:
+        intersections = tuple(DEFAULT_INTERSECTION_IDS[: args.intersections])
     checkpoint = args.checkpoint.expanduser().resolve() if args.checkpoint else None
-    seeds = tuple(range(args.seed + 1, args.seed + args.episodes + 1))
+    seeds = (
+        tuple(args.seeds)
+        if args.seeds is not None
+        else tuple(range(args.seed + 1, args.seed + args.episodes + 1))
+    )
     if "model" in methods:
         if checkpoint is None or not checkpoint.is_file():
             parser.error("model evaluation requires an existing --checkpoint")
         metadata = load_checkpoint_metadata(checkpoint)
         saved_ids = tuple(str(value) for value in metadata["intersection_ids"])
-        if saved_ids != intersections:
+        if not set(intersections) <= set(saved_ids):
             parser.error(
-                f"checkpoint intersections {saved_ids} do not match requested {intersections}"
+                f"checkpoint intersections {saved_ids} are not a superset of requested {intersections}"
             )
         if abs(float(metadata["action_interval"]) - args.action_interval) > 1e-9:
             parser.error("checkpoint action interval does not match --action-interval")
