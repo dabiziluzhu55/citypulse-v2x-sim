@@ -3904,7 +3904,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Create: `algorithms/v2x/collab/engine.py`
 - Test: `algorithms/v2x/collab/tests/test_engine.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/test_engine.py`：
 
@@ -4091,12 +4091,12 @@ def test_reset_episode_clears_last_emitted():
     assert len(second.emitted_rsi_message_ids) == 1
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_engine.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError`）
 
-- [ ] **Step 3: 实现 `engine.py`**
+- [x] **Step 3: 实现 `engine.py`**
 
 ```python
 # algorithms/v2x/collab/engine.py
@@ -4428,12 +4428,12 @@ class CollabDecisionEngine:
 - `cloud_proposal_record` 的 `emitted_message_id/next_signal_intersection_id` 可选参数来自 Task 11 契约收口。
 - `GuidanceOutcome.would_pass_threshold/would_be_duplicate/would_be_in_cooldown` 来自 Task 11 契约收口；FULL 模式下统计进 `guidance_funnel` 的诊断键。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_engine.py algorithms/v2x/collab/tests/test_stats.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/collab/engine.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/collab/engine.py
@@ -4450,7 +4450,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Modify（小改）: `algorithms/v2x/collab/records.py`（新增 `CompositeSink`）
 - Test: `algorithms/v2x/tests/test_coslight_adapter.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `algorithms/v2x/tests/test_coslight_adapter.py` 末尾追加：
 
@@ -4509,12 +4509,12 @@ def test_collab_disabled_guidance_strips_actions_vehicles(monkeypatch, tmp_path)
     reset_bridge()
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/tests/test_coslight_adapter.py -q --tb=short'`
 Expected: FAIL（`AttributeError: module 'algorithms.v2x.adapters.coslight' has no attribute 'last_collab_summary'` / scope env 未解析）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 **3a. `records.py` 追加 `CompositeSink`：**
 
@@ -4722,12 +4722,12 @@ def last_collab_summary() -> Optional[dict]:
 - 非法枚举（`COSLIGHT_V2X_COLLAB_MODE=bad`）在 `_env_collab_config()` 抛 `ValueError`，即启动阶段 fail-fast（§6.1）；`active` 在 `ActionArbiter` 构造抛 `ActiveModeUnavailableError`。
 - `reset_bridge()` 需要同时清 `_last_collab_summary = None`（防止跨 episode 串数据）。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/tests/test_coslight_adapter.py algorithms/v2x/tests/test_hub.py -q --tb=short'`
 Expected: PASS（既有 4 条 + 新增 3 条）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/adapters/coslight.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/adapters/coslight.py
@@ -4744,7 +4744,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Create: `algorithms/coslight/scope_cli.py`
 - Test: `algorithms/coslight/test_scope_cli.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/coslight/test_scope_cli.py`：
 
@@ -4808,12 +4808,12 @@ def test_build_scope_block_matches_stats_scope_block():
     assert block == stats_scope_block(scope, tuple(f"demo_{i}" for i in range(1, 21)))
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/coslight/test_scope_cli.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError`）
 
-- [ ] **Step 3: 实现 `scope_cli.py`**
+- [x] **Step 3: 实现 `scope_cli.py`**
 
 ```python
 # algorithms/coslight/scope_cli.py
@@ -4896,12 +4896,12 @@ def build_scope_block(scope: ResolvedScenarioScope,
     }
 ```
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/coslight/test_scope_cli.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/coslight/scope_cli.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/coslight/scope_cli.py
@@ -4917,7 +4917,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Modify: `algorithms/coslight/evaluate.py`
 - Test: `algorithms/coslight/test_evaluate.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `algorithms/coslight/test_evaluate.py` 末尾追加：
 
@@ -4968,12 +4968,12 @@ def test_v2x_collab_active_rejected_at_startup(tmp_path):
         )
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/coslight/test_evaluate.py -q --tb=short'`
 Expected: 新增 4 条 FAIL（argparse 未定义 `--scenario-preset/--v2x-collab`、`--intersections` 不接受字符串）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 **3a. imports 追加：**
 
@@ -5080,12 +5080,12 @@ from config.scenario_presets import SCENARIO_PRESET_REGISTRY
             "v2x_guidance_mode": args.v2x_guidance_mode,
 ```
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/coslight/test_evaluate.py algorithms/coslight/test_scope_cli.py -q --tb=short'`
 Expected: PASS（既有 7 条 + 新增 4 条 + scope_cli 全量）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/coslight/evaluate.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/coslight/evaluate.py
@@ -5101,7 +5101,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Modify（可选，加固）: `algorithms/v2x/tests/test_hub.py`
 - 无新业务代码：Task 1 已实现 MAP `phase_order` 透传与断言
 
-- [ ] **Step 1: 写失败测试（加固断言，若 Task 1 已含可跳过）**
+- [x] **Step 1: 写失败测试（加固断言，若 Task 1 已含可跳过）**
 
 若 `test_hub.py` 尚无如下断言，追加：
 
@@ -5124,22 +5124,22 @@ def test_map_payload_passthrough_phase_order_and_required_fields_unchanged():
     assert hub._map_versions == {"i1": 1}
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/tests/test_hub.py -q --tb=short'`
 Expected: 若新增断言依赖 `_map_versions`/delivery 细节与现有实现不符则 FAIL（实现者按实际 hub 行为调整断言，不断言内部字段以外的行为）
 
-- [ ] **Step 3: 实现/对齐**
+- [x] **Step 3: 实现/对齐**
 
 - Task 1 已改 `hub.ingest_initialize` 的 MAP draft：`payload` 追加 `"phase_order": intersections[inter_id].get("phase_order")`；
 - 本任务仅做断言对齐与回归确认，无新实现。
 
-- [ ] **Step 4: 运行确认通过（回归）**
+- [x] **Step 4: 运行确认通过（回归）**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/tests/test_hub.py algorithms/v2x/tests/test_coslight_adapter.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/tests/test_hub.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/tests/test_hub.py
