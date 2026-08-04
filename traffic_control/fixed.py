@@ -1,4 +1,4 @@
-"""Fixed-timing control mode.
+"""固定配时控制模式
 """
 
 from __future__ import annotations

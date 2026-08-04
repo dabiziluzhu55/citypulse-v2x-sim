@@ -1,16 +1,16 @@
 # CityPulse V2X Sim
 
-基于SUMO的交通管控仿真平台,前端选算法,后端编排会话,SUMO Worker执行仿真并本地加载管控算法
+基于SUMO的交通管控仿真平台
 
 ## 目录
 
 | 目录 | 说明 |
 |------|------|
-| `frontend/` | Vue前端,通过REST/WebSocket调用后端 |
-| `backend/` | FastAPI后端,不直接调用仿真TraCI |
+| `frontend/` | Vue前端，通过REST/WebSocket调用后端 |
+| `backend/` | FastAPI后端，不直接调用仿真TraCI |
 | `simulation/` | SUMO/TraCI仿真内核与分布式Worker |
 | `traffic_control/` | 产品管控算法包，目前包括(fixed/sotl/max_pressure/ippo) |
-| `algorithms/` | 算法组训练与实验代码,不参与项目的部署 |
+| `algorithms/` | 算法组训练与实验代码，不参与项目的部署 |
 | `data/maps/` | 地图与SUMO生成产物 |
 | `docs/` | 详细文档 |
 
@@ -22,19 +22,19 @@
                                       └─ importlib加载 traffic_control.*
 ```
 
-- 前端只传业务名`control_mode`,不直接调用算法、SUMO
+- 前端只传业务名`control_mode`，不直接调用算法、SUMO
 - 后端根据`traffic_control.registry`写成`SimulationConfig`(如`algorithm_module=traffic_control.sotl`)
-- 仿真端只认`fixed`或`algorithm`,本地算法由`algorithm_module`动态加载
-- IPPO等含torch的推理只在SUMO Worker进程内运行,Backend启动不导入torch
+- 仿真端只认`fixed`或`algorithm`，本地算法由`algorithm_module`动态加载
+- IPPO等含torch的推理只在SUMO Worker进程内运行，Backend启动不导入torch
 
 ### 管控模式
 
 | control_mode | 说明 |
 |--------------|------|
 | `fixed` | SUMO固定配时 |
-| `sotl` | SOTL,本地Protocol 2.0 |
-| `max_pressure` | Max Pressure,本地Protocol 2.0 |
-| `ippo` | 部署版IPPO,仅`xiongan_20`,默认加载包内checkpoint |
+| `sotl` | SOTL，本地Protocol 2.0 |
+| `max_pressure` | Max Pressure，本地Protocol 2.0 |
+| `ippo` | 部署版IPPO，仅`xiongan_20`，默认加载包内checkpoint |
 
 ## 快速开始
 
@@ -87,18 +87,18 @@ celery -A simulation.sumo.distributed.celery_app:app worker \
   --queues citypulse-sumo --pool prefork --concurrency 4
 ```
 
-Worker使用prefork,一子进程同时只跑一个SUMO会话;与后端Backend共享`generated`与`outputs/sessions`
+Worker使用prefork，一子进程同时只跑一个SUMO会话;与后端Backend共享`generated`与`outputs/sessions`
 
 ## 容器化部署
 
 | 容器 | 内容 |
 |------|------|
 | frontend | 静态资源/Nginx |
-| backend | FastAPI,无SUMO/无torch |
+| backend | FastAPI，无SUMO/无torch |
 | sumo-worker | `simulation`+`traffic_control`+SUMO(+torch) |
 | redis | 队列与会话状态 |
 
-`traffic_control`不是独立服务,由Worker进程内加载
+`traffic_control`由仿真的Worker进程内加载
 
 ## 文档
 
