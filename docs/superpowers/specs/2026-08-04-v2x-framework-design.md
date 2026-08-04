@@ -92,11 +92,12 @@ algorithms/v2x/
 @dataclass(frozen=True, slots=True)
 class V2XMessage:
     message_type: str            # 显式字符串，如 "BSM"（JSON 序列化必须包含，不依赖类名）
-    message_id: str              # uuid5(MESSAGE_NAMESPACE, f"{episode_id}|{source_id}|{message_type}|{sequence_no}")
+    message_id: str              # uuid5(MESSAGE_NAMESPACE, f"{run_id}|{episode_id}|{source_id}|{message_type}|{sequence_no}")
     schema_version: str          # 默认 "1.0"
-    episode_id: str              # 调用方提供，要求单次运行内全局唯一（或 message_id 再加 run_id）
+    run_id: str                  # 调用方提供；与 episode_id 共同保证全局唯一
+    episode_id: str              # 调用方提供；同一 run_id 内唯一
     frame_id: str                # "{episode_id}:init" 或 "{episode_id}:step:{frame_index:06d}"
-    sequence_no: int             # 按 (episode_id, source_id, message_type) 单调递增，每局重置
+    sequence_no: int             # 按 (run_id, episode_id, source_id, message_type) 单调递增，每局重置
     sim_time: float              # Protocol 2.0 simulation_time
     source_id: str
     destination: str             # 具体实体 id，或 "*"（广播）
@@ -105,7 +106,7 @@ class V2XMessage:
 
 - `message_type` 是消息自身字段（不是 Python 类名推导）；
 - `message_id` 由 Hub 在 publish 时生成（确定性 uuid5），调用方不构造；
-- `episode_id` 全局唯一性由调用方保证；需要跨运行唯一时再加 `run_id`。
+- `(run_id, episode_id)` 组合必须全局唯一，由调用方保证。
 
 ### 5.2 六类领域消息 + 平台控制事件
 
@@ -129,9 +130,53 @@ class V2XMessage:
   v1 使用 SUMO 真值，`confidence` 固定 `1.0`（不实现感知误差模型）；
 - `SignalControlEvent.changed: bool` 表示相对上一帧是否相位变化，`previous_action: int | None`；
   `requested_effective_time` 是**请求生效时间**，不表示已验证执行；
+- 首帧规则：`previous_action = last_action_by_intersection.get(intersection_id)`；
+  `changed = (previous_action is None or action != previous_action)`——首次有效控制动作视为
+  控制状态建立，`changed=True`；
+- `requested_effective_time = frame.sim_time`（除非 Protocol action 未来显式携带生效时间）。
 - 前后车距可为 None，`gap_source: Literal["protocol", "derived"] | None`。
 
-## 6. 实体与通信能力
+## 6. 配置模型 V2XConfig（集中定义）
+
+```python
+@dataclass(frozen=True, slots=True)
+class V2XConfig:
+    schema_version: str = "1.0"
+
+    bsm_interval_s: float = 5.0
+    intent_interval_s: float = 5.0
+    spat_interval_s: float = 5.0
+    rsm_interval_s: float = 5.0
+    scheduling_epsilon_s: float = 1e-9
+
+    connected_classes: frozenset[str] = frozenset({"passenger", "bus"})
+    penetration_rate: float = 1.0
+    capability_seed: int = 0
+
+    default_latency_ms: float = 20.0
+    uplink_latency_ms: float | None = None
+    downlink_latency_ms: float | None = None
+    latency_jitter_ms: float = 0.0
+    drop_rate: float = 0.0
+    network_seed: int = 0
+
+    detection_radius_m: float | None = None
+```
+
+校验规则（构造时校验，违反抛 ValueError）：
+
+- `0 <= penetration_rate <= 1`、`0 <= drop_rate <= 1`；
+- latency / jitter / interval 不得为 NaN 或无穷；`latency >= 0`、`jitter >= 0`；
+- `interval <= 0` 表示关闭该消息类型；
+- `uplink_latency_ms` / `downlink_latency_ms` 为 None 时使用 `default_latency_ms`。
+
+网络随机模型（确定性、按消息）：
+
+- `capability_seed` 只用于网联渗透率（§7 稳定哈希）；
+- `network_seed` 只用于抖动/丢包（§8.2 稳定随机值）；
+- 两种子互不影响，增加实体不改变已有消息的随机结果。
+
+## 7. 实体与通信能力
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -180,7 +225,7 @@ v2x_enabled = score < penetration_rate
 - 只对 `connected_classes`（默认 `{"passenger", "bus"}`）中的机动车分配；非机动车永不分配 OBU；
 - 同 `capability_seed` 得到完全相同的网联车辆集合。
 
-## 7. V2XHub
+## 8. V2XHub
 
 ### 7.1 生命周期与两阶段 API
 
@@ -192,7 +237,9 @@ frame = hub.ingest_initialize(
     run_id: str,
     episode_id: str,
     scenario: dict | None = None,
+    initial_sim_time: float = 0.0,
 )          # 建实体、能力判定、发 MAP（每 RSU 1 条），frame_id = "{episode_id}:init"
+           # MAP.sent_at = initial_sim_time；scheduled_delivery_at = initial_sim_time + 网络延迟
 
 frame = hub.ingest_step(payload, intent_overrides=None)
 #   → FrameContext(episode_id, frame_id="{episode_id}:step:{index:06d}", sim_time, input_message_ids)
@@ -208,9 +255,18 @@ hub.ingest_step_with_actions(payload, actions, intent_overrides=None)
 - 未开始 episode 调用 `ingest_step`：报错（ValueError）；
 - 同一 episode 重复 `ingest_initialize`：报错；
 - `finish_episode` 后继续 ingest：报错；
-- 新 episode 开始时：sequence、调度器、实体、统计状态**全部重置**。
+- 新 episode 开始时：sequence、调度器、实体、统计状态**全部重置**；
+- 第一次 `ingest_step` 必须满足 `step_sim_time >= initial_sim_time`（否则 ValueError）。
 
 帧 ID 规则：`{episode_id}:init`；step 帧 `{episode_id}:step:{frame_index:06d}`（1 起）。
+
+`ingest_actions()` 单次消费约束（违反统一抛 ValueError）：
+
+1. frame 必须由当前 Hub 实例产生；
+2. `frame.episode_id` 必须等于 active episode；
+3. 只能对当前**最新** step frame 调用；
+4. 每个 frame 最多调用一次 `ingest_actions`；
+5. init frame 不允许 `ingest_actions`。
 
 调用链：
 
@@ -241,8 +297,20 @@ RSI（仅 v2x_enabled 车，影子） / SignalControlEvent（影子，correlatio
     （**不是** `processed_at - sent_at`，否则 20ms 配置会被统计成 5000ms）；
 - 到期事件按 `(scheduled_delivery_at, insertion_order)` 稳定排序，保证同时间回调顺序确定；
 - 延迟配置：`default_latency_ms=20`、`uplink_latency_ms`/`downlink_latency_ms` 可选覆盖、
-  `latency_jitter_ms=0`、`drop_rate=0`、`network_seed=0`；
+  `latency_jitter_ms=0`、`drop_rate=0`、`network_seed=0`（完整字段见 §6）；
 - v1 默认：固定 20ms + 零抖动 + 零丢包；接口保留抖动/丢包，供后续通信条件消融；
+- **网络随机性使用按消息确定的稳定随机值**（不依赖遍历顺序/状态式 RNG）：
+
+  ```python
+  drop_score   = stable_hash01(f"{network_seed}|drop|{message_id}")
+  jitter_score = stable_hash01(f"{network_seed}|jitter|{message_id}")
+  jitter_ms    = (2.0 * jitter_score - 1.0) * latency_jitter_ms
+  latency_ms   = max(0.0, base_latency_ms + jitter_ms)
+  network_dropped = drop_score < drop_rate
+  ```
+
+  单测可逐条精确复现；增加实体不改变已有消息结果；
+- 链路映射：BSM / INTENT / SPaT / MAP / RSM = **uplink**；RSI / SignalControlEvent = **downlink**；
 - 所有时间用 `simulation_time`，不用墙钟；
 - **coslight 决策保持同步**（拿到 payload 直接算动作）；延迟模型做"投递簿记"——
   记录 sent/delivered、统计延迟、回放展示，不让算法真的等待；
@@ -258,7 +326,7 @@ RSI（仅 v2x_enabled 车，影子） / SignalControlEvent（影子，correlatio
 
 ### 7.4 sequence_no 与投递质量检测
 
-- `sequence_no` 按 `(episode_id, source_id, message_type)` 计数，每局重置；
+- `sequence_no` 按 `(run_id, episode_id, source_id, message_type)` 计数，每局重置；
 - 跳号检测在 episode 结束时按 stream 计算：
   - `missing_sequence_count = |sent_set - delivered_set|`；
   - `out_of_order_count`：投递序与发送序不一致的次数（抖动可导致乱序，**乱序≠跳号**）；
@@ -303,7 +371,7 @@ hub.finish_episode(final_sim_time: float, drain_pending: bool = False)
 - coslight bridge 使用 `drain_pending=True`（零丢包配置下 `delivery_rate=1.0` 才成立）；
 - flush 日志并输出汇总。
 
-## 8. 意图推导（derive.py，纯函数）
+## 9. 意图推导（derive.py，纯函数）
 
 | 意图 | 确定性规则 |
 |---|---|
@@ -321,7 +389,7 @@ hub.finish_episode(final_sim_time: float, drain_pending: bool = False)
 | 依赖 next_signal fallback | 0.5 |
 | 无法确定 | 0.0 |
 
-## 9. RSM 感知覆盖（coverage.py）
+## 10. RSM 感知覆盖（coverage.py）
 
 ```python
 def is_in_rsu_coverage(road_user, rsu, detection_radius_m=None) -> bool:
@@ -338,12 +406,16 @@ def is_in_rsu_coverage(road_user, rsu, detection_radius_m=None) -> bool:
 - `covered_lane_ids`：incoming lanes + junction/internal lanes（按 `:路口id` 前缀匹配）+
   可选的近端 outgoing lanes（配置）；
 - 半径判定为可选：协议无路口坐标，配置提供 RSU 坐标时才启用；**完整空值保护**；
-- `next_signal.intersection_id` 仅作**协议数据缺失时的 fallback**（再无法定位则不生成 RSM）；
+- `next_signal.intersection_id` 仅作 fallback：**只有在 `lane_id` 缺失或无法映射，且坐标半径
+  判定也无法执行时**才使用；若车道/坐标信息完整且判定不在覆盖区，**不得**再用 next_signal 纳入；
+- 覆盖率口径拆成两个指标：
+  - `sensing_coverage_rate = 已写入所生成 RSM 的唯一对象 ÷ eligible 唯一对象`（感知覆盖，不受丢包影响）；
+  - `delivered_rsm_coverage_rate = 已成功投递 RSM 中的唯一对象 ÷ eligible 唯一对象`（可选，通信+感知）；
 - 相邻 RSU 可重复观测同一对象（**保留多源原始观测**）；
 - **本轮不实现云端融合/去重**：消费方未来可按 `(object_id, sim_time)` 融合；
   本轮日志和统计不删除重复原始观测。
 
-## 10. 日志 / 统计 / 回放
+## 11. 日志 / 统计 / 回放
 
 ### 10.1 接口契约
 
@@ -374,11 +446,16 @@ hub.subscribe(message_type: type[V2XMessage], handler: Callable[[V2XMessage], No
 {"record_type": "message", "message": {"message_type": "BSM", "...": "..."},
  "sent_at": 12.0, "scheduled_delivery_at": 12.02}   // 时间单位：仿真秒
 {"record_type": "delivery", "message_id": "...", "status": "delivered",
- "delivered_at": 12.02, "actual_latency_ms": 20.0}
+ "delivered_at": 12.02, "processed_at": 15.0, "actual_latency_ms": 20.0}
 {"record_type": "delivery", "message_id": "...", "status": "dropped",
- "drop_reason": "episode_ended"}
+ "dropped_at": 12.02, "processed_at": 15.0, "drop_reason": "network_drop"}
+{"record_type": "delivery", "message_id": "...", "status": "dropped",
+ "dropped_at": 60.0, "processed_at": 60.0, "drop_reason": "episode_ended"}
 {"record_type": "episode_end", "summary": {...}}
 ```
+
+口径：`delivered_at = scheduled_delivery_at`；`actual_latency_ms = (delivered_at - sent_at) * 1000`；
+`processed_at = advance()` 实际处理该事件的仿真时间；episode 结束丢弃 `dropped_at = processed_at = final_sim_time`。
 
 ### 10.3 统计口径（stats.py，结构化零分母）
 
@@ -400,7 +477,7 @@ hub.subscribe(message_type: type[V2XMessage], handler: Callable[[V2XMessage], No
 - 控制事件：SignalControlEvent 只证明"已生成/已下发"，**不声称"已执行"**
   （执行确认需从下一帧实际信号相位验证，本轮不做）。
 
-## 11. coslight 最小接入（shadow mode，不动决策逻辑）
+## 12. coslight 最小接入（shadow mode，不动决策逻辑）
 
 - `algorithms/v2x/adapters/coslight.py`：
 
@@ -429,7 +506,7 @@ hub.subscribe(message_type: type[V2XMessage], handler: Callable[[V2XMessage], No
 - **shadow mode**：V2X 层不过滤、不延迟、不修改任何原始 actions（见 §2.1）；
 - 输出：`PATH.jsonl` + `PATH.summary.json` + 控制台回放摘要。
 
-## 12. 测试与验收
+## 13. 测试与验收
 
 ### 12.1 单测（algorithms/v2x/tests/，纯 Python）
 
@@ -474,7 +551,7 @@ hub.subscribe(message_type: type[V2XMessage], handler: Callable[[V2XMessage], No
 - 新增 `algorithms/v2x` 测试集**零失败**；
 - 完整 pytest 命令退出码为 0。
 
-## 13. 未来扩展（非本轮）
+## 14. 未来扩展（非本轮）
 
 - 网联渗透率消融（20%/50%/80%）与通信条件消融（抖动/丢包）；
 - sink 接 backend/frontend，前端按 frame_id 展示同帧消息关联链；
