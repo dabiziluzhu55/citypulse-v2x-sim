@@ -1,3 +1,18 @@
+## 更新记录
+
+> 本板块记录 `algorithms/` 目录的最新变更，新条目放在最上方。
+
+### 2026-08-05
+- **MAPPO-v2 优化：M0 审计 + M1 三臂训练基础设施**
+  - 新增 M0 审计工具：决策延迟 p95（`evaluation`）、单侧 UCB95、10-seed IPPO 基线冻结入口、vanilla MAPPO 诊断（advantage 分位数、TD target 重复率、per-agent 相关性、梯度余弦）。
+  - 新增 `cooperative_m1_v1` 模型版本：`AgentConditionedCritic`、per-agent local reward、mean-of-values 团队价值、共享初始化工件（`mappo/runs/mappo_v2/m0/mappo_v2_shared_init.pt`）。
+  - 新增邻域 credit 组件：per-owner local GAE、neighbor/team 组件、`mix_advantages`，以及 M1 配置/checkpoint 元数据校验。
+  - 生成 20 路口邻接矩阵：`mappo/runs/mappo_v2/m0/intersection_adjacency_{directed,m1_symmetric}.json`。
+  - 训练入口接线中：`mappo/train.py` 支持 `--model-version cooperative_m1_v1`、`--m1-arm`、`--m1-target-mode`、`--m1-adjacency` 等参数；M1-0 走 scalar team GAE，M1-A/B 走 per-agent 组件混合。
+  - IPPO v8 10-seed 基线评估后台运行中，完成后将冻结基线并生成正式 pre-registration manifest。
+
+---
+
 # 算法目录
 
 本目录包含 CityPulse V2X Sim 的交通控制算法、训练入口和统一评价模块。所有算法通过项目协议 2.0 获取路口、车道和车辆状态；SUMO/TraCI 始终由 `simulation/` 独占，算法不直接操作 TraCI。
