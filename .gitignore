@@ -61,3 +61,6 @@ output/
 # IPPO regression/gate local artifacts (not committed)
 algorithms/ippo/regression_tmp/
 algorithms/ippo/gate_outputs/
+
+# Local rollback backups (not committed)
+.codex-backups/

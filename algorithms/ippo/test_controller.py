@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import math
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,8 +25,16 @@ def _metadata(intersection_ids=("demo_1", "demo_2"), phase_counts=(2, 1)):
             "incoming_lanes": [incoming],
             "outgoing_lanes": [outgoing],
             "lanes": {
-                incoming: {"length_m": 150.0, "speed_limit_mps": 15.0},
-                outgoing: {"length_m": 150.0, "speed_limit_mps": 15.0},
+                incoming: {
+                    "edge_id": f"in_edge_{offset}",
+                    "length_m": 150.0,
+                    "speed_limit_mps": 15.0,
+                },
+                outgoing: {
+                    "edge_id": f"out_edge_{offset}",
+                    "length_m": 150.0,
+                    "speed_limit_mps": 15.0,
+                },
             },
             "connections": [
                 {
@@ -106,6 +115,7 @@ def controller(monkeypatch):
     monkeypatch.setenv("IPPO_MODE", "train")
     monkeypatch.setenv("IPPO_ACTION_INTERVAL", "15")
     monkeypatch.delenv("IPPO_MODEL_PATH", raising=False)
+    monkeypatch.delenv("IPPO_EFFECTIVE_DEMAND", raising=False)
     monkeypatch.delenv("IPPO_TRAIN_SEED_START", raising=False)
     monkeypatch.delenv("IPPO_TRAIN_SEED_END", raising=False)
     return module
@@ -133,7 +143,7 @@ def test_state_adds_normalized_outgoing_congestion_summary(controller):
     second = builder.build("demo_1", congested_outgoing)
 
     assert not np.array_equal(first, second)
-    lane_start = controller.MAX_PHASES + 1 + 1
+    lane_start = controller.MAX_PHASES + 1 + len(controller.IDENTITY_SLOT_IDS)
     assert first[lane_start] == pytest.approx(0.5)  # 10 vehicles / 20 capacity
     assert first[lane_start + 1] == pytest.approx(0.25)
     assert first[lane_start + 3] == pytest.approx(0.5)
@@ -223,6 +233,231 @@ def test_phase_features_follow_served_connections(controller):
     assert features[1, controller.PHASE_PRESSURE_INDEX] < 0.0
     assert features[0, controller.PHASE_CURRENT_INDEX] == pytest.approx(1.0)
     assert features[1, controller.PHASE_SERVICE_AGE_INDEX] > 0.0
+
+
+def test_phase_features_count_effective_running_demand_by_route(controller):
+    metadata = _metadata(("demo_1",), (2,))
+    intersection = metadata["intersections"]["demo_1"]
+    intersection["incoming_lanes"] = ["busy_in", "empty_in"]
+    intersection["outgoing_lanes"] = ["free_out", "blocked_out"]
+    intersection["lanes"] = {
+        "busy_in": {
+            "edge_id": "busy_edge",
+            "length_m": 150.0,
+            "speed_limit_mps": 15.0,
+        },
+        "empty_in": {
+            "edge_id": "empty_edge",
+            "length_m": 150.0,
+            "speed_limit_mps": 15.0,
+        },
+        "free_out": {
+            "edge_id": "free_edge",
+            "length_m": 150.0,
+            "speed_limit_mps": 15.0,
+        },
+        "blocked_out": {
+            "edge_id": "blocked_edge",
+            "length_m": 150.0,
+            "speed_limit_mps": 15.0,
+        },
+    }
+    intersection["connections"] = [
+        {"connection_id": "busy", "from_lane": "busy_in", "to_lane": "free_out"},
+        {"connection_id": "empty", "from_lane": "empty_in", "to_lane": "blocked_out"},
+    ]
+    intersection["phases"] = {
+        0: {"green_seconds": 30.0, "connection_priorities": {"busy": "protected"}},
+        1: {"green_seconds": 30.0, "connection_priorities": {"empty": "protected"}},
+    }
+
+    def vehicle(*, route, speed, distance, signal="demo_1"):
+        return {
+            "motion": {"speed_mps": speed},
+            "location": {"route_edges": route, "route_index": 0},
+            "next_signal": {"intersection_id": signal, "distance_m": distance},
+        }
+
+    vehicles = {
+        "near_busy": vehicle(route=["busy_edge", "free_edge"], speed=8.0, distance=80.0),
+        "far_busy": vehicle(route=["busy_edge", "free_edge"], speed=8.0, distance=160.0),
+        "near_empty": vehicle(route=["empty_edge", "blocked_edge"], speed=6.0, distance=60.0),
+        "beyond_horizon": vehicle(route=["busy_edge", "free_edge"], speed=10.0, distance=310.0),
+        "stopped": vehicle(route=["busy_edge", "free_edge"], speed=0.0, distance=50.0),
+        "other_signal": vehicle(route=["busy_edge", "free_edge"], speed=8.0, distance=50.0, signal="demo_2"),
+    }
+    builder = controller.StateBuilder(metadata)
+
+    features = builder.build_phase_features(
+        "demo_1",
+        _step_payload(waiting=(100.0,))["intersections"]["demo_1"],
+        simulation_time=10.0,
+        last_service_times={0: 10.0, 1: 0.0},
+        vehicles=vehicles,
+        demand_horizon_seconds=15.0,
+    )
+
+    assert features.shape == (2, controller.PHASE_FEATURES)
+    one_vehicle = math.log1p(1.0) / math.log1p(7.5)
+    assert features[0, controller.PHASE_NEAR_DEMAND_INDEX] == pytest.approx(
+        one_vehicle
+    )
+    assert features[0, controller.PHASE_FAR_DEMAND_INDEX] == pytest.approx(
+        one_vehicle
+    )
+    assert features[1, controller.PHASE_NEAR_DEMAND_INDEX] == pytest.approx(
+        one_vehicle
+    )
+    assert features[1, controller.PHASE_FAR_DEMAND_INDEX] == 0.0
+
+
+def test_effective_demand_uses_eta_and_counts_next_local_movement_once(controller):
+    metadata = _metadata(("demo_1",), (2,))
+    route_with_a_later_repeat = [
+        "in_edge_0",
+        "out_edge_0",
+        "in_edge_0",
+        "out_edge_0",
+    ]
+    vehicles = {
+        "near": {
+            "motion": {"speed_mps": 10.0},
+            "location": {"route_edges": route_with_a_later_repeat, "route_index": 0},
+            "next_signal": {"intersection_id": "demo_1", "distance_m": 100.0},
+        },
+        "far_same_distance": {
+            "motion": {"speed_mps": 4.0},
+            "location": {"route_edges": ["in_edge_0", "out_edge_0"], "route_index": 0},
+            "next_signal": {"intersection_id": "demo_1", "distance_m": 100.0},
+        },
+    }
+    features = controller.StateBuilder(metadata).build_phase_features(
+        "demo_1",
+        _step_payload(waiting=(100.0,))["intersections"]["demo_1"],
+        simulation_time=10.0,
+        last_service_times={0: 10.0, 1: 0.0},
+        vehicles=vehicles,
+        demand_horizon_seconds=15.0,
+    )
+
+    one_vehicle = math.log1p(1.0) / math.log1p(7.5)
+    assert features[0, controller.PHASE_NEAR_DEMAND_INDEX] == pytest.approx(
+        one_vehicle
+    )
+    assert features[0, controller.PHASE_FAR_DEMAND_INDEX] == pytest.approx(
+        one_vehicle
+    )
+
+
+@pytest.mark.parametrize(
+    ("distance", "speed", "near_count", "far_count"),
+    [
+        (0.0, 10.0, 0, 0),
+        (150.0, 10.0, 1, 0),
+        (150.001, 10.0, 0, 1),
+        (300.0, 10.0, 0, 1),
+        (300.001, 10.0, 0, 0),
+        (1.0, 0.0, 0, 0),
+        (1.0, 0.1, 0, 0),
+        (1.0, 0.1001, 1, 0),
+        (1.0, math.inf, 0, 0),
+        (1.0, math.nan, 0, 0),
+    ],
+)
+def test_effective_demand_eta_and_speed_boundaries(
+    controller, distance, speed, near_count, far_count
+):
+    metadata = _metadata(("demo_1",), (2,))
+    vehicles = {
+        "probe": {
+            "motion": {"speed_mps": speed},
+            "location": {
+                "route_edges": ["in_edge_0", "out_edge_0"],
+                "route_index": 0,
+            },
+            "next_signal": {"intersection_id": "demo_1", "distance_m": distance},
+        }
+    }
+    features = controller.StateBuilder(metadata).build_phase_features(
+        "demo_1",
+        _step_payload(waiting=(100.0,))["intersections"]["demo_1"],
+        simulation_time=10.0,
+        last_service_times={0: 10.0, 1: 0.0},
+        vehicles=vehicles,
+        demand_horizon_seconds=15.0,
+    )
+    one_vehicle = math.log1p(1.0) / math.log1p(7.5)
+
+    assert features[0, controller.PHASE_NEAR_DEMAND_INDEX] == pytest.approx(
+        one_vehicle * near_count
+    )
+    assert features[0, controller.PHASE_FAR_DEMAND_INDEX] == pytest.approx(
+        one_vehicle * far_count
+    )
+
+
+def test_step_stores_effective_demand_in_executed_rollout(controller):
+    controller.initialize(_metadata(("demo_1",), (2,)))
+    vehicles = {
+        "approaching": {
+            "motion": {"speed_mps": 8.0},
+            "location": {
+                "route_edges": ["in_edge_0", "out_edge_0"],
+                "route_index": 0,
+            },
+            "next_signal": {"intersection_id": "demo_1", "distance_m": 100.0},
+        }
+    }
+
+    controller.step(_step_payload(time=5.0, waiting=(100.0,), vehicles=vehicles))
+
+    transition = controller._pending_transitions["demo_1"]
+    assert transition["phase_features"][
+        0, controller.PHASE_NEAR_DEMAND_INDEX
+    ] == pytest.approx(math.log1p(1.0) / math.log1p(7.5))
+    assert transition["phase_features"][0, controller.PHASE_FAR_DEMAND_INDEX] == 0.0
+
+
+def test_effective_demand_ablation_zeroes_only_the_demand_feature(
+    controller, monkeypatch
+):
+    metadata = _metadata(("demo_1",), (2,))
+    vehicles = {
+        "approaching": {
+            "motion": {"speed_mps": 8.0},
+            "location": {
+                "route_edges": ["in_edge_0", "out_edge_0"],
+                "route_index": 0,
+            },
+            "next_signal": {"intersection_id": "demo_1", "distance_m": 100.0},
+        }
+    }
+
+    monkeypatch.setenv("IPPO_EFFECTIVE_DEMAND", "off")
+    controller.initialize(metadata)
+    controller.step(_step_payload(time=5.0, waiting=(100.0,), vehicles=vehicles))
+    disabled = controller._pending_transitions["demo_1"]["phase_features"].copy()
+
+    controller = importlib.reload(controller)
+    monkeypatch.setenv("IPPO_MODE", "train")
+    monkeypatch.setenv("IPPO_ACTION_INTERVAL", "15")
+    monkeypatch.setenv("IPPO_EFFECTIVE_DEMAND", "on")
+    controller.initialize(metadata)
+    controller.step(_step_payload(time=5.0, waiting=(100.0,), vehicles=vehicles))
+    enabled = controller._pending_transitions["demo_1"]["phase_features"]
+
+    demand_indices = [
+        controller.PHASE_NEAR_DEMAND_INDEX,
+        controller.PHASE_FAR_DEMAND_INDEX,
+    ]
+    assert np.all(disabled[:, demand_indices] == 0.0)
+    assert enabled[0, controller.PHASE_NEAR_DEMAND_INDEX] == pytest.approx(
+        math.log1p(1.0) / math.log1p(7.5)
+    )
+    assert np.array_equal(
+        np.delete(disabled, demand_indices, axis=1),
+        np.delete(enabled, demand_indices, axis=1),
+    )
 
 
 def test_max_green_mask_forces_an_alternative_phase(controller):
@@ -473,15 +708,34 @@ def test_checkpoint_records_compatibility_and_seed_metadata(
     checkpoint_path = controller.save_checkpoint(tmp_path / "model")
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
-    assert checkpoint["model_version"] == "v6"
+    assert checkpoint["model_version"] == "v8"
     assert checkpoint["reward_definition"]["normalization"] == "physical_fixed"
     assert checkpoint["phase_feature_schema"] == controller.PHASE_FEATURE_SCHEMA
+    assert checkpoint["effective_demand_enabled"] is True
     assert checkpoint["max_green_factor"] == pytest.approx(2.0)
     assert checkpoint["intersection_ids"] == ["demo_1", "demo_2"]
     assert checkpoint["obs_dim"] == controller._model.obs_dim
     assert checkpoint["act_dim"] == 2
     assert checkpoint["training_seed_range"] == {"start": 43, "end": 242}
     assert not checkpoint_path.with_suffix(".pt.tmp").exists()
+
+
+def test_checkpoint_restores_disabled_effective_demand(
+    controller, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("IPPO_EFFECTIVE_DEMAND", "off")
+    controller.initialize(_metadata(("demo_1",), (2,)))
+    checkpoint_path = controller.save_checkpoint(tmp_path / "no-demand.pt")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    assert checkpoint["effective_demand_enabled"] is False
+
+    controller = importlib.reload(controller)
+    monkeypatch.setenv("IPPO_MODE", "model")
+    monkeypatch.setenv("IPPO_MODEL_PATH", str(checkpoint_path))
+    monkeypatch.delenv("IPPO_EFFECTIVE_DEMAND", raising=False)
+    controller.initialize(_metadata(("demo_1",), (2,)))
+
+    assert controller._effective_demand_enabled is False
 
 
 def test_resume_restores_episode_and_optimizer_state(controller, monkeypatch, tmp_path):
@@ -511,7 +765,7 @@ def test_checkpoint_with_different_intersections_is_rejected(
     controller = importlib.reload(controller)
     monkeypatch.setenv("IPPO_MODE", "model")
     monkeypatch.setenv("IPPO_MODEL_PATH", str(checkpoint))
-    with pytest.raises(ValueError, match="intersection_ids mismatch"):
+    with pytest.raises(ValueError, match="not trained on this intersection subset"):
         controller.initialize(_metadata(("demo_1", "demo_2"), (2, 1)))
 
 
@@ -619,7 +873,7 @@ def test_resume_training_advances_beyond_previous_seed_range(tmp_path):
     torch.save(
         {
             "model_state_dict": {},
-            "model_version": "v6",
+            "model_version": "v8",
             "intersection_ids": [],
             "obs_dim": 1,
             "act_dim": 1,
@@ -632,11 +886,56 @@ def test_resume_training_advances_beyond_previous_seed_range(tmp_path):
     assert train._training_seed_range(42, 10, checkpoint) == (243, 252, 43)
 
 
+def test_parallel_resume_rejects_previous_model_version_before_workers(
+    monkeypatch, tmp_path
+):
+    from algorithms.ippo import parallel_train
+
+    checkpoint = tmp_path / "v7.pt"
+    torch.save(
+        {
+            "model_state_dict": {},
+            "model_version": "v7",
+            "phase_feature_schema": "connection_pressure_service_age_effective_demand_v1",
+            "intersection_ids": [parallel_train.DEFAULT_INTERSECTION_IDS[0]],
+            "obs_dim": 1,
+            "act_dim": 1,
+            "action_interval": 15.0,
+            "training_seed_range": {"start": 43, "end": 46},
+            "effective_demand_enabled": True,
+        },
+        checkpoint,
+    )
+    monkeypatch.setattr(
+        parallel_train,
+        "_run_policy_batch",
+        lambda **_kwargs: pytest.fail("worker batch must not start"),
+    )
+
+    with pytest.raises(SystemExit) as error:
+        parallel_train.main(
+            [
+                "--episodes",
+                "1",
+                "--workers",
+                "1",
+                "--intersections",
+                "1",
+                "--duration",
+                "1",
+                "--resume",
+                str(checkpoint),
+            ]
+        )
+
+    assert error.value.code == 2
+
+
 def test_failed_evaluation_is_not_aggregated_as_zero(monkeypatch, tmp_path):
     from algorithms.ippo import evaluate_ckpt
 
     metadata = {
-        "model_version": "v6",
+        "model_version": "v8",
         "intersection_ids": list(evaluate_ckpt.DEFAULT_INTERSECTION_IDS),
         "action_interval": 15.0,
         "training_seed_range": {"start": 43, "end": 242},
@@ -731,9 +1030,9 @@ def test_checkpoint_watcher_records_failures_once(monkeypatch, tmp_path):
 
     checkpoint_dir = tmp_path / "checkpoints"
     checkpoint_dir.mkdir()
-    checkpoint = checkpoint_dir / "ippo_v6_ep20.pt"
+    checkpoint = checkpoint_dir / "ippo_v8_ep20.pt"
     checkpoint.write_bytes(b"complete")
-    parallel_checkpoint = checkpoint_dir / "ippo_v6_parallel_ep20.pt"
+    parallel_checkpoint = checkpoint_dir / "ippo_v8_parallel_ep20.pt"
     parallel_checkpoint.write_bytes(b"complete")
     manifest_path = checkpoint_dir / "evaluated.json"
     calls = []
@@ -929,10 +1228,13 @@ def test_parallel_periodic_checkpoint_records_only_consumed_seeds(
     }
     completed_episodes = 0
     saved_seed_ends = []
+    saved_paths = []
     monkeypatch.setenv("IPPO_TRAIN_SEED_START", "test-original")
     monkeypatch.setenv("IPPO_TRAIN_SEED_END", "test-original")
+    monkeypatch.delenv("IPPO_CHECKPOINT_DIR", raising=False)
 
     def collect_batch(**kwargs):
+        assert kwargs["effective_demand_enabled"] is False
         return [
             {
                 "status": "complete",
@@ -955,7 +1257,9 @@ def test_parallel_periodic_checkpoint_records_only_consumed_seeds(
         return {"episodes": len(rollouts), "samples": len(rollouts)}
 
     def save(path):
-        saved_seed_ends.append((Path(path).name, os.environ["IPPO_TRAIN_SEED_END"]))
+        path = Path(path)
+        saved_paths.append(path)
+        saved_seed_ends.append((path.name, os.environ["IPPO_TRAIN_SEED_END"]))
         return str(path)
 
     monkeypatch.setattr(parallel_train, "_run_policy_batch", collect_batch)
@@ -984,6 +1288,8 @@ def test_parallel_periodic_checkpoint_records_only_consumed_seeds(
             "1",
             "--checkpoint-every",
             "2",
+            "--effective-demand",
+            "off",
             "--save",
             str(tmp_path / "model.pt"),
         ]
@@ -991,9 +1297,14 @@ def test_parallel_periodic_checkpoint_records_only_consumed_seeds(
 
     assert result == 0
     assert saved_seed_ends == [
-        ("ippo_v6_parallel_ep2.pt", "44"),
-        ("ippo_v6_parallel_ep4.pt", "46"),
+        ("ippo_v8_parallel_ep2.pt", "44"),
+        ("ippo_v8_parallel_ep4.pt", "46"),
         ("model.pt", "46"),
+    ]
+    assert saved_paths == [
+        tmp_path / "checkpoints" / "ippo_v8_parallel_ep2.pt",
+        tmp_path / "checkpoints" / "ippo_v8_parallel_ep4.pt",
+        tmp_path / "model.pt",
     ]
 
 
@@ -1020,18 +1331,36 @@ def test_parallel_worker_failure_invalidates_entire_policy_batch():
 
 def test_four_tls_checkpoint_uses_its_own_intersection_set(monkeypatch, tmp_path):
     from algorithms.ippo import evaluate_ckpt
+    from algorithms.evaluation import runtime as evaluation_runtime
+    from algorithms.evaluation.collector import EvalResult
 
     intersection_ids = tuple(f"demo_{index}" for index in range(1, 5))
     metadata = {
-        "model_version": "v6",
+        "model_version": "v8",
         "intersection_ids": list(intersection_ids),
         "action_interval": 15.0,
         "training_seed_range": {"start": 43, "end": 58},
+        "effective_demand_enabled": False,
     }
     seen_configs = []
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    session_dir.joinpath("tripinfo.xml").write_text(
+        "<tripinfos>"
+        + "".join(
+            f"<tripinfo id='v{index}' depart='0' arrival='10' duration='10' "
+            "waitingTime='2'/>"
+            for index in range(20)
+        )
+        + "</tripinfos>",
+        encoding="utf-8",
+    )
 
     class SuccessfulManager:
+        session_root = tmp_path
+
         def start(self, config):
+            assert os.environ["IPPO_EFFECTIVE_DEMAND"] == "off"
             seen_configs.append(config)
             return "session"
 
@@ -1048,9 +1377,28 @@ def test_four_tls_checkpoint_uses_its_own_intersection_set(monkeypatch, tmp_path
 
     monkeypatch.setattr(evaluate_ckpt, "load_checkpoint_metadata", lambda _: metadata)
     monkeypatch.setattr(evaluate_ckpt, "SimulationManager", SuccessfulManager)
+    monkeypatch.setattr(
+        evaluation_runtime,
+        "last_result",
+        lambda _episode_id=None: EvalResult(
+            avg_queue_length_veh=1.0,
+            throughput_veh_per_h=1200.0,
+            avg_decision_latency_ms=2.0,
+            fuel_intensity_L_per_100km=8.0,
+            severe_conflict_exposure_per_10000=None,
+            emergency_braking_exposure_per_1000=None,
+            controlled_intersection_passages=100,
+            departed=100,
+            arrived=20,
+        ),
+    )
     summary = evaluate_ckpt.evaluate(
         str(tmp_path / "four.pt"), seeds=[1042], duration=60
     )
 
     assert summary["status"] == "complete"
+    assert summary["details"][0]["missing_official_metrics"] == [
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000",
+    ]
     assert tuple(seen_configs[0].intersection_ids) == intersection_ids

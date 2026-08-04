@@ -13,6 +13,7 @@ import copy
 import logging
 import math
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -21,9 +22,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from traffic_control.ippo.contract import (
+    CHECKPOINT_CONTRACT_VERSION,
+    COLLAB_MESSAGE_SCHEMA,
+    NORMALIZATION,
+    OBSERVATION_SCHEMA,
+    fingerprint_sha256,
+    intersection_fingerprint_from_index,
+    load_contract,
+    validate_contract,
+)
+from traffic_control.ippo.identity import IDENTITY_SLOT_IDS, identity_slots_for
 logger = logging.getLogger(__name__)
 
-MODEL_VERSION = "v6"
+MODEL_VERSION = "v8"
 DEFAULT_ACTION_INTERVAL = 15.0
 DEFAULT_INTERSECTION_IDS = tuple(f"demo_{index}" for index in range(1, 21))
 
@@ -54,11 +66,13 @@ DEFAULT_MAX_GREEN_FACTOR = 2.0
 MIN_MAX_GREEN_SECONDS = 60.0
 MAX_SERVICE_AGE = 120.0
 
-PHASE_FEATURES = 9
+PHASE_FEATURES = 11
 PHASE_PRESSURE_INDEX = 5
 PHASE_CURRENT_INDEX = 6
 PHASE_SERVICE_AGE_INDEX = 7
-PHASE_FEATURE_SCHEMA = "connection_pressure_service_age_v1"
+PHASE_NEAR_DEMAND_INDEX = 9
+PHASE_FAR_DEMAND_INDEX = 10
+PHASE_FEATURE_SCHEMA = "connection_pressure_service_age_eta_demand_v2"
 REWARD_COMPONENT_NAMES = ("D", "F_safe", "B", "H")
 
 _model: Optional["IPPONetwork"] = None
@@ -88,6 +102,7 @@ _decision_interval = 5.0
 _minimum_green = 5.0
 _action_interval = DEFAULT_ACTION_INTERVAL
 _max_green_factor = DEFAULT_MAX_GREEN_FACTOR
+_effective_demand_enabled = True
 _obs_dim = 0
 _act_dim = 0
 
@@ -96,12 +111,22 @@ _collector_policy_seed: Optional[int] = None
 _collector_rollout_seed: Optional[int] = None
 _collector_metadata: Optional[dict] = None
 _collected_rollout: Optional[dict] = None
+_evaluation_episode_id = ""
 
 
 def _orthogonal_init(layer: nn.Module, gain: float) -> None:
     if isinstance(layer, nn.Linear):
         nn.init.orthogonal_(layer.weight, gain)
         nn.init.constant_(layer.bias, 0.0)
+
+
+def _effective_demand_from_environment() -> bool:
+    value = os.environ.get("IPPO_EFFECTIVE_DEMAND", "on").strip().lower()
+    if value in {"1", "true", "on", "yes"}:
+        return True
+    if value in {"0", "false", "off", "no"}:
+        return False
+    raise ValueError("IPPO_EFFECTIVE_DEMAND must be 'on' or 'off'.")
 
 
 class IPPONetwork(nn.Module):
@@ -190,9 +215,11 @@ class _Idx:
         "lane_order",
         "lane_capacities",
         "lane_speed_limits",
+        "lane_edges",
         "outgoing_order",
         "outgoing_capacities",
         "phase_connections",
+        "phase_movements",
         "phase_durations",
         "flow_reference_rate",
     )
@@ -204,9 +231,11 @@ class _Idx:
         self.lane_order: List[str] = []
         self.lane_capacities: Dict[str, float] = {}
         self.lane_speed_limits: Dict[str, float] = {}
+        self.lane_edges: Dict[str, str] = {}
         self.outgoing_order: List[str] = []
         self.outgoing_capacities: Dict[str, float] = {}
         self.phase_connections: List[Tuple[Tuple[str, str], ...]] = []
+        self.phase_movements: List[Tuple[Tuple[str, str], ...]] = []
         self.phase_durations: List[float] = []
         self.flow_reference_rate = SATURATION_FLOW_PER_LANE
 
@@ -219,6 +248,10 @@ def _build_index(i_meta: Mapping[str, Any]) -> _Idx:
     index.lane_order = list(i_meta.get("incoming_lanes", []))[:MAX_LANES]
     index.outgoing_order = list(i_meta.get("outgoing_lanes", []))
     lane_metadata = i_meta.get("lanes", {})
+    for lane_id, metadata in lane_metadata.items():
+        edge_id = metadata.get("edge_id")
+        if edge_id is not None:
+            index.lane_edges[str(lane_id)] = str(edge_id)
     for lane_id in index.lane_order:
         metadata = lane_metadata.get(lane_id, {})
         length = float(metadata.get("length_m", metadata.get("length", 150.0)))
@@ -258,6 +291,18 @@ def _build_index(i_meta: Mapping[str, Any]) -> _Idx:
             and connection.get("to_lane") is not None
         }
         index.phase_connections.append(tuple(sorted(served_pairs)))
+        index.phase_movements.append(
+            tuple(
+                sorted(
+                    {
+                        (index.lane_edges[incoming], index.lane_edges[outgoing])
+                        for incoming, outgoing in served_pairs
+                        if incoming in index.lane_edges
+                        and outgoing in index.lane_edges
+                    }
+                )
+            )
+        )
         index.phase_durations.append(
             max(float(phase.get("green_seconds", DEFAULT_GREEN_DURATION)), 1.0)
         )
@@ -283,10 +328,12 @@ class StateBuilder:
     def __init__(self, metadata: Mapping[str, Any]) -> None:
         raw = metadata.get("intersections", {})
         self.intersection_ids = tuple(sorted(raw, key=_intersection_sort_key))
+        slot_indices = identity_slots_for(self.intersection_ids)
         self._agent_indices = {
             intersection_id: index
             for index, intersection_id in enumerate(self.intersection_ids)
         }
+        self._slot_indices = dict(zip(self.intersection_ids, slot_indices))
         self._indices = {
             intersection_id: _build_index(raw[intersection_id])
             for intersection_id in self.intersection_ids
@@ -296,7 +343,13 @@ class StateBuilder:
     def max_state_dim(self) -> int:
         if not self.intersection_ids:
             return 0
-        return MAX_PHASES + 1 + len(self.intersection_ids) + 5 * MAX_LANES + 3
+        return MAX_PHASES + 1 + len(IDENTITY_SLOT_IDS) + 5 * MAX_LANES + 3
+
+    def get_fingerprint(self, intersection_id: str) -> dict[str, Any]:
+        index = self._indices.get(intersection_id)
+        if index is None:
+            raise ValueError(f"Unknown controlled intersection: {intersection_id}")
+        return intersection_fingerprint_from_index(index)
 
     @property
     def max_phases(self) -> int:
@@ -339,6 +392,8 @@ class StateBuilder:
         *,
         simulation_time: float,
         last_service_times: Mapping[int, float],
+        vehicles: Optional[Mapping[str, Mapping[str, Any]]] = None,
+        demand_horizon_seconds: float = DEFAULT_ACTION_INTERVAL,
     ) -> np.ndarray:
         """Describe what every candidate phase serves, independent of action index."""
 
@@ -352,6 +407,40 @@ class StateBuilder:
                 "current_phase", index.phase_order[0] if index.phase_order else 0
             )
         )
+        local_movements = {
+            movement
+            for phase_movements in index.phase_movements
+            for movement in phase_movements
+        }
+        effective_etas: Dict[Tuple[str, str], List[float]] = {}
+        for vehicle in (vehicles or {}).values():
+            motion = vehicle.get("motion", {})
+            speed = float(motion.get("speed_mps", 0.0))
+            if not math.isfinite(speed) or speed <= 0.1:
+                continue
+            next_signal = vehicle.get("next_signal")
+            if not isinstance(next_signal, Mapping):
+                continue
+            if str(next_signal.get("intersection_id", "")) != intersection_id:
+                continue
+            distance = float(next_signal.get("distance_m", math.inf))
+            if not math.isfinite(distance) or distance <= 0.0:
+                continue
+            location = vehicle.get("location", {})
+            route_edges = [str(edge) for edge in location.get("route_edges", ())]
+            route_index = max(int(location.get("route_index", 0)), 0)
+            next_movement = next(
+                (
+                    (route_edges[offset], route_edges[offset + 1])
+                    for offset in range(route_index, len(route_edges) - 1)
+                    if (route_edges[offset], route_edges[offset + 1])
+                    in local_movements
+                ),
+                None,
+            )
+            if next_movement is None:
+                continue
+            effective_etas.setdefault(next_movement, []).append(distance / speed)
 
         def mean(values: Sequence[float]) -> float:
             return float(np.mean(values)) if values else 0.0
@@ -395,6 +484,35 @@ class StateBuilder:
                     0.0,
                 )
             )
+            demand_horizon = max(float(demand_horizon_seconds), 0.0)
+            near_count = sum(
+                1
+                for movement in index.phase_movements[phase_offset]
+                for eta in effective_etas.get(movement, ())
+                if eta <= demand_horizon
+            )
+            far_count = sum(
+                1
+                for movement in index.phase_movements[phase_offset]
+                for eta in effective_etas.get(movement, ())
+                if demand_horizon < eta <= 2.0 * demand_horizon
+            )
+            demand_reference = (
+                SATURATION_FLOW_PER_LANE
+                * demand_horizon
+                * max(len(incoming_lanes), 1)
+            )
+
+            def normalized_demand(count: int) -> float:
+                return float(
+                    np.clip(
+                        math.log1p(count)
+                        / math.log1p(max(demand_reference, 1.0)),
+                        0.0,
+                        1.0,
+                    )
+                )
+
             features[phase_offset] = np.asarray(
                 [
                     np.clip(mean_incoming, 0.0, 1.0),
@@ -410,6 +528,8 @@ class StateBuilder:
                         0.0,
                         1.0,
                     ),
+                    normalized_demand(near_count),
+                    normalized_demand(far_count),
                 ],
                 dtype=np.float32,
             )
@@ -464,8 +584,8 @@ class StateBuilder:
             [np.clip(elapsed / MAX_STAGE_ELAPSED, 0.0, 1.0)], dtype=np.float32
         )
 
-        identity = np.zeros(len(self.intersection_ids), dtype=np.float32)
-        identity[self._agent_indices[intersection_id]] = 1.0
+        identity = np.zeros(len(IDENTITY_SLOT_IDS), dtype=np.float32)
+        identity[self._slot_indices[intersection_id]] = 1.0
 
         lane_features: List[np.ndarray] = []
         lanes = intersection.get("lanes", {})
@@ -600,9 +720,11 @@ def _validate_checkpoint(
             f"Checkpoint version {checkpoint.get('model_version')!r} is not {MODEL_VERSION!r}."
         )
     saved_ids = tuple(str(value) for value in checkpoint.get("intersection_ids", ()))
-    if saved_ids != tuple(intersection_ids):
+    current_ids = tuple(str(iid) for iid in intersection_ids)
+    if not set(current_ids) <= set(saved_ids):
         raise ValueError(
-            f"Checkpoint intersection_ids mismatch: saved={saved_ids}, current={tuple(intersection_ids)}"
+            f"Checkpoint intersection_ids are not a superset of current: "
+            f"saved={saved_ids}, current={current_ids}"
         )
     if int(checkpoint.get("obs_dim", -1)) != obs_dim:
         raise ValueError("Checkpoint observation dimension does not match current metadata.")
@@ -687,16 +809,20 @@ def initialize(payload: dict) -> dict:
     global _signal_execution_stats, _pending_signal_commands
     global _episode_trajectories, _pending_transitions, _latest_states
     global _decision_interval, _minimum_green, _action_interval, _max_green_factor
+    global _effective_demand_enabled
     global _obs_dim, _act_dim
     global _episode, _collector_metadata, _collected_rollout
+    global _evaluation_episode_id
 
     mode = os.environ.get("IPPO_MODE", "random").strip().lower()
     if mode not in {"random", "fixed", "model", "train", "collect"}:
         raise ValueError(f"Unsupported IPPO_MODE: {mode!r}")
     _inference_mode = mode
     _model_path = os.environ.get("IPPO_MODEL_PATH") or None
+    _effective_demand_enabled = _effective_demand_from_environment()
 
     _state_builder = StateBuilder(payload)
+    _collector_metadata = copy.deepcopy(payload)
     _intersection_ids = _state_builder.intersection_ids
     _phase_orders = {
         intersection_id: _state_builder.get_phase_order(intersection_id)
@@ -738,8 +864,25 @@ def initialize(payload: dict) -> dict:
         if not Path(_model_path).is_file():
             raise FileNotFoundError(f"IPPO checkpoint does not exist: {_model_path}")
         checkpoint = load_checkpoint_metadata(_model_path)
-        _validate_checkpoint(
-            checkpoint, _intersection_ids, _obs_dim, _act_dim, _action_interval
+        _effective_demand_enabled = bool(
+            checkpoint.get("effective_demand_enabled", True)
+        )
+        _contract_version, contract_view = load_contract(_model_path, checkpoint)
+        live_fingerprints = {
+            intersection_id: _state_builder.get_fingerprint(intersection_id)
+            for intersection_id in _intersection_ids
+        }
+        validate_contract(
+            contract_view,
+            intersection_ids=_intersection_ids,
+            fingerprints=live_fingerprints,
+            obs_dim=_obs_dim,
+            act_dim=_act_dim,
+            action_interval=_action_interval,
+            max_green_factor=_max_green_factor,
+            phase_feature_schema=PHASE_FEATURE_SCHEMA,
+            effective_demand_enabled=_effective_demand_enabled,
+            model_version=MODEL_VERSION,
         )
         _model = IPPONetwork(_obs_dim, _act_dim)
         _model.load_state_dict(checkpoint["model_state_dict"])
@@ -753,8 +896,25 @@ def initialize(payload: dict) -> dict:
         resume_path = str(Path(_model_path).resolve()) if _model_path else None
         if resume_path and _loaded_model_path != resume_path:
             checkpoint = load_checkpoint_metadata(resume_path)
-            _validate_checkpoint(
-                checkpoint, _intersection_ids, _obs_dim, _act_dim, _action_interval
+            _effective_demand_enabled = bool(
+                checkpoint.get("effective_demand_enabled", True)
+            )
+            _contract_version, contract_view = load_contract(resume_path, checkpoint)
+            live_fingerprints = {
+                intersection_id: _state_builder.get_fingerprint(intersection_id)
+                for intersection_id in _intersection_ids
+            }
+            validate_contract(
+                contract_view,
+                intersection_ids=_intersection_ids,
+                fingerprints=live_fingerprints,
+                obs_dim=_obs_dim,
+                act_dim=_act_dim,
+                action_interval=_action_interval,
+                max_green_factor=_max_green_factor,
+                phase_feature_schema=PHASE_FEATURE_SCHEMA,
+                effective_demand_enabled=_effective_demand_enabled,
+                model_version=MODEL_VERSION,
             )
             _model = IPPONetwork(_obs_dim, _act_dim)
             _model.load_state_dict(checkpoint["model_state_dict"])
@@ -762,11 +922,18 @@ def initialize(payload: dict) -> dict:
             _loaded_model_path = resume_path
             _buffer_episodes.clear()
             _optimizer_actor, _optimizer_critic = _new_optimizers(_model)
-            actor_state = checkpoint.get("optimizer_actor_state_dict")
-            critic_state = checkpoint.get("optimizer_critic_state_dict")
-            if actor_state is not None and critic_state is not None:
-                _optimizer_actor.load_state_dict(actor_state)
-                _optimizer_critic.load_state_dict(critic_state)
+            reset_optimizer = (
+                os.environ.get("IPPO_RESET_OPTIMIZER", "0").strip().lower()
+                in {"1", "true", "on", "yes"}
+            )
+            if not reset_optimizer:
+                actor_state = checkpoint.get("optimizer_actor_state_dict")
+                critic_state = checkpoint.get("optimizer_critic_state_dict")
+                if actor_state is not None and critic_state is not None:
+                    _optimizer_actor.load_state_dict(actor_state)
+                    _optimizer_critic.load_state_dict(critic_state)
+            else:
+                _optimizer_actor, _optimizer_critic = _new_optimizers(_model)
             _episode = int(checkpoint.get("episode", 0))
             logger.info("IPPO %s 从 checkpoint 恢复权重: %s", MODEL_VERSION, resume_path)
         elif not signature_matches:
@@ -777,13 +944,15 @@ def initialize(payload: dict) -> dict:
             _optimizer_actor, _optimizer_critic = _new_optimizers(_model)
         _model.train()
         logger.info(
-            "IPPO %s 训练: obs=%d act=%d 路口=%d action_interval=%.1fs max_green=%.1fx",
+            "IPPO %s 训练: obs=%d act=%d 路口=%d action_interval=%.1fs "
+            "max_green=%.1fx effective_demand=%s",
             MODEL_VERSION,
             _obs_dim,
             _act_dim,
             len(_intersection_ids),
             _action_interval,
             _max_green_factor,
+            "on" if _effective_demand_enabled else "off",
         )
     elif mode == "collect":
         if _collector_policy_seed is None or _collector_rollout_seed is None:
@@ -836,6 +1005,10 @@ def initialize(payload: dict) -> dict:
     _episode_trajectories = {intersection_id: [] for intersection_id in _intersection_ids}
     _pending_transitions = {}
     _latest_states = {}
+    from algorithms.evaluation import runtime as evaluation_runtime
+
+    evaluation_runtime.start("IPPO", payload)
+    _evaluation_episode_id = str(payload["episode_id"])
     return {"protocol_version": "2.0", "episode_id": payload["episode_id"], "ready": True}
 
 
@@ -1203,6 +1376,7 @@ def step(payload: dict) -> dict:
     global _last_reward_time
     if _state_builder is None:
         raise RuntimeError("IPPO is not initialized.")
+    decision_started = time.perf_counter()
     simulation_time = float(
         payload.get(
             "simulation_time", float(payload.get("step_id", 0)) * _decision_interval
@@ -1251,6 +1425,8 @@ def step(payload: dict) -> dict:
             intersection,
             simulation_time=simulation_time,
             last_service_times=_last_phase_service_times[intersection_id],
+            vehicles=(payload.get("vehicles", {}) if _effective_demand_enabled else {}),
+            demand_horizon_seconds=_action_interval,
         )
         local_mask, max_green_forced = _state_builder.build_action_mask(
             intersection_id,
@@ -1300,12 +1476,20 @@ def step(payload: dict) -> dict:
                 "waiting_end": total_waiting,
             }
 
-    return {
+    response = {
         "protocol_version": "2.0",
         "episode_id": payload["episode_id"],
         "step_id": payload["step_id"],
         "actions": {"signals": signal_actions, "vehicles": {}},
     }
+    from algorithms.evaluation import runtime as evaluation_runtime
+
+    evaluation_runtime.record_latency(
+        (time.perf_counter() - decision_started) * 1000.0,
+        episode_id=str(payload["episode_id"]),
+    )
+    evaluation_runtime.observe_decision(payload)
+    return response
 
 
 def _clear_episode_rollout() -> None:
@@ -1319,6 +1503,11 @@ def _clear_episode_rollout() -> None:
 
 def finish(payload: dict) -> None:
     global _episode, _collected_rollout
+    from algorithms.evaluation import runtime as evaluation_runtime
+
+    evaluation_payload = dict(payload)
+    evaluation_payload.setdefault("episode_id", _evaluation_episode_id)
+    evaluation_runtime.finish(evaluation_payload)
     if _inference_mode not in {"train", "collect"} or _model is None:
         return
 
@@ -1436,6 +1625,15 @@ def finish(payload: dict) -> None:
     _clear_episode_rollout()
 
 
+def evaluation_result() -> Optional[Dict[str, Any]]:
+    """Return the latest six-metric result after ``finish``."""
+
+    from algorithms.evaluation import runtime as evaluation_runtime
+
+    result = evaluation_runtime.last_result()
+    return None if result is None else result.to_dict()
+
+
 def take_collected_rollout() -> dict:
     """Return exactly one completed rollout from a collector worker."""
 
@@ -1531,6 +1729,14 @@ def _ppo_update(episode_count: Optional[int] = None) -> None:
     phase_features = np.stack(
         [row[0]["phase_features"] for row in rows]
     ).astype(np.float32)
+    candidate_counts = np.asarray(
+        [row[0]["valid_action_count"] for row in rows], dtype=np.int64
+    )
+    candidate_mask = (
+        np.arange(phase_features.shape[1])[None, :] < candidate_counts[:, None]
+    )
+    near_demands = phase_features[:, :, PHASE_NEAR_DEMAND_INDEX][candidate_mask]
+    far_demands = phase_features[:, :, PHASE_FAR_DEMAND_INDEX][candidate_mask]
     action_masks = np.stack([row[0]["action_mask"] for row in rows]).astype(np.bool_)
     actions = np.asarray([row[0]["action"] for row in rows], dtype=np.int64)
     raw_rewards = np.asarray([row[0]["raw_reward"] for row in rows], dtype=np.float32)
@@ -1633,7 +1839,8 @@ def _ppo_update(episode_count: Optional[int] = None) -> None:
         "PPO 更新: samples=%d rew_raw=%.3f±%.3f D=%.3f F=%.3f B=%.3f H=%.3f "
         "ret=%.2f±%.2f "
         "val=%.2f±%.2f ev=%.3f actor=%.4f critic=%.4f ent=%.3f "
-        "kl=%.4f clip=%.3f grad_actor=%.3f grad_critic=%.3f",
+        "kl=%.4f clip=%.3f grad_actor=%.3f grad_critic=%.3f "
+        "demand_near=%.4f/%.3f/%.3f demand_far=%.4f/%.3f/%.3f",
         total_samples,
         float(raw_rewards.mean()),
         float(raw_rewards.std()),
@@ -1653,12 +1860,27 @@ def _ppo_update(episode_count: Optional[int] = None) -> None:
         totals["clip"] / divisor,
         totals["actor_grad"] / divisor,
         totals["critic_grad"] / divisor,
+        float(near_demands.mean()),
+        float(np.count_nonzero(near_demands) / len(near_demands)),
+        float(near_demands.max()),
+        float(far_demands.mean()),
+        float(np.count_nonzero(far_demands) / len(far_demands)),
+        float(far_demands.max()),
     )
 
 
 def save_checkpoint(path: str | os.PathLike[str]) -> Path:
     if _model is None:
         raise RuntimeError("Cannot save an uninitialized IPPO model.")
+    if _collector_metadata is None or not _collector_metadata.get("intersections"):
+        raise RuntimeError(
+            "Cannot save a checkpoint without collector metadata; "
+            "initialize() must receive the protocol metadata first."
+        )
+    builder = StateBuilder(_collector_metadata)
+    fingerprints = {
+        iid: builder.get_fingerprint(iid) for iid in builder.intersection_ids
+    }
     destination = Path(path)
     if destination.suffix != ".pt":
         destination = destination.with_suffix(".pt")
@@ -1672,6 +1894,17 @@ def save_checkpoint(path: str | os.PathLike[str]) -> Path:
         "action_interval": _action_interval,
         "max_green_factor": _max_green_factor,
         "phase_feature_schema": PHASE_FEATURE_SCHEMA,
+        "effective_demand_enabled": _effective_demand_enabled,
+        "checkpoint_contract_version": CHECKPOINT_CONTRACT_VERSION,
+        "identity_slots": list(IDENTITY_SLOT_IDS),
+        "observation_schema": dict(OBSERVATION_SCHEMA),
+        "phase_features": int(PHASE_FEATURES),
+        "normalization": dict(NORMALIZATION),
+        "collab_message_schema": COLLAB_MESSAGE_SCHEMA,
+        "per_intersection_fingerprints": {
+            iid: {"sha256": fingerprint_sha256(fp), "fingerprint": fp}
+            for iid, fp in fingerprints.items()
+        },
         "model_state_dict": _model.state_dict(),
         "optimizer_actor_state_dict": (
             _optimizer_actor.state_dict() if _optimizer_actor is not None else None
