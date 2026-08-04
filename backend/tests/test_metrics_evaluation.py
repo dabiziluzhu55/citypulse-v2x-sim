@@ -1,4 +1,4 @@
-"""后端六指标评估口径单元测试。"""
+"""后端六指标评估口径单元测试"""
 
 from __future__ import annotations
 
@@ -370,6 +370,192 @@ def test_session_hub_payload_includes_sources_and_warnings(tmp_path: Path) -> No
     assert "metric_sources" in payload
     assert "warnings" in payload
     assert payload["avg_queue_length"] == pytest.approx(3.0)
+
+
+def test_active_metrics_ignore_finished_hint_until_finalize(tmp_path: Path) -> None:
+    """仿真已终态但collector仍active时，不得把临时指标标成finished"""
+
+    hub = SessionMetricsHub(session_root=tmp_path)
+    hub.start_session("race", "max_pressure")
+    hub.observe(
+        _Snapshot(
+            session_id="race",
+            elapsed_seconds=5.0,
+            metrics=_Metrics(departed_vehicles=1, arrived_vehicles=0),
+            vehicles=(
+                _Vehicle("v1", waiting_time=4.0, distance=40.0, fuel_total_ml=5.0),
+            ),
+            intersections={
+                "ix": _Intersection(lanes={"in": _Lane(halting_count=2)})
+            },
+        )
+    )
+    hub.observe(
+        _Snapshot(
+            session_id="race",
+            elapsed_seconds=10.0,
+            metrics=_Metrics(departed_vehicles=1, arrived_vehicles=1),
+            vehicles=(),
+            intersections={
+                "ix": _Intersection(lanes={"in": _Lane(halting_count=1)})
+            },
+        )
+    )
+    premature = hub.get_metrics_payload(
+        "race", decision_latency_ms=1.0, finished_hint=True
+    )
+    assert premature is not None
+    assert premature["finished"] is False
+    assert premature["metric_sources"]["avg_travel_time_s"] == "snapshot_provisional"
+    assert premature["metric_sources"]["avg_waiting_time_s"] == "snapshot_provisional"
+    assert hub.has_final_metrics("race") is False
+
+    tripinfo_path = tmp_path / "race" / "tripinfo.xml"
+    tripinfo_path.parent.mkdir(parents=True, exist_ok=True)
+    tripinfo = _write_tripinfo(
+        tripinfo_path,
+        "<tripinfo id='v1' depart='0' arrival='10' duration='9' waitingTime='4'/>",
+    )
+    assert tripinfo.is_file()
+    final = hub.finalize(
+        _Snapshot(
+            session_id="race",
+            elapsed_seconds=20.0,
+            metrics=_Metrics(departed_vehicles=1, arrived_vehicles=1),
+            state="COMPLETED",
+            intersections={
+                "ix": _Intersection(lanes={"in": _Lane(halting_count=0)})
+            },
+        ),
+        decision_latency_ms=1.0,
+    )
+    assert final.metric_sources["avg_travel_time_s"] == "tripinfo_completed"
+    assert final.avg_travel_time_s == pytest.approx(9.0)
+    assert final.avg_waiting_time_s == pytest.approx(4.0)
+
+    done = hub.get_metrics_payload("race", finished_hint=True)
+    assert done is not None
+    assert done["finished"] is True
+    assert done["metric_sources"]["avg_travel_time_s"] == "tripinfo_completed"
+    assert done["metric_sources"]["avg_waiting_time_s"] == "tripinfo_completed"
+    assert hub.has_final_metrics("race") is True
+
+
+def test_serialize_terminal_snapshot_waits_for_delayed_tripinfo(
+    tmp_path: Path,
+) -> None:
+    """终态快照先到、TripInfo稍后就绪：最终序列化须回填后再标记finished"""
+
+    import threading
+    import time
+    from unittest.mock import MagicMock
+
+    from backend.app.controllers.runtime import AlgorithmRuntimeStore
+    from backend.app.core.config import Settings
+    from backend.app.services.session_metadata import InMemorySessionMetadataStore
+    from backend.app.services.simulation_service import SimulationService
+    from backend.app.services.snapshot_serializer import SnapshotSerializer
+    from simulation.sumo.session import SessionMetrics, SimulationSnapshot
+
+    session_root = tmp_path / "sessions"
+    session_root.mkdir()
+    session_id = "session-race-1"
+    (session_root / session_id).mkdir()
+
+    class _Mgr:
+        def __init__(self) -> None:
+            self._snap = SimulationSnapshot(
+                session_id=session_id,
+                state="RUNNING",
+                sequence=1,
+                elapsed_seconds=10.0,
+                duration_seconds=20.0,
+                progress=0.5,
+                official_time="00:00:10",
+                playback_speed=1.0,
+                metrics=SessionMetrics(departed_vehicles=1, arrived_vehicles=0),
+            )
+
+        def snapshot(self, _sid: str) -> SimulationSnapshot:
+            return self._snap
+
+        def catalog(self):
+            return MagicMock()
+
+        def set_completed(self) -> SimulationSnapshot:
+            self._snap = SimulationSnapshot(
+                session_id=session_id,
+                state="COMPLETED",
+                sequence=2,
+                elapsed_seconds=20.0,
+                duration_seconds=20.0,
+                progress=1.0,
+                official_time="00:00:20",
+                playback_speed=1.0,
+                metrics=SessionMetrics(departed_vehicles=1, arrived_vehicles=1),
+            )
+            return self._snap
+
+    meta = InMemorySessionMetadataStore()
+    meta.upsert(
+        session_id,
+        control_mode="max_pressure",
+        scenario_preset_id="east_dense",
+        state="RUNNING",
+        metrics_status="collecting",
+    )
+    hub = SessionMetricsHub(session_root=session_root, metadata_store=meta)
+    hub.start_session(session_id, "max_pressure")
+    mgr = _Mgr()
+    hub.observe(mgr.snapshot(session_id))
+
+    # 终态已到但watcher尚未finalize：临时指标不得finished
+    premature = hub.get_metrics_payload(
+        session_id, finished_hint=True, decision_latency_ms=None
+    )
+    assert premature is not None
+    assert premature["finished"] is False
+
+    tripinfo_path = session_root / session_id / "tripinfo.xml"
+
+    def _write_later() -> None:
+        time.sleep(0.35)
+        _write_tripinfo(
+            tripinfo_path,
+            "<tripinfo id='v1' depart='1' arrival='19' duration='11' waitingTime='2.5'/>",
+        )
+
+    writer = threading.Thread(target=_write_later, daemon=True)
+    writer.start()
+
+    settings = Settings(
+        simulation_manager_mode="local",
+        sumo_session_root=str(session_root),
+    )
+    converter = MagicMock()
+    converter.xy_to_lonlat.return_value = (116.0, 39.0)
+    service = SimulationService(
+        manager=mgr,
+        serializer=SnapshotSerializer(converter),
+        settings=settings,
+        algorithm_store=AlgorithmRuntimeStore(),
+        metrics_hub=hub,
+        metadata_store=meta,
+    )
+    completed = mgr.set_completed()
+    payload = service.serialize_terminal_snapshot(completed)
+    writer.join(timeout=2.0)
+
+    evaluation = payload["evaluation"]
+    assert evaluation["finished"] is True
+    assert evaluation["metric_sources"]["avg_travel_time_s"] == "tripinfo_completed"
+    assert evaluation["metric_sources"]["avg_waiting_time_s"] == "tripinfo_completed"
+    assert evaluation["avg_travel_time"] == pytest.approx(11.0)
+    assert evaluation["avg_waiting_time"] == pytest.approx(2.5)
+    # 再次序列化不得再产生第二套未回填终态
+    again = service.serialize_terminal_snapshot(completed)
+    assert again["evaluation"]["finished"] is True
+    assert again["evaluation"]["avg_travel_time"] == pytest.approx(11.0)
 
 
 def test_load_powertrain_from_manifests(tmp_path: Path) -> None:

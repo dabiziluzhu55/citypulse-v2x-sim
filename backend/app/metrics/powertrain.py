@@ -1,4 +1,4 @@
-"""从会话/交通清单解析车辆 type_id -> powertrain"""
+"""从会话/交通清单解析车辆type_id -> powertrain"""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ def load_powertrain_by_type(
     session_dir: Path | None = None,
     traffic_manifest_path: Path | None = None,
 ) -> tuple[dict[str, str], list[str]]:
-    """返回 (type_id -> powertrain, warnings)。
+    """返回 (type_id -> powertrain, warnings)
 
-    优先使用 session_manifest 的 vehicle_type_profiles，再回退到 traffic_manifest。
-    powertrain 取自 traffic_manifest.vehicle_profiles。
+    优先使用session_manifest的vehicle_type_profiles，再回退到traffic_manifest
+    powertrain取自traffic_manifest.vehicle_profiles
     """
 
     warnings: list[str] = []

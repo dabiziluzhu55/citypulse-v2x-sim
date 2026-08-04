@@ -1,10 +1,10 @@
-"""Backend 会话元数据仓库：独立于 simulation Redis key 命名空间。
+"""Backend会话元数据仓库：独立于simulation Redis key命名空间
 
-Key 约定（redis 模式）：
-  {prefix}:backend:sessions                 ZSET score=created_at
-  {prefix}:backend:session:{id}             HASH 元数据
-  {prefix}:backend:session:{id}:metrics     STRING JSON 指标
-  {prefix}:backend:metrics_lock:{id}        指标 watcher 分布式锁
+Key约定（redis模式）：
+  {prefix}:backend:sessions ZSET score=created_at
+  {prefix}:backend:session:{id} HASH元数据
+  {prefix}:backend:session:{id}:metrics STRING JSON指标
+  {prefix}:backend:metrics_lock:{id} 指标watcher分布式锁
 """
 
 from __future__ import annotations
@@ -109,7 +109,7 @@ def create_session_metadata_store(
 
 
 class InMemorySessionMetadataStore:
-    """local 模式与单元测试使用的进程内元数据仓库。"""
+    """local模式与单元测试使用的进程内元数据仓库"""
 
     def __init__(self, *, terminal_ttl_seconds: int = 86400) -> None:
         self.terminal_ttl_seconds = int(terminal_ttl_seconds)
@@ -239,7 +239,7 @@ class InMemorySessionMetadataStore:
 
 
 class RedisSessionMetadataStore:
-    """redis 模式：backend 独立命名空间的会话元数据。"""
+    """redis模式：backend独立命名空间的会话元数据"""
 
     def __init__(
         self,

@@ -1,4 +1,4 @@
-"""仿真播放倍速校验：与 SUMO SimulationManager 允许值保持一致。"""
+"""仿真播放倍速校验：与SUMO SimulationManager允许值保持一致"""
 
 from __future__ import annotations
 

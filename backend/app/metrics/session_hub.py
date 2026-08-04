@@ -1,4 +1,4 @@
-"""会话交通指标：每个仿真 session 一份采集器，终态结果可持久化到元数据仓库。"""
+"""会话交通指标：每个仿真session一份采集器，终态结果可持久化到元数据仓库"""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ TERMINAL_STATES = frozenset({"STOPPED", "COMPLETED", "FAILED"})
 
 
 class SessionMetricsHub:
-    """与 control_mode 无关的公共交通指标存储。"""
+    """与control_mode无关的公共交通指标存储"""
 
     def __init__(
         self,
@@ -148,6 +148,17 @@ class SessionMetricsHub:
             result.algorithm = mode or result.algorithm
             self._store_completed(session_id, result)
 
+    def has_final_metrics(self, session_id: str) -> bool:
+        """指标是否已终态结算（含TripInfo回填尝试）并离开active采集器"""
+
+        with self._lock:
+            if session_id in self._completed:
+                return True
+            if session_id in self._active:
+                return False
+            persisted = self._load_persisted_payload(session_id)
+            return bool(persisted and persisted.get("finished"))
+
     def get_metrics_payload(
         self,
         session_id: str,
@@ -155,6 +166,13 @@ class SessionMetricsHub:
         decision_latency_ms: Optional[float] = None,
         finished_hint: bool | None = None,
     ) -> dict[str, Any] | None:
+        """返回前端指标载荷
+
+        finished仅在指标已finalize（_completed或持久化）时为True。
+        finished_hint保留兼容调用方，但不再把active采集器上的临时指标标成终态。
+        """
+
+        _ = finished_hint
         with self._lock:
             if session_id in self._active:
                 collector = self._active[session_id]
@@ -166,9 +184,9 @@ class SessionMetricsHub:
                 result.algorithm = mode or result.algorithm
                 payload = result.to_frontend_metrics()
                 payload["episode_id"] = session_id
-                payload["finished"] = (
-                    bool(finished_hint) if finished_hint is not None else False
-                )
+                # 采集器仍在active时不得因仿真终态把临时指标标成finished
+                # finished仅在finalize/_completed/持久化路径为true
+                payload["finished"] = False
                 return payload
             if session_id in self._completed:
                 result = self._completed[session_id]
@@ -194,10 +212,9 @@ class SessionMetricsHub:
 
             persisted = self._load_persisted_payload(session_id)
             if persisted is not None:
-                if finished_hint is not None:
-                    persisted["finished"] = bool(finished_hint)
-                else:
-                    persisted.setdefault("finished", True)
+                # 已持久化的终态指标始终finished=true
+                persisted = dict(persisted)
+                persisted["finished"] = True
                 return persisted
             return None
 

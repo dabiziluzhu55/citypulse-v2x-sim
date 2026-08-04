@@ -1,4 +1,4 @@
-"""指标数据模型：交通运行指标与对外序列化格式。"""
+"""指标数据模型：交通运行指标与对外序列化格式"""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class EvalResult:
         }
 
     def to_frontend_metrics(self) -> dict[str, Any]:
-        """映射为 MetricsResponse / evaluation 兼容字段名。"""
+        """映射为MetricsResponse / evaluation兼容字段名"""
         return {
             "algorithm": self.algorithm,
             "avg_waiting_time": _rounded(self.avg_waiting_time_s, 2),

@@ -3,8 +3,8 @@
 通过POST /api/v1/simulations启动SUMO，结束后读取GET .../metrics做对比
 
 前置：
-  1. 已构建 SUMO 产物（build_tls / build_traffic）
-  2. 已设置 SUMO_HOME
+  1. 已构建SUMO产物（build_tls / build_traffic）
+  2. 已设置SUMO_HOME
   3. 后端已启动（workers=1），例如：
        cd <repo-root>
        uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
@@ -16,10 +16,8 @@
     --modes fixed,max_pressure,sotl --seed 42 \
     --output outputs/eval_results.json
 
-说明：
   - 同一时间只能有一个活动仿真会话，模式之间串行执行
-  - realtime=false 以加速批跑；gui 默认关闭
-  - 本脚本不会被 pytest 收集（文件名不以 test_ 开头）
+  - realtime=false以加速批跑；gui默认关闭
 """
 
 from __future__ import annotations
@@ -238,7 +236,7 @@ def fetch_metrics(
     retries: int = 10,
     delay_s: float = 0.5,
 ) -> dict[str, Any]:
-    """终态后指标 watcher 可能尚未 finalize，短暂重试直到 finished=true。"""
+    """终态后指标watcher可能尚未finalize，短暂重试直到finished=true"""
     last: dict[str, Any] = {}
     for _ in range(retries):
         response = client.get(f"/simulations/{session_id}/metrics")
@@ -298,7 +296,7 @@ def run_one(
     metrics: dict[str, Any] = {}
     if state != "FAILED":
         metrics = fetch_metrics(client, session_id)
-        # 兜底：若 metrics.algorithm 为空，用请求的 control_mode
+        # 兜底：若metrics.algorithm为空，用请求的control_mode
         if not metrics.get("algorithm"):
             metrics["algorithm"] = control_mode
     else:
@@ -405,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
     modes = _parse_modes(args.modes)
     base = args.base_url.rstrip("/")
 
-    # 单次仿真可能很长：timeout 覆盖启动 + 轮询
+    # 单次仿真可能很长：timeout覆盖启动 + 轮询
     http_timeout = httpx.Timeout(30.0, read=60.0)
     with httpx.Client(base_url=base, timeout=http_timeout) as client:
         print(f"检查后端健康: {base}/health")

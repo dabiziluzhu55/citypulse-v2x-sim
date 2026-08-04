@@ -1,4 +1,4 @@
-"""将 scenario_preset_id 与 disturbance_targets 解析为仿真启动参数。"""
+"""将scenario_preset_id与disturbance_targets解析为仿真启动参数"""
 
 from __future__ import annotations
 
@@ -349,7 +349,7 @@ def _resolve_optional_scene_lanes(
     *,
     preset_intersection_ids: set[str],
 ) -> list[str]:
-    """空列表表示沿用 simulation 默认端点语义；非空则必须属于当前场景。"""
+    """空列表表示沿用simulation默认端点语义；非空则必须属于当前场景"""
 
     if not requested_lane_ids:
         return []

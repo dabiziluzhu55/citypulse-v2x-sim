@@ -18,7 +18,7 @@ def health(request: Request) -> dict:
     session_root_ready = bool(getattr(request.app.state, "session_root_ready", True))
 
     if mode == "redis":
-        # redis 模式：不把缺失 SUMO_HOME 当成不可用；Redis/artifacts/session_root 才是关键
+        # redis模式：不把缺失SUMO_HOME当成不可用；Redis/artifacts/session_root才是关键
         healthy = artifacts_ready and redis_ready and manager_ready and session_root_ready
     else:
         healthy = artifacts_ready and sumo_home_configured and manager_ready

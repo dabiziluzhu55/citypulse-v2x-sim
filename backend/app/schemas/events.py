@@ -1,4 +1,4 @@
-"""扰动事件请求 Schema。"""
+"""扰动事件请求Schema"""
 
 from __future__ import annotations
 

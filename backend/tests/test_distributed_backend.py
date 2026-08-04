@@ -1,4 +1,4 @@
-"""多仿真并发 / Redis 管理模式单元测试（不启动真实 SUMO）。"""
+"""多仿真并发 / Redis管理模式单元测试（不启动真实SUMO）"""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class _FakeSubscription:
 
 
 class FakeMultiSessionManager:
-    """模拟 RedisSimulationManager：支持多 QUEUED 会话与状态推进。"""
+    """模拟RedisSimulationManager：支持多QUEUED会话与状态推进"""
 
     def __init__(self, catalog) -> None:
         self._catalog = catalog
@@ -139,7 +139,15 @@ class FakeMultiSessionManager:
                 f"Session {session_id} is queued; only stop is available before startup."
             )
 
-    def advance(self, session_id: str, state: str, *, progress: float | None = None) -> None:
+    def advance(
+        self,
+        session_id: str,
+        state: str,
+        *,
+        progress: float | None = None,
+        metrics: SessionMetrics | None = None,
+        elapsed_seconds: float | None = None,
+    ) -> None:
         with self._lock:
             current = self._sessions[session_id]
             updated = replace(
@@ -148,8 +156,16 @@ class FakeMultiSessionManager:
                 sequence=current.sequence + 1,
                 progress=current.progress if progress is None else progress,
                 elapsed_seconds=(
-                    current.duration_seconds if state in {"COMPLETED", "STOPPED", "FAILED"} else current.elapsed_seconds
+                    current.duration_seconds
+                    if state in {"COMPLETED", "STOPPED", "FAILED"}
+                    and elapsed_seconds is None
+                    else (
+                        current.elapsed_seconds
+                        if elapsed_seconds is None
+                        else elapsed_seconds
+                    )
                 ),
+                metrics=current.metrics if metrics is None else metrics,
             )
             self._sessions[session_id] = updated
             for sub in self._subs.get(session_id, []):
@@ -324,7 +340,7 @@ def test_session_recovery_after_restart(
     multi_manager.advance(session_id, "RUNNING", progress=0.3)
     service1._stop_all_watchers()
 
-    # 模拟后端重启：新 service，复用同一 metadata + manager
+    # 模拟后端重启：新service，复用同一metadata + manager
     service2 = SimulationService(
         manager=multi_manager,
         serializer=serializer,
@@ -359,7 +375,7 @@ def test_redis_unavailable_returns_503(demo_catalog) -> None:
         assert health["status"] == "degraded"
         assert health["simulation_manager_mode"] == "redis"
         assert health["redis_ready"] is False
-        assert health["sumo_home_configured"] is False  # 不应单独判定 redis 不可用
+        assert health["sumo_home_configured"] is False  # 不应单独判定redis不可用
 
         response = client.post("/api/v1/simulations", json=_start_body())
         assert response.status_code == 503
@@ -378,7 +394,7 @@ def test_queued_command_restrictions(redis_like_service: SimulationService):
         redis_like_service.resume(session_id)
     with pytest.raises(AppError):
         redis_like_service.set_playback_speed(session_id, 2.0)
-    # stop 允许
+    # stop允许
     snap = redis_like_service.stop(session_id)
     assert snap.state == "STOPPED"
 
@@ -426,6 +442,110 @@ def test_websocket_streams_from_queued_to_terminal(
         assert "COMPLETED" in states
 
 
+def test_websocket_final_snapshot_waits_for_tripinfo_race(
+    multi_manager: FakeMultiSessionManager,
+    serializer: SnapshotSerializer,
+    algorithm_store: AlgorithmRuntimeStore,
+    memory_meta: InMemorySessionMetadataStore,
+    tmp_path,
+):
+    """终态快照先到、TripInfo稍后写出：WS最终帧必须是回填后的finished指标"""
+
+    from backend.app.schemas.simulations import StartSimulationRequest
+
+    session_root = tmp_path / "sessions"
+    session_root.mkdir()
+    settings = Settings(
+        simulation_manager_mode="redis",
+        sumo_session_root=str(session_root),
+    )
+
+    hub = SessionMetricsHub(
+        session_root=session_root,
+        traffic_manifest_path=settings.generated_dir
+        / "manifests"
+        / "traffic_manifest.json",
+        metadata_store=memory_meta,
+    )
+    service = SimulationService(
+        manager=multi_manager,
+        serializer=serializer,
+        settings=settings,
+        algorithm_store=algorithm_store,
+        metrics_hub=hub,
+        metadata_store=memory_meta,
+    )
+
+    app = create_app()
+    with TestClient(app) as client:
+        app.state.artifacts_ready = True
+        app.state.sumo_home_configured = True
+        app.state.simulation_manager_mode = "redis"
+        app.state.redis_ready = True
+        app.state.simulation_manager_ready = True
+        app.state.simulation_service = service
+        app.state.algorithm_store = algorithm_store
+        app.state.missing_files = []
+
+        session_id, _ = service.start(StartSimulationRequest(**_start_body()))
+        session_dir = session_root / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        def advance_and_delay_tripinfo() -> None:
+            time.sleep(0.08)
+            multi_manager.advance(
+                session_id,
+                "RUNNING",
+                progress=0.5,
+                metrics=SessionMetrics(departed_vehicles=1, arrived_vehicles=0),
+                elapsed_seconds=10.0,
+            )
+            time.sleep(0.05)
+            # 终态先到，TripInfo故意晚到，覆盖watcher/WS竞态
+            multi_manager.advance(
+                session_id,
+                "COMPLETED",
+                progress=1.0,
+                metrics=SessionMetrics(departed_vehicles=1, arrived_vehicles=1),
+            )
+
+            def write_tripinfo() -> None:
+                time.sleep(0.4)
+                (session_dir / "tripinfo.xml").write_text(
+                    '<?xml version="1.0"?>\n'
+                    "<tripinfos>\n"
+                    "  <tripinfo id='v1' depart='1' arrival='19' "
+                    "duration='12' waitingTime='3.5'/>\n"
+                    "</tripinfos>\n",
+                    encoding="utf-8",
+                )
+
+            threading.Thread(target=write_tripinfo, daemon=True).start()
+
+        threading.Thread(target=advance_and_delay_tripinfo, daemon=True).start()
+
+        terminal_evaluations: list[dict[str, Any]] = []
+        with client.websocket_connect(f"/api/v1/simulations/{session_id}/stream") as ws:
+            while True:
+                message = ws.receive_json()
+                if message.get("type") != "snapshot":
+                    continue
+                data = message["data"]
+                if data["state"] in {"COMPLETED", "STOPPED", "FAILED"}:
+                    terminal_evaluations.append(data.get("evaluation") or {})
+                    break
+
+        assert len(terminal_evaluations) == 1
+        evaluation = terminal_evaluations[0]
+        assert evaluation.get("finished") is True
+        sources = evaluation.get("metric_sources") or {}
+        assert sources.get("avg_travel_time_s") == "tripinfo_completed"
+        assert sources.get("avg_waiting_time_s") == "tripinfo_completed"
+        assert "snapshot_provisional" not in sources.values()
+        assert evaluation.get("avg_travel_time") == pytest.approx(12.0)
+        assert evaluation.get("avg_waiting_time") == pytest.approx(3.5)
+
+
 def test_redis_shutdown_does_not_stop_sumo_sessions(
     redis_like_service: SimulationService, multi_manager: FakeMultiSessionManager
 ):
@@ -435,7 +555,7 @@ def test_redis_shutdown_does_not_stop_sumo_sessions(
     multi_manager.advance(session_id, "RUNNING")
     redis_like_service.shutdown()
     assert session_id not in multi_manager.stop_calls
-    # 会话仍在 manager 中运行
+    # 会话仍在manager中运行
     assert multi_manager.snapshot(session_id).state == "RUNNING"
 
 

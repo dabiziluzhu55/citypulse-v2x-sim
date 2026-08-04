@@ -1,4 +1,4 @@
-"""仿真生命周期接口与 WebSocket 实时推送：委托统一 SimulationService。"""
+"""仿真生命周期接口与WebSocket实时推送：委托统一SimulationService"""
 
 from __future__ import annotations
 
@@ -184,15 +184,28 @@ async def simulation_stream(websocket: WebSocket, session_id: str) -> None:
 
     logger.info("WebSocket connected for session %s", session_id)
 
-    try:
-        # 支持从 QUEUED 一直推送到终态
-        initial_snapshot = subscription.get(timeout=2.0)
+    async def _send_snapshot(snapshot) -> bool:
+        """推送快照；若为终态则先完成指标回填再推送唯一最终帧，返回是否应结束流"""
+
+        if snapshot.state in TERMINAL_STATES:
+            payload = await asyncio.to_thread(
+                service.serialize_terminal_snapshot, snapshot
+            )
+            await websocket.send_json({"type": "snapshot", "data": payload})
+            return True
         await websocket.send_json(
             {
                 "type": "snapshot",
-                "data": service.serialize_snapshot(initial_snapshot),
+                "data": service.serialize_snapshot(snapshot),
             }
         )
+        return False
+
+    try:
+        # 支持从QUEUED一直推送到终态
+        initial_snapshot = subscription.get(timeout=2.0)
+        if await _send_snapshot(initial_snapshot):
+            return
 
         while True:
             try:
@@ -207,13 +220,7 @@ async def simulation_stream(websocket: WebSocket, session_id: str) -> None:
                 )
                 continue
 
-            await websocket.send_json(
-                {
-                    "type": "snapshot",
-                    "data": service.serialize_snapshot(snapshot),
-                }
-            )
-            if snapshot.state in TERMINAL_STATES:
+            if await _send_snapshot(snapshot):
                 break
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected for session %s", session_id)

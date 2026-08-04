@@ -1,4 +1,4 @@
-"""扰动目标请求 Schema：按路口描述，后端解析为 lane 级事件。"""
+"""扰动目标请求Schema：按路口描述，后端解析为lane级事件"""
 
 from __future__ import annotations
 

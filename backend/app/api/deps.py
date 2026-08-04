@@ -44,7 +44,7 @@ def require_simulation_manager_ready(request: Request) -> None:
 def get_simulation_service(request: Request) -> SimulationService:
     require_artifacts_ready(request)
     mode = getattr(request.app.state, "simulation_manager_mode", "local")
-    # redis 模式由 SUMO worker 运行仿真，API 容器不强制要求本机 SUMO_HOME
+    # redis模式由SUMO worker运行仿真，API容器不强制要求本机SUMO_HOME
     if mode == "local":
         require_sumo_home(request)
     require_simulation_manager_ready(request)

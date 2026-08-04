@@ -1,11 +1,11 @@
-"""公共交通指标采集器：主数据源为 SimulationManager 推送的 SimulationSnapshot。
+"""公共交通指标采集器：主数据源为SimulationManager推送的SimulationSnapshot
 
-六指标口径与 algorithms/evaluation 对齐：
-- 行程/等待：终态由 TripInfo 回填；进行中可为快照临时值并标记来源
-- 排队：仅 role==incoming 进口车道，先车道均值再时间均值（veh/lane）
+六指标口径与algorithms/evaluation对齐：
+- 行程/等待：终态由TripInfo回填；进行中可为快照临时值并标记来源
+- 排队：仅role==incoming进口车道，先车道均值再时间均值（veh/lane）
 - 通行能力：arrived / evaluation_duration_seconds * 3600
-- 决策延迟：由外部 AlgorithmRuntimeStore 注入；无样本为 None
-- 燃油强度：仅 gasoline/diesel/hybrid，同批车辆分子分母一致
+- 决策延迟：由外部AlgorithmRuntimeStore注入；无样本为None
+- 燃油强度：仅gasoline/diesel/hybrid，同批车辆分子分母一致
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ FUEL_POWERTRAINS = frozenset({"gasoline", "diesel", "hybrid"})
 
 
 class TrafficMetricsCollector:
-    """按 session 生命周期采集交通运行指标。"""
+    """按session生命周期采集交通运行指标"""
 
     def __init__(self, algorithm: str = "") -> None:
         self._algorithm = algorithm
@@ -76,7 +76,7 @@ class TrafficMetricsCollector:
             self._warn(message)
 
     def observe_snapshot(self, snapshot: SimulationSnapshot) -> None:
-        """从统一 Snapshot 取数据。"""
+        """从统一Snapshot取数据"""
         if self._finished:
             return
         sim_time = float(snapshot.elapsed_seconds)
@@ -116,7 +116,7 @@ class TrafficMetricsCollector:
         decision_latency_ms: Optional[float] = None,
         tripinfo_path: str | Path | None = None,
     ) -> EvalResult:
-        """会话结束时结算最终交通指标，并可选 TripInfo 回填。"""
+        """会话结束时结算最终交通指标，并可选TripInfo回填"""
         self.observe_snapshot(snapshot)
         self._finished = True
         self._final_sim_time = float(snapshot.elapsed_seconds)
@@ -293,7 +293,7 @@ class TrafficMetricsCollector:
                     "平均行程时间/等待时间为快照临时值，终态将等待 TripInfo 回填。"
                 )
         else:
-            # 终态默认不发布快照近似值；由 TripInfo 回填覆盖。
+            # 终态默认不发布快照近似值；由TripInfo回填覆盖
             r.avg_travel_time_s = None
             r.avg_waiting_time_s = None
             if not self._tripinfo_applied:
@@ -308,7 +308,7 @@ class TrafficMetricsCollector:
                 "fuel_intensity_L_per_100km"
             ] = "fuel_powertrain_vehicle_totals"
 
-        # _fuel_metric 可能追加 warning
+        # _fuel_metric可能追加warning
         for message in self._warnings:
             if message not in warnings:
                 warnings.append(message)

@@ -1,4 +1,4 @@
-"""TripInfo 解析与已完成车辆行程/等待指标回填。"""
+"""TripInfo解析与已完成车辆行程/等待指标回填"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ TRIPINFO_READY_DELAY_S = 0.25
 def parse_completed_tripinfo(
     tripinfo_path: str | Path,
 ) -> tuple[list[ET.Element], Optional[str]]:
-    """返回已完成且未 vaporize 的 tripinfo 节点；失败时返回 ([], warning)。"""
+    """返回已完成且未vaporize的tripinfo节点；失败时返回 ([], warning)"""
 
     path = Path(tripinfo_path)
     try:
@@ -42,7 +42,7 @@ def wait_for_readable_tripinfo(
     retries: int = TRIPINFO_READY_RETRIES,
     delay_s: float = TRIPINFO_READY_DELAY_S,
 ) -> tuple[Optional[Path], Optional[str]]:
-    """终态后等待 TripInfo 写完并可解析，避免读到未关闭文件。"""
+    """终态后等待TripInfo写完并可解析，避免读到未关闭文件"""
 
     path = Path(tripinfo_path)
     last_error: Optional[str] = None
@@ -70,10 +70,10 @@ def apply_tripinfo_completed_metrics(
     retries: int = TRIPINFO_READY_RETRIES,
     delay_s: float = TRIPINFO_READY_DELAY_S,
 ) -> EvalResult:
-    """用 TripInfo 覆盖平均行程时间与平均等待时间。
+    """用TripInfo覆盖平均行程时间与平均等待时间
 
-    文件缺失、解析失败或已完成车辆数与 arrived 不一致时，对应指标置为 None
-    并记录 warning，不抛出异常。
+    文件缺失、解析失败或已完成车辆数与arrived不一致时，对应指标置为None
+    并记录warning，不抛出异常
     """
 
     arrived_expected = (
@@ -118,7 +118,7 @@ def apply_tripinfo_completed_metrics(
         result.avg_waiting_time_s = None
         result.metric_sources.pop("avg_travel_time_s", None)
         result.metric_sources.pop("avg_waiting_time_s", None)
-        _append_warning(result, "TripInfo 中没有已完成且未 vaporize 的车辆。")
+        _append_warning(result, "TripInfo中没有已完成且未vaporize的车辆")
         return result
 
     result.avg_travel_time_s = sum(

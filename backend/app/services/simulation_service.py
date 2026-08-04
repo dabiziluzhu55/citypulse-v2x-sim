@@ -1,4 +1,4 @@
-"""仿真应用服务：多会话并发、元数据持久化、指标 watcher 与生命周期管理。"""
+"""仿真应用服务：多会话并发、元数据持久化、指标watcher与生命周期管理"""
 
 from __future__ import annotations
 
@@ -202,6 +202,19 @@ class SimulationService:
             payload["evaluation"] = evaluation
         return payload
 
+    def serialize_terminal_snapshot(
+        self, snapshot: SimulationSnapshot
+    ) -> dict[str, Any]:
+        """终态快照：先完成TripInfo回填与指标持久化，再序列化唯一最终帧
+
+        WebSocket应调用本方法发送终态，避免把运行中临时指标伪装成finished结果
+        """
+
+        if snapshot.state not in TERMINAL_STATES:
+            return self.serialize_snapshot(snapshot)
+        self._finalize_session(snapshot)
+        return self.serialize_snapshot(snapshot)
+
     def stop(self, session_id: str) -> SimulationSnapshot:
         logger.info("停止仿真: %s", session_id)
         self._manager.stop(session_id)
@@ -254,7 +267,7 @@ class SimulationService:
         self._manager.cancel_event(session_id, event_id)
 
     def subscribe(self, session_id: str):
-        # 未知会话由 manager 抛 UnknownSessionError
+        # 未知会话由manager抛UnknownSessionError
         return self._manager.subscribe(session_id)
 
     def get_metrics(self, session_id: str) -> dict[str, Any]:
@@ -278,6 +291,7 @@ class SimulationService:
 
         meta = self._metadata.get(session_id)
         mode = meta.control_mode if meta is not None else "fixed"
+        # 无已结算指标时即使仿真已终态也不宣称finished，避免前端过早断开
         return {
             "episode_id": session_id,
             "algorithm": mode,
@@ -292,11 +306,11 @@ class SimulationService:
             "completion_rate": None,
             "metric_sources": {},
             "warnings": [],
-            "finished": bool(finished_hint),
+            "finished": False,
         }
 
     def recover_sessions(self) -> int:
-        """后端重启后，为未完成会话重新建立指标 watcher。"""
+        """后端重启后，为未完成会话重新建立指标watcher"""
 
         recovered = 0
         for meta in self._metadata.list_non_terminal():
@@ -336,10 +350,10 @@ class SimulationService:
         return recovered
 
     def shutdown(self) -> None:
-        """进程关闭钩子。
+        """进程关闭钩子
 
-        local：停止本机活动会话。
-        redis：只停止本地 watcher，不停止 SUMO worker 中的会话。
+        local：停止本机活动会话
+        redis：只停止本地watcher，不停止SUMO worker中的会话
         """
 
         mode = self._settings.normalized_manager_mode()
@@ -382,7 +396,7 @@ class SimulationService:
         self.shutdown()
 
     def get_active_session_id(self) -> str | None:
-        """兼容旧接口：返回任意一个非终态会话（不保证唯一）。"""
+        """兼容旧接口：返回任意一个非终态会话（不保证唯一）"""
 
         active = self._metadata.list_non_terminal()
         return active[0].session_id if active else None
@@ -446,7 +460,7 @@ class SimulationService:
                 except Empty:
                     continue
                 self._sync_metadata_from_snapshot(snapshot)
-                # QUEUED/STARTING 也可能推送；采集器可安全忽略空车辆帧
+                # QUEUED/STARTING也可能推送；采集器可安全忽略空车辆帧
                 if snapshot.state not in {QUEUED_STATE}:
                     self._metrics_hub.observe(snapshot)
                 if snapshot.state in TERMINAL_STATES:

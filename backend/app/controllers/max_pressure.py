@@ -1,7 +1,7 @@
 """
 Movement-based Max Pressure信号控制
 
-对每个 connection (movement) 估计排队 x(l,m)，计算
+对每个connection (movement) 估计排队x(l,m)，计算
     w(l,m) = x(l,m) - downstream_queue(m)
     phase_pressure = Σ service_weight(l,m) × w(l,m)
 

@@ -1,4 +1,4 @@
-"""仿真请求与响应 Schema：control_mode 从管控模式注册表校验。"""
+"""仿真请求与响应Schema：control_mode从管控模式注册表校验"""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ class StopSimulationResponse(BaseModel):
 
 
 class SimulationPlaybackResponse(BaseModel):
-    """暂停/恢复等播放控制操作的统一响应。"""
+    """暂停/恢复等播放控制操作的统一响应"""
 
     session_id: str
     state: str
@@ -105,7 +105,7 @@ class SimulationStatusResponse(BaseModel):
 
 
 class MetricsResponse(BaseModel):
-    """统一评估指标响应；算法字段仅标识 control_mode，不拆多套接口。"""
+    """统一评估指标响应；算法字段仅标识control_mode，不拆多套接口"""
 
     episode_id: str
     algorithm: str

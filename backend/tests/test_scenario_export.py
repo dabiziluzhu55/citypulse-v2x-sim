@@ -120,14 +120,17 @@ def test_export_scenario_returns_zip_bundle(
         assert "events.json" in names
         assert "export_manifest.json" in names
         assert "TotalMap_20.signals.net.xml" in names
-        assert "od/od_matrix_morning_peak.csv" in names
-        assert "od/taz_9_zones.json" in names
-        assert "od/od_heatmap_morning_peak.png" in names
+        # 东部密集区不导出全局九区域OD/TAZ
+        assert "od/od_matrix_morning_peak.csv" not in names
+        assert "od/taz_9_zones.json" not in names
+        assert "od/od_heatmap_morning_peak.png" not in names
         sumocfg = archive.read("session.sumocfg").decode("utf-8")
         assert 'net-file value="TotalMap_20.signals.net.xml"' in sumocfg
         events = json.loads(archive.read("events.json"))
         assert events["events"][0]["event_type"] == "lane_closure"
-        assert str(tmp_path) not in archive.read("od/taz_9_zones.json").decode("utf-8")
+        manifest = json.loads(archive.read("export_manifest.json"))
+        assert manifest["od_included"] is False
+        assert "od_matrix_csv" not in manifest["files"]
 
 
 def test_export_endpoint_returns_zip(

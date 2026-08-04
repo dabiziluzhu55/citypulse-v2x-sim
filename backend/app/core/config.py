@@ -38,10 +38,10 @@ class Settings(BaseSettings):
     sumo_session_root: str = "outputs/sessions"
     sumo_scenario_export_dir: str = "outputs/scenario_exports"
 
-    # local=进程内 SimulationManager；redis=RedisSimulationManager 多会话并发
+    # local=进程内SimulationManager；redis=RedisSimulationManager多会话并发
     simulation_manager_mode: str = "local"
 
-    # 与 SUMO worker 共享的 Redis 会话状态（仅 redis 模式）
+    # 与SUMO worker共享的Redis会话状态（仅redis模式）
     citypulse_redis_state_url: str = "redis://127.0.0.1:6380/1"
     citypulse_redis_key_prefix: str = "citypulse"
     citypulse_session_ttl_seconds: int = 86400
@@ -54,10 +54,10 @@ class Settings(BaseSettings):
 
     mvp_intersection_ids: tuple[str, ...] = ("demo_2",)
 
-    # 启用模式白名单（逗号分隔）；必须是 registry 子集。空字符串表示启用注册表全部模式。
+    # 启用模式白名单（逗号分隔）；必须是registry子集空字符串表示启用注册表全部模式
     enabled_control_modes_csv: str = ""
 
-    # SUMO worker 回调 backend 内部算法协议的可达基址（多机部署时必须改成外部可达 URL）
+    # SUMO worker回调backend内部算法协议的可达基址（多机部署时必须改成外部可达URL）
     algorithm_base_url: str = "http://127.0.0.1:8000"
     algorithm_timeout: float = 2.0
     decision_interval: float = 5.0
@@ -91,7 +91,7 @@ class Settings(BaseSettings):
 
     @property
     def backend_redis_key_prefix(self) -> str:
-        """Backend 元数据独立命名空间，避免与 simulation Redis key 冲突。"""
+        """Backend元数据独立命名空间，避免与simulation Redis key冲突"""
         return f"{self.citypulse_redis_key_prefix.rstrip(':')}:backend"
 
     @property
