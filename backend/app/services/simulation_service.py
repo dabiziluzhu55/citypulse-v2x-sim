@@ -8,8 +8,6 @@ import threading
 from datetime import datetime, timezone
 from queue import Empty
 from typing import Any, Iterable
-from urllib.parse import urljoin
-
 from simulation.sumo import (
     AccidentEvent,
     LaneClosureEvent,
@@ -50,7 +48,6 @@ logger = logging.getLogger(__name__)
 TERMINAL_STATES = frozenset({"STOPPED", "COMPLETED", "FAILED"})
 QUEUED_STATE = "QUEUED"
 ACTIVE_COMMAND_STATES = frozenset({"STARTING", "RUNNING", "PAUSED", "STOPPING"})
-INTERNAL_ALGORITHM_PATH_PREFIX = "api/v1/internal/algorithm"
 METRICS_LOCK_TTL_SECONDS = 30
 
 
@@ -151,6 +148,17 @@ class SimulationService:
                 message=(
                     f"Unsupported control_mode={resolved.control_mode!r}. "
                     f"Allowed: {list(enabled)}"
+                ),
+                status_code=422,
+            )
+        mode_spec = require_control_mode(resolved.control_mode)
+        if not mode_spec.allows_preset(resolved.scenario_preset_id):
+            allowed = list(mode_spec.supported_presets or ())
+            raise AppError(
+                code="INVALID_CONTROL_MODE_PRESET",
+                message=(
+                    f"control_mode={resolved.control_mode!r} only supports "
+                    f"scenario presets {allowed}; got {resolved.scenario_preset_id!r}."
                 ),
                 status_code=422,
             )
@@ -291,7 +299,7 @@ class SimulationService:
 
         meta = self._metadata.get(session_id)
         mode = meta.control_mode if meta is not None else "fixed"
-        # 无已结算指标时即使仿真已终态也不宣称finished，避免前端过早断开
+        # 无已结算指标时即使仿真已终态也不finished，避免前端过早断开
         return {
             "episode_id": session_id,
             "algorithm": mode,
@@ -547,13 +555,21 @@ class SimulationService:
 
     def _build_config(self, request: ResolvedStartSimulation) -> SimulationConfig:
         spec = require_control_mode(request.control_mode)
+        algorithm_transport = ""
+        algorithm_module = ""
         algorithm_endpoint = ""
         if spec.needs_algorithm:
-            assert spec.algorithm_name is not None
-            algorithm_endpoint = urljoin(
-                self._settings.algorithm_base_url.rstrip("/") + "/",
-                f"{INTERNAL_ALGORITHM_PATH_PREFIX}/{spec.algorithm_name}",
-            )
+            algorithm_transport = spec.algorithm_transport or "local"
+            algorithm_module = spec.algorithm_module
+            if not algorithm_module:
+                raise AppError(
+                    code="INVALID_CONTROL_MODE",
+                    message=(
+                        f"control_mode={spec.name!r} is missing algorithm_module "
+                        "in traffic_control.registry."
+                    ),
+                    status_code=422,
+                )
 
         return SimulationConfig(
             intersection_ids=request.intersection_ids,
@@ -563,6 +579,8 @@ class SimulationService:
             duration_seconds=request.duration_seconds,
             flow_multiplier=1.0,
             control_mode=spec.kernel_mode,
+            algorithm_transport=algorithm_transport or "http",
+            algorithm_module=algorithm_module,
             algorithm_endpoint=algorithm_endpoint,
             algorithm_timeout=self._settings.algorithm_timeout,
             decision_interval=self._settings.decision_interval,

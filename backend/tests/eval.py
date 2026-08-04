@@ -34,7 +34,7 @@ from typing import Any
 import httpx
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000/api/v1"
-DEFAULT_MODES = ("fixed", "max_pressure", "sotl")
+DEFAULT_MODES = ("fixed", "max_pressure", "sotl", "ippo")
 TERMINAL_STATES = frozenset({"COMPLETED", "STOPPED", "FAILED"})
 
 METRIC_COLUMNS = (
@@ -62,7 +62,7 @@ class RunResult:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="评估 backend 中 fixed / max_pressure / sotl 的交通指标",
+        description="评估 backend 中 fixed / max_pressure / sotl / ippo 的交通指标",
     )
     parser.add_argument(
         "--base-url",
@@ -139,9 +139,12 @@ def _parse_modes(raw: str) -> list[str]:
     modes = [item.strip() for item in raw.split(",") if item.strip()]
     if not modes:
         raise SystemExit("--modes 不能为空")
-    unknown = [m for m in modes if m not in {"fixed", "max_pressure", "sotl"}]
+    allowed = {"fixed", "max_pressure", "sotl", "ippo"}
+    unknown = [m for m in modes if m not in allowed]
     if unknown:
-        raise SystemExit(f"不支持的 control_mode: {unknown}；允许 fixed/max_pressure/sotl")
+        raise SystemExit(
+            f"不支持的 control_mode: {unknown}；允许 fixed/max_pressure/sotl/ippo"
+        )
     return modes
 
 

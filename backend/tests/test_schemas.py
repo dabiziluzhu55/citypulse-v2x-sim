@@ -62,6 +62,16 @@ def test_start_simulation_accepts_sotl() -> None:
     assert request.control_mode == "sotl"
 
 
+def test_start_simulation_accepts_ippo() -> None:
+    request = StartSimulationRequest(
+        scenario_preset_id="xiongan_20",
+        period="morning_peak",
+        duration_seconds=600,
+        control_mode="ippo",
+    )
+    assert request.control_mode == "ippo"
+
+
 def test_reject_invalid_playback_speed() -> None:
     with pytest.raises(ValidationError):
         StartSimulationRequest(
@@ -82,7 +92,7 @@ def test_reject_unknown_scenario_preset() -> None:
         )
 
 
-@pytest.mark.parametrize("control_mode", ["algorithm", "ippo", "unknown"])
+@pytest.mark.parametrize("control_mode", ["algorithm", "unknown"])
 def test_reject_unsupported_control_mode(control_mode: str) -> None:
     with pytest.raises(ValidationError):
         StartSimulationRequest(
