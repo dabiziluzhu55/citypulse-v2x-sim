@@ -217,6 +217,20 @@ class EdgeAggregator:
                 queue_estimate=float(stopped),
                 arrivals_since_last_snapshot=arrivals,
             )
+        # RSM-only 车道（无网联 BSM）：仍进入快照，供排队估计/车道建议使用
+        for lane_id, speeds in self._rsm_speeds.get(intersection_id, {}).items():
+            if lane_id in lane_states:
+                continue
+            observed = len(speeds)
+            stopped = sum(1 for s in speeds if s <= _STOP_SPEED_MPS)
+            lane_states[lane_id] = LaneState(
+                lane_id=lane_id,
+                connected_count=0,
+                observed_count=observed,
+                stopped_count=stopped,
+                queue_estimate=float(stopped),
+                arrivals_since_last_snapshot=0,
+            )
         approach_ids: dict[str, list[str]] = {}
         for lane_id in lane_states:
             approach_ids.setdefault(

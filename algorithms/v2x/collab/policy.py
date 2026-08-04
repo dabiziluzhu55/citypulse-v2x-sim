@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Mapping
+
+from config.scenario_presets import ResolvedScenarioScope
 
 from .proposals import (
     CollabConfig,
@@ -31,6 +34,25 @@ _TRANSITION_STAGES = frozenset({"YELLOW", "CLEARANCE"})
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+# ---- RSI 车辆引导（spec §3）----
+
+GUIDANCE_FUNNEL_STAGES = (
+    "connected_seen", "fresh_bsm", "next_signal_known", "next_signal_managed",
+    "distance_known", "in_horizon_candidates", "raw_proposals",
+    "threshold_passed", "dedup_passed", "cooldown_passed", "published",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class GuidanceOutcome:
+    """单辆车引导决策结果：proposal 为 None 表示候选筛选未通过。"""
+    proposal: VehicleGuidanceProposal | None
+    funnel_stage: str          # 最高到达的漏斗阶段（§5.1）
+    filter_reason: str | None  # 未 published 时的统计原因（§3.6）
+
+
 
 
 class CloudRulePolicy:
@@ -294,3 +316,347 @@ class CloudRulePolicy:
             source_message_ids=source_message_ids,
             source_frame_ids=source_frame_ids,
         )
+
+
+    # ---------- 引导：候选筛选 ----------
+    def _candidate_stage(
+        self, vehicle: ConnectedVehicleState, now: float,
+        freshness: FreshnessConfig, scope: ResolvedScenarioScope,
+        horizon_m: float,
+    ) -> tuple[str, str | None]:
+        """返回 (最高到达漏斗阶段, 过滤原因)。"""
+        if now - vehicle.bsm_delivered_at > freshness.bsm_s:
+            return "connected_seen", "stale_bsm"
+        if vehicle.next_signal_intersection_id is None:
+            return "fresh_bsm", "next_signal_unknown"
+        if vehicle.next_signal_intersection_id not in scope.managed_ids:
+            return "next_signal_known", "next_signal_not_managed"
+        if vehicle.distance_to_signal_m is None:
+            return "next_signal_managed", "distance_unknown"
+        if vehicle.distance_to_signal_m > horizon_m:
+            return "distance_known", "not_in_guidance_horizon"
+        return "in_horizon_candidates", None
+
+    def _resolve_movement(
+        self, vehicle: ConnectedVehicleState, snapshot: EdgeSnapshot,
+        now: float, freshness: FreshnessConfig,
+        static_context: IntersectionStaticContext,
+    ) -> str | None:
+        if (vehicle.intent_delivered_at is not None
+                and now - vehicle.intent_delivered_at <= freshness.intent_s
+                and vehicle.turn_intent):
+            return vehicle.turn_intent
+        lane_movements = static_context.lane_to_movements.get(
+            vehicle.lane_id or "", ())
+        if len(lane_movements) == 1:
+            return lane_movements[0]
+        return None
+
+    # ---------- 引导：速度分量（§3.2，两阶段：raw 生成） ----------
+    def _speed_decision(
+        self, vehicle: ConnectedVehicleState, snapshot: EdgeSnapshot,
+        static_context: IntersectionStaticContext, now: float,
+        policy: GuidancePolicyConfig, freshness: FreshnessConfig,
+    ) -> tuple[GuidanceDecisionStatus, float | None, str]:
+        movement = self._resolve_movement(
+            vehicle, snapshot, now, freshness, static_context)
+        if movement is None:
+            return GuidanceDecisionStatus.MISSING_INPUT, None, "movement_unknown"
+        spat_delivered_at = snapshot.last_delivery_at.get("SPaT")
+        if snapshot.phase is None or spat_delivered_at is None:
+            return GuidanceDecisionStatus.MISSING_INPUT, None, "missing_spat"
+        if now - spat_delivered_at > freshness.spat_s:
+            return GuidanceDecisionStatus.STALE_INPUT, None, "spat_stale"
+        stage = snapshot.stage or ""
+        if stage != "GREEN":
+            # v1 不预测下一服务相位：非绿灯阶段不生成减速赶绿建议
+            return GuidanceDecisionStatus.NO_ACTION_NEEDED, None, "stage_not_green"
+        action = static_context.phase_to_action.get(snapshot.phase)
+        served = set(static_context.action_to_movements.get(action, ())) \
+            if action is not None else set()
+        if movement not in served:
+            return (GuidanceDecisionStatus.MISSING_INPUT, None,
+                    "next_served_green_unknown")
+        if vehicle.speed_mps < policy.min_guidance_speed_mps:
+            return GuidanceDecisionStatus.NO_ACTION_NEEDED, None, "vehicle_too_slow"
+        remaining = snapshot.remaining_time_s
+        if remaining is None:
+            return (GuidanceDecisionStatus.NO_ACTION_NEEDED, None,
+                    "insufficient_green_remaining")
+        available = remaining - policy.green_clearance_buffer_s
+        if available <= 0.0:
+            return (GuidanceDecisionStatus.NO_ACTION_NEEDED, None,
+                    "insufficient_green_remaining")
+        distance = vehicle.distance_to_signal_m or 0.0
+        eta_now = distance / max(vehicle.speed_mps, 1e-6)
+        if eta_now <= available:
+            return GuidanceDecisionStatus.NO_ACTION_NEEDED, None, "can_pass_within_green"
+        raw_target = distance / available
+        lane_speed_limit = static_context.lane_speed_limit_mps.get(
+            vehicle.lane_id or "")
+        v_eff_max = policy.v_max_mps
+        if lane_speed_limit is not None:
+            v_eff_max = min(v_eff_max, lane_speed_limit)
+        lower = max(policy.v_min_mps,
+                    policy.speed_scale_low * vehicle.speed_mps)
+        upper = min(v_eff_max, policy.speed_scale_high * vehicle.speed_mps)
+        if lower > upper:
+            return (GuidanceDecisionStatus.INVALID_PROPOSAL, None,
+                    "empty_speed_interval")
+        if raw_target > upper:
+            return (GuidanceDecisionStatus.NO_ACTION_NEEDED, None,
+                    "cannot_catch_green_within_limits")
+        target = max(raw_target, lower)
+        return GuidanceDecisionStatus.PROPOSED, target, "speed_catchup"
+
+    # ---------- 引导：车道分量（§3.3，严格校验 + advisory） ----------
+    def _lane_has_fresh_support(
+        self, snapshot: EdgeSnapshot, lane_id: str, now: float,
+        freshness: FreshnessConfig,
+    ) -> bool:
+        for vehicle in snapshot.connected_vehicles.values():
+            if vehicle.lane_id == lane_id and \
+                    now - vehicle.bsm_delivered_at <= freshness.bsm_s:
+                return True
+        rsm_delivered_at = snapshot.last_delivery_at.get("RSM")
+        if rsm_delivered_at is None or now - rsm_delivered_at > freshness.rsm_s:
+            return False
+        for approach in snapshot.approaches.values():
+            lane = approach.lane_states.get(lane_id)
+            if lane is not None and lane.observed_count > 0:
+                return True
+        return False
+
+    def _queue_estimate(self, snapshot: EdgeSnapshot, lane_id: str) -> float:
+        for approach in snapshot.approaches.values():
+            lane = approach.lane_states.get(lane_id)
+            if lane is not None:
+                return lane.queue_estimate
+        return 0.0
+
+    def _lane_decision(
+        self, vehicle: ConnectedVehicleState, snapshot: EdgeSnapshot,
+        static_context: IntersectionStaticContext, now: float,
+        policy: GuidancePolicyConfig, freshness: FreshnessConfig,
+    ) -> tuple[GuidanceDecisionStatus, str | None, int | None, str]:
+        movement = self._resolve_movement(
+            vehicle, snapshot, now, freshness, static_context)
+        if movement is None:
+            return (GuidanceDecisionStatus.MISSING_INPUT, None, None,
+                    "movement_unknown")
+        current_lane = vehicle.lane_id
+        if current_lane is None or current_lane not in static_context.lane_to_approach:
+            return (GuidanceDecisionStatus.MISSING_INPUT, None, None,
+                    "lane_unknown")
+        if (vehicle.distance_to_signal_m is None
+                or vehicle.distance_to_signal_m < policy.lane_change_min_distance_m):
+            return (GuidanceDecisionStatus.NO_ACTION_NEEDED, None, None,
+                    "lane_change_too_close")
+        current_edge = static_context.lane_to_edge.get(current_lane)
+        current_index = static_context.lane_to_index.get(current_lane)
+        if current_edge is None or current_index is None:
+            return (GuidanceDecisionStatus.MISSING_INPUT, None, None,
+                    "lane_adjacency_unknown")
+        if not self._lane_has_fresh_support(snapshot, current_lane, now, freshness):
+            return (GuidanceDecisionStatus.MISSING_INPUT, None, None,
+                    "lane_queue_missing")
+        best: tuple[float, str, int] | None = None
+        for lane_id, index in static_context.lane_to_index.items():
+            if lane_id == current_lane:
+                continue
+            if static_context.lane_to_edge.get(lane_id) != current_edge:
+                continue
+            if abs(index - current_index) != 1:
+                continue
+            if movement not in static_context.lane_to_movements.get(lane_id, ()):
+                continue
+            if not self._lane_has_fresh_support(snapshot, lane_id, now, freshness):
+                return (GuidanceDecisionStatus.STALE_INPUT, None, None,
+                        "lane_queue_stale")
+            benefit = (self._queue_estimate(snapshot, current_lane)
+                       - self._queue_estimate(snapshot, lane_id))
+            if benefit >= policy.lane_queue_margin:
+                if best is None or benefit > best[0]:
+                    best = (benefit, lane_id, index)
+        if best is None:
+            return (GuidanceDecisionStatus.NO_ACTION_NEEDED, None, None,
+                    "no_better_adjacent_lane")
+        return GuidanceDecisionStatus.PROPOSED, best[1], best[2], "lane_queue_benefit"
+
+    # ---------- 引导：状态汇总与发射判定（§3.4/§3.5） ----------
+    @staticmethod
+    def _merge_guidance_status(
+        speed_status: GuidanceDecisionStatus,
+        lane_status: GuidanceDecisionStatus,
+    ) -> GuidanceDecisionStatus:
+        if (speed_status is GuidanceDecisionStatus.PROPOSED
+                or lane_status is GuidanceDecisionStatus.PROPOSED):
+            return GuidanceDecisionStatus.PROPOSED
+        priority = (
+            GuidanceDecisionStatus.STALE_INPUT,
+            GuidanceDecisionStatus.MISSING_INPUT,
+            GuidanceDecisionStatus.INVALID_PROPOSAL,
+            GuidanceDecisionStatus.SUPPRESSED_COOLDOWN,
+            GuidanceDecisionStatus.SUPPRESSED_DUPLICATE,
+            GuidanceDecisionStatus.SUPPRESSED_THRESHOLD,
+            GuidanceDecisionStatus.NO_ACTION_NEEDED,
+        )
+        for status in priority:
+            if speed_status is status or lane_status is status:
+                return status
+        return GuidanceDecisionStatus.NO_ACTION_NEEDED
+
+    @staticmethod
+    def _filter_reason(
+        speed_status: GuidanceDecisionStatus, speed_reason: str,
+        lane_status: GuidanceDecisionStatus, lane_reason: str,
+    ) -> str:
+        reasons = {
+            GuidanceDecisionStatus.STALE_INPUT: ("stale_input", speed_reason),
+            GuidanceDecisionStatus.MISSING_INPUT: ("missing_input", speed_reason),
+            GuidanceDecisionStatus.INVALID_PROPOSAL: ("invalid_proposal", speed_reason),
+            GuidanceDecisionStatus.SUPPRESSED_THRESHOLD: ("speed_below_trigger", speed_reason),
+            GuidanceDecisionStatus.SUPPRESSED_DUPLICATE: ("duplicate_guidance", speed_reason),
+            GuidanceDecisionStatus.SUPPRESSED_COOLDOWN: ("cooldown_active", speed_reason),
+        }
+        for status, (default, detail) in reasons.items():
+            if speed_status is status or lane_status is status:
+                return default
+        return "no_action_needed"
+
+    def _build_guidance_proposal(
+        self, *, vehicle: ConnectedVehicleState, snapshot: EdgeSnapshot,
+        now: float, frame_id: str, policy: GuidancePolicyConfig,
+        overall: GuidanceDecisionStatus,
+        speed_status: GuidanceDecisionStatus, target_speed_mps: float | None,
+        lane_status: GuidanceDecisionStatus, target_lane_id: str | None,
+        target_lane_index: int | None, reason: str,
+    ) -> VehicleGuidanceProposal:
+        if overall is GuidanceDecisionStatus.PROPOSED:
+            has_speed = target_speed_mps is not None
+            has_lane = target_lane_id is not None
+            guidance_type = ("combined" if has_speed and has_lane
+                             else "speed" if has_speed else "lane")
+        else:
+            guidance_type = None
+        source_message_ids = tuple(dict.fromkeys(
+            tuple(vehicle.source_message_ids) + tuple(snapshot.source_message_ids)))
+        return VehicleGuidanceProposal(
+            vehicle_id=vehicle.vehicle_id,
+            status=overall,
+            speed_status=speed_status,
+            lane_status=lane_status,
+            current_speed_mps=vehicle.speed_mps,
+            target_speed_mps=target_speed_mps,
+            current_lane_id=vehicle.lane_id,
+            target_lane_id=target_lane_id,
+            target_lane_index=target_lane_index,
+            guidance_type=guidance_type,
+            reason=reason,
+            confidence=None,
+            valid_from=now,
+            valid_until=now + policy.guidance_ttl_s,
+            source_message_ids=source_message_ids,
+            source_frame_ids=snapshot.source_frame_ids,
+        )
+
+    def _should_resend(
+        self, last: LastEmittedGuidanceState, target_speed_mps: float | None,
+        target_lane_id: str | None, reason: str, now: float,
+        policy: GuidancePolicyConfig,
+    ) -> bool:
+        if last.target_lane_id != target_lane_id:
+            return True
+        if (target_speed_mps is None) != (last.target_speed_mps is None):
+            return True
+        if target_speed_mps is not None and last.target_speed_mps is not None:
+            if abs(target_speed_mps - last.target_speed_mps) >= policy.speed_resend_delta_mps:
+                return True
+        if reason != last.reason:
+            return True
+        if now >= last.valid_until:
+            return True
+        return False
+
+    def propose_guidance(
+        self, *, vehicle: ConnectedVehicleState, snapshot: EdgeSnapshot,
+        static_context: IntersectionStaticContext, now: float, frame_id: str,
+        config: CollabConfig, scope: ResolvedScenarioScope,
+        last_emitted: LastEmittedGuidanceState | None,
+    ) -> GuidanceOutcome:
+        policy = config.guidance_policy
+        if config.guidance_mode is GuidanceEmissionMode.DISABLED:
+            return GuidanceOutcome(None, "connected_seen", "guidance_disabled")
+        stage, filter_reason = self._candidate_stage(
+            vehicle, now, config.freshness, scope, policy.guidance_horizon_m)
+        if stage != "in_horizon_candidates":
+            return GuidanceOutcome(None, stage, filter_reason)
+        speed_status, target_speed_mps, speed_reason = self._speed_decision(
+            vehicle, snapshot, static_context, now, policy, config.freshness)
+        lane_status, target_lane_id, target_lane_index, lane_reason = \
+            self._lane_decision(vehicle, snapshot, static_context, now,
+                                policy, config.freshness)
+        # 阈值（仅 THRESHOLD；速度分量需要 delta ≥ trigger，车道分量天然过阈值）
+        if (config.guidance_mode is GuidanceEmissionMode.THRESHOLD
+                and speed_status is GuidanceDecisionStatus.PROPOSED
+                and abs((target_speed_mps or 0.0) - vehicle.speed_mps)
+                < policy.speed_trigger_delta_mps):
+            speed_status = GuidanceDecisionStatus.SUPPRESSED_THRESHOLD
+            speed_reason = "speed_below_trigger"
+        overall = self._merge_guidance_status(speed_status, lane_status)
+        if overall is not GuidanceDecisionStatus.PROPOSED:
+            reason = self._filter_reason(speed_status, speed_reason,
+                                         lane_status, lane_reason)
+            proposal = self._build_guidance_proposal(
+                vehicle=vehicle, snapshot=snapshot, now=now, frame_id=frame_id,
+                policy=policy, overall=overall,
+                speed_status=speed_status, target_speed_mps=target_speed_mps,
+                lane_status=lane_status, target_lane_id=target_lane_id,
+                target_lane_index=target_lane_index, reason=reason)
+            return GuidanceOutcome(proposal, "raw_proposals", reason)
+        funnel_stage = "raw_proposals"
+        reason = self._pick_guidance_reason(speed_reason, lane_reason)
+        if config.guidance_mode is GuidanceEmissionMode.THRESHOLD:
+            funnel_stage = "threshold_passed"
+            if last_emitted is not None and not self._should_resend(
+                    last_emitted, target_speed_mps, target_lane_id, reason,
+                    now, policy):
+                overall = GuidanceDecisionStatus.SUPPRESSED_DUPLICATE
+                return GuidanceOutcome(
+                    self._build_guidance_proposal(
+                        vehicle=vehicle, snapshot=snapshot, now=now,
+                        frame_id=frame_id, policy=policy, overall=overall,
+                        speed_status=speed_status, target_speed_mps=target_speed_mps,
+                        lane_status=lane_status, target_lane_id=target_lane_id,
+                        target_lane_index=target_lane_index,
+                        reason="duplicate_guidance"),
+                    "threshold_passed", "duplicate_guidance")
+            funnel_stage = "dedup_passed"
+            if last_emitted is not None and \
+                    now < last_emitted.emitted_at + policy.minimum_resend_interval_s:
+                overall = GuidanceDecisionStatus.SUPPRESSED_COOLDOWN
+                return GuidanceOutcome(
+                    self._build_guidance_proposal(
+                        vehicle=vehicle, snapshot=snapshot, now=now,
+                        frame_id=frame_id, policy=policy, overall=overall,
+                        speed_status=speed_status, target_speed_mps=target_speed_mps,
+                        lane_status=lane_status, target_lane_id=target_lane_id,
+                        target_lane_index=target_lane_index,
+                        reason="cooldown_active"),
+                    "dedup_passed", "cooldown_active")
+            funnel_stage = "cooldown_passed"
+        proposal = self._build_guidance_proposal(
+            vehicle=vehicle, snapshot=snapshot, now=now, frame_id=frame_id,
+            policy=policy, overall=GuidanceDecisionStatus.PROPOSED,
+            speed_status=speed_status, target_speed_mps=target_speed_mps,
+            lane_status=lane_status, target_lane_id=target_lane_id,
+            target_lane_index=target_lane_index, reason=reason)
+        return GuidanceOutcome(proposal, "published", None)
+
+    @staticmethod
+    def _pick_guidance_reason(speed_reason: str, lane_reason: str) -> str:
+        if speed_reason == "speed_catchup":
+            return speed_reason
+        if lane_reason == "lane_queue_benefit":
+            return lane_reason
+        return speed_reason if speed_reason != "no_action_needed" else lane_reason
