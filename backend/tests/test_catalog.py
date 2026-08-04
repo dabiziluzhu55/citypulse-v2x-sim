@@ -15,14 +15,10 @@ def test_catalog_returns_scenario_presets(client: TestClient) -> None:
 
     presets = payload["scenario_presets"]
     assert [item["preset_id"] for item in presets] == [
-        "demo_2_single",
         "east_dense",
         "west_dense",
         "xiongan_20",
     ]
-    demo_2_single = next(item for item in presets if item["preset_id"] == "demo_2_single")
-    assert demo_2_single["intersection_ids"] == ["demo_2"]
-    assert demo_2_single["map_template"] == "xiongan20"
     east_dense = next(item for item in presets if item["preset_id"] == "east_dense")
     assert east_dense["intersection_ids"] == ["demo_3", "demo_5", "demo_6", "demo_9"]
     assert east_dense["map_template"] == "east_dense"

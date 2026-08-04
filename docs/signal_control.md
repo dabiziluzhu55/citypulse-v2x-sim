@@ -187,6 +187,7 @@ TLS linkIndex，拓扑中的 `auxiliary_east` 使其三条目的车道连接全�
 | `traffic/global/PERIOD/signals.add.xml` | 全部路口在该时段的官方 program |
 | `traffic/global/PERIOD/simulation.sumocfg` | 可直接运行的全局场景 |
 | `reports/traffic_quality_PERIOD.json/csv` | PCU、GEH、车型和跨路口路线质量报告 |
+| `reports/traffic_od_PERIOD.json/csv` | 行表示起点、列表示终点的九区域 OD PCU 矩阵 |
 
 生成目录根层只保留上述分类目录。旧的转向验证车流、验证用 `sumocfg` 和 debug POI
 工具已经删除；路线正确性由配置校验、连接报告、单元测试和真实场景 GUI 检查共同保证。

@@ -1,4 +1,4 @@
-"""仿真请求与响应 Schema：control_mode 从管控模式注册表校验。"""
+"""仿真请求与响应Schema：control_mode从管控模式注册表校验"""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ class StopSimulationResponse(BaseModel):
 
 
 class SimulationPlaybackResponse(BaseModel):
-    """暂停/恢复等播放控制操作的统一响应。"""
+    """暂停/恢复等播放控制操作的统一响应"""
 
     session_id: str
     state: str
@@ -105,16 +105,37 @@ class SimulationStatusResponse(BaseModel):
 
 
 class MetricsResponse(BaseModel):
-    """统一评估指标响应；算法字段仅标识 control_mode，不拆多套接口。"""
+    """统一评估指标响应；算法字段仅标识control_mode，不拆多套接口"""
 
     episode_id: str
     algorithm: str
-    avg_waiting_time: float = 0.0
-    avg_travel_time: float = 0.0
-    avg_queue_length: float = 0.0
-    throughput: float = 0.0
-    fuel_consumption: float = 0.0
-    avg_decision_latency_ms: float = 0.0
+    avg_waiting_time: float | None = None
+    avg_travel_time: float | None = None
+    avg_queue_length: float | None = None
+    throughput: float | None = None
+    fuel_consumption: float | None = None
+    avg_decision_latency_ms: float | None = None
     departed: int = 0
     arrived: int = 0
+    completion_rate: float | None = None
+    metric_sources: dict[str, str] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
     finished: bool = False
+
+
+class SimulationSessionSummary(BaseModel):
+    session_id: str
+    state: str
+    control_mode: str
+    scenario_preset_id: str
+    progress: float = 0.0
+    created_at: str
+    updated_at: str
+    metrics_status: str | None = None
+
+
+class SimulationSessionListResponse(BaseModel):
+    items: list[SimulationSessionSummary]
+    total: int
+    offset: int = 0
+    limit: int = 50

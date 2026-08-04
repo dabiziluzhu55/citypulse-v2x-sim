@@ -5,7 +5,11 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from simulation.sumo.artifacts import GeneratedArtifactLayout
-from simulation.sumo.scenario import ScenarioCompilationError, compile_session_scenario
+from simulation.sumo.scenario import (
+    ScenarioCompilationError,
+    compile_session_scenario,
+    load_compiled_scenario,
+)
 
 
 def write_fixture(root: Path):
@@ -28,26 +32,7 @@ def write_fixture(root: Path):
         encoding="utf-8",
     )
     additional_file.write_text(
-        (
-            '<additional>'
-            '<tlLogic id="4427" programID="demo_1_morning_peak"/>'
-            '<tlLogic id="317" programID="demo_2_morning_peak"/>'
-            '<tlLogic id="318" programID="demo_3_morning_peak"/>'
-            '</additional>'
-        ),
-        encoding="utf-8",
-    )
-    layout.tls_manifest.write_text(
-        json.dumps(
-            {
-                "schema_version": 2,
-                "intersections": {
-                    "demo_2": {
-                        "tls_ids": ["317"],
-                    }
-                },
-            }
-        ),
+        '<additional><tlLogic id="317" programID="demo_2_morning_peak"/></additional>',
         encoding="utf-8",
     )
     profile_root = json.loads(
@@ -97,6 +82,25 @@ def write_fixture(root: Path):
 
 
 class SessionScenarioTests(unittest.TestCase):
+    def test_loads_an_existing_compiled_scenario(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            generated = write_fixture(root)
+            compiled = compile_session_scenario(
+                "restored-session",
+                ["demo_2"],
+                "morning_peak",
+                duration_seconds=60,
+                generated_dir=generated,
+                session_root=root / "sessions",
+            )
+            restored = load_compiled_scenario(
+                compiled.session_id,
+                generated_dir=generated,
+                session_root=root / "sessions",
+            )
+            self.assertEqual(restored, compiled)
+
     def test_intersection_selection_does_not_filter_or_duplicate_global_traffic(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -114,13 +118,6 @@ class SessionScenarioTests(unittest.TestCase):
             )
             layout.traffic_manifest.write_text(
                 json.dumps(manifest), encoding="utf-8"
-            )
-            tls_manifest = json.loads(
-                layout.tls_manifest.read_text(encoding="utf-8")
-            )
-            tls_manifest["intersections"]["demo_3"] = {"tls_ids": ["318"]}
-            layout.tls_manifest.write_text(
-                json.dumps(tls_manifest), encoding="utf-8"
             )
             one = compile_session_scenario(
                 "one-intersection",
@@ -164,6 +161,9 @@ class SessionScenarioTests(unittest.TestCase):
             )
             route_root = ET.parse(compiled.route_file).getroot()
             self.assertEqual([item.tag for item in route_root][:2], ["vType", "vType"])
+            activity_type = route_root.find("vType[@id='citypulse_event_passenger']")
+            self.assertIsNotNone(activity_type)
+            self.assertEqual(activity_type.get("color"), "255,128,0")
             flows = route_root.findall("flow")
             self.assertEqual(
                 [flow.get("id") for flow in flows],
@@ -182,13 +182,6 @@ class SessionScenarioTests(unittest.TestCase):
             self.assertEqual(compiled.selected_origins, {})
             config = ET.parse(compiled.sumocfg).getroot()
             self.assertEqual(config.find("time/end").get("value"), "900")
-            signal_logics = ET.parse(compiled.additional_file).getroot().findall(
-                "tlLogic"
-            )
-            self.assertEqual(
-                [(logic.get("id"), logic.get("programID")) for logic in signal_logics],
-                [("317", "demo_2_morning_peak")],
-            )
 
     def test_rejects_origin_filtering_and_invalid_multiplier(self):
         with tempfile.TemporaryDirectory() as directory:

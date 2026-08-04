@@ -22,6 +22,8 @@ from .events import (
     EventValidationError,
     LaneClosureEvent,
     LaneTarget,
+    MajorEventClosingEvent,
+    MajorEventOpeningEvent,
     SpeedLimitEvent,
 )
 from .external_policy import HttpAlgorithmClient
@@ -136,7 +138,13 @@ class IntersectionCapability:
 @dataclass(frozen=True)
 class SimulationCatalog:
     intersections: Mapping[str, IntersectionCapability]
-    event_types: tuple[str, ...] = ("lane_closure", "speed_limit", "accident")
+    event_types: tuple[str, ...] = (
+        "lane_closure",
+        "speed_limit",
+        "accident",
+        "major_event_opening",
+        "major_event_closing",
+    )
     flow_multiplier_min: float = 0.1
     flow_multiplier_max: float = 5.0
     playback_speeds: tuple[float, ...] = PLAYBACK_SPEEDS
@@ -149,6 +157,14 @@ class LaneRuntimeSnapshot:
     mean_speed: float
     waiting_time: float
     occupancy: float
+    edge_id: str = ""
+    lane_index: int = 0
+    role: str = ""
+    approach_id: str | None = None
+    downstream_lane_ids: tuple[str, ...] = ()
+    lane_has_green: bool | None = None
+    signal_state: str | None = None
+    current_allowed_speed_mps: float | None = None
 
 
 @dataclass(frozen=True)
@@ -539,8 +555,13 @@ class SimulationManager:
             if not event.event_id or event.event_id in event_ids:
                 raise EventValidationError("Initial event IDs must be non-empty and unique.")
             event_ids.add(event.event_id)
-            if set((event.lane_id,) if isinstance(event, AccidentEvent) else event.lane_ids) - lane_ids:
+            event_lanes = _config_event_lanes(event)
+            if event_lanes - lane_ids:
                 raise EventValidationError(f"Initial event {event.event_id} targets unknown lanes.")
+            if isinstance(event, (MajorEventOpeningEvent, MajorEventClosingEvent)) and event.vehicle_count <= 0:
+                raise EventValidationError(
+                    f"Initial event {event.event_id} vehicle_count must be positive."
+                )
             if duration is not None and event.end_seconds > duration + 1e-9:
                 raise EventValidationError(f"Initial event {event.event_id} exceeds duration.")
 
@@ -618,6 +639,7 @@ class SimulationManager:
         from .config import load_signal_configuration
         from .build_tls import DEFAULT_MAPPING, DEFAULT_PLANS, DEFAULT_TOPOLOGY
         from .vehicle import (
+            StoppedLaneChangeGuard,
             VehicleActionController,
             VehicleTelemetryTracker,
             build_vehicle_type_metadata,
@@ -656,6 +678,18 @@ class SimulationManager:
             selected_manifest = _select_program_manifests(
                 selected_manifest, programs
             )
+            traffic_manifest = _read_json(
+                GeneratedArtifactLayout(self.generated_dir).traffic_manifest
+            )
+            endpoint_policy = traffic_manifest.get("route_endpoint_policy", {})
+            if not isinstance(endpoint_policy, Mapping):
+                endpoint_policy = {}
+            upstream_extensions = endpoint_policy.get("upstream_extensions", {})
+            if not isinstance(upstream_extensions, Mapping):
+                upstream_extensions = {}
+            downstream_extensions = endpoint_policy.get("downstream_extensions", {})
+            if not isinstance(downstream_extensions, Mapping):
+                downstream_extensions = {}
             command = [
                 sumolib.checkBinary("sumo-gui" if config.gui else "sumo"),
                 "--configuration-file",
@@ -682,9 +716,14 @@ class SimulationManager:
             vehicle_tracker = VehicleTelemetryTracker(
                 traci, vehicle_types, tls_to_intersection
             )
+            lane_change_guard = StoppedLaneChangeGuard(traci, vehicle_tracker)
             lane_targets = _lane_targets(traci, selected_manifest)
             scheduler = DisturbanceScheduler(
-                traci, lane_targets, scenario.duration_seconds
+                traci,
+                lane_targets,
+                scenario.duration_seconds,
+                upstream_extensions=upstream_extensions,
+                downstream_extensions=downstream_extensions,
             )
             for event in config.initial_events:
                 scheduler.schedule(event)
@@ -777,6 +816,7 @@ class SimulationManager:
                 elapsed = float(traci.simulation.getTime())
                 scheduler.tick(elapsed)
                 vehicle_tracker.tick(elapsed)
+                lane_change_guard.tick()
                 if fixed_tracker is not None:
                     fixed_tracker.tick(traci, elapsed)
                 departed = int(traci.simulation.getDepartedNumber())
@@ -1020,6 +1060,16 @@ class SimulationManager:
             first = False
             try:
                 if command.name == "stop":
+                    if record.snapshot.state != "STOPPING":
+                        sequence += 1
+                        self._publish(
+                            record,
+                            replace(
+                                record.snapshot,
+                                state="STOPPING",
+                                sequence=sequence,
+                            ),
+                        )
                     stop = True
                 elif command.name == "pause":
                     if not record.paused:
@@ -1101,20 +1151,50 @@ class SimulationManager:
 
 
 def _lane_targets(traci, selected_manifest) -> Mapping[str, LaneTarget]:
-    result = {}
+    result: dict[str, LaneTarget] = {}
+    roles: dict[str, set[str]] = {}
     for item in selected_manifest.values():
+        successors = {}
         for connection in item["connections"]:
-            for edge_key, lane_key in (("from_edge", "from_lane"), ("to_edge", "to_lane")):
+            from_lane = f"{connection['from_edge']}_{connection['from_lane']}"
+            successors.setdefault(from_lane, set()).add(str(connection["to_edge"]))
+        for connection in item["connections"]:
+            for role, edge_key, lane_key in (
+                ("incoming", "from_edge", "from_lane"),
+                ("outgoing", "to_edge", "to_lane"),
+            ):
                 edge_id = str(connection[edge_key])
                 lane_index = int(connection[lane_key])
                 lane_id = f"{edge_id}_{lane_index}"
+                roles.setdefault(lane_id, set()).add(role)
                 result[lane_id] = LaneTarget(
                     lane_id=lane_id,
                     edge_id=edge_id,
                     lane_index=lane_index,
                     length=float(traci.lane.getLength(lane_id)),
+                    successor_edge_ids=tuple(sorted(successors.get(lane_id, ()))),
                 )
+    for lane_id, target in tuple(result.items()):
+        lane_roles = roles[lane_id]
+        role = next(iter(lane_roles)) if len(lane_roles) == 1 else "both"
+        result[lane_id] = LaneTarget(
+            lane_id=target.lane_id,
+            edge_id=target.edge_id,
+            lane_index=target.lane_index,
+            length=target.length,
+            role=role,
+        )
     return result
+
+
+def _config_event_lanes(event: DisturbanceEvent) -> set[str]:
+    if isinstance(event, AccidentEvent):
+        return {event.lane_id}
+    if isinstance(event, MajorEventOpeningEvent):
+        return {event.venue_lane_id, *event.source_lane_ids}
+    if isinstance(event, MajorEventClosingEvent):
+        return {event.venue_lane_id, *event.destination_lane_ids}
+    return set(event.lane_ids)
 
 
 def _format_clock(seconds: float) -> str:
@@ -1169,6 +1249,14 @@ def _capture_snapshot(
     intersections = {}
     unique_lanes = set()
     for intersection_id, item in selected_manifest.items():
+        connections_by_lane: dict[str, list[dict]] = {}
+        outgoing_lanes = set()
+        for connection in item["connections"]:
+            from_lane = f"{connection['from_edge']}_{connection['from_lane']}"
+            to_lane = f"{connection['to_edge']}_{connection['to_lane']}"
+            connections_by_lane.setdefault(from_lane, []).append(connection)
+            outgoing_lanes.add(to_lane)
+        tls_states = {}
         lane_ids = sorted(
             {
                 f"{connection[key]}_{connection[index_key]}"
@@ -1180,12 +1268,44 @@ def _capture_snapshot(
         lanes = {}
         for lane_id in lane_ids:
             count = int(traci.lane.getLastStepVehicleNumber(lane_id))
+            lane_connections = connections_by_lane.get(lane_id, [])
+            signal_states = []
+            for connection in lane_connections:
+                tls_id = str(connection["tls_id"])
+                tls_state = tls_states.setdefault(
+                    tls_id,
+                    str(traci.trafficlight.getRedYellowGreenState(tls_id)),
+                )
+                link_index = int(connection["link_index"])
+                if 0 <= link_index < len(tls_state):
+                    signal_states.append(tls_state[link_index])
+            edge_id, _, lane_index = lane_id.rpartition("_")
             lanes[lane_id] = LaneRuntimeSnapshot(
                 vehicle_count=count,
                 halting_count=int(traci.lane.getLastStepHaltingNumber(lane_id)),
                 mean_speed=float(traci.lane.getLastStepMeanSpeed(lane_id)) if count else 0.0,
                 waiting_time=float(traci.lane.getWaitingTime(lane_id)),
                 occupancy=float(traci.lane.getLastStepOccupancy(lane_id)),
+                edge_id=edge_id,
+                lane_index=int(lane_index),
+                role="incoming" if lane_connections else "outgoing" if lane_id in outgoing_lanes else "",
+                approach_id=(str(lane_connections[0]["approach"]) if lane_connections else None),
+                downstream_lane_ids=tuple(
+                    sorted(
+                        f"{connection['to_edge']}_{connection['to_lane']}"
+                        for connection in lane_connections
+                    )
+                ),
+                lane_has_green=(
+                    any(state in {"G", "g"} for state in signal_states)
+                    if signal_states else None
+                ),
+                signal_state=(
+                    signal_states[0]
+                    if len(set(signal_states)) == 1 and signal_states else
+                    "mixed" if signal_states else None
+                ),
+                current_allowed_speed_mps=float(traci.lane.getMaxSpeed(lane_id)),
             )
         if controllers:
             controller = controllers[intersection_id]

@@ -1,1 +1,1 @@
-"""CityPulse V2X FastAPI 后端。"""
+"""CityPulse V2X FastAPI后端"""

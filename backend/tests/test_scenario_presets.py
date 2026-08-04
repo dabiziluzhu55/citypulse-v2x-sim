@@ -55,15 +55,13 @@ def east_dense_catalog() -> SimulationCatalog:
     )
 
 
-def test_list_scenario_presets_contains_single_and_network_presets() -> None:
+def test_list_scenario_presets_contains_three_presets() -> None:
     presets = list_scenario_presets()
     assert [preset.preset_id for preset in presets] == [
-        "demo_2_single",
         "east_dense",
         "west_dense",
         "xiongan_20",
     ]
-    assert SCENARIO_PRESET_REGISTRY["demo_2_single"].intersection_ids == ("demo_2",)
     assert len(SCENARIO_PRESET_REGISTRY["xiongan_20"].intersection_ids) == 20
 
 
@@ -105,23 +103,6 @@ def test_resolve_east_dense_disturbance_targets(east_dense_catalog: SimulationCa
     assert len(resolved.initial_events) == 2
     assert resolved.initial_events[0].lane_ids == ["-30_0"]
     assert resolved.initial_events[1].lane_id == "-90_0"
-
-
-def test_resolve_demo_2_single_with_partial_catalog() -> None:
-    catalog = SimulationCatalog(
-        intersections={"demo_2": _intersection("demo_2", "-20_0")}
-    )
-    request = StartSimulationRequest(
-        scenario_preset_id="demo_2_single",
-        period="morning_peak",
-        duration_seconds=120,
-        control_mode="fixed",
-    )
-
-    resolved = resolve_start_simulation(request, catalog)
-
-    assert resolved.scenario_preset_id == "demo_2_single"
-    assert resolved.intersection_ids == ("demo_2",)
 
 
 def test_reject_disturbance_outside_preset(east_dense_catalog: SimulationCatalog) -> None:

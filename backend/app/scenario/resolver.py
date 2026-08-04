@@ -12,12 +12,16 @@ from ..schemas.disturbance_targets import (
     DisturbanceTarget,
     DisturbanceTargetAccident,
     DisturbanceTargetLaneClosure,
+    DisturbanceTargetMajorEventClosing,
+    DisturbanceTargetMajorEventOpening,
     DisturbanceTargetSpeedLimit,
 )
 from ..schemas.events import (
     AccidentRequest,
     EventRequest,
     LaneClosureRequest,
+    MajorEventClosingRequest,
+    MajorEventOpeningRequest,
     SpeedLimitRequest,
 )
 from ..schemas.simulations import StartSimulationRequest
@@ -112,7 +116,14 @@ def resolve_disturbance_targets(
                 status_code=422,
             )
         seen_event_ids.add(event_id)
-        events.append(_resolve_disturbance_target(target, event_id, catalog))
+        events.append(
+            _resolve_disturbance_target(
+                target,
+                event_id,
+                catalog,
+                preset_intersection_ids=preset_intersections,
+            )
+        )
 
     return events
 
@@ -196,6 +207,8 @@ def _resolve_disturbance_target(
     target: DisturbanceTarget,
     event_id: str,
     catalog: SimulationCatalog,
+    *,
+    preset_intersection_ids: set[str],
 ) -> EventRequest:
     if isinstance(target, DisturbanceTargetLaneClosure):
         lane_ids = _resolve_lane_ids(
@@ -237,6 +250,48 @@ def _resolve_disturbance_target(
             end_seconds=target.end_seconds,
             lane_id=lane_id,
             position_ratio=target.position_ratio,
+        )
+    if isinstance(target, DisturbanceTargetMajorEventOpening):
+        venue_lane_id = _resolve_single_lane_id(
+            target.intersection_id,
+            target.venue_lane_id,
+            catalog,
+        )
+        source_lane_ids = _resolve_optional_scene_lanes(
+            target.source_lane_ids,
+            catalog,
+            preset_intersection_ids=preset_intersection_ids,
+        )
+        return MajorEventOpeningRequest(
+            event_type="major_event_opening",
+            event_id=event_id,
+            start_seconds=target.start_seconds,
+            end_seconds=target.end_seconds,
+            venue_lane_id=venue_lane_id,
+            vehicle_count=target.vehicle_count,
+            source_lane_ids=source_lane_ids,
+            vehicle_type_id=target.vehicle_type_id,
+        )
+    if isinstance(target, DisturbanceTargetMajorEventClosing):
+        venue_lane_id = _resolve_single_lane_id(
+            target.intersection_id,
+            target.venue_lane_id,
+            catalog,
+        )
+        destination_lane_ids = _resolve_optional_scene_lanes(
+            target.destination_lane_ids,
+            catalog,
+            preset_intersection_ids=preset_intersection_ids,
+        )
+        return MajorEventClosingRequest(
+            event_type="major_event_closing",
+            event_id=event_id,
+            start_seconds=target.start_seconds,
+            end_seconds=target.end_seconds,
+            venue_lane_id=venue_lane_id,
+            vehicle_count=target.vehicle_count,
+            destination_lane_ids=destination_lane_ids,
+            vehicle_type_id=target.vehicle_type_id,
         )
     raise AppError(
         code="INVALID_EVENT",
@@ -286,6 +341,32 @@ def _resolve_single_lane_id(
             )
         return requested_lane_id
     return _default_incoming_lane_id(intersection_id, catalog)
+
+
+def _resolve_optional_scene_lanes(
+    requested_lane_ids: list[str] | None,
+    catalog: SimulationCatalog,
+    *,
+    preset_intersection_ids: set[str],
+) -> list[str]:
+    """空列表表示沿用simulation默认端点语义；非空则必须属于当前场景"""
+
+    if not requested_lane_ids:
+        return []
+    scene_lanes = {
+        lane.lane_id
+        for intersection_id in preset_intersection_ids
+        if intersection_id in catalog.intersections
+        for lane in catalog.intersections[intersection_id].lanes
+    }
+    unknown = set(requested_lane_ids) - scene_lanes
+    if unknown:
+        raise AppError(
+            code="INVALID_LANE",
+            message=f"Lane IDs outside current scenario: {sorted(unknown)}",
+            status_code=422,
+        )
+    return list(requested_lane_ids)
 
 
 def _intersection_lane_ids(intersection_id: str, catalog: SimulationCatalog) -> set[str]:

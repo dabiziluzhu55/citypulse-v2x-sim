@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.controllers.runtime import AlgorithmRuntimeStore
+from backend.app.core.config import get_settings
 from backend.app.main import create_app
 from backend.app.services.map_service import MapService
 from backend.app.services.scenario_export_service import ScenarioExportService
@@ -21,6 +22,13 @@ from simulation.sumo.session import (
     OriginCapability,
     SimulationCatalog,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_settings_cache() -> None:
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @dataclass(frozen=True)
@@ -95,9 +103,19 @@ def simulation_service(
     algorithm_store: AlgorithmRuntimeStore,
 ) -> SimulationService:
     from backend.app.core.config import get_settings
+    from backend.app.services.session_metadata import InMemorySessionMetadataStore
 
     settings = get_settings()
-    return SimulationService(mock_manager, serializer, settings, algorithm_store)
+    meta = InMemorySessionMetadataStore(
+        terminal_ttl_seconds=settings.citypulse_session_ttl_seconds
+    )
+    return SimulationService(
+        mock_manager,
+        serializer,
+        settings,
+        algorithm_store,
+        metadata_store=meta,
+    )
 
 
 @pytest.fixture
@@ -134,6 +152,13 @@ def client(
         app.state.scenario_export_service = scenario_export_service
         app.state.algorithm_store = algorithm_store
         app.state.map_service = map_service
+        app.state.simulation_manager_mode = "local"
+        app.state.simulation_manager_ready = True
+        app.state.redis_ready = True
+        app.state.session_root_ready = True
+        app.state.algorithm_state_shared = False
+        app.state.recommended_uvicorn_workers = 1
+        app.state.detected_uvicorn_workers = None
         yield test_client
 
 
@@ -144,4 +169,8 @@ def degraded_client() -> TestClient:
         app.state.artifacts_ready = False
         app.state.sumo_home_configured = True
         app.state.missing_files = ["data/maps/sumo/generated/traffic_manifest.json"]
+        app.state.simulation_manager_mode = "local"
+        app.state.simulation_manager_ready = True
+        app.state.redis_ready = True
+        app.state.session_root_ready = True
         yield test_client

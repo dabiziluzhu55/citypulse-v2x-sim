@@ -4,7 +4,7 @@ Multi-intersection coordination via attention-based collaborator selection.
 
 Protocol 2.0: initialize(payload) / step(payload) / finish(payload).
 """
-import os, json, sys, numpy as np, torch, torch.nn as nn
+import os, json, sys, time, numpy as np, torch, torch.nn as nn
 from collections import defaultdict
 from typing import Dict, List, Any
 import math, glob
@@ -72,6 +72,7 @@ _phase_counts: Dict[str, int] = {}
 _buffer: dict = None
 _batch_buffer: dict = {}
 _episode: int = 0
+_evaluation_episode_id: str = ""
 
 
 # ============================================================
@@ -270,6 +271,7 @@ def initialize(payload: dict) -> dict:
     global _tls_order, _num_agents, _phase_counts, _model, _optimizer, _buffer, _episode
     global _prev_pressure, _prev_actions, _lane_capacity, _neighbors, _incoming, _outgoing
     global _phase_durations
+    global _evaluation_episode_id
 
     intersections_meta = payload.get("intersections", {})
     _tls_order = sorted(intersections_meta.keys())
@@ -302,6 +304,10 @@ def initialize(payload: dict) -> dict:
 
     _buffer = defaultdict(list)
     _episode += 1
+    from algorithms.evaluation import runtime as evaluation_runtime
+
+    evaluation_runtime.start("CoSLight", payload)
+    _evaluation_episode_id = str(payload.get("episode_id", ""))
     print(f"[CoSLight] 初始化：{_num_agents} 个路口，ep={_episode}"
           + (" [评估模式]" if EVAL_MODE else ""))
     return {"protocol_version": "2.0", "episode_id": payload.get("episode_id", ""), "ready": True}
@@ -412,6 +418,7 @@ _sample_logged = 0
 def step(payload: dict) -> dict:
     """每个决策周期调用。返回 {signals: {tls_id: {target_phase}}, vehicles: {veh_id: ...}}。"""
     global _step_count, _sample_logged
+    decision_started = time.perf_counter()
     obs_np = build_state(payload.get("intersections", {}))
     obs_t = torch.FloatTensor(obs_np).unsqueeze(0)
 
@@ -451,17 +458,30 @@ def step(payload: dict) -> dict:
             print(f"[CoSLight] 车辆消息: {vid} speed={va['target_speed_mps']}{lane_s}")
         _sample_logged += 1
 
-    return {
+    response = {
         "protocol_version": "2.0",
         "episode_id": payload.get("episode_id", ""),
         "step_id": payload.get("step_id", 0),
         "actions": {"signals": signals, "vehicles": veh_actions},
     }
+    from algorithms.evaluation import runtime as evaluation_runtime
+
+    evaluation_runtime.record_latency(
+        (time.perf_counter() - decision_started) * 1000.0,
+        episode_id=str(payload.get("episode_id", "")),
+    )
+    evaluation_runtime.observe_decision(payload)
+    return response
 
 
 def finish(payload: dict) -> None:
     """Episode 结束。攒够 N 集后做批量 PPO 更新。"""
     global _episode, _buffer, _step_count, _batch_buffer
+    from algorithms.evaluation import runtime as evaluation_runtime
+
+    evaluation_payload = dict(payload)
+    evaluation_payload.setdefault("episode_id", _evaluation_episode_id)
+    evaluation_runtime.finish(evaluation_payload)
     _step_count = 0
     traffic = payload.get("traffic", {})
 
@@ -491,6 +511,15 @@ def finish(payload: dict) -> None:
         _save_checkpoint()
 
     _buffer.clear()
+
+
+def evaluation_result():
+    """Return the latest six-metric result after ``finish``."""
+
+    from algorithms.evaluation import runtime as evaluation_runtime
+
+    result = evaluation_runtime.last_result()
+    return None if result is None else result.to_dict()
 
 
 def _batch_ppo_update():

@@ -1,0 +1,12 @@
+{
+  "events": [
+    {
+      "event_type": "accident",
+      "event_id": "demo2_accident_001",
+      "start_seconds": 300,
+      "end_seconds": 480,
+      "lane_id": "-56734_0",
+      "position_ratio": 0.6
+    }
+  ]
+}

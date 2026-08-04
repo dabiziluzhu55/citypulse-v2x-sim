@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
 <configuration>
   <input>
-    <net-file value="TotalMap_20.signals.net.xml" />
-    <route-files value="official_traffic_demo_2_morning_peak.rou.xml" />
-    <additional-files value="official_tls_demo_2_morning_peak.add.xml" />
+    <net-file value="../../../network/TotalMap_20.signals.net.xml" />
+    <route-files value="routes.rou.xml" />
+    <additional-files value="signals.add.xml" />
   </input>
   <time>
     <begin value="0" />

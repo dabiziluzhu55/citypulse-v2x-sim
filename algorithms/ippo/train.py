@@ -1,55 +1,144 @@
-"""
-IPPO 训练脚本 —— 多路口参数共享 PPO。
-
-用法:
-  IPPO_MODE=train python3 -m ippo.train --episodes 200
-
-依赖：服务器上的 SimulationManager + Protocol 2.0 local transport。
-"""
+"""Train the current IPPO policy through the local SUMO protocol."""
 
 from __future__ import annotations
 
 import argparse
-import json
-
+import gc
 import logging
 import os
+import random
 import sys
 import time
-
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
 
-import gymnasium as gym
 import numpy as np
-from gymnasium import spaces
+import torch
 
-if tools not in sys.path:
-        sys.path.append(tools)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-_setup_sumo_path()
+os.environ.setdefault("SUMO_HOME", "/usr/share/sumo")
+sumo_bin = str(Path(os.environ["SUMO_HOME"]) / "bin")
+path_entries = [
+    entry
+    for entry in os.environ.get("PATH", "").split(os.pathsep)
+    if entry and entry != sumo_bin
+]
+os.environ["PATH"] = os.pathsep.join([*path_entries, sumo_bin])
+os.environ["IPPO_MODE"] = "train"
 
-import traci  # type: ignore
+from algorithms.ippo.controller import (  # noqa: E402
+    DEFAULT_ACTION_INTERVAL,
+    DEFAULT_INTERSECTION_IDS,
+    MODEL_VERSION,
+    load_checkpoint_metadata,
+    save_checkpoint,
+)
+from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+)
 logger = logging.getLogger("ippo.train")
 
-CHECKPOINT_SAVE_PATH = "/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/models/ippo_20"
+DEFAULT_SAVE_PATH = REPO_ROOT / "algorithms" / "models" / f"ippo_{MODEL_VERSION}_20"
 
 
-def main():
+def _stop_timed_out_session(manager: SimulationManager, session_id: str | None) -> None:
+    if session_id is None:
+        return
+    try:
+        manager.stop(session_id)
+        manager.wait(session_id, timeout=60)
+    except Exception as exc:
+        logger.error("SUMO timeout cleanup failed: %s", exc)
+
+
+def _positive(parser: argparse.ArgumentParser, name: str, value: float) -> None:
+    if value <= 0:
+        parser.error(f"{name} must be positive")
+
+
+def _training_seed_range(
+    base_seed: int, episodes: int, resume_path: Path | None
+) -> tuple[int, int, int]:
+    first_seed = base_seed + 1
+    recorded_start = first_seed
+    if resume_path is not None:
+        metadata = load_checkpoint_metadata(resume_path)
+        previous_range = metadata.get("training_seed_range")
+        if (
+            not isinstance(previous_range, dict)
+            or "start" not in previous_range
+            or "end" not in previous_range
+        ):
+            raise ValueError(
+                "resume checkpoint 缺少 training_seed_range，无法避免重复训练种子"
+            )
+        first_seed = max(first_seed, int(previous_range["end"]) + 1)
+        recorded_start = int(previous_range["start"])
+    return first_seed, first_seed + episodes - 1, recorded_start
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--duration", type=int, default=300)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--save", type=str, default=CHECKPOINT_SAVE_PATH)
-    args = parser.parse_args()
+    parser.add_argument("--action-interval", type=float, default=DEFAULT_ACTION_INTERVAL)
+    parser.add_argument("--save", type=Path, default=DEFAULT_SAVE_PATH)
+    parser.add_argument("--resume", type=Path, default=None)
+    args = parser.parse_args(argv)
 
-    logger.info("IPPO 开始训练: %d episodes × %ds, seed=%d", args.episodes, args.duration, args.seed)
+    _positive(parser, "episodes", args.episodes)
+    _positive(parser, "duration", args.duration)
+    _positive(parser, "action-interval", args.action_interval)
 
-    for ep in range(1, args.episodes + 1):
-        mgr = SimulationManager()
+    resume_path = args.resume
+    if resume_path is None and os.environ.get("IPPO_MODEL_PATH"):
+        resume_path = Path(os.environ["IPPO_MODEL_PATH"])
+    if resume_path is not None:
+        resume_path = resume_path.expanduser().resolve()
+        if not resume_path.is_file():
+            parser.error(f"resume checkpoint does not exist: {resume_path}")
+        os.environ["IPPO_MODEL_PATH"] = str(resume_path)
+    else:
+        os.environ.pop("IPPO_MODEL_PATH", None)
+
+    try:
+        (
+            first_training_seed,
+            last_training_seed,
+            recorded_seed_start,
+        ) = _training_seed_range(args.seed, args.episodes, resume_path)
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    os.environ["IPPO_ACTION_INTERVAL"] = str(args.action_interval)
+    os.environ["IPPO_TRAIN_SEED_START"] = str(recorded_seed_start)
+    os.environ["IPPO_TRAIN_SEED_END"] = str(last_training_seed)
+
+    logger.info(
+        "IPPO %s 开始训练: %d episodes × %ds, seeds=%d..%d, "
+        "action_interval=%.1fs%s",
+        MODEL_VERSION,
+        args.episodes,
+        args.duration,
+        first_training_seed,
+        last_training_seed,
+        args.action_interval,
+        f", resume={resume_path}" if resume_path else "",
+    )
+
+    for episode in range(1, args.episodes + 1):
+        manager = SimulationManager()
         config = SimulationConfig(
-            intersection_ids=INTERSECTIONS,
+            intersection_ids=list(DEFAULT_INTERSECTION_IDS),
             period="off_peak",
             duration_seconds=args.duration,
             control_mode="algorithm",
@@ -57,54 +146,53 @@ def main():
             algorithm_module="algorithms.ippo",
             decision_interval=5.0,
             minimum_green=5.0,
-            seed=args.seed + ep,
+            seed=first_training_seed + episode - 1,
             step_length=0.05,
         )
-
-        t0 = time.time()
+        started_at = time.time()
+        failure = None
+        session_id = None
         try:
-            sid = mgr.start(config)
-            s = mgr.wait(sid, timeout=max(600, args.duration * 3))
-            elapsed = time.time() - t0
-
-            if s is None:
-                logger.warning("EP%d TIMEOUT", ep)
-            elif s.metrics and s.state != "FAILED":
-                logger.info(
-                    "EP%d OK (%.0fs) departed=%d arrived=%d",
-                    ep, elapsed, s.metrics.departed_vehicles, s.metrics.arrived_vehicles,
-                )
+            session_id = manager.start(config)
+            snapshot = manager.wait(
+                session_id, timeout=max(600, int(args.duration * 3))
+            )
+            elapsed = time.time() - started_at
+            if snapshot is None:
+                failure = "TIMEOUT"
+            elif snapshot.state != "COMPLETED":
+                failure = f"state={snapshot.state} error={snapshot.error or ''}".strip()
+            elif snapshot.metrics is None:
+                failure = "COMPLETED without metrics"
             else:
                 logger.info(
-                    "EP%d FAILED (%.0fs) departed=%d arrived=%d",
-                    ep, elapsed,
-                    s.metrics.departed_vehicles if s and s.metrics else 0,
-                    s.metrics.arrived_vehicles if s and s.metrics else 0,
+                    "EP%d OK (%.0fs) departed=%d arrived=%d",
+                    episode,
+                    elapsed,
+                    snapshot.metrics.departed_vehicles,
+                    snapshot.metrics.arrived_vehicles,
                 )
-        except Exception as e:
-            logger.error("EP%d ERR: %s", ep, str(e)[:100])
+        except TimeoutError as exc:
+            failure = f"TimeoutError: {exc}"
+            _stop_timed_out_session(manager, session_id)
+        except Exception as exc:
+            failure = f"{type(exc).__name__}: {exc}"
+        finally:
+            del manager
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
-        # 内存清理：防 SUMO malloc 崩溃
-        import gc
-        del mgr
-        gc.collect()
-        try:
-            import torch
-            torch.cuda.empty_cache()
-        except:
-            pass
+        if failure is not None:
+            logger.error("EP%d ABORT: %s", episode, failure)
+            logger.error("失败 rollout 不计入训练，也不保存最终模型。")
+            return 1
         time.sleep(2.0)
 
-    # 保存最终模型
-    from algorithms.ippo.controller import _model
-    if _model is not None:
-        save_path = args.save + ".pt"
-        import torch
-        torch.save(_model.state_dict(), save_path)
-        logger.info("模型已保存: %s", save_path)
-
-    logger.info("训练完成: %d episodes", args.episodes)
+    saved_path = save_checkpoint(args.save)
+    logger.info("训练完成: %d episodes, model=%s", args.episodes, saved_path)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -6,9 +6,17 @@ from pydantic import ValidationError
 from backend.app.schemas.disturbance_targets import (
     DisturbanceTargetAccident,
     DisturbanceTargetLaneClosure,
+    DisturbanceTargetMajorEventClosing,
+    DisturbanceTargetMajorEventOpening,
     DisturbanceTargetSpeedLimit,
 )
-from backend.app.schemas.events import AccidentRequest, LaneClosureRequest, SpeedLimitRequest
+from backend.app.schemas.events import (
+    AccidentRequest,
+    LaneClosureRequest,
+    MajorEventClosingRequest,
+    MajorEventOpeningRequest,
+    SpeedLimitRequest,
+)
 from backend.app.schemas.simulations import StartSimulationRequest
 
 
@@ -64,15 +72,14 @@ def test_reject_invalid_playback_speed() -> None:
         )
 
 
-def test_accept_demo_2_single_scenario_preset() -> None:
-    request = StartSimulationRequest(
-        scenario_preset_id="demo_2_single",
-        period="morning_peak",
-        duration_seconds=600,
-        control_mode="fixed",
-    )
-
-    assert request.scenario_preset_id == "demo_2_single"
+def test_reject_unknown_scenario_preset() -> None:
+    with pytest.raises(ValidationError):
+        StartSimulationRequest(
+            scenario_preset_id="demo_2_single",
+            period="morning_peak",
+            duration_seconds=600,
+            control_mode="fixed",
+        )
 
 
 @pytest.mark.parametrize("control_mode", ["algorithm", "ippo", "unknown"])
@@ -136,6 +143,46 @@ def test_event_discriminated_union() -> None:
         lane_id="-56734_0",
         position_ratio=0.6,
     )
+    opening = MajorEventOpeningRequest(
+        event_type="major_event_opening",
+        event_id="open-1",
+        start_seconds=60,
+        end_seconds=300,
+        venue_lane_id="-56734_0",
+        vehicle_count=10,
+        source_lane_ids=[],
+    )
+    closing = MajorEventClosingRequest(
+        event_type="major_event_closing",
+        event_id="close-1",
+        start_seconds=60,
+        end_seconds=300,
+        venue_lane_id="-56734_0",
+        vehicle_count=10,
+        destination_lane_ids=[],
+    )
     assert lane_closure.event_type == "lane_closure"
     assert speed_limit.max_speed == 5.0
     assert accident.position_ratio == 0.6
+    assert opening.vehicle_count == 10
+    assert closing.destination_lane_ids == []
+
+
+def test_major_event_disturbance_targets() -> None:
+    opening = DisturbanceTargetMajorEventOpening(
+        event_type="major_event_opening",
+        intersection_id="demo_2",
+        start_seconds=60,
+        end_seconds=300,
+        vehicle_count=12,
+    )
+    closing = DisturbanceTargetMajorEventClosing(
+        event_type="major_event_closing",
+        intersection_id="demo_2",
+        start_seconds=60,
+        end_seconds=300,
+        vehicle_count=12,
+        destination_lane_ids=["-3000_0"],
+    )
+    assert opening.intersection_id == "demo_2"
+    assert closing.destination_lane_ids == ["-3000_0"]

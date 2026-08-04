@@ -1,7 +1,11 @@
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 from simulation.sumo.vehicle import (
+    DEFAULT_LANE_CHANGE_MODE,
+    STOPPED_LANE_CHANGE_MODE,
+    StoppedLaneChangeGuard,
     VehicleActionController,
     VehicleTelemetryTracker,
     build_vehicle_type_metadata,
@@ -65,6 +69,8 @@ class FakeVehicleDomain:
         self.subscriptions = {}
         self.speed_commands = []
         self.lane_commands = []
+        self.lane_change_modes = {"car.0": DEFAULT_LANE_CHANGE_MODE}
+        self.lane_change_mode_commands = []
 
     def getIDList(self):
         return tuple(self.states)
@@ -107,6 +113,17 @@ class FakeVehicleDomain:
 
     def changeLane(self, vehicle_id, lane_index, duration):
         self.lane_commands.append((vehicle_id, lane_index, duration))
+
+    def getLaneChangeMode(self, vehicle_id):
+        if vehicle_id not in self.states:
+            raise KeyError(vehicle_id)
+        return self.lane_change_modes.get(vehicle_id, DEFAULT_LANE_CHANGE_MODE)
+
+    def setLaneChangeMode(self, vehicle_id, mode):
+        if vehicle_id not in self.states:
+            raise KeyError(vehicle_id)
+        self.lane_change_modes[vehicle_id] = int(mode)
+        self.lane_change_mode_commands.append((vehicle_id, int(mode)))
 
 
 class FakeEdgeDomain:
@@ -169,6 +186,38 @@ class VehicleTelemetryTests(unittest.TestCase):
         self.tracker.tick(5.0)
         self.assertAlmostEqual(self.tracker.totals()[0], 500.0)
 
+    def test_neighbor_gaps_and_time_since_lane_change_use_cached_telemetry(self):
+        second = deepcopy(self.traci.vehicle.states["car.0"])
+        second["lane_position"] = 25.0
+        second["position"] = (23.0, 20.0)
+        self.traci.vehicle.states["car.1"] = second
+
+        self.tracker.tick(1.0)
+        observations = self.tracker.observations(reset_interval=False)
+        self.assertEqual(observations["car.0"].leader_gap_m, 8.0)
+        self.assertIsNone(observations["car.0"].follower_gap_m)
+        self.assertEqual(observations["car.1"].follower_gap_m, 8.0)
+        self.assertIsNone(observations["car.1"].leader_gap_m)
+        self.assertIsNone(observations["car.0"].time_since_last_lane_change_s)
+
+        self.traci.vehicle.states["car.0"]["lane_id"] = "edge_1"
+        self.traci.vehicle.states["car.0"]["lane_index"] = 1
+        self.tracker.tick(2.0)
+        changed = self.tracker.observations(reset_interval=False)["car.0"]
+        self.assertEqual(changed.time_since_last_lane_change_s, 0.0)
+        self.assertIsNone(changed.leader_gap_m)
+
+        self.tracker.tick(3.5)
+        later = self.tracker.observations(reset_interval=False)["car.0"]
+        self.assertEqual(later.time_since_last_lane_change_s, 1.5)
+
+        self.traci.vehicle.states["car.0"]["road_id"] = "out"
+        self.traci.vehicle.states["car.0"]["lane_id"] = "out_0"
+        self.traci.vehicle.states["car.0"]["lane_index"] = 0
+        self.tracker.tick(4.0)
+        next_edge = self.tracker.observations(reset_interval=False)["car.0"]
+        self.assertEqual(next_edge.time_since_last_lane_change_s, 2.0)
+
     def test_speed_and_lane_actions_are_validated_leased_and_reported(self):
         self.tracker.tick(1.0)
         controller = VehicleActionController(self.traci, self.tracker)
@@ -193,6 +242,64 @@ class VehicleTelemetryTests(unittest.TestCase):
         controller.apply(4, {}, 5.0)
         self.assertEqual(self.traci.vehicle.speed_commands[-1], ("car.0", -1))
 
+    def test_stopped_lane_change_guard_locks_and_restores_stopped_vehicles(self):
+        self.traci.vehicle.states["car.0"]["speed"] = 0.0
+        self.traci.vehicle.lane_change_modes["car.0"] = 0
+        self.tracker.tick(1.0)
+        guard = StoppedLaneChangeGuard(self.traci, self.tracker)
+
+        guard.tick()
+        guard.tick()
+        self.assertEqual(
+            self.traci.vehicle.lane_change_mode_commands,
+            [("car.0", STOPPED_LANE_CHANGE_MODE)],
+        )
+        self.assertEqual(
+            self.traci.vehicle.lane_change_modes["car.0"], STOPPED_LANE_CHANGE_MODE
+        )
+
+        self.traci.vehicle.states["car.0"]["speed"] = 0.2
+        self.tracker.tick(2.0)
+        guard.tick()
+        self.assertEqual(
+            self.traci.vehicle.lane_change_mode_commands[-1],
+            ("car.0", 0),
+        )
+        self.assertEqual(self.traci.vehicle.lane_change_modes["car.0"], 0)
+
+    def test_stopped_lane_change_guard_cleans_up_arrived_vehicles(self):
+        self.traci.vehicle.states["car.0"]["speed"] = 0.0
+        self.tracker.tick(1.0)
+        guard = StoppedLaneChangeGuard(self.traci, self.tracker)
+        guard.tick()
+
+        self.traci.vehicle.states.pop("car.0")
+        self.tracker.tick(2.0)
+        guard.tick()
+
+        self.assertEqual(
+            self.traci.vehicle.lane_change_mode_commands,
+            [("car.0", STOPPED_LANE_CHANGE_MODE)],
+        )
+
+    def test_stopped_vehicles_cannot_receive_lane_change_actions(self):
+        self.traci.vehicle.states["car.0"]["speed"] = 0.0
+        self.tracker.tick(1.0)
+        controller = VehicleActionController(self.traci, self.tracker)
+        with self.assertRaisesRegex(ValueError, "cannot change lanes while stopped"):
+            controller.validate({"car.0": {"target_lane_index": 1}})
+        self.assertEqual(self.traci.vehicle.lane_commands, [])
+
+    def test_lane_change_action_cannot_stop_the_vehicle(self):
+        self.tracker.tick(1.0)
+        controller = VehicleActionController(self.traci, self.tracker)
+        with self.assertRaisesRegex(ValueError, "cannot change lanes while stopped"):
+            controller.validate(
+                {"car.0": {"target_speed_mps": 0.0, "target_lane_index": 1}}
+            )
+        self.assertEqual(self.traci.vehicle.speed_commands, [])
+        self.assertEqual(self.traci.vehicle.lane_commands, [])
+
     def test_invalid_vehicle_action_is_rejected_before_application(self):
         self.tracker.tick(1.0)
         controller = VehicleActionController(self.traci, self.tracker)
@@ -201,6 +308,16 @@ class VehicleTelemetryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown vehicle"):
             controller.validate({"missing": {"target_speed_mps": 3.0}})
         self.assertEqual(self.traci.vehicle.speed_commands, [])
+
+    def test_lane_disallow_all_rejects_vehicle_action(self):
+        self.tracker.tick(1.0)
+        self.traci.lane.getDisallowed = (
+            lambda lane_id: ("all",) if lane_id == "edge_1" else ()
+        )
+        controller = VehicleActionController(self.traci, self.tracker)
+        with self.assertRaisesRegex(ValueError, "does not allow passenger"):
+            controller.validate({"car.0": {"target_lane_index": 1}})
+        self.assertEqual(self.traci.vehicle.lane_commands, [])
 
 
 if __name__ == "__main__":

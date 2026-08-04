@@ -1,206 +1,405 @@
-"""
-HTTP 指标采集器 —— 从 v2.0 /step + /finish 数据直接计算 6 大指标。
+"""Protocol 2.0 live collector for the six official evaluation metrics.
 
-不依赖 tripinfo.xml，在算法服务内部实时跟踪车辆状态，
-/finish 时一次性出结果。
-
-原理：
-  - 每个 /step 采样排队长度，跟踪路网上所有车辆的抵达/消失
-  - 车辆从 vehicles 中消失 = 到达，结算其等待时间/油耗/里程
-  - /finish 时汇总出 6 大指标
+The collector only consumes algorithm-side ``initialize``/``step``/``finish``
+payloads.  It never calls TraCI and does not require a SUMO-side code change.
+Unavailable measurements are returned as ``None`` rather than a misleading
+numeric zero.
 """
 
 from __future__ import annotations
 
+import os
+import re
+import subprocess
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
+
+
+FUEL_POWERTRAINS = frozenset({"gasoline", "diesel", "hybrid"})
+FUEL_TELEMETRY_UNITS = frozenset({"auto", "protocol_ml", "legacy_ml_as_mg"})
+_AUTO_UNIT_CACHE: Optional[tuple[str, Optional[str]]] = None
+
+
+def _resolve_fuel_telemetry_unit(requested: str) -> tuple[str, Optional[str]]:
+    global _AUTO_UNIT_CACHE
+    override = os.environ.get("EVALUATION_FUEL_TELEMETRY_UNIT", requested)
+    unit = str(override).strip().lower()
+    if unit not in FUEL_TELEMETRY_UNITS:
+        raise ValueError(
+            "EVALUATION_FUEL_TELEMETRY_UNIT must be auto, protocol_ml or "
+            "legacy_ml_as_mg"
+        )
+    if unit != "auto":
+        return unit, None
+    if _AUTO_UNIT_CACHE is not None:
+        return _AUTO_UNIT_CACHE
+    try:
+        completed = subprocess.run(
+            ["sumo", "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        match = re.search(r"Version\s+(\d+)\.(\d+)", completed.stdout)
+    except (OSError, subprocess.SubprocessError):
+        match = None
+    if match is None:
+        _AUTO_UNIT_CACHE = (
+            "protocol_ml",
+            "无法检测 SUMO 版本；按 Protocol 2.0 的 fuel_total_ml 解释燃油数据。",
+        )
+        return _AUTO_UNIT_CACHE
+    version = (int(match.group(1)), int(match.group(2)))
+    if version < (1, 14):
+        _AUTO_UNIT_CACHE = (
+            "legacy_ml_as_mg",
+            f"检测到 SUMO {version[0]}.{version[1]}：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+        )
+        return _AUTO_UNIT_CACHE
+    _AUTO_UNIT_CACHE = ("protocol_ml", None)
+    return _AUTO_UNIT_CACHE
+
+
+def _rounded(value: Optional[float], digits: int) -> Optional[float]:
+    return None if value is None else round(value, digits)
 
 
 @dataclass
 class EvalResult:
-    """单次仿真的指标。"""
+    """Metrics for one simulation episode."""
+
     algorithm: str = ""
-
-    avg_travel_time_s: float = 0.0            # 1. 平均行程时间
-    avg_waiting_time_s: float = 0.0           # 2. 平均等待时间
-    avg_queue_length_veh: float = 0.0         # 3. 平均排队长度
-    throughput_veh_per_h: float = 0.0         # 4. 有效吞吐量
-    avg_decision_latency_ms: float = 0.0      # 5. 平均决策耗时（纯计算）
-    fuel_intensity_L_per_100km: float = 0.0   # 6. 单位车公里燃油消耗
-
+    avg_travel_time_s: Optional[float] = None
+    avg_waiting_time_s: Optional[float] = None
+    avg_queue_length_veh: Optional[float] = None
+    throughput_veh_per_h: Optional[float] = None
+    avg_decision_latency_ms: Optional[float] = None
+    fuel_intensity_L_per_100km: Optional[float] = None
     departed: int = 0
     arrived: int = 0
+    metric_sources: Dict[str, str] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
-            "avg_travel_time_s": round(self.avg_travel_time_s, 2),
-            "avg_waiting_time_s": round(self.avg_waiting_time_s, 2),
-            "avg_queue_length_veh": round(self.avg_queue_length_veh, 2),
-            "throughput_veh_per_h": round(self.throughput_veh_per_h, 1),
-            "avg_decision_latency_ms": round(self.avg_decision_latency_ms, 3),
-            "fuel_intensity_L_per_100km": round(self.fuel_intensity_L_per_100km, 2),
+            "avg_travel_time_s": _rounded(self.avg_travel_time_s, 2),
+            "avg_waiting_time_s": _rounded(self.avg_waiting_time_s, 2),
+            "avg_queue_length_veh": _rounded(self.avg_queue_length_veh, 2),
+            "throughput_veh_per_h": _rounded(self.throughput_veh_per_h, 1),
+            "avg_decision_latency_ms": _rounded(
+                self.avg_decision_latency_ms, 3
+            ),
+            "fuel_intensity_L_per_100km": _rounded(
+                self.fuel_intensity_L_per_100km, 2
+            ),
             "departed": self.departed,
             "arrived": self.arrived,
+            "metric_sources": dict(self.metric_sources),
+            "warnings": list(self.warnings),
         }
 
 
 class HttpMetricsCollector:
-    """在每个 /step 和 /finish 调用时收集数据，最后产出 EvalResult。
+    """Collect live metrics from Protocol 2.0 dictionaries.
 
-    用法：
-        collector = HttpMetricsCollector()
-        collector.on_initialize(init_data)
-        for each /step:
-            actions = controller.compute_actions(step_data)
-            collector.on_step(step_data)
-            return actions
-        collector.on_finish(finish_data)
-        result = collector.result()
+    Per-vehicle travel/waiting values use the latest snapshot before a vehicle
+    disappears.  The collector reports them only when interval arrival counts
+    and the final arrival total prove that every completed trip was observed.
     """
 
-    def __init__(self, algorithm: str = "") -> None:
+    def __init__(
+        self, algorithm: str = "", *, fuel_telemetry_unit: str = "auto"
+    ) -> None:
         self._algorithm = algorithm
-
-        # 活跃车辆: vid → {first_seen_s, last_waiting_s, last_time_loss_s,
-        #                    last_distance_m, last_fuel_ml}
-        self._active: Dict[str, Dict[str, float]] = {}
-
-        # 已到达车辆的最终快照
-        self._arrived_waiting: List[float] = []     # 每车累计等待
-        self._arrived_travel: List[float] = []      # 每车行程时间（近似）
-        self._arrived_time_loss: List[float] = []   # 每车时间损失
-        self._arrived_distance: List[float] = []    # 每车行驶距离(m)
-        self._arrived_fuel_ml: List[float] = []     # 每车燃油(mL)
-
-        # 排队长度采样
+        self._fuel_telemetry_unit, self._fuel_unit_warning = (
+            _resolve_fuel_telemetry_unit(fuel_telemetry_unit)
+        )
+        self._warnings: List[str] = []
+        self._incoming_lanes: Dict[str, tuple[str, ...]] = {}
+        self._powertrain_by_type: Dict[str, str] = {}
+        self._active: Dict[str, Dict[str, Any]] = {}
+        self._closed: List[Dict[str, Any]] = []
+        self._arrived: List[Dict[str, Any]] = []
+        self._seen_vehicle_ids: set[str] = set()
         self._queue_samples: List[float] = []
-        # 决策耗时采样（ms）
         self._latency_samples: List[float] = []
-
-        # /finish 汇总
-        self._total_departed: int = 0
-        self._total_arrived: int = 0
-        self._final_sim_time: float = 0.0
-        self._final_fuel_ml: float = 0.0
-
-    # ------------------------------------------------------------------
-    # 公共接口（由 server.py 调用）
-    # ------------------------------------------------------------------
-
-    def on_initialize(self, _body: Dict[str, Any]) -> None:
-        """重置所有状态。"""
-        self._active.clear()
-        self._arrived_waiting.clear()
-        self._arrived_travel.clear()
-        self._arrived_time_loss.clear()
-        self._arrived_distance.clear()
-        self._arrived_fuel_ml.clear()
-        self._queue_samples.clear()
-        self._latency_samples.clear()
+        self._arrival_tracking_complete = True
+        self._observer_frames_dropped = 0
+        self._last_step_time: Optional[float] = None
         self._total_departed = 0
         self._total_arrived = 0
         self._final_sim_time = 0.0
         self._final_fuel_ml = 0.0
+        self._finished = False
+
+    def _warn(self, message: str) -> None:
+        if message not in self._warnings:
+            self._warnings.append(message)
+
+    def on_initialize(self, body: Dict[str, Any]) -> None:
+        """Reset state and cache lane/vehicle-type metadata."""
+
+        self._warnings.clear()
+        self._incoming_lanes = {
+            str(intersection_id): tuple(
+                str(lane_id) for lane_id in metadata.get("incoming_lanes", ())
+            )
+            for intersection_id, metadata in body.get("intersections", {}).items()
+        }
+        self._powertrain_by_type = {
+            str(type_id): str(metadata.get("powertrain", "")).lower()
+            for type_id, metadata in body.get("vehicle_types", {}).items()
+        }
+        self._active.clear()
+        self._closed.clear()
+        self._arrived.clear()
+        self._seen_vehicle_ids.clear()
+        self._queue_samples.clear()
+        self._latency_samples.clear()
+        self._arrival_tracking_complete = True
+        self._observer_frames_dropped = 0
+        self._last_step_time = None
+        self._total_departed = 0
+        self._total_arrived = 0
+        self._final_sim_time = 0.0
+        self._final_fuel_ml = 0.0
+        self._finished = False
+
+        if not self._incoming_lanes:
+            self._warn("初始化数据缺少 incoming_lanes，平均排队长度不可计算。")
+        if not self._powertrain_by_type:
+            self._warn("初始化数据缺少 vehicle_types.powertrain，燃油强度不可计算。")
+        if self._fuel_unit_warning:
+            self._warn(self._fuel_unit_warning)
 
     def record_latency(self, ms: float) -> None:
-        """记录本步的纯算法计算耗时（毫秒）。由 server.py 在 compute_actions 前后调用。"""
-        self._latency_samples.append(ms)
+        """Record one pure algorithm-computation latency sample in ms."""
+
+        value = float(ms)
+        if value >= 0:
+            self._latency_samples.append(value)
+
+    def _record_queue(self, body: Mapping[str, Any]) -> None:
+        lane_values: List[float] = []
+        intersections = body.get("intersections", {})
+        for intersection_id, incoming_lane_ids in self._incoming_lanes.items():
+            lanes = intersections.get(intersection_id, {}).get("lanes", {})
+            for lane_id in incoming_lane_ids:
+                if lane_id in lanes:
+                    lane_values.append(
+                        float(lanes[lane_id].get("halting_count", 0.0))
+                    )
+        if lane_values:
+            self._queue_samples.append(sum(lane_values) / len(lane_values))
+        else:
+            self._warn("实时帧没有可用的进口车道数据，部分排队样本缺失。")
+
+    @staticmethod
+    def _new_vehicle_record(
+        sim_time: float, vehicle_data: Mapping[str, Any]
+    ) -> Dict[str, Any]:
+        return {
+            "first_seen_s": sim_time,
+            "last_seen_s": sim_time,
+            "type_id": str(vehicle_data.get("type_id", "")),
+            "last_waiting": 0.0,
+            "last_time_loss": 0.0,
+            "last_distance": 0.0,
+            "last_fuel_ml": 0.0,
+        }
+
+    def _update_vehicle_record(
+        self,
+        record: Dict[str, Any],
+        sim_time: float,
+        vehicle_data: Mapping[str, Any],
+    ) -> None:
+        traffic = vehicle_data.get("traffic", {})
+        energy = vehicle_data.get("energy", {})
+        record.update(
+            {
+                "last_seen_s": sim_time,
+                "type_id": str(vehicle_data.get("type_id", record["type_id"])),
+                "last_waiting": float(
+                    traffic.get("accumulated_waiting_time_s", 0.0)
+                ),
+                "last_time_loss": float(traffic.get("time_loss_s", 0.0)),
+                "last_distance": float(traffic.get("distance_m", 0.0)),
+                "last_fuel_ml": float(
+                    energy.get(
+                        "fuel_total_mg"
+                        if self._fuel_telemetry_unit == "legacy_ml_as_mg"
+                        else "fuel_total_ml",
+                        0.0,
+                    )
+                ),
+            }
+        )
 
     def on_step(self, body: Dict[str, Any]) -> None:
-        """记录本步的车辆状态和排队数据。"""
+        """Record one decision observation or high-frequency observer frame."""
+
+        if self._finished:
+            raise RuntimeError("Cannot add evaluation samples after finish.")
         sim_time = float(body.get("simulation_time", 0.0))
+        if self._last_step_time is not None:
+            if sim_time < self._last_step_time:
+                raise ValueError("Evaluation frame time cannot move backwards.")
+            if sim_time == self._last_step_time:
+                return
+        self._last_step_time = sim_time
         current_vehicles: Dict[str, Any] = body.get("vehicles", {})
+        current_ids = set(current_vehicles)
+        previous_ids = set(self._active)
 
-        # ── 1. 采样排队长度 ──
-        for iid, i_state in body.get("intersections", {}).items():
-            for lane_id, lane_data in i_state.get("lanes", {}).items():
-                self._queue_samples.append(
-                    float(lane_data.get("halting_count", 0))
+        self._record_queue(body)
+
+        disappeared = previous_ids - current_ids
+        interval_arrived = body.get("traffic", {}).get("arrived_vehicles")
+        if interval_arrived is None:
+            self._arrival_tracking_complete = False
+            self._warn("实时帧缺少 arrived_vehicles，完成车辆统计不可验证。")
+        elif int(interval_arrived) != len(disappeared):
+            self._arrival_tracking_complete = False
+            self._warn(
+                "到达计数与逐车消失数量不一致，存在未完整观测或非到达移除车辆。"
+            )
+
+        for vehicle_id in disappeared:
+            record = self._active.pop(vehicle_id)
+            record["disappeared_s"] = sim_time
+            self._closed.append(record)
+            self._arrived.append(record)
+
+        for vehicle_id, vehicle_data in current_vehicles.items():
+            if vehicle_id not in self._active:
+                self._active[vehicle_id] = self._new_vehicle_record(
+                    sim_time, vehicle_data
                 )
-
-        # ── 2. 检测新车辆（首次出现） ──
-        for vid in current_vehicles:
-            if vid not in self._active:
-                # 首次出现 — 近似 depart_time = 当前 sim_time
-                # 无法拿到真实 depart_time，用首次出现时间近似
-                self._active[vid] = {
-                    "first_seen_s": sim_time,
-                    "last_waiting": 0.0,
-                    "last_time_loss": 0.0,
-                    "last_distance": 0.0,
-                    "last_fuel_ml": 0.0,
-                }
-
-        # ── 3. 检测到达车辆（消失 = 已到达） ──
-        arrived_vids = set(self._active.keys()) - set(current_vehicles.keys())
-        for vid in arrived_vids:
-            rec = self._active.pop(vid)
-            # 行程时间近似 = 消失时间 − 首次出现时间
-            travel = sim_time - rec["first_seen_s"]
-            if travel > 0:
-                self._arrived_travel.append(travel)
-            self._arrived_waiting.append(rec["last_waiting"])
-            self._arrived_time_loss.append(rec["last_time_loss"])
-            self._arrived_distance.append(rec["last_distance"])
-            self._arrived_fuel_ml.append(rec["last_fuel_ml"])
-
-        # ── 4. 更新活跃车辆的最新数据 ──
-        for vid, vdata in current_vehicles.items():
-            if vid in self._active:
-                traffic = vdata.get("traffic", {})
-                energy = vdata.get("energy", {})
-                self._active[vid].update({
-                    "last_waiting": float(traffic.get("accumulated_waiting_time_s", 0)),
-                    "last_time_loss": float(traffic.get("time_loss_s", 0)),
-                    "last_distance": float(traffic.get("distance_m", 0)),
-                    "last_fuel_ml": float(energy.get("fuel_total_ml", 0)),
-                })
+            self._update_vehicle_record(
+                self._active[vehicle_id], sim_time, vehicle_data
+            )
+            self._seen_vehicle_ids.add(vehicle_id)
 
     def on_finish(self, body: Dict[str, Any]) -> None:
-        """记录 /finish 的汇总数据。"""
+        """Record final totals. Calling twice with the same episode is safe."""
+
         self._total_departed = int(body.get("departed_vehicles", 0))
         self._total_arrived = int(body.get("arrived_vehicles", 0))
         self._final_sim_time = float(body.get("simulation_time", 0.0))
         self._final_fuel_ml = float(body.get("fuel_consumed_ml", 0.0))
+        frame_stats = body.get("observer_frames", {})
+        dropped = int(frame_stats.get("dropped", 0)) if frame_stats else 0
+        if dropped:
+            self._observer_frames_dropped = max(
+                self._observer_frames_dropped, dropped
+            )
+            self._warn(f"高频评价观察器丢弃了 {dropped} 帧，时序指标不完整。")
+        self._finished = True
+
+    def _arrival_metrics_are_complete(self) -> bool:
+        complete = (
+            self._arrival_tracking_complete
+            and self._observer_frames_dropped == 0
+            and len(self._arrived) == self._total_arrived
+        )
+        if not complete and self._total_arrived:
+            self._warn(
+                "未完整观测全部到达车辆，平均行程时间和等待时间记为不可用。"
+            )
+        return complete
+
+    def _fuel_metric(self) -> Optional[float]:
+        if self._observer_frames_dropped:
+            self._warn("高频观察数据不完整，燃油强度记为不可用。")
+            return None
+        records = self._closed + list(self._active.values())
+        if self._total_departed > len(self._seen_vehicle_ids):
+            self._warn("未完整观测全部出发车辆，燃油强度记为不可用。")
+            return None
+
+        fuel_records: List[Dict[str, Any]] = []
+        for record in records:
+            powertrain = self._powertrain_by_type.get(str(record["type_id"]))
+            if powertrain is None:
+                self._warn(
+                    f"车辆类型 {record['type_id']!r} 缺少 powertrain，燃油强度记为不可用。"
+                )
+                return None
+            if powertrain in FUEL_POWERTRAINS:
+                fuel_records.append(record)
+
+        total_distance_m = sum(
+            float(record["last_distance"]) for record in fuel_records
+        )
+        total_fuel_ml = sum(
+            float(record["last_fuel_ml"]) for record in fuel_records
+        )
+        if total_distance_m <= 0:
+            self._warn("没有可用的燃油车辆行驶里程，燃油强度记为不可用。")
+            return None
+
+        if (
+            self._fuel_telemetry_unit == "protocol_ml"
+            and self._final_fuel_ml > 0
+        ):
+            difference = abs(self._final_fuel_ml - total_fuel_ml)
+            tolerance = max(1.0, 0.02 * self._final_fuel_ml)
+            if difference > tolerance:
+                self._warn(
+                    "逐车燃油累计值与结束汇总值不一致；燃油强度使用同车辆集合的逐车值。"
+                )
+
+        return (total_fuel_ml / 1000.0) / (total_distance_m / 100000.0)
 
     def result(self) -> EvalResult:
-        """计算最终 6 大指标。"""
-        r = EvalResult(algorithm=self._algorithm)
-        arrived = self._total_arrived
-        if arrived <= 0:
-            arrived = len(self._arrived_waiting)
-        departed = self._total_departed
-        sim_time = self._final_sim_time
+        """Compute the six official metrics without changing their definitions."""
 
-        r.departed = departed
-        r.arrived = arrived
+        result = EvalResult(
+            algorithm=self._algorithm,
+            departed=self._total_departed,
+            arrived=self._total_arrived,
+        )
+        arrival_complete = self._arrival_metrics_are_complete()
+        if arrival_complete and self._arrived:
+            self._warn(
+                "实时接口不含精确 depart/arrival 时刻；平均行程时间和等待时间等待 TripInfo 回填。"
+            )
 
-        # 1. 平均行程时间（近似）
-        if self._arrived_travel:
-            r.avg_travel_time_s = sum(self._arrived_travel) / len(self._arrived_travel)
+        if self._observer_frames_dropped:
+            self._warn("高频观察数据不完整，平均排队长度记为不可用。")
+        elif self._queue_samples:
+            result.avg_queue_length_veh = sum(self._queue_samples) / len(
+                self._queue_samples
+            )
+            result.metric_sources[
+                "avg_queue_length_veh"
+            ] = "incoming_lane_halting_count"
 
-        # 2. 平均等待时间
-        if self._arrived_waiting:
-            r.avg_waiting_time_s = sum(self._arrived_waiting) / len(self._arrived_waiting)
+        if self._final_sim_time > 0:
+            result.throughput_veh_per_h = (
+                self._total_arrived / self._final_sim_time * 3600.0
+            )
+            result.metric_sources["throughput_veh_per_h"] = "finish_totals"
 
-        # 3. 平均排队长度
-        if self._queue_samples:
-            r.avg_queue_length_veh = sum(self._queue_samples) / len(self._queue_samples)
-
-        # 4. 吞吐量
-        if sim_time > 0 and arrived > 0:
-            r.throughput_veh_per_h = arrived / sim_time * 3600.0
-
-        # 5. 平均决策耗时
         if self._latency_samples:
-            r.avg_decision_latency_ms = sum(self._latency_samples) / len(self._latency_samples)
+            result.avg_decision_latency_ms = sum(self._latency_samples) / len(
+                self._latency_samples
+            )
+            result.metric_sources[
+                "avg_decision_latency_ms"
+            ] = "algorithm_perf_counter"
 
-        # 6. 单位车公里油耗
-        total_distance_m = sum(self._arrived_distance)
-        total_fuel = self._final_fuel_ml if self._final_fuel_ml > 0 else sum(self._arrived_fuel_ml)
-        if total_distance_m > 0 and total_fuel > 0:
-            fuel_L = total_fuel / 1000.0
-            dist_100km = total_distance_m / 100000.0
-            r.fuel_intensity_L_per_100km = fuel_L / dist_100km if dist_100km > 0 else 0.0
+        result.fuel_intensity_L_per_100km = self._fuel_metric()
+        if result.fuel_intensity_L_per_100km is not None:
+            result.metric_sources[
+                "fuel_intensity_L_per_100km"
+            ] = (
+                "fuel_powertrain_vehicle_totals_legacy_ml"
+                if self._fuel_telemetry_unit == "legacy_ml_as_mg"
+                else "fuel_powertrain_vehicle_totals"
+            )
 
-        return r
+        result.warnings = list(self._warnings)
+        return result

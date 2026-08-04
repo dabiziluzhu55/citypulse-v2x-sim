@@ -68,12 +68,15 @@ def _build_export_service(
     mock_manager: MagicMock,
     tmp_path: Path,
 ) -> ScenarioExportService:
-    generated = tmp_path / "generated"
+    from backend.tests.test_od_and_major_events import _write_od_fixture
+
+    generated = _write_od_fixture(tmp_path, period="morning_peak")
     net_path = generated / "network" / "TotalMap_20.signals.net.xml"
-    net_path.parent.mkdir(parents=True)
+    net_path.parent.mkdir(parents=True, exist_ok=True)
     net_path.write_text("<net/>", encoding="utf-8")
 
     settings = MagicMock()
+    settings.project_root = tmp_path
     settings.generated_dir = generated
     settings.signals_net_path = net_path
     settings.scenario_export_root = tmp_path / "exports"
@@ -117,10 +120,17 @@ def test_export_scenario_returns_zip_bundle(
         assert "events.json" in names
         assert "export_manifest.json" in names
         assert "TotalMap_20.signals.net.xml" in names
+        # 东部密集区不导出全局九区域OD/TAZ
+        assert "od/od_matrix_morning_peak.csv" not in names
+        assert "od/taz_9_zones.json" not in names
+        assert "od/od_heatmap_morning_peak.png" not in names
         sumocfg = archive.read("session.sumocfg").decode("utf-8")
         assert 'net-file value="TotalMap_20.signals.net.xml"' in sumocfg
         events = json.loads(archive.read("events.json"))
         assert events["events"][0]["event_type"] == "lane_closure"
+        manifest = json.loads(archive.read("export_manifest.json"))
+        assert manifest["od_included"] is False
+        assert "od_matrix_csv" not in manifest["files"]
 
 
 def test_export_endpoint_returns_zip(

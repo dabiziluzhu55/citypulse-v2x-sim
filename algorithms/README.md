@@ -1,220 +1,410 @@
-# 管控算法
+# 算法目录
 
-算法组独立维护，全部通过 HTTP/JSON 协议（v2.0）与仿真端对接，
+本目录包含 CityPulse V2X Sim 的交通控制算法、训练入口和统一评价模块。所有算法通过项目协议 2.0 获取路口、车道和车辆状态；SUMO/TraCI 始终由 `simulation/` 独占，算法不直接操作 TraCI。
 
-算法代码不需要导入 SUMO 或 TraCI。跨进程部署时实现 docs/algorithm_interface.md 中的三个 HTTP 接口；同机训练时可复制 local_policy_example.py，实现同名的 initialize/step/finish Python 函数。 两种方式收发完全相同的字典结构，本地方式不经过网络和 JSON 编解码。 固定配时由仿真端直接执行，不经过算法服务。当前接口为不兼容旧版的协议 2.0，算法响应 必须同时提供 actions.signals 和 actions.vehicles 两个对象。
+如果你第一次接入算法，先阅读：
 
-只消费状态、不返回控制动作的 AI 训练入口见 ai_observer_example.py 和 docs/local_transport_ai_observer.md。
+- [算法接口协议 2.0](../docs/algorithm_interface.md)：完整请求、响应和字段口径；
+- [本地算法与 AI 观察者](../docs/local_transport_ai_observer.md)：同进程调用方式；
+- [IPPO v8 算法与实验说明](ippo/说明文档.md)：IPPO 的状态、奖励、并行训练、评价和实验结果；
+- [CoSLight-P0 讲解](coslight/coslight讲解.md)：Transformer 协同控制器的结构与训练逻辑。
 
-## 目录结构
+## 1. 当前可用模块
 
-```
-algorithms/
-├── README.md                  # 本文件
-├── __init__.py
-├── evaluation/                # 指标计算（与仿真端解耦）
-│   ├── __init__.py
-│   ├── metrics.py             # 离线计算：基于 SUMO tripinfo.xml
-│   ├── collector.py           # 在线采集：每步采样，/finish 汇总
-│   └── compare.py             # 一键对比脚本
-├── max_pressure/              # 8001 — 排队理论自适应
-│   ├── server.py              # FastAPI 服务入口 + 指标集成
-│   ├── controller.py          # MaxPressure 算法主体
-│   ├── requirements.txt
-│   └── __init__.py
-├── sotl/                      # 8002 — 规则驱动自适应
-│   ├── server.py
-│   ├── controller.py
-│   ├── requirements.txt
-│   └── __init__.py
-├── ippo/                      # 8003 — 独立多智能体强化学习
-│   ├── server.py
-│   ├── controller.py
-│   ├── train.py               # 训练入口
-│   ├── requirements.txt
-│   └── __init__.py
-└── models/                    # RL 模型权重
-    └── ippo_demo2.zip
-```
+| 模块 | 类型 | 控制对象 | 是否训练 | 当前定位 |
+|---|---|---|---|---|
+| fixed | SUMO 官方固定配时 | 信号灯 | 否 | 仿真端基线，不经过 `algorithms/` |
+| [`sotl`](sotl/) | 自组织规则控制 | 信号灯 | 否 | 轻量自适应基线，支持本地模块和 HTTP 服务 |
+| [`ippo`](ippo/) | 参数共享独立 PPO | 信号灯 | 是 | 当前纯 RL 基线；发布 v8 ep160 模型 |
+| [`coslight`](coslight/) | Transformer + 集中式 Critic | 信号灯、车辆速度/车道建议 | 是 | 车路协同研究算法，当前为 P0 实现 |
+| [`evaluation`](evaluation/) | 六指标采集与计算 | 不控制 | 否 | 为算法提供统一评价口径 |
+| [`local_policy_example.py`](local_policy_example.py) | 最小协议示例 | 信号灯、合法车道示例 | 否 | 新算法模板，不作为性能基线 |
+| [`ai_observer_example.py`](ai_observer_example.py) | 高频只读观察器 | 不控制 | 否 | 展示异步消费实时帧和跳帧检测 |
 
-## 算法层级
+项目文档把 MaxPressure 列为目标基线，但当前 `algorithms/` 目录没有可独立运行的 MaxPressure 模块。提交实验报告前，应先补齐实现并使用与其他算法相同的六指标管线复评，不能混用旧脚本或不同统计口径的数据。
 
-| 层级 | 算法 | 端口 | 类型 | 状态 |
-|------|------|------|------|------|
-| L1 | Fixed-Time（固定配时） | 仿真端内置 | 静态基线 | ✅ 仿真端直接执行 |
-| L2 | SOTL | 8002 | 规则驱动自适应 | ✅ |
-| L3 | MaxPressure | 8001 | 排队理论自适应 | ✅ |
-| L4 | SCATS-like | — | 传统多路口协调 | ⬜ 等待多路口车流 |
-| L5 | IPPO | 8003 | 独立多智能体 RL | ✅ 单路口训练完成 |
-| L6 | 自研 RL | — | MARL 多路口协同 | ⬜ 等待多路口车流 |
+## 2. 运行边界
 
-### 各算法原理
-
-**Fixed-Time（固定配时）**：按预设相位顺序和固定时长循环切换。
-仿真端直接执行，不经过算法服务。作为下界（lower bound）基线。
-
-**SOTL（Self-Organizing Traffic Light）**：规则驱动的自适应控制。
-如果当前相位绿灯期间有新来车且排队超过阈值，延长绿灯；否则切换相位。
-简单、可解释、无训练成本。
-
-**MaxPressure**：基于排队压力的自适应控制。
-每步选择"压力最大"的相位——压力 = 进口道排队长度 − 出口道排队长度。
-理论上能最大化路网吞吐量，是强 baseline。
-
-**IPPO（Independent PPO）**：每个路口独立的 PPO 智能体。
-State：各进口道排队长度 + 等待时间 + 当前相位。
-Action：离散相位选择。
-Reward：−等待时间（差分式 `diff_waiting_time`）。
-训练用 SB3 PPO，推理时一次前向传播 < 1ms。
-
-**自研 RL**：计划采用 QMIX / MAPPO 做多路口协同值分解，
-待多路口车流数据（demo_3～demo_20）到位后启动。
-
----
-
-## 6 大评估指标
-
-指标全部通过 HTTP 协议实时采集，由 `evaluation/collector.py` 的
-`HttpMetricsCollector` 在每个 `/step` 和 `/finish` 中计算。
-
-### 指标定义与计算
-
-| # | 指标 | 英文 | 计算公式 | 数据来源 |
-|---|------|------|---------|---------|
-| 1 | 平均行程时间 | avg_travel_time_s | Σ(车辆消失时间 − 首次出现时间) ÷ 到达车辆数 | `/step` vehicles 跟踪：首次出现 → 从 vehicles 消失 |
-| 2 | 平均等待时间 | avg_waiting_time_s | Σ(到达车辆累计等待) ÷ 到达车辆数 | `/step` vehicles[vid].traffic.accumulated_waiting_time_s |
-| 3 | 平均排队长度 | avg_queue_length_veh | Σ(各步 halting_count) ÷ 采样步数 | `/step` intersections[].lanes[].halting_count |
-| 4 | 有效吞吐量 | throughput_veh_per_h | arrived_vehicles ÷ simulation_time × 3600 | `/finish` arrived_vehicles + simulation_time |
-| 5 | 平均决策耗时 | avg_decision_latency_ms | Σ(compute_actions 耗时) ÷ 决策步数 | server.py 内 `time.perf_counter()` 打点 |
-| 6 | 单位车公里油耗 | fuel_intensity_L_per_100km | (fuel_ml ÷ 1000) ÷ (total_distance_m ÷ 100000) | `/finish` fuel_consumed_ml + 车辆里程累计 |
-
-### 辅助统计
-
-| 指标 | 说明 |
-|------|------|
-| departed | 已出发车辆总数 |
-| arrived | 已到达车辆总数 |
-| completion_rate_pct | 到达率 = arrived ÷ planned × 100% |
-
-### 采集流程
-
-```
-/initialize → 重置 collector 状态
-    ↓
-/step（循环）→ 每步：
-  1. 采样 halting_count → 排队长度
-  2. 跟踪 vehicles 增删 → 检测新车/到达车
-  3. 更新 active vehicles 的最新等待/油耗/里程
-  4. 打点计算耗时 → 决策延迟
-    ↓
-/finish → 汇总 6 大指标，输出到日志 + /stats 接口
+```text
+SUMO / TraCI（simulation 独占）
+        │
+        │ Protocol 2.0 字典或 HTTP/JSON
+        ▼
+initialize → step → finish
+        │
+        ├─ actions.signals：目标相位
+        └─ actions.vehicles：目标速度或目标车道
+        │
+        ▼
+仿真端校验动作，并执行最小绿灯、黄灯和全红安全过渡
 ```
 
-### 离线计算（备用）
+算法必须遵守以下边界：
 
-`evaluation/metrics.py` 提供 `compute_from_tripinfo()`，
-从 SUMO 的 `tripinfo.xml` + `emission.xml` 独立计算相同 6 大指标，
-不依赖 HTTP 协议，用于事后分析。
+- 不导入 SUMO 或 TraCI；
+- 不修改 `.net.xml`、routes、OD、`tlLogic` 或仿真安全控制器；
+- `step()` 响应必须同时包含 `actions.signals` 和 `actions.vehicles`；
+- 信号灯动作只请求 `target_phase`，实际切换时机由仿真端约束；
+- 车辆换道必须遵守 `edge_lanes[].allowed_vehicle_type_ids`；
+- 内部道路（`road_id` 以 `:` 开头）不返回换道动作。
 
-### 查看指标
+## 3. 环境准备
+
+从仓库根目录执行：
 
 ```bash
-# 查询最近一次仿真的 6 大指标（任一算法服务）
-curl http://localhost:8001/stats
-
-# 返回示例：
-# {
-#   "avg_travel_time_s": 183.6,
-#   "avg_waiting_time_s": 1.31,
-#   "avg_queue_length_veh": 0.05,
-#   "throughput_veh_per_h": 1346.5,
-#   "avg_decision_latency_ms": 0.023,
-#   "fuel_intensity_L_per_100km": 0.01,
-#   "departed": 2761,
-#   "arrived": 2693
-# }
-```
-
-### 一键对比
-
-```bash
-# 对比多个算法的 tripinfo 输出
-python3 -m evaluation.compare \
-  --tripinfo-fixed     tripinfo_fixed.xml \
-  --tripinfo-sotl      tripinfo_sotl.xml \
-  --tripinfo-maxpressure tripinfo_mp.xml \
-  --tripinfo-ippo      tripinfo_ippo.xml \
-  --eval-duration 3600 \
-  --markdown
-```
-
----
-
-## HTTP 接口
-
-每个算法服务实现 5 个接口，协议见 `../docs/algorithm_interface.md`：
-
-| 接口 | 方法 | 调用频次 | 说明 |
-|------|------|---------|------|
-| `/initialize` | POST | 每轮 1 次 | 接收路口拓扑、相位、车道、车型 |
-| `/step` | POST | 每决策周期 1 次 | 接收实时状态，返回信号+车辆动作 |
-| `/finish` | POST | 每轮 1 次 | 接收汇总数据，输出指标 |
-| `/stats` | GET | 任意 | 查询最近仿真的 6 大指标 |
-| `/health` | GET | 任意 | 健康检查 |
-
-请求/响应格式详见 `../docs/algorithm_interface.md`。
-
----
-
-## 启动命令
-
-```bash
-# 确保在 algorithms/ 目录
-cd /home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms
-
-# MaxPressure（8001）
-python3 -m uvicorn max_pressure.server:app --host 0.0.0.0 --port 8001
-
-# SOTL（8002）
-python3 -m uvicorn sotl.server:app --host 0.0.0.0 --port 8002
-
-# IPPO — 随机探索模式（8003）
-IPPO_MODE=random ~/anaconda3/envs/v2x-ai-py310/bin/python3 \
-  -m uvicorn ippo.server:app --host 0.0.0.0 --port 8003
-
-# IPPO — 训练模式
 export SUMO_HOME=/usr/share/sumo
-~/anaconda3/envs/v2x-ai-py310/bin/python3 -m ippo.train \
-  --episodes 50 --save models/ippo_demo2
-
-# IPPO — 推理模式
-IPPO_MODE=model IPPO_MODEL_PATH=models/ippo_demo2.zip \
-  ~/anaconda3/envs/v2x-ai-py310/bin/python3 \
-  -m uvicorn ippo.server:app --port 8003
+python3 -c "import torch, numpy; print(torch.__version__, numpy.__version__)"
+sumo --version
 ```
 
-IPPO 使用独立的 conda 环境 `v2x-ai-py310`（含 torch + stable-baselines3）。
-MaxPressure / SOTL 用系统 Python 即可。
+完整依赖与 SUMO 安装方式见 [环境配置](../docs/setup.md)。SOTL 的 HTTP 服务还需要：
 
----
-
-## 当前阻塞
-
-多路口车流数据（`demo_3` ~ `demo_20`）。以下工作依赖此数据：
-
-- SCATS 绿波协调
-- IPPO 多路口参数共享验证
-- 自研 MARL（QMIX/MAPPO）多路口协同训练
-
----
-
-## 对接关系
-
+```bash
+python3 -m pip install -r algorithms/sotl/requirements.txt
 ```
-仿真端（SUMO + TraCI）
-    │  HTTP/JSON v2.0
-    ├──→ :8001 MaxPressure
-    ├──→ :8002 SOTL
-    ├──→ :8003 IPPO
-    └──→ 内置 Fixed-Time（不经过 HTTP）
+
+## 4. 快速运行
+
+### 4.1 fixed 基线
+
+fixed 由 SUMO 直接执行，不加载算法模块：
+
+```bash
+python3 -m simulation.sumo.run \
+  --mode fixed \
+  --intersection demo_1 demo_2 demo_3 demo_4 \
+  --period off_peak \
+  --duration 300 \
+  --seed 62001
 ```
+
+### 4.2 SOTL 本地模式
+
+```bash
+python3 -m simulation.sumo.run \
+  --mode algorithm \
+  --algorithm-transport local \
+  --algorithm-module algorithms.sotl \
+  --intersection demo_1 demo_2 demo_3 demo_4 \
+  --period off_peak \
+  --duration 300 \
+  --seed 62001
+```
+
+SOTL 根据每个相位服务车道的 `vehicle_count` 选择车辆最多的相位，并使用动态最小保持时间。黄灯、全红和项目级最小绿灯仍由仿真端执行。
+
+### 4.3 SOTL HTTP 模式
+
+先启动服务：
+
+```bash
+PYTHONPATH=algorithms python3 -m uvicorn sotl.server:app \
+  --host 0.0.0.0 \
+  --port 8002
+```
+
+再启动仿真：
+
+```bash
+python3 -m simulation.sumo.run \
+  --mode algorithm \
+  --algorithm-transport http \
+  --algorithm-endpoint http://127.0.0.1:8002 \
+  --intersection demo_1 demo_2 demo_3 demo_4 \
+  --period off_peak \
+  --duration 300 \
+  --seed 62001
+```
+
+完成一轮后可访问 `GET /stats` 获取最近一次六指标结果，`GET /health` 查看服务状态。
+
+### 4.4 IPPO ep160 推理
+
+仓库只发布当前选出的 ep160：
+
+```text
+algorithms/ippo/models/ippo_v8_20tls_ep160.pt
+```
+
+推理时必须显式设置 `IPPO_MODE=model` 和模型路径；不设置时默认是 random 模式：
+
+```bash
+IPPO_MODE=model \
+IPPO_MODEL_PATH=algorithms/ippo/models/ippo_v8_20tls_ep160.pt \
+python3 -m simulation.sumo.run \
+  --mode algorithm \
+  --algorithm-transport local \
+  --algorithm-module algorithms.ippo \
+  --intersection \
+    demo_1 demo_2 demo_3 demo_4 demo_5 \
+    demo_6 demo_7 demo_8 demo_9 demo_10 \
+    demo_11 demo_12 demo_13 demo_14 demo_15 \
+    demo_16 demo_17 demo_18 demo_19 demo_20 \
+  --period off_peak \
+  --duration 300 \
+  --seed 62001
+```
+
+发布模型的 checkpoint 固定记录了 `demo_1` 至 `demo_20` 的路口集合和顺序，不能直接用于 4 路口或其他路口组合。正式复现实验应使用上面的 20 路口配置和第 7 节的配对评价入口；4 路口健康检查使用第 6.1 节重新创建的小模型。
+
+模型 SHA-256：
+
+```text
+5656e351dc66aa7ffebd50d6a01109aff6a71bca393976eb45e9dca70c7ef107
+```
+
+### 4.5 CoSLight-P0 本地模式
+
+```bash
+python3 -m simulation.sumo.run \
+  --mode algorithm \
+  --algorithm-transport local \
+  --algorithm-module algorithms.coslight \
+  --intersection demo_1 demo_2 demo_3 demo_4 \
+  --period off_peak \
+  --duration 300 \
+  --seed 62001
+```
+
+当前模块默认进入在线采样/训练模式，不会自动加载目录中的参考权重。`actor_207.pt`、`critic_207.pt` 和 `vnorm_207.pt` 是历史参考产物；不要把上面的命令误当作冻结模型评估。冻结推理需要在路口元数据初始化后显式调用 `checkpoint_load(path)`，并先确认模型结构与路口数量兼容。
+
+## 5. 新算法接入
+
+### 5.1 本地模块
+
+复制 [`local_policy_example.py`](local_policy_example.py)，实现：
+
+```python
+def initialize(payload: dict) -> dict: ...
+def step(payload: dict) -> dict: ...
+def finish(payload: dict) -> object: ...
+```
+
+然后运行：
+
+```bash
+python3 -m simulation.sumo.run \
+  --mode algorithm \
+  --algorithm-transport local \
+  --algorithm-module algorithms.your_algorithm \
+  --intersection demo_1 \
+  --period off_peak \
+  --duration 120 \
+  --seed 42
+```
+
+本地模式与 HTTP 使用完全相同的字典结构，但省去网络与 JSON 编解码，适合训练和可信模块部署。
+
+### 5.2 HTTP 服务
+
+HTTP 算法必须提供：
+
+| 接口 | 调用次数 | 作用 |
+|---|---:|---|
+| `POST /initialize` | 每轮一次 | 接收静态路网、相位、车道、车型和控制能力 |
+| `POST /step` | 每个决策周期一次 | 接收实时状态并返回动作 |
+| `POST /finish` | 每轮一次 | 接收结束原因和汇总指标 |
+
+协议错误、超时、episode/step 回显不一致或非法动作会使本轮仿真失败。完整 JSON 示例见 [算法接口协议](../docs/algorithm_interface.md)。
+
+### 5.3 只读 AI 观察者
+
+只需要状态、不需要控制权时，实现：
+
+```python
+def initialize(metadata: dict) -> None: ...
+def on_frame(frame: dict) -> None: ...
+def finish(summary: dict) -> None: ...
+```
+
+示例：
+
+```bash
+python3 -m simulation.sumo.run \
+  --mode fixed \
+  --ai-observer-module algorithms.ai_observer_example \
+  --ai-frame-interval 1.0 \
+  --intersection demo_1 \
+  --period off_peak \
+  --duration 120
+```
+
+观察者异步消费容量为 1 的最新帧队列。推理慢时旧帧会被覆盖，`frame_id` 缺口可用于检测跳帧，SUMO 不等待观察者完成每一帧。
+
+## 6. IPPO 训练
+
+IPPO v8 使用多个独立 SUMO 进程同步采样、中心 learner 统一更新。所有 worker 必须使用同一 policy generation；任何 worker 失败时整批数据作废，保证 PPO 的 on-policy 条件。
+
+### 6.1 4 路口 smoke
+
+```bash
+python3 -m algorithms.ippo.parallel_train \
+  --episodes 4 \
+  --duration 120 \
+  --workers 4 \
+  --intersections 4 \
+  --period off_peak \
+  --seed 90000 \
+  --checkpoint-every 4 \
+  --save /tmp/ippo_v8_4tls_smoke.pt
+```
+
+### 6.2 20 路口训练
+
+```bash
+python3 -m algorithms.ippo.parallel_train \
+  --episodes 160 \
+  --duration 300 \
+  --workers 8 \
+  --intersections 20 \
+  --period off_peak \
+  --seed 88300 \
+  --effective-demand on \
+  --checkpoint-every 8 \
+  --save algorithms/ippo/runs/my_v8_run/ippo_v8_20tls_ep160.pt
+```
+
+`--episodes` 表示本次新增 episode 数。续训应同时传入 `--resume`；程序会恢复 Actor、Critic、optimizer、episode 计数和训练 seed 范围，并拒绝不兼容的 checkpoint。
+
+训练瓶颈主要是 SUMO CPU 进程。增加 worker 前先检查物理 CPU 核、内存和并发 SUMO 稳定性；当前小型 MLP 通常不会因换用更强 GPU 获得同等比例加速。
+
+## 7. 配对评价
+
+正式对比使用相同场景、时长和 seed 的 paired evaluation：
+
+```bash
+python3 -m algorithms.ippo.evaluate_paired \
+  --methods fixed random model \
+  --episodes 4 \
+  --workers 8 \
+  --duration 300 \
+  --intersections 20 \
+  --period off_peak \
+  --seed 62000 \
+  --checkpoint algorithms/ippo/models/ippo_v8_20tls_ep160.pt \
+  --output /tmp/ippo_v8_ep160_paired.json
+```
+
+`--seed 62000 --episodes 4` 生成 `62001..62004`。评价器会拒绝与 checkpoint 训练 seed 范围重叠的评估配置。
+
+### 7.1 六项正式指标
+
+| 指标 | 趋势 | 数据来源 |
+|---|---|---|
+| 平均行程时间 | 越低越好 | 已完成车辆 TripInfo `duration` |
+| 平均等待时间 | 越低越好 | 同一批已完成车辆 TripInfo `waitingTime` |
+| 平均排队长度 | 越低越好 | 1 s 实时进口车道 `halting_count` 时间平均 |
+| 吞吐量 | 越高越好 | `arrived / simulation_time × 3600` |
+| 平均决策延迟 | 越低越好 | `step()` 内纯算法计算耗时 |
+| 燃油强度 | 越低越好 | 燃油车辆累计燃油/同一车辆集合累计里程 |
+
+燃油强度只统计 gasoline、diesel 和 hybrid。纯电动车、自行车、电动自行车等不进入燃油分子或里程分母。数据缺失时返回 `N/A`，不会以 0 参与平均。
+
+300 s episode 结束时仍可能有车辆留在路网。除六项正式指标外，应同时检查 completion rate、未完成车辆 waiting/timeLoss、末端 active/halting 和残余队列，避免 completed-trip 截尾偏差。
+
+### 7.2 当前 IPPO ep160 结果
+
+统一配置：20 路口、off_peak、300 s、deterministic 推理、seeds `62001..62004`。
+
+| 方法 | 行程时间↓ | 等待时间↓ | 队列↓ | 吞吐量↑ | 决策延迟↓ | 燃油强度↓ |
+|---|---:|---:|---:|---:|---:|---:|
+| IPPO v8 ep160 | 100.53 s | 8.43 s | 0.08 | 906 veh/h | 12.53 ms | 13.82 L/100km |
+| fixed | 103.04 s | 16.22 s | 0.22 | 744 veh/h | N/A | 14.70 L/100km |
+
+ep160 相对 fixed：行程时间 `-2.4%`、等待时间 `-48.0%`、队列 `-63.6%`、吞吐量 `+21.8%`、燃油强度 `-5.9%`。这些数字是当前 off_peak 验证集结果，不代表多时段、扰动或 MaxPressure 对比结论。完整训练谱系和 ep160/168/176/184/192 选模过程见 [IPPO 说明文档](ippo/说明文档.md)。
+
+## 8. 文件职责
+
+```text
+algorithms/
+├── README.md                  # 本文档：算法入口和统一使用方式
+├── local_policy_example.py    # Protocol 2.0 本地算法模板
+├── ai_observer_example.py     # 高频只读观察器模板
+├── ippo/                      # IPPO v8、并行训练、配对评价、测试、发布模型
+├── coslight/                  # CoSLight-P0、参考权重和算法说明
+├── sotl/                      # SOTL 本地控制器与 FastAPI 服务
+└── evaluation/                # 六指标采集、TripInfo 回填和计算
+```
+
+| 文件 | 作用 |
+|---|---|
+| [`ippo/controller.py`](ippo/controller.py) | IPPO 状态、相位语义、网络、动作约束、奖励、GAE/PPO 和 checkpoint |
+| [`ippo/parallel_train.py`](ippo/parallel_train.py) | 多 SUMO 同步采样和中心更新 |
+| [`ippo/evaluate_paired.py`](ippo/evaluate_paired.py) | fixed/random/model 的配对评价 |
+| [`ippo/test_controller.py`](ippo/test_controller.py) | IPPO 与并行训练回归测试 |
+| [`coslight/controller.py`](coslight/controller.py) | Transformer 控制器、PPO 和车辆速度/车道建议 |
+| [`sotl/controller.py`](sotl/controller.py) | SOTL 规则控制器 |
+| [`sotl/server.py`](sotl/server.py) | SOTL FastAPI/HTTP 服务 |
+| [`evaluation/collector.py`](evaluation/collector.py) | 实时帧指标采集 |
+| [`evaluation/metrics.py`](evaluation/metrics.py) | TripInfo 回填、六指标计算和燃油单位处理 |
+| [`evaluation/runtime.py`](evaluation/runtime.py) | 单 episode 评价生命周期和 episode_id 保护 |
+
+## 9. 测试与提交检查
+
+```bash
+python3 -m pytest -q \
+  algorithms/ippo \
+  algorithms/evaluation \
+  tests/test_session_scenario.py
+
+python3 -m compileall -q algorithms/ippo algorithms/evaluation algorithms/sotl
+git diff --check
+```
+
+IPPO 训练产物默认不进入 Git：
+
+```text
+algorithms/ippo/runs/
+algorithms/ippo/checkpoints/
+algorithms/ippo/*.pt
+```
+
+仓库只保留经过统一评价选出的 `algorithms/ippo/models/ippo_v8_20tls_ep160.pt`。更换发布模型时，必须同步更新 SHA-256、验证 seed、实验表和说明文档。
+
+## 10. 常见问题
+
+### IPPO 为什么像随机策略？
+
+`IPPO_MODE` 默认值是 `random`。冻结模型评估必须设置：
+
+```bash
+export IPPO_MODE=model
+export IPPO_MODEL_PATH=algorithms/ippo/models/ippo_v8_20tls_ep160.pt
+```
+
+### checkpoint 为什么加载失败？
+
+IPPO 会检查模型版本、路口顺序、状态/动作维度、动作周期、相位特征 schema、最大绿灯、ETA 开关和训练时段。旧版 raw `state_dict` 或配置不一致的模型会在启动 worker 前被拒绝。
+
+### `Retrying in 1 seconds` 是训练错误吗？
+
+通常是算法客户端等待新的 SUMO/协议服务就绪。只要随后 session 正常进入运行并以 `COMPLETED` 结束，就不是 PPO 失败；若持续重试，应检查服务进程、端口和 session 状态。
+
+### 路口 891 的 warning 是什么？
+
+```text
+Warning: Missing green phase in tlLogic '891', program 'demo_19_off_peak' for tl-index 7
+```
+
+它表示该信号方案中受控 link index 7 没有任何绿灯相位，属于 SUMO 信号数据问题，不是 IPPO 代码异常。对照算法使用同一网络时仍可配对比较，但正式数据应由 SUMO/数据负责人修复或确认。
+
+### emergency braking warning 是 PPO 崩溃吗？
+
+不是。它是 SUMO 跟驰/车流警告。算法评价可以把急刹车作为安全诊断，但单条 warning 不代表训练更新失败。
+
+### 为什么不直接访问 TripInfo 做训练？
+
+TripInfo 在 episode 结束后用于精确评价已完成和未完成行程；实时控制、奖励和 ETA 需求仍读取 Protocol 2.0 状态。这样训练不依赖未来信息，也不要求算法接管 SUMO。
+
+## 11. 贡献约定
+
+新增或修改算法时：
+
+1. 保持 `initialize/step/finish` 的 Protocol 2.0 响应完整；
+2. 不绕过仿真端信号安全约束；
+3. 为动作 mask、checkpoint 兼容、异常 episode 和评价缺失数据补测试；
+4. 使用固定留出 seed 做 paired evaluation；
+5. 同时报告六项正式指标和未完成车辆诊断；
+6. 不提交 `runs/`、临时 checkpoint、日志或服务器绝对路径；
+7. 文档中的命令必须从仓库根目录可直接执行。

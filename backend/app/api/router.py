@@ -1,4 +1,4 @@
-"""聚合API路由：对外统一 /api/v1；算法协议挂在 internal 子路径。"""
+"""聚合API路由：对外统一 /api/v1；算法协议挂在internal子路径"""
 
 from __future__ import annotations
 

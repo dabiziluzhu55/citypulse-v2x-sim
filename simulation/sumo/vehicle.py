@@ -23,6 +23,10 @@ from .policy import (
 from .vehicle_profiles import VehicleProfile
 
 
+STOPPED_SPEED_EPSILON_MPS = 1e-3
+STOPPED_LANE_CHANGE_MODE = 512
+DEFAULT_LANE_CHANGE_MODE = 1621
+
 _SUBSCRIPTION_FIELDS = {
     "VAR_POSITION": "position",
     "VAR_SPEED": "speed",
@@ -54,6 +58,9 @@ class _TrackedVehicle:
     hard_braking_total: int = 0
     hard_braking_interval: int = 0
     hard_braking_active: bool = False
+    previous_road_id: str | None = None
+    previous_lane_index: int | None = None
+    last_lane_change_time: float | None = None
 
 
 def build_vehicle_type_metadata(
@@ -135,6 +142,17 @@ class VehicleTelemetryTracker:
             }
             if len(tracked.values) != len(self._variables):
                 tracked.values = self._read_direct(vehicle_id)
+            road_id = str(tracked.values["road_id"])
+            lane_index = int(tracked.values["lane_index"])
+            if (
+                tracked.previous_road_id == road_id
+                and tracked.previous_lane_index is not None
+                and tracked.previous_lane_index != lane_index
+                and not road_id.startswith(":")
+            ):
+                tracked.last_lane_change_time = now
+            tracked.previous_road_id = road_id
+            tracked.previous_lane_index = lane_index
             fuel_rate = max(0.0, float(tracked.values["fuel_rate"]))
             consumed = fuel_rate * delta
             tracked.fuel_total_mg += consumed
@@ -185,12 +203,16 @@ class VehicleTelemetryTracker:
 
     def observations(self, *, reset_interval: bool) -> Mapping[str, VehicleObservation]:
         result = {}
+        neighbor_gaps = self._neighbor_gaps()
         for vehicle_id in sorted(self._tracked):
             tracked = self._tracked[vehicle_id]
             values = tracked.values
             if not values:
                 continue
             type_metadata = self.vehicle_types[tracked.type_id]
+            leader_gap, follower_gap = neighbor_gaps.get(
+                vehicle_id, (None, None)
+            )
             x, y = values["position"]
             lane_index = int(values["lane_index"])
             route_edges = tuple(str(edge) for edge in values["route_edges"])
@@ -233,11 +255,54 @@ class VehicleTelemetryTracker:
                     hard_braking_since_last_decision=tracked.hard_braking_interval,
                     hard_braking_total=tracked.hard_braking_total,
                 ),
+                leader_gap_m=leader_gap,
+                follower_gap_m=follower_gap,
+                time_since_last_lane_change_s=(
+                    max(0.0, self._last_time - tracked.last_lane_change_time)
+                    if tracked.last_lane_change_time is not None
+                    else None
+                ),
             )
         if reset_interval:
             for tracked in self._tracked.values():
                 tracked.fuel_interval_mg = 0.0
                 tracked.hard_braking_interval = 0
+        return result
+
+    def _neighbor_gaps(self) -> Mapping[str, tuple[float | None, float | None]]:
+        """Derive bumper-to-bumper gaps from the subscribed lane-position cache."""
+        lanes: dict[str, list[tuple[float, str, float]]] = {}
+        for vehicle_id, tracked in self._tracked.items():
+            if not tracked.values:
+                continue
+            metadata = self.vehicle_types[tracked.type_id]
+            lanes.setdefault(str(tracked.values["lane_id"]), []).append(
+                (
+                    float(tracked.values["lane_position"]),
+                    vehicle_id,
+                    metadata.length_m,
+                )
+            )
+
+        result = {}
+        for vehicles in lanes.values():
+            vehicles.sort(key=lambda item: (item[0], item[1]))
+            for index, (position, vehicle_id, length) in enumerate(vehicles):
+                leader_gap = None
+                follower_gap = None
+                if index + 1 < len(vehicles):
+                    leader_position, _, leader_length = vehicles[index + 1]
+                    leader_gap = max(
+                        0.0,
+                        leader_position - leader_length - position,
+                    )
+                if index > 0:
+                    follower_position, _, _ = vehicles[index - 1]
+                    follower_gap = max(
+                        0.0,
+                        position - length - follower_position,
+                    )
+                result[vehicle_id] = (leader_gap, follower_gap)
         return result
 
     def _next_signal(self, values) -> NextSignalObservation | None:
@@ -255,8 +320,14 @@ class VehicleTelemetryTracker:
     def contains(self, vehicle_id: str) -> bool:
         return vehicle_id in self._tracked
 
+    def active_vehicle_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._tracked))
+
     def type_metadata(self, vehicle_id: str) -> VehicleTypeMetadata:
         return self.vehicle_types[self._tracked[vehicle_id].type_id]
+
+    def speed(self, vehicle_id: str) -> float:
+        return float(self._tracked[vehicle_id].values["speed"])
 
     def allowed_speed(self, vehicle_id: str) -> float:
         return float(self._tracked[vehicle_id].values["allowed_speed"])
@@ -308,6 +379,63 @@ class VehicleTelemetryTracker:
         return sum(
             item.length_m + item.min_gap_m for item in self.vehicle_types.values()
         ) / len(self.vehicle_types)
+
+
+class StoppedLaneChangeGuard:
+    """Disable autonomous SUMO lane changes while official vehicles are stopped."""
+
+    def __init__(
+        self,
+        traci,
+        telemetry: VehicleTelemetryTracker,
+        *,
+        stopped_speed_epsilon_mps: float = STOPPED_SPEED_EPSILON_MPS,
+    ) -> None:
+        if stopped_speed_epsilon_mps < 0:
+            raise ValueError("stopped_speed_epsilon_mps cannot be negative.")
+        vehicle = traci.vehicle
+        if not hasattr(vehicle, "getLaneChangeMode") or not hasattr(
+            vehicle, "setLaneChangeMode"
+        ):
+            raise RuntimeError(
+                "SUMO TraCI vehicle lane-change mode APIs are unavailable."
+            )
+        self.traci = traci
+        self.telemetry = telemetry
+        self.stopped_speed_epsilon_mps = float(stopped_speed_epsilon_mps)
+        self._locked_modes: dict[str, int] = {}
+
+    def tick(self) -> None:
+        active_ids = set(self.telemetry.active_vehicle_ids())
+        for vehicle_id in sorted(set(self._locked_modes) - active_ids):
+            self._locked_modes.pop(vehicle_id, None)
+        for vehicle_id in sorted(active_ids):
+            speed = self.telemetry.speed(vehicle_id)
+            if speed <= self.stopped_speed_epsilon_mps:
+                if vehicle_id not in self._locked_modes:
+                    self._lock(vehicle_id)
+            elif vehicle_id in self._locked_modes:
+                self._restore(vehicle_id)
+
+    def _lock(self, vehicle_id: str) -> None:
+        try:
+            raw_mode = self.traci.vehicle.getLaneChangeMode(vehicle_id)
+            original_mode = (
+                DEFAULT_LANE_CHANGE_MODE if raw_mode is None else int(raw_mode)
+            )
+            self.traci.vehicle.setLaneChangeMode(
+                vehicle_id, STOPPED_LANE_CHANGE_MODE
+            )
+        except Exception:
+            return
+        self._locked_modes[vehicle_id] = original_mode
+
+    def _restore(self, vehicle_id: str) -> None:
+        original_mode = self._locked_modes.pop(vehicle_id)
+        try:
+            self.traci.vehicle.setLaneChangeMode(vehicle_id, original_mode)
+        except Exception:
+            return
 
 
 class VehicleActionController:
@@ -377,6 +505,7 @@ class VehicleActionController:
                 raise ValueError(f"Action for vehicle {vehicle_id} cannot be empty.")
             speed = self._validate_speed(vehicle_id, raw_action.get("target_speed_mps"))
             lane = self._validate_lane(vehicle_id, raw_action.get("target_lane_index"))
+            self._validate_stopped_lane_change(vehicle_id, speed, lane)
             if speed is None and lane is None:
                 raise ValueError(
                     f"Action for vehicle {vehicle_id} must set at least one target."
@@ -414,9 +543,29 @@ class VehicleActionController:
         vehicle_class = self.telemetry.type_metadata(vehicle_id).vehicle_class
         allowed = tuple(self.traci.lane.getAllowed(lane_id))
         disallowed = tuple(self.traci.lane.getDisallowed(lane_id))
-        if (allowed and vehicle_class not in allowed) or vehicle_class in disallowed:
+        if (
+            (allowed and "all" not in allowed and vehicle_class not in allowed)
+            or "all" in disallowed
+            or vehicle_class in disallowed
+        ):
             raise ValueError(f"Lane {lane_id} does not allow {vehicle_class} vehicles.")
         return value
+
+    def _validate_stopped_lane_change(
+        self,
+        vehicle_id: str,
+        target_speed_mps: float | None,
+        target_lane_index: int | None,
+    ) -> None:
+        if target_lane_index is None:
+            return
+        if self.telemetry.speed(vehicle_id) <= STOPPED_SPEED_EPSILON_MPS:
+            raise ValueError(f"Vehicle {vehicle_id} cannot change lanes while stopped.")
+        if (
+            target_speed_mps is not None
+            and target_speed_mps <= STOPPED_SPEED_EPSILON_MPS
+        ):
+            raise ValueError(f"Vehicle {vehicle_id} cannot change lanes while stopped.")
 
     def apply(
         self,

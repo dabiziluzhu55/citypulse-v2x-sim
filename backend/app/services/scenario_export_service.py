@@ -1,4 +1,4 @@
-"""将场景配置编译为可下载的SUMO文件包"""
+"""将场景配置编译为可下载的SUMO文件包（xiongan_20时含九区域OD）"""
 
 from __future__ import annotations
 
@@ -17,18 +17,24 @@ from simulation.sumo.session import SimulationManager
 
 from ..core.config import Settings
 from ..core.exceptions import AppError
+from ..scenario.presets import require_scenario_preset
 from ..scenario.resolver import resolve_start_simulation
 from ..schemas.events import (
     AccidentRequest,
     EventRequest,
     LaneClosureRequest,
+    MajorEventClosingRequest,
+    MajorEventOpeningRequest,
     SpeedLimitRequest,
 )
 from ..schemas.simulations import StartSimulationRequest
+from .od_export import OdExportArtifacts, write_od_bundle
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_FLOW_MULTIPLIER = 1.0
+# 九区域OD/TAZ是全网20路口口径，仅全网预设导出
+OD_EXPORT_PRESET_ID = "xiongan_20"
 
 
 class ScenarioExportService:
@@ -64,8 +70,33 @@ class ScenarioExportService:
             shutil.copy2(self._settings.signals_net_path, net_destination)
             self._rewrite_sumocfg_net_file(scenario.sumocfg, net_filename)
             self._write_events_file(bundle_dir, resolved.initial_events)
-            self._write_export_manifest(bundle_dir, request, resolved.scenario_preset_id)
-            filename = self._build_download_filename(resolved.scenario_preset_id, resolved.period)
+
+            od_artifacts: OdExportArtifacts | None = None
+            if resolved.scenario_preset_id == OD_EXPORT_PRESET_ID:
+                od_artifacts = write_od_bundle(
+                    project_root=self._settings.project_root,
+                    generated_dir=self._settings.generated_dir,
+                    period=resolved.period,
+                    window_start_seconds=resolved.window_start_seconds,
+                    duration_seconds=resolved.duration_seconds,
+                    output_dir=bundle_dir / "od",
+                )
+            else:
+                logger.info(
+                    "Skip OD/TAZ export for preset %s (only %s includes global OD)",
+                    resolved.scenario_preset_id,
+                    OD_EXPORT_PRESET_ID,
+                )
+
+            self._write_export_manifest(
+                bundle_dir,
+                request,
+                resolved.scenario_preset_id,
+                od_artifacts=od_artifacts,
+            )
+            filename = self._build_download_filename(
+                resolved.scenario_preset_id, resolved.period
+            )
             return filename, self._create_zip(bundle_dir)
         except ScenarioCompilationError as exc:
             raise AppError(
@@ -105,11 +136,22 @@ class ScenarioExportService:
         bundle_dir: Path,
         request: StartSimulationRequest,
         scenario_preset_id: str,
+        *,
+        od_artifacts: OdExportArtifacts | None,
     ) -> None:
-        payload = {
+        preset = require_scenario_preset(scenario_preset_id)
+        files: dict[str, str] = {
+            "sumocfg": "session.sumocfg",
+            "routes": "session.rou.xml",
+            "additional": "session.add.xml",
+            "events": "events.json",
+        }
+        payload: dict[str, object] = {
             "schema_version": 1,
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "scenario_preset_id": scenario_preset_id,
+            "scenario_preset_label": preset.label,
+            "controlled_intersection_ids": list(preset.intersection_ids),
             "period": request.period,
             "window_start_seconds": request.window_start_seconds,
             "duration_seconds": request.duration_seconds,
@@ -119,16 +161,18 @@ class ScenarioExportService:
                 target.model_dump(exclude_none=True)
                 for target in request.disturbance_targets
             ],
-            "files": {
-                "sumocfg": "session.sumocfg",
-                "routes": "session.rou.xml",
-                "additional": "session.add.xml",
-                "events": "events.json",
-            },
+            "files": files,
+            "od_included": od_artifacts is not None,
         }
+        if od_artifacts is not None:
+            files["od_matrix_csv"] = f"od/{od_artifacts.csv_name}"
+            files["od_taz_json"] = f"od/{od_artifacts.taz_json_name}"
+            files["od_heatmap_png"] = f"od/{od_artifacts.heatmap_name}"
+            payload["od_sources"] = od_artifacts.relative_sources
+            payload["od_time_scope"] = "full_period"
         net_files = sorted(path.name for path in bundle_dir.glob("*.net.xml"))
         if net_files:
-            payload["files"]["network"] = net_files[0]
+            files["network"] = net_files[0]
         (bundle_dir / "export_manifest.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -159,7 +203,7 @@ def _serialize_event(event: EventRequest) -> dict[str, object]:
             "lane_ids": event.lane_ids,
         }
     if isinstance(event, SpeedLimitRequest):
-        payload = {
+        return {
             "event_type": "speed_limit",
             "event_id": event.event_id,
             "start_seconds": event.start_seconds,
@@ -167,7 +211,6 @@ def _serialize_event(event: EventRequest) -> dict[str, object]:
             "lane_ids": event.lane_ids,
             "max_speed": event.max_speed,
         }
-        return payload
     if isinstance(event, AccidentRequest):
         return {
             "event_type": "accident",
@@ -176,6 +219,28 @@ def _serialize_event(event: EventRequest) -> dict[str, object]:
             "end_seconds": event.end_seconds,
             "lane_id": event.lane_id,
             "position_ratio": event.position_ratio,
+        }
+    if isinstance(event, MajorEventOpeningRequest):
+        return {
+            "event_type": "major_event_opening",
+            "event_id": event.event_id,
+            "start_seconds": event.start_seconds,
+            "end_seconds": event.end_seconds,
+            "venue_lane_id": event.venue_lane_id,
+            "vehicle_count": event.vehicle_count,
+            "source_lane_ids": event.source_lane_ids,
+            "vehicle_type_id": event.vehicle_type_id,
+        }
+    if isinstance(event, MajorEventClosingRequest):
+        return {
+            "event_type": "major_event_closing",
+            "event_id": event.event_id,
+            "start_seconds": event.start_seconds,
+            "end_seconds": event.end_seconds,
+            "venue_lane_id": event.venue_lane_id,
+            "vehicle_count": event.vehicle_count,
+            "destination_lane_ids": event.destination_lane_ids,
+            "vehicle_type_id": event.vehicle_type_id,
         }
     raise AppError(
         code="INVALID_EVENT",

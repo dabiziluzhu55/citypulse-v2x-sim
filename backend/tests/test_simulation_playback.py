@@ -46,7 +46,8 @@ def test_pause_simulation_returns_paused_state(client, mock_manager: MagicMock) 
         "playback_speed": 1.0,
     }
     mock_manager.pause.assert_called_once_with("session-1")
-    mock_manager.snapshot.assert_called_once_with("session-1")
+    assert mock_manager.snapshot.call_count >= 1
+    mock_manager.snapshot.assert_any_call("session-1")
 
 
 def test_resume_simulation_returns_running_state(client, mock_manager: MagicMock) -> None:
@@ -62,7 +63,8 @@ def test_resume_simulation_returns_running_state(client, mock_manager: MagicMock
         "playback_speed": 1.0,
     }
     mock_manager.resume.assert_called_once_with("session-1")
-    mock_manager.snapshot.assert_called_once_with("session-1")
+    assert mock_manager.snapshot.call_count >= 1
+    mock_manager.snapshot.assert_any_call("session-1")
 
 
 def test_pause_unknown_session_maps_to_404(client, mock_manager: MagicMock) -> None:

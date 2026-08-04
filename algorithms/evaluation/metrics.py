@@ -1,225 +1,362 @@
-"""竞赛算法评估指标 -- 6 大指标纯计算，与仿真端解耦。
-适用于所有算法：FixedTime / MaxPressure / SOTL / IPPO / 自研RL。
-"""
+"""Six official traffic-control metrics computed outside the simulator."""
 
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
+
+from .collector import EvalResult, FUEL_POWERTRAINS, _resolve_fuel_telemetry_unit
+
+
+def _rounded(value: Optional[float], digits: int) -> Optional[float]:
+    return None if value is None else round(value, digits)
 
 
 @dataclass
 class BenchmarkResult:
-    """单次仿真的全部指标。"""
+    """Metrics for one completed benchmark run."""
 
     algorithm: str = ""
     scenario: str = ""
-
-    # 原始数据
     total_departed: int = 0
     total_arrived: int = 0
     total_planned: int = 0
     eval_duration_s: float = 0.0
-
-    # 6 大指标
-    avg_travel_time_s: float = 0.0            # 1. 平均行程时间
-    avg_waiting_time_s: float = 0.0           # 2. 平均等待时间
-    avg_queue_length_veh: float = 0.0         # 3. 平均排队长度
-    throughput_veh_per_h: float = 0.0         # 4. 有效吞吐量
-    avg_decision_latency_ms: float = 0.0      # 5. 平均决策耗时
-    fuel_intensity_L_per_100km: float = 0.0   # 6. 单位车公里燃油消耗
-
-    # 辅助（队列时序数据来源）
+    avg_travel_time_s: Optional[float] = None
+    avg_waiting_time_s: Optional[float] = None
+    avg_queue_length_veh: Optional[float] = None
+    throughput_veh_per_h: Optional[float] = None
+    avg_decision_latency_ms: Optional[float] = None
+    fuel_intensity_L_per_100km: Optional[float] = None
     avg_queue_per_step: List[float] = field(default_factory=list)
+    metric_sources: Dict[str, str] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
-            "avg_travel_time_s": round(self.avg_travel_time_s, 2),
-            "avg_waiting_time_s": round(self.avg_waiting_time_s, 2),
-            "avg_queue_length_veh": round(self.avg_queue_length_veh, 2),
-            "throughput_veh_per_h": round(self.throughput_veh_per_h, 1),
-            "avg_decision_latency_ms": round(self.avg_decision_latency_ms, 3),
-            "fuel_intensity_L_per_100km": round(self.fuel_intensity_L_per_100km, 2),
+            "avg_travel_time_s": _rounded(self.avg_travel_time_s, 2),
+            "avg_waiting_time_s": _rounded(self.avg_waiting_time_s, 2),
+            "avg_queue_length_veh": _rounded(self.avg_queue_length_veh, 2),
+            "throughput_veh_per_h": _rounded(self.throughput_veh_per_h, 1),
+            "avg_decision_latency_ms": _rounded(
+                self.avg_decision_latency_ms, 3
+            ),
+            "fuel_intensity_L_per_100km": _rounded(
+                self.fuel_intensity_L_per_100km, 2
+            ),
             "departed": self.total_departed,
             "arrived": self.total_arrived,
+            "metric_sources": dict(self.metric_sources),
+            "warnings": list(self.warnings),
         }
-
-
-# ======================================================================
-# 指标计算
-# ======================================================================
 
 
 def compute_from_tripinfo(
     tripinfo_path: str,
     *,
     eval_duration_s: float = 0.0,
-    queue_timeseries: Optional[List[float]] = None,
+    queue_timeseries: Optional[Sequence[float]] = None,
     lane_count: int = 0,
+    decision_latencies_ms: Optional[Sequence[float]] = None,
     emission_path: Optional[str] = None,
+    vehicle_type_metadata: Optional[Mapping[str, Any]] = None,
+    emission_step_scaled: bool = False,
+    emission_step_length_s: Optional[float] = None,
+    emission_fuel_unit: str = "auto",
     total_planned: int = 0,
     algorithm: str = "",
     scenario: str = "",
 ) -> BenchmarkResult:
-    """从 SUMO tripinfo.xml 计算全部 6 大指标。
+    """Compute metrics from TripInfo plus optional live auxiliary sources.
 
-    Parameters
-    ----------
-    tripinfo_path : str
-        SUMO 的 tripinfo 输出文件路径。
-    eval_duration_s : float
-        仿真评估时长（秒），用于吞吐量计算。
-    queue_timeseries : list[float] or None
-        每步的平均进口道排队长度（已按步采样），用于计算平均排队长度。
-    lane_count : int
-        进口道数量，用于排队长度归一化。queue_timeseries 已归一化时可传 1。
-    emission_path : str or None
-        SUMO 排放输出文件路径（可选，无排放数据时燃油指标为 0）。
-    total_planned : int
-        计划出发车辆数，用于完成率计算。
-    algorithm : str
-        算法名称（仅用于标记结果）。
-    scenario : str
-        场景名称（仅用于标记结果）。
+    TripInfo provides completed-trip travel/waiting times.  Queue length,
+    algorithm latency and fuel intensity cannot be inferred from TripInfo alone;
+    missing auxiliary inputs therefore produce ``None`` (rendered as ``N/A``).
+
+    Standard SUMO emission output stores ``fuel`` in mg/s.  Set
+    ``emission_step_scaled=True`` only when SUMO was run with
+    ``--emission-output.step-scaled``.  ``vehicle_type_metadata`` must expose
+    ``powertrain`` and ``fuel_density_mg_per_ml`` for every emitted type.
+    ``emission_fuel_unit`` accepts ``auto``, ``mg_per_s`` or ``ml_per_s``;
+    ``auto`` follows the locally installed SUMO version (1.14 changed units).
+    ``lane_count`` remains accepted for backward compatibility; queue samples
+    are expected to already be per-incoming-lane means.
     """
+
+    del lane_count
     result = BenchmarkResult(algorithm=algorithm, scenario=scenario)
-
-    tree = ET.parse(tripinfo_path)
-    root = tree.getroot()
-
-    # ── 遍历 tripinfo ──
-    trips = []
+    root = ET.parse(tripinfo_path).getroot()
+    all_tripinfos = list(root.findall("tripinfo"))
+    completed = []
     total_waiting = 0.0
     total_travel = 0.0
-    total_distance = 0.0
 
-    for trip in root.findall("tripinfo"):
-        depart = float(trip.get("depart", 0))
+    for trip in all_tripinfos:
         arrival = float(trip.get("arrival", -1))
+        if arrival < 0 or str(trip.get("vaporized", "false")).lower() == "true":
+            continue
+        total_travel += float(trip.get("duration", 0.0))
+        total_waiting += float(trip.get("waitingTime", 0.0))
+        completed.append(trip)
 
-        if arrival < 0:
-            continue  # 未到达，跳过（不参与行程/等待计算）
-
-        duration = float(trip.get("duration", 0))
-        wait = float(trip.get("waitingTime", 0))
-        length = float(trip.get("routeLength", 0))
-
-        total_travel += duration
-        total_waiting += wait
-        total_distance += length
-        trips.append(trip)
-
-    arrived = len(trips)
-    departed = sum(1 for t in root.findall("tripinfo"))
-
+    arrived = len(completed)
     result.total_arrived = arrived
-    result.total_departed = departed
-    result.total_planned = total_planned if total_planned > 0 else departed
-    result.eval_duration_s = eval_duration_s
+    result.total_departed = len(all_tripinfos)
+    result.total_planned = total_planned if total_planned > 0 else len(all_tripinfos)
+    result.eval_duration_s = float(eval_duration_s)
 
-    # 1. 平均行程时间
-    result.avg_travel_time_s = total_travel / arrived if arrived > 0 else 0.0
-
-    # 2. 平均等待时间
-    result.avg_waiting_time_s = total_waiting / arrived if arrived > 0 else 0.0
-
-    # 3. 平均排队长度（从时序数据计算）
-    if queue_timeseries:
-        result.avg_queue_per_step = queue_timeseries
-        result.avg_queue_length_veh = sum(queue_timeseries) / len(queue_timeseries)
-    elif lane_count > 0:
-        result.avg_queue_length_veh = 0.0  # 无时序数据时无法计算
-
-    # 4. 有效吞吐量（veh/h）
-    if eval_duration_s > 0:
-        result.throughput_veh_per_h = (arrived / eval_duration_s) * 3600.0
+    if arrived:
+        result.avg_travel_time_s = total_travel / arrived
+        result.avg_waiting_time_s = total_waiting / arrived
+        result.metric_sources["avg_travel_time_s"] = "tripinfo_completed"
+        result.metric_sources["avg_waiting_time_s"] = "tripinfo_completed"
     else:
-        # 用到达时间跨度估算
-        if arrived >= 2 and trips:
-            span = max(float(t.get("arrival", 0)) for t in trips) - \
-                   min(float(t.get("depart", 0)) for t in trips)
-            if span > 0:
-                result.throughput_veh_per_h = (arrived / span) * 3600.0
+        result.warnings.append("TripInfo 中没有已完成且未 vaporize 的车辆。")
 
-    # 5. 单位车公里燃油消耗（L/100km）
-    if emission_path and Path(emission_path).exists():
-        fuel_total_ml, emission_distance_m = _parse_emission(emission_path)
-        if emission_distance_m > 0:
-            # fuel_total_ml → L, distance_m → 100km
-            fuel_L = fuel_total_ml / 1000.0
-            dist_100km = emission_distance_m / 100000.0
-            result.fuel_intensity_L_per_100km = fuel_L / dist_100km if dist_100km > 0 else 0.0
-    elif total_distance > 0:
-        # 用 tripinfo 的距离估算（无排放文件时燃油消耗无法精确计算，填 0）
-        # SUMO 用 HBEFA3 模型，近似：汽油 8L/100km 作为常数参考
-        # 此处不做估算，如有排放文件再填充
-        result.fuel_intensity_L_per_100km = 0.0
+    if queue_timeseries is not None and len(queue_timeseries) > 0:
+        result.avg_queue_per_step = [float(value) for value in queue_timeseries]
+        result.avg_queue_length_veh = sum(result.avg_queue_per_step) / len(
+            result.avg_queue_per_step
+        )
+        result.metric_sources[
+            "avg_queue_length_veh"
+        ] = "incoming_lane_queue_timeseries"
+    else:
+        result.warnings.append("缺少进口车道排队时序，平均排队长度不可用。")
+
+    if eval_duration_s > 0:
+        result.throughput_veh_per_h = arrived / eval_duration_s * 3600.0
+        result.metric_sources["throughput_veh_per_h"] = "tripinfo_arrivals"
+    elif arrived >= 2:
+        span = max(float(trip.get("arrival", 0.0)) for trip in completed) - min(
+            float(trip.get("depart", 0.0)) for trip in completed
+        )
+        if span > 0:
+            result.throughput_veh_per_h = arrived / span * 3600.0
+            result.metric_sources["throughput_veh_per_h"] = "tripinfo_time_span"
+    if result.throughput_veh_per_h is None:
+        result.warnings.append("缺少有效评估时长，吞吐量不可用。")
+
+    if decision_latencies_ms is not None and len(decision_latencies_ms) > 0:
+        samples = [float(value) for value in decision_latencies_ms]
+        result.avg_decision_latency_ms = sum(samples) / len(samples)
+        result.metric_sources[
+            "avg_decision_latency_ms"
+        ] = "algorithm_latency_samples"
+    else:
+        result.warnings.append("缺少算法决策耗时时序，平均决策耗时不可用。")
+
+    if emission_path:
+        if not Path(emission_path).exists():
+            raise FileNotFoundError(emission_path)
+        if not vehicle_type_metadata:
+            result.warnings.append(
+                "缺少车辆 powertrain/燃油密度元数据，燃油强度不可用。"
+            )
+        else:
+            fuel_ml, distance_m = _parse_emission(
+                emission_path,
+                vehicle_type_metadata,
+                step_scaled=emission_step_scaled,
+                step_length_s=emission_step_length_s,
+                fuel_unit=emission_fuel_unit,
+            )
+            if distance_m > 0:
+                result.fuel_intensity_L_per_100km = (fuel_ml / 1000.0) / (
+                    distance_m / 100000.0
+                )
+                result.metric_sources[
+                    "fuel_intensity_L_per_100km"
+                ] = "fuel_powertrain_emission_output"
+            else:
+                result.warnings.append("排放文件中没有燃油车辆行驶里程。")
+    else:
+        result.warnings.append("缺少排放或实时燃油数据，燃油强度不可用。")
 
     return result
 
 
-# ======================================================================
-# 排放文件解析
-# ======================================================================
+def apply_tripinfo_completed_metrics(
+    result: EvalResult, tripinfo_path: str
+) -> EvalResult:
+    """Replace sampled completed-trip metrics with exact TripInfo values.
 
-
-def _parse_emission(emission_path: str) -> tuple:
-    """从 SUMO emission 输出提取总燃油消耗(mL)和总行驶距离(m)。
-
-    Returns
-    -------
-    (fuel_total_ml, distance_total_m)
+    The live Protocol 2.0 payload has cumulative waiting, but does not expose
+    exact vehicle departure and arrival times.  Official post-run evaluation
+    therefore uses TripInfo for these two completed-trip metrics and keeps the
+    other four metrics from the live interface.
     """
-    tree = ET.parse(emission_path)
-    root = tree.getroot()
 
-    fuel_ml = 0.0
-    distance_m = 0.0
+    root = ET.parse(tripinfo_path).getroot()
+    completed = [
+        trip
+        for trip in root.findall("tripinfo")
+        if float(trip.get("arrival", -1)) >= 0
+        and str(trip.get("vaporized", "false")).lower() != "true"
+    ]
+    if len(completed) != result.arrived:
+        result.avg_travel_time_s = None
+        result.avg_waiting_time_s = None
+        result.metric_sources.pop("avg_travel_time_s", None)
+        result.metric_sources.pop("avg_waiting_time_s", None)
+        warning = (
+            "TripInfo 已完成车辆数与 finish arrived_vehicles 不一致；"
+            "平均行程时间和等待时间不可用。"
+        )
+        if warning not in result.warnings:
+            result.warnings.append(warning)
+        return result
+    if not completed:
+        return result
 
-    for timestep in root.findall("timestep"):
+    result.avg_travel_time_s = sum(
+        float(trip.get("duration", 0.0)) for trip in completed
+    ) / len(completed)
+    result.avg_waiting_time_s = sum(
+        float(trip.get("waitingTime", 0.0)) for trip in completed
+    ) / len(completed)
+    result.metric_sources["avg_travel_time_s"] = "tripinfo_completed"
+    result.metric_sources["avg_waiting_time_s"] = "tripinfo_completed"
+    result.warnings = [
+        warning
+        for warning in result.warnings
+        if "等待 TripInfo 回填" not in warning
+    ]
+    return result
+
+
+def _metadata_value(metadata: Any, name: str, default: Any = None) -> Any:
+    if isinstance(metadata, Mapping):
+        return metadata.get(name, default)
+    return getattr(metadata, name, default)
+
+
+def _parse_emission(
+    emission_path: str,
+    vehicle_type_metadata: Mapping[str, Any],
+    *,
+    step_scaled: bool = False,
+    step_length_s: Optional[float] = None,
+    fuel_unit: str = "auto",
+) -> tuple[float, float]:
+    """Return fuel mL and distance m for the same fuel-consuming vehicles."""
+
+    timesteps = list(ET.parse(emission_path).getroot().findall("timestep"))
+    if not timesteps:
+        return 0.0, 0.0
+    times = [float(timestep.get("time", 0.0)) for timestep in timesteps]
+    resolved_fuel_unit = str(fuel_unit).strip().lower()
+    if resolved_fuel_unit == "auto":
+        telemetry_unit, _ = _resolve_fuel_telemetry_unit("auto")
+        resolved_fuel_unit = (
+            "ml_per_s"
+            if telemetry_unit == "legacy_ml_as_mg"
+            else "mg_per_s"
+        )
+    if resolved_fuel_unit not in {"mg_per_s", "ml_per_s"}:
+        raise ValueError("emission_fuel_unit must be auto, mg_per_s or ml_per_s")
+
+    inferred_step = float(step_length_s) if step_length_s is not None else None
+    if inferred_step is not None and inferred_step <= 0:
+        raise ValueError("emission_step_length_s must be positive")
+    if inferred_step is None and len(times) >= 2:
+        positive_deltas = [
+            later - earlier
+            for earlier, later in zip(times, times[1:])
+            if later - earlier > 0
+        ]
+        if positive_deltas:
+            inferred_step = positive_deltas[0]
+    if inferred_step is None:
+        raise ValueError(
+            "Cannot infer emission step length from a single timestep; "
+            "pass emission_step_length_s."
+        )
+
+    total_fuel_ml = 0.0
+    total_distance_m = 0.0
+    for index, timestep in enumerate(timesteps):
+        if index + 1 < len(times):
+            delta = times[index + 1] - times[index]
+            if delta <= 0:
+                raise ValueError("Emission timestep times must be increasing")
+        else:
+            delta = inferred_step
+
         for vehicle in timestep.findall("vehicle"):
-            fuel_ml += float(vehicle.get("fuel", 0))       # SUMO 排放单位: mL
-            distance_m += float(vehicle.get("routeLength", 0))
+            type_id = str(vehicle.get("type", ""))
+            if type_id not in vehicle_type_metadata:
+                raise ValueError(
+                    f"Emission vehicle type {type_id!r} has no profile metadata"
+                )
+            metadata = vehicle_type_metadata[type_id]
+            powertrain = str(_metadata_value(metadata, "powertrain", "")).lower()
+            if powertrain not in FUEL_POWERTRAINS:
+                continue
+            fuel_value = max(0.0, float(vehicle.get("fuel", 0.0)))
+            fuel_per_step = fuel_value if step_scaled else fuel_value * delta
+            if resolved_fuel_unit == "ml_per_s":
+                total_fuel_ml += fuel_per_step
+            else:
+                density = float(
+                    _metadata_value(metadata, "fuel_density_mg_per_ml", 0.0)
+                )
+                if density <= 0:
+                    raise ValueError(
+                        f"Fuel vehicle type {type_id!r} has invalid fuel density"
+                    )
+                total_fuel_ml += fuel_per_step / density
+            total_distance_m += max(
+                0.0, float(vehicle.get("speed", 0.0))
+            ) * delta
 
-    return fuel_ml, distance_m
+    return total_fuel_ml, total_distance_m
 
 
-# ======================================================================
-# 对比表输出
-# ======================================================================
+def _format_metric(value: Optional[float], width: int, precision: int) -> str:
+    if value is None:
+        return f"{'N/A':>{width}}"
+    return f"{value:>{width}.{precision}f}"
 
 
 def print_comparison_table(results: List[BenchmarkResult]) -> str:
-    """生成对比表格字符串。"""
     header = (
         f"{'算法':<20} {'行程(s)':>8} {'等待(s)':>8} {'排队':>6} "
         f"{'吞吐':>8} {'延迟(ms)':>8} {'油耗':>8}"
     )
-    sep = "-" * len(header)
-
-    lines = [header, sep]
-    for r in results:
+    lines = [header, "-" * len(header)]
+    for result in results:
         lines.append(
-            f"{r.algorithm:<20} {r.avg_travel_time_s:>8.1f} {r.avg_waiting_time_s:>8.1f} "
-            f"{r.avg_queue_length_veh:>6.2f} {r.throughput_veh_per_h:>8.1f} "
-            f"{r.avg_decision_latency_ms:>8.3f} {r.fuel_intensity_L_per_100km:>7.2f}"
+            f"{result.algorithm:<20} "
+            f"{_format_metric(result.avg_travel_time_s, 8, 1)} "
+            f"{_format_metric(result.avg_waiting_time_s, 8, 1)} "
+            f"{_format_metric(result.avg_queue_length_veh, 6, 2)} "
+            f"{_format_metric(result.throughput_veh_per_h, 8, 1)} "
+            f"{_format_metric(result.avg_decision_latency_ms, 8, 3)} "
+            f"{_format_metric(result.fuel_intensity_L_per_100km, 8, 2)}"
         )
-
     return "\n".join(lines)
 
 
+def _markdown_metric(value: Optional[float], precision: int) -> str:
+    return "N/A" if value is None else f"{value:.{precision}f}"
+
+
 def print_markdown_table(results: List[BenchmarkResult]) -> str:
-    """生成 Markdown 对比表格。"""
     lines = [
         "| 算法 | 行程时间(s) | 等待时间(s) | 排队长度 | 吞吐量(veh/h) | 延迟(ms) | 油耗(L/100km) |",
         "|------|------------|------------|---------|-------------|---------|--------------|",
     ]
-    for r in results:
+    for result in results:
         lines.append(
-            f"| {r.algorithm} | {r.avg_travel_time_s:.1f} | {r.avg_waiting_time_s:.1f} | "
-            f"{r.avg_queue_length_veh:.2f} | {r.throughput_veh_per_h:.1f} | "
-            f"{r.avg_decision_latency_ms:.3f} | {r.fuel_intensity_L_per_100km:.2f} |"
+            f"| {result.algorithm} | "
+            f"{_markdown_metric(result.avg_travel_time_s, 1)} | "
+            f"{_markdown_metric(result.avg_waiting_time_s, 1)} | "
+            f"{_markdown_metric(result.avg_queue_length_veh, 2)} | "
+            f"{_markdown_metric(result.throughput_veh_per_h, 1)} | "
+            f"{_markdown_metric(result.avg_decision_latency_ms, 3)} | "
+            f"{_markdown_metric(result.fuel_intensity_L_per_100km, 2)} |"
         )
     return "\n".join(lines)
