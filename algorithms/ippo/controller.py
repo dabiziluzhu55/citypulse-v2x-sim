@@ -837,6 +837,14 @@ def initialize(payload: dict) -> dict:
     if any(not phases for phases in _phase_orders.values()):
         raise ValueError("Every controlled intersection must have at least one phase.")
 
+    resume_path = str(Path(_model_path).resolve()) if _model_path else None
+    resume_checkpoint = None
+    if mode == "train" and resume_path:
+        resume_checkpoint = load_checkpoint_metadata(resume_path)
+        _act_dim = int(resume_checkpoint["act_dim"])
+        if _act_dim > MAX_PHASES:
+            raise ValueError(f"IPPO supports at most {MAX_PHASES} phases per intersection.")
+
     _decision_interval = float(payload.get("decision_interval", 5.0))
     _minimum_green = float(payload.get("minimum_green", 5.0))
     requested_interval = float(
@@ -864,6 +872,9 @@ def initialize(payload: dict) -> dict:
         if not Path(_model_path).is_file():
             raise FileNotFoundError(f"IPPO checkpoint does not exist: {_model_path}")
         checkpoint = load_checkpoint_metadata(_model_path)
+        _act_dim = int(checkpoint["act_dim"])
+        if _act_dim > MAX_PHASES:
+            raise ValueError(f"IPPO supports at most {MAX_PHASES} phases per intersection.")
         _effective_demand_enabled = bool(
             checkpoint.get("effective_demand_enabled", True)
         )
@@ -893,9 +904,8 @@ def initialize(payload: dict) -> dict:
         _optimizer_critic = None
         logger.info("IPPO %s 推理: %s", MODEL_VERSION, _model_path)
     elif mode == "train":
-        resume_path = str(Path(_model_path).resolve()) if _model_path else None
         if resume_path and _loaded_model_path != resume_path:
-            checkpoint = load_checkpoint_metadata(resume_path)
+            checkpoint = resume_checkpoint
             _effective_demand_enabled = bool(
                 checkpoint.get("effective_demand_enabled", True)
             )
@@ -977,6 +987,13 @@ def initialize(payload: dict) -> dict:
             _act_dim,
             len(_intersection_ids),
             _collector_rollout_seed,
+        )
+
+    if _state_builder.max_phases > _act_dim:
+        raise ValueError(
+            "Active subset requires more phase slots than the checkpoint action "
+            f"dimension ({_state_builder.max_phases} > {_act_dim}); the checkpoint "
+            "cannot represent this subset."
         )
 
     _vehicle_reward_state = {}

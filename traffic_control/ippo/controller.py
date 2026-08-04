@@ -737,6 +737,9 @@ def initialize(payload: dict) -> dict:
         if not model_path.is_file():
             raise FileNotFoundError(f"IPPO checkpoint does not exist: {model_path}")
         checkpoint = load_checkpoint_metadata(model_path)
+        _act_dim = int(checkpoint["act_dim"])
+        if _act_dim > MAX_PHASES:
+            raise ValueError(f"IPPO supports at most {MAX_PHASES} phases per intersection.")
         _effective_demand_enabled = bool(
             checkpoint.get("effective_demand_enabled", True)
         )
@@ -768,6 +771,13 @@ def initialize(payload: dict) -> dict:
         _loaded_model_path = None
         _model_intersection_ids = _intersection_ids
         logger.info("IPPO %s fixed 占位模式（无模型）", MODEL_VERSION)
+
+    if _state_builder.max_phases > _act_dim:
+        raise ValueError(
+            "Active subset requires more phase slots than the checkpoint action "
+            f"dimension ({_state_builder.max_phases} > {_act_dim}); the checkpoint "
+            "cannot represent this subset."
+        )
 
     _last_decision_times = {
         intersection_id: -math.inf for intersection_id in _intersection_ids
