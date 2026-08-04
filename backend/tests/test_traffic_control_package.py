@@ -183,7 +183,9 @@ def test_four_control_modes_registered() -> None:
         assert spec.algorithm_transport == "local"
         assert spec.algorithm_module == module
 
-    assert require_control_mode("ippo").supported_presets == ("xiongan_20",)
+    assert require_control_mode("ippo").supported_presets == (
+        "xiongan_20", "east_dense", "west_dense"
+    )
 
 
 def test_registry_import_does_not_load_torch() -> None:
@@ -239,9 +241,11 @@ def test_ippo_rejects_non_xiongan_20_preset(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
     def _fake_resolve(request, catalog):
+        # Schema validation accepts east_dense; the service must still reject a
+        # resolved preset outside the IPPO whitelist (defense in depth).
         return _resolved(
             control_mode="ippo",
-            scenario_preset_id="east_dense",
+            scenario_preset_id="south_dense",
             intersection_ids=("demo_3", "demo_5", "demo_6", "demo_9"),
         )
 

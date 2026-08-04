@@ -77,6 +77,11 @@ def _effective_demand_from_environment() -> bool:
 
 
 def default_model_path() -> Path:
+    alias = os.environ.get("IPPO_MODEL_ALIAS", "").strip()
+    if alias:
+        from .aliases import resolve_model_path
+
+        return resolve_model_path(alias)
     override = os.environ.get("IPPO_MODEL_PATH", "").strip()
     if override:
         return Path(override)
