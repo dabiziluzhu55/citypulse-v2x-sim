@@ -141,7 +141,8 @@ class V2XHub:
                  "phases": intersections[inter_id].get("phases") or {},
                  "lanes": intersections[inter_id].get("lanes") or {},
                  "connections": intersections[inter_id].get("connections") or [],
-                 "direct_neighbors": intersections[inter_id].get("direct_neighbors") or []},
+                 "direct_neighbors": intersections[inter_id].get("direct_neighbors") or [],
+                 "phase_order": [int(v) for v in (intersections[inter_id].get("phase_order") or [])]},
             ), frame_id=frame.frame_id)
             self._map_versions[inter_id] = 1
         self._state = "ACTIVE"

@@ -134,3 +134,34 @@ def test_finish_drain_pending_true_delivers_all():
     hub.finish_episode(10.0, drain_pending=True)
     assert sum(1 for r in hub.delivery_records if r["status"] == "delivered") == 1
     assert sum(1 for r in hub.delivery_records if r["status"] == "dropped") == 0
+
+
+def test_map_payload_carries_phase_order():
+    hub = _hub()
+    payload = {
+        "episode_id": "ep1",
+        "vehicle_types": {},
+        "intersections": {
+            "i1": {"phase_order": [1, 2, 3],
+                   "phases": {}, "lanes": {}, "connections": [], "direct_neighbors": []},
+        },
+    }
+    frame = hub.ingest_initialize(
+        payload, run_id="run1", episode_id="ep1", initial_sim_time=0.0)
+    # MAP 走延迟队列，手动 advance 到投递时刻
+    hub.advance(1.0)
+    maps = [rec for rec in hub.sent_records if rec["message_type"] == "MAP"]
+    assert len(maps) == 1
+    # sent_records 只有元数据；通过订阅回调读取 payload
+    seen = []
+
+    def _on_map(message):
+        seen.append(message)
+
+    hub2 = _hub()
+    hub2.subscribe("MAP", _on_map)
+    frame2 = hub2.ingest_initialize(
+        payload, run_id="run1", episode_id="ep1", initial_sim_time=0.0)
+    hub2.advance(1.0)
+    assert len(seen) == 1
+    assert seen[0].payload["phase_order"] == [1, 2, 3]
