@@ -152,7 +152,7 @@ def run_vanilla_diagnostics(
     # 2) 一次 on-policy update 得到 PPO/KL/entropy 诊断
     update_diag = trainer.update(batch)
     # 3) per_agent_corr：vanilla 广播语义下 joint 内 owner target 完全相同 -> 1.0
-    per_agent_corr = 1.0 - _within_joint_variance_ratio(batch)
+    per_agent_corr = _per_agent_target_corr(batch)
     payload = {
         "advantage": advantage_quantiles(batch.advantages),
         "td_target": {
@@ -205,3 +205,11 @@ def _within_joint_variance_ratio(batch) -> float:
     if total_var <= 1e-12:
         return 1.0
     return float(max(0.0, 1.0 - within / total_var))
+
+
+def _per_agent_target_corr(batch) -> float:
+    """同一 joint step 内各 owner TD target 的一致程度（eta-squared）。
+
+    vanilla 广播语义下 target 完全相同：within 方差为 0，返回 1.0。
+    """
+    return float(_within_joint_variance_ratio(batch))
