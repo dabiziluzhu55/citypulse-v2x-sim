@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+
+import numpy as np
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -77,6 +79,7 @@ class EvalResult:
     avg_queue_length_veh: Optional[float] = None
     throughput_veh_per_h: Optional[float] = None
     avg_decision_latency_ms: Optional[float] = None
+    decision_latency_p95_ms: Optional[float] = None
     fuel_intensity_L_per_100km: Optional[float] = None
     severe_conflict_exposure_per_10000: Optional[float] = None
     emergency_braking_exposure_per_1000: Optional[float] = None
@@ -100,6 +103,9 @@ class EvalResult:
             "throughput_veh_per_h": _rounded(self.throughput_veh_per_h, 1),
             "avg_decision_latency_ms": _rounded(
                 self.avg_decision_latency_ms, 3
+            ),
+            "decision_latency_p95_ms": _rounded(
+                self.decision_latency_p95_ms, 3
             ),
             "fuel_intensity_L_per_100km": _rounded(
                 self.fuel_intensity_L_per_100km, 2
@@ -452,6 +458,9 @@ class HttpMetricsCollector:
             result.metric_sources[
                 "avg_decision_latency_ms"
             ] = "algorithm_perf_counter"
+            result.decision_latency_p95_ms = float(
+                np.percentile(self._latency_samples, 95.0)
+            )
 
         result.fuel_intensity_L_per_100km = self._fuel_metric()
         if result.fuel_intensity_L_per_100km is not None:

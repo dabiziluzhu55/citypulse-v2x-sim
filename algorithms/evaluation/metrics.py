@@ -29,6 +29,7 @@ class BenchmarkResult:
     avg_queue_length_veh: Optional[float] = None
     throughput_veh_per_h: Optional[float] = None
     avg_decision_latency_ms: Optional[float] = None
+    decision_latency_p95_ms: Optional[float] = None
     fuel_intensity_L_per_100km: Optional[float] = None
     severe_conflict_exposure_per_10000: Optional[float] = None
     emergency_braking_exposure_per_1000: Optional[float] = None
@@ -47,6 +48,9 @@ class BenchmarkResult:
             "throughput_veh_per_h": _rounded(self.throughput_veh_per_h, 1),
             "avg_decision_latency_ms": _rounded(
                 self.avg_decision_latency_ms, 3
+            ),
+            "decision_latency_p95_ms": _rounded(
+                self.decision_latency_p95_ms, 3
             ),
             "fuel_intensity_L_per_100km": _rounded(
                 self.fuel_intensity_L_per_100km, 2

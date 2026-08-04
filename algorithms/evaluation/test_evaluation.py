@@ -333,6 +333,26 @@ def test_live_collector_combines_closed_and_active_fuel_vehicles():
     assert result.fuel_intensity_L_per_100km == pytest.approx(10.0)
 
 
+def test_decision_latency_p95_from_samples():
+    # 与既有 live collector 测试同款模式；p95 使用 np.percentile 默认线性插值
+    # （[1,2,3,4,100] 的 95th percentile = 80.8，与设计冻结的 np.percentile 语义一致）。
+    collector = HttpMetricsCollector("IPPO", fuel_telemetry_unit="protocol_ml")
+    collector.on_initialize(_metadata())
+    for value in [1.0, 2.0, 3.0, 4.0, 100.0]:
+        collector.record_latency(value)
+    collector.on_finish(
+        {
+            "simulation_time": 5,
+            "departed_vehicles": 0,
+            "arrived_vehicles": 0,
+            "fuel_consumed_ml": 0,
+        }
+    )
+    result = collector.result()
+    assert result.avg_decision_latency_ms == pytest.approx(22.0)
+    assert result.decision_latency_p95_ms == pytest.approx(80.8)
+
+
 def test_live_collector_marks_unobserved_arrivals_unavailable():
     collector = HttpMetricsCollector("IPPO", fuel_telemetry_unit="protocol_ml")
     collector.on_initialize(_metadata())
