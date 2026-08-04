@@ -198,6 +198,8 @@ class IntersectionStaticContext:
 
 > 注：`next_stage` 只是阶段名（GREEN/YELLOW/CLEARANCE），不含下一相位 id；CoSLight 切相是动态决策。v1 **不做下一服务相位的预测**（见 §3.2 第 4 步），因此静态上下文不提供 `stage_to_action` 单值映射。
 
+> 实现契约澄清（writing-plans 阶段补齐）：MAP 载荷在冻结字段之外，由 `ingest_initialize` **额外透传 `phase_order`**（协议增量扩展，不改变既有字段语义），静态上下文据此构建 `valid_actions / phase_to_action / action_to_movements`；`transition_phases` 在 v1 恒为空集，§2.2 的 transition 门禁改以 **SPaT `stage ∈ {YELLOW, CLEARANCE}`** 判定（`SUPPRESSED_TRANSITION`）。
+
 ### 1.5 新鲜度视图（CloudStateStore）
 
 ```python
