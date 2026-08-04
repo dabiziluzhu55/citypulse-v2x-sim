@@ -1,6 +1,6 @@
 # CoSLight 车路云协同决策层（VRC Collaboration）Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 在 `algorithms/v2x/collab/` 实现端-边-云协同决策层（EdgeAggregator → CloudStateStore → CloudRulePolicy → ActionArbiter → RSI 下发），以 shadow 模式接入 CoSLight：云端只消费 V2XHub 已投递消息生成信号/车辆建议，`applied == baseline`；并加入算法无关的场景预设（`config/scenario_presets.py`）与 `--scenario-preset/--intersections/--v2x-collab*` CLI。
 
@@ -56,7 +56,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add <paths> 
 - Modify: `algorithms/v2x/hub.py`（`ingest_initialize` 的 MAP draft 构造）
 - Test: `algorithms/v2x/tests/test_hub.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `algorithms/v2x/tests/test_hub.py` 末尾追加：
 
@@ -92,12 +92,12 @@ def test_map_payload_carries_phase_order():
     assert seen[0].payload["phase_order"] == [1, 2, 3]
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/tests/test_hub.py::test_map_payload_carries_phase_order -q --tb=short'`
 Expected: FAIL（`payload["phase_order"]` KeyError）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 修改 `algorithms/v2x/hub.py` 中 `ingest_initialize` 的 MAP draft 构造（约 200-215 行），把：
 
@@ -128,12 +128,12 @@ Expected: FAIL（`payload["phase_order"]` KeyError）
 
 注意：`phase_order` 是**增量字段**，不进 `REQUIRED_FIELDS["MAP"]`；`get("phase_order") or []` 保证旧调用（如 `test_hub.py` 的 `_init`）不传该键时仍兼容。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x -q --tb=short'`
 Expected: PASS（全部 v2x 测试，含新增 1 条）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/hub.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/hub.py
@@ -149,7 +149,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Modify: `backend/app/scenario/presets.py`, `backend/tests/test_scenario_presets.py`
 - Test: `backend/tests/test_scenario_presets.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `backend/tests/test_scenario_presets.py` 末尾追加：
 
@@ -163,12 +163,12 @@ def test_backend_registry_is_same_object_as_config_module() -> None:
     assert neutral["east_dense"].map_template == "east_dense"
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest backend/tests/test_scenario_presets.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError: No module named 'config'`）
 
-- [ ] **Step 3: 实现 `config/scenario_presets.py`**
+- [x] **Step 3: 实现 `config/scenario_presets.py`**
 
 创建 `config/__init__.py`（空文件）与 `config/scenario_presets.py`：
 
@@ -256,7 +256,7 @@ def supported_intersection_ids() -> tuple[str, ...]:
     return tuple(ordered)
 ```
 
-- [ ] **Step 4: 修改 `backend/app/scenario/presets.py` 为透传**
+- [x] **Step 4: 修改 `backend/app/scenario/presets.py` 为透传**
 
 把 `backend/app/scenario/presets.py` 全文替换为：
 
@@ -289,12 +289,12 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 5: 运行确认通过**
+- [x] **Step 5: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest backend/tests/test_scenario_presets.py -q --tb=short && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest backend/tests -q --tb=short'`
 Expected: PASS（backend 全量测试，含既有 3 条 + 新增 1 条）
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 scp -P 24 config/scenario_presets.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/config/scenario_presets.py
@@ -311,7 +311,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add config b
 - Create: `algorithms/v2x/collab/__init__.py`, `algorithms/v2x/collab/proposals.py`
 - Test: `algorithms/v2x/collab/tests/test_proposals.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/__init__.py`（空）与 `algorithms/v2x/collab/tests/test_proposals.py`：
 
@@ -383,12 +383,12 @@ def test_collab_config_defaults_are_immutable_and_fresh():
         cfg.freshness.bsm_s = 99.0  # type: ignore[misc]
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_proposals.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError: No module named 'algorithms.v2x.collab'`）
 
-- [ ] **Step 3: 实现 `proposals.py`**
+- [x] **Step 3: 实现 `proposals.py`**
 
 ```python
 # algorithms/v2x/collab/proposals.py
@@ -616,12 +616,12 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_proposals.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 -r algorithms/v2x/collab kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/
@@ -636,7 +636,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Create: `algorithms/v2x/collab/snapshot.py`
 - Test: `algorithms/v2x/collab/tests/test_snapshot.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/test_snapshot.py`：
 
@@ -724,12 +724,12 @@ def test_static_context_unknown_priority_connection_ignored():
     assert ctx.action_to_movements[1] == ("through",)
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_snapshot.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError: No module named 'algorithms.v2x.collab.snapshot'`）
 
-- [ ] **Step 3: 实现 `snapshot.py`**
+- [x] **Step 3: 实现 `snapshot.py`**
 
 ```python
 # algorithms/v2x/collab/snapshot.py
@@ -876,12 +876,12 @@ def build_static_context(map_message: V2XMessage) -> IntersectionStaticContext:
 
 注意：`snapshot.py` 顶部需要 `from dataclasses import dataclass`——上面的代码块已包含 dataclass 使用，实现时在文件头补齐该 import（与 `from typing import Mapping` 并列）。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_snapshot.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/collab/snapshot.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/collab/snapshot.py
@@ -897,7 +897,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Create: `algorithms/v2x/collab/aggregator.py`
 - Test: `algorithms/v2x/collab/tests/test_aggregator.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/test_aggregator.py`：
 
@@ -1035,12 +1035,12 @@ def test_non_managed_message_ignored():
     assert agg.snapshot("i1", now=5.0) is None  # i1 无 MAP 也未收到
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_aggregator.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError`）
 
-- [ ] **Step 3: 实现 `aggregator.py`**
+- [x] **Step 3: 实现 `aggregator.py`**
 
 ```python
 # algorithms/v2x/collab/aggregator.py
@@ -1335,12 +1335,12 @@ class EdgeAggregator:
 
 注意：测试 `test_non_managed_message_ignored` 中 `snapshot("i1", now=5.0)` 返回 `None` 的条件是**i1 从未收到 MAP**——当前实现 `snapshot()` 在 i1 ∈ managed 时仍会返回空快照（`_spat`/`_static` 缺失）。为满足该断言，`snapshot()` 开头增加：`if intersection_id not in self._static: return None`（MAP 未投递 = 静态上下文缺失 = 不产快照，由策略 MISSING_INPUT）。请按此修正上面的实现（在 `if intersection_id not in self._managed: return None` 之后追加一行）。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_aggregator.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/collab/aggregator.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/collab/aggregator.py
@@ -1356,7 +1356,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Create: `algorithms/v2x/collab/state.py`
 - Test: `algorithms/v2x/collab/tests/test_state.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/test_state.py`：
 
@@ -1438,12 +1438,12 @@ def test_reset_episode_clears_state():
     assert store.view("i1", now=10.0) is None
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_state.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError`）
 
-- [ ] **Step 3: 实现 `state.py`**
+- [x] **Step 3: 实现 `state.py`**
 
 ```python
 # algorithms/v2x/collab/state.py
@@ -1513,12 +1513,12 @@ class CloudStateStore:
 
 注意：`state.py` 顶部需要 `from dataclasses import dataclass`。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_state.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/collab/state.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/collab/state.py
@@ -1534,7 +1534,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Create: `algorithms/v2x/collab/policy.py`（本任务只实现信号部分；引导部分 Task 8 追加）
 - Test: `algorithms/v2x/collab/tests/test_policy_signal.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/test_policy_signal.py`：
 
@@ -1717,12 +1717,12 @@ def test_min_green_suppresses_switch():
     assert proposal.proposed_action == 1
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_policy_signal.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError`）
 
-- [ ] **Step 3: 实现 `policy.py`（信号部分）**
+- [x] **Step 3: 实现 `policy.py`（信号部分）**
 
 ```python
 # algorithms/v2x/collab/policy.py
@@ -2007,12 +2007,12 @@ class CloudRulePolicy:
 - `_signal_result` 的 `current_action` 通过传参更严谨——实现时建议把 `current_action` 作为显式参数传入（见 Task 7 测试：`SUPPRESSED_MIN_GREEN` 断言 `candidate_action==2, proposed_action==1`；`KEEP_CURRENT`/`NO_DEMAND` 需 `current_action` 非空）。**实现修正**：`_signal_result(..., current_action=...)` 增加显式 `current_action: int | None` 参数，调用处分别传 `current_action`（决策处）或 `None`（门禁失败处）；`needs_transition` 按 spec §2.3 定义为 `proposed_action is not None and current_action is not None and proposed_action != current_action`。
 - `source_frame_ids` v1 从 snapshot 传入（Task 7 测试未断言，但 spec 要求）；实现时在 `propose_signal` 各分支把 `snapshot.source_frame_ids` 传入。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_policy_signal.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/collab/policy.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/collab/policy.py
@@ -2028,7 +2028,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Modify: `algorithms/v2x/collab/policy.py`（追加引导部分；复用 Task 7 的 `_clamp`/`_signal_result` 等）
 - Test: `algorithms/v2x/collab/tests/test_policy_guidance.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/test_policy_guidance.py`：
 
@@ -2270,12 +2270,12 @@ def test_funnel_stages_order():
     assert GUIDANCE_FUNNEL_STAGES[-1] == "published"
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_policy_guidance.py -q --tb=short'`
 Expected: FAIL（`AttributeError: module 'algorithms.v2x.collab.policy' has no attribute 'propose_guidance'`）
 
-- [ ] **Step 3: 实现（追加到 `policy.py`）**
+- [x] **Step 3: 实现（追加到 `policy.py`）**
 
 在 Task 7 的 `policy.py` 末尾追加（顶部 imports 增加 `from config.scenario_presets import ResolvedScenarioScope`，dataclass 追加 `GuidanceOutcome`）：
 
@@ -2651,12 +2651,12 @@ class CloudRulePolicy:
 - 阈值抑制测试：`speed=6, distance=140, remaining=21` → `raw=7.0`、`upper=7.8`、`target=7.0`、delta=1.0 < 2.0。
 - 车道测试依赖 RSM：目标车道 `A_1` 的排队估计必须有新鲜 BSM/RSM 支撑（§3.3 新鲜度门禁），fixture 注入一辆 RSM 低速卡车使 `queue_estimate(A_1)=1`。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_policy_guidance.py algorithms/v2x/collab/tests/test_policy_signal.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/collab/policy.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/collab/policy.py
@@ -2672,7 +2672,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Create: `algorithms/v2x/collab/arbiter.py`
 - Test: `algorithms/v2x/collab/tests/test_arbiter.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/test_arbiter.py`：
 
@@ -2770,12 +2770,12 @@ def test_active_mode_unavailable_at_construction():
         ActionArbiter(DecisionMode.ACTIVE)
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_arbiter.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError`）
 
-- [ ] **Step 3: 实现 `arbiter.py`**
+- [x] **Step 3: 实现 `arbiter.py`**
 
 ```python
 # algorithms/v2x/collab/arbiter.py
@@ -2901,12 +2901,12 @@ class ActionArbiter:
 - 验证顺序与 spec §4.3 一致；`current_action` 在 SHADOW 下传入 `baseline_action`（shadow 下 Cloud view 与 baseline 一致是架构前提，若不一致 validator 会记录 `current_action_mismatch`，不改变 applied）。
 - `valid_actions` 来自静态上下文 `valid_actions`；`in_transition` 由 engine 传 `stage ∈ {YELLOW, CLEARANCE}`。
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_arbiter.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/collab/arbiter.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/collab/arbiter.py
@@ -2922,7 +2922,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
 - Create: `algorithms/v2x/collab/records.py`
 - Test: `algorithms/v2x/collab/tests/test_records.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/test_records.py`：
 
@@ -3005,12 +3005,12 @@ def test_record_schemas_contain_required_keys():
     assert by_type["collab_episode_end"]["summary"]["collab"]["schema_version"] == "1.0"
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_records.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError`）
 
-- [ ] **Step 3: 实现 `records.py`**
+- [x] **Step 3: 实现 `records.py`**
 
 ```python
 # algorithms/v2x/collab/records.py
@@ -3194,12 +3194,12 @@ def collab_episode_end_record(*, summary: Mapping[str, Any]) -> LogRecord:
     return LogRecord("collab_episode_end", {"summary": dict(summary)})
 ```
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_records.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/collab/records.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/collab/records.py
@@ -3256,7 +3256,7 @@ ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && git add algorith
            source_message_ids=(), source_frame_ids=())
    ```
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `algorithms/v2x/collab/tests/test_stats.py`：
 
@@ -3445,12 +3445,12 @@ def test_zero_denominators_are_null():
     assert summary["collab"]["guidance"]["rates"]["network_delivery_rate"] is None
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_stats.py -q --tb=short'`
 Expected: FAIL（`ModuleNotFoundError`）
 
-- [ ] **Step 3: 实现 `stats.py`**
+- [x] **Step 3: 实现 `stats.py`**
 
 ```python
 # algorithms/v2x/collab/stats.py
@@ -3881,12 +3881,12 @@ def _per_episode_stats(values: Sequence[Optional[float]]) -> dict:
         "max": max(valid),
     }
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `ssh 346-4090 'cd /home/kemove/devdata1/gsb/citypulse-v2x-sim && /home/kemove/anaconda3/envs/BWformer/bin/python -m pytest algorithms/v2x/collab/tests/test_stats.py -q --tb=short'`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 scp -P 24 algorithms/v2x/collab/stats.py kemove@172.27.185.208:/home/kemove/devdata1/gsb/citypulse-v2x-sim/algorithms/v2x/collab/stats.py
