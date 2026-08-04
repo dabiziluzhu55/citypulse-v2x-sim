@@ -174,6 +174,13 @@ def collab_tick_stats_record(
                 "next_signal_managed", "distance_known",
                 "in_horizon_candidates", "raw_proposals", "threshold_passed",
                 "dedup_passed", "cooldown_passed", "published")},
+            **{k: guidance_funnel[k] for k in guidance_funnel
+               if k not in (
+                   "connected_seen", "fresh_bsm", "next_signal_known",
+                   "next_signal_managed", "distance_known",
+                   "in_horizon_candidates", "raw_proposals", "threshold_passed",
+                   "dedup_passed", "cooldown_passed", "published")
+               and k != "filter_reason_counts"},
             "filter_reason_counts": dict(filter_reason_counts),
         },
     })

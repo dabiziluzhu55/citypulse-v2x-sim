@@ -101,9 +101,19 @@ def build_collab_summary(
             disagreement_matrix.setdefault(key_b, {}).setdefault(key_p, 0)
             disagreement_matrix[key_b][key_p] += 1
     failed_validations = validation_counts.get("failed", 0)
-    # ---- 引导 ----
-    funnel = {key: sum(t["guidance"].get(key, 0) for t in ticks)
+    # ---- 引导（含 FULL 模式诊断键） ----
+    funnel_counter: Counter[str] = Counter()
+    for t in ticks:
+        for key, value in t["guidance"].items():
+            if key == "filter_reason_counts" or not isinstance(value, int):
+                continue
+            funnel_counter[key] += value
+    # 标准漏斗键始终存在（零分母/无记录时取 0）；FULL 诊断键透传
+    funnel = {key: funnel_counter.get(key, 0)
               for key in GUIDANCE_FUNNEL_KEYS}
+    for key, value in funnel_counter.items():
+        if key not in GUIDANCE_FUNNEL_KEYS:
+            funnel[key] = value
     filter_reason_counts = _sum_counts(
         t["guidance"].get("filter_reason_counts", {}) for t in ticks)
     guidance_type_counts: Counter[str] = Counter()
@@ -304,6 +314,10 @@ def pool_collab_summaries(summaries: Sequence[dict]) -> dict:
         guid = c["guidance"]
         for key in GUIDANCE_FUNNEL_KEYS:
             funnel[key] += guid["funnel"].get(key, 0)
+        for key in ("would_pass_threshold", "would_be_duplicate",
+                    "would_be_in_cooldown"):
+            if key in guid["funnel"]:
+                funnel[key] += guid["funnel"][key]
         filter_reason_counts.update(guid.get("filter_reason_counts", {}))
         guidance_type_counts.update(guid["guidance_type_counts"])
         delivered_count += guid["delivered_count"]
