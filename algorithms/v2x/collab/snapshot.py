@@ -74,6 +74,7 @@ class IntersectionStaticContext:
     valid_actions: tuple[int, ...]
     phase_to_action: Mapping[int, int | None]
     action_to_movements: Mapping[int, tuple[str, ...]]
+    action_to_lanes: Mapping[int, tuple[str, ...]]
     movement_to_lanes: Mapping[str, tuple[str, ...]]
     transition_phases: frozenset[int]
     map_source_message_id: str
@@ -110,15 +111,20 @@ def build_static_context(map_message: V2XMessage) -> IntersectionStaticContext:
     }
     phases_meta = payload.get("phases") or {}
     action_to_movements: dict[int, tuple[str, ...]] = {}
+    action_to_lanes: dict[int, tuple[str, ...]] = {}
     movement_to_lanes: dict[str, set[str]] = {}
     for phase_id in phase_order:
         phase = phases_meta.get(str(phase_id), phases_meta.get(phase_id, {}))
         served: set[str] = set()
+        served_lanes: set[str] = set()
         for raw_connection_id, _priority in (phase.get("connection_priorities") or {}).items():
             conn = connections_by_id.get(str(raw_connection_id))
             if conn and conn.get("movement"):
                 served.add(str(conn["movement"]))
+            if conn and conn.get("from_lane"):
+                served_lanes.add(str(conn["from_lane"]))
         action_to_movements[phase_id] = tuple(sorted(served))
+        action_to_lanes[phase_id] = tuple(sorted(served_lanes))
     for conn in (payload.get("connections") or []):
         movement = conn.get("movement")
         from_lane = conn.get("from_lane")
@@ -135,6 +141,7 @@ def build_static_context(map_message: V2XMessage) -> IntersectionStaticContext:
         valid_actions=phase_order,
         phase_to_action={p: p for p in phase_order},
         action_to_movements=action_to_movements,
+        action_to_lanes=action_to_lanes,
         movement_to_lanes={m: tuple(sorted(ls)) for m, ls in movement_to_lanes.items()},
         transition_phases=frozenset(),
         map_source_message_id=map_message.message_id,
