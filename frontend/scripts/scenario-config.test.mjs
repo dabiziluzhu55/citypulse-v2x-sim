@@ -7,6 +7,7 @@ import {
   resolveCatalogEventTypes,
   resolveCatalogPlaybackSpeeds,
   SIMULATION_TIME_OPTIONS,
+  maximumSimulationEndTime,
   simulationTimeWindow,
 } from '../src/constants/scenarioOptions.ts'
 import { formatIntersectionLabel } from '../src/utils/intersectionLabels.ts'
@@ -62,13 +63,15 @@ test('keeps the final evening window aligned to the backend offset contract', ()
 
 test('converts arbitrary clock ranges inside each official period', () => {
   assert.deepEqual(
-    simulationTimeWindow('morning_peak', '07:20', '08:35'),
-    { windowStartSeconds: 1200, durationSeconds: 4500 },
+    simulationTimeWindow('morning_peak', '07:20', '07:35'),
+    { windowStartSeconds: 1200, durationSeconds: 900 },
   )
   assert.deepEqual(
-    simulationTimeWindow('flat', '14:30', '16:30'),
-    { windowStartSeconds: 0, durationSeconds: 7200 },
+    simulationTimeWindow('flat', '14:30', '14:45'),
+    { windowStartSeconds: 0, durationSeconds: 900 },
   )
+  assert.equal(maximumSimulationEndTime('morning_peak', '08:55'), '09:00')
+  assert.throws(() => simulationTimeWindow('morning_peak', '07:20', '07:36'))
   assert.throws(() => simulationTimeWindow('evening_peak', '17:00', '18:00'))
   assert.throws(() => simulationTimeWindow('evening_peak', '19:00', '18:00'))
 })
@@ -85,14 +88,16 @@ test('exposes exactly five disturbance presets backed by supported event types',
     ['施工占道', '道路限速', '大型活动散场', '大型活动开场', '交通事故'],
   )
   assert.ok(DISTURBANCE_EVENT_OPTIONS.every((item) => (
-    ['lane_closure', 'speed_limit', 'accident'].includes(item.eventType)
+    ['lane_closure', 'speed_limit', 'accident', 'major_event_opening', 'major_event_closing'].includes(item.eventType)
   )))
 })
 
 test('uses the main backend catalog contract while the catalog is offline', () => {
   assert.deepEqual(resolveCatalogControlModes(null), [...SUPPORTED_BACKEND_CONTROL_MODES])
   assert.deepEqual(resolveCatalogPlaybackSpeeds(undefined), [...DEFAULT_PLAYBACK_SPEED_OPTIONS])
-  assert.deepEqual(resolveCatalogEventTypes(null), ['lane_closure', 'speed_limit', 'accident'])
+  assert.deepEqual(resolveCatalogEventTypes(null), [
+    'lane_closure', 'speed_limit', 'accident', 'major_event_opening', 'major_event_closing',
+  ])
   assert.deepEqual(resolveCatalogControlModes(['fixed']), ['fixed'])
   assert.deepEqual(resolveCatalogPlaybackSpeeds([1, 2]), [1, 2])
 })
@@ -184,6 +189,37 @@ test('flattens multiple configured events into unique backend disturbance target
   assert.equal(new Set(payload.disturbance_targets.map((target) => target.event_id)).size, 4)
 })
 
+test('sends real opening and closing events with a per-intersection vehicle count', () => {
+  const payload = buildStartSimulationRequest({
+    scenarioPresetId: 'xiongan_20',
+    period: 'morning_peak',
+    windowStartSeconds: 0,
+    durationSeconds: 900,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    disturbanceEvents: [
+      { eventId: 'opening', eventType: 'major_event_opening', intersectionIds: ['demo_1', 'demo_2'], vehicleCount: 30 },
+      { eventId: 'closing', eventType: 'major_event_closing', intersectionIds: ['demo_3'] },
+    ],
+    snapshotIntervalSeconds: 0.2,
+  })
+  assert.deepEqual(payload.disturbance_targets.map((target) => target.event_type), [
+    'major_event_opening', 'major_event_opening', 'major_event_closing',
+  ])
+  assert.deepEqual(payload.disturbance_targets.map((target) => target.vehicle_count), [30, 30, 20])
+  assert.ok(payload.disturbance_targets.every((target) => !('venue_lane_id' in target)))
+  assert.throws(() => buildStartSimulationRequest({
+    ...payload,
+    scenarioPresetId: 'xiongan_20',
+    windowStartSeconds: 0,
+    durationSeconds: 900,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    disturbanceEvents: [{ eventType: 'major_event_opening', intersectionIds: ['demo_1'], vehicleCount: 0 }],
+    snapshotIntervalSeconds: 0.2,
+  }), /positive integer/)
+})
+
 test('uses each configured event time and rejects an event outside the simulation window', () => {
   const input = {
     scenarioPresetId: 'xiongan_20',
@@ -232,7 +268,7 @@ test('aggregates multiple warnings per intersection and tracks active/completed 
   assert.ok(completed.every((item) => item.status === 'completed'))
 })
 
-test('migrates v4 events to the outer window and exports v5 scene configuration', () => {
+test('migrates legacy events to the outer window and exports v6 scene configuration', () => {
   assert.deepEqual(resolveImportedDisturbanceTimes({}, '07:10', '07:40'), {
     startTime: '07:10',
     endTime: '07:40',
@@ -243,7 +279,7 @@ test('migrates v4 events to the outer window and exports v5 scene configuration'
     startTime: '07:15',
     endTime: '07:25',
   })
-  assert.equal(SCENARIO_CONFIG_EXPORT_VERSION, 5)
+  assert.equal(SCENARIO_CONFIG_EXPORT_VERSION, 6)
 })
 
 test('marks a scenario unavailable until every preset intersection is in the catalog', () => {

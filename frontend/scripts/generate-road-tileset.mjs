@@ -233,7 +233,7 @@ function geoJsonBounds(features) {
 
 async function main() {
   const sourcePath = path.resolve(
-    process.argv[2] ?? '../data/maps/sumo/generated/geojson/demo_2.roads.wgs84.geojson',
+    process.argv[2] ?? 'public/showcase-data/demo_2.roads.wgs84.geojson',
   )
   const source = JSON.parse(await readFile(sourcePath, 'utf8'))
   const [west, south, east, north] = geoJsonBounds(source.features)

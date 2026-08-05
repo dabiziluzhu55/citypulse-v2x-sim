@@ -7,6 +7,7 @@ import {
   startSimulation,
   stopSimulation,
 } from '../api/simulation'
+import { simulationApiErrorMessage } from '../api/client'
 import {
   ACTIVE_SESSION_ID_KEY,
   ACTIVE_SIMULATION_CONTEXT_KEY,
@@ -106,6 +107,7 @@ const activeWebsocketUrl = ref(
   storedContext?.sessionId === sessionId.value ? storedContext.websocketUrl : '',
 )
 const achievedPlaybackSpeed = ref<number | null>(null)
+const acceptedState = ref<SimulationState | null>(null)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let requestVersion = 0
@@ -124,7 +126,7 @@ const summary = computed<TrafficSummary>(() => {
   }
 })
 
-const state = computed<SimulationState | null>(() => snapshot.value?.state ?? null)
+const state = computed<SimulationState | null>(() => snapshot.value?.state ?? acceptedState.value)
 
 function resetPlaybackRateTracking(): void {
   playbackRateSamples = []
@@ -152,7 +154,9 @@ function recordPlaybackRate(next: SimulationSnapshot): void {
 function applySnapshot(next: SimulationSnapshot) {
   if (!shouldApplySimulationSnapshot(snapshot.value, next, sessionId.value)) return
   recordPlaybackRate(next)
+  const previousState = state.value
   snapshot.value = next
+  acceptedState.value = next.state
   if (typeof next.playback_speed === 'number') activePlaybackSpeed.value = next.playback_speed
   statusError.value = null
   if (isTerminal(next.state)) {
@@ -164,6 +168,8 @@ function applySnapshot(next: SimulationSnapshot) {
     activePlaybackSpeed.value = 1
     activeWebsocketUrl.value = ''
     restoredSession.value = false
+  } else if (previousState === 'QUEUED' && next.state !== 'QUEUED') {
+    lastMessage.value = '已获得仿真资源，正在启动仿真'
   }
 }
 
@@ -201,6 +207,7 @@ async function pollOnce() {
       connectSimulationStream('')
       sessionId.value = ''
       snapshot.value = null
+      acceptedState.value = null
       resetPlaybackRateTracking()
       sessionIntersectionId.value = ''
       activeScenarioPresetId.value = ''
@@ -238,9 +245,11 @@ function bindSession(
     controlMode: string
     playbackSpeed: number
     websocketUrl: string
+    initialState?: SimulationState
   },
 ) {
   sessionId.value = nextSessionId
+  acceptedState.value = context?.initialState ?? null
   restoredSession.value = false
   if (nextSessionId) {
     localStorage.setItem(ACTIVE_SESSION_ID_KEY, nextSessionId)
@@ -267,6 +276,7 @@ function bindSession(
     activeControlMode.value = ''
     activePlaybackSpeed.value = 1
     activeWebsocketUrl.value = ''
+    acceptedState.value = null
   }
   snapshot.value = null
   resetPlaybackRateTracking()
@@ -315,11 +325,14 @@ async function launchRun(
       controlMode: payload.control_mode,
       playbackSpeed: payload.playback_speed ?? 1,
       websocketUrl: result.websocket_url,
+      initialState: result.state,
     })
-    lastMessage.value = `仿真已启动，状态：${result.state}`
+    lastMessage.value = result.state === 'QUEUED'
+      ? '排队中，等待仿真资源'
+      : `仿真已启动，状态：${result.state}`
     return result
   } catch (err) {
-    startError.value = err instanceof Error ? err.message : '启动仿真失败'
+    startError.value = simulationApiErrorMessage(err, '启动仿真失败')
     return null
   } finally {
     starting.value = false
@@ -343,7 +356,7 @@ async function runPlaybackControl(
     await pollOnce()
     return result
   } catch (err) {
-    controlError.value = err instanceof Error ? err.message : `${successMessage}失败`
+    controlError.value = simulationApiErrorMessage(err, `${successMessage}失败`)
     return null
   } finally {
     controlling.value = false
@@ -390,7 +403,7 @@ async function stopRun(): Promise<StopSimulationResponse | null> {
     void pollOnce()
     return result
   } catch (err) {
-    controlError.value = err instanceof Error ? err.message : '结束仿真失败'
+    controlError.value = simulationApiErrorMessage(err, '结束仿真失败')
     return null
   } finally {
     controlling.value = false

@@ -33,11 +33,14 @@ export interface ExperimentComparisonResponse {
 export interface MetricsTimeseriesPoint {
   time: number
   algorithm?: string
-  avg_waiting_time: number
-  avg_travel_time?: number
-  avg_queue_length: number
-  throughput: number
-  fuel_consumption?: number
+  avg_waiting_time: number | null
+  avg_travel_time?: number | null
+  avg_queue_length: number | null
+  throughput: number | null
+  fuel_consumption?: number | null
+  finished?: boolean
+  metric_sources?: Record<string, string>
+  warnings?: string[]
 }
 
 export type MetricSeriesSource = 'backend' | 'missing'

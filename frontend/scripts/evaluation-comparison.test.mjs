@@ -5,8 +5,12 @@ import {
   appendRealEvaluationPoint,
   comparisonChangeRequiresConfirmation,
   createScenarioFingerprint,
+  evaluationPoint,
+  requiresFinalEvaluationRecovery,
 } from '../src/composables/useEvaluationComparison.ts'
 import {
+  EVALUATION_AXIS,
+  EVALUATION_METRICS,
   METRICS_ALGORITHMS,
   buildAlgorithmMetricSeries,
   evaluationTimes,
@@ -17,6 +21,13 @@ test('uses concrete algorithm names in the evaluation legend', () => {
     METRICS_ALGORITHMS.map((item) => item.shortLabel),
     ['固定配时', 'Max Pressure', 'SOTL'],
   )
+})
+
+test('uses one fixed zero-to-fifteen-minute axis and backend metric units', () => {
+  assert.deepEqual(EVALUATION_AXIS, { minMinutes: 0, maxMinutes: 15, intervalMinutes: 3 })
+  assert.deepEqual(EVALUATION_METRICS.map((item) => item.unit), [
+    '辆/进口车道', '秒', 'L/100km',
+  ])
 })
 
 test('prompts only when an accepted comparison with data would change', () => {
@@ -95,4 +106,51 @@ test('replaces duplicate timestamps and caps stored real points', () => {
   assert.equal(replaced[0].avg_queue_length, 9)
   const capped = appendRealEvaluationPoint(replaced, { ...initial[0], time: 2 }, 1)
   assert.deepEqual(capped.map((point) => point.time), [2])
+})
+
+function snapshot(state, elapsedSeconds, finished) {
+  const evaluation = {
+    episode_id: 'session-1',
+    algorithm: 'fixed',
+    avg_waiting_time: finished ? 7 : 9,
+    avg_travel_time: finished ? 20 : 18,
+    avg_queue_length: 2.5,
+    throughput: 100,
+    fuel_consumption: null,
+    avg_decision_latency_ms: null,
+    departed: 10,
+    arrived: 8,
+    completion_rate: 0.8,
+    metric_sources: finished ? { avg_waiting_time_s: 'tripinfo_completed' } : {},
+    warnings: finished ? ['fuel unavailable'] : [],
+    finished,
+  }
+  return {
+    session_id: 'session-1', state, sequence: 1, elapsed_seconds: elapsedSeconds,
+    duration_seconds: 900, progress: elapsedSeconds / 900, official_time: '07:00:00',
+    playback_speed: 1, intersections: {}, vehicles: [], events: [], error: null,
+    metrics: { active_vehicles: 0, departed_vehicles: 0, arrived_vehicles: 0, remaining_vehicles: 0, halting_vehicles: 0, total_waiting_time: 0, mean_speed: 0, evaluation },
+    evaluation,
+  }
+}
+
+test('buckets provisional samples every five seconds and preserves null values', () => {
+  const point = evaluationPoint(snapshot('RUNNING', 12.8, false))
+  assert.equal(point.time, 10)
+  assert.equal(point.fuel_consumption, null)
+  assert.equal(point.finished, false)
+})
+
+test('rejects unfinished terminal metrics and records the TripInfo-completed final frame', () => {
+  const provisionalTerminal = snapshot('COMPLETED', 900, false)
+  assert.equal(requiresFinalEvaluationRecovery(provisionalTerminal), true)
+  assert.equal(evaluationPoint(provisionalTerminal), null)
+
+  const completed = snapshot('COMPLETED', 899.9, true)
+  const point = evaluationPoint(completed)
+  assert.equal(requiresFinalEvaluationRecovery(completed), false)
+  assert.equal(point.time, 900)
+  assert.equal(point.avg_waiting_time, 7)
+  assert.equal(point.metric_sources.avg_waiting_time_s, 'tripinfo_completed')
+  assert.deepEqual(point.warnings, ['fuel unavailable'])
 })

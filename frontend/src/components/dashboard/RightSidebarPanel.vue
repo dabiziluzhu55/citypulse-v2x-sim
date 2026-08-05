@@ -12,8 +12,7 @@ import {
   RIGHT_SIDEBAR_DESIGN_WIDTH,
   RIGHT_SIDEBAR_METRICS_LAYOUT,
 } from '../../constants/rightSidebarLayout'
-import { EVALUATION_METRICS, METRICS_ALGORITHMS, buildAlgorithmMetricSeries, evaluationTimes, type EvaluationMetricKey } from '../../constants/metricsEvaluation'
-import { formatSimTime } from '../../utils/format'
+import { EVALUATION_AXIS, EVALUATION_METRICS, METRICS_ALGORITHMS, buildAlgorithmMetricSeries, evaluationTimes, type EvaluationMetricKey } from '../../constants/metricsEvaluation'
 import RightSidebarFrameSvg from './RightSidebarFrameSvg.vue'
 import RightSidebarSectionHeader from './RightSidebarSectionHeader.vue'
 import type { CollaborationLogEntry } from '../../types/collaboration'
@@ -32,15 +31,15 @@ function algorithmHasData(algorithmId: string): boolean {
 
 function setChartRef(key: EvaluationMetricKey, element: unknown) { chartRefs.value[key] = element as HTMLElement | null }
 function chartOption(metric: typeof EVALUATION_METRICS[number]) {
-  const times = evaluationTimes(points.value).map((time) => formatSimTime(time))
+  const times = evaluationTimes(points.value)
   return {
     animationDuration: 450,
     backgroundColor: 'transparent',
     grid: { left: 38, right: 10, top: 8, bottom: 25 },
-    tooltip: { trigger: 'axis', backgroundColor: 'rgba(2,16,31,.96)', borderColor: 'rgba(82,194,250,.5)', textStyle: { color: '#f4fcff', fontSize: 11 }, valueFormatter: (value: number) => `${value} ${metric.unit}` },
-    xAxis: { type: 'category', boundaryGap: false, data: times, axisLine: { lineStyle: { color: 'rgba(141,202,242,.28)' } }, axisTick: { show: false }, axisLabel: { color: 'rgba(188,219,241,.72)', fontSize: 10, hideOverlap: true } },
-    yAxis: { type: 'value', min: 0, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: 'rgba(188,219,241,.68)', fontSize: 10 }, splitLine: { lineStyle: { color: 'rgba(176,215,255,.18)', type: 'dashed' } } },
-    series: comparison.value[metric.key].map((series) => ({ name: `${series.shortLabel} ${series.label}`, type: 'line', smooth: .42, connectNulls: false, showSymbol: false, emphasis: { focus: 'series' }, lineStyle: { color: series.color, width: 1.9 }, data: series.values })),
+    tooltip: { trigger: 'axis', backgroundColor: 'rgba(2,16,31,.96)', borderColor: 'rgba(82,194,250,.5)', textStyle: { color: '#f4fcff', fontSize: 11 }, valueFormatter: (value: number | null) => value == null ? '--' : `${value} ${metric.unit}` },
+    xAxis: { type: 'value', min: EVALUATION_AXIS.minMinutes, max: EVALUATION_AXIS.maxMinutes, interval: EVALUATION_AXIS.intervalMinutes, name: '分钟', nameTextStyle: { color: 'rgba(188,219,241,.72)', fontSize: 9 }, axisLine: { lineStyle: { color: 'rgba(141,202,242,.28)' } }, axisTick: { show: false }, axisLabel: { color: 'rgba(188,219,241,.72)', fontSize: 10 } },
+    yAxis: { type: 'value', min: 0, name: metric.unit, nameTextStyle: { color: 'rgba(188,219,241,.68)', fontSize: 9, align: 'left' }, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: 'rgba(188,219,241,.68)', fontSize: 10 }, splitLine: { lineStyle: { color: 'rgba(176,215,255,.18)', type: 'dashed' } } },
+    series: comparison.value[metric.key].map((series) => ({ name: `${series.shortLabel} ${series.label}`, type: 'line', smooth: .42, connectNulls: false, showSymbol: false, emphasis: { focus: 'series' }, lineStyle: { color: series.color, width: 1.9 }, data: series.values.map((value, index) => [times[index] / 60, value]) })),
   }
 }
 function renderCharts() {
@@ -55,7 +54,7 @@ function renderCharts() {
 function resizeCharts() { charts.forEach((chart) => chart.resize()) }
 function disposeCharts() { charts.forEach((chart) => chart.dispose()); charts.clear() }
 function handleExport() {
-  const payload = { run_id: props.runId || 'unassigned', exported_at: new Date().toISOString(), contains_real_data: hasRealData.value, metrics: EVALUATION_METRICS.map((metric) => ({ ...metric, times: evaluationTimes(points.value), algorithms: comparison.value[metric.key] })), algorithms: METRICS_ALGORITHMS, source_notice: '仅包含相同配置下由后端仿真实际返回的算法评估数据；missing 表示该算法尚未运行。' }
+  const payload = { run_id: props.runId || 'unassigned', exported_at: new Date().toISOString(), contains_real_data: hasRealData.value, x_axis: { min_minutes: EVALUATION_AXIS.minMinutes, max_minutes: EVALUATION_AXIS.maxMinutes, interval_minutes: EVALUATION_AXIS.intervalMinutes }, metrics: EVALUATION_METRICS.map((metric) => ({ ...metric, times_seconds: evaluationTimes(points.value), algorithms: comparison.value[metric.key] })), backend_points: points.value, algorithms: METRICS_ALGORITHMS, source_notice: '仅包含相同配置下由后端仿真实际返回的算法评估数据；missing 表示该算法尚未运行。' }
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -85,7 +84,7 @@ watch(() => props.timeseries, renderCharts, { deep: true })
             </div>
 
             <div v-for="(metric, index) in EVALUATION_METRICS" :key="metric.key" class="right-sidebar__metric" :style="{ top: `${layout.metrics[index].titleTop}px` }">
-              <h3>{{ metric.title }}</h3>
+              <h3>{{ metric.title }}<small>{{ metric.unit }}</small></h3>
               <div :ref="(el) => setChartRef(metric.key, el)" class="right-sidebar__chart" />
             </div>
 
@@ -111,6 +110,7 @@ watch(() => props.timeseries, renderCharts, { deep: true })
 .right-sidebar__metric { position: absolute; left: 55px; width: 355px; height: 208px; border-bottom: 1px solid rgba(97,170,224,.2); }
 .right-sidebar__metric h3 { height: 27px; margin: 0; display: flex; align-items: center; color: #fff; font-size: 18px; font-weight: 800; letter-spacing: .04em; text-shadow: 0 0 8px rgba(33,230,255,.25); }
 .right-sidebar__metric h3::before { content: ''; width: 4px; height: 16px; margin-right: 8px; background: #21e6ff; box-shadow: 0 0 8px #21e6ff; }
+.right-sidebar__metric h3 small { margin-left: 8px; color: rgba(188,219,241,.72); font-size: 10px; font-weight: 600; }
 .right-sidebar__legend { position: absolute; left: 55px; top: 80px; width: 355px; height: 25px; display: flex; align-items: center; justify-content: center; gap: 12px; }
 .right-sidebar__legend span { display: flex; align-items: center; gap: 5px; color: rgba(190,216,233,.75); font-size: 10px; white-space: nowrap; }
 .right-sidebar__legend i { width: 14px; height: 3px; border-radius: 2px; box-shadow: 0 0 5px currentColor; }

@@ -1,5 +1,6 @@
 import type { DisturbanceTargetPayload, StartSimulationRequest } from '../types/simulation'
 import type { BackendControlMode } from '../constants/simulationOptions'
+import type { DisturbanceType } from '../types/scenario'
 
 export interface ScenarioPayloadInput {
   scenarioPresetId: string
@@ -8,7 +9,7 @@ export interface ScenarioPayloadInput {
   durationSeconds: number
   controlMode: BackendControlMode
   playbackSpeed: number
-  disturbance?: 'lane_closure' | 'speed_limit' | 'accident' | 'none'
+  disturbance?: DisturbanceType | 'none'
   intersectionId?: string
   disturbanceIntersectionIds?: string[]
   disturbanceEvents?: ScenarioDisturbanceInput[]
@@ -19,10 +20,11 @@ export interface ScenarioPayloadInput {
 
 export interface ScenarioDisturbanceInput {
   eventId?: string
-  eventType: 'lane_closure' | 'speed_limit' | 'accident'
+  eventType: DisturbanceType
   intersectionIds: string[]
   startSeconds?: number
   endSeconds?: number
+  vehicleCount?: number
 }
 
 export function buildDisturbanceTargets(input: ScenarioPayloadInput): DisturbanceTargetPayload[] {
@@ -67,7 +69,15 @@ export function buildDisturbanceTargets(input: ScenarioPayloadInput): Disturbanc
       }
       if (event.eventType === 'lane_closure') return { event_type: 'lane_closure' as const, ...base }
       if (event.eventType === 'speed_limit') return { event_type: 'speed_limit' as const, ...base, max_speed: 5 }
-      return { event_type: 'accident' as const, ...base, position_ratio: 0.5 }
+      if (event.eventType === 'accident') return { event_type: 'accident' as const, ...base, position_ratio: 0.5 }
+      const vehicleCount = event.vehicleCount ?? 20
+      if (!Number.isInteger(vehicleCount) || vehicleCount < 1) {
+        throw new Error('Major event vehicle count must be a positive integer')
+      }
+      if (event.eventType === 'major_event_opening') {
+        return { event_type: 'major_event_opening' as const, ...base, vehicle_count: vehicleCount }
+      }
+      return { event_type: 'major_event_closing' as const, ...base, vehicle_count: vehicleCount }
     })
   })
 }

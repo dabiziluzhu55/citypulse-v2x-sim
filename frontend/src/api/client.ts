@@ -14,7 +14,56 @@ export interface ApiBlobResponse {
   headers: Headers
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
+export class ApiError extends Error {
+  readonly status: number
+  readonly code: string | null
+  readonly details: Record<string, unknown> | null
+
+  constructor(input: {
+    status: number
+    code?: string | null
+    message: string
+    details?: Record<string, unknown> | null
+  }) {
+    super(input.message)
+    this.name = 'ApiError'
+    this.status = input.status
+    this.code = input.code ?? null
+    this.details = input.details ?? null
+  }
+}
+
+async function responseError(response: Response): Promise<ApiError> {
+  let code: string | null = null
+  let message = `${response.status} ${response.statusText}`
+  let details: Record<string, unknown> | null = null
+  try {
+    const payload = await response.json() as {
+      detail?: string | ({ code?: string; message?: string } & Record<string, unknown>)
+    }
+    if (typeof payload.detail === 'string') {
+      message = payload.detail
+    } else if (payload.detail) {
+      details = payload.detail
+      code = typeof payload.detail.code === 'string' ? payload.detail.code : null
+      if (typeof payload.detail.message === 'string') message = payload.detail.message
+    }
+  } catch {
+    // Keep the HTTP status fallback for non-JSON responses.
+  }
+  return new ApiError({ status: response.status, code, message, details })
+}
+
+export function simulationApiErrorMessage(cause: unknown, fallback: string): string {
+  if (cause instanceof ApiError) {
+    if (cause.code === 'SESSION_QUEUED') return '排队期间暂不可执行该操作'
+    if (cause.code === 'REDIS_UNAVAILABLE') return '仿真调度服务不可用，请稍后重试'
+    return cause.code ? `${cause.code}: ${cause.message}` : cause.message
+  }
+  return cause instanceof Error ? cause.message : fallback
+}
+
+const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 
 function buildUrl(path: string, config?: ApiRequestConfig): string {
@@ -54,22 +103,7 @@ async function request<T>(
     })
 
     if (!response.ok) {
-      let detail = `${response.status} ${response.statusText}`
-      try {
-        const payload = await response.json() as {
-          detail?: string | { code?: string; message?: string }
-        }
-        if (typeof payload.detail === 'string') {
-          detail = payload.detail
-        } else if (payload.detail?.message) {
-          detail = payload.detail.code
-            ? `${payload.detail.code}: ${payload.detail.message}`
-            : payload.detail.message
-        }
-      } catch {
-        // The status text remains the most useful fallback for non-JSON errors.
-      }
-      throw new Error(detail)
+      throw await responseError(response)
     }
 
     if (response.status === 204 || response.headers.get('Content-Length') === '0') {
@@ -116,21 +150,7 @@ async function requestBlob(
       },
     })
     if (!response.ok) {
-      let detail = `${response.status} ${response.statusText}`
-      try {
-        const payload = await response.json() as {
-          detail?: string | { code?: string; message?: string }
-        }
-        if (typeof payload.detail === 'string') detail = payload.detail
-        else if (payload.detail?.message) {
-          detail = payload.detail.code
-            ? `${payload.detail.code}: ${payload.detail.message}`
-            : payload.detail.message
-        }
-      } catch {
-        // Keep the HTTP status fallback for non-JSON responses.
-      }
-      throw new Error(detail)
+      throw await responseError(response)
     }
     return { data: await response.blob(), status: response.status, headers: response.headers }
   } catch (cause) {
