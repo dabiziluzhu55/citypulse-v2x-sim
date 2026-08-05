@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 
 from algorithms.mappo.trainer import MAPPOTrainer, PPOBatch
-from algorithms.mappo.config import MAPPOConfig, COOPERATIVE_M1_MODEL_VERSION
+from algorithms.mappo.config import MAPPOConfig
 from algorithms.mappo.models import MAPPOPolicy
 from algorithms.mappo.checkpoint import (
     CheckpointMetadata,
@@ -20,16 +20,10 @@ REWARD_DEFINITION = "v5a:-0.60D+0.20F_safe-0.15B+0.05H;clip[-3,1]"
 def _make_config(**kw):
     base = dict(
         intersection_ids=("demo_1", "demo_2"),
-        model_version=COOPERATIVE_M1_MODEL_VERSION,
+        model_version="cooperative_joint_v1",
         reward_scope="shared_team",
         critic_scope="global",
         critic_target_scope="team_return",
-        m1_target_mode="per_agent",
-        m1_arm="m1_a",
-        m1_local_weight=0.95,
-        m1_neighbor_weight=0.0,
-        m1_team_weight=0.05,
-        m1_adjacency_path="algorithms/mappo/runs/mappo_v2/m0/intersection_adjacency_m1_symmetric.json",
     )
     base.update(kw)
     return MAPPOConfig(**base)
@@ -44,7 +38,7 @@ def _make_policy(config: MAPPOConfig) -> MAPPOPolicy:
 
 
 def _make_batch(policy: MAPPOPolicy) -> PPOBatch:
-    """2 agents x 2 joints 的 per-agent 目标 batch（M1-A 语义），on-policy 计算。"""
+    """2 agents x 2 joints 的共享团队目标 batch，on-policy 计算。"""
     obs_dim = policy.actor.obs_dim
     local_obs = torch.arange(4 * obs_dim, dtype=torch.float32).reshape(4, obs_dim) / 100.0
     phase_features = torch.zeros((4, 2, 11), dtype=torch.float32)

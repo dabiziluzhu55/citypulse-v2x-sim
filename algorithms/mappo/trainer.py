@@ -7,12 +7,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from algorithms.mappo.config import (
-    COOPERATIVE_M1_MODEL_VERSION,
-    MAPPOConfig,
-    REWARD_SCOPE_SHARED_TEAM,
-)
-from algorithms.mappo.m1_advantage import mix_advantages
+from algorithms.mappo.config import MAPPOConfig, REWARD_SCOPE_SHARED_TEAM
 from algorithms.mappo.models import MAPPOPolicy
 
 
@@ -30,7 +25,6 @@ class PPOBatch:
     advantages: torch.Tensor
     returns: torch.Tensor
     joint_step_index: torch.Tensor | None = None
-    component_advantages: dict[str, torch.Tensor] | None = None
 
     def __post_init__(self) -> None:
         batch_size = int(self.local_obs.shape[0])
@@ -70,14 +64,6 @@ class PPOBatch:
             )
         elif self.joint_step_index.dtype != torch.long:
             raise ValueError("joint step index must use torch.long dtype")
-        if self.component_advantages is not None:
-            for key, tensor in self.component_advantages.items():
-                if key not in {"local", "neighbor", "team"}:
-                    raise ValueError(f"unknown advantage component: {key}")
-                if tensor.shape != (batch_size,):
-                    raise ValueError(
-                        "component advantages must have one value per sample"
-                    )
         finite_tensors = (
             self.local_obs,
             self.phase_features,
@@ -96,14 +82,6 @@ class PPOBatch:
 
     def select(self, indices: torch.Tensor) -> "PPOBatch":
         assert self.joint_step_index is not None
-        component = (
-            None
-            if self.component_advantages is None
-            else {
-                key: value[indices]
-                for key, value in self.component_advantages.items()
-            }
-        )
         return PPOBatch(
             local_obs=self.local_obs[indices],
             phase_features=self.phase_features[indices],
@@ -117,7 +95,6 @@ class PPOBatch:
             advantages=self.advantages[indices],
             returns=self.returns[indices],
             joint_step_index=self.joint_step_index[indices],
-            component_advantages=component,
         )
 
 
@@ -218,12 +195,12 @@ def _validate_cooperative_joint_rows(
 ) -> torch.Tensor | None:
     """Validate atomic owner rows and optionally literal shared targets.
 
-    target_mode: "shared" | "per_agent" | "m1_0_scalar"
-      - shared / m1_0_scalar: advantages/returns/old_values must be
-        identical within each joint; returns one joint advantage per joint.
+    target_mode: "shared" | "per_agent"
+      - shared: advantages/returns/old_values must be identical within each
+        joint; returns one joint advantage per joint.
       - per_agent: only validates joint context/owner completeness.
     """
-    require_shared = target_mode in {"shared", "m1_0_scalar"}
+    require_shared = target_mode == "shared"
 
     assert batch.joint_step_index is not None
     joint_advantages: list[torch.Tensor] = []
@@ -325,23 +302,6 @@ class MAPPOTrainer:
     def compute_critic_loss(
         self, batch: PPOBatch
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        if self.config.m1_target_mode == "m1_0_scalar":
-            assert batch.joint_step_index is not None
-            values = self.policy.value(
-                batch.global_obs, batch.agent_mask, batch.agent_index
-            ).squeeze(-1)
-            joint_ids = batch.joint_step_index
-            scalar_means = torch.zeros_like(values)
-            for jid in torch.unique(joint_ids, sorted=True):
-                mask = joint_ids == jid
-                scalar_means[mask] = values[mask].mean()
-            loss = F.huber_loss(
-                scalar_means,
-                batch.returns,
-                reduction="mean",
-                delta=self.config.huber_delta,
-            )
-            return loss, {"values": scalar_means.detach()}
         values = self.policy.value(
             batch.global_obs, batch.agent_mask, batch.agent_index
         ).squeeze(-1)
@@ -356,18 +316,11 @@ class MAPPOTrainer:
     def update(self, batch: PPOBatch) -> dict[str, float]:
         joint_advantages: torch.Tensor | None = None
         if self.config.reward_scope == REWARD_SCOPE_SHARED_TEAM:
-            if self.config.model_version == COOPERATIVE_M1_MODEL_VERSION:
-                target_mode = {
-                    "shared": "shared",
-                    "per_agent": "per_agent",
-                    "m1_0_scalar": "m1_0_scalar",
-                }[self.config.m1_target_mode]
-            else:
-                target_mode = (
-                    "shared"
-                    if self.config.requires_shared_values
-                    else "per_agent"
-                )
+            target_mode = (
+                "shared"
+                if self.config.requires_shared_values
+                else "per_agent"
+            )
             validated = _validate_cooperative_joint_rows(
                 batch,
                 num_agents=len(self.config.intersection_ids),
@@ -393,18 +346,6 @@ class MAPPOTrainer:
         )
 
         training_advantages = batch.advantages
-        if batch.component_advantages is not None:
-            training_advantages = mix_advantages(
-                local=batch.component_advantages["local"],
-                neighbor=batch.component_advantages.get("neighbor"),
-                team=batch.component_advantages["team"],
-                m1_arm=self.config.m1_arm,
-                weights=(
-                    self.config.m1_local_weight,
-                    self.config.m1_neighbor_weight,
-                    self.config.m1_team_weight,
-                ),
-            )
         raw_advantages = training_advantages.detach()
         advantage_std = raw_advantages.std(unbiased=False)
         normalized_advantages = (

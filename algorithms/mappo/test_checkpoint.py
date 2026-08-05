@@ -20,8 +20,6 @@ from algorithms.mappo.checkpoint import (
 )
 from algorithms.mappo.config import (
     COOPERATIVE_MODEL_VERSION,
-    COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-    MAPPO_V2_RESIDUAL_MODEL_VERSION,
     MAPPOConfig,
     REWARD_SCOPE_LOCAL,
     REWARD_SCOPE_SHARED_TEAM,
@@ -60,9 +58,7 @@ def _objects(
         phase_feature_dim=current.phase_feature_dim,
         model_version=current.model_version,
         actor_variant=current.actor_variant,
-        residual_hidden_dim=current.residual_hidden_dim,
         identity_offset=current.identity_offset,
-        residual_init_seed=342,
     )
     return current, policy, MAPPOTrainer(policy, current)
 
@@ -81,7 +77,6 @@ def _metadata(config: MAPPOConfig) -> CheckpointMetadata:
         reward_definition=REWARD_DEFINITION,
         training_workers=4,
         episode_duration_s=300.0,
-        residual_init_seed=(342 if config.actor_variant == "residual" else None),
     )
 
 
@@ -152,9 +147,7 @@ def _rewrite_as_format_v1(source: Path, destination: Path) -> None:
         "training_workers",
         "episode_duration_s",
         "actor_variant",
-        "residual_hidden_dim",
         "identity_offset",
-        "residual_init_seed",
     ):
         payload["metadata"].pop(optional_field, None)
     torch.save(payload, destination)
@@ -322,9 +315,7 @@ def test_checkpoint_metadata_loads_legacy_worker_duration_as_na(
     payload["metadata"].pop("training_workers")
     payload["metadata"].pop("episode_duration_s")
     payload["metadata"].pop("actor_variant")
-    payload["metadata"].pop("residual_hidden_dim")
     payload["metadata"].pop("identity_offset")
-    payload["metadata"].pop("residual_init_seed")
     torch.save(payload, legacy_path)
 
     metadata = read_checkpoint_metadata(legacy_path)
@@ -332,108 +323,7 @@ def test_checkpoint_metadata_loads_legacy_worker_duration_as_na(
     assert metadata.training_workers is None
     assert metadata.episode_duration_s is None
     assert metadata.actor_variant is None
-    assert metadata.residual_hidden_dim is None
     assert metadata.identity_offset is None
-    assert metadata.residual_init_seed is None
-
-
-def test_v2_checkpoint_round_trip_records_residual_provenance(
-    tmp_path: Path,
-) -> None:
-    config = MAPPOConfig(
-        ("demo_1", "demo_2"),
-        model_version=MAPPO_V2_RESIDUAL_MODEL_VERSION,
-        actor_variant="residual",
-    )
-    _, policy, trainer = _objects(config)
-    _take_optimizer_step(trainer)
-    path = tmp_path / "mappo-v2-residual.pt"
-    save_checkpoint(path, policy, trainer, _metadata(config))
-    _, restored_policy, restored_trainer = _objects(config)
-
-    restored = load_checkpoint(
-        path,
-        restored_policy,
-        restored_trainer,
-        expected_config=config,
-        expected_local_observation_schema=LOCAL_SCHEMA,
-        expected_residual_init_seed=342,
-    )
-
-    assert restored.actor_variant == "residual"
-    assert restored.residual_hidden_dim == 32
-    assert restored.identity_offset == 9
-    assert restored.residual_init_seed == 342
-    for name, tensor in policy.state_dict().items():
-        assert torch.equal(tensor, restored_policy.state_dict()[name])
-    _assert_nested_equal(
-        trainer.actor_optimizer.state_dict(),
-        restored_trainer.actor_optimizer.state_dict(),
-    )
-    _assert_nested_equal(
-        trainer.critic_optimizer.state_dict(),
-        restored_trainer.critic_optimizer.state_dict(),
-    )
-
-
-def test_v2_checkpoint_rejects_residual_seed_before_state_load(
-    tmp_path: Path,
-) -> None:
-    config = MAPPOConfig(
-        ("demo_1", "demo_2"),
-        model_version=MAPPO_V2_RESIDUAL_MODEL_VERSION,
-        actor_variant="residual",
-    )
-    _, policy, trainer = _objects(config)
-    path = tmp_path / "mappo-v2-residual.pt"
-    save_checkpoint(path, policy, trainer, _metadata(config))
-    before = {
-        name: tensor.detach().clone()
-        for name, tensor in policy.state_dict().items()
-    }
-
-    with pytest.raises(
-        CheckpointCompatibilityError, match="residual initialization seed"
-    ):
-        load_checkpoint(
-            path,
-            policy,
-            trainer,
-            expected_config=config,
-            expected_local_observation_schema=LOCAL_SCHEMA,
-            expected_residual_init_seed=999,
-        )
-
-    for name, tensor in policy.state_dict().items():
-        assert torch.equal(tensor, before[name])
-
-
-@pytest.mark.parametrize(
-    ("field", "value", "message"),
-    [
-        ("actor_variant", "shared", "model version.*actor variant"),
-        ("residual_hidden_dim", 16, "residual hidden dimension"),
-        ("identity_offset", 8, "identity offset"),
-    ],
-)
-def test_v2_checkpoint_rejects_malformed_variant_metadata(
-    tmp_path: Path, field: str, value: object, message: str
-) -> None:
-    config = MAPPOConfig(
-        ("demo_1", "demo_2"),
-        model_version=MAPPO_V2_RESIDUAL_MODEL_VERSION,
-        actor_variant="residual",
-    )
-    _, policy, trainer = _objects(config)
-    path = tmp_path / "mappo-v2-residual.pt"
-    broken_path = tmp_path / f"broken-{field}.pt"
-    save_checkpoint(path, policy, trainer, _metadata(config))
-    payload = torch.load(path, map_location="cpu", weights_only=False)
-    payload["metadata"][field] = value
-    torch.save(payload, broken_path)
-
-    with pytest.raises(CheckpointCompatibilityError, match=message):
-        read_checkpoint_metadata(broken_path)
 
 
 @pytest.mark.parametrize(
@@ -560,86 +450,15 @@ def test_cooperative_checkpoint_round_trip_records_full_objective_provenance(
     )
 
 
-def test_owner_conditioned_cooperative_checkpoint_round_trip(
-    tmp_path: Path,
-) -> None:
-    config = _cooperative_config(
-        model_version=COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION
-    )
-    _, policy, trainer = _objects(config)
-    _take_optimizer_step(trainer)
-    path = tmp_path / "cooperative-owner-conditioned.pt"
-    save_checkpoint(path, policy, trainer, _metadata(config))
-    _, restored_policy, restored_trainer = _objects(config)
-
-    metadata = load_checkpoint(
-        path,
-        restored_policy,
-        restored_trainer,
-        expected_config=config,
-        expected_local_observation_schema=LOCAL_SCHEMA,
-    )
-
-    assert metadata.model_version == COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION
-    for name, tensor in policy.state_dict().items():
-        assert torch.equal(tensor, restored_policy.state_dict()[name])
-    _assert_nested_equal(
-        trainer.actor_optimizer.state_dict(),
-        restored_trainer.actor_optimizer.state_dict(),
-    )
-    _assert_nested_equal(
-        trainer.critic_optimizer.state_dict(),
-        restored_trainer.critic_optimizer.state_dict(),
-    )
-
-
-@pytest.mark.parametrize(
-    ("saved_version", "target_version"),
-    [
-        (
-            COOPERATIVE_MODEL_VERSION,
-            COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-        ),
-        (
-            COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-            COOPERATIVE_MODEL_VERSION,
-        ),
-    ],
-)
-def test_cooperative_model_versions_cannot_cross_load_before_mutation(
-    tmp_path: Path, saved_version: str, target_version: str
-) -> None:
-    saved_config = _cooperative_config(model_version=saved_version)
-    _, saved_policy, saved_trainer = _objects(saved_config)
-    source = tmp_path / f"{saved_version}.pt"
-    save_checkpoint(
-        source, saved_policy, saved_trainer, _metadata(saved_config)
-    )
-    target_config = _cooperative_config(model_version=target_version)
-    _, target_policy, target_trainer = _objects(target_config)
-    _take_optimizer_step(target_trainer)
-    before = _training_state_snapshot(target_policy, target_trainer)
-
-    with pytest.raises(CheckpointCompatibilityError, match="model version"):
-        load_checkpoint(
-            source,
-            target_policy,
-            target_trainer,
-            expected_config=target_config,
-            expected_local_observation_schema=LOCAL_SCHEMA,
-        )
-
-    _assert_training_state_unchanged(
-        before, target_policy, target_trainer
-    )
-
-
 @pytest.mark.parametrize(
     ("changed_config", "message"),
     [
         (
-            MAPPOConfig(("demo_1", "demo_2")),
-            "algorithm variant|reward scope|critic target|model version|legacy",
+            replace(
+                _cooperative_config(),
+                team_reward_schema="different-team-schema",
+            ),
+            "team reward schema",
         ),
         (
             replace(
@@ -782,73 +601,8 @@ def test_format_v1_metadata_is_read_only_legacy_cc_ippo(
     assert metadata.training_workers is None
     assert metadata.episode_duration_s is None
     assert metadata.actor_variant is None
-    assert metadata.residual_hidden_dim is None
     assert metadata.identity_offset is None
-    assert metadata.residual_init_seed is None
     assert legacy_path.read_bytes() == original_bytes
-
-
-def test_format_v1_fully_restores_legacy_policy_optimizers_rng_and_metadata(
-    tmp_path: Path,
-) -> None:
-    config, policy, trainer = _objects()
-    _take_optimizer_step(trainer)
-    random.seed(71)
-    np.random.seed(72)
-    torch.manual_seed(73)
-    current_path = tmp_path / "current.pt"
-    legacy_path = tmp_path / "legacy-v1.pt"
-    save_checkpoint(current_path, policy, trainer, _metadata(config))
-    _rewrite_as_format_v1(current_path, legacy_path)
-
-    expected_policy = {
-        name: tensor.detach().clone()
-        for name, tensor in policy.state_dict().items()
-    }
-    expected_actor_optimizer = copy.deepcopy(
-        trainer.actor_optimizer.state_dict()
-    )
-    expected_critic_optimizer = copy.deepcopy(
-        trainer.critic_optimizer.state_dict()
-    )
-    expected_python = random.random()
-    expected_numpy = float(np.random.random())
-    expected_torch = torch.rand(3)
-
-    _, restored_policy, restored_trainer = _objects(config)
-    with torch.no_grad():
-        for parameter in restored_policy.parameters():
-            parameter.add_(101.0)
-    _take_optimizer_step(restored_trainer)
-    random.seed(710)
-    np.random.seed(720)
-    torch.manual_seed(730)
-
-    metadata = load_checkpoint(
-        legacy_path,
-        restored_policy,
-        restored_trainer,
-        expected_config=config,
-        expected_local_observation_schema=LOCAL_SCHEMA,
-    )
-
-    assert metadata.algorithm_variant == "cc_ippo_local_reward_v1"
-    assert metadata.reward_scope == REWARD_SCOPE_LOCAL
-    assert metadata.critic_target_scope == "local_return"
-    _assert_nested_equal(expected_policy, restored_policy.state_dict())
-    _assert_nested_equal(
-        expected_actor_optimizer,
-        restored_trainer.actor_optimizer.state_dict(),
-    )
-    _assert_nested_equal(
-        expected_critic_optimizer,
-        restored_trainer.critic_optimizer.state_dict(),
-    )
-    assert random.random() == expected_python
-    assert float(np.random.random()) == expected_numpy
-    torch.testing.assert_close(
-        torch.rand(3), expected_torch, rtol=0, atol=0
-    )
 
 
 def test_vanilla_cooperative_resume_rejects_format_v1_critic_and_optimizers(

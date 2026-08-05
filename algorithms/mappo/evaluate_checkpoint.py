@@ -95,7 +95,6 @@ def _config_from_metadata(
         critic_scope=metadata.critic_scope,
         model_version=metadata.model_version,
         actor_variant=metadata.actor_variant or "shared",
-        residual_hidden_dim=metadata.residual_hidden_dim or 32,
         identity_offset=metadata.identity_offset or 9,
         phase_feature_schema=metadata.phase_feature_schema,
         phase_feature_dim=metadata.phase_feature_dim,
@@ -127,12 +126,6 @@ def _config_from_metadata(
             else metadata.joint_step_schema
         ),
         critic_target_scope=metadata.critic_target_scope,
-        m1_target_mode=metadata.m1_target_mode or "shared",
-        m1_arm=metadata.m1_arm or "m1_0",
-        m1_local_weight=metadata.m1_local_weight or 0.0,
-        m1_neighbor_weight=metadata.m1_neighbor_weight or 0.0,
-        m1_team_weight=metadata.m1_team_weight or 1.0,
-        m1_adjacency_path=metadata.m1_adjacency_path,
     )
 
 
@@ -161,13 +154,7 @@ def load_evaluation_checkpoint(
         phase_feature_dim=config.phase_feature_dim,
         model_version=config.model_version,
         actor_variant=config.actor_variant,
-        residual_hidden_dim=config.residual_hidden_dim,
         identity_offset=config.identity_offset,
-        residual_init_seed=(
-            44
-            if metadata.residual_init_seed is None
-            else metadata.residual_init_seed
-        ),
     )
     trainer = MAPPOTrainer(policy, config)
     loaded_metadata = load_checkpoint(
@@ -177,7 +164,6 @@ def load_evaluation_checkpoint(
         expected_config=config,
         expected_local_observation_schema=IPPO_V8_LOCAL_OBSERVATION_SCHEMA,
         expected_reward_definition=REWARD_DEFINITION,
-        expected_residual_init_seed=metadata.residual_init_seed,
         restore_rng=False,
     )
     if loaded_metadata != metadata:
@@ -233,7 +219,6 @@ def _run_evaluation(request: Mapping[str, object]) -> dict[str, object]:
         rollout_seed=seed,
         actor_init_seed=metadata.actor_init_seed,
         critic_init_seed=metadata.critic_init_seed,
-        residual_init_seed=metadata.residual_init_seed,
         expected_duration_s=float(request["duration"]),
         mode="model",
         record_evaluation=True,

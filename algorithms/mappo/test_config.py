@@ -4,11 +4,6 @@ import pytest
 
 from algorithms.mappo.config import (
     COOPERATIVE_MODEL_VERSION,
-    COOPERATIVE_M1_MODEL_VERSION,
-    COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-    MAPPO_V1_MODEL_VERSION,
-    MAPPO_V2_RESIDUAL_MODEL_VERSION,
-    MAPPO_V2_SHARED_MODEL_VERSION,
     MAPPOConfig,
     algorithm_label,
     assert_seed_disjoint,
@@ -17,82 +12,41 @@ from algorithms.mappo.config import (
 
 
 def test_cooperative_value_sharing_is_model_semantic_not_critic_scope() -> None:
-    old_global = MAPPOConfig(
+    global_critic = MAPPOConfig(
         ("demo_1", "demo_2"),
         critic_scope="global",
         model_version=COOPERATIVE_MODEL_VERSION,
         reward_scope="shared_team",
         critic_target_scope="team_return",
     )
-    old_local = MAPPOConfig(
+    local_critic = MAPPOConfig(
         ("demo_1", "demo_2"),
         critic_scope="local",
         model_version=COOPERATIVE_MODEL_VERSION,
         reward_scope="shared_team",
         critic_target_scope="team_return",
     )
-    owner_conditioned = MAPPOConfig(
-        ("demo_1", "demo_2"),
-        critic_scope="global",
-        model_version=COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-        reward_scope="shared_team",
-        critic_target_scope="team_return",
-    )
 
-    assert old_global.requires_shared_values is True
-    assert old_local.requires_shared_values is False
-    assert owner_conditioned.requires_shared_values is False
+    assert global_critic.requires_shared_values is True
+    assert local_critic.requires_shared_values is False
 
 
-def test_owner_conditioned_cooperative_model_rejects_local_reward() -> None:
-    with pytest.raises(ValueError, match="shared_team"):
-        MAPPOConfig(
-            ("demo_1", "demo_2"),
-            model_version=COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-            reward_scope="local",
-        )
-
-
-def test_v2_config_pins_actor_and_residual_schema() -> None:
-    shared = MAPPOConfig(
-        ("demo_1", "demo_2"),
-        model_version=MAPPO_V2_SHARED_MODEL_VERSION,
-        actor_variant="shared",
-    )
-    residual = MAPPOConfig(
-        ("demo_1", "demo_2"),
-        model_version=MAPPO_V2_RESIDUAL_MODEL_VERSION,
-        actor_variant="residual",
-    )
-
-    assert shared.residual_hidden_dim == residual.residual_hidden_dim == 32
-    assert shared.identity_offset == residual.identity_offset == 9
-
-
-@pytest.mark.parametrize(
-    ("model_version", "actor_variant"),
-    [
-        (MAPPO_V1_MODEL_VERSION, "residual"),
-        (MAPPO_V2_SHARED_MODEL_VERSION, "residual"),
-        (MAPPO_V2_RESIDUAL_MODEL_VERSION, "shared"),
-    ],
-)
-def test_config_rejects_model_actor_mismatch(
-    model_version: str, actor_variant: str
-) -> None:
+def test_config_rejects_model_actor_mismatch() -> None:
     with pytest.raises(ValueError, match="model version.*actor variant"):
         MAPPOConfig(
             ("demo_1", "demo_2"),
-            model_version=model_version,
-            actor_variant=actor_variant,
+            model_version=COOPERATIVE_MODEL_VERSION,
+            actor_variant="residual",
         )
 
 
 def test_config_freezes_ippo_v8_training_contract() -> None:
     config = MAPPOConfig(intersection_ids=("demo_1", "demo_2"))
 
-    assert config.model_version == "mappo_v1"
+    assert config.model_version == "cooperative_joint_v1"
     assert config.critic_scope == "global"
+    assert config.reward_scope == "shared_team"
+    assert config.critic_target_scope == "team_return"
     assert config.obs_dim == 132
     assert config.phase_feature_dim == 11
     assert config.max_action_dim == 4
@@ -138,41 +92,22 @@ def test_configuration_signature_is_stable_and_scope_sensitive() -> None:
     assert len(configuration_signature(first)) == 64
 
 
-def test_shared_reward_scope_changes_configuration_signature() -> None:
-    local = MAPPOConfig(("demo_1", "demo_2"), reward_scope="local")
-    shared = MAPPOConfig(
-        ("demo_1", "demo_2"),
-        model_version=COOPERATIVE_MODEL_VERSION,
-        reward_scope="shared_team",
-        critic_target_scope="team_return",
-    )
-    assert configuration_signature(local) != configuration_signature(shared)
-
-
 @pytest.mark.parametrize(
-    ("reward_scope", "critic_scope", "expected"),
+    ("critic_scope", "expected"),
     [
-        ("local", "local", "ippo_local_reward"),
-        ("local", "global", "cc_ippo_local_reward"),
-        ("shared_team", "local", "cooperative_ippo"),
-        ("shared_team", "global", "cooperative_mappo"),
+        ("local", "cooperative_ippo"),
+        ("global", "cooperative_mappo"),
     ],
 )
-def test_algorithm_label_is_derived_from_reward_and_critic_scope(
-    reward_scope: str, critic_scope: str, expected: str
+def test_algorithm_label_is_derived_from_critic_scope(
+    critic_scope: str, expected: str
 ) -> None:
     config = MAPPOConfig(
         ("demo_1", "demo_2"),
-        model_version=(
-            COOPERATIVE_MODEL_VERSION
-            if reward_scope == "shared_team"
-            else MAPPO_V1_MODEL_VERSION
-        ),
-        reward_scope=reward_scope,
+        model_version=COOPERATIVE_MODEL_VERSION,
+        reward_scope="shared_team",
         critic_scope=critic_scope,
-        critic_target_scope=(
-            "team_return" if reward_scope == "shared_team" else "local_return"
-        ),
+        critic_target_scope="team_return",
     )
     assert algorithm_label(config) == expected
 
@@ -183,41 +118,4 @@ def test_shared_reward_requires_team_return_target() -> None:
             ("demo_1",),
             reward_scope="shared_team",
             critic_target_scope="local_return",
-        )
-
-
-def test_local_reward_requires_local_return_target() -> None:
-    with pytest.raises(ValueError, match="local requires local_return"):
-        MAPPOConfig(
-            ("demo_1",),
-            reward_scope="local",
-            critic_target_scope="team_return",
-        )
-
-
-def test_cooperative_m1_requires_agent_conditioned_critic():
-    cfg = MAPPOConfig(
-        intersection_ids=("demo_1", "demo_2"),
-        model_version=COOPERATIVE_M1_MODEL_VERSION,
-        reward_scope="shared_team",
-        critic_scope="global",
-        critic_target_scope="team_return",
-        m1_target_mode="per_agent",
-        m1_arm="m1_a",
-        m1_local_weight=0.95,
-        m1_neighbor_weight=0.0,
-        m1_team_weight=0.05,
-        m1_adjacency_path="adj.json",
-    )
-    assert not cfg.requires_shared_values
-
-
-def test_cooperative_m1_rejects_invalid_target_mode():
-    with pytest.raises(ValueError):
-        MAPPOConfig(
-            intersection_ids=("demo_1",),
-            model_version=COOPERATIVE_M1_MODEL_VERSION,
-            reward_scope="shared_team",
-            critic_target_scope="team_return",
-            m1_target_mode="unknown",
         )

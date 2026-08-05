@@ -10,7 +10,7 @@ from algorithms.ippo.controller import (
     _masked_categorical,
 )
 from algorithms.mappo.features import IPPOV8FeatureBuilder
-from algorithms.mappo.models import CandidateActor, LocalCritic
+from algorithms.mappo.models import CandidateActor, IsomorphicTeamValueCritic
 
 
 def _metadata() -> dict:
@@ -192,29 +192,4 @@ def test_candidate_actor_loaded_from_ippo_is_bitwise_equivalent() -> None:
     actions = torch.tensor([3, 2, 1])
     torch.testing.assert_close(
         actual.log_prob(actions), expected.log_prob(actions), rtol=0, atol=0
-    )
-
-
-def test_local_critic_loaded_from_ippo_is_bitwise_equivalent() -> None:
-    torch.manual_seed(456)
-    ippo = IPPONetwork(obs_dim=6, act_dim=4, hidden=8)
-    critic = LocalCritic(obs_dim=6, num_agents=2, hidden_dim=8)
-    critic.load_state_dict(
-        {
-            name: tensor
-            for name, tensor in ippo.state_dict().items()
-            if name.startswith("critic_body.") or name.startswith("critic.")
-        }
-    )
-    local_obs = torch.arange(18, dtype=torch.float32).reshape(3, 6) / 10.0
-    global_obs = torch.zeros((3, 2, 6), dtype=torch.float32)
-    owner = torch.tensor([0, 1, 0])
-    global_obs[torch.arange(3), owner] = local_obs
-    mask = torch.ones((3, 2), dtype=torch.bool)
-
-    torch.testing.assert_close(
-        critic(global_obs, mask, owner),
-        ippo.critic_forward(local_obs),
-        rtol=0,
-        atol=0,
     )

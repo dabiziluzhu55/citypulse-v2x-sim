@@ -8,8 +8,6 @@ import torch
 
 from algorithms.mappo.config import (
     COOPERATIVE_MODEL_VERSION,
-    COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-    MAPPO_V1_MODEL_VERSION,
     REWARD_SCOPE_SHARED_TEAM,
     MAPPOConfig,
 )
@@ -214,12 +212,10 @@ def _cooperative_controller(
     )
 
 
-def test_owner_conditioned_joint_values_use_one_batched_critic_call(
+def test_shared_joint_values_use_one_scalar_critic_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    controller = _cooperative_controller(
-        model_version=COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION
-    )
+    controller = _cooperative_controller()
     state = CentralizedState(
         observations=np.zeros(
             (20, controller.config.obs_dim), dtype=np.float32
@@ -241,8 +237,8 @@ def test_owner_conditioned_joint_values_use_one_batched_critic_call(
 
     values = controller._joint_values(state)
 
-    assert values == (0.0, 1.0)
-    assert calls == [((20, 20, controller.config.obs_dim), tuple(range(20)))]
+    assert values == (0.0, 0.0)
+    assert calls == [((1, 20, controller.config.obs_dim), (0,))]
 
 
 @pytest.mark.parametrize(
@@ -276,14 +272,12 @@ def test_cooperative_controller_rejects_incompatible_policy_architecture(
             if mismatch == "phase_feature_dim"
             else config.phase_feature_dim
         ),
-        model_version=(
-            MAPPO_V1_MODEL_VERSION
-            if mismatch == "model_version"
-            else COOPERATIVE_MODEL_VERSION
-        ),
+        model_version=COOPERATIVE_MODEL_VERSION,
     )
     if mismatch == "actor_variant":
         policy.actor_variant = "residual"
+    if mismatch == "model_version":
+        policy.model_version = "mappo_v1"
 
     with pytest.raises(ValueError, match=message):
         MAPPOController(
@@ -808,15 +802,15 @@ def test_requested_action_commits_only_after_target_green_is_observed() -> None:
     assert first["actions"]["signals"]["demo_1"] == {"target_phase": 1}
     assert clearance["actions"]["signals"] == {}
     assert "demo_1" in next_decision["actions"]["signals"]
-    transitions = controller.trajectories["demo_1"]
-    assert len(transitions) == 1
-    transition = transitions[0]
+    assert len(controller._joint_transitions) == 1
+    joint = controller._joint_transitions[0]
+    transition = joint.agent_transitions[0]
     assert transition.requested_phase == 1
     assert transition.applied_phase == 1
     assert transition.applied_time_s == 20.0
     assert transition.decision_time_s == 5.0
     assert transition.policy_generation == 3
-    assert transition.global_state.observations.shape == (1, 132)
+    assert joint.global_state.observations.shape == (1, 132)
 
 
 def test_unapplied_request_at_next_eligible_decision_invalidates_worker() -> None:
@@ -835,7 +829,24 @@ def test_time_limit_completion_bootstraps_confirmed_partial_transition() -> None
     controller = _controller()
     controller.step(_step(5.0, current_phase=0, stage_elapsed=5.0))
     controller.step(
-        _step(10.0, current_phase=0, stage_elapsed=10.0, waiting=90.0)
+        _step(
+            10.0,
+            current_phase=0,
+            stage="YELLOW",
+            stage_elapsed=5.0,
+            pending_phase=1,
+            waiting=90.0,
+        )
+    )
+    controller.step(
+        _step(
+            120.0,
+            current_phase=0,
+            stage="YELLOW",
+            stage_elapsed=5.0,
+            pending_phase=1,
+            waiting=90.0,
+        )
     )
 
     rollout = controller.finish(
@@ -853,10 +864,13 @@ def test_time_limit_completion_bootstraps_confirmed_partial_transition() -> None
     assert rollout.action_diagnostics["intersections"]["demo_1"]["decision_count"] == 1
     assert rollout.reward_diagnostics["transition_count"] == 1
     assert rollout.reward_diagnostics["components"]["D"]["mean"] >= 0.0
-    transition = rollout.transitions[0]
-    assert transition.terminated is False
-    assert transition.truncated is True
-    assert np.isfinite(transition.next_value)
+    joint = rollout.transitions[0]
+    assert joint.terminated is False
+    assert joint.truncated is True
+    assert np.isfinite(joint.next_team_value)
+    assert tuple(item.next_value for item in joint.agent_transitions) == (
+        joint.next_team_value,
+    )
 
 
 def test_early_natural_completion_is_terminal_without_bootstrap() -> None:
@@ -875,13 +889,14 @@ def test_early_natural_completion_is_terminal_without_bootstrap() -> None:
     )
 
     assert rollout is not None
-    transition = rollout.transitions[0]
-    assert transition.terminated is True
-    assert transition.truncated is False
-    assert transition.next_value == 0.0
+    joint = rollout.transitions[0]
+    assert joint.terminated is True
+    assert joint.truncated is False
+    assert joint.next_team_value == 0.0
+    assert tuple(item.next_value for item in joint.agent_transitions) == (0.0,)
 
 
-def test_unobserved_final_pending_is_dropped_without_losing_completed_data() -> None:
+def test_unobserved_final_pending_invalidates_whole_worker() -> None:
     controller = _controller()
     controller.step(_step(5.0, current_phase=0, stage_elapsed=5.0))
     controller.step(
@@ -891,18 +906,15 @@ def test_unobserved_final_pending_is_dropped_without_losing_completed_data() -> 
         _step(20.0, current_phase=0, stage_elapsed=61.0, waiting=80.0)
     )
 
-    rollout = controller.finish(
+    assert controller.finish(
         {
             "episode_id": "protocol-test",
             "reason": "completed",
             "simulation_time": 120.0,
         }
-    )
-
-    assert rollout is not None
-    assert len(rollout.transitions) == 1
-    assert rollout.pending_count == 0
-    assert rollout.dropped_pending == 1
+    ) is None
+    assert controller.invalid is True
+    assert "incomplete final joint transition" in (controller.invalid_reason or "")
 
 
 def test_error_finish_discards_complete_rollout() -> None:
