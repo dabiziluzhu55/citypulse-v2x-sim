@@ -1,6 +1,8 @@
-# 官方 20 路口预测：训练、结果与模型交接
+# 归档：官方 20 路口聚合预测：训练、结果与模型交接
 
 更新时间：2026-07-30（Asia/Shanghai）
+
+> 状态：归档。当前预测主线是官方 20 路口 206 入口车道级预测；本文件保留旧版 20 路口聚合方案的结果和交接约定。
 
 ## 目标与数据口径
 
@@ -36,7 +38,7 @@ demo_6, demo_7, demo_8, demo_9
 - 对照：`persistence`、`moving_average`、`historical_average`。
 - 数据窗口不跨 episode；活跃节点掩码、归一化和历史均值均只使用训练集，避免泄漏。
 
-60 秒结果如下；详细 CSV 位于 `docs/results/official20_prediction_results_60s.csv`。
+60 秒结果如下；详细 CSV 位于 `docs/results/prediction_archive_official20_intersection20_results_60s.csv`。
 
 | 测试集 | 模型 | MAE | RMSE | sMAPE | WMAPE |
 | --- | --- | ---: | ---: | ---: | ---: |

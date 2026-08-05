@@ -1,6 +1,8 @@
-# 官方 20 路口入口车道预测：训练结果与模型交接
+# 当前主线：官方 20 路口 206 入口车道预测：训练结果与模型交接
 
-更新：2026-07-30（Asia/Shanghai）
+更新：2026-08-04（Asia/Shanghai）
+
+> 状态：当前主线。206 入口车道级预测作为项目当前默认预测方法；TLS100 路口级方案已归档。
 
 ## 范围
 
@@ -26,7 +28,7 @@
 
 训练在 AutoDL RTX 4090 上完成。STGCN 使用 Chebyshev 图卷积、4 个输入特征、batch size 32、最多 100 epoch；最佳 checkpoint 为 **epoch 95**。XGBoost 使用 250,000 条确定性抽样训练行。
 
-60 秒统一结果见 [CSV](results/official20_lane206_prediction_results_60s.csv)。sMAPE 和 WMAPE 在下表中均已转换为百分比。
+60 秒统一结果见 [CSV](results/prediction_current_official20_lane206_results_60s.csv)。sMAPE 和 WMAPE 在下表中均已转换为百分比。
 
 | 集合 | 模型 | MAE | RMSE | sMAPE | WMAPE |
 | --- | --- | ---: | ---: | ---: | ---: |
