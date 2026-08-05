@@ -15,6 +15,7 @@ from algorithms.mappo.models import MAPPOPolicy
 from algorithms.mappo.trainer import (
     MAPPOTrainer,
     PPOBatch,
+    _batch_structure_diagnostics,
     _validate_cooperative_joint_rows,
 )
 
@@ -259,6 +260,23 @@ def test_one_update_changes_actor_and_critic_with_finite_diagnostics() -> None:
     assert diagnostics["action_1_fraction"] == 0.5
     assert diagnostics["valid_action_count_mean"] == 1.5
     assert diagnostics["unselected_valid_action_fraction"] == 0.0
+
+
+def test_batch_diagnostics_emit_max_action_dim_fractions_for_narrow_masks() -> None:
+    policy, _trainer = _policy_and_trainer()
+    batch = _batch(policy)
+    # Action masks in this fixture have width 2 while the frozen config
+    # reserves max_action_dim=4; subset scenarios can run with fewer
+    # candidate phases and must still report every reserved action slot.
+    diagnostics = _batch_structure_diagnostics(
+        batch,
+        owner_conditioned_critic=False,
+        max_action_dim=4,
+    )
+    assert diagnostics["action_0_fraction"] == 0.5
+    assert diagnostics["action_1_fraction"] == 0.5
+    assert diagnostics["action_2_fraction"] == 0.0
+    assert diagnostics["action_3_fraction"] == 0.0
 
 
 def test_batch_diagnostics_collapse_owner_rows_for_shared_joint() -> None:

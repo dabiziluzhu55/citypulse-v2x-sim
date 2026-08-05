@@ -19,6 +19,7 @@ from algorithms.mappo.features import CentralizedState
 from algorithms.mappo.joint_rollout import JointTransition
 from algorithms.mappo.rollout import Transition, compute_gae
 from algorithms.mappo.trainer import PPOBatch
+from traffic_control.ippo.identity import IDENTITY_SLOT_IDS, identity_slots_for
 
 
 class BatchValidationError(RuntimeError):
@@ -56,7 +57,9 @@ def build_ppo_batch(
     worker_values = tuple(workers)
     if not worker_values:
         raise ValueError("cannot build PPO batch from no workers")
-    return _pack_ppo_batch(*_build_shared_team_rows(worker_values, config))
+    return _pack_ppo_batch(
+        *_build_shared_team_rows(worker_values, config), config=config
+    )
 
 
 def _build_shared_team_rows(
@@ -166,12 +169,51 @@ def _build_shared_team_rows(
     )
 
 
+def _pad_global_to_identity_slots(
+    global_state: CentralizedState, config: MAPPOConfig
+) -> tuple[np.ndarray, np.ndarray]:
+    """Pad an active-subset global state to the canonical 20 identity slots.
+
+    The joint rollout keeps active-subset states (rows sized by the
+    controlled intersections); every cooperative critic is a 20-slot model
+    from the fixed identity contract.  Inactive slots are zero-filled and
+    masked out, matching the controller-side ``_padded_global`` behaviour.
+    For the full 20-intersection scope this is the identity mapping.
+    """
+    observations = np.asarray(
+        global_state.observations, dtype=np.float32
+    )
+    agent_mask = np.asarray(global_state.agent_mask, dtype=np.bool_)
+    num_slots = len(IDENTITY_SLOT_IDS)
+    if (
+        observations.shape == (num_slots, config.obs_dim)
+        and agent_mask.shape == (num_slots,)
+    ):
+        return observations, agent_mask
+    slots = np.asarray(
+        identity_slots_for(config.intersection_ids), dtype=np.int64
+    )
+    padded_observations = np.zeros(
+        (num_slots, config.obs_dim), dtype=np.float32
+    )
+    padded_mask = np.zeros(num_slots, dtype=np.bool_)
+    padded_observations[slots] = observations
+    padded_mask[slots] = agent_mask
+    return padded_observations, padded_mask
+
+
 def _pack_ppo_batch(
     ordered_transitions: list[Transition],
     ordered_advantages: list[float],
     ordered_returns: list[float],
     joint_step_indices: list[int],
+    *,
+    config: MAPPOConfig,
 ) -> PPOBatch:
+    padded_global = [
+        _pad_global_to_identity_slots(item.global_state, config)
+        for item in ordered_transitions
+    ]
     return PPOBatch(
         local_obs=torch.from_numpy(
             np.stack(
@@ -189,14 +231,14 @@ def _pack_ppo_batch(
             ).astype(np.bool_, copy=True)
         ),
         global_obs=torch.from_numpy(
-            np.stack(
-                [item.global_state.observations for item in ordered_transitions]
-            ).astype(np.float32, copy=True)
+            np.stack([padded for padded, _mask in padded_global]).astype(
+                np.float32, copy=True
+            )
         ),
         agent_mask=torch.from_numpy(
-            np.stack(
-                [item.global_state.agent_mask for item in ordered_transitions]
-            ).astype(np.bool_, copy=True)
+            np.stack([mask for _padded, mask in padded_global]).astype(
+                np.bool_, copy=True
+            )
         ),
         agent_index=torch.tensor(
             [item.agent_index for item in ordered_transitions], dtype=torch.long

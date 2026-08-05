@@ -129,7 +129,10 @@ def _agent_explained_variance(
 
 
 def _batch_structure_diagnostics(
-    batch: PPOBatch, *, owner_conditioned_critic: bool
+    batch: PPOBatch,
+    *,
+    owner_conditioned_critic: bool,
+    max_action_dim: int,
 ) -> dict[str, float]:
     assert batch.joint_step_index is not None
     joint_rows = batch.global_obs.detach().cpu().contiguous().numpy()
@@ -149,9 +152,8 @@ def _batch_structure_diagnostics(
         torch.unique(batch.joint_step_index.detach()).numel()
     )
 
-    action_dimension = int(batch.action_mask.shape[1])
     action_counts = torch.bincount(
-        batch.actions.detach().cpu(), minlength=action_dimension
+        batch.actions.detach().cpu(), minlength=max_action_dim
     )
     diagnostics = {
         "unique_joint_state_count": float(unique_joint_states),
@@ -167,9 +169,9 @@ def _batch_structure_diagnostics(
             batch.action_mask.sum(dim=1).float().mean()
         ),
     }
-    for action_index, count in enumerate(action_counts):
+    for action_index in range(max_action_dim):
         diagnostics[f"action_{action_index}_fraction"] = float(
-            count / batch.batch_size
+            action_counts[action_index] / batch.batch_size
         )
 
     starved = 0
@@ -343,6 +345,7 @@ class MAPPOTrainer:
         structure_diagnostics = _batch_structure_diagnostics(
             batch,
             owner_conditioned_critic=not self.config.requires_shared_values,
+            max_action_dim=self.config.max_action_dim,
         )
 
         training_advantages = batch.advantages
