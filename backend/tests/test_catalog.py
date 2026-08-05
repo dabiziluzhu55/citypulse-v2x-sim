@@ -10,7 +10,7 @@ def test_catalog_returns_scenario_presets(client: TestClient) -> None:
     assert len(payload["intersections"]) == 20
     intersection_ids = {item["intersection_id"] for item in payload["intersections"]}
     assert intersection_ids == {f"demo_{index}" for index in range(1, 21)}
-    assert payload["control_modes"] == ["fixed", "max_pressure", "sotl"]
+    assert payload["control_modes"] == ["fixed", "max_pressure", "sotl", "ippo"]
     assert payload["playback_speeds"] == [1.0, 1.25, 1.5, 2.0, 3.0, 5.0]
 
     presets = payload["scenario_presets"]
