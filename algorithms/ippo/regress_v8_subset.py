@@ -131,7 +131,7 @@ def _capture_l3(seed: int, duration: int) -> list[dict]:
         duration_seconds=duration,
         control_mode="algorithm",
         algorithm_transport="local",
-        algorithm_module="tools.traced_ippo",
+        algorithm_module="algorithms.tools.traced_ippo",
         decision_interval=5.0,
         minimum_green=5.0,
         seed=seed,
