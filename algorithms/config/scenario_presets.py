@@ -1,4 +1,4 @@
-# config/scenario_presets.py
+# algorithms/config/scenario_presets.py
 """算法无关的场景预设注册表（单一事实源；backend 与 evaluate 共同导入）。
 
 字段契约与既有 backend.app.scenario.presets 完全一致：

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Optional, Sequence
 
-from config.scenario_presets import (
+from algorithms.config.scenario_presets import (
     ALL_DEMO_INTERSECTION_IDS, ResolvedScenarioScope,
     require_scenario_preset,
 )
