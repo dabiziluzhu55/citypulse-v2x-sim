@@ -127,6 +127,12 @@ def _config_from_metadata(
             else metadata.joint_step_schema
         ),
         critic_target_scope=metadata.critic_target_scope,
+        m1_target_mode=metadata.m1_target_mode or "shared",
+        m1_arm=metadata.m1_arm or "m1_0",
+        m1_local_weight=metadata.m1_local_weight or 0.0,
+        m1_neighbor_weight=metadata.m1_neighbor_weight or 0.0,
+        m1_team_weight=metadata.m1_team_weight or 1.0,
+        m1_adjacency_path=metadata.m1_adjacency_path,
     )
 
 
