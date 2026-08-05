@@ -1,7 +1,4 @@
-"""Unique control-mode registry for product APIs and SUMO workers.
-
-This module must stay free of torch / IPPO imports. Algorithm modules are
-registered as importable module name strings and loaded by the SUMO worker.
+"""API和SUMO workers的唯一控制模式注册表
 """
 
 from __future__ import annotations

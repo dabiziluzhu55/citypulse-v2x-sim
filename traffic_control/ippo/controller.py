@@ -1,7 +1,4 @@
-"""Deployable IPPO Protocol 2.0 controller (inference only).
-
-Defaults to the packaged checkpoint. Multi-session deployments must use Celery
-prefork so each worker process runs one SUMO session at a time.
+"""部署版IPPO控制器（仅支持推理）
 """
 
 from __future__ import annotations

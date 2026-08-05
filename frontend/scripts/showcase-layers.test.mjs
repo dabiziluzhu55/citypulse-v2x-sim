@@ -11,7 +11,7 @@ import { BAIDU_DARK_BASE_STYLE } from '../src/mapv/baiduDarkStyle.ts'
 import { extractOsmLandcover } from './generate-showcase-landcover.mjs'
 
 const roadGeoJson = JSON.parse(await readFile(
-  new URL('../../data/maps/sumo/generated/geojson/demo_2.roads.wgs84.geojson', import.meta.url),
+  new URL('../public/showcase-data/demo_2.roads.wgs84.geojson', import.meta.url),
   'utf8',
 ))
 

@@ -221,6 +221,20 @@ class SessionScenarioTests(unittest.TestCase):
             self.assertEqual(compiled.selected_origins, {})
             config = ET.parse(compiled.sumocfg).getroot()
             self.assertEqual(config.find("time/end").get("value"), "900")
+            self.assertEqual(config.find("time/step-length").get("value"), "0.1")
+            self.assertEqual(
+                config.find("processing/device.emissions.probability").get("value"),
+                "1",
+            )
+            self.assertEqual(
+                config.find("output/tripinfo-output").get("value"),
+                "tripinfo.xml",
+            )
+            self.assertEqual(
+                config.find("output/tripinfo-output.write-unfinished").get("value"),
+                "true",
+            )
+            self.assertEqual(compiled.tripinfo_file, compiled.directory / "tripinfo.xml")
 
     def test_rejects_origin_filtering_and_invalid_multiplier(self):
         with tempfile.TemporaryDirectory() as directory:

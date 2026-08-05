@@ -9,6 +9,7 @@ export interface ScenarioDraftDisturbanceEvent {
   intersection_ids: string[]
   start_time: string
   end_time: string
+  vehicle_count?: number
 }
 
 const disturbanceEvents = ref<ScenarioDraftDisturbanceEvent[]>([])

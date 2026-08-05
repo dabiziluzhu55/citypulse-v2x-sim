@@ -68,6 +68,9 @@ export const SIMULATION_PERIOD_RANGES: Record<TrafficFlowMode, SimulationPeriodR
   evening_peak: { start: '17:30', end: '19:30' },
 }
 
+export const MAX_SIMULATION_DURATION_MINUTES = 15
+export const MAX_SIMULATION_DURATION_SECONDS = MAX_SIMULATION_DURATION_MINUTES * 60
+
 export function clockTimeToMinutes(value: string): number {
   const match = /^(\d{2}):(\d{2})$/.exec(value)
   if (!match) return Number.NaN
@@ -75,6 +78,23 @@ export function clockTimeToMinutes(value: string): number {
   const minutes = Number(match[2])
   if (hours > 23 || minutes > 59) return Number.NaN
   return hours * 60 + minutes
+}
+
+export function minutesToClockTime(value: number): string {
+  const minutes = Math.max(0, Math.min(24 * 60 - 1, Math.round(value)))
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+}
+
+export function maximumSimulationEndTime(flowMode: TrafficFlowMode, start: string): string {
+  const rangeEnd = clockTimeToMinutes(SIMULATION_PERIOD_RANGES[flowMode].end)
+  const startMinutes = clockTimeToMinutes(start)
+  if (!Number.isFinite(startMinutes)) return SIMULATION_PERIOD_RANGES[flowMode].end
+  return minutesToClockTime(Math.min(rangeEnd, startMinutes + MAX_SIMULATION_DURATION_MINUTES))
+}
+
+export function defaultSimulationTimeWindow(flowMode: TrafficFlowMode): { start: string; end: string } {
+  const start = SIMULATION_PERIOD_RANGES[flowMode].start
+  return { start, end: maximumSimulationEndTime(flowMode, start) }
 }
 
 export function simulationTimeWindow(
@@ -93,8 +113,9 @@ export function simulationTimeWindow(
     || startMinutes < rangeStart
     || endMinutes > rangeEnd
     || endMinutes <= startMinutes
+    || endMinutes - startMinutes > MAX_SIMULATION_DURATION_MINUTES
   ) {
-    throw new Error(`Simulation time must stay within ${range.start}-${range.end}`)
+    throw new Error(`Simulation time must stay within ${range.start}-${range.end} and not exceed 15 minutes`)
   }
   return {
     windowStartSeconds: (startMinutes - rangeStart) * 60,
@@ -179,8 +200,8 @@ export interface DisturbanceEventOption extends SelectOption<DisturbancePresetId
 export const DISTURBANCE_EVENT_OPTIONS: DisturbanceEventOption[] = [
   { label: '施工占道', value: 'construction', eventType: 'lane_closure' },
   { label: '道路限速', value: 'speed_limit', eventType: 'speed_limit' },
-  { label: '大型活动散场', value: 'event_departure', eventType: 'lane_closure' },
-  { label: '大型活动开场', value: 'event_arrival', eventType: 'speed_limit' },
+  { label: '大型活动散场', value: 'event_departure', eventType: 'major_event_closing' },
+  { label: '大型活动开场', value: 'event_arrival', eventType: 'major_event_opening' },
   { label: '交通事故', value: 'accident', eventType: 'accident' },
 ]
 
@@ -188,6 +209,8 @@ export const DEFAULT_BACKEND_EVENT_TYPES: DisturbanceType[] = [
   'lane_closure',
   'speed_limit',
   'accident',
+  'major_event_opening',
+  'major_event_closing',
 ]
 
 export function resolveCatalogEventTypes(eventTypes: string[] | null | undefined): string[] {

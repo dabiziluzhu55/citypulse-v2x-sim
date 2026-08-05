@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppBackgroundMap from './components/visualization/AppBackgroundMap.vue'
 import AppMapGradientMask from './components/visualization/AppMapGradientMask.vue'
@@ -11,7 +11,17 @@ const route = useRoute()
 const mapView = provideAppMapView()
 const mapDimension = computed(() => mapView.dimension.value)
 const isStandaloneRoute = computed(() => route.meta.standalone === true)
+const threeMapState = ref<'loading' | 'ready' | 'error'>('loading')
+const threeMapBlocked = computed(() => (
+  mapDimension.value === '3d' && threeMapState.value !== 'ready'
+))
+
+function handleThreeMapState(nextState: 'loading' | 'ready' | 'error'): void {
+  threeMapState.value = nextState
+}
+
 function returnTo2d(): void {
+  threeMapState.value = 'loading'
   mapView.setDimension('2d')
 }
 </script>
@@ -20,12 +30,19 @@ function returnTo2d(): void {
   <router-view v-if="isStandaloneRoute" />
   <div v-else class="app-shell app-shell--dashboard">
     <AppBackgroundMap v-if="mapDimension === '2d'" />
-    <AppThreeMapLoader v-else @return2d="returnTo2d" />
+    <AppThreeMapLoader
+      v-else
+      @return2d="returnTo2d"
+      @state-change="handleThreeMapState"
+    />
     <AppMapGradientMask />
 
     <DashboardChrome />
 
-    <div class="app-content app-content--dashboard">
+    <div
+      class="app-content app-content--dashboard"
+      :class="{ 'app-content--map3d-blocked': threeMapBlocked }"
+    >
       <main class="app-main app-main--dashboard">
         <router-view />
       </main>
@@ -105,6 +122,15 @@ function returnTo2d(): void {
 .app-content :deep(.map-dimension-toggle),
 .app-content :deep(.dashboard-bottom-icons__btn) {
   pointer-events: auto;
+}
+
+.app-content--map3d-blocked :deep(*) {
+  pointer-events: none !important;
+}
+
+.app-content--map3d-blocked :deep(.map-dimension-toggle),
+.app-content--map3d-blocked :deep(.map-dimension-toggle *) {
+  pointer-events: auto !important;
 }
 
 .app-main {

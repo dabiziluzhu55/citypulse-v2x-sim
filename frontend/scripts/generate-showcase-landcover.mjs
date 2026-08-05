@@ -121,7 +121,7 @@ export function extractOsmLandcover(osmXml, bounds) {
 
 async function main() {
   const osmUrl = new URL('../../data/maps/osm/TotalMap.osm', import.meta.url)
-  const roadsUrl = new URL('../../data/maps/sumo/generated/geojson/demo_2.roads.wgs84.geojson', import.meta.url)
+  const roadsUrl = new URL('../public/showcase-data/demo_2.roads.wgs84.geojson', import.meta.url)
   const roads = JSON.parse(await readFile(roadsUrl, 'utf8'))
   const center = roads.metadata.center
   const radius = Math.max(Number(roads.metadata.radius_m ?? 600) + 100, 1800)

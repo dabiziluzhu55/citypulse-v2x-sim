@@ -1,4 +1,4 @@
-"""IPPO actor-critic network used for online inference."""
+"""IPPO actor-critic网络，用于在线推理"""
 
 from __future__ import annotations
 

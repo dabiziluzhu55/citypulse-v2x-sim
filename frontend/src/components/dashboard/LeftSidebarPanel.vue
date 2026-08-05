@@ -5,8 +5,11 @@ import {
   SIMULATION_PERIOD_RANGES,
   TRAFFIC_FLOW_MODE_OPTIONS,
   clockTimeToMinutes,
+  defaultSimulationTimeWindow,
+  maximumSimulationEndTime,
   type DisturbancePresetId,
 } from '../../constants/scenarioOptions'
+import { DEFAULT_MAJOR_EVENT_VEHICLE_COUNT } from '../../utils/scenarioConfigMigration'
 import { resolveControlModeLabel, resolveDashboardControlModes } from '../../constants/simulationOptions'
 import { exportScenarioArchive } from '../../api/scenario'
 import {
@@ -34,6 +37,13 @@ import { LEFT_SIDEBAR_DESIGN_HEIGHT, LEFT_SIDEBAR_DESIGN_WIDTH, LEFT_SIDEBAR_REF
 import type { SimulationSnapshot, SimulationState, StartSimulationRequest } from '../../types/simulation'
 import { formatIntersectionLabel } from '../../utils/intersectionLabels'
 import { loadIntersectionTopologyCatalog } from '../../mapv/intersectionTopology'
+import { validateScenarioArchive } from '../../utils/scenarioArchiveValidation'
+import {
+  canPauseSimulation,
+  canResumeSimulation,
+  isActiveSimulationState,
+  simulationStateLabel,
+} from '../../utils/simulationSessionState'
 
 const props = defineProps<{
   sessionId: string
@@ -83,6 +93,7 @@ const {
   config,
   configNote,
   activeTimeRange,
+  activeMaximumEndTime,
   buildPayload,
   buildPayloadFor,
   buildExport,
@@ -105,11 +116,13 @@ const disturbanceDraft = ref<{
   intersectionIds: string[]
   startTime: string
   endTime: string
+  vehicleCount: number
 }>({
   presetId: DISTURBANCE_EVENT_OPTIONS[0].value,
   intersectionIds: [],
   startTime: SIMULATION_PERIOD_RANGES.morning_peak.start,
-  endTime: SIMULATION_PERIOD_RANGES.morning_peak.end,
+  endTime: defaultSimulationTimeWindow('morning_peak').end,
+  vehicleCount: DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
 })
 const localIntersectionIds = ref<string[]>([])
 const scenarioOptions = computed(() => scenarioPresets.value.map((item) => ({
@@ -131,6 +144,13 @@ const disturbanceIntersectionOptions = computed(() => {
     .map((id) => ({ label: formatIntersectionLabel(id), value: id }))
 })
 const selectedDisturbanceIntersectionCount = computed(() => disturbanceDraft.value.intersectionIds.length)
+const selectedDisturbanceOption = computed(() => DISTURBANCE_EVENT_OPTIONS.find(
+  (item) => item.value === disturbanceDraft.value.presetId,
+))
+const isMajorDisturbance = computed(() => (
+  selectedDisturbanceOption.value?.eventType === 'major_event_opening'
+  || selectedDisturbanceOption.value?.eventType === 'major_event_closing'
+))
 const availableDisturbanceEventOptions = computed(() => DISTURBANCE_EVENT_OPTIONS.map((option) => ({
   ...option,
   disabled: !eventTypes.value.includes(option.eventType),
@@ -149,11 +169,11 @@ const fields = computed(() => [
   { key: 'flow', label: '交通流模式', options: TRAFFIC_FLOW_MODE_OPTIONS },
 ])
 const isSessionActive = computed(() => props.starting || (
-  !!props.sessionId && (!props.state || ['STARTING', 'RUNNING', 'PAUSED', 'STOPPING'].includes(props.state))
+  !!props.sessionId && (!props.state || isActiveSimulationState(props.state))
 ))
 const canStop = computed(() => isSessionActive.value)
-const canPause = computed(() => props.state === 'RUNNING' && !props.controlling)
-const canResume = computed(() => props.state === 'PAUSED' && !props.controlling)
+const canPause = computed(() => canPauseSimulation(props.state) && !props.controlling)
+const canResume = computed(() => canResumeSimulation(props.state) && !props.controlling)
 const selectedPreset = computed(() => findCatalogScenarioPreset(catalog.value, config.value.scenario_preset_id))
 const presetMissingIds = computed(() => missingPresetIntersectionIds(catalog.value, config.value.scenario_preset_id))
 const presetUnavailableMessage = computed(() => {
@@ -182,7 +202,8 @@ const unsupportedMessage = computed(() => (
     ? `${activeIntersectionId.value} 当前仅支持高精度查看，尚未接入真实仿真路网`
     : ''
 ))
-const statusMessage = computed(() => feedback.value
+const statusMessage = computed(() => (props.state === 'QUEUED' ? '排队中，等待仿真资源' : '')
+  || feedback.value
   || props.startError
   || props.controlError
   || props.statusError
@@ -192,7 +213,8 @@ const statusMessage = computed(() => feedback.value
   || controlModeUnavailableMessage.value
   || (!props.healthReady ? props.healthLabel : ''))
 const playbackSpeedOptions = computed(() => playbackSpeeds.value.map((value) => ({ label: `${value}x`, value })))
-const stateLabel = computed(() => props.state ?? (props.healthReady ? 'READY' : 'OFFLINE'))
+const stateLabel = computed(() => simulationStateLabel(props.state)
+  ?? (props.healthReady ? 'READY' : 'OFFLINE'))
 const officialTimeLabel = computed(() => {
   const value = props.snapshot?.official_time
   if (!value) return '--:--:--'
@@ -306,13 +328,13 @@ function requestFieldChange(key: string, value: unknown): void {
   const model = fieldModel(key)
   const next = { ...config.value, [model]: value } as CompactScenarioConfig
   if (model === 'flow_mode') {
-    const range = SIMULATION_PERIOD_RANGES[next.flow_mode]
-    next.simulation_start_time = range.start
-    next.simulation_end_time = range.end
+    const time = defaultSimulationTimeWindow(next.flow_mode)
+    next.simulation_start_time = time.start
+    next.simulation_end_time = time.end
     next.disturbance_events = next.disturbance_events.map((event) => ({
       ...event,
-      start_time: range.start,
-      end_time: range.end,
+      start_time: time.start,
+      end_time: time.end,
     }))
   }
   requestConfiguration(next)
@@ -333,6 +355,7 @@ function openDisturbanceModal(event?: CompactDisturbanceEvent): void {
       : disturbanceIntersectionOptions.value.slice(0, 1).map((item) => item.value),
     startTime: event?.start_time ?? config.value.simulation_start_time,
     endTime: event?.end_time ?? config.value.simulation_end_time,
+    vehicleCount: event?.vehicle_count ?? DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
   }
   disturbanceFormError.value = ''
   disturbanceModalOpen.value = true
@@ -356,6 +379,10 @@ function selectDisturbanceType(presetId: DisturbancePresetId): void {
   const option = availableDisturbanceEventOptions.value.find((item) => item.value === presetId)
   if (!option || option.disabled) return
   disturbanceDraft.value.presetId = presetId
+  if (
+    (option.eventType === 'major_event_opening' || option.eventType === 'major_event_closing')
+    && (!Number.isInteger(disturbanceDraft.value.vehicleCount) || disturbanceDraft.value.vehicleCount < 1)
+  ) disturbanceDraft.value.vehicleCount = DEFAULT_MAJOR_EVENT_VEHICLE_COUNT
   disturbanceFormError.value = ''
 }
 
@@ -371,6 +398,13 @@ function saveDisturbanceEvent(): void {
   }
   if (disturbanceDraft.value.intersectionIds.length === 0) {
     disturbanceFormError.value = '请选择至少一个路口'
+    return
+  }
+  if (
+    isMajorDisturbance.value
+    && (!Number.isInteger(disturbanceDraft.value.vehicleCount) || disturbanceDraft.value.vehicleCount < 1)
+  ) {
+    disturbanceFormError.value = '活动车辆数必须为大于 0 的整数'
     return
   }
   const outerStart = clockTimeToMinutes(config.value.simulation_start_time)
@@ -396,6 +430,7 @@ function saveDisturbanceEvent(): void {
     intersection_ids: [...new Set(disturbanceDraft.value.intersectionIds)],
     start_time: disturbanceDraft.value.startTime,
     end_time: disturbanceDraft.value.endTime,
+    ...(isMajorDisturbance.value ? { vehicle_count: disturbanceDraft.value.vehicleCount } : {}),
   }
   const existingIndex = config.value.disturbance_events.findIndex((event) => event.event_id === eventId)
   const disturbanceEvents = config.value.disturbance_events.map((event) => ({
@@ -422,12 +457,21 @@ function removeDisturbanceEvent(eventId: string): void {
       intersectionIds: disturbanceIntersectionOptions.value.slice(0, 1).map((item) => item.value),
       startTime: config.value.simulation_start_time,
       endTime: config.value.simulation_end_time,
+      vehicleCount: DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
     }
   }
 }
 
 function requestTimeChange(key: 'simulation_start_time' | 'simulation_end_time', value: string): void {
   const next = { ...config.value, [key]: value }
+  if (key === 'simulation_start_time') {
+    const startMinutes = clockTimeToMinutes(value)
+    const endMinutes = clockTimeToMinutes(next.simulation_end_time)
+    const maximumEnd = maximumSimulationEndTime(next.flow_mode, value)
+    if (endMinutes <= startMinutes || endMinutes > clockTimeToMinutes(maximumEnd)) {
+      next.simulation_end_time = maximumEnd
+    }
+  }
   const outerStart = key === 'simulation_start_time' ? value : next.simulation_start_time
   const outerEnd = key === 'simulation_end_time' ? value : next.simulation_end_time
   const outerStartMinutes = clockTimeToMinutes(outerStart)
@@ -470,7 +514,12 @@ async function exportConfig() {
   }
   exporting.value = true
   try {
-    const { blob, filename } = await exportScenarioArchive(buildPayload())
+    const payload = buildPayload()
+    const { blob, filename } = await exportScenarioArchive(payload)
+    const validation = await validateScenarioArchive(blob, {
+      scenarioPresetId: payload.scenario_preset_id,
+      period: payload.period,
+    })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -479,7 +528,7 @@ async function exportConfig() {
     link.click()
     link.remove()
     window.setTimeout(() => URL.revokeObjectURL(url), 0)
-    feedback.value = 'SUMO仿真场景ZIP已导出'
+    feedback.value = validation.summary
   } catch (error) {
     feedback.value = error instanceof Error ? error.message : '场景导出失败'
   } finally {
@@ -587,7 +636,6 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
             :start="activeTimeRange.start"
             step="00:01"
             :end="activeTimeRange.end"
-            :max-time="config.simulation_end_time"
             placeholder="开始时间"
             @change="requestTimeChange('simulation_start_time', $event as string)"
           />
@@ -597,7 +645,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
             :disabled="isSessionActive"
             :start="activeTimeRange.start"
             step="00:01"
-            :end="activeTimeRange.end"
+            :end="activeMaximumEndTime"
             :min-time="config.simulation_start_time"
             placeholder="结束时间"
             @change="requestTimeChange('simulation_end_time', $event as string)"
@@ -647,7 +695,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
             type="button"
             class="left-sidebar__speed-badge"
             :class="{ 'is-open': multiplierOpen }"
-            :disabled="props.controlling"
+            :disabled="props.controlling || props.state === 'QUEUED'"
             :aria-expanded="multiplierOpen"
             aria-haspopup="listbox"
             :title="playbackSpeedTitle"
@@ -722,7 +770,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
             >
               <button type="button" @click="openDisturbanceModal(event)">
                 <strong>{{ disturbanceEventLabel(event) }}</strong>
-                <small>{{ event.start_time }}-{{ event.end_time }} · {{ event.intersection_ids.map(formatIntersectionLabel).join('、') }}</small>
+                <small>{{ event.start_time }}-{{ event.end_time }} · {{ event.intersection_ids.map(formatIntersectionLabel).join('、') }}<template v-if="event.vehicle_count"> · 每路口 {{ event.vehicle_count }} 辆</template></small>
               </button>
               <button type="button" aria-label="删除扰动事件" title="删除" @click="removeDisturbanceEvent(event.event_id)">×</button>
             </div>
@@ -766,6 +814,16 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
                 :end="config.simulation_end_time"
                 :min-time="disturbanceDraft.startTime"
                 placeholder="结束时间"
+              />
+            </label>
+            <label v-if="isMajorDisturbance" class="disturbance-modal__vehicle-count">
+              <span>每个路口活动车辆数</span>
+              <el-input-number
+                v-model="disturbanceDraft.vehicleCount"
+                :min="1"
+                :step="1"
+                :precision="0"
+                controls-position="right"
               />
             </label>
             </div>
@@ -1168,6 +1226,8 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__runtime-head em { min-width: 0; margin-left: auto; overflow: hidden; color: #8fc6e5; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .left-sidebar__runtime.is-running .left-sidebar__runtime-head strong { color: #58f0ae; }
 .left-sidebar__runtime.is-running .left-sidebar__runtime-head strong i { background: #3ce69a; }
+.left-sidebar__runtime.is-queued .left-sidebar__runtime-head strong { color: #7fdfff; }
+.left-sidebar__runtime.is-queued .left-sidebar__runtime-head strong i { background: #52c2fa; box-shadow: 0 0 8px #52c2fa; }
 .left-sidebar__runtime.is-starting .left-sidebar__runtime-head strong,
 .left-sidebar__runtime.is-stopping .left-sidebar__runtime-head strong { color: #ffe47a; }
 .left-sidebar__runtime.is-starting .left-sidebar__runtime-head strong i,
@@ -1302,6 +1362,8 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   grid-template-columns: repeat(2, minmax(130px, 1fr));
   gap: 12px;
 }
+.disturbance-modal__vehicle-count { grid-column: 1 / -1; max-width: 260px; }
+.disturbance-modal__vehicle-count :deep(.el-input-number) { width: 100%; }
 .disturbance-modal__form :deep(.el-select),
 .disturbance-modal__form :deep(.el-time-select) { width: 100%; }
 .disturbance-modal__form :deep(.el-select__wrapper) {

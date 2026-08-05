@@ -64,8 +64,10 @@ session_id = manager.start(
 | `algorithm_transport` | `http`（默认）或 `local`；仅 algorithm 模式使用 |
 | `algorithm_endpoint` | HTTP algorithm 模式必填，协议见 `algorithm_interface.md` |
 | `algorithm_module` | local algorithm 模式必填，例如 `algorithms.local_policy_example` |
+| `decision_interval` | 算法决策周期，默认 5 秒；完整单车观测仅在决策或 AI 帧前刷新 |
+| `step_length` | SUMO 物理仿真步长，默认 0.1 秒 |
 | `ai_observer_module` | 可选的本地 AI 观察模块；可与 fixed、HTTP 或 local 控制并用 |
-| `ai_frame_interval_seconds` | AI 帧仿真时间间隔，默认 0.1 秒且不得小于 `step_length` |
+| `ai_frame_interval_seconds` | AI 帧仿真时间间隔，默认 0.5 秒且不得小于 `step_length` |
 | `ai_observer_shutdown_timeout` | 结束时排空 AI 帧并调用 finish 的超时，默认 5 秒 |
 | `start_paused` | `True` 时 SUMO 加载完成后停在 `elapsed=0`，等待 `resume()` |
 | `playback_speed` | 初始播放倍速，只允许 `1、1.25、1.5、2、3、5`；`None` 表示不限速 |
@@ -227,8 +229,10 @@ final_snapshot = manager.wait(session_id, timeout=30)
 
 会话状态为 `RUNNING`、`PAUSED`、`COMPLETED`、`STOPPED` 或 `FAILED`。`COMPLETED`
 表示自然结束，`STOPPED` 表示人工停止，`FAILED` 时查看
-`snapshot.error`。会话配置、route、additional 和 manifest 诊断文件位于
-`outputs/sessions/<session_id>/`。
+`snapshot.error`。会话配置、route、additional、manifest 和 SUMO `tripinfo.xml` 诊断文件位于
+`outputs/sessions/<session_id>/`。运行中的油耗是低频采样估计；自然结束或人工停止后，最终
+`fuel_consumed_mg/ml`、`departed_vehicles` 和 `arrived_vehicles` 由关闭 TraCI 后的 tripinfo
+重新汇总，因此终态快照和算法 `finish` 汇总应作为最终口径。
 
 ## CLI
 

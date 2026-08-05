@@ -11,7 +11,7 @@ const { buildRoadTileset } = roadTilesetGenerator
 const { roadTilesetMatchesResponse } = staticRoadTileset
 
 const source = JSON.parse(readFileSync(
-  new URL('../../data/maps/sumo/generated/geojson/demo_2.roads.wgs84.geojson', import.meta.url),
+  new URL('../public/showcase-data/demo_2.roads.wgs84.geojson', import.meta.url),
   'utf8',
 ))
 
