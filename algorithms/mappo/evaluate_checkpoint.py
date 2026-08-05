@@ -358,6 +358,23 @@ def _atomic_write_json(path: Path, payload: Mapping[str, object]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _scenario_preset_intersections(preset_id: str) -> tuple[str, ...]:
+    """Resolve a typical-scenario preset to its controlled intersection IDs.
+
+    Uses the algorithm-side registry (``algorithms.config.scenario_presets``)
+    as the single source of truth; does not depend on backend re-exports.
+    """
+    from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
+
+    preset = SCENARIO_PRESET_REGISTRY.get(preset_id)
+    if preset is None:
+        allowed = sorted(SCENARIO_PRESET_REGISTRY)
+        raise ValueError(
+            f"unknown scenario preset {preset_id!r}; available: {allowed}"
+        )
+    return tuple(preset.intersection_ids)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=Path, required=True)
@@ -390,15 +407,10 @@ def main(argv: list[str] | None = None) -> int:
     if not checkpoint_path.is_file():
         parser.error("checkpoint must be an existing file")
     if args.preset is not None:
-        from backend.app.scenario.presets import SCENARIO_PRESET_REGISTRY
-
-        if args.preset not in SCENARIO_PRESET_REGISTRY:
-            parser.error(
-                "unknown scenario preset "
-                f"{args.preset!r}; available: "
-                f"{sorted(SCENARIO_PRESET_REGISTRY)}"
-            )
-        intersections = SCENARIO_PRESET_REGISTRY[args.preset].intersection_ids
+        try:
+            intersections = _scenario_preset_intersections(args.preset)
+        except ValueError as error:
+            parser.error(str(error))
     elif args.intersections is not None:
         intersections = tuple(dict.fromkeys(args.intersections))
     else:

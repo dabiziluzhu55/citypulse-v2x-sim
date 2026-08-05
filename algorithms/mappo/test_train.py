@@ -273,6 +273,54 @@ def test_main_wires_cli_objective_before_any_sumo_worker(
     )
 
 
+def test_main_wires_scenario_preset_before_any_sumo_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, MAPPOConfig] = {}
+
+    def stop_before_sumo(**kwargs):
+        captured["config"] = kwargs["config"]
+        raise _StopBeforeSumo("intentional pre-SUMO test stop")
+
+    monkeypatch.setattr(train_module, "_run_policy_batch", stop_before_sumo)
+    result = train_module.main(
+        [
+            "--base-seed",
+            "93001",
+            "--episodes",
+            "1",
+            "--workers",
+            "1",
+            "--duration",
+            "120",
+            "--scenario-preset",
+            "east_dense",
+        ]
+    )
+
+    assert result == 1
+    assert captured["config"].intersection_ids == (
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9",
+    )
+
+
+def test_scenario_preset_and_intersections_are_mutually_exclusive() -> None:
+    with pytest.raises(SystemExit):
+        train_module.main(
+            [
+                "--base-seed",
+                "93001",
+                "--scenario-preset",
+                "east_dense",
+                "--intersections",
+                "4",
+            ]
+        )
+
+
 @pytest.mark.parametrize(
     "resume_args",
     [

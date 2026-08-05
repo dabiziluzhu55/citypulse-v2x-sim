@@ -405,7 +405,17 @@ def _training_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--critic-scope", choices=("local", "global"), default="global")
     parser.add_argument("--init", choices=("random",), default="random")
-    parser.add_argument("--intersections", type=int, default=20)
+    from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
+
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
+        "--scenario-preset",
+        choices=sorted(SCENARIO_PRESET_REGISTRY),
+        default=None,
+        help="Typical scenario preset (xiongan_20 / east_dense / west_dense); "
+        "mutually exclusive with --intersections",
+    )
+    scope.add_argument("--intersections", type=int, default=None)
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--duration", type=int, default=300)
@@ -467,20 +477,28 @@ def main(argv: list[str] | None = None) -> int:
     parser = _training_arg_parser()
     args = _parse_training_args(argv, parser=parser)
 
-    for name in (
-        "intersections",
-        "episodes",
-        "workers",
-        "duration",
-        "checkpoint_every",
-    ):
+    for name in ("episodes", "workers", "duration", "checkpoint_every"):
         _positive(parser, name, getattr(args, name))
-    if args.intersections > len(DEFAULT_INTERSECTION_IDS):
-        parser.error(f"intersections must be <= {len(DEFAULT_INTERSECTION_IDS)}")
     periods = tuple(str(value) for value in (args.periods or (args.period,)))
     if any(not value.strip() for value in periods):
         parser.error("training periods must be non-empty")
-    intersections = DEFAULT_INTERSECTION_IDS[: args.intersections]
+    if args.scenario_preset is not None:
+        from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
+
+        intersections = tuple(
+            SCENARIO_PRESET_REGISTRY[args.scenario_preset].intersection_ids
+        )
+    else:
+        _positive(parser, "intersections", args.intersections or 1)
+        if (args.intersections or len(DEFAULT_INTERSECTION_IDS)) > len(
+            DEFAULT_INTERSECTION_IDS
+        ):
+            parser.error(
+                f"intersections must be <= {len(DEFAULT_INTERSECTION_IDS)}"
+            )
+        intersections = DEFAULT_INTERSECTION_IDS[
+            : (args.intersections or len(DEFAULT_INTERSECTION_IDS))
+        ]
     workers = min(args.workers, args.episodes)
     try:
         config = _build_training_config(
@@ -493,7 +511,7 @@ def main(argv: list[str] | None = None) -> int:
     actor_variant = config.actor_variant
     run_label = _training_run_label(config)
     save_path = args.save or _default_checkpoint_path(
-        config, intersections=args.intersections
+        config, intersections=len(intersections)
     )
     diagnostics_path = (
         None

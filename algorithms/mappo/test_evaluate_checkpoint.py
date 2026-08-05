@@ -11,6 +11,7 @@ from algorithms.mappo.config import (
     REWARD_SCOPE_SHARED_TEAM,
 )
 from algorithms.mappo.evaluate_checkpoint import (
+    _scenario_preset_intersections,
     _summarize,
     load_evaluation_checkpoint,
     validate_evaluation_seeds,
@@ -19,6 +20,26 @@ from algorithms.mappo.features import IPPO_V8_LOCAL_OBSERVATION_SCHEMA
 from algorithms.mappo.models import MAPPOPolicy
 from algorithms.mappo.train import REWARD_DEFINITION
 from algorithms.mappo.trainer import MAPPOTrainer
+
+
+def test_scenario_preset_intersections_resolve_algorithm_side_registry() -> None:
+    assert _scenario_preset_intersections("xiongan_20") == tuple(
+        f"demo_{index}" for index in range(1, 21)
+    )
+    assert _scenario_preset_intersections("east_dense") == (
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9",
+    )
+    assert _scenario_preset_intersections("west_dense") == (
+        "demo_14",
+        "demo_15",
+        "demo_19",
+    )
+
+    with pytest.raises(ValueError, match="unknown scenario preset"):
+        _scenario_preset_intersections("unknown_preset")
 
 
 def _checkpoint(
