@@ -13,6 +13,7 @@ class CeleryConfigurationTests(unittest.TestCase):
         self.assertEqual(app.conf.task_serializer, "json")
         self.assertEqual(app.conf.result_serializer, "json")
         self.assertNotIn("pickle", app.conf.accept_content)
+        self.assertEqual(app.conf.worker_pool, "prefork")
         self.assertEqual(app.conf.worker_prefetch_multiplier, 1)
         self.assertIn("citypulse.sumo.run_session", app.tasks)
 

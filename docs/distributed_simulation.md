@@ -1,8 +1,8 @@
 # Redis/Celery 多会话仿真
 
 `RedisSimulationManager` 在保留本地 `SimulationManager` 的同时，为后端提供跨进程的
-SUMO 会话队列。每个 Celery prefork 子进程只运行一个 TraCI 仿真，因此不同会话不会
-共享 TraCI 默认连接。
+SUMO 会话队列。每个 Celery prefork 子进程只运行一个进程内 libsumo 会话，因此不同会话
+不共享 libsumo 全局状态。
 
 ## 安装和启动
 
@@ -32,6 +32,10 @@ celery -A simulation.sumo.distributed.celery_app:app worker \
   --loglevel INFO
 ```
 
+必须保留 `--pool prefork`。不得改用 threads、gevent 或 eventlet；libsumo 是进程内单例，
+`--concurrency N` 表示 N 个相互隔离的 libsumo 子进程。应用配置也将默认 pool 固定为
+prefork，进程内所有权锁会拒绝任何误配置造成的并发 runtime。
+
 Redis 使用数据库 0 作为 broker、数据库 1 保存会话、数据库 2 保存 Celery 结果。
 如使用带密码或远端 Redis，在三个 URL 中配置完整凭据。不要把 Redis 的 6379 端口暴露
 到公网。
@@ -57,7 +61,8 @@ snapshot = manager.snapshot(session_id)
 
 新会话首先处于 `QUEUED`。worker 领取后依次进入 `STARTING` 和 `RUNNING` 或
 `PAUSED`。排队时可查询、订阅、等待或停止；暂停、倍速和运行时事件命令需要等到
-`STARTING` 之后。分布式模式拒绝 `gui=True`，图形调试继续使用本地 CLI。
+`STARTING` 之后。分布式模式严格使用 libsumo 并拒绝 `gui=True`，图形调试继续使用本地
+CLI 的 TraCI/sumo-gui 旁路。
 
 后端只需把全局管理器的构造替换为 `RedisSimulationManager(...)`，其余
 `catalog/start/snapshot/subscribe/wait/stop/pause/resume/event` 方法保持一致。

@@ -22,6 +22,7 @@ app.conf.update(
     accept_content=("json",),
     task_acks_late=False,
     task_reject_on_worker_lost=False,
+    worker_pool="prefork",
     worker_prefetch_multiplier=1,
     result_expires=int(os.getenv("CITYPULSE_SESSION_TTL_SECONDS", "86400")),
     task_default_queue="citypulse-sumo",
