@@ -39,7 +39,7 @@ from algorithms.coslight.scope_cli import (  # noqa: E402
 )
 from config.scenario_presets import SCENARIO_PRESET_REGISTRY  # noqa: E402
 from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
-from simulation.sumo.tripinfo import (  # noqa: E402
+from algorithms.evaluation.tripinfo_diagnostics import (  # noqa: E402
     parse_tripinfo_diagnostics,
     residual_mismatch,
 )

@@ -39,7 +39,7 @@ from algorithms.ippo.controller import (  # noqa: E402
     load_checkpoint_metadata,
 )
 from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
-from simulation.sumo.tripinfo import (  # noqa: E402
+from algorithms.evaluation.tripinfo_diagnostics import (  # noqa: E402
     parse_tripinfo_diagnostics,
     residual_mismatch,
 )
