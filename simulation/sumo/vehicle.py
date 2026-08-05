@@ -1,10 +1,10 @@
-"""Per-vehicle SUMO telemetry, fuel accounting and leased control actions."""
+"""On-demand SUMO vehicle telemetry and leased control actions."""
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Iterable, Mapping
 
 from .policy import (
     NextSignalObservation,
@@ -27,31 +27,10 @@ STOPPED_SPEED_EPSILON_MPS = 1e-3
 STOPPED_LANE_CHANGE_MODE = 512
 DEFAULT_LANE_CHANGE_MODE = 1621
 
-_SUBSCRIPTION_FIELDS = {
-    "VAR_POSITION": "position",
-    "VAR_SPEED": "speed",
-    "VAR_ACCELERATION": "acceleration",
-    "VAR_ANGLE": "angle",
-    "VAR_ROAD_ID": "road_id",
-    "VAR_LANE_ID": "lane_id",
-    "VAR_LANE_INDEX": "lane_index",
-    "VAR_LANEPOSITION": "lane_position",
-    "VAR_ALLOWED_SPEED": "allowed_speed",
-    "VAR_ROUTE_ID": "route_id",
-    "VAR_ROUTE_INDEX": "route_index",
-    "VAR_EDGES": "route_edges",
-    "VAR_NEXT_TLS": "next_tls",
-    "VAR_WAITING_TIME": "waiting_time",
-    "VAR_ACCUMULATED_WAITING_TIME": "accumulated_waiting_time",
-    "VAR_TIMELOSS": "time_loss",
-    "VAR_DISTANCE": "distance",
-    "VAR_FUELCONSUMPTION": "fuel_rate",
-}
-
-
 @dataclass
 class _TrackedVehicle:
     type_id: str
+    last_observed_time: float
     values: dict[str, object] = field(default_factory=dict)
     fuel_total_mg: float = 0.0
     fuel_interval_mg: float = 0.0
@@ -92,7 +71,7 @@ def build_vehicle_type_metadata(
 
 
 class VehicleTelemetryTracker:
-    """Maintain current vehicle state while integrating step-level fuel rates."""
+    """Maintain the active set cheaply and refresh full observations on demand."""
 
     def __init__(
         self,
@@ -103,45 +82,46 @@ class VehicleTelemetryTracker:
         self.traci = traci
         self.vehicle_types = dict(vehicle_types)
         self.tls_to_intersection = dict(tls_to_intersection)
-        constants = getattr(traci, "constants", None)
-        if constants is None:
-            raise RuntimeError("TraCI constants are unavailable for vehicle subscriptions.")
-        missing = [name for name in _SUBSCRIPTION_FIELDS if not hasattr(constants, name)]
-        if missing:
-            raise RuntimeError(f"SUMO lacks required vehicle telemetry constants: {missing}")
-        self._variables = {
-            getattr(constants, name): field_name
-            for name, field_name in _SUBSCRIPTION_FIELDS.items()
-        }
         self._tracked: dict[str, _TrackedVehicle] = {}
         self._last_time = 0.0
-        self._completed_fuel_mg = 0.0
-        self._completed_fuel_ml = 0.0
-        self._completed_braking = 0
+        self._sampled_fuel_mg = 0.0
+        self._sampled_fuel_ml = 0.0
+        self._sampled_braking = 0
 
-    def tick(self, elapsed: float) -> None:
+    def update_vehicle_set(
+        self,
+        departed_vehicle_ids: Iterable[object],
+        arrived_vehicle_ids: Iterable[object],
+        elapsed: float,
+    ) -> None:
+        """Apply SUMO's per-step lifecycle deltas without reading full vehicle state."""
+
         now = float(elapsed)
         if now + 1e-9 < self._last_time:
             raise ValueError("Vehicle telemetry time cannot move backwards.")
-        delta = max(0.0, now - self._last_time)
-        active_ids = {str(value) for value in self.traci.vehicle.getIDList()}
-        for vehicle_id in sorted(active_ids - set(self._tracked)):
+        for value in arrived_vehicle_ids:
+            self._tracked.pop(str(value), None)
+        for value in departed_vehicle_ids:
+            vehicle_id = str(value)
+            if vehicle_id in self._tracked:
+                continue
             type_id = str(self.traci.vehicle.getTypeID(vehicle_id))
             if type_id not in self.vehicle_types:
                 continue
-            self.traci.vehicle.subscribe(vehicle_id, tuple(self._variables))
-            self._tracked[vehicle_id] = _TrackedVehicle(type_id=type_id)
+            self._tracked[vehicle_id] = _TrackedVehicle(
+                type_id=type_id,
+                last_observed_time=now,
+            )
 
-        for vehicle_id in sorted(set(self._tracked) & active_ids):
+    def refresh_observations(self, elapsed: float) -> None:
+        """Read full state once immediately before a decision or AI frame."""
+
+        now = float(elapsed)
+        if now + 1e-9 < self._last_time:
+            raise ValueError("Vehicle telemetry time cannot move backwards.")
+        for vehicle_id in sorted(self._tracked):
             tracked = self._tracked[vehicle_id]
-            raw = self.traci.vehicle.getSubscriptionResults(vehicle_id) or {}
-            tracked.values = {
-                field_name: raw[variable]
-                for variable, field_name in self._variables.items()
-                if variable in raw
-            }
-            if len(tracked.values) != len(self._variables):
-                tracked.values = self._read_direct(vehicle_id)
+            tracked.values = self._read_direct(vehicle_id)
             road_id = str(tracked.values["road_id"])
             lane_index = int(tracked.values["lane_index"])
             if (
@@ -153,29 +133,24 @@ class VehicleTelemetryTracker:
                 tracked.last_lane_change_time = now
             tracked.previous_road_id = road_id
             tracked.previous_lane_index = lane_index
+            delta = max(0.0, now - tracked.last_observed_time)
             fuel_rate = max(0.0, float(tracked.values["fuel_rate"]))
             consumed = fuel_rate * delta
             tracked.fuel_total_mg += consumed
             tracked.fuel_interval_mg += consumed
+            self._sampled_fuel_mg += consumed
+            self._sampled_fuel_ml += (
+                consumed / self.vehicle_types[tracked.type_id].fuel_density_mg_per_ml
+            )
             acceleration = float(tracked.values["acceleration"])
             threshold = self.vehicle_types[tracked.type_id].hard_braking_threshold_mps2
             braking = acceleration <= threshold
             if braking and not tracked.hard_braking_active:
                 tracked.hard_braking_total += 1
                 tracked.hard_braking_interval += 1
+                self._sampled_braking += 1
             tracked.hard_braking_active = braking
-
-        for vehicle_id in sorted(set(self._tracked) - active_ids):
-            tracked = self._tracked.pop(vehicle_id)
-            metadata = self.vehicle_types[tracked.type_id]
-            final_consumed = max(0.0, float(tracked.values.get("fuel_rate", 0.0))) * delta
-            tracked.fuel_total_mg += final_consumed
-            tracked.fuel_interval_mg += final_consumed
-            self._completed_fuel_mg += tracked.fuel_total_mg
-            self._completed_fuel_ml += (
-                tracked.fuel_total_mg / metadata.fuel_density_mg_per_ml
-            )
-            self._completed_braking += tracked.hard_braking_total
+            tracked.last_observed_time = now
         self._last_time = now
 
     def _read_direct(self, vehicle_id: str) -> dict[str, object]:
@@ -342,16 +317,38 @@ class VehicleTelemetryTracker:
             int(self._tracked[vehicle_id].values["lane_index"]),
         )
 
+    def runtime_fields(self, vehicle_id: str) -> Mapping[str, object] | None:
+        """Return cached non-positional fields without rebuilding full observations."""
+
+        tracked = self._tracked.get(vehicle_id)
+        if tracked is None or not tracked.values:
+            return None
+        metadata = self.vehicle_types[tracked.type_id]
+        next_signal = self._next_signal(tracked.values["next_tls"])
+        return {
+            "type_id": tracked.type_id,
+            "acceleration": float(tracked.values["acceleration"]),
+            "lane_index": int(tracked.values["lane_index"]),
+            "lane_position": float(tracked.values["lane_position"]),
+            "allowed_speed": float(tracked.values["allowed_speed"]),
+            "route_id": str(tracked.values["route_id"]),
+            "route_index": int(tracked.values["route_index"]),
+            "waiting_time": float(tracked.values["accumulated_waiting_time"]),
+            "time_loss": float(tracked.values["time_loss"]),
+            "distance": float(tracked.values["distance"]),
+            "fuel_rate_mg_s": max(0.0, float(tracked.values["fuel_rate"])),
+            "fuel_total_mg": tracked.fuel_total_mg,
+            "fuel_total_ml": tracked.fuel_total_mg / metadata.fuel_density_mg_per_ml,
+            "hard_braking_events": tracked.hard_braking_total,
+            "next_intersection_id": (
+                next_signal.intersection_id if next_signal is not None else None
+            ),
+        }
+
     def totals(self) -> tuple[float, float, int]:
-        fuel_mg = self._completed_fuel_mg
-        fuel_ml = self._completed_fuel_ml
-        braking = self._completed_braking
-        for tracked in self._tracked.values():
-            metadata = self.vehicle_types[tracked.type_id]
-            fuel_mg += tracked.fuel_total_mg
-            fuel_ml += tracked.fuel_total_mg / metadata.fuel_density_mg_per_ml
-            braking += tracked.hard_braking_total
-        return fuel_mg, fuel_ml, braking
+        """Return monotonic sampled estimates; tripinfo owns final totals."""
+
+        return self._sampled_fuel_mg, self._sampled_fuel_ml, self._sampled_braking
 
     def lane_vehicle_samples(
         self, lane_id: str
