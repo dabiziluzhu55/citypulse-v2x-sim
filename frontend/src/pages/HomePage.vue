@@ -16,6 +16,7 @@ import type { CesiumCameraPresetId, MapDimension } from '../types/map'
 import type { StartSimulationRequest } from '../types/simulation'
 import { formatIntersectionLabel } from '../utils/intersectionLabels'
 import { detectMap3dCapability } from '../mapv/map3dCapabilities'
+import { isActiveSimulationState, shouldAutoPresentSimulation } from '../utils/simulationSessionState'
 
 const mapView = useOptionalAppMapView()
 const mapDimension = computed(() => mapView?.dimension.value ?? '2d')
@@ -76,10 +77,7 @@ const {
 } = useSimulationStore()
 const isSimulationActive = computed(() => (
   (!!sessionId.value && !state.value)
-  || state.value === 'STARTING'
-  || state.value === 'RUNNING'
-  || state.value === 'PAUSED'
-  || state.value === 'STOPPING'
+  || isActiveSimulationState(state.value)
 ))
 
 const { ready: healthReady, statusLabel: healthLabel } = useHealth()
@@ -89,6 +87,7 @@ const {
   timeseries,
   activeFingerprint,
   hasActiveComparisonData,
+  finalizationWarning,
   beginRun: beginComparisonRun,
   resetForConfiguration,
 } = useEvaluationComparison(sessionId, snapshot)
@@ -99,23 +98,25 @@ interface ConfigurationChangeRequest {
 }
 const pendingConfigChange = ref<ConfigurationChangeRequest | null>(null)
 
-watch(
-  [snapshot, restoredSession],
-  ([nextSnapshot, shouldRestore]) => {
-    if (
-      !shouldRestore
-      || !nextSnapshot
-      || !['STARTING', 'RUNNING', 'PAUSED', 'STOPPING'].includes(nextSnapshot.state)
-    ) return
+const autoPresentedSessionId = ref('')
 
-    const intersectionId = sessionIntersectionId.value
-      || Object.keys(nextSnapshot.intersections)[0]
-    if (intersectionId) selectIntersection(intersectionId)
-    setMapDimension('3d')
-    markRestoredSessionHandled()
-  },
-  { immediate: true },
-)
+watch([snapshot, restoredSession], ([nextSnapshot, shouldRestore]) => {
+  if (!shouldRestore || !nextSnapshot) return
+  const intersectionId = sessionIntersectionId.value || Object.keys(nextSnapshot.intersections)[0]
+  if (intersectionId) selectIntersection(intersectionId)
+  markRestoredSessionHandled()
+}, { immediate: true })
+
+watch([sessionId, state], ([nextSessionId, nextState]) => {
+  if (
+    !nextSessionId
+    || autoPresentedSessionId.value === nextSessionId
+    || !nextState
+    || !shouldAutoPresentSimulation(nextState)
+  ) return
+  autoPresentedSessionId.value = nextSessionId
+  setMapDimension('3d')
+}, { immediate: true })
 
 function handleOverlayKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
@@ -136,7 +137,6 @@ onBeforeUnmount(() => {
 })
 
 async function handleStart(payload: StartSimulationRequest) {
-  setMapDimension('3d')
   const result = await launchRun(payload, activeIntersectionId.value)
   if (result) beginComparisonRun(result.session_id, payload, activeIntersectionId.value)
 }
@@ -311,7 +311,7 @@ async function handleStop() {
         :ws-connected="wsConnected"
         :timeseries="timeseries"
         :timeseries-loading="false"
-        :timeseries-error="null"
+        :timeseries-error="finalizationWarning"
       />
     </div>
   </section>

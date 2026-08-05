@@ -237,7 +237,7 @@ export function buildVegetationGround(manifest, roadGeoJson, baseGreen = null) {
 }
 
 async function main() {
-  const roadsUrl = new URL('../../data/maps/sumo/generated/geojson/demo_2.roads.wgs84.geojson', import.meta.url)
+  const roadsUrl = new URL('../public/showcase-data/demo_2.roads.wgs84.geojson', import.meta.url)
   const facilitiesUrl = new URL('../public/showcase-data/demo_2.facilities.json', import.meta.url)
   const outputUrl = new URL('../public/showcase-data/demo_2.vegetation.json', import.meta.url)
   const baseGreenUrl = new URL('../public/showcase-data/demo_2.green.geojson', import.meta.url)

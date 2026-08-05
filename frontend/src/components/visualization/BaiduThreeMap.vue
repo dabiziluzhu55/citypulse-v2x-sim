@@ -65,13 +65,18 @@ import {
   buildingTilesetManifestUrl,
 } from '../../mapv/buildingTilesetSource'
 import {
-  advanceStableTileSamples,
-  BUILDING_STABLE_SAMPLE_COUNT,
+  advanceBuildingLoadTracker,
+  buildingPresentationSettled,
+  buildingPresentationUsable,
   BUILDING_STABLE_SAMPLE_INTERVAL_MS,
+  createBuildingLoadTracker,
   FINAL_RENDER_FRAME_COUNT,
+  MAP3D_PRESENTATION_HARD_TIMEOUT_MS,
   map3dLoadingStage,
-  map3dPresentationReady,
+  resolveMap3dPresentationDecision,
+  type BuildingLoadTracker,
   type Map3dPresentationSignals,
+  type Map3dRenderQuality,
 } from '../../mapv/map3dPresentationReadiness'
 
 const emit = defineEmits<{
@@ -98,7 +103,7 @@ const { snapshot, trafficView } = useSimulationStore()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
-const tilesStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const tilesStatus = ref<'loading' | 'refining' | 'ready' | 'error'>('loading')
 const tilesMessage = ref('正在加载百度底图与本地 3D 建筑…')
 const interacting = ref(false)
 const vehicleStats = ref<VehicleRenderStats>({
@@ -116,7 +121,10 @@ let roadTileset: mapvthree.Default3DTiles | null = null
 let roadTilesetManifest: StaticRoadTilesetManifest | null = null
 let roadTilesReady = false
 let buildingTilesReady = false
-let buildingStableSamples = 0
+let buildingLoadTracker: BuildingLoadTracker = createBuildingLoadTracker()
+let buildingCameraRevision = 0
+let renderQuality: Map3dRenderQuality = 'full'
+let presentationStartedAt = 0
 let roadRenderer: BaiduRoadNetworkRenderer | BaiduDetailedRoadRenderer | null = null
 let vehicleRenderer: BaiduVehicleRenderer | null = null
 const showcaseGeoJsonLayers = new Map<string, ShowcaseGeoJsonLayers>()
@@ -193,6 +201,16 @@ function enableCameraInteraction(): void {
   roadTileset?.releaseCameraViewport()
 }
 
+function beginBuildingCameraRevision(): void {
+  buildingCameraRevision += 1
+  buildingLoadTracker = createBuildingLoadTracker(performance.now(), buildingCameraRevision)
+  buildingTilesReady = false
+  if (presentationReady && buildingTileset) {
+    tilesStatus.value = 'refining'
+    tilesMessage.value = '建筑细化中 · 正在适配当前视野'
+  }
+}
+
 function refreshIntersectionRoadLod(force = false): void {
   if (!realisticIntersectionLayer) return
   const now = performance.now()
@@ -206,6 +224,7 @@ function refreshIntersectionRoadLod(force = false): void {
 function markInteracting(): void {
   if (cameraFlightActive) return
   if (!interacting.value) {
+    beginBuildingCameraRevision()
     buildingTileset && (buildingTileset.errorTarget = BUILDING_MOVING_ERROR_TARGET)
     vegetationRenderer?.setInteractionActive(true)
     roadsideFacilityRenderer?.refreshViewport()
@@ -303,18 +322,21 @@ function updateTilesStatus(): void {
     roadTilesReady = nextRoadTilesReady
     syncRoadRendering(geojson.value)
   }
-  const buildingHasContent = Boolean(
-    buildingTileset
-    && (buildingTileset.statistics.numberOfTilesWithContentReady > 0
-      || buildingTileset.statistics.numberOfLoadedTilesTotal > 0),
-  )
-  buildingStableSamples = advanceStableTileSamples(buildingStableSamples, {
-    hasContent: buildingHasContent,
-    pendingRequests: buildingTileset?.statistics.numberOfPendingRequests ?? 0,
-    processingTiles: buildingTileset?.statistics.numberOfTilesProcessing ?? 0,
-  })
-  const nextBuildingTilesReady = buildingHasContent
-    && buildingStableSamples >= BUILDING_STABLE_SAMPLE_COUNT
+  if (buildingTileset) {
+    const statistics = buildingTileset.statistics as typeof buildingTileset.statistics & {
+      numberOfAttemptedRequests?: number
+    }
+    buildingLoadTracker = advanceBuildingLoadTracker(buildingLoadTracker, {
+      readyTiles: statistics.numberOfTilesWithContentReady,
+      pendingRequests: statistics.numberOfPendingRequests,
+      processingTiles: statistics.numberOfTilesProcessing,
+      attemptedRequests: statistics.numberOfAttemptedRequests ?? 0,
+      totalTiles: statistics.numberOfTilesTotal,
+      cameraRevision: buildingCameraRevision,
+      nowMs: performance.now(),
+    }, renderQuality)
+  }
+  const nextBuildingTilesReady = buildingPresentationUsable(buildingLoadTracker)
   if (nextBuildingTilesReady !== buildingTilesReady) {
     buildingTilesReady = nextBuildingTilesReady
     if (nextBuildingTilesReady && buildingTileset) configureBuildingShadows(buildingTileset)
@@ -322,13 +344,19 @@ function updateTilesStatus(): void {
   }
 
   const roadSatisfied = realisticDetailReady || !enableStaticRoadTileset || roadTilesReady
-  const buildingSatisfied = !enableLocalTileset || buildingTilesReady || showBaiduBuildings
+  const buildingSatisfied = !enableLocalTileset
+    || buildingTilesReady
+    || presentationReady
+    || showBaiduBuildings
   if (roadSatisfied && buildingSatisfied) {
-    tilesStatus.value = 'ready'
-    const buildingMessage = buildingTilesReady
-      ? '本地建筑已就绪'
-      : showBaiduBuildings ? '百度建筑兜底，本地建筑加载中' : '建筑未启用'
-    tilesMessage.value = `3D Tiles 已就绪 · ${buildingMessage} · 可见 ${ready} · 已载 ${loaded}${total > 0 ? `/${total}` : ''}`
+    const settled = !enableLocalTileset || buildingPresentationSettled(buildingLoadTracker)
+    tilesStatus.value = settled ? 'ready' : 'refining'
+    if (settled) {
+      tilesMessage.value = `3D Tiles 已就绪 · 可见 ${ready} · 已载 ${loaded}${total > 0 ? `/${total}` : ''}`
+    } else {
+      const coverage = Math.round(buildingLoadTracker.coverage * 100)
+      tilesMessage.value = `建筑细化中 · 已准备 ${buildingLoadTracker.readyTiles} · 覆盖 ${coverage}% · 活动请求 ${buildingLoadTracker.activeRequests}`
+    }
     return
   }
   tilesStatus.value = 'loading'
@@ -361,6 +389,7 @@ function syncRoadRendering(response: MapGeoJsonResponse | null): void {
 async function switchRealisticIntersection(
   intersectionId: string,
   trackInitialPresentation = false,
+  focusCamera = true,
 ): Promise<boolean> {
   if (!realisticIntersectionLayer || !intersectionId) return false
   const revision = ++sceneSwitchRevision
@@ -369,26 +398,28 @@ async function switchRealisticIntersection(
   try {
     const manifest = await realisticIntersectionLayer.prepare(intersectionId)
     if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return false
-    let cameraReady = false
+    let cameraReady = !focusCamera
     let resourcesReady = false
     const completeSwitch = () => {
       if (!cameraReady || !resourcesReady) return
       if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return
       setSceneReady(intersectionId)
     }
-    mapView.focusIntersection(
-      [manifest.origin.longitude, manifest.origin.latitude],
-      manifest.intersectionId,
-      {
-        force: true,
-        duration: 900,
-        complete: () => {
-          cameraReady = true
-          if (trackInitialPresentation) initialCameraReady = true
-          completeSwitch()
+    if (focusCamera) {
+      mapView.focusIntersection(
+        [manifest.origin.longitude, manifest.origin.latitude],
+        manifest.intersectionId,
+        {
+          force: true,
+          duration: 900,
+          complete: () => {
+            cameraReady = true
+            if (trackInitialPresentation) initialCameraReady = true
+            completeSwitch()
+          },
         },
-      },
-    )
+      )
+    }
     realisticIntersectionLayer.activate(intersectionId)
     refreshIntersectionRoadLod(true)
     realisticDetailReady = true
@@ -566,8 +597,9 @@ function createBuildingTileset(url: string): mapvthree.Default3DTiles {
     forceUnlit: false,
     dynamicScreenSpaceError: false,
     foveatedScreenSpaceError: false,
-    progressiveResolutionHeightFraction: 1,
-    cullRequestsWhileMoving: false,
+    progressiveResolutionHeightFraction: 0.3,
+    cullRequestsWhileMoving: true,
+    cullRequestsWhileMovingMultiplier: 60,
     cacheBytes: BUILDING_CACHE_BYTES,
   })) as mapvthree.Default3DTiles
   if (Number.isFinite(buildingZOffsetMeters)) tileset.position.z = buildingZOffsetMeters
@@ -595,6 +627,8 @@ async function validateGlobalBuildingSource(): Promise<void> {
 function addGlobalBuildingTileset(): void {
   if (!engine || !enableLocalTileset || buildingTileset) return
   tilesStatus.value = 'loading'
+  buildingLoadTracker = createBuildingLoadTracker(performance.now(), buildingCameraRevision)
+  buildingTilesReady = false
   buildingTileset = createBuildingTileset(tilesetUrl)
   engine.requestRender()
 }
@@ -608,16 +642,47 @@ function presentationSignals(): Map3dPresentationSignals {
     intersectionReady: initialIntersectionReady,
     environmentReady: initialEnvironmentReady,
     buildingRequired: enableLocalTileset,
-    buildingStableSamples,
+    buildingUsable: buildingTilesReady,
+    buildingReadyTiles: buildingLoadTracker.readyTiles,
+    buildingCoverage: buildingLoadTracker.coverage,
   }
 }
 
 async function waitForPresentationGate(): Promise<boolean> {
   while (engine) {
     updateTilesStatus()
+    const nowMs = performance.now()
+    const elapsedMs = nowMs - presentationStartedAt
     const signals = presentationSignals()
     emit('loading', map3dLoadingStage(signals))
-    if (map3dPresentationReady(signals)) return true
+    const decision = resolveMap3dPresentationDecision(
+      signals,
+      buildingLoadTracker,
+      elapsedMs,
+      nowMs,
+    )
+    if (decision === 'present') {
+      if (buildingTilesReady || !signals.buildingRequired) return true
+      console.info('[map3d-load] opening usable scene while buildings continue refining', {
+        elapsedMs: Math.round(elapsedMs),
+        readyTiles: buildingLoadTracker.readyTiles,
+        demandedTiles: buildingLoadTracker.demandedTiles,
+        coverage: buildingLoadTracker.coverage,
+        activeRequests: buildingLoadTracker.activeRequests,
+      })
+      return true
+    }
+    if (decision === 'stalled') {
+      throw new Error(
+        `3D Tiles 加载连续 ${Math.round((nowMs - buildingLoadTracker.lastProgressAtMs) / 1000)} 秒无进展`
+        + `（已准备 ${buildingLoadTracker.readyTiles}，活动请求 ${buildingLoadTracker.activeRequests}）`,
+      )
+    }
+    if (decision === 'hard-timeout') {
+      throw new Error(
+        `3D 场景加载超过 ${MAP3D_PRESENTATION_HARD_TIMEOUT_MS / 1000} 秒：${map3dLoadingStage(signals)}`,
+      )
+    }
     engine.requestRender()
     await new Promise((resolve) => window.setTimeout(resolve, BUILDING_STABLE_SAMPLE_INTERVAL_MS))
   }
@@ -696,6 +761,59 @@ function unbindContainerInteraction(container: HTMLElement | null): void {
   container.removeEventListener('wheel', markInteracting)
 }
 
+function registerThreeMapController(): void {
+  mapView.registerThreeMap({
+    flyTo: (target, options) => {
+      if (options.force || !interacting.value) {
+        beginBuildingCameraRevision()
+        const revision = ++cameraFlightRevision
+        cameraFlightGuard?.cancel()
+        cameraFlightActive = options.duration > 0
+        if (cameraFlightActive && engine) engine.controller.enabled = false
+        const placedTarget = placeBaiduCameraTarget(target, scenePlacement)
+        const finishFlight = () => {
+          if (revision !== cameraFlightRevision) return
+          cameraFlightGuard = null
+          cameraFlightActive = false
+          enableCameraInteraction()
+          refreshIntersectionRoadLod(true)
+          options.complete()
+        }
+        cameraFlightGuard = createCameraFlightGuard({
+          timeoutMs: cameraFlightWatchdogDelay(options.duration),
+          onTimeout: () => {
+            if (revision !== cameraFlightRevision || !engine) return
+            engine.map.flyTo(placedTarget, {
+              ...options,
+              duration: 0,
+              complete: () => undefined,
+            })
+          },
+          onComplete: finishFlight,
+        })
+        engine?.map.flyTo(placedTarget, {
+          ...options,
+          complete: cameraFlightGuard.complete,
+        })
+      }
+    },
+    setViewport: (points, options) => {
+      if (options.force || !interacting.value) {
+        beginBuildingCameraRevision()
+        engine?.map.setViewport(
+          points.map((point) => placeBaiduCameraTarget(point, scenePlacement)),
+          options,
+        )
+        refreshIntersectionRoadLod(true)
+      }
+    },
+    setRangeLimits: (minimum, maximum) => {
+      engine?.map.setMinRange(minimum)
+      engine?.map.setMaxRange(maximum)
+    },
+  })
+}
+
 function handleWebglContextLost(event: Event): void {
   event.preventDefault()
   error.value = '三维图形上下文暂时不可用，正在恢复'
@@ -707,13 +825,24 @@ function handleWebglContextLost(event: Event): void {
 
 function handleWebglContextRestored(): void {
   error.value = null
-  engine?.requestRender()
+  presentationStartedAt = performance.now()
+  presentationReady = false
   initialCameraReady = false
   initialIntersectionReady = false
   initialEnvironmentReady = false
-  buildingStableSamples = 0
+  buildingCameraRevision += 1
+  buildingLoadTracker = createBuildingLoadTracker(
+    presentationStartedAt,
+    buildingCameraRevision,
+  )
   buildingTilesReady = false
-  void switchRealisticIntersection(activeIntersectionId.value, true).then(async (sceneReady) => {
+  enableCameraInteraction()
+  engine?.requestRender()
+  void waitForFinalRenderFrames().then(async (cameraReady) => {
+    if (!cameraReady) return false
+    initialCameraReady = true
+    return switchRealisticIntersection(activeIntersectionId.value, true, false)
+  }).then(async (sceneReady) => {
     if (!sceneReady || !await waitForPresentationGate()) {
       throw new Error('三维场景恢复后未能重新稳定')
     }
@@ -722,6 +851,7 @@ function handleWebglContextRestored(): void {
     presentationReady = true
     loading.value = false
     enableCameraInteraction()
+    updateTilesStatus()
     emit('ready')
   }).catch((cause: unknown) => emit('fatal', cause))
 }
@@ -729,6 +859,7 @@ function handleWebglContextRestored(): void {
 async function initMap(): Promise<void> {
   const container = containerRef.value
   if (!container) return
+  presentationStartedAt = performance.now()
   const capability = detectMap3dCapability()
   if (!capability.supported) {
     throw new Error(capability.reason ?? '当前浏览器不支持三维地图')
@@ -736,6 +867,7 @@ async function initMap(): Promise<void> {
   if (!baiduAk) {
     throw new Error('未配置 VITE_BAIDU_MAP_AK，请先填写百度地图浏览器端 AK')
   }
+  renderQuality = capability.quality === 'reduced' ? 'reduced' : 'full'
 
   mapvthree.BaiduMapConfig.ak = baiduAk
   engine = new mapvthree.Engine(container, {
@@ -781,10 +913,17 @@ async function initMap(): Promise<void> {
   container.addEventListener('webglcontextlost', handleWebglContextLost, true)
   container.addEventListener('webglcontextrestored', handleWebglContextRestored, true)
 
+  emit('loading', '正在定位20路口总览视角')
+  mapView.setCameraPreset('overview')
+  registerThreeMapController()
+  if (!await waitForFinalRenderFrames()) {
+    throw new Error('20路口总览视角定位失败')
+  }
+  initialCameraReady = true
+
   if (enableLocalTileset) {
     await validateGlobalBuildingSource()
-    tilesMessage.value = '3D Tiles 已加入场景，正在加载可见建筑…'
-    addGlobalBuildingTileset()
+    tilesMessage.value = '全域建筑源已验证，等待总览资源完成…'
   } else {
     tilesStatus.value = 'ready'
     tilesMessage.value = showBaiduBuildings
@@ -841,55 +980,6 @@ async function initMap(): Promise<void> {
     { immediate: true },
   )
 
-  mapView.registerThreeMap({
-    flyTo: (target, options) => {
-      if (options.force || !interacting.value) {
-        const revision = ++cameraFlightRevision
-        cameraFlightGuard?.cancel()
-        cameraFlightActive = options.duration > 0
-        if (cameraFlightActive && engine) engine.controller.enabled = false
-        const placedTarget = placeBaiduCameraTarget(target, scenePlacement)
-        const finishFlight = () => {
-          if (revision !== cameraFlightRevision) return
-          cameraFlightGuard = null
-          cameraFlightActive = false
-          enableCameraInteraction()
-          refreshIntersectionRoadLod(true)
-          options.complete()
-        }
-        cameraFlightGuard = createCameraFlightGuard({
-          timeoutMs: cameraFlightWatchdogDelay(options.duration),
-          onTimeout: () => {
-            if (revision !== cameraFlightRevision || !engine) return
-            engine.map.flyTo(placedTarget, {
-              ...options,
-              duration: 0,
-              complete: () => undefined,
-            })
-          },
-          onComplete: finishFlight,
-        })
-        engine?.map.flyTo(placedTarget, {
-          ...options,
-          complete: cameraFlightGuard.complete,
-        })
-      }
-    },
-    setViewport: (points, options) => {
-      if (options.force || !interacting.value) {
-        engine?.map.setViewport(
-          points.map((point) => placeBaiduCameraTarget(point, scenePlacement)),
-          options,
-        )
-        refreshIntersectionRoadLod(true)
-      }
-    },
-    setRangeLimits: (minimum, maximum) => {
-      engine?.map.setMinRange(minimum)
-      engine?.map.setMaxRange(maximum)
-    },
-  })
-
   if (enableIntersectionTopology && intersectionTopologyLayer) {
     emit('loading', '正在加载 20 路口道路总览')
     const nodes = await intersectionTopologyLayer.load()
@@ -905,8 +995,14 @@ async function initMap(): Promise<void> {
   }
   overviewReady = true
 
-  const initialSceneReady = await switchRealisticIntersection(activeIntersectionId.value, true)
+  const initialSceneReady = await switchRealisticIntersection(
+    activeIntersectionId.value,
+    true,
+    false,
+  )
   if (!initialSceneReady) throw new Error(`${activeIntersectionId.value} 高精度路口加载失败`)
+
+  addGlobalBuildingTileset()
 
   watch(
     [activeIntersectionId, selectionRevision],
@@ -921,6 +1017,7 @@ async function initMap(): Promise<void> {
   if (!await waitForFinalRenderFrames()) return
   presentationReady = true
   enableCameraInteraction()
+  updateTilesStatus()
   if (enableLocalTileset || roadTileset) {
     tilesStatusTimer = setInterval(updateTilesStatus, 500)
   }
@@ -981,7 +1078,7 @@ onUnmounted(() => {
   roadTileset = null
   roadTilesetManifest = null
   buildingTilesReady = false
-  buildingStableSamples = 0
+  buildingLoadTracker = createBuildingLoadTracker()
   roadTilesReady = false
   engine?.dispose()
   engine = null

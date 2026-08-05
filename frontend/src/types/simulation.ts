@@ -1,6 +1,7 @@
 import type { BackendControlMode } from '../constants/simulationOptions'
 
 export type SimulationState =
+  | 'QUEUED'
   | 'STARTING'
   | 'RUNNING'
   | 'PAUSED'
@@ -9,16 +10,40 @@ export type SimulationState =
   | 'COMPLETED'
   | 'FAILED'
 
-export interface DisturbanceEventPayload {
-  event_type: 'lane_closure' | 'speed_limit' | 'accident'
+interface DisturbanceEventBase {
   event_id: string
   start_seconds: number
   end_seconds: number
+}
+
+export interface StandardDisturbanceEventPayload extends DisturbanceEventBase {
+  event_type: 'lane_closure' | 'speed_limit' | 'accident'
   lane_ids?: string[]
   lane_id?: string
   max_speed?: number
   position_ratio?: number
 }
+
+export interface MajorEventOpeningPayload extends DisturbanceEventBase {
+  event_type: 'major_event_opening'
+  vehicle_count: number
+  venue_lane_id?: string
+  source_lane_ids?: string[]
+  vehicle_type_id?: string
+}
+
+export interface MajorEventClosingPayload extends DisturbanceEventBase {
+  event_type: 'major_event_closing'
+  vehicle_count: number
+  venue_lane_id?: string
+  destination_lane_ids?: string[]
+  vehicle_type_id?: string
+}
+
+export type DisturbanceEventPayload =
+  | StandardDisturbanceEventPayload
+  | MajorEventOpeningPayload
+  | MajorEventClosingPayload
 
 interface DisturbanceTargetBase {
   intersection_id: string
@@ -44,10 +69,28 @@ export interface AccidentDisturbanceTarget extends DisturbanceTargetBase {
   position_ratio?: number
 }
 
+export interface MajorEventOpeningDisturbanceTarget extends DisturbanceTargetBase {
+  event_type: 'major_event_opening'
+  vehicle_count: number
+  venue_lane_id?: string
+  source_lane_ids?: string[]
+  vehicle_type_id?: string
+}
+
+export interface MajorEventClosingDisturbanceTarget extends DisturbanceTargetBase {
+  event_type: 'major_event_closing'
+  vehicle_count: number
+  venue_lane_id?: string
+  destination_lane_ids?: string[]
+  vehicle_type_id?: string
+}
+
 export type DisturbanceTargetPayload =
   | LaneClosureDisturbanceTarget
   | SpeedLimitDisturbanceTarget
   | AccidentDisturbanceTarget
+  | MajorEventOpeningDisturbanceTarget
+  | MajorEventClosingDisturbanceTarget
 
 export interface StartSimulationRequest {
   scenario_preset_id: string
@@ -124,25 +167,28 @@ export interface SimulationMetrics {
   halting_vehicles: number
   total_waiting_time: number
   mean_speed: number
-  avg_waiting_time?: number
-  avg_travel_time?: number
-  avg_queue_length?: number
-  throughput?: number
-  fuel_consumption?: number
+  avg_waiting_time?: number | null
+  avg_travel_time?: number | null
+  avg_queue_length?: number | null
+  throughput?: number | null
+  fuel_consumption?: number | null
   evaluation?: SimulationEvaluation
 }
 
 export interface SimulationEvaluation {
   episode_id: string
   algorithm: string
-  avg_waiting_time: number
-  avg_travel_time: number
-  avg_queue_length: number
-  throughput: number
-  fuel_consumption: number
-  avg_decision_latency_ms: number
+  avg_waiting_time: number | null
+  avg_travel_time: number | null
+  avg_queue_length: number | null
+  throughput: number | null
+  fuel_consumption: number | null
+  avg_decision_latency_ms: number | null
   departed: number
   arrived: number
+  completion_rate: number | null
+  metric_sources: Record<string, string>
+  warnings: string[]
   finished: boolean
 }
 

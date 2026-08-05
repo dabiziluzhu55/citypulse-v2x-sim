@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 
 import { buildSceneFacilityManifest } from '../src/mapv/showcaseLayers/sceneFacilities.ts'
 
-const roadsUrl = new URL('../../data/maps/sumo/generated/geojson/demo_2.roads.wgs84.geojson', import.meta.url)
+const roadsUrl = new URL('../public/showcase-data/demo_2.roads.wgs84.geojson', import.meta.url)
 const tlsUrl = new URL('../../data/maps/sumo/generated/manifests/tls_manifest.json', import.meta.url)
 const outputUrl = new URL('../public/showcase-data/demo_2.facilities.json', import.meta.url)
 

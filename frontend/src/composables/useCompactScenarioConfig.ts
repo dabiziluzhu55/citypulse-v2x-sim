@@ -6,6 +6,8 @@ import {
   SIMULATION_TIME_OPTIONS,
   TRAFFIC_FLOW_MODE_OPTIONS,
   clockTimeToMinutes,
+  defaultSimulationTimeWindow,
+  maximumSimulationEndTime,
   simulationTimeWindow,
   type ScenarioModeId,
 } from '../constants/scenarioOptions'
@@ -22,6 +24,7 @@ import { requireSimulatableIntersection } from './catalogCapabilities'
 import { buildStartSimulationRequest } from '../utils/scenarioPayload'
 import {
   SCENARIO_CONFIG_EXPORT_VERSION,
+  DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
   resolveImportedDisturbanceTimes,
 } from '../utils/scenarioConfigMigration'
 import {
@@ -68,12 +71,13 @@ const FLOW_MODE_TO_PERIOD: Record<TrafficFlowMode, string> = {
 }
 
 function defaultCompactConfig(): CompactScenarioConfig {
+  const time = defaultSimulationTimeWindow('morning_peak')
   return {
     scenario_preset_id: 'xiongan_20',
     flow_mode: 'morning_peak',
     disturbance_events: [],
-    simulation_start_time: SIMULATION_PERIOD_RANGES.morning_peak.start,
-    simulation_end_time: SIMULATION_PERIOD_RANGES.morning_peak.end,
+    simulation_start_time: time.start,
+    simulation_end_time: time.end,
     playback_speed: 1,
     control_mode: 'fixed',
   }
@@ -131,6 +135,7 @@ export function buildSimulationPayload(
       intersectionIds,
       startSeconds,
       endSeconds,
+      vehicleCount: event.vehicle_count,
     }
   })
   const controlMode = requireAvailableControlMode(config.control_mode, controlModes)
@@ -168,6 +173,10 @@ export function useCompactScenarioConfig(
 ) {
   const config = ref<CompactScenarioConfig>(defaultCompactConfig())
   const activeTimeRange = computed(() => SIMULATION_PERIOD_RANGES[config.value.flow_mode])
+  const activeMaximumEndTime = computed(() => maximumSimulationEndTime(
+    config.value.flow_mode,
+    config.value.simulation_start_time,
+  ))
 
   watch(
     config,
@@ -182,13 +191,13 @@ export function useCompactScenarioConfig(
   watch(
     () => config.value.flow_mode,
     (mode) => {
-      const range = SIMULATION_PERIOD_RANGES[mode]
-      config.value.simulation_start_time = range.start
-      config.value.simulation_end_time = range.end
+      const time = defaultSimulationTimeWindow(mode)
+      config.value.simulation_start_time = time.start
+      config.value.simulation_end_time = time.end
       config.value.disturbance_events = config.value.disturbance_events.map((event) => ({
         ...event,
-        start_time: range.start,
-        end_time: range.end,
+        start_time: time.start,
+        end_time: time.end,
       }))
     },
   )
@@ -297,9 +306,14 @@ export function useCompactScenarioConfig(
     const startTime = typeof candidate.simulation_start_time === 'string'
       ? candidate.simulation_start_time
       : legacyTimes?.start ?? range.start
-    const endTime = typeof candidate.simulation_end_time === 'string'
+    let endTime = typeof candidate.simulation_end_time === 'string'
       ? candidate.simulation_end_time
-      : legacyTimes?.end ?? range.end
+      : legacyTimes?.end ?? maximumSimulationEndTime(mode, startTime)
+    const startMinutes = clockTimeToMinutes(startTime)
+    const endMinutes = clockTimeToMinutes(endTime)
+    if (Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && endMinutes - startMinutes > 15) {
+      endTime = maximumSimulationEndTime(mode, startTime)
+    }
     simulationTimeWindow(mode, startTime, endTime)
 
     const fallbackIntersectionIds = Array.isArray(candidate.disturbance_intersection_ids)
@@ -315,13 +329,32 @@ export function useCompactScenarioConfig(
           ? value.intersection_ids.filter((id): id is string => typeof id === 'string')
           : []
         const importedTimes = resolveImportedDisturbanceTimes(value, startTime, endTime)
+        const outerStart = clockTimeToMinutes(startTime)
+        const outerEnd = clockTimeToMinutes(endTime)
+        const importedStart = clockTimeToMinutes(importedTimes.startTime)
+        const importedEnd = clockTimeToMinutes(importedTimes.endTime)
+        const eventStartTime = Number.isFinite(importedStart) && importedStart >= outerStart && importedStart < outerEnd
+          ? importedTimes.startTime
+          : startTime
+        const eventEndTime = Number.isFinite(importedEnd) && importedEnd > clockTimeToMinutes(eventStartTime) && importedEnd <= outerEnd
+          ? importedTimes.endTime
+          : endTime
+        const isMajorEvent = preset.eventType === 'major_event_opening'
+          || preset.eventType === 'major_event_closing'
         return {
           event_id: typeof value.event_id === 'string' ? value.event_id : `ui_import_${index + 1}`,
           preset_id: preset.value,
           event_type: preset.eventType,
           intersection_ids: intersectionIds,
-          start_time: importedTimes.startTime,
-          end_time: importedTimes.endTime,
+          start_time: eventStartTime,
+          end_time: eventEndTime,
+          ...(isMajorEvent ? {
+            vehicle_count: typeof value.vehicle_count === 'number'
+              && Number.isInteger(value.vehicle_count)
+              && value.vehicle_count > 0
+              ? value.vehicle_count
+              : DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
+          } : {}),
         }
       })
     } else if (typeof candidate.disturbance === 'string' && candidate.disturbance !== 'none') {
@@ -334,6 +367,12 @@ export function useCompactScenarioConfig(
         intersection_ids: fallbackIntersectionIds,
         start_time: startTime,
         end_time: endTime,
+        ...(
+          legacyPreset.eventType === 'major_event_opening'
+          || legacyPreset.eventType === 'major_event_closing'
+            ? { vehicle_count: DEFAULT_MAJOR_EVENT_VEHICLE_COUNT }
+            : {}
+        ),
       }]
     }
 
@@ -383,6 +422,7 @@ export function useCompactScenarioConfig(
     labels,
     configNote,
     activeTimeRange,
+    activeMaximumEndTime,
     buildPayload,
     buildPayloadFor,
     parseImportedConfig,

@@ -19,6 +19,14 @@ export function useHealth() {
     if (!health.value) {
       return '检测中...'
     }
+    if (
+      health.value.simulation_manager_mode === 'redis'
+      && (health.value.redis_ready === false || health.value.session_root_ready === false)
+    ) {
+      return health.value.redis_error
+        ? `仿真调度未就绪：${health.value.redis_error}`
+        : 'Redis 仿真调度未就绪'
+    }
     return health.value.status === 'ok' ? 'SUMO 就绪' : 'SUMO 未就绪'
   })
 

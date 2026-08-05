@@ -269,7 +269,7 @@ test('crosswalk orientation follows the rebuilt road centerline instead of one s
 test('demo_2 lanes align with the authoritative WGS84 road export', async () => {
   const [manifestSource, roadsSource, mappingSource] = await Promise.all([
     readFile(new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url), 'utf8'),
-    readFile(new URL('../../data/maps/sumo/generated/geojson/demo_2.roads.wgs84.geojson', import.meta.url), 'utf8'),
+    readFile(new URL('../public/showcase-data/demo_2.roads.wgs84.geojson', import.meta.url), 'utf8'),
     readFile(new URL('../../data/maps/sumo/TotalMap_20.intersections.json', import.meta.url), 'utf8'),
   ])
   const manifest = JSON.parse(manifestSource)

@@ -284,7 +284,7 @@ async function main() {
   const sourceDirectory = path.resolve(process.argv[2] ?? 'public/3dtiles/xiongan-webmercator')
   const outputDirectory = path.resolve(process.argv[3] ?? 'public/3dtiles/xiongan-webmercator-demo_2')
   const roads = JSON.parse(await readFile(
-    path.resolve(process.argv[4] ?? '../data/maps/sumo/generated/geojson/demo_2.roads.wgs84.geojson'),
+    path.resolve(process.argv[4] ?? 'public/showcase-data/demo_2.roads.wgs84.geojson'),
     'utf8',
   ))
   const center = roads.metadata.center

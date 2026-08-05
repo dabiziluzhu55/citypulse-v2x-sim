@@ -1,11 +1,20 @@
 import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
+import { fetchSimulationMetrics } from '../api/simulation.ts'
 import type { MetricsTimeseriesPoint, MetricsTimeseriesResponse } from '../types/metrics'
-import type { SimulationSnapshot, StartSimulationRequest } from '../types/simulation'
+import {
+  TERMINAL_SIMULATION_STATES,
+  type SimulationEvaluation,
+  type SimulationSnapshot,
+  type StartSimulationRequest,
+} from '../types/simulation.ts'
 
-const STORAGE_KEY = 'citypulse.evaluation_comparison.v1'
-const STORAGE_VERSION = 1
+const STORAGE_KEY = 'citypulse.evaluation_comparison.v2'
+const LEGACY_STORAGE_KEY = 'citypulse.evaluation_comparison.v1'
+const STORAGE_VERSION = 2
 const MAX_GROUPS = 8
-const MAX_POINTS_PER_RUN = 360
+const MAX_POINTS_PER_RUN = 200
+export const EVALUATION_BUCKET_SECONDS = 5
+export const EVALUATION_TIME_LIMIT_SECONDS = 15 * 60
 
 interface StoredRun {
   sessionId: string
@@ -21,7 +30,7 @@ interface StoredGroup {
 }
 
 interface StoredComparison {
-  version: 1
+  version: 2
   groups: StoredGroup[]
 }
 
@@ -81,6 +90,7 @@ function emptyStore(): StoredComparison {
 function readStore(): StoredComparison {
   if (typeof localStorage === 'undefined') return emptyStore()
   try {
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as StoredComparison | null
     if (parsed?.version === STORAGE_VERSION && Array.isArray(parsed.groups)) return parsed
   } catch {
@@ -89,18 +99,42 @@ function readStore(): StoredComparison {
   return emptyStore()
 }
 
-function evaluationPoint(snapshot: SimulationSnapshot): MetricsTimeseriesPoint | null {
-  const evaluation = snapshot.evaluation ?? snapshot.metrics.evaluation
+function boundedEvaluationTime(value: number): number {
+  return Math.min(EVALUATION_TIME_LIMIT_SECONDS, Math.max(0, value))
+}
+
+export function evaluationPoint(
+  snapshot: SimulationSnapshot,
+  suppliedEvaluation?: SimulationEvaluation,
+): MetricsTimeseriesPoint | null {
+  const evaluation = suppliedEvaluation ?? snapshot.evaluation ?? snapshot.metrics.evaluation
   if (!evaluation) return null
+  const terminal = TERMINAL_SIMULATION_STATES.includes(snapshot.state)
+  if (terminal && !evaluation.finished) return null
+  const rawTime = evaluation.finished && snapshot.state === 'COMPLETED'
+    ? snapshot.duration_seconds
+    : snapshot.elapsed_seconds
+  const boundedTime = boundedEvaluationTime(rawTime)
+  const time = evaluation.finished
+    ? boundedTime
+    : Math.floor(boundedTime / EVALUATION_BUCKET_SECONDS) * EVALUATION_BUCKET_SECONDS
   return {
-    time: snapshot.elapsed_seconds,
+    time,
     algorithm: evaluation.algorithm,
     avg_waiting_time: evaluation.avg_waiting_time,
     avg_travel_time: evaluation.avg_travel_time,
     avg_queue_length: evaluation.avg_queue_length,
     throughput: evaluation.throughput,
     fuel_consumption: evaluation.fuel_consumption,
+    finished: evaluation.finished,
+    metric_sources: { ...(evaluation.metric_sources ?? {}) },
+    warnings: [...(evaluation.warnings ?? [])],
   }
+}
+
+export function requiresFinalEvaluationRecovery(snapshot: SimulationSnapshot): boolean {
+  const evaluation = snapshot.evaluation ?? snapshot.metrics.evaluation
+  return TERMINAL_SIMULATION_STATES.includes(snapshot.state) && !evaluation?.finished
 }
 
 export function appendRealEvaluationPoint(
@@ -122,7 +156,9 @@ export function useEvaluationComparison(
 ) {
   const store = ref<StoredComparison>(readStore())
   const activeFingerprint = ref('')
+  const finalizationWarning = ref<string | null>(null)
   let persistTimer: ReturnType<typeof setTimeout> | null = null
+  let finalizationRequest = 0
 
   function findFingerprintBySession(nextSessionId: string): string {
     if (!nextSessionId) return ''
@@ -166,10 +202,8 @@ export function useEvaluationComparison(
     persistSoon()
   }
 
-  function ingest(next: SimulationSnapshot | null): void {
-    if (!next) return
-    const point = evaluationPoint(next)
-    if (!point?.algorithm) return
+  function storePoint(next: SimulationSnapshot, point: MetricsTimeseriesPoint): void {
+    if (!point.algorithm) return
     let fingerprint = findFingerprintBySession(next.session_id)
     if (!fingerprint) {
       fingerprint = `restored-session:${next.session_id}`
@@ -197,6 +231,47 @@ export function useEvaluationComparison(
     group.updatedAt = now
     store.value.groups = [...store.value.groups]
     persistSoon()
+  }
+
+  function waitForFinalization(): Promise<void> {
+    return new Promise((resolve) => window.setTimeout(resolve, 500))
+  }
+
+  async function recoverFinalEvaluation(next: SimulationSnapshot): Promise<void> {
+    const request = ++finalizationRequest
+    finalizationWarning.value = '正在汇总 TripInfo 终态指标'
+    let lastError: unknown = null
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        const evaluation = await fetchSimulationMetrics(next.session_id)
+        if (request !== finalizationRequest) return
+        if (evaluation.finished) {
+          const point = evaluationPoint(next, evaluation)
+          if (point) storePoint(next, point)
+          finalizationWarning.value = null
+          return
+        }
+      } catch (cause) {
+        lastError = cause
+      }
+      await waitForFinalization()
+    }
+    if (request !== finalizationRequest) return
+    finalizationWarning.value = lastError instanceof Error
+      ? `终态指标汇总失败：${lastError.message}`
+      : '终态指标在 10 秒内未完成，未记录临时结果'
+  }
+
+  function ingest(next: SimulationSnapshot | null): void {
+    if (!next) return
+    if (requiresFinalEvaluationRecovery(next)) {
+      void recoverFinalEvaluation(next)
+      return
+    }
+    finalizationRequest += 1
+    finalizationWarning.value = null
+    const point = evaluationPoint(next)
+    if (point) storePoint(next, point)
   }
 
   const activeGroup = computed(() => (
@@ -230,11 +305,14 @@ export function useEvaluationComparison(
   }
 
   watch(sessionId, (next) => {
+    finalizationRequest += 1
+    finalizationWarning.value = null
     const restored = findFingerprintBySession(next)
     activeFingerprint.value = restored
   }, { immediate: true })
   watch(snapshot, ingest)
   onScopeDispose(() => {
+    finalizationRequest += 1
     if (persistTimer !== null && typeof localStorage !== 'undefined') {
       clearTimeout(persistTimer)
       localStorage.setItem(STORAGE_KEY, JSON.stringify(store.value))
@@ -247,6 +325,7 @@ export function useEvaluationComparison(
     activeFingerprint,
     hasComparisonData,
     hasActiveComparisonData,
+    finalizationWarning,
     beginRun,
     resetForConfiguration,
   }

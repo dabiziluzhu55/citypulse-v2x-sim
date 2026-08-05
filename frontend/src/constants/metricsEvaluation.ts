@@ -8,10 +8,16 @@ export const METRICS_ALGORITHMS = [
 
 export type EvaluationMetricKey = 'queue' | 'waiting' | 'fuel'
 
+export const EVALUATION_AXIS = {
+  minMinutes: 0,
+  maxMinutes: 15,
+  intervalMinutes: 3,
+} as const
+
 export const EVALUATION_METRICS = [
-  { key: 'queue', title: '平均排队长度', unit: '辆' },
+  { key: 'queue', title: '平均排队长度', unit: '辆/进口车道' },
   { key: 'waiting', title: '平均等待时间', unit: '秒' },
-  { key: 'fuel', title: '平均燃油消耗', unit: 'L' },
+  { key: 'fuel', title: '燃油消耗', unit: 'L/100km' },
 ] as const
 
 function timeKey(value: number): string {
