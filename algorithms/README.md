@@ -1,3 +1,18 @@
+## 更新记录
+
+> 本板块记录 `algorithms/` 目录的最新变更，新条目放在最上方。
+
+### 2026-08-05
+- **MAPPO-v2 优化：M0 审计 + M1 三臂训练基础设施**
+  - 新增 M0 审计工具：决策延迟 p95（`evaluation`）、单侧 UCB95、10-seed IPPO 基线冻结入口、vanilla MAPPO 诊断（advantage 分位数、TD target 重复率、per-agent 相关性、梯度余弦）。
+  - 新增 `cooperative_m1_v1` 模型版本：`AgentConditionedCritic`、per-agent local reward、mean-of-values 团队价值、共享初始化工件（`mappo/runs/mappo_v2/m0/mappo_v2_shared_init.pt`）。
+  - 新增邻域 credit 组件：per-owner local GAE、neighbor/team 组件、`mix_advantages`，以及 M1 配置/checkpoint 元数据校验。
+  - 生成 20 路口邻接矩阵：`mappo/runs/mappo_v2/m0/intersection_adjacency_{directed,m1_symmetric}.json`。
+  - 训练入口接线中：`mappo/train.py` 支持 `--model-version cooperative_m1_v1`、`--m1-arm`、`--m1-target-mode`、`--m1-adjacency` 等参数；M1-0 走 scalar team GAE，M1-A/B 走 per-agent 组件混合。
+  - IPPO v8 10-seed 基线评估后台运行中，完成后将冻结基线并生成正式 pre-registration manifest。
+
+---
+
 # 算法目录
 
 本目录包含 CityPulse V2X Sim 的交通控制算法、训练入口和统一评价模块。所有算法通过项目协议 2.0 获取路口、车道和车辆状态；SUMO/TraCI 始终由 `simulation/` 独占，算法不直接操作 TraCI。
@@ -295,7 +310,7 @@ python3 -m algorithms.ippo.evaluate_paired \
 | 平均行程时间 | 越低越好 | 已完成车辆 TripInfo `duration` |
 | 平均等待时间 | 越低越好 | 同一批已完成车辆 TripInfo `waitingTime` |
 | 平均排队长度 | 越低越好 | 1 s 实时进口车道 `halting_count` 时间平均 |
-| 吞吐量 | 越高越好 | `arrived / simulation_time × 3600` |
+| 路网吞吐量 | 越高越好 | `arrived / simulation_time × 3600` |
 | 平均决策延迟 | 越低越好 | `step()` 内纯算法计算耗时 |
 | 燃油强度 | 越低越好 | 燃油车辆累计燃油/同一车辆集合累计里程 |
 
@@ -307,12 +322,12 @@ python3 -m algorithms.ippo.evaluate_paired \
 
 统一配置：20 路口、off_peak、300 s、deterministic 推理、seeds `62001..62004`。
 
-| 方法 | 行程时间↓ | 等待时间↓ | 队列↓ | 吞吐量↑ | 决策延迟↓ | 燃油强度↓ |
+| 方法 | 行程时间↓ | 等待时间↓ | 队列↓ | 路网吞吐量↑ | 决策延迟↓ | 燃油强度↓ |
 |---|---:|---:|---:|---:|---:|---:|
 | IPPO v8 ep160 | 100.53 s | 8.43 s | 0.08 | 906 veh/h | 12.53 ms | 13.82 L/100km |
 | fixed | 103.04 s | 16.22 s | 0.22 | 744 veh/h | N/A | 14.70 L/100km |
 
-ep160 相对 fixed：行程时间 `-2.4%`、等待时间 `-48.0%`、队列 `-63.6%`、吞吐量 `+21.8%`、燃油强度 `-5.9%`。这些数字是当前 off_peak 验证集结果，不代表多时段、扰动或 MaxPressure 对比结论。完整训练谱系和 ep160/168/176/184/192 选模过程见 [IPPO 说明文档](ippo/说明文档.md)。
+ep160 相对 fixed：行程时间 `-2.4%`、等待时间 `-48.0%`、队列 `-63.6%`、路网吞吐量 `+21.8%`、燃油强度 `-5.9%`。这些数字是当前 off_peak 验证集结果，不代表多时段、扰动或 MaxPressure 对比结论。完整训练谱系和 ep160/168/176/184/192 选模过程见 [IPPO 说明文档](ippo/说明文档.md)。
 
 ## 8. 文件职责
 

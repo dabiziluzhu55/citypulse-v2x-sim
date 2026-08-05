@@ -43,6 +43,12 @@ data/maps/sumo/generated/signals/
 data/maps/sumo/generated/traffic/
 *.bak
 
+# Local run artifacts & backups (kept on disk, not committed)
+.codex-backups/
+algorithms/coslight/runs/
+algorithms/ippo/runs/
+algorithms/ippo/checkpoints/
+
 # Frontend UI capture artifacts
 current-ui*.png
 historical-ui-contact-sheet.jpg
@@ -52,3 +58,17 @@ assets/preview/
 .playwright-cli/
 _sid.txt
 output/
+# IPPO regression/gate local artifacts (not committed)
+algorithms/ippo/regression_tmp/
+algorithms/ippo/gate_outputs/
+
+# Local rollback backups (not committed)
+.codex-backups/
+
+# Experiment logs (remote scratch)
+logs/
+
+# M1/cooperative run artifacts (kept on disk, not committed)
+algorithms/mappo/runs/
+# Editor/merge backups
+*.orig

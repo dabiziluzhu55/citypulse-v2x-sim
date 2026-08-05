@@ -43,6 +43,7 @@ class LaneTarget:
     lane_index: int
     length: float
     role: str = ""
+    successor_edge_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

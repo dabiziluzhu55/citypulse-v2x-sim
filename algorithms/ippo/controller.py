@@ -22,6 +22,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from traffic_control.ippo.contract import (
+    CHECKPOINT_CONTRACT_VERSION,
+    COLLAB_MESSAGE_SCHEMA,
+    NORMALIZATION,
+    OBSERVATION_SCHEMA,
+    fingerprint_sha256,
+    intersection_fingerprint_from_index,
+    load_contract,
+    validate_contract,
+)
+from traffic_control.ippo.identity import IDENTITY_SLOT_IDS, identity_slots_for
 logger = logging.getLogger(__name__)
 
 MODEL_VERSION = "v8"
@@ -317,10 +328,12 @@ class StateBuilder:
     def __init__(self, metadata: Mapping[str, Any]) -> None:
         raw = metadata.get("intersections", {})
         self.intersection_ids = tuple(sorted(raw, key=_intersection_sort_key))
+        slot_indices = identity_slots_for(self.intersection_ids)
         self._agent_indices = {
             intersection_id: index
             for index, intersection_id in enumerate(self.intersection_ids)
         }
+        self._slot_indices = dict(zip(self.intersection_ids, slot_indices))
         self._indices = {
             intersection_id: _build_index(raw[intersection_id])
             for intersection_id in self.intersection_ids
@@ -330,7 +343,13 @@ class StateBuilder:
     def max_state_dim(self) -> int:
         if not self.intersection_ids:
             return 0
-        return MAX_PHASES + 1 + len(self.intersection_ids) + 5 * MAX_LANES + 3
+        return MAX_PHASES + 1 + len(IDENTITY_SLOT_IDS) + 5 * MAX_LANES + 3
+
+    def get_fingerprint(self, intersection_id: str) -> dict[str, Any]:
+        index = self._indices.get(intersection_id)
+        if index is None:
+            raise ValueError(f"Unknown controlled intersection: {intersection_id}")
+        return intersection_fingerprint_from_index(index)
 
     @property
     def max_phases(self) -> int:
@@ -565,8 +584,8 @@ class StateBuilder:
             [np.clip(elapsed / MAX_STAGE_ELAPSED, 0.0, 1.0)], dtype=np.float32
         )
 
-        identity = np.zeros(len(self.intersection_ids), dtype=np.float32)
-        identity[self._agent_indices[intersection_id]] = 1.0
+        identity = np.zeros(len(IDENTITY_SLOT_IDS), dtype=np.float32)
+        identity[self._slot_indices[intersection_id]] = 1.0
 
         lane_features: List[np.ndarray] = []
         lanes = intersection.get("lanes", {})
@@ -701,9 +720,11 @@ def _validate_checkpoint(
             f"Checkpoint version {checkpoint.get('model_version')!r} is not {MODEL_VERSION!r}."
         )
     saved_ids = tuple(str(value) for value in checkpoint.get("intersection_ids", ()))
-    if saved_ids != tuple(intersection_ids):
+    current_ids = tuple(str(iid) for iid in intersection_ids)
+    if not set(current_ids) <= set(saved_ids):
         raise ValueError(
-            f"Checkpoint intersection_ids mismatch: saved={saved_ids}, current={tuple(intersection_ids)}"
+            f"Checkpoint intersection_ids are not a superset of current: "
+            f"saved={saved_ids}, current={current_ids}"
         )
     if int(checkpoint.get("obs_dim", -1)) != obs_dim:
         raise ValueError("Checkpoint observation dimension does not match current metadata.")
@@ -801,6 +822,7 @@ def initialize(payload: dict) -> dict:
     _effective_demand_enabled = _effective_demand_from_environment()
 
     _state_builder = StateBuilder(payload)
+    _collector_metadata = copy.deepcopy(payload)
     _intersection_ids = _state_builder.intersection_ids
     _phase_orders = {
         intersection_id: _state_builder.get_phase_order(intersection_id)
@@ -814,6 +836,14 @@ def initialize(payload: dict) -> dict:
         raise ValueError(f"IPPO supports at most {MAX_PHASES} phases per intersection.")
     if any(not phases for phases in _phase_orders.values()):
         raise ValueError("Every controlled intersection must have at least one phase.")
+
+    resume_path = str(Path(_model_path).resolve()) if _model_path else None
+    resume_checkpoint = None
+    if mode == "train" and resume_path:
+        resume_checkpoint = load_checkpoint_metadata(resume_path)
+        _act_dim = int(resume_checkpoint["act_dim"])
+        if _act_dim > MAX_PHASES:
+            raise ValueError(f"IPPO supports at most {MAX_PHASES} phases per intersection.")
 
     _decision_interval = float(payload.get("decision_interval", 5.0))
     _minimum_green = float(payload.get("minimum_green", 5.0))
@@ -842,11 +872,28 @@ def initialize(payload: dict) -> dict:
         if not Path(_model_path).is_file():
             raise FileNotFoundError(f"IPPO checkpoint does not exist: {_model_path}")
         checkpoint = load_checkpoint_metadata(_model_path)
+        _act_dim = int(checkpoint["act_dim"])
+        if _act_dim > MAX_PHASES:
+            raise ValueError(f"IPPO supports at most {MAX_PHASES} phases per intersection.")
         _effective_demand_enabled = bool(
             checkpoint.get("effective_demand_enabled", True)
         )
-        _validate_checkpoint(
-            checkpoint, _intersection_ids, _obs_dim, _act_dim, _action_interval
+        _contract_version, contract_view = load_contract(_model_path, checkpoint)
+        live_fingerprints = {
+            intersection_id: _state_builder.get_fingerprint(intersection_id)
+            for intersection_id in _intersection_ids
+        }
+        validate_contract(
+            contract_view,
+            intersection_ids=_intersection_ids,
+            fingerprints=live_fingerprints,
+            obs_dim=_obs_dim,
+            act_dim=_act_dim,
+            action_interval=_action_interval,
+            max_green_factor=_max_green_factor,
+            phase_feature_schema=PHASE_FEATURE_SCHEMA,
+            effective_demand_enabled=_effective_demand_enabled,
+            model_version=MODEL_VERSION,
         )
         _model = IPPONetwork(_obs_dim, _act_dim)
         _model.load_state_dict(checkpoint["model_state_dict"])
@@ -857,14 +904,27 @@ def initialize(payload: dict) -> dict:
         _optimizer_critic = None
         logger.info("IPPO %s 推理: %s", MODEL_VERSION, _model_path)
     elif mode == "train":
-        resume_path = str(Path(_model_path).resolve()) if _model_path else None
         if resume_path and _loaded_model_path != resume_path:
-            checkpoint = load_checkpoint_metadata(resume_path)
+            checkpoint = resume_checkpoint
             _effective_demand_enabled = bool(
                 checkpoint.get("effective_demand_enabled", True)
             )
-            _validate_checkpoint(
-                checkpoint, _intersection_ids, _obs_dim, _act_dim, _action_interval
+            _contract_version, contract_view = load_contract(resume_path, checkpoint)
+            live_fingerprints = {
+                intersection_id: _state_builder.get_fingerprint(intersection_id)
+                for intersection_id in _intersection_ids
+            }
+            validate_contract(
+                contract_view,
+                intersection_ids=_intersection_ids,
+                fingerprints=live_fingerprints,
+                obs_dim=_obs_dim,
+                act_dim=_act_dim,
+                action_interval=_action_interval,
+                max_green_factor=_max_green_factor,
+                phase_feature_schema=PHASE_FEATURE_SCHEMA,
+                effective_demand_enabled=_effective_demand_enabled,
+                model_version=MODEL_VERSION,
             )
             _model = IPPONetwork(_obs_dim, _act_dim)
             _model.load_state_dict(checkpoint["model_state_dict"])
@@ -872,11 +932,18 @@ def initialize(payload: dict) -> dict:
             _loaded_model_path = resume_path
             _buffer_episodes.clear()
             _optimizer_actor, _optimizer_critic = _new_optimizers(_model)
-            actor_state = checkpoint.get("optimizer_actor_state_dict")
-            critic_state = checkpoint.get("optimizer_critic_state_dict")
-            if actor_state is not None and critic_state is not None:
-                _optimizer_actor.load_state_dict(actor_state)
-                _optimizer_critic.load_state_dict(critic_state)
+            reset_optimizer = (
+                os.environ.get("IPPO_RESET_OPTIMIZER", "0").strip().lower()
+                in {"1", "true", "on", "yes"}
+            )
+            if not reset_optimizer:
+                actor_state = checkpoint.get("optimizer_actor_state_dict")
+                critic_state = checkpoint.get("optimizer_critic_state_dict")
+                if actor_state is not None and critic_state is not None:
+                    _optimizer_actor.load_state_dict(actor_state)
+                    _optimizer_critic.load_state_dict(critic_state)
+            else:
+                _optimizer_actor, _optimizer_critic = _new_optimizers(_model)
             _episode = int(checkpoint.get("episode", 0))
             logger.info("IPPO %s 从 checkpoint 恢复权重: %s", MODEL_VERSION, resume_path)
         elif not signature_matches:
@@ -920,6 +987,13 @@ def initialize(payload: dict) -> dict:
             _act_dim,
             len(_intersection_ids),
             _collector_rollout_seed,
+        )
+
+    if _state_builder.max_phases > _act_dim:
+        raise ValueError(
+            "Active subset requires more phase slots than the checkpoint action "
+            f"dimension ({_state_builder.max_phases} > {_act_dim}); the checkpoint "
+            "cannot represent this subset."
         )
 
     _vehicle_reward_state = {}
@@ -1815,6 +1889,15 @@ def _ppo_update(episode_count: Optional[int] = None) -> None:
 def save_checkpoint(path: str | os.PathLike[str]) -> Path:
     if _model is None:
         raise RuntimeError("Cannot save an uninitialized IPPO model.")
+    if _collector_metadata is None or not _collector_metadata.get("intersections"):
+        raise RuntimeError(
+            "Cannot save a checkpoint without collector metadata; "
+            "initialize() must receive the protocol metadata first."
+        )
+    builder = StateBuilder(_collector_metadata)
+    fingerprints = {
+        iid: builder.get_fingerprint(iid) for iid in builder.intersection_ids
+    }
     destination = Path(path)
     if destination.suffix != ".pt":
         destination = destination.with_suffix(".pt")
@@ -1829,6 +1912,16 @@ def save_checkpoint(path: str | os.PathLike[str]) -> Path:
         "max_green_factor": _max_green_factor,
         "phase_feature_schema": PHASE_FEATURE_SCHEMA,
         "effective_demand_enabled": _effective_demand_enabled,
+        "checkpoint_contract_version": CHECKPOINT_CONTRACT_VERSION,
+        "identity_slots": list(IDENTITY_SLOT_IDS),
+        "observation_schema": dict(OBSERVATION_SCHEMA),
+        "phase_features": int(PHASE_FEATURES),
+        "normalization": dict(NORMALIZATION),
+        "collab_message_schema": COLLAB_MESSAGE_SCHEMA,
+        "per_intersection_fingerprints": {
+            iid: {"sha256": fingerprint_sha256(fp), "fingerprint": fp}
+            for iid, fp in fingerprints.items()
+        },
         "model_state_dict": _model.state_dict(),
         "optimizer_actor_state_dict": (
             _optimizer_actor.state_dict() if _optimizer_actor is not None else None

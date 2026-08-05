@@ -1,0 +1,3209 @@
+{
+  "nature": "engineering_criterion_not_industry_standard",
+  "preliminary": false,
+  "checkpoint": "/home/kemove/devdata1/gsb/citypulse-v2x-sim/traffic_control/ippo/models/ippo_v8_20tls_ep160.pt",
+  "seeds": [
+    1042,
+    1142,
+    1242,
+    1342,
+    1442,
+    1542,
+    1642,
+    1742,
+    1842,
+    1942
+  ],
+  "duration_s": 300,
+  "period": "off_peak",
+  "scenarios": {
+    "east_dense": {
+      "verdicts": {
+        "primary": {
+          "scenario": "east_dense",
+          "metric": "controlled_avg_waiting_time_s",
+          "status": "strong",
+          "p_value": 0.0009765625,
+          "method": "exact",
+          "wins": 10,
+          "ties": 0,
+          "losses": 0,
+          "valid_pairs": 10,
+          "relative_improvement": 0.666939666939667,
+          "details": {
+            "required_wins": 7,
+            "win_rate": 1.0
+          }
+        },
+        "non_inferiority": {
+          "avg_travel_time_s": {
+            "metric": "avg_travel_time_s",
+            "status": "pass",
+            "paired_mean": -0.024106619477169904,
+            "paired_median": -0.0256411904751608,
+            "worst_seed": -0.007928983883478425,
+            "violation_count": 0,
+            "violation_ratio": 0.0,
+            "abs_violation_count": null,
+            "bound": 0.05,
+            "max_violation_ratio": 0.3
+          },
+          "avg_queue_length_veh": {
+            "metric": "avg_queue_length_veh",
+            "status": "pass",
+            "paired_mean": -0.6363636363636366,
+            "paired_median": -0.6363636363636365,
+            "worst_seed": -0.6363636363636365,
+            "violation_count": 0,
+            "violation_ratio": 0.0,
+            "abs_violation_count": 0,
+            "bound": 0.05,
+            "max_violation_ratio": 0.3
+          },
+          "fuel_intensity_L_per_100km": {
+            "metric": "fuel_intensity_L_per_100km",
+            "status": "pass",
+            "paired_mean": -0.007157721067918897,
+            "paired_median": -0.0072311712310801305,
+            "worst_seed": -0.005513439007580984,
+            "violation_count": 0,
+            "violation_ratio": 0.0,
+            "abs_violation_count": null,
+            "bound": 0.05,
+            "max_violation_ratio": 0.3
+          },
+          "throughput_veh_per_h": {
+            "metric": "throughput_veh_per_h",
+            "status": "pass",
+            "paired_mean": -0.0014492753623188406,
+            "paired_median": 0.0,
+            "worst_seed": 0.0,
+            "violation_count": 0,
+            "violation_ratio": 0.0,
+            "abs_violation_count": null,
+            "bound": 0.05,
+            "max_violation_ratio": 0.3
+          }
+        },
+        "safety": {
+          "severe_conflict_exposure_per_10000": {
+            "metric": "severe_conflict_exposure_per_10000",
+            "status": "insufficient",
+            "reason": "total controlled passages below 5000"
+          },
+          "emergency_braking_exposure_per_1000": {
+            "metric": "emergency_braking_exposure_per_1000",
+            "status": "insufficient",
+            "reason": "total controlled passages below 5000"
+          }
+        },
+        "network_scope_waiting_secondary": {
+          "model": [
+            21.07,
+            19.88,
+            19.95,
+            21.11,
+            20.0,
+            20.05,
+            21.04,
+            18.83,
+            20.07,
+            18.76
+          ],
+          "fixed": [
+            22.09,
+            20.88,
+            20.95,
+            20.34,
+            21.03,
+            21.06,
+            22.08,
+            19.88,
+            21.08,
+            19.76
+          ]
+        }
+      },
+      "runs": {
+        "fixed": [
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1042,
+            "session_id": "26f296f0-886c-4b8e-9899-b57f4c8d67e6",
+            "elapsed_s": 436.99657826800103,
+            "active": 767,
+            "departed": 837,
+            "arrived": 70,
+            "remaining": 767,
+            "halting": 8,
+            "waiting": 123.30000000000001,
+            "mean_speed": 10.781940682327889,
+            "fuel_mg": 174229.8400796486,
+            "hard_braking": 8988,
+            "trip_records": 837,
+            "completed_trips": 70,
+            "unfinished_trips": 767,
+            "completion_rate": 0.08363201911589008,
+            "completed_duration_mean_s": 118.23642857142859,
+            "completed_duration_median_s": 114.95,
+            "completed_duration_p95_s": 236.59249999999997,
+            "completed_waiting_mean_s": 22.09285714285715,
+            "completed_time_loss_mean_s": 32.53485714285714,
+            "unfinished_waiting_total_s": 20477.249999999996,
+            "unfinished_time_loss_total_s": 29443.54999999997,
+            "all_waiting_total_s": 22023.75,
+            "end_waiting_total_s": 22023.75,
+            "end_waiting_mean_s": 26.31272401433692,
+            "all_time_loss_total_s": 31720.989999999965,
+            "official_metrics": {
+              "avg_travel_time_s": 118.24,
+              "avg_waiting_time_s": 22.09,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 840.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.52,
+              "severe_conflict_exposure_per_10000": 1595.74,
+              "emergency_braking_exposure_per_1000": 3372.34,
+              "controlled_intersection_passages": 94,
+              "severe_conflict_events": 15,
+              "emergency_braking_events": 317,
+              "controlled_avg_waiting_time_s": 14.85,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 70,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1142,
+            "session_id": "0821f64e-bf11-446d-9ff2-37e7a9d34a18",
+            "elapsed_s": 442.103678296,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 8,
+            "waiting": 123.30000000000001,
+            "mean_speed": 10.759176349613506,
+            "fuel_mg": 174130.16862252585,
+            "hard_braking": 8979,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 116.95563380281693,
+            "completed_duration_median_s": 110.4,
+            "completed_duration_p95_s": 224.825,
+            "completed_waiting_mean_s": 20.88309859154929,
+            "completed_time_loss_mean_s": 31.426338028169013,
+            "unfinished_waiting_total_s": 20426.400000000023,
+            "unfinished_time_loss_total_s": 29320.18999999998,
+            "all_waiting_total_s": 21909.100000000024,
+            "end_waiting_total_s": 21909.100000000024,
+            "end_waiting_mean_s": 26.17574671445642,
+            "all_time_loss_total_s": 31551.459999999977,
+            "official_metrics": {
+              "avg_travel_time_s": 116.96,
+              "avg_waiting_time_s": 20.88,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.49,
+              "severe_conflict_exposure_per_10000": 1595.74,
+              "emergency_braking_exposure_per_1000": 3382.98,
+              "controlled_intersection_passages": 94,
+              "severe_conflict_events": 15,
+              "emergency_braking_events": 318,
+              "controlled_avg_waiting_time_s": 14.75,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1242,
+            "session_id": "2b070e3c-0c65-435f-a216-ab833da3c238",
+            "elapsed_s": 437.3788020050051,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 8,
+            "waiting": 123.35,
+            "mean_speed": 10.68035332431321,
+            "fuel_mg": 173947.90813652793,
+            "hard_braking": 8855,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 117.04225352112677,
+            "completed_duration_median_s": 110.4,
+            "completed_duration_p95_s": 225.75,
+            "completed_waiting_mean_s": 20.953521126760563,
+            "completed_time_loss_mean_s": 31.331830985915484,
+            "unfinished_waiting_total_s": 20552.150000000027,
+            "unfinished_time_loss_total_s": 29570.76,
+            "all_waiting_total_s": 22039.85000000003,
+            "end_waiting_total_s": 22039.85000000003,
+            "end_waiting_mean_s": 26.33195937873361,
+            "all_time_loss_total_s": 31795.31999999998,
+            "official_metrics": {
+              "avg_travel_time_s": 117.04,
+              "avg_waiting_time_s": 20.95,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.5,
+              "severe_conflict_exposure_per_10000": 1489.36,
+              "emergency_braking_exposure_per_1000": 3297.87,
+              "controlled_intersection_passages": 94,
+              "severe_conflict_events": 14,
+              "emergency_braking_events": 310,
+              "controlled_avg_waiting_time_s": 14.31,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1342,
+            "session_id": "9cf30605-fce0-42ef-a9c3-57227cab0b91",
+            "elapsed_s": 441.50883734299714,
+            "active": 768,
+            "departed": 837,
+            "arrived": 69,
+            "remaining": 768,
+            "halting": 8,
+            "waiting": 123.35000000000001,
+            "mean_speed": 10.749489209920077,
+            "fuel_mg": 174109.30347248682,
+            "hard_braking": 9086,
+            "trip_records": 837,
+            "completed_trips": 69,
+            "unfinished_trips": 768,
+            "completion_rate": 0.08243727598566308,
+            "completed_duration_mean_s": 116.02826086956523,
+            "completed_duration_median_s": 110.35,
+            "completed_duration_p95_s": 220.19,
+            "completed_waiting_mean_s": 20.344202898550726,
+            "completed_time_loss_mean_s": 30.637246376811593,
+            "unfinished_waiting_total_s": 21001.25000000002,
+            "unfinished_time_loss_total_s": 30071.090000000015,
+            "all_waiting_total_s": 22405.00000000003,
+            "end_waiting_total_s": 22405.00000000003,
+            "end_waiting_mean_s": 26.768219832735998,
+            "all_time_loss_total_s": 32185.060000000012,
+            "official_metrics": {
+              "avg_travel_time_s": 116.03,
+              "avg_waiting_time_s": 20.34,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 828.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.57,
+              "severe_conflict_exposure_per_10000": 1595.74,
+              "emergency_braking_exposure_per_1000": 3404.26,
+              "controlled_intersection_passages": 94,
+              "severe_conflict_events": 15,
+              "emergency_braking_events": 320,
+              "controlled_avg_waiting_time_s": 14.88,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 69,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1442,
+            "session_id": "b11ba172-897a-4eab-a1bd-45a7194211dc",
+            "elapsed_s": 440.7103237210031,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 8,
+            "waiting": 123.39999999999999,
+            "mean_speed": 10.763974588330864,
+            "fuel_mg": 174262.3377122824,
+            "hard_braking": 8801,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 116.84084507042255,
+            "completed_duration_median_s": 110.5,
+            "completed_duration_p95_s": 220.125,
+            "completed_waiting_mean_s": 21.033802816901407,
+            "completed_time_loss_mean_s": 31.349436619718315,
+            "unfinished_waiting_total_s": 20667.95,
+            "unfinished_time_loss_total_s": 29608.670000000016,
+            "all_waiting_total_s": 22161.350000000006,
+            "end_waiting_total_s": 22161.350000000006,
+            "end_waiting_mean_s": 26.47712066905616,
+            "all_time_loss_total_s": 31834.480000000007,
+            "official_metrics": {
+              "avg_travel_time_s": 116.84,
+              "avg_waiting_time_s": 21.03,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.53,
+              "severe_conflict_exposure_per_10000": 1489.36,
+              "emergency_braking_exposure_per_1000": 3276.6,
+              "controlled_intersection_passages": 94,
+              "severe_conflict_events": 14,
+              "emergency_braking_events": 308,
+              "controlled_avg_waiting_time_s": 15.02,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1542,
+            "session_id": "4330c2bc-8891-41f3-9d75-21760567e586",
+            "elapsed_s": 439.0515374010065,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 8,
+            "waiting": 123.35000000000001,
+            "mean_speed": 10.731769340301966,
+            "fuel_mg": 174226.9728708995,
+            "hard_braking": 8642,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 116.79436619718312,
+            "completed_duration_median_s": 110.4,
+            "completed_duration_p95_s": 222.55,
+            "completed_waiting_mean_s": 21.064788732394366,
+            "completed_time_loss_mean_s": 31.2238028169014,
+            "unfinished_waiting_total_s": 20735.350000000017,
+            "unfinished_time_loss_total_s": 29679.409999999985,
+            "all_waiting_total_s": 22230.950000000015,
+            "end_waiting_total_s": 22230.950000000015,
+            "end_waiting_mean_s": 26.56027479091997,
+            "all_time_loss_total_s": 31896.29999999998,
+            "official_metrics": {
+              "avg_travel_time_s": 116.79,
+              "avg_waiting_time_s": 21.06,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.55,
+              "severe_conflict_exposure_per_10000": 1489.36,
+              "emergency_braking_exposure_per_1000": 3106.38,
+              "controlled_intersection_passages": 94,
+              "severe_conflict_events": 14,
+              "emergency_braking_events": 292,
+              "controlled_avg_waiting_time_s": 14.34,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1642,
+            "session_id": "c7542e08-e080-4020-864e-a37c59d7b5d1",
+            "elapsed_s": 434.0729123860001,
+            "active": 767,
+            "departed": 837,
+            "arrived": 70,
+            "remaining": 767,
+            "halting": 8,
+            "waiting": 123.35,
+            "mean_speed": 10.67008361089822,
+            "fuel_mg": 174217.81039703017,
+            "hard_braking": 8763,
+            "trip_records": 837,
+            "completed_trips": 70,
+            "unfinished_trips": 767,
+            "completion_rate": 0.08363201911589008,
+            "completed_duration_mean_s": 117.99571428571427,
+            "completed_duration_median_s": 114.9,
+            "completed_duration_p95_s": 232.59999999999994,
+            "completed_waiting_mean_s": 22.084285714285716,
+            "completed_time_loss_mean_s": 32.691857142857145,
+            "unfinished_waiting_total_s": 20545.750000000015,
+            "unfinished_time_loss_total_s": 29490.539999999975,
+            "all_waiting_total_s": 22091.650000000005,
+            "end_waiting_total_s": 22091.650000000005,
+            "end_waiting_mean_s": 26.393847072879336,
+            "all_time_loss_total_s": 31778.969999999958,
+            "official_metrics": {
+              "avg_travel_time_s": 118.0,
+              "avg_waiting_time_s": 22.08,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 840.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.51,
+              "severe_conflict_exposure_per_10000": 1489.36,
+              "emergency_braking_exposure_per_1000": 3180.85,
+              "controlled_intersection_passages": 94,
+              "severe_conflict_events": 14,
+              "emergency_braking_events": 299,
+              "controlled_avg_waiting_time_s": 14.43,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 70,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1742,
+            "session_id": "a0f0fadb-43e6-4917-949d-408a67081b78",
+            "elapsed_s": 436.1464692880036,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 8,
+            "waiting": 123.35,
+            "mean_speed": 10.713852474571043,
+            "fuel_mg": 174102.5238462302,
+            "hard_braking": 8735,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 115.41408450704225,
+            "completed_duration_median_s": 110.45,
+            "completed_duration_p95_s": 213.625,
+            "completed_waiting_mean_s": 19.876760563380284,
+            "completed_time_loss_mean_s": 29.873661971830987,
+            "unfinished_waiting_total_s": 20728.15000000001,
+            "unfinished_time_loss_total_s": 29724.42999999997,
+            "all_waiting_total_s": 22139.4,
+            "end_waiting_total_s": 22139.4,
+            "end_waiting_mean_s": 26.450896057347673,
+            "all_time_loss_total_s": 31845.45999999998,
+            "official_metrics": {
+              "avg_travel_time_s": 115.41,
+              "avg_waiting_time_s": 19.88,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.56,
+              "severe_conflict_exposure_per_10000": 1595.74,
+              "emergency_braking_exposure_per_1000": 3468.09,
+              "controlled_intersection_passages": 94,
+              "severe_conflict_events": 15,
+              "emergency_braking_events": 326,
+              "controlled_avg_waiting_time_s": 14.87,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1842,
+            "session_id": "0b06ce96-70b0-4b16-9369-40be38aa6947",
+            "elapsed_s": 439.4010834800065,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 8,
+            "waiting": 123.35,
+            "mean_speed": 10.737266976951139,
+            "fuel_mg": 173954.14545569906,
+            "hard_braking": 8800,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 117.16056338028169,
+            "completed_duration_median_s": 116.55,
+            "completed_duration_p95_s": 226.15,
+            "completed_waiting_mean_s": 21.08169014084507,
+            "completed_time_loss_mean_s": 31.14338028169014,
+            "unfinished_waiting_total_s": 20688.699999999993,
+            "unfinished_time_loss_total_s": 29617.359999999953,
+            "all_waiting_total_s": 22185.499999999996,
+            "end_waiting_total_s": 22185.499999999996,
+            "end_waiting_mean_s": 26.50597371565113,
+            "all_time_loss_total_s": 31828.539999999943,
+            "official_metrics": {
+              "avg_travel_time_s": 117.16,
+              "avg_waiting_time_s": 21.08,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.53,
+              "severe_conflict_exposure_per_10000": 1489.36,
+              "emergency_braking_exposure_per_1000": 3265.96,
+              "controlled_intersection_passages": 94,
+              "severe_conflict_events": 14,
+              "emergency_braking_events": 307,
+              "controlled_avg_waiting_time_s": 14.56,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1942,
+            "session_id": "24ec8411-d93c-4463-adbc-3e48c6489f3a",
+            "elapsed_s": 439.63221345999773,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 9,
+            "waiting": 131.04999999999998,
+            "mean_speed": 10.715350054636483,
+            "fuel_mg": 173990.80798436282,
+            "hard_braking": 8762,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 115.52112676056338,
+            "completed_duration_median_s": 110.35,
+            "completed_duration_p95_s": 213.225,
+            "completed_waiting_mean_s": 19.756338028169015,
+            "completed_time_loss_mean_s": 29.979154929577465,
+            "unfinished_waiting_total_s": 20584.40000000003,
+            "unfinished_time_loss_total_s": 29505.09999999998,
+            "all_waiting_total_s": 21987.100000000028,
+            "end_waiting_total_s": 21987.100000000028,
+            "end_waiting_mean_s": 26.268936678614132,
+            "all_time_loss_total_s": 31633.619999999966,
+            "official_metrics": {
+              "avg_travel_time_s": 115.52,
+              "avg_waiting_time_s": 19.76,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.51,
+              "severe_conflict_exposure_per_10000": 1505.38,
+              "emergency_braking_exposure_per_1000": 3408.6,
+              "controlled_intersection_passages": 93,
+              "severe_conflict_events": 14,
+              "emergency_braking_events": 317,
+              "controlled_avg_waiting_time_s": 14.51,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          }
+        ],
+        "model": [
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1042,
+            "session_id": "4c6c8f79-67f3-45dc-b10b-cbaca2becdf2",
+            "elapsed_s": 444.3252892630044,
+            "active": 767,
+            "departed": 837,
+            "arrived": 70,
+            "remaining": 767,
+            "halting": 4,
+            "waiting": 44.5,
+            "mean_speed": 10.86277886956488,
+            "fuel_mg": 174778.492741312,
+            "hard_braking": 8966,
+            "trip_records": 837,
+            "completed_trips": 70,
+            "unfinished_trips": 767,
+            "completion_rate": 0.08363201911589008,
+            "completed_duration_mean_s": 115.05928571428572,
+            "completed_duration_median_s": 114.9,
+            "completed_duration_p95_s": 226.24749999999997,
+            "completed_waiting_mean_s": 21.072857142857146,
+            "completed_time_loss_mean_s": 31.039000000000005,
+            "unfinished_waiting_total_s": 19602.499999999993,
+            "unfinished_time_loss_total_s": 28516.81,
+            "all_waiting_total_s": 21077.6,
+            "end_waiting_total_s": 21077.6,
+            "end_waiting_mean_s": 25.18231780167264,
+            "all_time_loss_total_s": 30689.539999999994,
+            "official_metrics": {
+              "avg_travel_time_s": 115.06,
+              "avg_waiting_time_s": 21.07,
+              "avg_queue_length_veh": 0.04,
+              "throughput_veh_per_h": 840.0,
+              "avg_decision_latency_ms": 4.369,
+              "fuel_intensity_L_per_100km": 14.41,
+              "severe_conflict_exposure_per_10000": 721.65,
+              "emergency_braking_exposure_per_1000": 2237.11,
+              "controlled_intersection_passages": 97,
+              "severe_conflict_events": 7,
+              "emergency_braking_events": 217,
+              "controlled_avg_waiting_time_s": 4.86,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 70,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1142,
+            "session_id": "445dd13f-25ca-49d2-a9f6-ecc2939698f3",
+            "elapsed_s": 445.6358517490007,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 3,
+            "waiting": 36.900000000000006,
+            "mean_speed": 10.895098994947816,
+            "fuel_mg": 174939.2136887237,
+            "hard_braking": 8678,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 113.81056338028168,
+            "completed_duration_median_s": 110.55,
+            "completed_duration_p95_s": 215.725,
+            "completed_waiting_mean_s": 19.88098591549296,
+            "completed_time_loss_mean_s": 29.937746478873237,
+            "unfinished_waiting_total_s": 19570.60000000003,
+            "unfinished_time_loss_total_s": 28359.660000000018,
+            "all_waiting_total_s": 20982.150000000034,
+            "end_waiting_total_s": 20982.150000000034,
+            "end_waiting_mean_s": 25.068279569892514,
+            "all_time_loss_total_s": 30485.240000000005,
+            "official_metrics": {
+              "avg_travel_time_s": 113.81,
+              "avg_waiting_time_s": 19.88,
+              "avg_queue_length_veh": 0.04,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 4.001,
+              "fuel_intensity_L_per_100km": 14.4,
+              "severe_conflict_exposure_per_10000": 721.65,
+              "emergency_braking_exposure_per_1000": 2123.71,
+              "controlled_intersection_passages": 97,
+              "severe_conflict_events": 7,
+              "emergency_braking_events": 206,
+              "controlled_avg_waiting_time_s": 4.96,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1242,
+            "session_id": "b3fd9e17-4c46-4a8c-90f9-d7617860a02d",
+            "elapsed_s": 431.787387640994,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 4,
+            "waiting": 44.85,
+            "mean_speed": 10.810507976275481,
+            "fuel_mg": 174738.074056765,
+            "hard_braking": 8620,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 114.07605633802815,
+            "completed_duration_median_s": 110.45,
+            "completed_duration_p95_s": 213.8,
+            "completed_waiting_mean_s": 19.945070422535213,
+            "completed_time_loss_mean_s": 30.02211267605634,
+            "unfinished_waiting_total_s": 19659.65,
+            "unfinished_time_loss_total_s": 28608.649999999976,
+            "all_waiting_total_s": 21075.75000000001,
+            "end_waiting_total_s": 21075.75000000001,
+            "end_waiting_mean_s": 25.180107526881734,
+            "all_time_loss_total_s": 30740.219999999972,
+            "official_metrics": {
+              "avg_travel_time_s": 114.08,
+              "avg_waiting_time_s": 19.95,
+              "avg_queue_length_veh": 0.04,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 3.951,
+              "fuel_intensity_L_per_100km": 14.41,
+              "severe_conflict_exposure_per_10000": 824.74,
+              "emergency_braking_exposure_per_1000": 2103.09,
+              "controlled_intersection_passages": 97,
+              "severe_conflict_events": 8,
+              "emergency_braking_events": 204,
+              "controlled_avg_waiting_time_s": 4.98,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1342,
+            "session_id": "5e586cbe-c7d5-45bc-b478-b3c15eafbace",
+            "elapsed_s": 435.36372578800365,
+            "active": 767,
+            "departed": 837,
+            "arrived": 70,
+            "remaining": 767,
+            "halting": 3,
+            "waiting": 37.45,
+            "mean_speed": 10.797707542365444,
+            "fuel_mg": 174796.92213138158,
+            "hard_braking": 8730,
+            "trip_records": 837,
+            "completed_trips": 70,
+            "unfinished_trips": 767,
+            "completion_rate": 0.08363201911589008,
+            "completed_duration_mean_s": 115.11428571428571,
+            "completed_duration_median_s": 114.875,
+            "completed_duration_p95_s": 226.05999999999997,
+            "completed_waiting_mean_s": 21.11285714285715,
+            "completed_time_loss_mean_s": 31.51328571428572,
+            "unfinished_waiting_total_s": 19750.249999999993,
+            "unfinished_time_loss_total_s": 28766.779999999988,
+            "all_waiting_total_s": 21228.149999999994,
+            "end_waiting_total_s": 21228.149999999994,
+            "end_waiting_mean_s": 25.362186379928307,
+            "all_time_loss_total_s": 30972.709999999992,
+            "official_metrics": {
+              "avg_travel_time_s": 115.11,
+              "avg_waiting_time_s": 21.11,
+              "avg_queue_length_veh": 0.04,
+              "throughput_veh_per_h": 840.0,
+              "avg_decision_latency_ms": 4.307,
+              "fuel_intensity_L_per_100km": 14.45,
+              "severe_conflict_exposure_per_10000": 714.29,
+              "emergency_braking_exposure_per_1000": 2030.61,
+              "controlled_intersection_passages": 98,
+              "severe_conflict_events": 7,
+              "emergency_braking_events": 199,
+              "controlled_avg_waiting_time_s": 4.81,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 70,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1442,
+            "session_id": "d0be3628-3bcf-4596-9a65-26f63d9c644f",
+            "elapsed_s": 436.4497892759973,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 3,
+            "waiting": 35.9,
+            "mean_speed": 10.774848769298421,
+            "fuel_mg": 175049.63205783188,
+            "hard_braking": 8730,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 113.8274647887324,
+            "completed_duration_median_s": 110.4,
+            "completed_duration_p95_s": 213.8,
+            "completed_waiting_mean_s": 20.004225352112677,
+            "completed_time_loss_mean_s": 29.995774647887327,
+            "unfinished_waiting_total_s": 19650.75,
+            "unfinished_time_loss_total_s": 28509.98000000002,
+            "all_waiting_total_s": 21071.05000000001,
+            "end_waiting_total_s": 21071.05000000001,
+            "end_waiting_mean_s": 25.174492234169666,
+            "all_time_loss_total_s": 30639.68000000002,
+            "official_metrics": {
+              "avg_travel_time_s": 113.83,
+              "avg_waiting_time_s": 20.0,
+              "avg_queue_length_veh": 0.04,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 3.927,
+              "fuel_intensity_L_per_100km": 14.42,
+              "severe_conflict_exposure_per_10000": 721.65,
+              "emergency_braking_exposure_per_1000": 2144.33,
+              "controlled_intersection_passages": 97,
+              "severe_conflict_events": 7,
+              "emergency_braking_events": 208,
+              "controlled_avg_waiting_time_s": 4.86,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1542,
+            "session_id": "00c19f83-9d79-4675-94a2-a6581ed086ae",
+            "elapsed_s": 435.57986898299714,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 4,
+            "waiting": 44.3,
+            "mean_speed": 10.80717411651931,
+            "fuel_mg": 174744.22054820467,
+            "hard_braking": 8615,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 113.86901408450703,
+            "completed_duration_median_s": 110.5,
+            "completed_duration_p95_s": 213.125,
+            "completed_waiting_mean_s": 20.054225352112674,
+            "completed_time_loss_mean_s": 29.957746478873247,
+            "unfinished_waiting_total_s": 19785.750000000004,
+            "unfinished_time_loss_total_s": 28684.029999999966,
+            "all_waiting_total_s": 21209.60000000001,
+            "end_waiting_total_s": 21209.60000000001,
+            "end_waiting_mean_s": 25.340023894862615,
+            "all_time_loss_total_s": 30811.029999999962,
+            "official_metrics": {
+              "avg_travel_time_s": 113.87,
+              "avg_waiting_time_s": 20.05,
+              "avg_queue_length_veh": 0.04,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 4.121,
+              "fuel_intensity_L_per_100km": 14.43,
+              "severe_conflict_exposure_per_10000": 721.65,
+              "emergency_braking_exposure_per_1000": 2185.57,
+              "controlled_intersection_passages": 97,
+              "severe_conflict_events": 7,
+              "emergency_braking_events": 212,
+              "controlled_avg_waiting_time_s": 4.81,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1642,
+            "session_id": "657eeb83-6329-49f9-9dce-3ace7b225bde",
+            "elapsed_s": 433.48075307000545,
+            "active": 767,
+            "departed": 837,
+            "arrived": 70,
+            "remaining": 767,
+            "halting": 3,
+            "waiting": 38.15,
+            "mean_speed": 10.81378967533327,
+            "fuel_mg": 174982.39168909605,
+            "hard_braking": 8722,
+            "trip_records": 837,
+            "completed_trips": 70,
+            "unfinished_trips": 767,
+            "completion_rate": 0.08363201911589008,
+            "completed_duration_mean_s": 115.005,
+            "completed_duration_median_s": 114.95,
+            "completed_duration_p95_s": 225.98999999999998,
+            "completed_waiting_mean_s": 21.038571428571434,
+            "completed_time_loss_mean_s": 31.382142857142856,
+            "unfinished_waiting_total_s": 19685.549999999996,
+            "unfinished_time_loss_total_s": 28598.820000000007,
+            "all_waiting_total_s": 21158.25000000002,
+            "end_waiting_total_s": 21158.25000000002,
+            "end_waiting_mean_s": 25.27867383512547,
+            "all_time_loss_total_s": 30795.570000000007,
+            "official_metrics": {
+              "avg_travel_time_s": 115.01,
+              "avg_waiting_time_s": 21.04,
+              "avg_queue_length_veh": 0.04,
+              "throughput_veh_per_h": 840.0,
+              "avg_decision_latency_ms": 4.085,
+              "fuel_intensity_L_per_100km": 14.43,
+              "severe_conflict_exposure_per_10000": 721.65,
+              "emergency_braking_exposure_per_1000": 2216.49,
+              "controlled_intersection_passages": 97,
+              "severe_conflict_events": 7,
+              "emergency_braking_events": 215,
+              "controlled_avg_waiting_time_s": 4.89,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 70,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1742,
+            "session_id": "f54a33a4-daa3-4d55-8827-2d8c0ee7ef00",
+            "elapsed_s": 440.46306789699884,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 3,
+            "waiting": 38.900000000000006,
+            "mean_speed": 10.81159046478722,
+            "fuel_mg": 174762.36237909834,
+            "hard_braking": 8551,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 112.42887323943663,
+            "completed_duration_median_s": 110.3,
+            "completed_duration_p95_s": 202.52499999999998,
+            "completed_waiting_mean_s": 18.828873239436618,
+            "completed_time_loss_mean_s": 28.543239436619718,
+            "unfinished_waiting_total_s": 19700.34999999999,
+            "unfinished_time_loss_total_s": 28601.040000000026,
+            "all_waiting_total_s": 21037.199999999997,
+            "end_waiting_total_s": 21037.199999999997,
+            "end_waiting_mean_s": 25.134050179211467,
+            "all_time_loss_total_s": 30627.610000000022,
+            "official_metrics": {
+              "avg_travel_time_s": 112.43,
+              "avg_waiting_time_s": 18.83,
+              "avg_queue_length_veh": 0.04,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 4.295,
+              "fuel_intensity_L_per_100km": 14.44,
+              "severe_conflict_exposure_per_10000": 721.65,
+              "emergency_braking_exposure_per_1000": 2134.02,
+              "controlled_intersection_passages": 97,
+              "severe_conflict_events": 7,
+              "emergency_braking_events": 207,
+              "controlled_avg_waiting_time_s": 4.86,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1842,
+            "session_id": "51721cc2-ff06-414b-bf63-98d22568db00",
+            "elapsed_s": 398.48440579399903,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 4,
+            "waiting": 43.45,
+            "mean_speed": 10.803024232750756,
+            "fuel_mg": 174634.56288379605,
+            "hard_braking": 8727,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 114.16760563380281,
+            "completed_duration_median_s": 116.55,
+            "completed_duration_p95_s": 215.075,
+            "completed_waiting_mean_s": 20.072535211267606,
+            "completed_time_loss_mean_s": 29.80647887323944,
+            "unfinished_waiting_total_s": 19772.05000000001,
+            "unfinished_time_loss_total_s": 28667.379999999997,
+            "all_waiting_total_s": 21197.200000000015,
+            "end_waiting_total_s": 21197.200000000015,
+            "end_waiting_mean_s": 25.32520908004781,
+            "all_time_loss_total_s": 30783.64,
+            "official_metrics": {
+              "avg_travel_time_s": 114.17,
+              "avg_waiting_time_s": 20.07,
+              "avg_queue_length_veh": 0.04,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 3.936,
+              "fuel_intensity_L_per_100km": 14.43,
+              "severe_conflict_exposure_per_10000": 824.74,
+              "emergency_braking_exposure_per_1000": 2134.02,
+              "controlled_intersection_passages": 97,
+              "severe_conflict_events": 8,
+              "emergency_braking_events": 207,
+              "controlled_avg_waiting_time_s": 4.97,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1942,
+            "session_id": "0c893dd4-eb0a-4e10-9027-ecc152d0c7a4",
+            "elapsed_s": 398.45135195900366,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 3,
+            "waiting": 28.95,
+            "mean_speed": 10.878119448612015,
+            "fuel_mg": 174741.30514729442,
+            "hard_braking": 8624,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 112.45281690140844,
+            "completed_duration_median_s": 110.45,
+            "completed_duration_p95_s": 202.15,
+            "completed_waiting_mean_s": 18.76267605633803,
+            "completed_time_loss_mean_s": 28.56647887323944,
+            "unfinished_waiting_total_s": 19692.350000000024,
+            "unfinished_time_loss_total_s": 28556.40000000001,
+            "all_waiting_total_s": 21024.50000000003,
+            "end_waiting_total_s": 21024.50000000003,
+            "end_waiting_mean_s": 25.11887694145762,
+            "all_time_loss_total_s": 30584.62,
+            "official_metrics": {
+              "avg_travel_time_s": 112.45,
+              "avg_waiting_time_s": 18.76,
+              "avg_queue_length_veh": 0.04,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 3.579,
+              "fuel_intensity_L_per_100km": 14.41,
+              "severe_conflict_exposure_per_10000": 714.29,
+              "emergency_braking_exposure_per_1000": 2183.67,
+              "controlled_intersection_passages": 98,
+              "severe_conflict_events": 7,
+              "emergency_braking_events": 214,
+              "controlled_avg_waiting_time_s": 4.8,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": 0
+          }
+        ]
+      }
+    },
+    "west_dense": {
+      "verdicts": {
+        "primary": {
+          "scenario": "west_dense",
+          "metric": "controlled_avg_waiting_time_s",
+          "status": "strong",
+          "p_value": 0.0015998400159984002,
+          "method": "permutation",
+          "wins": 10,
+          "ties": 0,
+          "losses": 0,
+          "valid_pairs": 10,
+          "relative_improvement": 0.4599401143271934,
+          "details": {
+            "required_wins": 7,
+            "win_rate": 1.0
+          }
+        },
+        "non_inferiority": {
+          "avg_travel_time_s": {
+            "metric": "avg_travel_time_s",
+            "status": "pass",
+            "paired_mean": -0.018714858450426763,
+            "paired_median": -0.01962613622999855,
+            "worst_seed": -0.009244723530437836,
+            "violation_count": 0,
+            "violation_ratio": 0.0,
+            "abs_violation_count": null,
+            "bound": 0.05,
+            "max_violation_ratio": 0.3
+          },
+          "avg_queue_length_veh": {
+            "metric": "avg_queue_length_veh",
+            "status": "pass",
+            "paired_mean": -0.7591119333950047,
+            "paired_median": -0.7849213691026826,
+            "worst_seed": -0.6808510638297872,
+            "violation_count": 0,
+            "violation_ratio": 0.0,
+            "abs_violation_count": 0,
+            "bound": 0.05,
+            "max_violation_ratio": 0.3
+          },
+          "fuel_intensity_L_per_100km": {
+            "metric": "fuel_intensity_L_per_100km",
+            "status": "pass",
+            "paired_mean": -0.010368750449404657,
+            "paired_median": -0.01024240474458683,
+            "worst_seed": -0.00886766712141888,
+            "violation_count": 0,
+            "violation_ratio": 0.0,
+            "abs_violation_count": null,
+            "bound": 0.05,
+            "max_violation_ratio": 0.3
+          },
+          "throughput_veh_per_h": {
+            "metric": "throughput_veh_per_h",
+            "status": "pass",
+            "paired_mean": -0.07165501165501166,
+            "paired_median": -0.07575757575757576,
+            "worst_seed": -0.06060606060606061,
+            "violation_count": 0,
+            "violation_ratio": 0.0,
+            "abs_violation_count": null,
+            "bound": 0.05,
+            "max_violation_ratio": 0.3
+          }
+        },
+        "safety": {
+          "severe_conflict_exposure_per_10000": {
+            "metric": "severe_conflict_exposure_per_10000",
+            "status": "insufficient",
+            "reason": "total controlled passages below 5000"
+          },
+          "emergency_braking_exposure_per_1000": {
+            "metric": "emergency_braking_exposure_per_1000",
+            "status": "insufficient",
+            "reason": "total controlled passages below 5000"
+          }
+        },
+        "network_scope_waiting_secondary": {
+          "model": [
+            20.44,
+            19.24,
+            19.82,
+            19.85,
+            19.71,
+            19.38,
+            21.88,
+            20.69,
+            19.55,
+            18.95
+          ],
+          "fixed": [
+            22.58,
+            21.42,
+            21.48,
+            22.68,
+            21.5,
+            20.73,
+            22.7,
+            21.53,
+            21.71,
+            21.27
+          ]
+        }
+      },
+      "runs": {
+        "fixed": [
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1042,
+            "session_id": "c658f986-4c3d-42f7-9153-323d39684796",
+            "elapsed_s": 399.25817752100556,
+            "active": 766,
+            "departed": 831,
+            "arrived": 65,
+            "remaining": 772,
+            "halting": 17,
+            "waiting": 552.1000000000001,
+            "mean_speed": 10.674376221522206,
+            "fuel_mg": 172575.0963129379,
+            "hard_braking": 8634,
+            "trip_records": 831,
+            "completed_trips": 65,
+            "unfinished_trips": 766,
+            "completion_rate": 0.07821901323706378,
+            "completed_duration_mean_s": 115.57769230769232,
+            "completed_duration_median_s": 119.5,
+            "completed_duration_p95_s": 222.22,
+            "completed_waiting_mean_s": 22.575384615384618,
+            "completed_time_loss_mean_s": 31.423076923076923,
+            "unfinished_waiting_total_s": 22087.100000000035,
+            "unfinished_time_loss_total_s": 31079.009999999984,
+            "all_waiting_total_s": 23554.500000000033,
+            "end_waiting_total_s": 23554.500000000033,
+            "end_waiting_mean_s": 28.34476534296033,
+            "all_time_loss_total_s": 33121.50999999998,
+            "official_metrics": {
+              "avg_travel_time_s": 115.58,
+              "avg_waiting_time_s": 22.58,
+              "avg_queue_length_veh": 0.47,
+              "throughput_veh_per_h": 780.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.65,
+              "severe_conflict_exposure_per_10000": 3169.01,
+              "emergency_braking_exposure_per_1000": 5619.72,
+              "controlled_intersection_passages": 142,
+              "severe_conflict_events": 45,
+              "emergency_braking_events": 798,
+              "controlled_avg_waiting_time_s": 11.06,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 831,
+              "arrived": 65,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": -6
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1142,
+            "session_id": "4e785731-99e4-4dc5-a119-affcbd06f56b",
+            "elapsed_s": 399.479409298001,
+            "active": 765,
+            "departed": 831,
+            "arrived": 66,
+            "remaining": 771,
+            "halting": 17,
+            "waiting": 562.45,
+            "mean_speed": 10.720386511461905,
+            "fuel_mg": 173021.311611169,
+            "hard_braking": 8564,
+            "trip_records": 831,
+            "completed_trips": 66,
+            "unfinished_trips": 765,
+            "completion_rate": 0.07942238267148015,
+            "completed_duration_mean_s": 113.39696969696969,
+            "completed_duration_median_s": 109.80000000000001,
+            "completed_duration_p95_s": 217.5875,
+            "completed_waiting_mean_s": 21.415151515151514,
+            "completed_time_loss_mean_s": 29.382272727272724,
+            "unfinished_waiting_total_s": 21959.650000000027,
+            "unfinished_time_loss_total_s": 30787.919999999955,
+            "all_waiting_total_s": 23373.050000000025,
+            "end_waiting_total_s": 23373.050000000025,
+            "end_waiting_mean_s": 28.12641395908547,
+            "all_time_loss_total_s": 32727.149999999932,
+            "official_metrics": {
+              "avg_travel_time_s": 113.4,
+              "avg_waiting_time_s": 21.42,
+              "avg_queue_length_veh": 0.47,
+              "throughput_veh_per_h": 792.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.64,
+              "severe_conflict_exposure_per_10000": 3028.17,
+              "emergency_braking_exposure_per_1000": 5464.79,
+              "controlled_intersection_passages": 142,
+              "severe_conflict_events": 43,
+              "emergency_braking_events": 776,
+              "controlled_avg_waiting_time_s": 10.99,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 831,
+              "arrived": 66,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": -6
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1242,
+            "session_id": "2d8e6617-eba0-4f98-93b3-93e9660922cf",
+            "elapsed_s": 392.97133159200166,
+            "active": 765,
+            "departed": 831,
+            "arrived": 66,
+            "remaining": 771,
+            "halting": 17,
+            "waiting": 568.25,
+            "mean_speed": 10.596423050596567,
+            "fuel_mg": 172608.97188078074,
+            "hard_braking": 8620,
+            "trip_records": 831,
+            "completed_trips": 66,
+            "unfinished_trips": 765,
+            "completion_rate": 0.07942238267148015,
+            "completed_duration_mean_s": 113.6931818181818,
+            "completed_duration_median_s": 109.80000000000001,
+            "completed_duration_p95_s": 217.15,
+            "completed_waiting_mean_s": 21.48030303030303,
+            "completed_time_loss_mean_s": 29.622121212121215,
+            "unfinished_waiting_total_s": 22100.900000000027,
+            "unfinished_time_loss_total_s": 31094.610000000004,
+            "all_waiting_total_s": 23518.600000000024,
+            "end_waiting_total_s": 23518.600000000024,
+            "end_waiting_mean_s": 28.30156438026477,
+            "all_time_loss_total_s": 33049.67000000002,
+            "official_metrics": {
+              "avg_travel_time_s": 113.69,
+              "avg_waiting_time_s": 21.48,
+              "avg_queue_length_veh": 0.47,
+              "throughput_veh_per_h": 792.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.65,
+              "severe_conflict_exposure_per_10000": 3098.59,
+              "emergency_braking_exposure_per_1000": 5746.48,
+              "controlled_intersection_passages": 142,
+              "severe_conflict_events": 44,
+              "emergency_braking_events": 816,
+              "controlled_avg_waiting_time_s": 11.05,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 831,
+              "arrived": 66,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": -6
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1342,
+            "session_id": "c3acef5b-f285-45e5-bd52-1ba063fa4914",
+            "elapsed_s": 398.1480354170053,
+            "active": 766,
+            "departed": 831,
+            "arrived": 65,
+            "remaining": 772,
+            "halting": 17,
+            "waiting": 565.1500000000001,
+            "mean_speed": 10.565680803463032,
+            "fuel_mg": 172831.690863942,
+            "hard_braking": 8571,
+            "trip_records": 831,
+            "completed_trips": 65,
+            "unfinished_trips": 766,
+            "completion_rate": 0.07821901323706378,
+            "completed_duration_mean_s": 114.67692307692307,
+            "completed_duration_median_s": 110.45,
+            "completed_duration_p95_s": 220.27,
+            "completed_waiting_mean_s": 22.67923076923077,
+            "completed_time_loss_mean_s": 30.92046153846154,
+            "unfinished_waiting_total_s": 22250.35000000001,
+            "unfinished_time_loss_total_s": 31189.20999999998,
+            "all_waiting_total_s": 23724.500000000007,
+            "end_waiting_total_s": 23724.500000000007,
+            "end_waiting_mean_s": 28.54933814681108,
+            "all_time_loss_total_s": 33199.040000000015,
+            "official_metrics": {
+              "avg_travel_time_s": 114.68,
+              "avg_waiting_time_s": 22.68,
+              "avg_queue_length_veh": 0.47,
+              "throughput_veh_per_h": 780.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.69,
+              "severe_conflict_exposure_per_10000": 3169.01,
+              "emergency_braking_exposure_per_1000": 5845.07,
+              "controlled_intersection_passages": 142,
+              "severe_conflict_events": 45,
+              "emergency_braking_events": 830,
+              "controlled_avg_waiting_time_s": 11.14,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 831,
+              "arrived": 65,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": -6
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1442,
+            "session_id": "cb30508c-b24d-4a49-ab2d-579ce8b53244",
+            "elapsed_s": 395.7666770750002,
+            "active": 765,
+            "departed": 831,
+            "arrived": 66,
+            "remaining": 771,
+            "halting": 17,
+            "waiting": 557.8,
+            "mean_speed": 10.633467083560324,
+            "fuel_mg": 172809.95384420888,
+            "hard_braking": 8441,
+            "trip_records": 831,
+            "completed_trips": 66,
+            "unfinished_trips": 765,
+            "completion_rate": 0.07942238267148015,
+            "completed_duration_mean_s": 113.38787878787878,
+            "completed_duration_median_s": 109.875,
+            "completed_duration_p95_s": 215.95,
+            "completed_waiting_mean_s": 21.499242424242425,
+            "completed_time_loss_mean_s": 29.514242424242425,
+            "unfinished_waiting_total_s": 22163.400000000016,
+            "unfinished_time_loss_total_s": 31086.579999999998,
+            "all_waiting_total_s": 23582.350000000013,
+            "end_waiting_total_s": 23582.350000000013,
+            "end_waiting_mean_s": 28.378279181708802,
+            "all_time_loss_total_s": 33034.520000000026,
+            "official_metrics": {
+              "avg_travel_time_s": 113.39,
+              "avg_waiting_time_s": 21.5,
+              "avg_queue_length_veh": 0.47,
+              "throughput_veh_per_h": 792.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.66,
+              "severe_conflict_exposure_per_10000": 3239.44,
+              "emergency_braking_exposure_per_1000": 5929.58,
+              "controlled_intersection_passages": 142,
+              "severe_conflict_events": 46,
+              "emergency_braking_events": 842,
+              "controlled_avg_waiting_time_s": 11.09,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 831,
+              "arrived": 66,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": -6
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1542,
+            "session_id": "cda8c0b9-44ce-45eb-b082-d7affc7b9396",
+            "elapsed_s": 395.5540088870039,
+            "active": 765,
+            "departed": 831,
+            "arrived": 66,
+            "remaining": 771,
+            "halting": 17,
+            "waiting": 567.1500000000001,
+            "mean_speed": 10.585881910178722,
+            "fuel_mg": 172772.7426194454,
+            "hard_braking": 8503,
+            "trip_records": 831,
+            "completed_trips": 66,
+            "unfinished_trips": 765,
+            "completion_rate": 0.07942238267148015,
+            "completed_duration_mean_s": 112.57575757575756,
+            "completed_duration_median_s": 109.75,
+            "completed_duration_p95_s": 216.8125,
+            "completed_waiting_mean_s": 20.729545454545455,
+            "completed_time_loss_mean_s": 28.599545454545453,
+            "unfinished_waiting_total_s": 22119.65000000002,
+            "unfinished_time_loss_total_s": 31104.779999999995,
+            "all_waiting_total_s": 23487.800000000017,
+            "end_waiting_total_s": 23487.800000000017,
+            "end_waiting_mean_s": 28.264500601684738,
+            "all_time_loss_total_s": 32992.35000000002,
+            "official_metrics": {
+              "avg_travel_time_s": 112.58,
+              "avg_waiting_time_s": 20.73,
+              "avg_queue_length_veh": 0.46,
+              "throughput_veh_per_h": 792.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.66,
+              "severe_conflict_exposure_per_10000": 3028.17,
+              "emergency_braking_exposure_per_1000": 5598.59,
+              "controlled_intersection_passages": 142,
+              "severe_conflict_events": 43,
+              "emergency_braking_events": 795,
+              "controlled_avg_waiting_time_s": 10.49,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 831,
+              "arrived": 66,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": -6
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1642,
+            "session_id": "44a50e87-1544-4d10-96b8-35c61e6df136",
+            "elapsed_s": 416.05410569900414,
+            "active": 766,
+            "departed": 831,
+            "arrived": 65,
+            "remaining": 772,
+            "halting": 17,
+            "waiting": 562.3000000000001,
+            "mean_speed": 10.603371454246403,
+            "fuel_mg": 172728.211565992,
+            "hard_braking": 8594,
+            "trip_records": 831,
+            "completed_trips": 65,
+            "unfinished_trips": 766,
+            "completion_rate": 0.07821901323706378,
+            "completed_duration_mean_s": 114.65692307692309,
+            "completed_duration_median_s": 110.45,
+            "completed_duration_p95_s": 220.21,
+            "completed_waiting_mean_s": 22.703076923076928,
+            "completed_time_loss_mean_s": 30.88,
+            "unfinished_waiting_total_s": 22146.200000000015,
+            "unfinished_time_loss_total_s": 31074.549999999963,
+            "all_waiting_total_s": 23621.899999999998,
+            "end_waiting_total_s": 23621.899999999998,
+            "end_waiting_mean_s": 28.42587244283995,
+            "all_time_loss_total_s": 33081.74999999999,
+            "official_metrics": {
+              "avg_travel_time_s": 114.66,
+              "avg_waiting_time_s": 22.7,
+              "avg_queue_length_veh": 0.47,
+              "throughput_veh_per_h": 780.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.66,
+              "severe_conflict_exposure_per_10000": 3239.44,
+              "emergency_braking_exposure_per_1000": 5612.68,
+              "controlled_intersection_passages": 142,
+              "severe_conflict_events": 46,
+              "emergency_braking_events": 797,
+              "controlled_avg_waiting_time_s": 11.14,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 831,
+              "arrived": 65,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": -6
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1742,
+            "session_id": "af16a3e3-3464-4466-873e-1fddc746dec8",
+            "elapsed_s": 417.01257467899995,
+            "active": 765,
+            "departed": 831,
+            "arrived": 66,
+            "remaining": 771,
+            "halting": 17,
+            "waiting": 557.3,
+            "mean_speed": 10.569647795322295,
+            "fuel_mg": 172782.19526654595,
+            "hard_braking": 8550,
+            "trip_records": 831,
+            "completed_trips": 66,
+            "unfinished_trips": 765,
+            "completion_rate": 0.07942238267148015,
+            "completed_duration_mean_s": 113.43939393939394,
+            "completed_duration_median_s": 109.69999999999999,
+            "completed_duration_p95_s": 216.8375,
+            "completed_waiting_mean_s": 21.53409090909091,
+            "completed_time_loss_mean_s": 29.392575757575756,
+            "unfinished_waiting_total_s": 22237.65000000002,
+            "unfinished_time_loss_total_s": 31191.91000000003,
+            "all_waiting_total_s": 23658.900000000016,
+            "end_waiting_total_s": 23658.900000000016,
+            "end_waiting_mean_s": 28.47039711191338,
+            "all_time_loss_total_s": 33131.82000000004,
+            "official_metrics": {
+              "avg_travel_time_s": 113.44,
+              "avg_waiting_time_s": 21.53,
+              "avg_queue_length_veh": 0.47,
+              "throughput_veh_per_h": 792.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.7,
+              "severe_conflict_exposure_per_10000": 3098.59,
+              "emergency_braking_exposure_per_1000": 5598.59,
+              "controlled_intersection_passages": 142,
+              "severe_conflict_events": 44,
+              "emergency_braking_events": 795,
+              "controlled_avg_waiting_time_s": 11.11,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 831,
+              "arrived": 66,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": -6
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1842,
+            "session_id": "01e39fa7-dff6-4bc0-baf0-69e1bd274463",
+            "elapsed_s": 417.75771387299756,
+            "active": 766,
+            "departed": 831,
+            "arrived": 65,
+            "remaining": 772,
+            "halting": 18,
+            "waiting": 544.85,
+            "mean_speed": 10.544244104842479,
+            "fuel_mg": 172499.91773118768,
+            "hard_braking": 8440,
+            "trip_records": 831,
+            "completed_trips": 65,
+            "unfinished_trips": 766,
+            "completion_rate": 0.07821901323706378,
+            "completed_duration_mean_s": 113.34692307692306,
+            "completed_duration_median_s": 109.1,
+            "completed_duration_p95_s": 218.30999999999997,
+            "completed_waiting_mean_s": 21.705384615384613,
+            "completed_time_loss_mean_s": 29.319846153846154,
+            "unfinished_waiting_total_s": 22234.000000000004,
+            "unfinished_time_loss_total_s": 31205.009999999984,
+            "all_waiting_total_s": 23644.850000000002,
+            "end_waiting_total_s": 23644.850000000002,
+            "end_waiting_mean_s": 28.45348977135981,
+            "all_time_loss_total_s": 33110.8,
+            "official_metrics": {
+              "avg_travel_time_s": 113.35,
+              "avg_waiting_time_s": 21.71,
+              "avg_queue_length_veh": 0.47,
+              "throughput_veh_per_h": 780.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.67,
+              "severe_conflict_exposure_per_10000": 3191.49,
+              "emergency_braking_exposure_per_1000": 5758.87,
+              "controlled_intersection_passages": 141,
+              "severe_conflict_events": 45,
+              "emergency_braking_events": 812,
+              "controlled_avg_waiting_time_s": 11.11,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 831,
+              "arrived": 65,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": -6
+          },
+          {
+            "status": "complete",
+            "method": "fixed",
+            "seed": 1942,
+            "session_id": "b4f5e0d3-f9fe-453f-9d92-417710623cc2",
+            "elapsed_s": 419.12529961900145,
+            "active": 765,
+            "departed": 831,
+            "arrived": 66,
+            "remaining": 771,
+            "halting": 17,
+            "waiting": 555.95,
+            "mean_speed": 10.636353072493186,
+            "fuel_mg": 172915.48080941863,
+            "hard_braking": 8495,
+            "trip_records": 831,
+            "completed_trips": 66,
+            "unfinished_trips": 765,
+            "completion_rate": 0.07942238267148015,
+            "completed_duration_mean_s": 113.47272727272727,
+            "completed_duration_median_s": 109.775,
+            "completed_duration_p95_s": 216.91250000000002,
+            "completed_waiting_mean_s": 21.274242424242427,
+            "completed_time_loss_mean_s": 29.42878787878788,
+            "unfinished_waiting_total_s": 21797.10000000003,
+            "unfinished_time_loss_total_s": 30646.31999999997,
+            "all_waiting_total_s": 23201.20000000003,
+            "end_waiting_total_s": 23201.20000000003,
+            "end_waiting_mean_s": 27.919614921781022,
+            "all_time_loss_total_s": 32588.619999999974,
+            "official_metrics": {
+              "avg_travel_time_s": 113.47,
+              "avg_waiting_time_s": 21.27,
+              "avg_queue_length_veh": 0.47,
+              "throughput_veh_per_h": 792.0,
+              "avg_decision_latency_ms": null,
+              "fuel_intensity_L_per_100km": 14.61,
+              "severe_conflict_exposure_per_10000": 3028.17,
+              "emergency_braking_exposure_per_1000": 5570.42,
+              "controlled_intersection_passages": 142,
+              "severe_conflict_events": 43,
+              "emergency_braking_events": 791,
+              "controlled_avg_waiting_time_s": 11.03,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 831,
+              "arrived": 66,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+                "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+              ]
+            },
+            "missing_official_metrics": [],
+            "residual_mismatch": -6
+          }
+        ],
+        "model": [
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1042,
+            "session_id": "6643313f-614b-4379-a961-546996f51b39",
+            "elapsed_s": 429.32810905599763,
+            "active": 767,
+            "departed": 837,
+            "arrived": 70,
+            "remaining": 767,
+            "halting": 1,
+            "waiting": 6.35,
+            "mean_speed": 10.789110595485054,
+            "fuel_mg": 175171.67687378265,
+            "hard_braking": 8596,
+            "trip_records": 837,
+            "completed_trips": 70,
+            "unfinished_trips": 767,
+            "completion_rate": 0.08363201911589008,
+            "completed_duration_mean_s": 112.77285714285713,
+            "completed_duration_median_s": 112.1,
+            "completed_duration_p95_s": 210.58749999999992,
+            "completed_waiting_mean_s": 20.438571428571432,
+            "completed_time_loss_mean_s": 29.322285714285712,
+            "unfinished_waiting_total_s": 20048.099999999995,
+            "unfinished_time_loss_total_s": 28868.749999999978,
+            "all_waiting_total_s": 21478.800000000003,
+            "end_waiting_total_s": 21478.800000000003,
+            "end_waiting_mean_s": 25.661648745519717,
+            "all_time_loss_total_s": 30921.309999999987,
+            "official_metrics": {
+              "avg_travel_time_s": 112.77,
+              "avg_waiting_time_s": 20.44,
+              "avg_queue_length_veh": 0.11,
+              "throughput_veh_per_h": 840.0,
+              "avg_decision_latency_ms": 3.271,
+              "fuel_intensity_L_per_100km": 14.52,
+              "severe_conflict_exposure_per_10000": null,
+              "emergency_braking_exposure_per_1000": null,
+              "controlled_intersection_passages": 166,
+              "severe_conflict_events": 29,
+              "emergency_braking_events": 622,
+              "controlled_avg_waiting_time_s": 5.37,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 70,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+                "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+              ]
+            },
+            "missing_official_metrics": [
+              "emergency_braking_exposure_per_1000",
+              "severe_conflict_exposure_per_10000"
+            ],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1142,
+            "session_id": "319b1993-8ab1-4d6b-bcd0-9ef646792830",
+            "elapsed_s": 429.4539052359978,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 2,
+            "waiting": 9.15,
+            "mean_speed": 10.760177586007108,
+            "fuel_mg": 175344.789730093,
+            "hard_braking": 8630,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 111.01338028169013,
+            "completed_duration_median_s": 110.4,
+            "completed_duration_p95_s": 204.725,
+            "completed_waiting_mean_s": 19.2443661971831,
+            "completed_time_loss_mean_s": 27.70394366197183,
+            "unfinished_waiting_total_s": 19884.550000000014,
+            "unfinished_time_loss_total_s": 28606.149999999958,
+            "all_waiting_total_s": 21250.900000000016,
+            "end_waiting_total_s": 21250.900000000016,
+            "end_waiting_mean_s": 25.389366786141,
+            "all_time_loss_total_s": 30573.129999999965,
+            "official_metrics": {
+              "avg_travel_time_s": 111.01,
+              "avg_waiting_time_s": 19.24,
+              "avg_queue_length_veh": 0.1,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 3.293,
+              "fuel_intensity_L_per_100km": 14.49,
+              "severe_conflict_exposure_per_10000": null,
+              "emergency_braking_exposure_per_1000": null,
+              "controlled_intersection_passages": 165,
+              "severe_conflict_events": 27,
+              "emergency_braking_events": 552,
+              "controlled_avg_waiting_time_s": 5.41,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+                "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+              ]
+            },
+            "missing_official_metrics": [
+              "emergency_braking_exposure_per_1000",
+              "severe_conflict_exposure_per_10000"
+            ],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1242,
+            "session_id": "a46dc8cf-28cf-429d-8319-cce701ea0522",
+            "elapsed_s": 423.60786375300086,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 2,
+            "waiting": 9.1,
+            "mean_speed": 10.662374563811426,
+            "fuel_mg": 174742.24350262064,
+            "hard_braking": 8424,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 112.02183098591547,
+            "completed_duration_median_s": 110.4,
+            "completed_duration_p95_s": 209.425,
+            "completed_waiting_mean_s": 19.823239436619723,
+            "completed_time_loss_mean_s": 28.502253521126764,
+            "unfinished_waiting_total_s": 20204.599999999988,
+            "unfinished_time_loss_total_s": 29019.280000000002,
+            "all_waiting_total_s": 21612.05,
+            "end_waiting_total_s": 21612.05,
+            "end_waiting_mean_s": 25.82084826762246,
+            "all_time_loss_total_s": 31042.939999999984,
+            "official_metrics": {
+              "avg_travel_time_s": 112.02,
+              "avg_waiting_time_s": 19.82,
+              "avg_queue_length_veh": 0.14,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 3.258,
+              "fuel_intensity_L_per_100km": 14.5,
+              "severe_conflict_exposure_per_10000": null,
+              "emergency_braking_exposure_per_1000": null,
+              "controlled_intersection_passages": 165,
+              "severe_conflict_events": 28,
+              "emergency_braking_events": 594,
+              "controlled_avg_waiting_time_s": 6.7,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+                "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+              ]
+            },
+            "missing_official_metrics": [
+              "emergency_braking_exposure_per_1000",
+              "severe_conflict_exposure_per_10000"
+            ],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1342,
+            "session_id": "4eed2bbd-8e0d-4012-8580-c4193cd861be",
+            "elapsed_s": 426.6842118170025,
+            "active": 767,
+            "departed": 837,
+            "arrived": 70,
+            "remaining": 767,
+            "halting": 2,
+            "waiting": 9.25,
+            "mean_speed": 10.669280879844962,
+            "fuel_mg": 175345.7644764669,
+            "hard_braking": 8688,
+            "trip_records": 837,
+            "completed_trips": 70,
+            "unfinished_trips": 767,
+            "completion_rate": 0.08363201911589008,
+            "completed_duration_mean_s": 111.23499999999999,
+            "completed_duration_median_s": 109.875,
+            "completed_duration_p95_s": 209.77749999999995,
+            "completed_waiting_mean_s": 19.84714285714286,
+            "completed_time_loss_mean_s": 28.070857142857147,
+            "unfinished_waiting_total_s": 20153.75,
+            "unfinished_time_loss_total_s": 28899.499999999953,
+            "all_waiting_total_s": 21543.050000000003,
+            "end_waiting_total_s": 21543.050000000003,
+            "end_waiting_mean_s": 25.7384109916368,
+            "all_time_loss_total_s": 30864.45999999996,
+            "official_metrics": {
+              "avg_travel_time_s": 111.23,
+              "avg_waiting_time_s": 19.85,
+              "avg_queue_length_veh": 0.09,
+              "throughput_veh_per_h": 840.0,
+              "avg_decision_latency_ms": 3.208,
+              "fuel_intensity_L_per_100km": 14.52,
+              "severe_conflict_exposure_per_10000": null,
+              "emergency_braking_exposure_per_1000": null,
+              "controlled_intersection_passages": 164,
+              "severe_conflict_events": 29,
+              "emergency_braking_events": 666,
+              "controlled_avg_waiting_time_s": 5.25,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 70,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+                "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+              ]
+            },
+            "missing_official_metrics": [
+              "emergency_braking_exposure_per_1000",
+              "severe_conflict_exposure_per_10000"
+            ],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1442,
+            "session_id": "560ad494-2010-4fc9-8c05-3fae528e484a",
+            "elapsed_s": 422.9415006420022,
+            "active": 767,
+            "departed": 837,
+            "arrived": 70,
+            "remaining": 767,
+            "halting": 2,
+            "waiting": 9.15,
+            "mean_speed": 10.796923043149476,
+            "fuel_mg": 175362.9609660395,
+            "hard_braking": 8544,
+            "trip_records": 837,
+            "completed_trips": 70,
+            "unfinished_trips": 767,
+            "completion_rate": 0.08363201911589008,
+            "completed_duration_mean_s": 111.24857142857142,
+            "completed_duration_median_s": 111.175,
+            "completed_duration_p95_s": 203.05749999999998,
+            "completed_waiting_mean_s": 19.712857142857143,
+            "completed_time_loss_mean_s": 28.253714285714285,
+            "unfinished_waiting_total_s": 19971.750000000007,
+            "unfinished_time_loss_total_s": 28735.48999999996,
+            "all_waiting_total_s": 21351.650000000005,
+            "end_waiting_total_s": 21351.650000000005,
+            "end_waiting_mean_s": 25.509737156511356,
+            "all_time_loss_total_s": 30713.24999999997,
+            "official_metrics": {
+              "avg_travel_time_s": 111.25,
+              "avg_waiting_time_s": 19.71,
+              "avg_queue_length_veh": 0.1,
+              "throughput_veh_per_h": 840.0,
+              "avg_decision_latency_ms": 3.247,
+              "fuel_intensity_L_per_100km": 14.49,
+              "severe_conflict_exposure_per_10000": null,
+              "emergency_braking_exposure_per_1000": null,
+              "controlled_intersection_passages": 165,
+              "severe_conflict_events": 34,
+              "emergency_braking_events": 677,
+              "controlled_avg_waiting_time_s": 5.51,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 70,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+                "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+              ]
+            },
+            "missing_official_metrics": [
+              "emergency_braking_exposure_per_1000",
+              "severe_conflict_exposure_per_10000"
+            ],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1542,
+            "session_id": "c50e3ac7-43b6-4996-8ef2-646bcf044560",
+            "elapsed_s": 428.69063873000414,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 1,
+            "waiting": 6.35,
+            "mean_speed": 10.786175226103422,
+            "fuel_mg": 175529.27084138998,
+            "hard_braking": 8406,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 111.07112676056337,
+            "completed_duration_median_s": 110.4,
+            "completed_duration_p95_s": 202.075,
+            "completed_waiting_mean_s": 19.375352112676058,
+            "completed_time_loss_mean_s": 27.682957746478877,
+            "unfinished_waiting_total_s": 20019.05000000003,
+            "unfinished_time_loss_total_s": 28749.259999999973,
+            "all_waiting_total_s": 21394.700000000026,
+            "end_waiting_total_s": 21394.700000000026,
+            "end_waiting_mean_s": 25.561170848267654,
+            "all_time_loss_total_s": 30714.749999999978,
+            "official_metrics": {
+              "avg_travel_time_s": 111.07,
+              "avg_waiting_time_s": 19.38,
+              "avg_queue_length_veh": 0.1,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 3.027,
+              "fuel_intensity_L_per_100km": 14.51,
+              "severe_conflict_exposure_per_10000": null,
+              "emergency_braking_exposure_per_1000": null,
+              "controlled_intersection_passages": 166,
+              "severe_conflict_events": 32,
+              "emergency_braking_events": 648,
+              "controlled_avg_waiting_time_s": 5.61,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+                "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+              ]
+            },
+            "missing_official_metrics": [
+              "emergency_braking_exposure_per_1000",
+              "severe_conflict_exposure_per_10000"
+            ],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1642,
+            "session_id": "9cb4fd75-4d5a-490d-94b2-d01c4f9b0079",
+            "elapsed_s": 425.692655877996,
+            "active": 768,
+            "departed": 837,
+            "arrived": 69,
+            "remaining": 768,
+            "halting": 1,
+            "waiting": 2.85,
+            "mean_speed": 10.671064905378541,
+            "fuel_mg": 174885.7649247467,
+            "hard_braking": 8558,
+            "trip_records": 837,
+            "completed_trips": 69,
+            "unfinished_trips": 768,
+            "completion_rate": 0.08243727598566308,
+            "completed_duration_mean_s": 113.5985507246377,
+            "completed_duration_median_s": 118.9,
+            "completed_duration_p95_s": 215.15999999999994,
+            "completed_waiting_mean_s": 21.881159420289862,
+            "completed_time_loss_mean_s": 30.82985507246378,
+            "unfinished_waiting_total_s": 20354.699999999983,
+            "unfinished_time_loss_total_s": 29140.020000000008,
+            "all_waiting_total_s": 21864.499999999985,
+            "end_waiting_total_s": 21864.499999999985,
+            "end_waiting_mean_s": 26.12246117084825,
+            "all_time_loss_total_s": 31267.280000000006,
+            "official_metrics": {
+              "avg_travel_time_s": 113.6,
+              "avg_waiting_time_s": 21.88,
+              "avg_queue_length_veh": 0.15,
+              "throughput_veh_per_h": 828.0,
+              "avg_decision_latency_ms": 3.178,
+              "fuel_intensity_L_per_100km": 14.53,
+              "severe_conflict_exposure_per_10000": null,
+              "emergency_braking_exposure_per_1000": null,
+              "controlled_intersection_passages": 165,
+              "severe_conflict_events": 31,
+              "emergency_braking_events": 624,
+              "controlled_avg_waiting_time_s": 8.03,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 69,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+                "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+              ]
+            },
+            "missing_official_metrics": [
+              "emergency_braking_exposure_per_1000",
+              "severe_conflict_exposure_per_10000"
+            ],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1742,
+            "session_id": "5cd450d3-7843-495f-a4e1-e7a5e56cdf34",
+            "elapsed_s": 425.6100059780001,
+            "active": 767,
+            "departed": 837,
+            "arrived": 70,
+            "remaining": 767,
+            "halting": 2,
+            "waiting": 9.15,
+            "mean_speed": 10.670473590494684,
+            "fuel_mg": 175022.49937345603,
+            "hard_braking": 8517,
+            "trip_records": 837,
+            "completed_trips": 70,
+            "unfinished_trips": 767,
+            "completion_rate": 0.08363201911589008,
+            "completed_duration_mean_s": 112.25357142857142,
+            "completed_duration_median_s": 113.65,
+            "completed_duration_p95_s": 207.4475,
+            "completed_waiting_mean_s": 20.692857142857147,
+            "completed_time_loss_mean_s": 29.210571428571427,
+            "unfinished_waiting_total_s": 20205.099999999984,
+            "unfinished_time_loss_total_s": 29071.929999999968,
+            "all_waiting_total_s": 21653.599999999984,
+            "end_waiting_total_s": 21653.599999999984,
+            "end_waiting_mean_s": 25.870489844683373,
+            "all_time_loss_total_s": 31116.66999999997,
+            "official_metrics": {
+              "avg_travel_time_s": 112.25,
+              "avg_waiting_time_s": 20.69,
+              "avg_queue_length_veh": 0.15,
+              "throughput_veh_per_h": 840.0,
+              "avg_decision_latency_ms": 2.981,
+              "fuel_intensity_L_per_100km": 14.54,
+              "severe_conflict_exposure_per_10000": null,
+              "emergency_braking_exposure_per_1000": null,
+              "controlled_intersection_passages": 164,
+              "severe_conflict_events": 28,
+              "emergency_braking_events": 651,
+              "controlled_avg_waiting_time_s": 7.2,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 70,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+                "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+              ]
+            },
+            "missing_official_metrics": [
+              "emergency_braking_exposure_per_1000",
+              "severe_conflict_exposure_per_10000"
+            ],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1842,
+            "session_id": "dfcd2c2f-a9c4-4f2f-b112-5937db4fc8cf",
+            "elapsed_s": 381.597482268,
+            "active": 767,
+            "departed": 837,
+            "arrived": 70,
+            "remaining": 767,
+            "halting": 2,
+            "waiting": 9.25,
+            "mean_speed": 10.69232541438378,
+            "fuel_mg": 175279.65187183116,
+            "hard_braking": 8658,
+            "trip_records": 837,
+            "completed_trips": 70,
+            "unfinished_trips": 767,
+            "completion_rate": 0.08363201911589008,
+            "completed_duration_mean_s": 111.04142857142857,
+            "completed_duration_median_s": 109.80000000000001,
+            "completed_duration_p95_s": 204.50999999999996,
+            "completed_waiting_mean_s": 19.553571428571427,
+            "completed_time_loss_mean_s": 27.513285714285715,
+            "unfinished_waiting_total_s": 20222.649999999994,
+            "unfinished_time_loss_total_s": 28856.63,
+            "all_waiting_total_s": 21591.399999999994,
+            "end_waiting_total_s": 21591.399999999994,
+            "end_waiting_mean_s": 25.796176821983266,
+            "all_time_loss_total_s": 30782.56000000002,
+            "official_metrics": {
+              "avg_travel_time_s": 111.04,
+              "avg_waiting_time_s": 19.55,
+              "avg_queue_length_veh": 0.09,
+              "throughput_veh_per_h": 840.0,
+              "avg_decision_latency_ms": 2.852,
+              "fuel_intensity_L_per_100km": 14.52,
+              "severe_conflict_exposure_per_10000": null,
+              "emergency_braking_exposure_per_1000": null,
+              "controlled_intersection_passages": 165,
+              "severe_conflict_events": 27,
+              "emergency_braking_events": 617,
+              "controlled_avg_waiting_time_s": 5.1,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 70,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+                "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+              ]
+            },
+            "missing_official_metrics": [
+              "emergency_braking_exposure_per_1000",
+              "severe_conflict_exposure_per_10000"
+            ],
+            "residual_mismatch": 0
+          },
+          {
+            "status": "complete",
+            "method": "model",
+            "seed": 1942,
+            "session_id": "cbedc983-3915-4495-b6be-85992b0aa3cc",
+            "elapsed_s": 381.6151429550009,
+            "active": 766,
+            "departed": 837,
+            "arrived": 71,
+            "remaining": 766,
+            "halting": 1,
+            "waiting": 6.25,
+            "mean_speed": 10.776970479358079,
+            "fuel_mg": 175306.34664421977,
+            "hard_braking": 8630,
+            "trip_records": 837,
+            "completed_trips": 71,
+            "unfinished_trips": 766,
+            "completion_rate": 0.08482676224611709,
+            "completed_duration_mean_s": 110.6830985915493,
+            "completed_duration_median_s": 109.2,
+            "completed_duration_p95_s": 202.14999999999998,
+            "completed_waiting_mean_s": 18.951408450704225,
+            "completed_time_loss_mean_s": 27.364507042253525,
+            "unfinished_waiting_total_s": 19678.899999999994,
+            "unfinished_time_loss_total_s": 28394.699999999968,
+            "all_waiting_total_s": 21024.45,
+            "end_waiting_total_s": 21024.45,
+            "end_waiting_mean_s": 25.118817204301077,
+            "all_time_loss_total_s": 30337.57999999996,
+            "official_metrics": {
+              "avg_travel_time_s": 110.68,
+              "avg_waiting_time_s": 18.95,
+              "avg_queue_length_veh": 0.1,
+              "throughput_veh_per_h": 852.0,
+              "avg_decision_latency_ms": 2.822,
+              "fuel_intensity_L_per_100km": 14.45,
+              "severe_conflict_exposure_per_10000": null,
+              "emergency_braking_exposure_per_1000": null,
+              "controlled_intersection_passages": 166,
+              "severe_conflict_events": 34,
+              "emergency_braking_events": 661,
+              "controlled_avg_waiting_time_s": 5.34,
+              "controlled_waiting_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "severe_conflict_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "emergency_braking_availability": {
+                "status": "available",
+                "reason": null
+              },
+              "departed": 837,
+              "arrived": 71,
+              "metric_sources": {
+                "avg_queue_length_veh": "incoming_lane_halting_count",
+                "throughput_veh_per_h": "finish_totals",
+                "avg_decision_latency_ms": "algorithm_perf_counter",
+                "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+                "avg_travel_time_s": "tripinfo_completed",
+                "avg_waiting_time_s": "tripinfo_completed"
+              },
+              "warnings": [
+                "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+                "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+              ]
+            },
+            "missing_official_metrics": [
+              "emergency_braking_exposure_per_1000",
+              "severe_conflict_exposure_per_10000"
+            ],
+            "residual_mismatch": 0
+          }
+        ]
+      }
+    }
+  }
+}

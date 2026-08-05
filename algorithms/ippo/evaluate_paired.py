@@ -39,6 +39,10 @@ from algorithms.ippo.controller import (  # noqa: E402
     load_checkpoint_metadata,
 )
 from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
+from simulation.sumo.tripinfo import (  # noqa: E402
+    parse_tripinfo_diagnostics,
+    residual_mismatch,
+)
 
 
 logging.basicConfig(
@@ -55,6 +59,14 @@ OFFICIAL_METRIC_NAMES = (
     "throughput_veh_per_h",
     "avg_decision_latency_ms",
     "fuel_intensity_L_per_100km",
+    "severe_conflict_exposure_per_10000",
+    "emergency_braking_exposure_per_1000",
+)
+OPTIONAL_OFFICIAL_METRIC_NAMES = frozenset(
+    {
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000",
+    }
 )
 SUMMARY_METRICS = (
     "departed",
@@ -68,11 +80,14 @@ SUMMARY_METRICS = (
     "completed_trips",
     "unfinished_trips",
     "completion_rate",
+    "residual_mismatch",
     "completed_duration_mean_s",
     "completed_waiting_mean_s",
     "completed_time_loss_mean_s",
     "unfinished_waiting_total_s",
     "all_waiting_total_s",
+    "end_waiting_total_s",
+    "end_waiting_mean_s",
     "all_time_loss_total_s",
 )
 
@@ -90,49 +105,32 @@ def _validate_evaluation_seeds(metadata: Mapping[str, object], seeds: Sequence[i
         raise ValueError(f"evaluation seeds overlap training seeds: {overlap}")
 
 
-def _mean(values: Sequence[float]) -> float | None:
-    return float(statistics.fmean(values)) if values else None
+def _missing_official_metrics(
+    method: str, official_metrics: Mapping[str, object] | None
+) -> tuple[list[str], list[str]]:
+    required = set(OFFICIAL_METRIC_NAMES) - OPTIONAL_OFFICIAL_METRIC_NAMES
+    if method == "fixed":
+        required.remove("avg_decision_latency_ms")
+    required_missing = sorted(
+        name
+        for name in required
+        if official_metrics is None or official_metrics.get(name) is None
+    )
+    optional_missing = sorted(
+        name
+        for name in OPTIONAL_OFFICIAL_METRIC_NAMES
+        if official_metrics is None or official_metrics.get(name) is None
+    )
+    return required_missing, optional_missing
+
+
+def _mean(values: Sequence[float]) -> float:
+    return float(statistics.fmean(values)) if values else 0.0
 
 
 def _parse_tripinfo(path: Path) -> dict:
-    completed: list[dict[str, float]] = []
-    unfinished: list[dict[str, float]] = []
-    for _, element in ET.iterparse(path, events=("end",)):
-        if element.tag != "tripinfo":
-            continue
-        record = {
-            "duration": float(element.get("duration", "0")),
-            "waiting": float(element.get("waitingTime", "0")),
-            "time_loss": float(element.get("timeLoss", "0")),
-        }
-        target = completed if float(element.get("arrival", "-1")) >= 0.0 else unfinished
-        target.append(record)
-        element.clear()
-
-    completed_durations = [item["duration"] for item in completed]
-    completed_waiting = [item["waiting"] for item in completed]
-    completed_loss = [item["time_loss"] for item in completed]
-    all_records = completed + unfinished
-    total = len(all_records)
-    return {
-        "trip_records": total,
-        "completed_trips": len(completed),
-        "unfinished_trips": len(unfinished),
-        "completion_rate": len(completed) / total if total else None,
-        "completed_duration_mean_s": _mean(completed_durations),
-        "completed_waiting_mean_s": _mean(completed_waiting),
-        "completed_time_loss_mean_s": _mean(completed_loss),
-        "unfinished_waiting_total_s": float(
-            sum(item["waiting"] for item in unfinished)
-        ),
-        "unfinished_time_loss_total_s": float(
-            sum(item["time_loss"] for item in unfinished)
-        ),
-        "all_waiting_total_s": float(sum(item["waiting"] for item in all_records)),
-        "all_time_loss_total_s": float(
-            sum(item["time_loss"] for item in all_records)
-        ),
-    }
+    """TripInfo 诊断（统一口径，见 simulation/sumo/tripinfo.py）。"""
+    return parse_tripinfo_diagnostics(path)
 
 
 def _snapshot_metrics(snapshot) -> dict:
@@ -184,7 +182,8 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
             seed=seed,
             step_length=0.05,
             ai_observer_module="algorithms.evaluation.observer",
-            ai_frame_interval_seconds=1.0,
+            # Safety events need denser observations than queue/fuel metrics.
+            ai_frame_interval_seconds=0.2,
         )
         session_id = manager.start(config)
         snapshot = manager.wait(
@@ -205,19 +204,14 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
                 official, str(tripinfo_path)
             )
         official_metrics = official.to_dict() if official is not None else None
-        required_metrics = set(OFFICIAL_METRIC_NAMES)
-        if method == "fixed":
-            required_metrics.remove("avg_decision_latency_ms")
-        missing_official = sorted(
-            name
-            for name in required_metrics
-            if official_metrics is None or official_metrics.get(name) is None
+        required_missing, optional_missing = _missing_official_metrics(
+            method, official_metrics
         )
-        if missing_official:
+        if required_missing:
             raise RuntimeError(
-                "missing official metrics: " + ", ".join(missing_official)
+                "missing official metrics: " + ", ".join(required_missing)
             )
-        return {
+        result = {
             "status": "complete",
             "method": method,
             "seed": seed,
@@ -226,7 +220,12 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
             **_snapshot_metrics(snapshot),
             **_parse_tripinfo(tripinfo_path),
             "official_metrics": official_metrics,
+            "missing_official_metrics": optional_missing,
         }
+        result["residual_mismatch"] = residual_mismatch(
+            result["unfinished_trips"], result["remaining"]
+        )
+        return result
     except BaseException as exc:
         if session_id is not None:
             try:
@@ -282,17 +281,6 @@ def _official_summary(rows: Sequence[Mapping[str, object]]) -> dict:
     }
 
 
-def _paired_mean_delta(
-    pairs: Sequence[tuple[Mapping[str, object], Mapping[str, object]]],
-    metric: str,
-) -> float | None:
-    values = [
-        float(row[metric]) - float(fixed[metric])
-        for row, fixed in pairs
-        if row.get(metric) is not None and fixed.get(metric) is not None
-    ]
-    return _mean(values)
-
 
 def _summarize(rows: Sequence[Mapping[str, object]]) -> dict:
     complete = [row for row in rows if row.get("status") == "complete"]
@@ -306,7 +294,7 @@ def _summarize(rows: Sequence[Mapping[str, object]]) -> dict:
         item = {
             "episodes": len(selected),
             **{
-                metric: _describe([row.get(metric) for row in selected])
+                metric: _describe([float(row[metric]) for row in selected])
                 for metric in SUMMARY_METRICS
                 if selected and all(metric in row for row in selected)
             },
@@ -321,17 +309,43 @@ def _summarize(rows: Sequence[Mapping[str, object]]) -> dict:
             if pairs:
                 item["paired_vs_fixed"] = {
                     "pair_count": len(pairs),
-                    "arrived_mean_delta": _paired_mean_delta(
-                        pairs, "arrived"
+                    "arrived_mean_delta": _mean(
+                        [float(row["arrived"]) - float(fixed["arrived"]) for row, fixed in pairs]
                     ),
-                    "waiting_mean_delta": _paired_mean_delta(
-                        pairs, "waiting"
+                    "waiting_mean_delta": _mean(
+                        [float(row["waiting"]) - float(fixed["waiting"]) for row, fixed in pairs]
                     ),
-                    "completed_duration_mean_delta_s": _paired_mean_delta(
-                        pairs, "completed_duration_mean_s"
+                    "completed_duration_mean_delta_s": _mean(
+                        [
+                            float(row["completed_duration_mean_s"])
+                            - float(fixed["completed_duration_mean_s"])
+                            for row, fixed in pairs
+                        ]
                     ),
-                    "all_waiting_total_mean_delta_s": _paired_mean_delta(
-                        pairs, "all_waiting_total_s"
+                    "all_waiting_total_mean_delta_s": _mean(
+                        [
+                            float(row["all_waiting_total_s"])
+                            - float(fixed["all_waiting_total_s"])
+                            for row, fixed in pairs
+                        ]
+                    ),
+                    "end_waiting_total_mean_delta_s": _mean(
+                        [
+                            float(row["end_waiting_total_s"])
+                            - float(fixed["end_waiting_total_s"])
+                            for row, fixed in pairs
+                            if "end_waiting_total_s" in row
+                            and "end_waiting_total_s" in fixed
+                        ]
+                    ),
+                    "unfinished_waiting_total_mean_delta_s": _mean(
+                        [
+                            float(row["unfinished_waiting_total_s"])
+                            - float(fixed["unfinished_waiting_total_s"])
+                            for row, fixed in pairs
+                            if "unfinished_waiting_total_s" in row
+                            and "unfinished_waiting_total_s" in fixed
+                        ]
                     ),
                 }
         summary[method] = item
@@ -345,6 +359,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--duration", type=int, default=300)
     parser.add_argument("--intersections", type=int, default=20)
+    parser.add_argument(
+        "--preset",
+        choices=("east_dense", "west_dense", "xiongan_20"),
+        default=None,
+        help="scenario preset; controlled IDs come from backend/app/scenario/presets.py",
+    )
+    parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        default=None,
+        help="explicit seed list (default: pre-registered 10 seeds for the gate)",
+    )
     parser.add_argument("--period", default="off_peak")
     parser.add_argument("--seed", type=int, default=10000)
     parser.add_argument("--action-interval", type=float, default=DEFAULT_ACTION_INTERVAL)
@@ -365,17 +392,26 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"intersections must be <= {len(DEFAULT_INTERSECTION_IDS)}")
 
     methods = tuple(dict.fromkeys(args.methods))
-    intersections = tuple(DEFAULT_INTERSECTION_IDS[: args.intersections])
+    if args.preset is not None:
+        from backend.app.scenario.presets import SCENARIO_PRESET_REGISTRY
+
+        intersections = SCENARIO_PRESET_REGISTRY[args.preset].intersection_ids
+    else:
+        intersections = tuple(DEFAULT_INTERSECTION_IDS[: args.intersections])
     checkpoint = args.checkpoint.expanduser().resolve() if args.checkpoint else None
-    seeds = tuple(range(args.seed + 1, args.seed + args.episodes + 1))
+    seeds = (
+        tuple(args.seeds)
+        if args.seeds is not None
+        else tuple(range(args.seed + 1, args.seed + args.episodes + 1))
+    )
     if "model" in methods:
         if checkpoint is None or not checkpoint.is_file():
             parser.error("model evaluation requires an existing --checkpoint")
         metadata = load_checkpoint_metadata(checkpoint)
         saved_ids = tuple(str(value) for value in metadata["intersection_ids"])
-        if saved_ids != intersections:
+        if not set(intersections) <= set(saved_ids):
             parser.error(
-                f"checkpoint intersections {saved_ids} do not match requested {intersections}"
+                f"checkpoint intersections {saved_ids} are not a superset of requested {intersections}"
             )
         if abs(float(metadata["action_interval"]) - args.action_interval) > 1e-9:
             parser.error("checkpoint action interval does not match --action-interval")

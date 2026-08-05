@@ -32,7 +32,7 @@ def write_fixture(root: Path):
         encoding="utf-8",
     )
     additional_file.write_text(
-        '<additional><tlLogic id="317" programID="demo_2_morning_peak"/></additional>',
+        '<additional><tlLogic id="317" programID="demo_2_morning_peak"/><tlLogic id="318" programID="demo_3_morning_peak"/></additional>',
         encoding="utf-8",
     )
     profile_root = json.loads(
@@ -78,6 +78,23 @@ def write_fixture(root: Path):
         },
     }
     layout.traffic_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+    tls_manifest = {
+        "schema_version": 2,
+        "source_net": "test.net.xml",
+        "intersections": {
+            "demo_2": {
+                "junction_ids": ["317"],
+                "tls_ids": ["317"],
+                "program_ids": ["demo_2_morning_peak"],
+            },
+            "demo_3": {
+                "junction_ids": ["318"],
+                "tls_ids": ["318"],
+                "program_ids": ["demo_3_morning_peak"],
+            }
+        },
+    }
+    layout.tls_manifest.write_text(json.dumps(tls_manifest), encoding="utf-8")
     return generated
 
 
@@ -100,6 +117,28 @@ class SessionScenarioTests(unittest.TestCase):
                 session_root=root / "sessions",
             )
             self.assertEqual(restored, compiled)
+    def test_writes_tripinfo_for_completed_and_unfinished_vehicles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compiled = compile_session_scenario(
+                "tripinfo-session",
+                ["demo_2"],
+                "morning_peak",
+                generated_dir=write_fixture(root),
+                session_root=root / "sessions",
+            )
+
+            config = ET.parse(compiled.sumocfg).getroot()
+            output = config.find("output")
+            self.assertIsNotNone(output)
+            self.assertEqual(
+                output.find("tripinfo-output").get("value"),
+                str((compiled.directory / "tripinfo.xml").resolve()),
+            )
+            self.assertEqual(
+                output.find("tripinfo-output.write-unfinished").get("value"),
+                "true",
+            )
 
     def test_intersection_selection_does_not_filter_or_duplicate_global_traffic(self):
         with tempfile.TemporaryDirectory() as directory:
