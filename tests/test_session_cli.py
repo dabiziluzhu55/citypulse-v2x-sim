@@ -29,14 +29,22 @@ class SessionCliTests(unittest.TestCase):
                 "--ai-observer-module",
                 "algorithms.ai_observer_example",
                 "--ai-frame-interval",
-                "0.05",
+                "0.5",
             ],
         ):
             args = parse_args()
         self.assertEqual(args.algorithm_transport, "local")
         self.assertEqual(args.algorithm_module, "algorithms.local_policy_example")
         self.assertEqual(args.ai_observer_module, "algorithms.ai_observer_example")
-        self.assertEqual(args.ai_frame_interval, 0.05)
+        self.assertEqual(args.ai_frame_interval, 0.5)
+
+    def test_cpu_safe_time_defaults(self):
+        with patch("sys.argv", ["run.py"]):
+            args = parse_args()
+        self.assertEqual(args.step_length, 0.1)
+        self.assertEqual(args.decision_interval, 5.0)
+        self.assertEqual(args.snapshot_interval, 0.5)
+        self.assertEqual(args.ai_frame_interval, 0.5)
 
     def test_repeated_origins_are_grouped_by_intersection(self):
         self.assertEqual(

@@ -94,14 +94,14 @@ class SimulationConfig:
     decision_interval: float = 5.0
     minimum_green: float = 5.0
     seed: int = 42
-    step_length: float = 0.05
+    step_length: float = 0.1
     gui: bool = False
     realtime: bool = False
     playback_speed: float | None = None
     start_paused: bool = False
     snapshot_interval_seconds: float = 0.5
     ai_observer_module: str = ""
-    ai_frame_interval_seconds: float = 0.1
+    ai_frame_interval_seconds: float = 0.5
     ai_observer_shutdown_timeout: float = 5.0
     initial_events: tuple[DisturbanceEvent, ...] = ()
 
@@ -636,6 +636,7 @@ class SimulationManager:
             VehicleTelemetryTracker,
             build_vehicle_type_metadata,
         )
+        from .tripinfo import load_tripinfo_totals
 
         config = record.config
         scenario = record.scenario
@@ -807,12 +808,17 @@ class SimulationManager:
                 traci.simulationStep()
                 elapsed = float(traci.simulation.getTime())
                 scheduler.tick(elapsed)
-                vehicle_tracker.tick(elapsed)
-                lane_change_guard.tick()
                 if fixed_tracker is not None:
                     fixed_tracker.tick(traci, elapsed)
-                departed = int(traci.simulation.getDepartedNumber())
-                arrived = int(traci.simulation.getArrivedNumber())
+                departed_ids = tuple(traci.simulation.getDepartedIDList())
+                arrived_ids = tuple(traci.simulation.getArrivedIDList())
+                vehicle_tracker.update_vehicle_set(
+                    departed_ids,
+                    arrived_ids,
+                    elapsed,
+                )
+                departed = len(departed_ids)
+                arrived = len(arrived_ids)
                 total_departed += departed
                 total_arrived += arrived
                 departed_since_decision += departed
@@ -820,15 +826,32 @@ class SimulationManager:
                 departed_since_ai_frame += departed
                 arrived_since_ai_frame += arrived
 
+                decision_due = (
+                    config.control_mode == "algorithm"
+                    and elapsed + 1e-9 >= next_decision
+                )
+                ai_frame_id = (
+                    ai_frame_clock.poll(elapsed)
+                    if ai_observer is not None
+                    else None
+                )
+                vehicle_observations = None
+                if decision_due or ai_frame_id is not None:
+                    vehicle_tracker.refresh_observations(elapsed)
+                    vehicle_observations = vehicle_tracker.observations(
+                        reset_interval=decision_due
+                    )
+
                 if config.control_mode == "algorithm":
                     for intersection_id, controller in controllers.items():
                         if controller.advance(elapsed):
                             _apply_controller_state(
                                 traci, selected_manifest[intersection_id], controller
                             )
-                    if elapsed + 1e-9 >= next_decision:
+                    if decision_due:
                         from .run import _observe
 
+                        lane_change_guard.tick()
                         observation = _observe(
                             traci,
                             elapsed,
@@ -842,6 +865,7 @@ class SimulationManager:
                             previous_action_results=(
                                 vehicle_action_controller.previous_results()
                             ),
+                            vehicle_observations=vehicle_observations,
                         )
                         decision = client.decide(observation)
                         signal_actions = _validate_actions(
@@ -868,11 +892,6 @@ class SimulationManager:
                         while next_decision <= elapsed + 1e-9:
                             next_decision += config.decision_interval
 
-                ai_frame_id = (
-                    ai_frame_clock.poll(elapsed)
-                    if ai_observer is not None
-                    else None
-                )
                 if ai_observer is not None and ai_frame_id is not None:
                     from .run import _observe_ai_frame
 
@@ -892,6 +911,7 @@ class SimulationManager:
                             if vehicle_action_controller is not None
                             else None
                         ),
+                        vehicle_observations=vehicle_observations,
                     )
                     ai_observer.publish(frame)
                     departed_since_ai_frame = 0
@@ -947,6 +967,7 @@ class SimulationManager:
             if ai_observer is not None:
                 from .run import _observe_ai_frame
 
+                vehicle_tracker.refresh_observations(final_elapsed)
                 ai_observer.publish(
                     _observe_ai_frame(
                         traci,
@@ -978,32 +999,7 @@ class SimulationManager:
             if scheduler is not None:
                 scheduler.close()
                 last_snapshot = replace(last_snapshot, events=scheduler.snapshots())
-            finish_payload = {
-                "protocol_version": PROTOCOL_VERSION,
-                "episode_id": record.session_id,
-                "reason": finish_reason,
-                "simulation_time": last_snapshot.elapsed_seconds,
-                "departed_vehicles": total_departed,
-                "arrived_vehicles": total_arrived,
-                "fuel_consumed_mg": last_snapshot.metrics.fuel_consumed_mg,
-                "fuel_consumed_ml": last_snapshot.metrics.fuel_consumed_ml,
-                "hard_braking_events": last_snapshot.metrics.hard_braking_events,
-            }
             cleanup_error = None
-            if ai_observer is not None:
-                try:
-                    ai_observer.close(
-                        finish_payload,
-                        config.ai_observer_shutdown_timeout,
-                    )
-                except BaseException as exc:
-                    cleanup_error = exc
-            if client is not None and client_initialized:
-                try:
-                    client.finish(finish_payload)
-                except BaseException as exc:
-                    if isinstance(client, LocalAlgorithmClient) and cleanup_error is None:
-                        cleanup_error = exc
             if vehicle_action_controller is not None:
                 try:
                     vehicle_action_controller.release()
@@ -1014,6 +1010,52 @@ class SimulationManager:
                     traci.close()
                 except Exception:
                     pass
+            if traci is not None and finish_reason != "error":
+                try:
+                    tripinfo = load_tripinfo_totals(
+                        scenario.tripinfo_file,
+                        vehicle_types,
+                    )
+                    total_departed = tripinfo.departed_vehicles
+                    total_arrived = tripinfo.arrived_vehicles
+                    last_snapshot = replace(
+                        last_snapshot,
+                        metrics=replace(
+                            last_snapshot.metrics,
+                            departed_vehicles=total_departed,
+                            arrived_vehicles=total_arrived,
+                            fuel_consumed_mg=tripinfo.fuel_consumed_mg,
+                            fuel_consumed_ml=tripinfo.fuel_consumed_ml,
+                        ),
+                    )
+                except BaseException as exc:
+                    cleanup_error = exc
+            finish_payload = {
+                "protocol_version": PROTOCOL_VERSION,
+                "episode_id": record.session_id,
+                "reason": "error" if cleanup_error is not None else finish_reason,
+                "simulation_time": last_snapshot.elapsed_seconds,
+                "departed_vehicles": total_departed,
+                "arrived_vehicles": total_arrived,
+                "fuel_consumed_mg": last_snapshot.metrics.fuel_consumed_mg,
+                "fuel_consumed_ml": last_snapshot.metrics.fuel_consumed_ml,
+                "hard_braking_events": last_snapshot.metrics.hard_braking_events,
+            }
+            if ai_observer is not None:
+                try:
+                    ai_observer.close(
+                        finish_payload,
+                        config.ai_observer_shutdown_timeout,
+                    )
+                except BaseException as exc:
+                    if cleanup_error is None:
+                        cleanup_error = exc
+            if client is not None and client_initialized:
+                try:
+                    client.finish(finish_payload)
+                except BaseException as exc:
+                    if isinstance(client, LocalAlgorithmClient) and cleanup_error is None:
+                        cleanup_error = exc
             if cleanup_error is not None:
                 finish_reason = "error"
                 last_snapshot = replace(
@@ -1271,51 +1313,48 @@ def _capture_snapshot(
             stage_elapsed=signal[3],
             lanes=lanes,
         )
-    telemetry = vehicle_tracker.observations(reset_interval=False)
     vehicle_values = []
     speeds = []
     for vehicle_id in traci.vehicle.getIDList():
         vehicle_id = str(vehicle_id)
-        observation = telemetry.get(vehicle_id)
-        if observation is not None:
+        x, y = traci.vehicle.getPosition(vehicle_id)
+        speed = float(traci.vehicle.getSpeed(vehicle_id))
+        angle = float(traci.vehicle.getAngle(vehicle_id))
+        road_id = str(traci.vehicle.getRoadID(vehicle_id))
+        lane_id = str(traci.vehicle.getLaneID(vehicle_id))
+        speeds.append(speed)
+        telemetry = vehicle_tracker.runtime_fields(vehicle_id)
+        if telemetry is not None:
             action = (
                 vehicle_action_controller.current_action(vehicle_id)
                 if vehicle_action_controller is not None
                 else None
             )
-            speed = observation.motion.speed_mps
-            speeds.append(speed)
             vehicle_values.append(
                 VehicleRuntimeSnapshot(
                     vehicle_id=vehicle_id,
-                    x=observation.position.x_m,
-                    y=observation.position.y_m,
+                    x=float(x),
+                    y=float(y),
                     speed=speed,
-                    angle=observation.motion.angle_deg,
-                    road_id=observation.location.road_id,
-                    lane_id=observation.location.lane_id,
+                    angle=angle,
+                    road_id=road_id,
+                    lane_id=lane_id,
                     controllable=True,
-                    type_id=observation.type_id,
-                    acceleration=observation.motion.acceleration_mps2,
-                    lane_index=observation.location.lane_index,
-                    lane_position=observation.location.lane_position_m,
-                    allowed_speed=observation.motion.allowed_speed_mps,
-                    route_id=observation.location.route_id,
-                    route_index=observation.location.route_index,
-                    waiting_time=observation.traffic.accumulated_waiting_time_s,
-                    time_loss=observation.traffic.time_loss_s,
-                    distance=observation.traffic.distance_m,
-                    fuel_rate_mg_s=observation.energy.fuel_rate_mg_s,
-                    fuel_total_mg=observation.energy.fuel_total_mg,
-                    fuel_total_ml=observation.energy.fuel_total_ml,
-                    hard_braking_events=(
-                        observation.driving_events.hard_braking_total
-                    ),
-                    next_intersection_id=(
-                        observation.next_signal.intersection_id
-                        if observation.next_signal
-                        else None
-                    ),
+                    type_id=str(telemetry["type_id"]),
+                    acceleration=float(telemetry["acceleration"]),
+                    lane_index=int(telemetry["lane_index"]),
+                    lane_position=float(telemetry["lane_position"]),
+                    allowed_speed=float(telemetry["allowed_speed"]),
+                    route_id=str(telemetry["route_id"]),
+                    route_index=int(telemetry["route_index"]),
+                    waiting_time=float(telemetry["waiting_time"]),
+                    time_loss=float(telemetry["time_loss"]),
+                    distance=float(telemetry["distance"]),
+                    fuel_rate_mg_s=float(telemetry["fuel_rate_mg_s"]),
+                    fuel_total_mg=float(telemetry["fuel_total_mg"]),
+                    fuel_total_ml=float(telemetry["fuel_total_ml"]),
+                    hard_braking_events=int(telemetry["hard_braking_events"]),
+                    next_intersection_id=telemetry["next_intersection_id"],
                     target_speed=(action.target_speed_mps if action else None),
                     target_lane_index=(
                         action.target_lane_index if action else None
@@ -1323,18 +1362,21 @@ def _capture_snapshot(
                 )
             )
             continue
-        x, y = traci.vehicle.getPosition(vehicle_id)
-        speed = float(traci.vehicle.getSpeed(vehicle_id))
-        speeds.append(speed)
         vehicle_values.append(
             VehicleRuntimeSnapshot(
                 vehicle_id=str(vehicle_id),
                 x=float(x),
                 y=float(y),
                 speed=speed,
-                angle=float(traci.vehicle.getAngle(vehicle_id)),
-                road_id=str(traci.vehicle.getRoadID(vehicle_id)),
-                lane_id=str(traci.vehicle.getLaneID(vehicle_id)),
+                angle=angle,
+                road_id=road_id,
+                lane_id=lane_id,
+                controllable=vehicle_tracker.contains(vehicle_id),
+                type_id=(
+                    vehicle_tracker.type_metadata(vehicle_id).type_id
+                    if vehicle_tracker.contains(vehicle_id)
+                    else ""
+                ),
             )
         )
     halting = sum(int(traci.lane.getLastStepHaltingNumber(lane)) for lane in unique_lanes)
