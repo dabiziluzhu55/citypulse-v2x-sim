@@ -5,9 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any, Mapping, Optional
 
-from algorithms.config.scenario_presets import (
-    ALL_DEMO_INTERSECTION_IDS, ResolvedScenarioScope,
-)
+from algorithms.presets import ALL_DEMO_INTERSECTION_IDS
+from algorithms.v2x.collab.scope import ResolvedScenarioScope
 from ..config import V2XConfig
 from ..hub import V2XHub
 from ..logger import JSONLSink

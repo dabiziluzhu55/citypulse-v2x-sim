@@ -361,10 +361,10 @@ def _atomic_write_json(path: Path, payload: Mapping[str, object]) -> None:
 def _scenario_preset_intersections(preset_id: str) -> tuple[str, ...]:
     """Resolve a typical-scenario preset to its controlled intersection IDs.
 
-    Uses the algorithm-side registry (``algorithms.config.scenario_presets``)
-    as the single source of truth; does not depend on backend re-exports.
+    Uses the algorithm-side registry (``algorithms.presets``) as the
+    single source of truth; synced with the backend by preset_id protocol.
     """
-    from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
+    from algorithms.presets import SCENARIO_PRESET_REGISTRY
 
     preset = SCENARIO_PRESET_REGISTRY.get(preset_id)
     if preset is None:

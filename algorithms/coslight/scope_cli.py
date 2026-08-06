@@ -10,10 +10,9 @@ from __future__ import annotations
 import re
 from typing import Optional, Sequence
 
-from algorithms.config.scenario_presets import (
-    ALL_DEMO_INTERSECTION_IDS, ResolvedScenarioScope,
-    require_scenario_preset,
-)
+from algorithms.presets import require_scenario_preset
+from algorithms.presets import ALL_DEMO_INTERSECTION_IDS
+from algorithms.v2x.collab.scope import ResolvedScenarioScope
 
 _DEMO_ID_RE = re.compile(r"demo_\d+")
 

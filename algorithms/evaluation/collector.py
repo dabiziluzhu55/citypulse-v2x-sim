@@ -81,14 +81,11 @@ class EvalResult:
     avg_decision_latency_ms: Optional[float] = None
     decision_latency_p95_ms: Optional[float] = None
     fuel_intensity_L_per_100km: Optional[float] = None
-    severe_conflict_exposure_per_10000: Optional[float] = None
     emergency_braking_exposure_per_1000: Optional[float] = None
     controlled_intersection_passages: int = 0
-    severe_conflict_events: int = 0
     emergency_braking_events: int = 0
     controlled_avg_waiting_time_s: Optional[float] = None
     controlled_waiting_availability: Optional[Dict[str, Any]] = None
-    severe_conflict_availability: Optional[Dict[str, Any]] = None
     emergency_braking_availability: Optional[Dict[str, Any]] = None
     departed: int = 0
     arrived: int = 0
@@ -110,16 +107,12 @@ class EvalResult:
             "fuel_intensity_L_per_100km": _rounded(
                 self.fuel_intensity_L_per_100km, 2
             ),
-            "severe_conflict_exposure_per_10000": _rounded(
-                self.severe_conflict_exposure_per_10000, 2
-            ),
             "emergency_braking_exposure_per_1000": _rounded(
                 self.emergency_braking_exposure_per_1000, 2
             ),
             "controlled_intersection_passages": (
                 self.controlled_intersection_passages
             ),
-            "severe_conflict_events": self.severe_conflict_events,
             "emergency_braking_events": self.emergency_braking_events,
             "controlled_avg_waiting_time_s": _rounded(
                 self.controlled_avg_waiting_time_s, 2
@@ -128,11 +121,6 @@ class EvalResult:
                 None
                 if self.controlled_waiting_availability is None
                 else dict(self.controlled_waiting_availability)
-            ),
-            "severe_conflict_availability": (
-                None
-                if self.severe_conflict_availability is None
-                else dict(self.severe_conflict_availability)
             ),
             "emergency_braking_availability": (
                 None
@@ -473,38 +461,25 @@ class HttpMetricsCollector:
             )
 
         result.controlled_intersection_passages = self._safety.passages
-        result.severe_conflict_events = self._safety.severe_conflicts
         result.emergency_braking_events = self._safety.emergency_braking_events
         safety_frames_complete = self._observer_frames_dropped == 0
         if not safety_frames_complete:
-            self._warn("高频观察数据不完整，两项安全暴露率记为不可用。")
+            self._warn("高频观察数据不完整，紧急制动暴露率记为不可用。")
         elif not self._safety.passage_tracking_complete:
-            self._warn("未完整观测受控路口通行次数，两项安全暴露率记为不可用。")
+            self._warn("未完整观测受控路口通行次数，紧急制动暴露率记为不可用。")
         elif self._safety.passages <= 0:
-            self._warn("未观测到受控路口通行，安全暴露率记为不可用。")
+            self._warn("未观测到受控路口通行，紧急制动暴露率记为不可用。")
+        elif not self._safety.braking_tracking_complete:
+            self._warn("紧急制动观测字段不完整，该安全暴露率记为不可用。")
         else:
-            if self._safety.conflict_tracking_complete:
-                result.severe_conflict_exposure_per_10000 = (
-                    self._safety.severe_conflicts
-                    / self._safety.passages
-                    * 10000.0
-                )
-                result.metric_sources[
-                    "severe_conflict_exposure_per_10000"
-                ] = "protocol_ttc_drac_per_controlled_intersection_passage"
-            else:
-                self._warn("严重冲突观测字段不完整，该安全暴露率记为不可用。")
-            if self._safety.braking_tracking_complete:
-                result.emergency_braking_exposure_per_1000 = (
-                    self._safety.emergency_braking_events
-                    / self._safety.passages
-                    * 1000.0
-                )
-                result.metric_sources[
-                    "emergency_braking_exposure_per_1000"
-                ] = "protocol_hard_braking_per_controlled_intersection_passage"
-            else:
-                self._warn("紧急制动观测字段不完整，该安全暴露率记为不可用。")
+            result.emergency_braking_exposure_per_1000 = (
+                self._safety.emergency_braking_events
+                / self._safety.passages
+                * 1000.0
+            )
+            result.metric_sources[
+                "emergency_braking_exposure_per_1000"
+            ] = "protocol_hard_braking_per_controlled_intersection_passage"
 
         if self._observer_frames_dropped:
             result.controlled_avg_waiting_time_s = None
@@ -528,12 +503,6 @@ class HttpMetricsCollector:
             result.controlled_waiting_availability = {
                 "status": "available", "reason": None
             }
-        result.severe_conflict_availability = self._availability(
-            frames_complete=safety_frames_complete,
-            tracking_complete=self._safety.conflict_tracking_complete,
-            passages=self._safety.passages,
-            metric_name="severe_conflict_exposure_per_10000",
-        )
         result.emergency_braking_availability = self._availability(
             frames_complete=safety_frames_complete,
             tracking_complete=self._safety.braking_tracking_complete,

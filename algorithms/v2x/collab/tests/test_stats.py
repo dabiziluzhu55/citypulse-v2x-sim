@@ -7,7 +7,7 @@ from algorithms.v2x.collab.records import (
 )
 from algorithms.v2x.collab.stats import build_collab_summary, pool_collab_summaries
 from algorithms.v2x.collab.snapshot import EdgeSnapshot
-from algorithms.config.scenario_presets import ResolvedScenarioScope
+from algorithms.v2x.collab.scope import ResolvedScenarioScope
 
 
 SCOPE = ResolvedScenarioScope(source="preset", preset_id="east_dense",

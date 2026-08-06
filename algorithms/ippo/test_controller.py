@@ -1385,7 +1385,6 @@ def test_four_tls_checkpoint_uses_its_own_intersection_set(monkeypatch, tmp_path
             throughput_veh_per_h=1200.0,
             avg_decision_latency_ms=2.0,
             fuel_intensity_L_per_100km=8.0,
-            severe_conflict_exposure_per_10000=None,
             emergency_braking_exposure_per_1000=None,
             controlled_intersection_passages=100,
             departed=100,
@@ -1399,6 +1398,5 @@ def test_four_tls_checkpoint_uses_its_own_intersection_set(monkeypatch, tmp_path
     assert summary["status"] == "complete"
     assert summary["details"][0]["missing_official_metrics"] == [
         "emergency_braking_exposure_per_1000",
-        "severe_conflict_exposure_per_10000",
     ]
     assert tuple(seen_configs[0].intersection_ids) == intersection_ids

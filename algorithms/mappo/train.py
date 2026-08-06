@@ -407,7 +407,7 @@ def _training_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--critic-scope", choices=("local", "global"), default="global")
     parser.add_argument("--init", choices=("random",), default="random")
-    from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
+    from algorithms.presets import SCENARIO_PRESET_REGISTRY
 
     scope = parser.add_mutually_exclusive_group()
     scope.add_argument(
@@ -488,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
     if any(not value.strip() for value in periods):
         parser.error("training periods must be non-empty")
     if args.scenario_preset is not None:
-        from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
+        from algorithms.presets import SCENARIO_PRESET_REGISTRY
 
         intersections = tuple(
             SCENARIO_PRESET_REGISTRY[args.scenario_preset].intersection_ids

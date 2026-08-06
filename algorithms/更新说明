@@ -4,9 +4,15 @@
 
 ## 更新记录（2026-08-06）
 
+### 评价口径调整
+
+- 平均行程时间 / 平均等待时间改为**全部已出发车辆**口径（含截断未完成 / 残余车辆），消除只统计成功到达车辆造成的幸存者偏差；`metric_sources` 标记为 `tripinfo_all_departed`；
+- 安全指标只保留**紧急制动暴露率**（`emergency_braking_exposure_per_1000`），移除严重冲突暴露率（TTC/DRAC）；
+- 修复紧急制动可用性：车辆在观察帧间从进口车道消失不再废弃整项指标，而是计入受控路口通行分母。
+
 ### 工作区整理与迁移
 
-- 删除根目录非算法工作区内容（`tools/`、`runs/`、根 `config/` 等），相关功能迁移到 `algorithms/` 内实现；场景预设注册表单一事实源移至 `algorithms/config/scenario_presets.py`。
+- 删除根目录非算法工作区内容（`tools/`、`runs/`、根 `config/` 等），相关功能迁移到 `algorithms/` 内实现；删除根 `config/` 与算法端 `algorithms/config/`；场景预设注册表由算法端 `algorithms/presets.py` 自持（与后端 `backend/app/scenario/presets.py` 按 preset_id 协议对齐，不依赖后端）；算法端 CLI 范围结构 `ResolvedScenarioScope` 移至 `algorithms/v2x/collab/scope.py`。评估/测试统一入口待后端脚本提供后接入。
 
 ### MAPPO 交付整理
 
@@ -24,7 +30,7 @@
 ### 部署与修复
 
 - 同步更新 `traffic_control/` 中 IPPO / MAPPO 部署 checkpoint 为步长 0.1 训练版本（含 IPPO contract v2 sidecar 重生成）；
-- `gate_zero_shot.py` / `evaluate_paired.py` 的场景预设 import 改为 `algorithms.config.scenario_presets`（根 `config/` 已删除）。
+- `gate_zero_shot.py` / `evaluate_paired.py` / `mappo` / `coslight` 的场景预设 import 统一改为算法端 `algorithms.presets`（根 `config/` 与算法端 `algorithms/config/` 均已删除；算法端不再依赖后端）。
 
 ## 更新记录（2026-08-05）
 
@@ -48,7 +54,7 @@
 
 ### 算法专门跑典型场景
 
-新增中性场景预设注册表 `config/scenario_presets.py`（backend 与 evaluate 共用单一事实源）：
+典型场景预设注册表由算法端 `algorithms/presets.py` 提供（与后端按 preset_id 协议一致）：
 
 - `xiongan_20`：demo_1 ~ demo_20 全量 20 路口；
 - `east_dense`：demo_3、demo_5、demo_6、demo_9 东部密集路口；
@@ -70,5 +76,5 @@
 ## 使用提示
 
 - 评价口径变更不修改 SUMO 路网、配时与仿真核心，算法侧统一遵守八项指标定义；
-- 运行典型场景：`--scenario-preset east_dense`（详见 `algorithms/config/scenario_presets.py`）；
+- 运行典型场景：`--scenario-preset east_dense`（详见 `algorithms/presets.py`）；
 - V2X 协同建议在 shadow 模式下的展示必须标记“未执行”，不能与已应用控制混淆。

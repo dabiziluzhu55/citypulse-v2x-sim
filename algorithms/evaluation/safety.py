@@ -2,32 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
 
 
 CONTROL_ZONE_DISTANCE_M = 100.0
-TTC_THRESHOLD_S = 3.0
-DRAC_THRESHOLD_MPS2 = 3.0
-
-
-@dataclass(frozen=True)
-class _VehicleState:
-    vehicle_id: str
-    lane_id: str
-    lane_position_m: float
-    speed_mps: float
-    length_m: float
-    zone_intersection_id: str
 
 
 class SafetyExposureTracker:
-    """Count safety events and controlled-intersection passage exposures.
+    """Count emergency-braking events and controlled-intersection passages.
 
-    Severe conflicts are longitudinal conflicts between adjacent vehicles on
-    the same lane.  A pair is severe when TTC is below 3 seconds or DRAC is
-    above 3 m/s².  A continuously unsafe pair is counted once.  Emergency
-    braking uses the cumulative onset counter already carried by Protocol 2.0.
+    安全指标仅保留紧急制动暴露率（2026-08-06）：紧急制动使用 Protocol 2.0
+    已携带的累计 onset 计数器；严重冲突（TTC/DRAC）指标已移除。
     """
 
     def __init__(self) -> None:
@@ -35,16 +20,12 @@ class SafetyExposureTracker:
         self._controlled_intersections: set[str] = set()
         self._lane_lengths: Dict[str, float] = {}
         self._tls_to_intersection: Dict[str, str] = {}
-        self._vehicle_lengths: Dict[str, float] = {}
         self._previous_incoming: Dict[str, str] = {}
         self._previous_zone: Dict[str, Optional[str]] = {}
         self._hard_braking_totals: Dict[str, int] = {}
-        self._active_conflicts: set[tuple[str, str]] = set()
         self.passages = 0
-        self.severe_conflicts = 0
         self.emergency_braking_events = 0
         self.passage_tracking_complete = True
-        self.conflict_tracking_complete = True
         self.braking_tracking_complete = True
         self.passage_waiting_samples: list[float] = []
         self.passage_waiting_complete = True
@@ -65,13 +46,8 @@ class SafetyExposureTracker:
                 tls_id = str(connection.get("tls_id", ""))
                 if tls_id:
                     self._tls_to_intersection[tls_id] = own_id
-        self._vehicle_lengths = {
-            str(type_id): float(vehicle_type.get("length_m", 0.0))
-            for type_id, vehicle_type in metadata.get("vehicle_types", {}).items()
-        }
         if not self._incoming_to_intersection:
             self.passage_tracking_complete = False
-            self.conflict_tracking_complete = False
             self.braking_tracking_complete = False
 
     def _zone_intersection(
@@ -103,28 +79,14 @@ class SafetyExposureTracker:
                     return own_id
         return None
 
-    @staticmethod
-    def _is_severe(leader: _VehicleState, follower: _VehicleState) -> bool:
-        gap = leader.lane_position_m - leader.length_m - follower.lane_position_m
-        if gap <= 0:
-            return True
-        closing_speed = follower.speed_mps - leader.speed_mps
-        if closing_speed <= 0:
-            return False
-        ttc = gap / closing_speed
-        drac = closing_speed * closing_speed / (2.0 * gap)
-        return ttc < TTC_THRESHOLD_S or drac > DRAC_THRESHOLD_MPS2
-
     def observe(self, vehicles: Mapping[str, Any]) -> None:
         current_ids = {str(vehicle_id) for vehicle_id in vehicles}
-        states_by_lane: Dict[str, list[_VehicleState]] = {}
 
         for raw_vehicle_id, vehicle in vehicles.items():
             vehicle_id = str(raw_vehicle_id)
             location = vehicle.get("location")
             if not isinstance(location, Mapping) or "lane_id" not in location:
                 self.passage_tracking_complete = False
-                self.conflict_tracking_complete = False
                 self.braking_tracking_complete = False
                 self.passage_waiting_complete = False
                 continue
@@ -173,26 +135,12 @@ class SafetyExposureTracker:
 
             if zone_intersection is None:
                 continue
-            motion = vehicle.get("motion")
-            length_m = self._vehicle_lengths.get(
-                str(vehicle.get("type_id", "")), 0.0
-            )
-            if not isinstance(motion, Mapping) or length_m <= 0:
-                self.conflict_tracking_complete = False
-                continue
-            states_by_lane.setdefault(lane_id, []).append(
-                _VehicleState(
-                    vehicle_id=vehicle_id,
-                    lane_id=lane_id,
-                    lane_position_m=lane_position_m,
-                    speed_mps=float(motion.get("speed_mps", 0.0)),
-                    length_m=length_m,
-                    zone_intersection_id=zone_intersection,
-                )
-            )
+            # zone_intersection 仅用于判定急刹是否发生在受控路口附近。
 
         for vehicle_id in set(self._previous_incoming) - current_ids:
-            self.passage_tracking_complete = False
+            # 车辆在帧间从进口车道消失（到达终点/teleport）：视为完成一次
+            # 受控路口通行并计入分母；不再因单次观测缺口废弃整项安全指标。
+            self.passages += 1
             self._previous_incoming.pop(vehicle_id, None)
         for state in (
             self._previous_zone,
@@ -200,17 +148,3 @@ class SafetyExposureTracker:
         ):
             for vehicle_id in set(state) - current_ids:
                 state.pop(vehicle_id, None)
-
-        current_conflicts: set[tuple[str, str]] = set()
-        for lane_states in states_by_lane.values():
-            ordered = sorted(
-                lane_states, key=lambda state: state.lane_position_m, reverse=True
-            )
-            for leader, follower in zip(ordered, ordered[1:]):
-                if (
-                    leader.zone_intersection_id == follower.zone_intersection_id
-                    and self._is_severe(leader, follower)
-                ):
-                    current_conflicts.add((leader.vehicle_id, follower.vehicle_id))
-        self.severe_conflicts += len(current_conflicts - self._active_conflicts)
-        self._active_conflicts = current_conflicts

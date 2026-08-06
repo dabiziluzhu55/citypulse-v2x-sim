@@ -1,13 +1,13 @@
-# algorithms/config/scenario_presets.py
-"""算法无关的场景预设注册表（单一事实源；backend 与 evaluate 共同导入）。
+# algorithms/presets.py
+"""算法端场景预设注册表（训练/评估用，自包含，不依赖后端）。
 
-字段契约与既有 backend.app.scenario.presets 完全一致：
-preset_id / label / intersection_ids / map_template。
+与后端 ``backend/app/scenario/presets.py`` 按 preset_id 协议保持一致。
+评估/测试的统一入口由后端提供脚本驱动，届时本注册表可按其接口精简。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Optional
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,15 +45,6 @@ SCENARIO_PRESETS: dict[str, ScenarioPreset] = SCENARIO_PRESET_REGISTRY
 ALL_DEMO_INTERSECTION_IDS: tuple[str, ...] = tuple(
     f"demo_{i}" for i in range(1, 21)
 )
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedScenarioScope:
-    """CLI 解析结果：算法控制 == 协同 managed 范围（spec §7.2/§7.3）。"""
-
-    source: Literal["preset", "custom", "default"]
-    preset_id: Optional[str] = None
-    managed_ids: tuple[str, ...] = ()
 
 
 def list_scenario_presets() -> list[ScenarioPreset]:

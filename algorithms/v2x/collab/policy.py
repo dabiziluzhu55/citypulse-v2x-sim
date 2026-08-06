@@ -9,7 +9,7 @@ import math
 from dataclasses import dataclass
 from typing import Mapping
 
-from algorithms.config.scenario_presets import ResolvedScenarioScope
+from algorithms.v2x.collab.scope import ResolvedScenarioScope
 
 from .proposals import (
     CollabConfig,

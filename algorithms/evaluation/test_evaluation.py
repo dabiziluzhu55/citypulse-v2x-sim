@@ -196,12 +196,10 @@ def test_live_collector_reports_exposure_normalized_safety_metrics():
     result = collector.result()
 
     assert result.controlled_intersection_passages == 2
-    assert result.severe_conflict_events == 1
     assert result.emergency_braking_events == 1
-    assert result.severe_conflict_exposure_per_10000 == pytest.approx(5000.0)
     assert result.emergency_braking_exposure_per_1000 == pytest.approx(500.0)
-    assert result.metric_sources["severe_conflict_exposure_per_10000"] == (
-        "protocol_ttc_drac_per_controlled_intersection_passage"
+    assert result.metric_sources["emergency_braking_exposure_per_1000"] == (
+        "protocol_hard_braking_per_controlled_intersection_passage"
     )
 
 
@@ -231,9 +229,8 @@ def test_safety_metrics_are_na_without_complete_exposure_observation():
 
     result = collector.result()
 
-    assert result.severe_conflict_exposure_per_10000 is None
     assert result.emergency_braking_exposure_per_1000 is None
-    assert any("安全暴露率" in warning for warning in result.warnings)
+    assert any("暴露率" in warning for warning in result.warnings)
 
 
 def test_live_collector_includes_all_fuel_powertrains_but_excludes_electric():
@@ -445,7 +442,7 @@ def test_tripinfo_replaces_sampled_completed_trip_metrics(tmp_path):
 
     assert result.avg_travel_time_s == pytest.approx(8.0)
     assert result.avg_waiting_time_s == pytest.approx(3.0)
-    assert result.metric_sources["avg_travel_time_s"] == "tripinfo_completed"
+    assert result.metric_sources["avg_travel_time_s"] == "tripinfo_all_departed"
 
 
 def test_runtime_observer_suppresses_decision_frames_and_preserves_drop_state():
@@ -515,6 +512,62 @@ def test_live_collector_does_not_publish_timeseries_metrics_after_frame_drop():
     assert any("丢弃了 1 帧" in warning for warning in result.warnings)
 
 
+def test_tripinfo_apply_metrics_include_unfinished_all_departed(tmp_path):
+    collector = HttpMetricsCollector("IPPO", fuel_telemetry_unit="protocol_ml")
+    collector.on_initialize(_metadata())
+    collector.on_step(
+        _step(
+            5,
+            {"car": _vehicle("passenger", waiting=2, distance=100, fuel_ml=10)},
+        )
+    )
+    collector.on_step(_step(10, {}, arrived=1))
+    collector.on_finish(
+        {
+            "simulation_time": 10,
+            "departed_vehicles": 2,
+            "arrived_vehicles": 1,
+            "fuel_consumed_ml": 10,
+        }
+    )
+    tripinfo = tmp_path / "tripinfo.xml"
+    tripinfo.write_text(
+        "<tripinfos>"
+        "<tripinfo id='car' depart='2' arrival='10' duration='8' waitingTime='3'/>"
+        "<tripinfo id='stuck' depart='0' arrival='-1' duration='20' "
+        "waitingTime='10' vaporized='end'/>"
+        "</tripinfos>",
+        encoding="utf-8",
+    )
+
+    result = apply_tripinfo_completed_metrics(collector.result(), str(tripinfo))
+
+    assert result.avg_travel_time_s == pytest.approx(14.0)
+    assert result.avg_waiting_time_s == pytest.approx(6.5)
+    assert result.metric_sources["avg_travel_time_s"] == "tripinfo_all_departed"
+
+
+def test_compute_from_tripinfo_includes_unfinished_all_departed(tmp_path):
+    path = tmp_path / "tripinfo.xml"
+    path.write_text(
+        "<tripinfos>\n"
+        '  <tripinfo id="v0" depart="0" arrival="10" duration="10" '
+        'waitingTime="2" routeLength="100" vType="passenger"/>\n'
+        '  <tripinfo id="v1" depart="0" arrival="-1" duration="20" '
+        'waitingTime="8" routeLength="100" vType="passenger" vaporized="end"/>\n'
+        "</tripinfos>\n",
+        encoding="utf-8",
+    )
+
+    result = compute_from_tripinfo(str(path), eval_duration_s=20)
+
+    assert result.avg_travel_time_s == pytest.approx(15.0)
+    assert result.avg_waiting_time_s == pytest.approx(5.0)
+    assert result.total_arrived == 1
+    assert result.total_departed == 2
+    assert result.throughput_veh_per_h == pytest.approx(180.0)
+
+
 def test_tripinfo_missing_auxiliary_inputs_is_na_not_zero(tmp_path):
     path = tmp_path / "tripinfo.xml"
     path.write_text(
@@ -539,7 +592,6 @@ def test_tripinfo_missing_auxiliary_inputs_is_na_not_zero(tmp_path):
     table = print_comparison_table([result])
     assert "N/A" in table
     assert "路网吞吐" in table
-    assert "严重冲突/万次" in table
     assert "紧急制动/千次" in table
 
 
@@ -640,13 +692,10 @@ def test_safety_availability_zero_events_is_available():
     assert result.controlled_waiting_availability == {
         "status": "available", "reason": None
     }
-    assert result.severe_conflict_availability == {
-        "status": "available", "reason": None
-    }
     assert result.emergency_braking_availability == {
         "status": "available", "reason": None
     }
-    assert result.severe_conflict_exposure_per_10000 == 0.0  # zero events, NOT None
+    assert result.emergency_braking_exposure_per_1000 == 0.0  # zero events, NOT None
 
 
 def test_safety_availability_missing_frames_is_unavailable():
@@ -664,6 +713,5 @@ def test_safety_availability_missing_frames_is_unavailable():
         }
     )
     result = collector.result()
-    assert result.severe_conflict_availability["status"] == "unavailable"
     assert result.emergency_braking_availability["status"] == "unavailable"
-    assert result.severe_conflict_exposure_per_10000 is None
+    assert result.emergency_braking_exposure_per_1000 is None

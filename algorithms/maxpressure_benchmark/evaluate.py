@@ -47,7 +47,6 @@ DEFAULT_INTERSECTIONS = tuple(f"demo_{index}" for index in range(1, 21))
 OPTIONAL_OFFICIAL_METRIC_NAMES = frozenset(
     {
         "emergency_braking_exposure_per_1000",
-        "severe_conflict_exposure_per_10000",
     }
 )
 

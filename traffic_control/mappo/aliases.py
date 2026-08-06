@@ -1,7 +1,7 @@
 """Explicit scenario/model aliases for MAPPO cooperative deployment.
 
 Scenario presets declare only controlled intersection IDs
-(config/scenario_presets.py).  This module maps a model alias to a
+(backend/app/scenario/presets.py).  This module maps a model alias to a
 checkpoint path plus the model's training IDs, and a scenario alias to
 (scenario_preset_id, model_alias).  The resolver rejects combinations where
 the scenario's controlled IDs are not a subset of the model's training IDs.

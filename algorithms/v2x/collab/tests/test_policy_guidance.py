@@ -9,7 +9,7 @@ from algorithms.v2x.collab.proposals import (
 )
 from algorithms.v2x.collab.state import CloudStateStore
 from algorithms.v2x.messages import V2XMessage
-from algorithms.config.scenario_presets import ResolvedScenarioScope
+from algorithms.v2x.collab.scope import ResolvedScenarioScope
 
 
 MAP = {
