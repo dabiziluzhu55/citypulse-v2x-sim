@@ -36,6 +36,11 @@
 | `max_pressure` | Max Pressure，本地Protocol 2.0 |
 | `ippo` | 部署版IPPO，仅`xiongan_20`，默认加载包内checkpoint |
 
+**仿真与算法分离**：`simulation/` 在生产环境独占进程内libsumo；Max Pressure、IPPO和多路口
+强化学习通过HTTP/JSON协议2.0接收路口、单车及油耗状态，并返回官方目标相位、
+单车目标速度和换道请求。后端只转发snapshot，前端不直接连接SUMO。TraCI仅保留给
+本地`sumo-gui`调试。
+
 ## 快速开始
 
 ### 1. 构建路网与车流
@@ -75,6 +80,14 @@ python -m simulation.sumo.run --mode fixed --intersection demo_2 --period mornin
 python -m simulation.sumo.run --mode algorithm \
   --algorithm-transport local \
   --algorithm-module traffic_control.sotl \
+  --intersection demo_2 --period morning_peak
+
+python -m simulation.sumo.run --mode fixed \
+  --intersection demo_2 --period morning_peak
+
+# 需要观察 SUMO 原生窗口时使用本地 GUI 调试旁路
+python -m simulation.sumo.run --gui --realtime --mode fixed \
+>>>>>>> origin/feature/simulation-sumo
   --intersection demo_2 --period morning_peak
 ```
 

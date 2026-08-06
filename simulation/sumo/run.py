@@ -5,8 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
-import sys
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -35,22 +33,6 @@ from .policy import (
 
 
 LOGGER = logging.getLogger(__name__)
-
-
-def _load_sumo_modules():
-    sumo_home = os.environ.get("SUMO_HOME")
-    if sumo_home:
-        tools_path = str(Path(sumo_home) / "tools")
-        if tools_path not in sys.path:
-            sys.path.append(tools_path)
-    try:
-        import sumolib  # type: ignore
-        import traci  # type: ignore
-    except ImportError as exc:
-        raise RuntimeError(
-            "Cannot import SUMO Python tools. Set SUMO_HOME to the SUMO installation."
-        ) from exc
-    return sumolib, traci
 
 
 def _load_manifest(path: Path) -> Mapping[str, object]:

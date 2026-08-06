@@ -1,7 +1,7 @@
 # 本地算法传输与 AI 观察者
 
 本地算法和 AI 观察者都是可信 Python 模块，与 SUMO 仿真 worker 位于同一进程。它们不调用
-TraCI；仿真内核把普通 `dict/list` 数据传入模块。本地算法与 HTTP 协议 2.0 的字段和校验完全
+libsumo 或 TraCI；仿真内核把普通 `dict/list` 数据传入模块。本地算法与 HTTP 协议 2.0 的字段和校验完全
 一致，只省去网络及 JSON 编解码。后端快照、WebSocket 和前端接口不受影响。
 
 ## 本地管控算法
