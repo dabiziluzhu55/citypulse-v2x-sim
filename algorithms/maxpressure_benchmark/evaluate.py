@@ -1,9 +1,8 @@
-"""Paired six-metric evaluation for fixed and two MaxPressure variants."""
+"""Paired six-metric evaluation for fixed and the senior MaxPressure variant."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import multiprocessing
@@ -31,7 +30,6 @@ os.environ["PATH"] = os.pathsep.join([*path_entries, sumo_bin])
 
 from algorithms.ippo import evaluate_paired as shared  # noqa: E402
 from algorithms.maxpressure_benchmark import (  # noqa: E402
-    DEFAULT_LEGACY_ROOT,
     DEFAULT_SENIOR_REF,
     SENIOR_SOURCE_PATH,
 )
@@ -44,7 +42,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("maxpressure_benchmark.evaluate")
 
-METHODS = ("fixed", "ours", "senior")
+METHODS = ("fixed", "senior")
 DEFAULT_INTERSECTIONS = tuple(f"demo_{index}" for index in range(1, 21))
 OPTIONAL_OFFICIAL_METRIC_NAMES = frozenset(
     {
@@ -78,7 +76,6 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
     seed = int(request["seed"])
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["MAXPRESSURE_LEGACY_ROOT"] = str(request["legacy_root"])
     os.environ["MAXPRESSURE_SENIOR_REF"] = str(request["senior_ref"])
     if method != "fixed":
         os.environ["MAXPRESSURE_BENCHMARK_VARIANT"] = method
@@ -158,21 +155,7 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
         }
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _source_metadata(legacy_root: Path, senior_ref: str) -> dict:
-    legacy_controller = legacy_root / "algorithms" / "coslight" / "controller.py"
-    legacy_lane_state = legacy_root / "algorithms" / "coslight" / "lane_state.py"
-    for path in (legacy_controller, legacy_lane_state):
-        if not path.is_file():
-            raise FileNotFoundError(path)
-
+def _source_metadata(senior_ref: str) -> dict:
     resolved_ref = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "rev-parse", f"{senior_ref}^{{commit}}"],
         check=True,
@@ -194,14 +177,6 @@ def _source_metadata(legacy_root: Path, senior_ref: str) -> dict:
         timeout=30,
     ).stdout.strip()
     return {
-        "ours": {
-            "implementation": "historical_coslight_density_pressure_with_max_green",
-            "controller_path": str(legacy_controller),
-            "controller_sha256": _sha256(legacy_controller),
-            "lane_state_sha256": _sha256(legacy_lane_state),
-            "internal_joint_decision_interval_s": 15.0,
-            "max_green_factor": 2.0,
-        },
         "senior": {
             "implementation": "backend_movement_halting_max_pressure",
             "git_commit": resolved_ref,
@@ -220,7 +195,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--intersections", type=int, default=20)
     parser.add_argument("--period", default="off_peak")
     parser.add_argument("--step-length", type=float, default=0.1)
-    parser.add_argument("--legacy-root", type=Path, default=DEFAULT_LEGACY_ROOT)
     parser.add_argument("--senior-ref", default=DEFAULT_SENIOR_REF)
     parser.add_argument(
         "--output",
@@ -236,8 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     methods = tuple(dict.fromkeys(args.methods))
     seeds = tuple(dict.fromkeys(int(seed) for seed in args.seeds))
     intersections = DEFAULT_INTERSECTIONS[: args.intersections]
-    legacy_root = args.legacy_root.expanduser().resolve()
-    source_metadata = _source_metadata(legacy_root, args.senior_ref)
+    source_metadata = _source_metadata(args.senior_ref)
 
     jobs = [
         {
@@ -246,7 +219,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "intersection_ids": intersections,
             "period": args.period,
             "duration": args.duration,
-            "legacy_root": str(legacy_root),
             "senior_ref": source_metadata["senior"]["git_commit"],
             "step_length": args.step_length,
         }

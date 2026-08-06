@@ -8,7 +8,7 @@ def test_missing_safety_metrics_remain_na_without_invalidating_run() -> None:
     official_metrics["severe_conflict_exposure_per_10000"] = None
 
     required_missing, optional_missing = _missing_official_metrics(
-        "ours", official_metrics
+        "senior", official_metrics
     )
 
     assert required_missing == []
