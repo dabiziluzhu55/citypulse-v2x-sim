@@ -1,7 +1,7 @@
 {
   "checkpoint_contract_version": 2,
   "checkpoint_filename": "ippo_v8_20tls_ep160.pt",
-  "sha256": "5656e351dc66aa7ffebd50d6a01109aff6a71bca393976eb45e9dca70c7ef107",
+  "sha256": "4055ec30bcd03c65572720cea38e51a338f466c351e21124be5fa683e6339449",
   "identity_slots": [
     "demo_1",
     "demo_2",
@@ -58,8 +58,8 @@
     "off_peak"
   ],
   "training_seed_range": {
-    "start": 88301,
-    "end": 88460
+    "start": 88334,
+    "end": 88493
   },
   "intersection_ids": [
     "demo_1",
@@ -5769,5 +5769,5 @@
       }
     }
   },
-  "created_by": "tools/migrate_checkpoint_contract.py"
+  "created_by": "algorithms/ippo step0.1 checkpoint update"
 }
