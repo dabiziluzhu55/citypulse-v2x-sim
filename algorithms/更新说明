@@ -2,6 +2,30 @@
 
 > 本文档汇总 `algorithms/` 目录的阶段性更新，按主题分组记录。最新变更条目放在最上方；各子模块的详细说明见对应 README 与说明文档。
 
+## 更新记录（2026-08-06）
+
+### 工作区整理与迁移
+
+- 删除根目录非算法工作区内容（`tools/`、`runs/`、根 `config/` 等），相关功能迁移到 `algorithms/` 内实现；场景预设注册表单一事实源移至 `algorithms/config/scenario_presets.py`。
+
+### MAPPO 交付整理
+
+- 仅保留 faithful cooperative MAPPO 版本，整理为可直接交付的 `algorithms/mappo/`；支持典型场景选择（`--scenario-preset xiongan_20 / east_dense / west_dense`）。
+
+### 步长统一与重新训练
+
+- 训练/评估统一支持 `--step-length`（默认 0.1，与 SUMO 同步）；MAPPO 与 IPPO v8 均按步长 0.1 重新训练（20 TLS / off_peak / 300s / 8 workers / ep160）。
+
+### 评估
+
+- MaxPressure 评估器（Fixed / ours / senior）迁移进 `algorithms/maxpressure_benchmark/`，支持 `--step-length`；
+- 完成五方法正式对照评估（MAPPO / IPPO / Fixed / ours / senior，各 8 seeds），结果与复现命令见 `REPORT_step01.md`。
+
+### 部署与修复
+
+- 同步更新 `traffic_control/` 中 IPPO / MAPPO 部署 checkpoint 为步长 0.1 训练版本（含 IPPO contract v2 sidecar 重生成）；
+- `gate_zero_shot.py` / `evaluate_paired.py` 的场景预设 import 改为 `algorithms.config.scenario_presets`（根 `config/` 已删除）。
+
 ## 更新记录（2026-08-05）
 
 ### 新增两个安全评价指标
@@ -46,5 +70,5 @@
 ## 使用提示
 
 - 评价口径变更不修改 SUMO 路网、配时与仿真核心，算法侧统一遵守八项指标定义；
-- 运行典型场景：`--scenario-preset east_dense`（详见 `config/scenario_presets.py`）；
+- 运行典型场景：`--scenario-preset east_dense`（详见 `algorithms/config/scenario_presets.py`）；
 - V2X 协同建议在 shadow 模式下的展示必须标记“未执行”，不能与已应用控制混淆。
