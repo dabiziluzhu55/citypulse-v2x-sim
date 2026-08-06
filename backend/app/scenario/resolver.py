@@ -44,7 +44,6 @@ class ResolvedStartSimulation:
     snapshot_interval_seconds: float
     playback_speed: float | None
     initial_events: tuple[EventRequest, ...]
-    model_alias: str | None = None
 
 
 def resolve_start_simulation(
@@ -53,27 +52,6 @@ def resolve_start_simulation(
 ) -> ResolvedStartSimulation:
     preset = require_scenario_preset(request.scenario_preset_id)
     intersection_ids = _resolve_preset_intersections(preset, catalog)
-    model_alias: str | None = None
-    if request.control_mode == "ippo":
-        from traffic_control.ippo.aliases import (
-            default_model_alias_for,
-            validate_alias_combo,
-        )
-
-        effective = request.model_alias or default_model_alias_for(preset.preset_id)
-        model_alias, _model_path = validate_alias_combo(
-            intersection_ids, effective
-        )
-    elif request.control_mode == "mappo":
-        from traffic_control.mappo.aliases import (
-            default_model_alias_for,
-            validate_alias_combo,
-        )
-
-        effective = request.model_alias or default_model_alias_for(preset.preset_id)
-        model_alias, _model_path = validate_alias_combo(
-            intersection_ids, effective
-        )
     _validate_period(request.period, intersection_ids, catalog)
     _validate_origins(request.origins, intersection_ids, catalog)
     initial_events = tuple(
@@ -94,7 +72,6 @@ def resolve_start_simulation(
         window_start_seconds=request.window_start_seconds,
         duration_seconds=request.duration_seconds,
         control_mode=request.control_mode,
-        model_alias=model_alias,
         seed=request.seed,
         step_length=request.step_length,
         realtime=request.realtime,

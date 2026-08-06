@@ -19,10 +19,6 @@ class StartSimulationRequest(BaseModel):
     window_start_seconds: float = Field(default=0.0, ge=0.0)
     duration_seconds: float = Field(gt=0.0)
     control_mode: str = "fixed"
-    model_alias: str | None = Field(
-        default=None,
-        description="模型别名；缺省按场景默认通用模型。仅 control_mode=ippo/mappo 时生效。",
-    )
     seed: int = Field(default=42, ge=0)
     step_length: float = Field(default=0.05, gt=0.0)
     realtime: bool = True
