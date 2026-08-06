@@ -165,10 +165,19 @@ def test_resolve_mappo_east_dense_zero_shot(
     assert resolved.intersection_ids == ("demo_3", "demo_5", "demo_6", "demo_9")
     assert resolved.model_alias == "mappo_cooperative_20tls_ep160"
 
-def test_backend_registry_is_same_object_as_config_module() -> None:
-    from config.scenario_presets import SCENARIO_PRESET_REGISTRY as neutral
-    from backend.app.scenario.presets import SCENARIO_PRESET_REGISTRY
 
-    assert SCENARIO_PRESET_REGISTRY is neutral
-    assert neutral["east_dense"].intersection_ids == ("demo_3", "demo_5", "demo_6", "demo_9")
-    assert neutral["east_dense"].map_template == "east_dense"
+def test_backend_presets_are_self_contained() -> None:
+    """backend 场景预设必须独立，不得依赖 algorithms/config。"""
+    assert SCENARIO_PRESET_REGISTRY["east_dense"].intersection_ids == (
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9",
+    )
+    assert SCENARIO_PRESET_REGISTRY["east_dense"].map_template == "east_dense"
+    assert SCENARIO_PRESET_REGISTRY["west_dense"].intersection_ids == (
+        "demo_14",
+        "demo_15",
+        "demo_19",
+    )
+    assert len(SCENARIO_PRESET_REGISTRY["xiongan_20"].intersection_ids) == 20

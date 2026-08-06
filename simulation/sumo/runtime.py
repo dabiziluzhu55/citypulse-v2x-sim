@@ -84,14 +84,44 @@ class SumoRuntime:
             _RUNTIME_LOCK.release()
 
 
+def _normalized_path(path: str) -> str:
+    return os.path.normpath(path)
+
+
+def _sumo_tools_paths() -> list[str]:
+    sumo_home = os.environ.get("SUMO_HOME")
+    if not sumo_home:
+        return []
+    return [str(Path(sumo_home) / "tools")]
+
+
+def _ensure_sumo_tools_on_path() -> None:
+    for tools_path in _sumo_tools_paths():
+        if tools_path not in sys.path:
+            sys.path.append(tools_path)
+
+
+def _import_module_avoiding_sumo_tools(module_name: str):
+    """Import pip libsumo even when PYTHONPATH points at apt SUMO tools stubs."""
+
+    blocked = {_normalized_path(path) for path in _sumo_tools_paths()}
+    if not blocked:
+        return importlib.import_module(module_name)
+
+    saved_path = sys.path[:]
+    sys.path = [
+        entry for entry in sys.path if _normalized_path(entry) not in blocked
+    ]
+    try:
+        return importlib.import_module(module_name)
+    finally:
+        sys.path = saved_path
+
+
 def load_sumo_runtime(*, gui: bool) -> SumoRuntime:
     """Load strict headless libsumo or the explicit TraCI GUI debug path."""
 
-    sumo_home = os.environ.get("SUMO_HOME")
-    if sumo_home:
-        tools_path = str(Path(sumo_home) / "tools")
-        if tools_path not in sys.path:
-            sys.path.append(tools_path)
+    _ensure_sumo_tools_on_path()
 
     try:
         sumolib = importlib.import_module("sumolib")
@@ -103,7 +133,10 @@ def load_sumo_runtime(*, gui: bool) -> SumoRuntime:
 
     module_name = "traci" if gui else "libsumo"
     try:
-        api = importlib.import_module(module_name)
+        if gui:
+            api = importlib.import_module(module_name)
+        else:
+            api = _import_module_avoiding_sumo_tools(module_name)
     except ImportError as exc:
         if gui:
             message = (

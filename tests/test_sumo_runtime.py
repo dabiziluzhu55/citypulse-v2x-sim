@@ -1,3 +1,5 @@
+import os
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -67,6 +69,39 @@ class SumoRuntimeSelectionTests(unittest.TestCase):
 
         self.assertEqual(runtime.backend, "traci-gui")
         self.assertEqual(runtime.command([]), ["/sumo/bin/sumo-gui"])
+
+    def test_headless_imports_libsumo_without_sumo_tools_on_sys_path(self):
+        sumolib = FakeSumolib()
+        libsumo = FakeApi()
+        tools_path = "/usr/share/sumo/tools"
+        saved_path = sys.path[:]
+        sys.path.insert(0, tools_path)
+        try:
+
+            def load(name):
+                if name == "sumolib":
+                    return sumolib
+                if name == "libsumo":
+                    blocked = any(
+                        os.path.normpath(entry) == os.path.normpath(tools_path)
+                        for entry in sys.path
+                    )
+                    self.assertFalse(
+                        blocked,
+                        "libsumo import should ignore apt SUMO tools stubs on sys.path",
+                    )
+                    return libsumo
+                raise ImportError(name)
+
+            with (
+                patch.dict(os.environ, {"SUMO_HOME": "/usr/share/sumo"}, clear=False),
+                patch("simulation.sumo.runtime.importlib.import_module", side_effect=load),
+            ):
+                runtime = load_sumo_runtime(gui=False)
+
+            self.assertEqual(runtime.backend, "libsumo")
+        finally:
+            sys.path[:] = saved_path
 
     def test_missing_libsumo_does_not_fall_back_to_traci(self):
         imported = []

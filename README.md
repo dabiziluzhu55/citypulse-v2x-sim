@@ -8,8 +8,9 @@
 |------|------|
 | `frontend/` | Vue前端，通过REST/WebSocket调用后端 |
 | `backend/` | FastAPI后端，不直接调用仿真TraCI |
-| `simulation/` | SUMO/TraCI仿真内核与分布式Worker |
-| `traffic_control/` | 产品管控算法包，目前包括(fixed/sotl/max_pressure/ippo) |
+| `simulation/` | SUMO/libsumo仿真内核与分布式Worker |
+| `traffic_control/` | 产品管控算法包（fixed/sotl/max_pressure/ippo/mappo） |
+| `traffic_eval/` | 部署侧公共交通评估口径（Backend与命令行共用） |
 | `algorithms/` | 算法组训练与实验代码，不参与项目的部署 |
 | `data/maps/` | 地图与SUMO生成产物 |
 | `docs/` | 详细文档 |
@@ -17,14 +18,20 @@
 ## 项目架构
 
 ```text
-前端 --HTTP/WS--> 后端 --配置/队列--> SUMO Worker
-                                      ├─ simulation(TraCI)
-                                      └─ importlib加载 traffic_control.*
+[Frontend] ──HTTP──► [Backend API] ──Redis──► [SUMO Worker ×N]
+                              │                    │
+                    traffic_eval（结算指标）    libsumo + simulation
+                         会话元数据              + traffic_control（决策）
+                              │                    │
+                              └──── 共享session目录 / tripinfo.xml ────┘
 ```
 
 - 前端只传业务名`control_mode`，不直接调用算法、SUMO
 - 后端根据`traffic_control.registry`写成`SimulationConfig`(如`algorithm_module=traffic_control.sotl`)
 - 仿真端只认`fixed`或`algorithm`，本地算法由`algorithm_module`动态加载
+- 评估脚本在`traffic_eval/`（Backend封装；算法可直接import，无需启动后端）
+- `traffic_eval`：**Backend 容器封装**；sumo容器也需封装以便本地命令工具复用同一包，但Worker的仿真进程不负责指标计算
+
 - IPPO等含torch的推理只在SUMO Worker进程内运行，Backend启动不导入torch
 
 ### 管控模式
@@ -62,13 +69,22 @@ pip install -r requirements.txt          # SUMO Worker(含torch等)
 ### 3. 启动Backend(local调试)
 
 ```bash
-uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
+PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
 前端:
 
 ```bash
 cd frontend && npm install && npm run dev
+```
+
+### 3b. 无 Backend 本机评估（算法团队）
+
+```bash
+PYTHONPATH=. python -m traffic_eval \
+  --preset xiongan_20 --period morning_peak --duration 900 \
+  --modes fixed,max_pressure,sotl --seed 42 \
+  --output outputs/eval_900_local.json
 ```
 
 浏览器打开前端后选择场景与`control_mode`即可启动仿真

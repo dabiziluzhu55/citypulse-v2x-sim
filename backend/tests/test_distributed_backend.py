@@ -539,8 +539,8 @@ def test_websocket_final_snapshot_waits_for_tripinfo_race(
         evaluation = terminal_evaluations[0]
         assert evaluation.get("finished") is True
         sources = evaluation.get("metric_sources") or {}
-        assert sources.get("avg_travel_time_s") == "tripinfo_completed"
-        assert sources.get("avg_waiting_time_s") == "tripinfo_completed"
+        assert sources.get("avg_travel_time_s") == "tripinfo_departed"
+        assert sources.get("avg_waiting_time_s") == "tripinfo_departed"
         assert "snapshot_provisional" not in sources.values()
         assert evaluation.get("avg_travel_time") == pytest.approx(12.0)
         assert evaluation.get("avg_waiting_time") == pytest.approx(3.5)

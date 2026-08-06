@@ -1,23 +1,31 @@
-"""后端信号管控算法评估脚本（Backend API + /metrics）
+"""后端信号管控算法命令行评估脚本（Backend API + /metrics）
 
-通过POST /api/v1/simulations启动SUMO，结束后读取GET .../metrics做对比
+通过 POST /api/v1/simulations 启动 SUMO（无头默认 libsumo），结束后读取
+GET .../metrics 做对比。
 
-前置：
-  1. 已构建SUMO产物（build_tls / build_traffic）
-  2. 已设置SUMO_HOME
+若**不想启动后端**，请改用本机入口（同一 traffic_eval 口径）：
+  python -m traffic_eval \\
+    --preset xiongan_20 --period morning_peak --duration 900 \\
+    --modes fixed,max_pressure,sotl --seed 42 \\
+    --output outputs/eval_900_local.json
+
+前置（本 HTTP 脚本）：
+  1. 已构建 SUMO 产物（build_tls / build_traffic）
+  2. 已设置 SUMO_HOME，且可用：python -c "import libsumo; import sumolib"
   3. 后端已启动（workers=1），例如：
        cd <repo-root>
-       uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
+       PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
 
 用法（在仓库根目录）：
-  python backend/tests/eval.py
-  python backend/tests/eval.py \
-    --preset xiongan_20 --period morning_peak --duration 900 \
-    --modes fixed,max_pressure,sotl --seed 42 \
+  python backend/tools/eval.py
+  python backend/tools/eval.py \\
+    --preset xiongan_20 --period morning_peak --duration 900 \\
+    --modes fixed,max_pressure,sotl,ippo,mappo --seed 42 \\
     --output outputs/eval_results.json
 
   - 同一时间只能有一个活动仿真会话，模式之间串行执行
-  - realtime=false以加速批跑；gui默认关闭
+  - realtime=false 以加速批跑；gui 默认关闭（走 libsumo，勿开 TraCI/GUI）
+  - 默认步长 0.1s、快照间隔 0.5s，与当前 simulation 内核一致
 """
 
 from __future__ import annotations
@@ -34,7 +42,11 @@ from typing import Any
 import httpx
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000/api/v1"
-DEFAULT_MODES = ("fixed", "max_pressure", "sotl", "ippo")
+# 与 traffic_control.registry / simulation 默认对齐
+DEFAULT_MODES = ("fixed", "max_pressure", "sotl", "ippo", "mappo")
+ALLOWED_MODES = frozenset(DEFAULT_MODES)
+DEFAULT_STEP_LENGTH = 0.1
+DEFAULT_SNAPSHOT_INTERVAL = 0.5
 TERMINAL_STATES = frozenset({"COMPLETED", "STOPPED", "FAILED"})
 
 METRIC_COLUMNS = (
@@ -44,6 +56,8 @@ METRIC_COLUMNS = (
     ("avg_queue_length", "平均排队(辆)"),
     ("throughput", "吞吐(辆/h)"),
     ("fuel_consumption", "油耗强度(L/100km)"),
+    ("hard_braking_events", "急刹车事件数"),
+    ("hard_braking_rate", "急刹车率(次/100辆)"),
     ("avg_decision_latency_ms", "决策延迟(ms)"),
     ("departed", "出发"),
     ("arrived", "到达"),
@@ -62,7 +76,10 @@ class RunResult:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="评估 backend 中 fixed / max_pressure / sotl / ippo 的交通指标",
+        description=(
+            "评估 backend 管控算法交通指标："
+            "fixed / max_pressure / sotl / ippo / mappo"
+        ),
     )
     parser.add_argument(
         "--base-url",
@@ -95,19 +112,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--modes",
         default=",".join(DEFAULT_MODES),
-        help="逗号分隔的 control_mode 列表",
+        help=(
+            "逗号分隔的 control_mode 列表；"
+            f"允许 {','.join(sorted(ALLOWED_MODES))}"
+        ),
+    )
+    parser.add_argument(
+        "--model-alias",
+        default=None,
+        help="ippo/mappo 模型别名；缺省由场景预设解析默认通用模型",
     )
     parser.add_argument(
         "--snapshot-interval",
         type=float,
-        default=1.0,
-        help="快照间隔（秒）；评估不必太密，默认 1.0",
+        default=DEFAULT_SNAPSHOT_INTERVAL,
+        help=(
+            f"快照间隔（仿真秒）；默认 {DEFAULT_SNAPSHOT_INTERVAL}，"
+            "与 simulation 内核一致"
+        ),
     )
     parser.add_argument(
         "--step-length",
         type=float,
-        default=0.05,
-        help="SUMO 步长（秒）",
+        default=DEFAULT_STEP_LENGTH,
+        help=f"SUMO 步长（秒）；默认 {DEFAULT_STEP_LENGTH}，与当前仿真内核一致",
     )
     parser.add_argument(
         "--poll-interval",
@@ -139,11 +167,11 @@ def _parse_modes(raw: str) -> list[str]:
     modes = [item.strip() for item in raw.split(",") if item.strip()]
     if not modes:
         raise SystemExit("--modes 不能为空")
-    allowed = {"fixed", "max_pressure", "sotl", "ippo"}
-    unknown = [m for m in modes if m not in allowed]
+    unknown = [m for m in modes if m not in ALLOWED_MODES]
     if unknown:
         raise SystemExit(
-            f"不支持的 control_mode: {unknown}；允许 fixed/max_pressure/sotl/ippo"
+            f"不支持的 control_mode: {unknown}；允许 "
+            f"{'/'.join(sorted(ALLOWED_MODES))}"
         )
     return modes
 
@@ -155,13 +183,14 @@ def check_health(client: httpx.Client) -> dict[str, Any]:
     if payload.get("status") != "ok":
         raise RuntimeError(
             f"Backend 未就绪: {payload}. "
-            "请确认 SUMO_HOME、generated artifacts，并以 --workers 1 启动后端。"
+            "请确认 SUMO_HOME、libsumo、generated artifacts，"
+            "并以 --workers 1 启动后端。"
         )
     return payload
 
 
 def _start_payload(args: argparse.Namespace, control_mode: str) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "scenario_preset_id": args.preset,
         "period": args.period,
         "origins": {},
@@ -171,10 +200,14 @@ def _start_payload(args: argparse.Namespace, control_mode: str) -> dict[str, Any
         "seed": args.seed,
         "step_length": args.step_length,
         "realtime": False,
+        # gui=false → simulation 走 libsumo；gui=true 才走 TraCI/sumo-gui 调试路径
         "gui": False,
         "snapshot_interval_seconds": args.snapshot_interval,
         "disturbance_targets": [],
     }
+    if args.model_alias and control_mode in {"ippo", "mappo"}:
+        payload["model_alias"] = args.model_alias
+    return payload
 
 
 def start_simulation(
@@ -239,7 +272,7 @@ def fetch_metrics(
     retries: int = 10,
     delay_s: float = 0.5,
 ) -> dict[str, Any]:
-    """终态后指标watcher可能尚未finalize，短暂重试直到finished=true"""
+    """终态后指标 watcher 可能尚未 finalize，短暂重试直到 finished=true"""
     last: dict[str, Any] = {}
     for _ in range(retries):
         response = client.get(f"/simulations/{session_id}/metrics")
@@ -261,8 +294,12 @@ def run_one(
     print(f"\n=== 启动 control_mode={control_mode} ===")
     print(
         f"  preset={args.preset} period={args.period} "
-        f"duration={args.duration}s seed={args.seed}"
+        f"duration={args.duration}s seed={args.seed} "
+        f"step_length={args.step_length}s "
+        f"snapshot_interval={args.snapshot_interval}s"
     )
+    if args.model_alias and control_mode in {"ippo", "mappo"}:
+        print(f"  model_alias={args.model_alias}")
 
     t0 = time.perf_counter()
     created = start_simulation(
@@ -299,7 +336,6 @@ def run_one(
     metrics: dict[str, Any] = {}
     if state != "FAILED":
         metrics = fetch_metrics(client, session_id)
-        # 兜底：若metrics.algorithm为空，用请求的control_mode
         if not metrics.get("algorithm"):
             metrics["algorithm"] = control_mode
     else:
@@ -380,10 +416,12 @@ def write_output(path: Path, args: argparse.Namespace, results: list[RunResult])
             "duration_seconds": args.duration,
             "seed": args.seed,
             "modes": _parse_modes(args.modes),
+            "model_alias": args.model_alias,
             "snapshot_interval_seconds": args.snapshot_interval,
             "step_length": args.step_length,
             "realtime": False,
             "gui": False,
+            "sumo_backend": "libsumo",
         },
         "results": [
             {
@@ -404,14 +442,26 @@ def write_output(path: Path, args: argparse.Namespace, results: list[RunResult])
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     modes = _parse_modes(args.modes)
+    if args.step_length <= 0:
+        raise SystemExit("--step-length 必须 > 0")
+    if args.snapshot_interval <= 0:
+        raise SystemExit("--snapshot-interval 必须 > 0")
+    if args.snapshot_interval + 1e-9 < args.step_length:
+        raise SystemExit("--snapshot-interval 不能小于 --step-length")
+
     base = args.base_url.rstrip("/")
 
-    # 单次仿真可能很长：timeout覆盖启动 + 轮询
+    # 单次仿真可能很长：timeout 覆盖启动 + 轮询
     http_timeout = httpx.Timeout(30.0, read=60.0)
     with httpx.Client(base_url=base, timeout=http_timeout) as client:
         print(f"检查后端健康: {base}/health")
         health = check_health(client)
         print(f"  health={health.get('status')} artifacts_ok")
+        print(
+            f"  eval defaults: step_length={args.step_length}s "
+            f"snapshot_interval={args.snapshot_interval}s "
+            f"gui=false(libsumo) modes={','.join(modes)}"
+        )
 
         results: list[RunResult] = []
         for mode in modes:

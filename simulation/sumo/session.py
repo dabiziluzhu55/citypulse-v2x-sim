@@ -702,6 +702,9 @@ class SimulationManager:
                     str(config.seed),
                     "--no-step-log",
                     "true",
+                    # 急刹Warning刷屏；急刹次数由VehicleTelemetryTracker统计，不在终端输出
+                    "--no-warnings",
+                    "true",
                     "--collision.action",
                     "warn",
                 ]
