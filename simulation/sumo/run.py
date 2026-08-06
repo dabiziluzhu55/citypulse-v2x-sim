@@ -569,6 +569,7 @@ def _observe(
     vehicle_tracker=None,
     vehicle_action_controller=None,
     previous_action_results: PreviousActionResults | None = None,
+    vehicle_observations=None,
 ) -> SimulationObservation:
     observations = _build_intersection_observations(
         traci,
@@ -578,9 +579,10 @@ def _observe(
         vehicle_tracker=vehicle_tracker,
         vehicle_action_controller=vehicle_action_controller,
     )
-    vehicle_observations = (
-        vehicle_tracker.observations(reset_interval=True) if vehicle_tracker else {}
-    )
+    if vehicle_observations is None:
+        vehicle_observations = (
+            vehicle_tracker.observations(reset_interval=True) if vehicle_tracker else {}
+        )
     fuel_mg, fuel_ml, braking = (
         vehicle_tracker.totals() if vehicle_tracker else (0.0, 0.0, 0)
     )
@@ -623,6 +625,7 @@ def _observe_ai_frame(
     departed_vehicles: int = 0,
     arrived_vehicles: int = 0,
     previous_action_results: PreviousActionResults | None = None,
+    vehicle_observations=None,
 ) -> AIFrameObservation:
     intersections = _build_intersection_observations(
         traci,
@@ -633,9 +636,11 @@ def _observe_ai_frame(
         vehicle_tracker=vehicle_tracker,
         vehicle_action_controller=vehicle_action_controller,
     )
-    vehicles = (
-        vehicle_tracker.observations(reset_interval=False) if vehicle_tracker else {}
-    )
+    vehicles = vehicle_observations
+    if vehicles is None:
+        vehicles = (
+            vehicle_tracker.observations(reset_interval=False) if vehicle_tracker else {}
+        )
     fuel_mg, fuel_ml, braking = (
         vehicle_tracker.totals() if vehicle_tracker else (0.0, 0.0, 0)
     )
@@ -872,12 +877,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--algorithm-module", default="")
     parser.add_argument("--algorithm-timeout", type=float, default=2.0)
     parser.add_argument("--ai-observer-module", default="")
-    parser.add_argument("--ai-frame-interval", type=float, default=0.1)
+    parser.add_argument("--ai-frame-interval", type=float, default=0.5)
     parser.add_argument("--ai-observer-shutdown-timeout", type=float, default=5.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--decision-interval", type=float, default=5.0)
     parser.add_argument("--minimum-green", type=float, default=5.0)
-    parser.add_argument("--step-length", type=float, default=0.05)
+    parser.add_argument("--step-length", type=float, default=0.1)
     parser.add_argument("--snapshot-interval", type=float, default=0.5)
     parser.add_argument(
         "--end",

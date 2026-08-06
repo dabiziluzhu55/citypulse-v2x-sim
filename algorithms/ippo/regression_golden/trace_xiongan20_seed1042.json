@@ -1,0 +1,311 @@
+[
+  {
+    "step_id": 0,
+    "simulation_time": 0.05,
+    "signals": {}
+  },
+  {
+    "step_id": 1,
+    "simulation_time": 5.0,
+    "signals": {
+      "demo_1": {
+        "target_phase": 2
+      },
+      "demo_2": {
+        "target_phase": 2
+      },
+      "demo_3": {
+        "target_phase": 2
+      },
+      "demo_4": {
+        "target_phase": 2
+      },
+      "demo_5": {
+        "target_phase": 2
+      },
+      "demo_6": {
+        "target_phase": 3
+      },
+      "demo_7": {
+        "target_phase": 2
+      },
+      "demo_8": {
+        "target_phase": 3
+      },
+      "demo_9": {
+        "target_phase": 2
+      },
+      "demo_10": {
+        "target_phase": 2
+      },
+      "demo_11": {
+        "target_phase": 3
+      },
+      "demo_12": {
+        "target_phase": 3
+      },
+      "demo_13": {
+        "target_phase": 1
+      },
+      "demo_14": {
+        "target_phase": 2
+      },
+      "demo_15": {
+        "target_phase": 2
+      },
+      "demo_16": {
+        "target_phase": 2
+      },
+      "demo_17": {
+        "target_phase": 2
+      },
+      "demo_18": {
+        "target_phase": 2
+      },
+      "demo_19": {
+        "target_phase": 2
+      },
+      "demo_20": {
+        "target_phase": 3
+      }
+    }
+  },
+  {
+    "step_id": 2,
+    "simulation_time": 10.0,
+    "signals": {}
+  },
+  {
+    "step_id": 3,
+    "simulation_time": 15.0,
+    "signals": {}
+  },
+  {
+    "step_id": 4,
+    "simulation_time": 20.0,
+    "signals": {
+      "demo_1": {
+        "target_phase": 4
+      },
+      "demo_2": {
+        "target_phase": 1
+      },
+      "demo_3": {
+        "target_phase": 1
+      },
+      "demo_4": {
+        "target_phase": 3
+      },
+      "demo_5": {
+        "target_phase": 1
+      },
+      "demo_6": {
+        "target_phase": 2
+      },
+      "demo_7": {
+        "target_phase": 1
+      },
+      "demo_8": {
+        "target_phase": 2
+      },
+      "demo_9": {
+        "target_phase": 3
+      },
+      "demo_10": {
+        "target_phase": 1
+      },
+      "demo_11": {
+        "target_phase": 2
+      },
+      "demo_12": {
+        "target_phase": 1
+      },
+      "demo_13": {
+        "target_phase": 1
+      },
+      "demo_14": {
+        "target_phase": 1
+      },
+      "demo_15": {
+        "target_phase": 1
+      },
+      "demo_16": {
+        "target_phase": 1
+      },
+      "demo_17": {
+        "target_phase": 1
+      },
+      "demo_18": {
+        "target_phase": 1
+      },
+      "demo_19": {
+        "target_phase": 1
+      },
+      "demo_20": {
+        "target_phase": 2
+      }
+    }
+  },
+  {
+    "step_id": 5,
+    "simulation_time": 25.0,
+    "signals": {}
+  },
+  {
+    "step_id": 6,
+    "simulation_time": 30.0,
+    "signals": {}
+  },
+  {
+    "step_id": 7,
+    "simulation_time": 35.0,
+    "signals": {
+      "demo_1": {
+        "target_phase": 1
+      },
+      "demo_2": {
+        "target_phase": 2
+      },
+      "demo_3": {
+        "target_phase": 2
+      },
+      "demo_4": {
+        "target_phase": 1
+      },
+      "demo_5": {
+        "target_phase": 2
+      },
+      "demo_6": {
+        "target_phase": 3
+      },
+      "demo_7": {
+        "target_phase": 2
+      },
+      "demo_8": {
+        "target_phase": 4
+      },
+      "demo_9": {
+        "target_phase": 1
+      },
+      "demo_10": {
+        "target_phase": 2
+      },
+      "demo_11": {
+        "target_phase": 4
+      },
+      "demo_12": {
+        "target_phase": 4
+      },
+      "demo_13": {
+        "target_phase": 1
+      },
+      "demo_14": {
+        "target_phase": 1
+      },
+      "demo_15": {
+        "target_phase": 2
+      },
+      "demo_16": {
+        "target_phase": 2
+      },
+      "demo_17": {
+        "target_phase": 2
+      },
+      "demo_18": {
+        "target_phase": 2
+      },
+      "demo_19": {
+        "target_phase": 2
+      },
+      "demo_20": {
+        "target_phase": 3
+      }
+    }
+  },
+  {
+    "step_id": 8,
+    "simulation_time": 40.0,
+    "signals": {}
+  },
+  {
+    "step_id": 9,
+    "simulation_time": 45.0,
+    "signals": {}
+  },
+  {
+    "step_id": 10,
+    "simulation_time": 50.0,
+    "signals": {
+      "demo_1": {
+        "target_phase": 3
+      },
+      "demo_2": {
+        "target_phase": 1
+      },
+      "demo_3": {
+        "target_phase": 1
+      },
+      "demo_4": {
+        "target_phase": 2
+      },
+      "demo_5": {
+        "target_phase": 1
+      },
+      "demo_6": {
+        "target_phase": 1
+      },
+      "demo_7": {
+        "target_phase": 1
+      },
+      "demo_8": {
+        "target_phase": 1
+      },
+      "demo_9": {
+        "target_phase": 2
+      },
+      "demo_10": {
+        "target_phase": 1
+      },
+      "demo_11": {
+        "target_phase": 3
+      },
+      "demo_12": {
+        "target_phase": 1
+      },
+      "demo_13": {
+        "target_phase": 1
+      },
+      "demo_14": {
+        "target_phase": 2
+      },
+      "demo_15": {
+        "target_phase": 1
+      },
+      "demo_16": {
+        "target_phase": 1
+      },
+      "demo_17": {
+        "target_phase": 1
+      },
+      "demo_18": {
+        "target_phase": 2
+      },
+      "demo_19": {
+        "target_phase": 1
+      },
+      "demo_20": {
+        "target_phase": 1
+      }
+    }
+  },
+  {
+    "step_id": 11,
+    "simulation_time": 55.0,
+    "signals": {}
+  },
+  {
+    "step_id": 12,
+    "simulation_time": 60.0,
+    "signals": {}
+  }
+]

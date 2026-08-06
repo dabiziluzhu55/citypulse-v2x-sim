@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -101,56 +102,17 @@ def _max_pressure_metadata() -> dict:
 
 
 def _ippo_metadata() -> dict:
-    intersections = {}
-    for index in range(1, 21):
-        iid = f"demo_{index}"
-        phases = {}
-        connections = []
-        incoming = []
-        outgoing = []
-        lanes = {}
-        for phase in range(4):
-            conn_id = f"{iid}_c{phase}"
-            in_lane = f"{iid}_in_{phase}"
-            out_lane = f"{iid}_out_{phase}"
-            incoming.append(in_lane)
-            outgoing.append(out_lane)
-            lanes[in_lane] = {
-                "edge_id": f"{iid}_in_e{phase}",
-                "length_m": 150.0,
-                "speed_limit_mps": 15.0,
-            }
-            lanes[out_lane] = {
-                "edge_id": f"{iid}_out_e{phase}",
-                "length_m": 150.0,
-                "speed_limit_mps": 15.0,
-            }
-            connections.append(
-                {
-                    "connection_id": conn_id,
-                    "from_lane": in_lane,
-                    "to_lane": out_lane,
-                }
-            )
-            phases[str(phase)] = {
-                "green_seconds": 30.0,
-                "connection_priorities": {conn_id: "protected"},
-            }
-        intersections[iid] = {
-            "intersection_id": iid,
-            "phase_order": [0, 1, 2, 3],
-            "incoming_lanes": incoming,
-            "outgoing_lanes": outgoing,
-            "lanes": lanes,
-            "connections": connections,
-            "phases": phases,
-        }
-    return {
-        "episode_id": "ep-ippo",
-        "decision_interval": 5.0,
-        "minimum_green": 5.0,
-        "intersections": intersections,
-    }
+    """Real xiongan20 initialize metadata (contract-v2 fingerprint source)."""
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "algorithms"
+        / "ippo"
+        / "regression_golden"
+        / "metadata_xiongan20.json"
+    )
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _make_service(**settings_kwargs: object) -> SimulationService:
@@ -202,9 +164,9 @@ def _resolved(
     )
 
 
-def test_four_control_modes_registered() -> None:
-    assert list_control_modes() == ["fixed", "max_pressure", "sotl", "ippo"]
-    assert list(TC_REGISTRY.keys()) == ["fixed", "max_pressure", "sotl", "ippo"]
+def test_five_control_modes_registered() -> None:
+    assert list_control_modes() == ["fixed", "max_pressure", "sotl", "ippo", "mappo"]
+    assert list(TC_REGISTRY.keys()) == ["fixed", "max_pressure", "sotl", "ippo", "mappo"]
     assert CONTROL_MODE_REGISTRY is TC_REGISTRY
 
     fixed = require_control_mode("fixed")
@@ -215,24 +177,35 @@ def test_four_control_modes_registered() -> None:
         ("sotl", "traffic_control.sotl"),
         ("max_pressure", "traffic_control.max_pressure"),
         ("ippo", "traffic_control.ippo"),
+        ("mappo", "traffic_control.mappo"),
     ):
         spec = require_control_mode(name)
         assert spec.kernel_mode == "algorithm"
         assert spec.algorithm_transport == "local"
         assert spec.algorithm_module == module
 
-    assert require_control_mode("ippo").supported_presets == ("xiongan_20",)
+    assert require_control_mode("ippo").supported_presets == (
+        "xiongan_20", "east_dense", "west_dense"
+    )
 
 
 def test_registry_import_does_not_load_torch() -> None:
+    before_ippo = {
+        name
+        for name in sys.modules
+        if name == "traffic_control.ippo" or name.startswith("traffic_control.ippo.")
+    }
     before = {name for name in sys.modules if name == "torch" or name.startswith("torch.")}
     importlib.reload(importlib.import_module("traffic_control.registry"))
     importlib.reload(importlib.import_module("backend.app.controllers.registry"))
+    after_ippo = {
+        name
+        for name in sys.modules
+        if name == "traffic_control.ippo" or name.startswith("traffic_control.ippo.")
+    }
     after = {name for name in sys.modules if name == "torch" or name.startswith("torch.")}
-    # 允许环境里已有 torch，但 registry 路径不得新增 torch 依赖链
-    assert "traffic_control.ippo" not in sys.modules
-    assert "traffic_control.ippo.controller" not in sys.modules
-    assert "traffic_control.ippo.model" not in sys.modules
+    # 允许环境里已有 torch/ippo（其它测试文件可能先导入），但 registry 路径不得新增依赖链
+    assert after_ippo == before_ippo
     assert after == before or "torch" in before
 
 
@@ -248,6 +221,7 @@ def test_simulation_config_local_module_for_algorithms() -> None:
         ("sotl", "traffic_control.sotl"),
         ("max_pressure", "traffic_control.max_pressure"),
         ("ippo", "traffic_control.ippo"),
+        ("mappo", "traffic_control.mappo"),
     ):
         cfg = service._build_config(_resolved(control_mode=mode))
         assert cfg.control_mode == "algorithm"
@@ -269,9 +243,11 @@ def test_ippo_rejects_non_xiongan_20_preset(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
     def _fake_resolve(request, catalog):
+        # Schema validation accepts east_dense; the service must still reject a
+        # resolved preset outside the IPPO whitelist (defense in depth).
         return _resolved(
             control_mode="ippo",
-            scenario_preset_id="east_dense",
+            scenario_preset_id="south_dense",
             intersection_ids=("demo_3", "demo_5", "demo_6", "demo_9"),
         )
 
@@ -544,6 +520,72 @@ def test_ippo_checkpoint_loads_and_is_deterministic(monkeypatch: pytest.MonkeyPa
     assert first["actions"]["vehicles"] == {}
     ippo.finish({"episode_id": metadata["episode_id"], "reason": "completed"})
 
+
+
+
+def test_mappo_checkpoint_loads_and_is_deterministic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MAPPO_MODEL_PATH", raising=False)
+    monkeypatch.delenv("MAPPO_MODEL_ALIAS", raising=False)
+    monkeypatch.setenv("MAPPO_MODE", "model")
+    import traffic_control.mappo as mappo
+    import traffic_control.mappo.controller as controller
+
+    importlib.reload(controller)
+    importlib.reload(mappo)
+
+    metadata = _ippo_metadata()
+    init = mappo.initialize(metadata)
+    assert init["ready"] is True
+    assert controller._loaded_model_path is not None
+    assert controller._loaded_model_path.endswith(
+        "mappo_cooperative_20tls_ep160.pt"
+    )
+
+    intersections = {}
+    for index in range(1, 21):
+        iid = f"demo_{index}"
+        lanes = {}
+        for phase in range(4):
+            lanes[f"{iid}_in_{phase}"] = {
+                "vehicle_count": 2 + phase,
+                "halting_count": 1,
+                "waiting_time": 10.0,
+                "mean_speed": 5.0,
+                "occupancy": 20.0,
+            }
+            lanes[f"{iid}_out_{phase}"] = {
+                "vehicle_count": 0,
+                "halting_count": 0,
+                "waiting_time": 0.0,
+                "mean_speed": 10.0,
+                "occupancy": 5.0,
+            }
+        intersections[iid] = {
+            "current_phase": 0,
+            "pending_phase": None,
+            "stage": "GREEN",
+            "stage_elapsed": 20.0,
+            "lanes": lanes,
+        }
+    step_body = {
+        "episode_id": metadata["episode_id"],
+        "step_id": 4,
+        "simulation_time": 20.0,
+        "intersections": intersections,
+        "vehicles": {},
+    }
+    first = mappo.step(step_body)
+    # 重置决策时钟后再次同观测，确定性模型应给出相同动作
+    controller._last_decision_times = {
+        iid: -1e9 for iid in controller._intersection_ids
+    }
+    second = mappo.step(step_body)
+    assert first["actions"]["signals"]
+    assert first["actions"]["signals"] == second["actions"]["signals"]
+    assert first["actions"]["vehicles"] == {}
+    mappo.finish({"episode_id": metadata["episode_id"], "reason": "completed"})
 
 def test_redis_codec_preserves_algorithm_transport_and_module() -> None:
     config = SimulationConfig(

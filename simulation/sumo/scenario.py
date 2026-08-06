@@ -29,6 +29,7 @@ class CompiledScenario:
     sumocfg: Path
     route_file: Path
     additional_file: Path
+    tripinfo_file: Path
     period: str
     official_start_seconds: int
     window_start_seconds: float
@@ -122,7 +123,7 @@ def compile_session_scenario(
     window_start_seconds: float = 0.0,
     duration_seconds: float | None = None,
     flow_multiplier: float = 1.0,
-    step_length: float = 0.05,
+    step_length: float = 0.1,
     generated_dir: Path = DEFAULT_GENERATED_DIR,
     session_root: Path = DEFAULT_SESSION_ROOT,
 ) -> CompiledScenario:
@@ -344,14 +345,12 @@ def compile_session_scenario(
     ET.SubElement(time_node, "step-length", {"value": _format_number(step_length)})
     processing = ET.SubElement(config_root, "processing")
     ET.SubElement(processing, "time-to-teleport", {"value": "-1"})
-    output = ET.SubElement(config_root, "output")
+    ET.SubElement(processing, "device.emissions.probability", {"value": "1"})
+    output_node = ET.SubElement(config_root, "output")
+    tripinfo_file = session_dir / "tripinfo.xml"
+    ET.SubElement(output_node, "tripinfo-output", {"value": tripinfo_file.name})
     ET.SubElement(
-        output,
-        "tripinfo-output",
-        {"value": str((session_dir / "tripinfo.xml").resolve())},
-    )
-    ET.SubElement(
-        output,
+        output_node,
         "tripinfo-output.write-unfinished",
         {"value": "true"},
     )
@@ -383,6 +382,7 @@ def compile_session_scenario(
         sumocfg=sumocfg,
         route_file=route_file,
         additional_file=additional_file,
+        tripinfo_file=tripinfo_file,
         period=period,
         official_start_seconds=int(official_start),
         window_start_seconds=float(window_start_seconds),
@@ -434,6 +434,7 @@ def load_compiled_scenario(
     sumocfg = session_dir / "session.sumocfg"
     route_file = session_dir / "session.rou.xml"
     additional_file = session_dir / "session.add.xml"
+    tripinfo_file = session_dir / "tripinfo.xml"
     missing = [
         str(path)
         for path in (sumocfg, route_file, additional_file)
@@ -458,6 +459,7 @@ def load_compiled_scenario(
         sumocfg=sumocfg,
         route_file=route_file,
         additional_file=additional_file,
+        tripinfo_file=tripinfo_file,
         period=str(manifest["period"]),
         official_start_seconds=int(manifest["official_start_seconds"]),
         window_start_seconds=float(manifest["window_start_seconds"]),
