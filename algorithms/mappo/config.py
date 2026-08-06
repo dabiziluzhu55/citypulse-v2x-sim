@@ -12,9 +12,6 @@ from algorithms.mappo.features import (
 from traffic_control.ippo.identity import IDENTITY_SLOT_IDS
 
 
-MAPPO_V1_MODEL_VERSION = "mappo_v1"
-MAPPO_V2_SHARED_MODEL_VERSION = "mappo_v2_isomorphic_shared_actor"
-MAPPO_V2_RESIDUAL_MODEL_VERSION = "mappo_v2_isomorphic_residual_actor"
 REWARD_SCOPE_LOCAL = "local"
 REWARD_SCOPE_SHARED_TEAM = "shared_team"
 TEAM_REWARD_SCHEMA = "v5a_team_mean_raw_then_clip_v1"
@@ -24,24 +21,9 @@ TEAM_REWARD_CLIP_STAGE = "after_team_aggregation"
 LOCAL_REWARD_AGGREGATION = "per_agent_raw_then_clip"
 LOCAL_REWARD_CLIP_STAGE = "before_local_return"
 COOPERATIVE_MODEL_VERSION = "cooperative_joint_v1"
-COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION = (
-    "cooperative_joint_owner_conditioned_v1"
-)
-COOPERATIVE_M1_MODEL_VERSION = "cooperative_m1_v1"
-COOPERATIVE_MODEL_VERSIONS = frozenset(
-    {
-        COOPERATIVE_MODEL_VERSION,
-        COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-        COOPERATIVE_M1_MODEL_VERSION,
-    }
-)
+COOPERATIVE_MODEL_VERSIONS = frozenset({COOPERATIVE_MODEL_VERSION})
 MODEL_ACTOR_VARIANTS = {
-    MAPPO_V1_MODEL_VERSION: "shared",
-    MAPPO_V2_SHARED_MODEL_VERSION: "shared",
-    MAPPO_V2_RESIDUAL_MODEL_VERSION: "residual",
     COOPERATIVE_MODEL_VERSION: "shared",
-    COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION: "shared",
-    COOPERATIVE_M1_MODEL_VERSION: "shared",
 }
 
 
@@ -49,9 +31,8 @@ MODEL_ACTOR_VARIANTS = {
 class MAPPOConfig:
     intersection_ids: tuple[str, ...]
     critic_scope: str = "global"
-    model_version: str = MAPPO_V1_MODEL_VERSION
+    model_version: str = COOPERATIVE_MODEL_VERSION
     actor_variant: str = "shared"
-    residual_hidden_dim: int = 32
     identity_offset: int = IPPO_V8_IDENTITY_OFFSET
     phase_feature_schema: str = (
         "connection_pressure_service_age_eta_demand_v2"
@@ -73,16 +54,10 @@ class MAPPOConfig:
     max_grad_norm: float = 0.5
     huber_delta: float = 10.0
     centralized_state_schema: str = CENTRALIZED_STATE_SCHEMA
-    reward_scope: str = REWARD_SCOPE_LOCAL
+    reward_scope: str = REWARD_SCOPE_SHARED_TEAM
     team_reward_schema: str = TEAM_REWARD_SCHEMA
     joint_step_schema: str = JOINT_STEP_SCHEMA
-    critic_target_scope: str = "local_return"
-    m1_target_mode: str = "shared"
-    m1_arm: str = "m1_0"
-    m1_local_weight: float = 0.0
-    m1_neighbor_weight: float = 0.0
-    m1_team_weight: float = 1.0
-    m1_adjacency_path: str | None = None
+    critic_target_scope: str = "team_return"
 
     def __post_init__(self) -> None:
         ids = tuple(str(value) for value in self.intersection_ids)
@@ -126,53 +101,10 @@ class MAPPOConfig:
                 "model version and actor variant mismatch: "
                 f"{self.model_version!r} requires {expected_actor_variant!r}"
             )
-        if int(self.residual_hidden_dim) != 32:
-            raise ValueError("MAPPO-v2 residual hidden dimension must be 32")
         if int(self.identity_offset) != IPPO_V8_IDENTITY_OFFSET:
             raise ValueError(
-                "MAPPO-v2 identity offset must match the IPPO-v8 schema"
+                "identity offset must match the IPPO-v8 schema"
             )
-        if self.model_version == COOPERATIVE_M1_MODEL_VERSION:
-            if self.reward_scope != REWARD_SCOPE_SHARED_TEAM:
-                raise ValueError(
-                    "cooperative_m1 requires shared_team reward"
-                )
-            if self.critic_scope != "global":
-                raise ValueError(
-                    "cooperative_m1 requires global critic scope"
-                )
-            if self.m1_target_mode not in {"per_agent", "m1_0_scalar"}:
-                raise ValueError(
-                    "cooperative_m1 target mode must be per_agent or m1_0_scalar"
-                )
-            if self.m1_target_mode == "m1_0_scalar":
-                if (
-                    self.m1_local_weight,
-                    self.m1_neighbor_weight,
-                    self.m1_team_weight,
-                ) != (0.0, 0.0, 1.0):
-                    raise ValueError(
-                        "m1_0 requires pure team advantage weights"
-                    )
-            else:
-                weights = (
-                    self.m1_local_weight,
-                    self.m1_neighbor_weight,
-                    self.m1_team_weight,
-                )
-                if any(not (0.0 <= w <= 1.0) for w in weights):
-                    raise ValueError("m1 weights must be in [0,1]")
-                if abs(sum(weights) - 1.0) > 1e-6:
-                    raise ValueError("m1 weights must sum to 1")
-                if self.m1_arm == "m1_a" and self.m1_neighbor_weight != 0.0:
-                    raise ValueError("m1_a requires zero neighbor weight")
-                if self.m1_arm == "m1_b" and self.m1_neighbor_weight <= 0.0:
-                    raise ValueError("m1_b requires positive neighbor weight")
-                if self.m1_adjacency_path is None:
-                    raise ValueError(
-                        "m1 per-agent arms require adjacency path"
-                    )
-
     @property
     def obs_dim(self) -> int:
         """Fixed 20-slot observation dimension (IPPO-v8 identity contract)."""

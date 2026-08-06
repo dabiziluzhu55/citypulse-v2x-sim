@@ -39,7 +39,7 @@ from algorithms.ippo.controller import (  # noqa: E402
     load_checkpoint_metadata,
 )
 from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
-from simulation.sumo.tripinfo import (  # noqa: E402
+from algorithms.evaluation.tripinfo_diagnostics import (  # noqa: E402
     parse_tripinfo_diagnostics,
     residual_mismatch,
 )
@@ -363,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         "--preset",
         choices=("east_dense", "west_dense", "xiongan_20"),
         default=None,
-        help="scenario preset; controlled IDs come from backend/app/scenario/presets.py",
+        help="scenario preset; controlled IDs come from algorithms/config/scenario_presets.py",
     )
     parser.add_argument(
         "--seeds",
@@ -393,7 +393,7 @@ def main(argv: list[str] | None = None) -> int:
 
     methods = tuple(dict.fromkeys(args.methods))
     if args.preset is not None:
-        from backend.app.scenario.presets import SCENARIO_PRESET_REGISTRY
+        from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
 
         intersections = SCENARIO_PRESET_REGISTRY[args.preset].intersection_ids
     else:

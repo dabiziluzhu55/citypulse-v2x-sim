@@ -3,7 +3,7 @@ import pytest
 from algorithms.coslight.scope_cli import (
     build_scope_block, parse_intersections, resolve_scope,
 )
-from config.scenario_presets import ResolvedScenarioScope
+from algorithms.config.scenario_presets import ResolvedScenarioScope
 
 
 def test_parse_single_integer_expands_demo_range():

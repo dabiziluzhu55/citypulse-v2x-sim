@@ -15,7 +15,6 @@ from algorithms.mappo.config import (
     COOPERATIVE_MODEL_VERSIONS,
     LOCAL_REWARD_AGGREGATION,
     LOCAL_REWARD_CLIP_STAGE,
-    MAPPO_V1_MODEL_VERSION,
     MODEL_ACTOR_VARIANTS,
     MAPPOConfig,
     REWARD_SCOPE_LOCAL,
@@ -99,15 +98,7 @@ class CheckpointMetadata:
     training_workers: int | None = None
     episode_duration_s: float | None = None
     actor_variant: str | None = None
-    residual_hidden_dim: int | None = None
     identity_offset: int | None = None
-    residual_init_seed: int | None = None
-    m1_target_mode: str | None = None
-    m1_arm: str | None = None
-    m1_local_weight: float | None = None
-    m1_neighbor_weight: float | None = None
-    m1_team_weight: float | None = None
-    m1_adjacency_path: str | None = None
 
     def __post_init__(self) -> None:
         intersection_ids = tuple(str(value) for value in self.intersection_ids)
@@ -218,51 +209,12 @@ class CheckpointMetadata:
             raise ValueError(
                 f"unknown checkpoint model version: {self.model_version!r}"
             )
-        if self.model_version == MAPPO_V1_MODEL_VERSION:
-            if self.actor_variant not in {None, expected_actor_variant}:
-                raise ValueError(
-                    "checkpoint model version and actor variant mismatch"
-                )
-            if self.residual_hidden_dim not in {None, 32}:
-                raise ValueError(
-                    "checkpoint residual hidden dimension is invalid"
-                )
-            if self.identity_offset not in {
-                None,
-                IPPO_V8_IDENTITY_OFFSET,
-            }:
-                raise ValueError("checkpoint identity offset is invalid")
-            if self.residual_init_seed is not None:
-                raise ValueError(
-                    "legacy shared Actor cannot have a residual initialization seed"
-                )
-        else:
-            if self.actor_variant != expected_actor_variant:
-                raise ValueError(
-                    "checkpoint model version and actor variant mismatch"
-                )
-            if self.residual_hidden_dim != 32:
-                raise ValueError(
-                    "checkpoint residual hidden dimension must be 32"
-                )
-            if self.identity_offset != IPPO_V8_IDENTITY_OFFSET:
-                raise ValueError(
-                    "checkpoint identity offset does not match IPPO-v8"
-                )
-            if (
-                expected_actor_variant == "residual"
-                and self.residual_init_seed is None
-            ):
-                raise ValueError(
-                    "checkpoint residual initialization seed is missing"
-                )
-            if (
-                expected_actor_variant == "shared"
-                and self.residual_init_seed is not None
-            ):
-                raise ValueError(
-                    "shared Actor cannot have a residual initialization seed"
-                )
+        if self.actor_variant not in {None, expected_actor_variant}:
+            raise ValueError(
+                "checkpoint model version and actor variant mismatch"
+            )
+        if self.identity_offset not in {None, IPPO_V8_IDENTITY_OFFSET}:
+            raise ValueError("checkpoint identity offset is invalid")
         positive_dimensions = (
             self.obs_dim,
             self.phase_feature_dim,
@@ -331,7 +283,6 @@ class CheckpointMetadata:
         transfer_source_sha256: str | None = None,
         training_workers: int | None = None,
         episode_duration_s: float | None = None,
-        residual_init_seed: int | None = None,
     ) -> "CheckpointMetadata":
         periods = tuple(str(value) for value in training_periods)
         objective = objective_provenance(config)
@@ -384,19 +335,7 @@ class CheckpointMetadata:
                 else float(episode_duration_s)
             ),
             actor_variant=config.actor_variant,
-            residual_hidden_dim=config.residual_hidden_dim,
             identity_offset=config.identity_offset,
-            residual_init_seed=(
-                None
-                if residual_init_seed is None
-                else int(residual_init_seed)
-            ),
-            m1_target_mode=config.m1_target_mode,
-            m1_arm=config.m1_arm,
-            m1_local_weight=config.m1_local_weight,
-            m1_neighbor_weight=config.m1_neighbor_weight,
-            m1_team_weight=config.m1_team_weight,
-            m1_adjacency_path=config.m1_adjacency_path,
         )
 
 
@@ -486,6 +425,10 @@ def _metadata_from_payload(payload: Mapping[str, Any]) -> CheckpointMetadata:
         raise CheckpointCompatibilityError("checkpoint metadata is missing")
     format_version = payload.get("checkpoint_format_version")
     normalized = dict(raw)
+    known_fields = {field.name for field in fields(CheckpointMetadata)}
+    normalized = {
+        key: value for key, value in normalized.items() if key in known_fields
+    }
     if format_version == 1:
         critic_scope = normalized.get("critic_scope")
         if critic_scope not in {"local", "global"}:
@@ -570,7 +513,6 @@ def _validate_metadata(
     expected_config: MAPPOConfig,
     expected_local_observation_schema: str,
     expected_reward_definition: str | None,
-    expected_residual_init_seed: int | None,
 ) -> None:
     if (
         checkpoint_format_version == 1
@@ -694,54 +636,18 @@ def _validate_metadata(
                 f"checkpoint {label} mismatch: saved={saved!r}, expected={expected!r}"
             )
     if metadata.actor_variant is not None:
-        v2_checks = (
-            (
-                "actor variant",
-                metadata.actor_variant,
-                expected_config.actor_variant,
-            ),
-            (
-                "residual hidden dimension",
-                metadata.residual_hidden_dim,
-                expected_config.residual_hidden_dim,
-            ),
-            (
-                "identity offset",
-                metadata.identity_offset,
-                expected_config.identity_offset,
-            ),
-        )
-        for label, saved, expected in v2_checks:
-            if saved != expected:
-                raise CheckpointCompatibilityError(
-                    f"checkpoint {label} mismatch: "
-                    f"saved={saved!r}, expected={expected!r}"
-                )
-    if metadata.m1_target_mode is not None:
-        m1_checks = (
-            ("m1 target mode", metadata.m1_target_mode, expected_config.m1_target_mode),
-            ("m1 arm", metadata.m1_arm, expected_config.m1_arm),
-            ("m1 local weight", metadata.m1_local_weight, expected_config.m1_local_weight),
-            ("m1 neighbor weight", metadata.m1_neighbor_weight, expected_config.m1_neighbor_weight),
-            ("m1 team weight", metadata.m1_team_weight, expected_config.m1_team_weight),
-            ("m1 adjacency path", metadata.m1_adjacency_path, expected_config.m1_adjacency_path),
-        )
-        for label, saved, expected in m1_checks:
-            if saved != expected:
-                raise CheckpointCompatibilityError(
-                    f"checkpoint {label} mismatch: "
-                    f"saved={saved!r}, expected={expected!r}"
-                )
-    if metadata.actor_variant == "residual":
-        if expected_residual_init_seed is None:
+        if metadata.actor_variant != expected_config.actor_variant:
             raise CheckpointCompatibilityError(
-                "expected residual initialization seed is required"
+                "checkpoint actor variant mismatch: "
+                f"saved={metadata.actor_variant!r}, "
+                f"expected={expected_config.actor_variant!r}"
             )
-        if metadata.residual_init_seed != int(expected_residual_init_seed):
+    if metadata.identity_offset is not None:
+        if metadata.identity_offset != expected_config.identity_offset:
             raise CheckpointCompatibilityError(
-                "checkpoint residual initialization seed mismatch: "
-                f"saved={metadata.residual_init_seed!r}, "
-                f"expected={int(expected_residual_init_seed)!r}"
+                "checkpoint identity offset mismatch: "
+                f"saved={metadata.identity_offset!r}, "
+                f"expected={expected_config.identity_offset!r}"
             )
     if (
         expected_reward_definition is not None
@@ -762,7 +668,6 @@ def load_checkpoint(
     expected_config: MAPPOConfig,
     expected_local_observation_schema: str,
     expected_reward_definition: str | None = None,
-    expected_residual_init_seed: int | None = None,
     expected_metadata: CheckpointMetadata | None = None,
     restore_rng: bool = True,
 ) -> CheckpointMetadata:
@@ -778,7 +683,6 @@ def load_checkpoint(
         expected_config,
         expected_local_observation_schema,
         expected_reward_definition,
-        expected_residual_init_seed,
     )
     required = {
         "policy_state_dict",

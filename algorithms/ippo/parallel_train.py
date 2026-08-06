@@ -144,7 +144,7 @@ def _run_sumo_worker(request: Mapping[str, object]) -> dict:
             decision_interval=5.0,
             minimum_green=5.0,
             seed=seed,
-            step_length=0.05,
+            step_length=float(request["step_length"]),
         )
         session_id = manager.start(config)
         snapshot = manager.wait(
@@ -279,6 +279,7 @@ def _run_policy_batch(
     seeds: Sequence[int],
     intersections: Sequence[str],
     duration: int,
+    step_length: float,
     periods: Sequence[str],
     action_interval: float,
     effective_demand_enabled: bool,
@@ -290,6 +291,7 @@ def _run_policy_batch(
     request_base = {
         "intersection_ids": tuple(intersections),
         "duration": duration,
+        "step_length": float(step_length),
         "action_interval": action_interval,
         "effective_demand_enabled": effective_demand_enabled,
         "policy_seed": policy_seed,
@@ -329,6 +331,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--duration", type=int, default=300)
+    parser.add_argument(
+        "--step-length", type=float, default=0.1, help="SUMO simulation step (s)"
+    )
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--intersections", type=int, default=20)
     parser.add_argument(
@@ -368,7 +373,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resume", type=Path, default=None)
     args = parser.parse_args(argv)
 
-    for name in ("episodes", "duration", "workers", "intersections"):
+    for name in ("episodes", "duration", "workers", "intersections", "step_length"):
         _positive(parser, name, getattr(args, name))
     _positive(parser, "checkpoint-every", args.checkpoint_every)
     _positive(parser, "action-interval", args.action_interval)
@@ -489,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
                 seeds=seeds,
                 intersections=intersections,
                 duration=args.duration,
+                step_length=args.step_length,
                 periods=_period_batch(
                     seeds,
                     periods=periods,

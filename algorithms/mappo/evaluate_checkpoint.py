@@ -95,7 +95,6 @@ def _config_from_metadata(
         critic_scope=metadata.critic_scope,
         model_version=metadata.model_version,
         actor_variant=metadata.actor_variant or "shared",
-        residual_hidden_dim=metadata.residual_hidden_dim or 32,
         identity_offset=metadata.identity_offset or 9,
         phase_feature_schema=metadata.phase_feature_schema,
         phase_feature_dim=metadata.phase_feature_dim,
@@ -155,13 +154,7 @@ def load_evaluation_checkpoint(
         phase_feature_dim=config.phase_feature_dim,
         model_version=config.model_version,
         actor_variant=config.actor_variant,
-        residual_hidden_dim=config.residual_hidden_dim,
         identity_offset=config.identity_offset,
-        residual_init_seed=(
-            44
-            if metadata.residual_init_seed is None
-            else metadata.residual_init_seed
-        ),
     )
     trainer = MAPPOTrainer(policy, config)
     loaded_metadata = load_checkpoint(
@@ -171,7 +164,6 @@ def load_evaluation_checkpoint(
         expected_config=config,
         expected_local_observation_schema=IPPO_V8_LOCAL_OBSERVATION_SCHEMA,
         expected_reward_definition=REWARD_DEFINITION,
-        expected_residual_init_seed=metadata.residual_init_seed,
         restore_rng=False,
     )
     if loaded_metadata != metadata:
@@ -227,7 +219,6 @@ def _run_evaluation(request: Mapping[str, object]) -> dict[str, object]:
         rollout_seed=seed,
         actor_init_seed=metadata.actor_init_seed,
         critic_init_seed=metadata.critic_init_seed,
-        residual_init_seed=metadata.residual_init_seed,
         expected_duration_s=float(request["duration"]),
         mode="model",
         record_evaluation=True,
@@ -246,7 +237,7 @@ def _run_evaluation(request: Mapping[str, object]) -> dict[str, object]:
             decision_interval=5.0,
             minimum_green=5.0,
             seed=seed,
-            step_length=0.05,
+            step_length=float(request["step_length"]),
             ai_observer_module="algorithms.evaluation.observer",
             ai_frame_interval_seconds=1.0,
         )
@@ -367,12 +358,32 @@ def _atomic_write_json(path: Path, payload: Mapping[str, object]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _scenario_preset_intersections(preset_id: str) -> tuple[str, ...]:
+    """Resolve a typical-scenario preset to its controlled intersection IDs.
+
+    Uses the algorithm-side registry (``algorithms.config.scenario_presets``)
+    as the single source of truth; does not depend on backend re-exports.
+    """
+    from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
+
+    preset = SCENARIO_PRESET_REGISTRY.get(preset_id)
+    if preset is None:
+        allowed = sorted(SCENARIO_PRESET_REGISTRY)
+        raise ValueError(
+            f"unknown scenario preset {preset_id!r}; available: {allowed}"
+        )
+    return tuple(preset.intersection_ids)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--seeds", nargs="+", type=int, required=True)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--duration", type=int, default=300)
+    parser.add_argument(
+        "--step-length", type=float, default=0.1, help="SUMO simulation step (s)"
+    )
     parser.add_argument("--period", default="off_peak")
     parser.add_argument("--label")
     parser.add_argument("--output", type=Path, required=True)
@@ -393,21 +404,18 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("workers must be positive")
     if args.duration <= 0:
         parser.error("duration must be positive")
+    if args.step_length <= 0:
+        parser.error("step-length must be positive")
     if not args.period:
         parser.error("period must be non-empty")
     checkpoint_path = args.checkpoint.expanduser().resolve()
     if not checkpoint_path.is_file():
         parser.error("checkpoint must be an existing file")
     if args.preset is not None:
-        from backend.app.scenario.presets import SCENARIO_PRESET_REGISTRY
-
-        if args.preset not in SCENARIO_PRESET_REGISTRY:
-            parser.error(
-                "unknown scenario preset "
-                f"{args.preset!r}; available: "
-                f"{sorted(SCENARIO_PRESET_REGISTRY)}"
-            )
-        intersections = SCENARIO_PRESET_REGISTRY[args.preset].intersection_ids
+        try:
+            intersections = _scenario_preset_intersections(args.preset)
+        except ValueError as error:
+            parser.error(str(error))
     elif args.intersections is not None:
         intersections = tuple(dict.fromkeys(args.intersections))
     else:
@@ -433,6 +441,7 @@ def main(argv: list[str] | None = None) -> int:
             "seed": seed,
             "period": args.period,
             "duration": args.duration,
+            "step_length": args.step_length,
             "mappo_config": checkpoint.config,
             "checkpoint_metadata": checkpoint.metadata,
             "policy_state": checkpoint.policy_state,
@@ -441,10 +450,11 @@ def main(argv: list[str] | None = None) -> int:
     ]
     logger.info(
         "Deterministic checkpoint evaluation: label=%s seeds=%s "
-        "duration=%ds tls=%d workers=%d",
+        "duration=%ds step_length=%.2f tls=%d workers=%d",
         label,
         list(seeds),
         args.duration,
+        args.step_length,
         len(checkpoint.config.intersection_ids),
         worker_count,
     )

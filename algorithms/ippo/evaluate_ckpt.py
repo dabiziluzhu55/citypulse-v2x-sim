@@ -126,6 +126,7 @@ def evaluate(
     seeds: Iterable[int] = EVAL_SEEDS,
     duration: int = DEFAULT_DURATION,
     action_interval: float = DEFAULT_ACTION_INTERVAL,
+    step_length: float = 0.1,
 ) -> dict:
     checkpoint = Path(model_path).expanduser().resolve()
     metadata = load_checkpoint_metadata(checkpoint)
@@ -169,7 +170,7 @@ def evaluate(
             decision_interval=5.0,
             minimum_green=5.0,
             seed=seed,
-            step_length=0.05,
+            step_length=step_length,
             ai_observer_module="algorithms.evaluation.observer",
             # Safety events need denser observations than queue/fuel metrics.
             ai_frame_interval_seconds=0.2,
@@ -274,10 +275,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", default="")
     parser.add_argument("--duration", type=int, default=DEFAULT_DURATION)
     parser.add_argument("--action-interval", type=float, default=DEFAULT_ACTION_INTERVAL)
+    parser.add_argument("--step-length", type=float, default=0.1)
     parser.add_argument("--seeds", type=int, nargs="+", default=list(EVAL_SEEDS))
     args = parser.parse_args(argv)
-    if args.duration <= 0 or args.action_interval <= 0:
-        parser.error("duration and action interval must be positive")
+    if args.duration <= 0 or args.action_interval <= 0 or args.step_length <= 0:
+        parser.error("duration, action interval and step length must be positive")
 
     try:
         logger.info("评估: %s", args.model_path)
@@ -286,6 +288,7 @@ def main(argv: list[str] | None = None) -> int:
             seeds=args.seeds,
             duration=args.duration,
             action_interval=args.action_interval,
+            step_length=args.step_length,
         )
         output_path = Path(args.output or args.model_path.replace(".pt", "_eval.json"))
         output_path.parent.mkdir(parents=True, exist_ok=True)

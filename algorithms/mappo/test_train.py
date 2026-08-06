@@ -7,12 +7,8 @@ import pytest
 
 import algorithms.mappo.train as train_module
 from algorithms.mappo.config import (
-    COOPERATIVE_M1_MODEL_VERSION,
     COOPERATIVE_MODEL_VERSION,
-    COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
     MAPPOConfig,
-    MAPPO_V2_RESIDUAL_MODEL_VERSION,
-    REWARD_SCOPE_LOCAL,
     REWARD_SCOPE_SHARED_TEAM,
     algorithm_label,
     assert_seed_disjoint,
@@ -106,34 +102,6 @@ def test_periodic_checkpoint_is_due_only_after_a_complete_interval() -> None:
     ).as_posix() == "/tmp/run/checkpoints/mappo_ep000164.pt"
 
 
-def test_v2_checkpoint_metadata_records_residual_seed() -> None:
-    config = MAPPOConfig(
-        ("demo_1",),
-        model_version=MAPPO_V2_RESIDUAL_MODEL_VERSION,
-        actor_variant="residual",
-    )
-
-    metadata = _checkpoint_metadata(
-        config=config,
-        episode=32,
-        policy_generation=8,
-        actor_init_seed=142,
-        critic_init_seed=242,
-        residual_init_seed=342,
-        training_seed_start=95101,
-        training_seed_end=95132,
-        training_periods=("off_peak",),
-        training_workers=8,
-        episode_duration_s=300,
-    )
-
-    assert metadata.model_version == MAPPO_V2_RESIDUAL_MODEL_VERSION
-    assert metadata.actor_variant == "residual"
-    assert metadata.residual_hidden_dim == 32
-    assert metadata.identity_offset == 9
-    assert metadata.residual_init_seed == 342
-
-
 def test_training_diagnostics_are_atomically_replaced(tmp_path) -> None:
     output_path = tmp_path / "diagnostics.json"
     payload = {
@@ -168,7 +136,6 @@ def test_training_config_factory_builds_explicit_cooperative_variants(
         ("demo_1", "demo_2"),
         critic_scope=critic_scope,
         model_version=COOPERATIVE_MODEL_VERSION,
-        reward_scope=REWARD_SCOPE_SHARED_TEAM,
     )
 
     assert config.model_version == COOPERATIVE_MODEL_VERSION
@@ -184,74 +151,22 @@ def test_cli_parser_accepts_explicit_cooperative_objective() -> None:
             "93001",
             "--model-version",
             COOPERATIVE_MODEL_VERSION,
-            "--reward-scope",
-            REWARD_SCOPE_SHARED_TEAM,
             "--critic-scope",
             "global",
         ]
     )
 
     assert args.model_version == COOPERATIVE_MODEL_VERSION
-    assert args.reward_scope == REWARD_SCOPE_SHARED_TEAM
     assert args.critic_scope == "global"
 
 
-def test_cli_parser_accepts_owner_conditioned_cooperative_model() -> None:
-    args = _parse_training_args(
-        [
-            "--base-seed",
-            "93001",
-            "--model-version",
-            COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-            "--reward-scope",
-            REWARD_SCOPE_SHARED_TEAM,
-            "--critic-scope",
-            "global",
-        ]
-    )
-
-    assert args.model_version == COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION
-
-
-def test_owner_conditioned_run_label_cannot_overwrite_v1_checkpoint() -> None:
-    config = _build_training_config(
-        ("demo_1", "demo_2"),
-        critic_scope="global",
-        model_version=COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-        reward_scope=REWARD_SCOPE_SHARED_TEAM,
-    )
-
-    assert _training_run_label(config) == "cooperative_mappo_v1_1_as"
-    assert _default_checkpoint_path(config, intersections=2).name == (
-        "cooperative_mappo_v1_1_as_2tls.pt"
-    )
-
-
-def test_training_config_factory_defaults_remain_legacy_local_reward() -> None:
+def test_training_config_factory_defaults_to_cooperative_joint_v1() -> None:
     config = _build_training_config(("demo_1", "demo_2"))
 
-    assert config.reward_scope == REWARD_SCOPE_LOCAL
-    assert config.critic_target_scope == "local_return"
-    assert algorithm_label(config) == "cc_ippo_local_reward"
-
-
-@pytest.mark.parametrize(
-    ("model_version", "reward_scope"),
-    [
-        (COOPERATIVE_MODEL_VERSION, REWARD_SCOPE_LOCAL),
-        ("mappo_v1", REWARD_SCOPE_SHARED_TEAM),
-    ],
-)
-def test_invalid_mixed_objective_fails_in_config_factory_before_sumo(
-    model_version: str, reward_scope: str
-) -> None:
-    with pytest.raises(ValueError, match="cooperative|shared_team|objective"):
-        _build_training_config(
-            ("demo_1", "demo_2"),
-            critic_scope="global",
-            model_version=model_version,
-            reward_scope=reward_scope,
-        )
+    assert config.model_version == COOPERATIVE_MODEL_VERSION
+    assert config.reward_scope == REWARD_SCOPE_SHARED_TEAM
+    assert config.critic_target_scope == "team_return"
+    assert algorithm_label(config) == "cooperative_mappo"
 
 
 @pytest.mark.parametrize("critic_scope", ["global", "local"])
@@ -262,7 +177,6 @@ def test_startup_output_and_checkpoint_use_algorithm_label(
         ("demo_1", "demo_2"),
         critic_scope=critic_scope,
         model_version=COOPERATIVE_MODEL_VERSION,
-        reward_scope=REWARD_SCOPE_SHARED_TEAM,
     )
     expected_label = algorithm_label(config)
 
@@ -276,7 +190,6 @@ def test_startup_output_and_checkpoint_use_algorithm_label(
         policy_generation=1,
         actor_init_seed=42,
         critic_init_seed=43,
-        residual_init_seed=None,
         training_seed_start=93001,
         training_seed_end=93008,
         training_periods=("off_peak",),
@@ -304,8 +217,6 @@ class _StopBeforeSumo(RuntimeError):
             (
                 "--model-version",
                 COOPERATIVE_MODEL_VERSION,
-                "--reward-scope",
-                REWARD_SCOPE_SHARED_TEAM,
                 "--critic-scope",
                 "global",
             ),
@@ -315,14 +226,12 @@ class _StopBeforeSumo(RuntimeError):
             (
                 "--model-version",
                 COOPERATIVE_MODEL_VERSION,
-                "--reward-scope",
-                REWARD_SCOPE_SHARED_TEAM,
                 "--critic-scope",
                 "local",
             ),
             "cooperative_ippo",
         ),
-        ((), "cc_ippo_local_reward"),
+        ((), "cooperative_mappo"),
     ],
 )
 def test_main_wires_cli_objective_before_any_sumo_worker(
@@ -364,42 +273,52 @@ def test_main_wires_cli_objective_before_any_sumo_worker(
     )
 
 
-@pytest.mark.parametrize(
-    ("model_version", "reward_scope"),
-    [
-        (COOPERATIVE_MODEL_VERSION, REWARD_SCOPE_LOCAL),
-        ("mappo_v1", REWARD_SCOPE_SHARED_TEAM),
-    ],
-)
-def test_main_rejects_mixed_objective_before_worker_dispatch(
+def test_main_wires_scenario_preset_before_any_sumo_worker(
     monkeypatch: pytest.MonkeyPatch,
-    model_version: str,
-    reward_scope: str,
 ) -> None:
-    worker_called = False
+    captured: dict[str, MAPPOConfig] = {}
 
-    def unexpected_worker_call(**_kwargs):
-        nonlocal worker_called
-        worker_called = True
-        raise AssertionError("worker must not start for an invalid objective")
+    def stop_before_sumo(**kwargs):
+        captured["config"] = kwargs["config"]
+        raise _StopBeforeSumo("intentional pre-SUMO test stop")
 
-    monkeypatch.setattr(
-        train_module, "_run_policy_batch", unexpected_worker_call
+    monkeypatch.setattr(train_module, "_run_policy_batch", stop_before_sumo)
+    result = train_module.main(
+        [
+            "--base-seed",
+            "93001",
+            "--episodes",
+            "1",
+            "--workers",
+            "1",
+            "--duration",
+            "120",
+            "--scenario-preset",
+            "east_dense",
+        ]
     )
 
+    assert result == 1
+    assert captured["config"].intersection_ids == (
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9",
+    )
+
+
+def test_scenario_preset_and_intersections_are_mutually_exclusive() -> None:
     with pytest.raises(SystemExit):
         train_module.main(
             [
                 "--base-seed",
                 "93001",
-                "--model-version",
-                model_version,
-                "--reward-scope",
-                reward_scope,
+                "--scenario-preset",
+                "east_dense",
+                "--intersections",
+                "4",
             ]
         )
-
-    assert not worker_called
 
 
 @pytest.mark.parametrize(
@@ -421,7 +340,6 @@ def test_main_prevalidates_resume_contract_before_checkpoint_mutation(
         policy_generation=1,
         actor_init_seed=42,
         critic_init_seed=43,
-        residual_init_seed=None,
         training_seed_start=93001,
         training_seed_end=93004,
         training_periods=("off_peak",),
@@ -461,124 +379,3 @@ def test_main_prevalidates_resume_contract_before_checkpoint_mutation(
         )
 
     assert not load_called
-
-
-def test_cli_parser_accepts_m1_model_and_adjacency() -> None:
-    args = _parse_training_args(
-        [
-            "--base-seed",
-            "93001",
-            "--model-version",
-            COOPERATIVE_M1_MODEL_VERSION,
-            "--reward-scope",
-            REWARD_SCOPE_SHARED_TEAM,
-            "--critic-scope",
-            "global",
-            "--m1-arm",
-            "m1_b",
-            "--m1-target-mode",
-            "per_agent",
-            "--m1-adjacency",
-            "runs/mappo_v2/m0/intersection_adjacency_m1_symmetric.json",
-            "--m1-local-weight",
-            "0.7",
-            "--m1-neighbor-weight",
-            "0.25",
-            "--m1-team-weight",
-            "0.05",
-        ]
-    )
-
-    assert args.model_version == COOPERATIVE_M1_MODEL_VERSION
-    assert args.m1_arm == "m1_b"
-    assert args.m1_target_mode == "per_agent"
-    assert args.m1_local_weight == 0.7
-    assert args.m1_neighbor_weight == 0.25
-    assert args.m1_team_weight == 0.05
-
-
-def test_m1_run_label_and_checkpoint_path_are_distinct() -> None:
-    config = _build_training_config(
-        ("demo_1", "demo_2"),
-        critic_scope="global",
-        model_version=COOPERATIVE_M1_MODEL_VERSION,
-        reward_scope=REWARD_SCOPE_SHARED_TEAM,
-        m1_arm="m1_b",
-        m1_target_mode="per_agent",
-        m1_local_weight=0.7,
-        m1_neighbor_weight=0.25,
-        m1_team_weight=0.05,
-        m1_adjacency_path="runs/mappo_v2/m0/intersection_adjacency_m1_symmetric.json",
-    )
-
-    assert config.model_version == COOPERATIVE_M1_MODEL_VERSION
-    assert config.m1_target_mode == "per_agent"
-    assert config.m1_adjacency_path.endswith("intersection_adjacency_m1_symmetric.json")
-    assert _training_run_label(config) == "mappo_m1_m1_b"
-    assert _default_checkpoint_path(config, intersections=2).name == (
-        "mappo_m1_m1_b_2tls.pt"
-    )
-
-
-def test_main_wires_m1_config_before_worker_dispatch(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-    tmp_path,
-) -> None:
-    adjacency = tmp_path / "adjacency.json"
-    adjacency.write_text(
-        json.dumps({"edges": {"demo_1": ["demo_2"], "demo_2": ["demo_1"]}}),
-        encoding="utf-8",
-    )
-    captured: dict[str, MAPPOConfig] = {}
-
-    def stop_before_sumo(**kwargs):
-        captured["config"] = kwargs["config"]
-        raise _StopBeforeSumo("intentional pre-SUMO test stop")
-
-    monkeypatch.setattr(train_module, "_run_policy_batch", stop_before_sumo)
-    caplog.set_level(logging.INFO, logger="mappo.train")
-    result = train_module.main(
-        [
-            "--base-seed",
-            "93001",
-            "--episodes",
-            "1",
-            "--workers",
-            "1",
-            "--duration",
-            "120",
-            "--intersections",
-            "2",
-            "--model-version",
-            COOPERATIVE_M1_MODEL_VERSION,
-            "--reward-scope",
-            REWARD_SCOPE_SHARED_TEAM,
-            "--critic-scope",
-            "global",
-            "--m1-arm",
-            "m1_b",
-            "--m1-target-mode",
-            "per_agent",
-            "--m1-adjacency",
-            str(adjacency),
-            "--m1-local-weight",
-            "0.7",
-            "--m1-neighbor-weight",
-            "0.25",
-            "--m1-team-weight",
-            "0.05",
-        ]
-    )
-
-    assert result == 1
-    config = captured["config"]
-    assert config.model_version == COOPERATIVE_M1_MODEL_VERSION
-    assert config.m1_arm == "m1_b"
-    assert config.m1_target_mode == "per_agent"
-    assert _training_run_label(config) == "mappo_m1_m1_b"
-    assert any(
-        "mappo_m1_m1_b" in record.getMessage()
-        and "start" in record.getMessage()
-        for record in caplog.records
-    )

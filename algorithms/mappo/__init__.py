@@ -22,7 +22,6 @@ class _PreparedCollector:
     rollout_seed: int
     actor_init_seed: int
     critic_init_seed: int
-    residual_init_seed: int | None
     expected_duration_s: float
     mode: str
     record_evaluation: bool
@@ -42,7 +41,6 @@ def prepare_collector(
     rollout_seed: int,
     actor_init_seed: int,
     critic_init_seed: int,
-    residual_init_seed: int | None = None,
     expected_duration_s: float,
     mode: str = "collect",
     record_evaluation: bool = False,
@@ -52,8 +50,6 @@ def prepare_collector(
     global _prepared, _controller, _collected_rollout, _collected_diagnostics
     if _controller is not None:
         raise RuntimeError("cannot replace policy while a MAPPO episode is active")
-    if config.actor_variant == "residual" and residual_init_seed is None:
-        raise ValueError("residual actor requires residual_init_seed")
     _prepared = _PreparedCollector(
         policy_state={
             str(name): tensor.detach().cpu().clone()
@@ -64,9 +60,6 @@ def prepare_collector(
         rollout_seed=int(rollout_seed),
         actor_init_seed=int(actor_init_seed),
         critic_init_seed=int(critic_init_seed),
-        residual_init_seed=(
-            None if residual_init_seed is None else int(residual_init_seed)
-        ),
         expected_duration_s=float(expected_duration_s),
         mode=str(mode),
         record_evaluation=bool(record_evaluation),
@@ -92,9 +85,7 @@ def initialize(metadata: dict) -> dict:
         phase_feature_dim=prepared.config.phase_feature_dim,
         model_version=prepared.config.model_version,
         actor_variant=prepared.config.actor_variant,
-        residual_hidden_dim=prepared.config.residual_hidden_dim,
         identity_offset=prepared.config.identity_offset,
-        residual_init_seed=(prepared.residual_init_seed or 44),
     )
     policy.load_state_dict(prepared.policy_state, strict=True)
     policy.eval()

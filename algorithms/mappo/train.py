@@ -42,15 +42,9 @@ from algorithms.mappo.checkpoint import (  # noqa: E402
     save_checkpoint,
 )
 from algorithms.mappo.config import (  # noqa: E402
-    COOPERATIVE_M1_MODEL_VERSION,
     COOPERATIVE_MODEL_VERSION,
-    COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-    MAPPO_V1_MODEL_VERSION,
-    MAPPO_V2_RESIDUAL_MODEL_VERSION,
-    MAPPO_V2_SHARED_MODEL_VERSION,
     MODEL_ACTOR_VARIANTS,
     MAPPOConfig,
-    REWARD_SCOPE_LOCAL,
     REWARD_SCOPE_SHARED_TEAM,
     algorithm_label,
     configuration_signature,
@@ -68,7 +62,6 @@ from algorithms.mappo.parallel_train import (  # noqa: E402
     CentralUpdateCoordinator,
     WorkerRollout,
     build_ppo_batch,
-    load_intersection_adjacency_matrix,
 )
 from algorithms.mappo.trainer import MAPPOTrainer  # noqa: E402
 from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
@@ -175,7 +168,6 @@ def _checkpoint_metadata(
     policy_generation: int,
     actor_init_seed: int,
     critic_init_seed: int,
-    residual_init_seed: int | None,
     training_seed_start: int,
     training_seed_end: int,
     training_periods: tuple[str, ...],
@@ -188,7 +180,6 @@ def _checkpoint_metadata(
         policy_generation=policy_generation,
         actor_init_seed=actor_init_seed,
         critic_init_seed=critic_init_seed,
-        residual_init_seed=residual_init_seed,
         training_seed_start=training_seed_start,
         training_seed_end=training_seed_end,
         training_periods=training_periods,
@@ -270,11 +261,6 @@ def _run_sumo_worker(request: Mapping[str, object]) -> dict[str, object]:
         rollout_seed=seed,
         actor_init_seed=int(request["actor_init_seed"]),
         critic_init_seed=int(request["critic_init_seed"]),
-        residual_init_seed=(
-            None
-            if request.get("residual_init_seed") is None
-            else int(request["residual_init_seed"])
-        ),
         expected_duration_s=float(request["duration"]),
         mode="collect",
         record_evaluation=False,
@@ -294,7 +280,7 @@ def _run_sumo_worker(request: Mapping[str, object]) -> dict[str, object]:
             decision_interval=5.0,
             minimum_green=5.0,
             seed=seed,
-            step_length=0.05,
+            step_length=float(request["step_length"]),
         )
         session_id = manager.start(session_config)
         snapshot = manager.wait(
@@ -348,11 +334,11 @@ def _run_policy_batch(
     periods: Sequence[str],
     config: MAPPOConfig,
     duration: int,
+    step_length: float,
     policy: MAPPOPolicy,
     policy_generation: int,
     actor_init_seed: int,
     critic_init_seed: int,
-    residual_init_seed: int | None = None,
 ) -> list[dict[str, object]]:
     if len(seeds) != len(periods):
         raise ValueError("periods must contain one value per worker")
@@ -364,14 +350,12 @@ def _run_policy_batch(
     base_request = {
         "config": config,
         "duration": int(duration),
+        "step_length": float(step_length),
         "policy_state": state,
         "policy_generation": int(policy_generation),
         "policy_digest": digest,
         "actor_init_seed": int(actor_init_seed),
         "critic_init_seed": int(critic_init_seed),
-        "residual_init_seed": (
-            None if residual_init_seed is None else int(residual_init_seed)
-        ),
     }
     context = multiprocessing.get_context("spawn")
     results: list[dict[str, object]] = []
@@ -418,45 +402,33 @@ def _training_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--model-version",
-        choices=(
-            MAPPO_V1_MODEL_VERSION,
-            MAPPO_V2_SHARED_MODEL_VERSION,
-            MAPPO_V2_RESIDUAL_MODEL_VERSION,
-            COOPERATIVE_MODEL_VERSION,
-            COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-            COOPERATIVE_M1_MODEL_VERSION,
-        ),
-        default=MAPPO_V1_MODEL_VERSION,
+        choices=(COOPERATIVE_MODEL_VERSION,),
+        default=COOPERATIVE_MODEL_VERSION,
     )
     parser.add_argument("--critic-scope", choices=("local", "global"), default="global")
-    parser.add_argument(
-        "--reward-scope",
-        choices=(REWARD_SCOPE_LOCAL, REWARD_SCOPE_SHARED_TEAM),
-        default=REWARD_SCOPE_LOCAL,
-    )
     parser.add_argument("--init", choices=("random",), default="random")
-    parser.add_argument("--intersections", type=int, default=20)
+    from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
+
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
+        "--scenario-preset",
+        choices=sorted(SCENARIO_PRESET_REGISTRY),
+        default=None,
+        help="Typical scenario preset (xiongan_20 / east_dense / west_dense); "
+        "mutually exclusive with --intersections",
+    )
+    scope.add_argument("--intersections", type=int, default=None)
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--duration", type=int, default=300)
+    parser.add_argument(
+        "--step-length", type=float, default=0.1, help="SUMO simulation step (s)"
+    )
     parser.add_argument("--base-seed", type=int, required=True)
     parser.add_argument("--period", default="off_peak")
     parser.add_argument("--periods", nargs="+", default=None)
     parser.add_argument("--actor-init-seed", type=int, default=42)
     parser.add_argument("--critic-init-seed", type=int, default=43)
-    parser.add_argument("--residual-init-seed", type=int, default=44)
-    parser.add_argument(
-        "--m1-arm", choices=("m1_0", "m1_a", "m1_b"), default="m1_0"
-    )
-    parser.add_argument(
-        "--m1-target-mode",
-        choices=("per_agent", "m1_0_scalar"),
-        default="m1_0_scalar",
-    )
-    parser.add_argument("--m1-adjacency", type=Path, default=None)
-    parser.add_argument("--m1-local-weight", type=float, default=0.0)
-    parser.add_argument("--m1-neighbor-weight", type=float, default=0.0)
-    parser.add_argument("--m1-team-weight", type=float, default=1.0)
     parser.add_argument("--checkpoint-every", type=int, default=20)
     parser.add_argument("--save", type=Path, default=None)
     parser.add_argument("--resume", type=Path, default=None)
@@ -477,44 +449,20 @@ def _build_training_config(
     intersection_ids: Sequence[str],
     *,
     critic_scope: str = "global",
-    model_version: str = MAPPO_V1_MODEL_VERSION,
-    reward_scope: str = REWARD_SCOPE_LOCAL,
-    m1_target_mode: str = "m1_0_scalar",
-    m1_arm: str = "m1_0",
-    m1_local_weight: float = 0.0,
-    m1_neighbor_weight: float = 0.0,
-    m1_team_weight: float = 1.0,
-    m1_adjacency_path: str | None = None,
+    model_version: str = COOPERATIVE_MODEL_VERSION,
 ) -> MAPPOConfig:
     actor_variant = MODEL_ACTOR_VARIANTS[model_version]
-    critic_target_scope = (
-        "team_return"
-        if reward_scope == REWARD_SCOPE_SHARED_TEAM
-        else "local_return"
-    )
     return MAPPOConfig(
         tuple(str(value) for value in intersection_ids),
         critic_scope=critic_scope,
         model_version=model_version,
         actor_variant=actor_variant,
-        reward_scope=reward_scope,
-        critic_target_scope=critic_target_scope,
-        m1_target_mode=m1_target_mode,
-        m1_arm=m1_arm,
-        m1_local_weight=m1_local_weight,
-        m1_neighbor_weight=m1_neighbor_weight,
-        m1_team_weight=m1_team_weight,
-        m1_adjacency_path=(
-            None if m1_adjacency_path is None else str(m1_adjacency_path)
-        ),
+        reward_scope=REWARD_SCOPE_SHARED_TEAM,
+        critic_target_scope="team_return",
     )
 
 
 def _training_run_label(config: MAPPOConfig) -> str:
-    if config.model_version == COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION:
-        return "cooperative_mappo_v1_1_as"
-    if config.model_version == COOPERATIVE_M1_MODEL_VERSION:
-        return f"mappo_m1_{config.m1_arm}"
     return algorithm_label(config)
 
 
@@ -534,60 +482,47 @@ def main(argv: list[str] | None = None) -> int:
     parser = _training_arg_parser()
     args = _parse_training_args(argv, parser=parser)
 
-    for name in (
-        "intersections",
-        "episodes",
-        "workers",
-        "duration",
-        "checkpoint_every",
-    ):
+    for name in ("episodes", "workers", "duration", "checkpoint_every", "step_length"):
         _positive(parser, name, getattr(args, name))
-    if args.intersections > len(DEFAULT_INTERSECTION_IDS):
-        parser.error(f"intersections must be <= {len(DEFAULT_INTERSECTION_IDS)}")
     periods = tuple(str(value) for value in (args.periods or (args.period,)))
     if any(not value.strip() for value in periods):
         parser.error("training periods must be non-empty")
-    intersections = DEFAULT_INTERSECTION_IDS[: args.intersections]
+    if args.scenario_preset is not None:
+        from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
+
+        intersections = tuple(
+            SCENARIO_PRESET_REGISTRY[args.scenario_preset].intersection_ids
+        )
+    else:
+        _positive(parser, "intersections", args.intersections or 1)
+        if (args.intersections or len(DEFAULT_INTERSECTION_IDS)) > len(
+            DEFAULT_INTERSECTION_IDS
+        ):
+            parser.error(
+                f"intersections must be <= {len(DEFAULT_INTERSECTION_IDS)}"
+            )
+        intersections = DEFAULT_INTERSECTION_IDS[
+            : (args.intersections or len(DEFAULT_INTERSECTION_IDS))
+        ]
     workers = min(args.workers, args.episodes)
     try:
         config = _build_training_config(
             intersections,
             critic_scope=args.critic_scope,
             model_version=args.model_version,
-            reward_scope=args.reward_scope,
-            m1_target_mode=args.m1_target_mode,
-            m1_arm=args.m1_arm,
-            m1_local_weight=args.m1_local_weight,
-            m1_neighbor_weight=args.m1_neighbor_weight,
-            m1_team_weight=args.m1_team_weight,
-            m1_adjacency_path=args.m1_adjacency,
         )
     except (KeyError, ValueError) as error:
         parser.error(str(error))
     actor_variant = config.actor_variant
     run_label = _training_run_label(config)
     save_path = args.save or _default_checkpoint_path(
-        config, intersections=args.intersections
+        config, intersections=len(intersections)
     )
     diagnostics_path = (
         None
         if args.diagnostics_output is None
         else args.diagnostics_output.expanduser().resolve()
     )
-    residual_init_seed = (
-        args.residual_init_seed if actor_variant == "residual" else None
-    )
-    m1_adjacency: np.ndarray | None = None
-    if (
-        config.model_version == COOPERATIVE_M1_MODEL_VERSION
-        and config.m1_target_mode == "per_agent"
-    ):
-        if config.m1_adjacency_path is None:
-            parser.error("M1 per-agent arms require --m1-adjacency")
-        m1_adjacency = load_intersection_adjacency_matrix(
-            config.m1_adjacency_path, config.intersection_ids
-        )
-
     random.seed(args.actor_init_seed)
     np.random.seed(args.actor_init_seed % (2**32 - 1))
     torch.manual_seed(args.actor_init_seed)
@@ -601,9 +536,7 @@ def main(argv: list[str] | None = None) -> int:
         phase_feature_dim=config.phase_feature_dim,
         model_version=config.model_version,
         actor_variant=config.actor_variant,
-        residual_hidden_dim=config.residual_hidden_dim,
         identity_offset=config.identity_offset,
-        residual_init_seed=args.residual_init_seed,
     )
     trainer = MAPPOTrainer(policy, config)
     completed_episodes = 0
@@ -620,8 +553,6 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("resume checkpoint actor init seed does not match")
         if resume_metadata.critic_init_seed != args.critic_init_seed:
             parser.error("resume checkpoint critic init seed does not match")
-        if resume_metadata.residual_init_seed != residual_init_seed:
-            parser.error("resume checkpoint residual init seed does not match")
         if resume_metadata.training_periods != periods:
             parser.error("resume checkpoint training periods do not match")
         if (
@@ -665,7 +596,6 @@ def main(argv: list[str] | None = None) -> int:
             expected_config=config,
             expected_local_observation_schema=IPPO_V8_LOCAL_OBSERVATION_SCHEMA,
             expected_reward_definition=REWARD_DEFINITION,
-            expected_residual_init_seed=residual_init_seed,
             expected_metadata=resume_metadata,
         )
 
@@ -681,7 +611,7 @@ def main(argv: list[str] | None = None) -> int:
         joint_step_schema=config.joint_step_schema,
         digest_provider=lambda: policy_digest(policy),
         batch_builder=lambda rollouts: build_ppo_batch(
-            rollouts, config=config, adjacency=m1_adjacency
+            rollouts, config=config
         ),
     )
     diagnostic_batches: list[dict[str, object]] = []
@@ -696,7 +626,6 @@ def main(argv: list[str] | None = None) -> int:
             "actor_variant": config.actor_variant,
             "actor_init_seed": args.actor_init_seed,
             "critic_init_seed": args.critic_init_seed,
-            "residual_init_seed": residual_init_seed,
             "training_seed_start": training_seed_start,
             "training_seed_end": training_seed_end,
             "periods": list(periods),
@@ -743,12 +672,12 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 config=config,
                 duration=args.duration,
+                step_length=args.step_length,
                 policy=policy,
                 policy_generation=coordinator.policy_generation,
                 actor_init_seed=args.actor_init_seed,
                 critic_init_seed=args.critic_init_seed,
-                residual_init_seed=residual_init_seed,
-            )
+                    )
             rollouts = [result["rollout"] for result in results]
             diagnostics = coordinator.update_from_workers(
                 rollouts, expected_seeds=seeds
@@ -916,8 +845,7 @@ def main(argv: list[str] | None = None) -> int:
                     policy_generation=coordinator.policy_generation,
                     actor_init_seed=args.actor_init_seed,
                     critic_init_seed=args.critic_init_seed,
-                    residual_init_seed=residual_init_seed,
-                    training_seed_start=training_seed_start,
+                                training_seed_start=training_seed_start,
                     training_seed_end=int(seeds[-1]),
                     training_periods=periods,
                     training_workers=workers,
@@ -952,7 +880,6 @@ def main(argv: list[str] | None = None) -> int:
         policy_generation=coordinator.policy_generation,
         actor_init_seed=args.actor_init_seed,
         critic_init_seed=args.critic_init_seed,
-        residual_init_seed=residual_init_seed,
         training_seed_start=training_seed_start,
         training_seed_end=training_seed_end,
         training_periods=periods,

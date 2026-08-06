@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from simulation.sumo.tripinfo import (
+from algorithms.evaluation.tripinfo_diagnostics import (
     parse_tripinfo_diagnostics,
     residual_mismatch,
 )

@@ -39,7 +39,7 @@ from algorithms.ippo.gate_stats import (  # noqa: E402
     evaluate_primary_gate,
     evaluate_safety,
 )
-from backend.app.scenario.presets import SCENARIO_PRESET_REGISTRY  # noqa: E402
+from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY  # noqa: E402
 
 SCENARIOS = ("east_dense", "west_dense")
 
