@@ -86,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--duration", type=int, default=300)
+    parser.add_argument("--step-length", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--action-interval", type=float, default=DEFAULT_ACTION_INTERVAL)
     parser.add_argument("--save", type=Path, default=DEFAULT_SAVE_PATH)
@@ -95,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     _positive(parser, "episodes", args.episodes)
     _positive(parser, "duration", args.duration)
     _positive(parser, "action-interval", args.action_interval)
+    _positive(parser, "step-length", args.step_length)
 
     resume_path = args.resume
     if resume_path is None and os.environ.get("IPPO_MODEL_PATH"):
@@ -147,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
             decision_interval=5.0,
             minimum_green=5.0,
             seed=first_training_seed + episode - 1,
-            step_length=0.05,
+            step_length=args.step_length,
         )
         started_at = time.time()
         failure = None

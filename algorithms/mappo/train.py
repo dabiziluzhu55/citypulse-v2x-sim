@@ -280,7 +280,7 @@ def _run_sumo_worker(request: Mapping[str, object]) -> dict[str, object]:
             decision_interval=5.0,
             minimum_green=5.0,
             seed=seed,
-            step_length=0.05,
+            step_length=float(request["step_length"]),
         )
         session_id = manager.start(session_config)
         snapshot = manager.wait(
@@ -334,6 +334,7 @@ def _run_policy_batch(
     periods: Sequence[str],
     config: MAPPOConfig,
     duration: int,
+    step_length: float,
     policy: MAPPOPolicy,
     policy_generation: int,
     actor_init_seed: int,
@@ -349,6 +350,7 @@ def _run_policy_batch(
     base_request = {
         "config": config,
         "duration": int(duration),
+        "step_length": float(step_length),
         "policy_state": state,
         "policy_generation": int(policy_generation),
         "policy_digest": digest,
@@ -419,6 +421,9 @@ def _training_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--duration", type=int, default=300)
+    parser.add_argument(
+        "--step-length", type=float, default=0.1, help="SUMO simulation step (s)"
+    )
     parser.add_argument("--base-seed", type=int, required=True)
     parser.add_argument("--period", default="off_peak")
     parser.add_argument("--periods", nargs="+", default=None)
@@ -477,7 +482,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _training_arg_parser()
     args = _parse_training_args(argv, parser=parser)
 
-    for name in ("episodes", "workers", "duration", "checkpoint_every"):
+    for name in ("episodes", "workers", "duration", "checkpoint_every", "step_length"):
         _positive(parser, name, getattr(args, name))
     periods = tuple(str(value) for value in (args.periods or (args.period,)))
     if any(not value.strip() for value in periods):
@@ -667,6 +672,7 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 config=config,
                 duration=args.duration,
+                step_length=args.step_length,
                 policy=policy,
                 policy_generation=coordinator.policy_generation,
                 actor_init_seed=args.actor_init_seed,

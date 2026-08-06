@@ -237,7 +237,7 @@ def _run_evaluation(request: Mapping[str, object]) -> dict[str, object]:
             decision_interval=5.0,
             minimum_green=5.0,
             seed=seed,
-            step_length=0.05,
+            step_length=float(request["step_length"]),
             ai_observer_module="algorithms.evaluation.observer",
             ai_frame_interval_seconds=1.0,
         )
@@ -381,6 +381,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seeds", nargs="+", type=int, required=True)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--duration", type=int, default=300)
+    parser.add_argument(
+        "--step-length", type=float, default=0.1, help="SUMO simulation step (s)"
+    )
     parser.add_argument("--period", default="off_peak")
     parser.add_argument("--label")
     parser.add_argument("--output", type=Path, required=True)
@@ -401,6 +404,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("workers must be positive")
     if args.duration <= 0:
         parser.error("duration must be positive")
+    if args.step_length <= 0:
+        parser.error("step-length must be positive")
     if not args.period:
         parser.error("period must be non-empty")
     checkpoint_path = args.checkpoint.expanduser().resolve()
@@ -436,6 +441,7 @@ def main(argv: list[str] | None = None) -> int:
             "seed": seed,
             "period": args.period,
             "duration": args.duration,
+            "step_length": args.step_length,
             "mappo_config": checkpoint.config,
             "checkpoint_metadata": checkpoint.metadata,
             "policy_state": checkpoint.policy_state,
@@ -444,10 +450,11 @@ def main(argv: list[str] | None = None) -> int:
     ]
     logger.info(
         "Deterministic checkpoint evaluation: label=%s seeds=%s "
-        "duration=%ds tls=%d workers=%d",
+        "duration=%ds step_length=%.2f tls=%d workers=%d",
         label,
         list(seeds),
         args.duration,
+        args.step_length,
         len(checkpoint.config.intersection_ids),
         worker_count,
     )
