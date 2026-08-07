@@ -2,7 +2,9 @@ export const ACTIVE_SESSION_ID_KEY = 'citypulse.active_session_id'
 export const ACTIVE_SIMULATION_CONTEXT_KEY = 'citypulse.active_simulation_context'
 
 export const STATUS_POLL_INTERVAL_MS = 2_000
-export const SIMULATION_SNAPSHOT_INTERVAL_MS = 200
+// Two full-network snapshots per second are sufficient for buffered animation and
+// substantially reduce JSON serialization pressure in 20-intersection sessions.
+export const SIMULATION_SNAPSHOT_INTERVAL_MS = 500
 
 export const DEFAULT_INTERSECTION_ID = 'demo_2'
 
@@ -10,20 +12,26 @@ export const SUPPORTED_BACKEND_CONTROL_MODES = [
   'fixed',
   'max_pressure',
   'sotl',
+  'ippo',
+  'mappo',
 ] as const
 
 export type BackendControlMode = typeof SUPPORTED_BACKEND_CONTROL_MODES[number]
 
 export const CONTROL_MODE_LABELS: Record<string, string> = {
-  fixed: '固定配时算法',
-  max_pressure: 'Max Pressure算法',
-  sotl: 'SOTL自组织信号算法',
+  fixed: '固定配时',
+  max_pressure: 'Max Pressure',
+  sotl: 'SOTL',
+  ippo: 'IPPO',
+  mappo: 'MAPPO',
 }
 
 export const DASHBOARD_CONTROL_MODES = [
   { value: 'fixed', label: CONTROL_MODE_LABELS.fixed, backendSupported: true },
   { value: 'max_pressure', label: CONTROL_MODE_LABELS.max_pressure, backendSupported: true },
   { value: 'sotl', label: CONTROL_MODE_LABELS.sotl, backendSupported: true },
+  { value: 'ippo', label: CONTROL_MODE_LABELS.ippo, backendSupported: true },
+  { value: 'mappo', label: CONTROL_MODE_LABELS.mappo, backendSupported: true },
 ] as const
 
 export function resolveCatalogControlModes(controlModes: string[] | null | undefined): string[] {

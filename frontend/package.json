@@ -26,7 +26,7 @@
     "test:vehicles": "node --test scripts/vehicle-visibility.test.mjs",
     "test:evaluation-comparison": "node --test scripts/evaluation-comparison.test.mjs",
     "test:playback-rate": "node --test scripts/playback-rate.test.mjs",
-    "test:roads": "node --test scripts/road-geometry.test.mjs scripts/road-tileset.test.mjs",
+    "test:roads": "node --test scripts/road-geometry.test.mjs scripts/road-tileset.test.mjs scripts/road-joints.test.mjs",
     "test:intersection-demo": "node --test scripts/realistic-intersection.test.mjs",
     "test:intersection-scene": "node --test scripts/intersection-scene.test.mjs",
     "test:intersection-topology": "node --test scripts/intersection-topology.test.mjs",

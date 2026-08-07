@@ -1,6 +1,7 @@
 import type { DisturbanceTargetPayload, StartSimulationRequest } from '../types/simulation'
 import type { BackendControlMode } from '../constants/simulationOptions'
 import type { DisturbanceType } from '../types/scenario'
+import { resolveMajorEventVehicleCount } from './scenarioConfigMigration.ts'
 
 export interface ScenarioPayloadInput {
   scenarioPresetId: string
@@ -70,10 +71,7 @@ export function buildDisturbanceTargets(input: ScenarioPayloadInput): Disturbanc
       if (event.eventType === 'lane_closure') return { event_type: 'lane_closure' as const, ...base }
       if (event.eventType === 'speed_limit') return { event_type: 'speed_limit' as const, ...base, max_speed: 5 }
       if (event.eventType === 'accident') return { event_type: 'accident' as const, ...base, position_ratio: 0.5 }
-      const vehicleCount = event.vehicleCount ?? 20
-      if (!Number.isInteger(vehicleCount) || vehicleCount < 1) {
-        throw new Error('Major event vehicle count must be a positive integer')
-      }
+      const vehicleCount = resolveMajorEventVehicleCount(event.vehicleCount)
       if (event.eventType === 'major_event_opening') {
         return { event_type: 'major_event_opening' as const, ...base, vehicle_count: vehicleCount }
       }

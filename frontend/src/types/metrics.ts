@@ -41,9 +41,12 @@ export interface MetricsTimeseriesPoint {
   finished?: boolean
   metric_sources?: Record<string, string>
   warnings?: string[]
+  metric_status?: Partial<Record<EvaluationMetricKey, MetricPresentationStatus>>
 }
 
 export type MetricSeriesSource = 'backend' | 'missing'
+export type MetricPresentationStatus = 'pending' | 'provisional' | 'final' | 'unavailable'
+export type EvaluationMetricKey = 'queue' | 'waiting' | 'fuel'
 
 export interface AlgorithmMetricSeries {
   id: string
@@ -52,6 +55,7 @@ export interface AlgorithmMetricSeries {
   color: string
   source: MetricSeriesSource
   values: Array<number | null>
+  statuses: MetricPresentationStatus[]
 }
 
 export interface MetricsTimeseriesResponse {

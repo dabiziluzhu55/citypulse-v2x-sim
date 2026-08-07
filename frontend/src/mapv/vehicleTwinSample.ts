@@ -12,6 +12,8 @@ export interface VehicleTwinSample {
   modelType: number
   scale: [number, number, number]
   color: string
+  vehicleHeading: number
+  modelForwardAxisAngle: number
 }
 
 const VEHICLE_COLORS = [
@@ -54,5 +56,7 @@ export function createVehicleTwinSample(
     modelType: profile.modelType,
     scale: profile.scale,
     color,
+    vehicleHeading,
+    modelForwardAxisAngle: profile.modelForwardAxisAngle,
   }
 }

@@ -19,10 +19,13 @@ export const REALTIME_METRIC_ITEMS: Array<{
 ]
 
 export const ALGORITHM_LABELS: Record<string, string> = {
+  fixed: '固定配时',
   fixed_time: '固定配时',
   actuated: '感应控制',
   max_pressure: 'Max-Pressure',
+  sotl: 'SOTL',
   ippo: 'IPPO',
+  mappo: 'MAPPO',
 }
 
 export function formatAlgorithmLabel(algorithmId: string): string {

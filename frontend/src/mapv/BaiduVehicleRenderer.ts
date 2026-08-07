@@ -1,19 +1,25 @@
 import * as mapvthree from '@baidumap/mapv-three'
-import type { SimulationState } from '../types/simulation'
+import type { SimulationLaneRuntime, SimulationState } from '../types/simulation'
 import type { TrafficVehicleView } from '../types/traffic'
 import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates'
 import type { RoadCoordinateProjector } from './roadGeometry'
 import {
+  AdaptiveVehicleRenderBudget,
   resolveVehicleRenderRadius,
   StableVehicleSelector,
+  type VehicleRenderQuality,
 } from './vehicleVisibility'
 import {
   createVehicleTwinSample,
   type VehicleTwinSample,
 } from './vehicleTwinSample'
-import { resolveVehicleModelProfile } from './vehicleModelProfiles.ts'
+import {
+  ELECTRIC_BICYCLE_MODEL_TYPE,
+  resolveVehicleModelProfile,
+} from './vehicleModelProfiles.ts'
 import {
   resolveStableVehicleHeading,
+  sumoAngleToMapHeading,
   type VehicleHeadingState,
 } from './vehicleOrientation.ts'
 import type {
@@ -34,12 +40,22 @@ export interface VehicleRenderContext {
   state: SimulationState | null
   sequence: number
   elapsedSeconds: number
+  laneRuntimeById?: Record<string, SimulationLaneRuntime>
 }
 
 export interface VehicleRenderStats {
   inputCount: number
   visibleCount: number
   radiusMeters: number
+  vehicleLimit: number
+  quality: VehicleRenderQuality
+  fps: number | null
+  bufferSeconds: number
+  sourceRate: number
+  sourceGapP95Ms: number
+  sourceGapP99Ms: number
+  underrunCount: number
+  underrunActive: boolean
 }
 
 export class BaiduVehicleRenderer {
@@ -47,8 +63,13 @@ export class BaiduVehicleRenderer {
   private readonly twin: mapvthree.Twin
   private readonly projector: RoadCoordinateProjector
   private readonly selector = new StableVehicleSelector()
+  private readonly renderBudget = new AdaptiveVehicleRenderBudget()
   private readonly poseHistory = new Map<string, VehicleHeadingState>()
-  private readonly laneTrackHistory = new Map<string, { laneId: string; trackKey: string }>()
+  private readonly laneTrackHistory = new Map<string, {
+    laneId: string
+    trackKey: string
+    trackProgress: number
+  }>()
   private readonly historyLastSeenSequence = new Map<string, number>()
   private readonly presentationClock = new VehiclePresentationClock()
   private readonly motionBuffer = new VehicleMotionBuffer()
@@ -61,6 +82,7 @@ export class BaiduVehicleRenderer {
     state: null,
     sequence: -1,
     elapsedSeconds: 0,
+    laneRuntimeById: {},
   }
   private sessionId = ''
   private visibleCount = 0
@@ -72,12 +94,14 @@ export class BaiduVehicleRenderer {
   ) {
     this.engine = engine
     this.projector = projector
+    const realisticModels = mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL as unknown as Record<string, string>
     this.twin = engine.add(new mapvthree.Twin({
       delay: TWIN_INTERPOLATION_DELAY_MS,
       modelConfig: {
         3: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.CAR,
         6: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.BUS,
         10: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.TRUCK,
+        [ELECTRIC_BICYCLE_MODEL_TYPE]: realisticModels.ELECTRICBICYCLE,
       },
       keepSize: false,
     }))
@@ -118,7 +142,7 @@ export class BaiduVehicleRenderer {
       )
     )
     if (!force && (snapshotKey === previousSnapshotKey || staleSnapshot)) {
-      return { inputCount: vehicles.length, visibleCount: this.visibleCount, radiusMeters }
+      return this.stats(vehicles.length, radiusMeters)
     }
     this.lastVehicles = vehicles
     this.lastContext = context
@@ -128,7 +152,7 @@ export class BaiduVehicleRenderer {
       && (context.state === 'STOPPED' || context.state === 'COMPLETED' || context.state === 'FAILED')
     ) {
       this.resetRuntime()
-      return { inputCount: 0, visibleCount: 0, radiusMeters }
+      return this.stats(0, radiusMeters)
     }
     const visible = this.selector.select(
       vehicles,
@@ -136,6 +160,7 @@ export class BaiduVehicleRenderer {
       this.engine.map.getCenter(),
       cameraRange,
       snapshotKey,
+      this.renderBudget.state().limit,
     )
     this.visibleCount = visible.length
     if (visible.length === 0) {
@@ -146,7 +171,7 @@ export class BaiduVehicleRenderer {
         samples: [],
       })
       this.pruneHistory(context.sequence)
-      return { inputCount: vehicles.length, visibleCount: 0, radiusMeters }
+      return this.stats(vehicles.length, radiusMeters)
     }
     const sourceTime = context.elapsedSeconds * 1_000
     const activeIds = new Set<string>()
@@ -160,6 +185,12 @@ export class BaiduVehicleRenderer {
         profile.targetLengthMeters / 2,
         previousLaneTrack?.laneId,
         previousLaneTrack?.trackKey,
+        {
+          speedMetersPerSecond: vehicle.speed,
+          expectedHeading: previous?.reliableHeading ?? sumoAngleToMapHeading(vehicle.angle),
+          laneRuntime: context.laneRuntimeById?.[vehicle.lane_id] ?? null,
+          previousTrackProgress: previousLaneTrack?.trackProgress,
+        },
       )
       const renderLongitude = lanePose?.longitude ?? longitude
       const renderLatitude = lanePose?.latitude ?? latitude
@@ -179,6 +210,7 @@ export class BaiduVehicleRenderer {
         this.laneTrackHistory.set(vehicle.vehicle_id, {
           laneId: vehicle.lane_id,
           trackKey: lanePose.trackKey,
+          trackProgress: lanePose.trackProgress,
         })
       } else {
         this.laneTrackHistory.delete(vehicle.vehicle_id)
@@ -201,16 +233,29 @@ export class BaiduVehicleRenderer {
       arrivalTimeMs: performance.now(),
       samples,
     })
-    return { inputCount: vehicles.length, visibleCount: visible.length, radiusMeters }
+    if (!isVehicleAnimationActive(context.state) && samples.length > 0) {
+      this.presentImmediate(samples)
+    }
+    return this.stats(vehicles.length, radiusMeters)
   }
 
   refreshViewport(): VehicleRenderStats {
     return this.update(this.lastVehicles, this.lastContext, true)
   }
 
+  beginViewportTransition(): void {
+    this.resetRuntime()
+  }
+
   clear(): void {
     this.lastVehicles = []
-    this.lastContext = { sessionId: '', state: null, sequence: -1, elapsedSeconds: 0 }
+    this.lastContext = {
+      sessionId: '',
+      state: null,
+      sequence: -1,
+      elapsedSeconds: 0,
+      laneRuntimeById: {},
+    }
     this.sessionId = ''
     this.resetRuntime()
   }
@@ -221,6 +266,7 @@ export class BaiduVehicleRenderer {
     this.motionBuffer.reset()
     this.presentationClock.reset()
     this.selector.reset()
+    this.renderBudget.reset()
     this.poseHistory.clear()
     this.laneTrackHistory.clear()
     this.historyLastSeenSequence.clear()
@@ -238,6 +284,7 @@ export class BaiduVehicleRenderer {
 
   private flushMotionFrame(wallTimeMs: number): void {
     if (!isVehicleAnimationActive(this.lastContext.state)) return
+    this.renderBudget.recordFrame(wallTimeMs)
     const samples = this.motionBuffer.sample(wallTimeMs)
     if (!samples?.length) return
     const time = this.presentationClock.next(Date.now())
@@ -251,6 +298,38 @@ export class BaiduVehicleRenderer {
     }
     this.twin.push(timedSamples)
     this.engine.requestRender()
+  }
+
+  private presentImmediate(samples: VehicleTwinSample[]): void {
+    const time = this.presentationClock.next(Date.now())
+    const timedSamples = samples.map((sample) => ({ ...sample, time }))
+    this.twin.reset()
+    this.twin.push(timedSamples.map((sample) => ({
+      ...sample,
+      time: time - TWIN_INTERPOLATION_DELAY_MS,
+    })))
+    this.twin.push(timedSamples)
+    this.primed = true
+    this.engine.requestRender()
+  }
+
+  private stats(inputCount: number, radiusMeters: number): VehicleRenderStats {
+    const budget = this.renderBudget.state()
+    const motion = this.motionBuffer.stats()
+    return {
+      inputCount,
+      visibleCount: this.visibleCount,
+      radiusMeters,
+      vehicleLimit: budget.limit,
+      quality: budget.quality,
+      fps: budget.fps,
+      bufferSeconds: motion.bufferSeconds,
+      sourceRate: motion.sourceRate,
+      sourceGapP95Ms: motion.sourceGapP95Ms,
+      sourceGapP99Ms: motion.sourceGapP99Ms,
+      underrunCount: motion.underrunCount,
+      underrunActive: motion.underrunActive,
+    }
   }
 
   private pruneHistory(sequence: number, activeIds: Set<string> = new Set()): void {

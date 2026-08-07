@@ -165,4 +165,21 @@ const { nowLabel } = useDashboardClock()
     max-width: 150px;
   }
 }
+
+@media (max-width: 520px) {
+  .dashboard-header__brand {
+    left: 42px !important;
+    top: 58px !important;
+    transform: scale(0.56);
+  }
+
+  .dashboard-header__clock {
+    top: 91px !important;
+    right: 26px !important;
+  }
+
+  .dashboard-header__clock-value {
+    font-size: 11px;
+  }
+}
 </style>

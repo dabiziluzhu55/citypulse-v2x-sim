@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as mapvthree from '@baidumap/mapv-three'
 import { Color } from 'three'
 import { useAppMapView } from '../../composables/useAppMapView'
@@ -110,6 +110,23 @@ const vehicleStats = ref<VehicleRenderStats>({
   inputCount: 0,
   visibleCount: 0,
   radiusMeters: 420,
+  vehicleLimit: 450,
+  quality: 'full',
+  fps: null,
+  bufferSeconds: 0.5,
+  sourceRate: 1,
+  sourceGapP95Ms: 0,
+  sourceGapP99Ms: 0,
+  underrunCount: 0,
+  underrunActive: false,
+})
+const vehicleBufferBusy = computed(() => {
+  const current = snapshot.value
+  if (current?.state !== 'RUNNING' || vehicleStats.value.sourceGapP95Ms <= 0) return false
+  const targetRate = current.playback_speed ?? 1
+  return vehicleStats.value.underrunActive
+    || vehicleStats.value.quality === 'constrained'
+    || vehicleStats.value.sourceRate < targetRate * 0.75
 })
 const showRenderDiagnostics = import.meta.env.DEV
 
@@ -142,6 +159,7 @@ let cameraFlightActive = false
 let cameraFlightGuard: CameraFlightGuard | null = null
 let lastRoadLodRefreshAt = 0
 let lastEmptyVehicleWarningSequence = -25
+let lastVehicleUnderrunCount = 0
 let sceneSwitchRevision = 0
 let documentVisible = typeof document === 'undefined' || !document.hidden
 let presentationReady = false
@@ -249,6 +267,19 @@ function markInteracting(): void {
 function updateVehicleRenderStats(stats: VehicleRenderStats): void {
   vehicleStats.value = stats
   const current = snapshot.value
+  if (showRenderDiagnostics) {
+    const diagnosticsWindow = window as Window & {
+      __CITYPULSE_VEHICLE_DIAGNOSTICS__?: Record<string, unknown>
+    }
+    diagnosticsWindow.__CITYPULSE_VEHICLE_DIAGNOSTICS__ = {
+      ...stats,
+      activeVehicles: current?.metrics.active_vehicles ?? 0,
+      requestedPlaybackSpeed: current?.playback_speed ?? 1,
+      simulationProgressRate: stats.sourceRate,
+      snapshotSequence: current?.sequence ?? -1,
+      capturedAt: new Date().toISOString(),
+    }
+  }
   if (
     showRenderDiagnostics
     && current?.state === 'RUNNING'
@@ -262,6 +293,19 @@ function updateVehicleRenderStats(stats: VehicleRenderStats): void {
       inputVehicles: stats.inputCount,
       renderRadiusMeters: Math.round(stats.radiusMeters),
       snapshotSequence: current.sequence,
+    })
+  }
+  if (showRenderDiagnostics && stats.underrunCount > lastVehicleUnderrunCount) {
+    lastVehicleUnderrunCount = stats.underrunCount
+    console.debug('[vehicle-render] motion buffer underrun', {
+      sourceGapP95Ms: Math.round(stats.sourceGapP95Ms),
+      sourceGapP99Ms: Math.round(stats.sourceGapP99Ms),
+      bufferSeconds: Number(stats.bufferSeconds.toFixed(2)),
+      sourceRate: Number(stats.sourceRate.toFixed(2)),
+      fps: stats.fps,
+      quality: stats.quality,
+      visibleVehicles: stats.visibleCount,
+      vehicleLimit: stats.vehicleLimit,
     })
   }
 }
@@ -404,8 +448,11 @@ async function switchRealisticIntersection(
       if (!cameraReady || !resourcesReady) return
       if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return
       setSceneReady(intersectionId)
+      const stats = vehicleRenderer?.refreshViewport()
+      if (stats) updateVehicleRenderStats(stats)
     }
     if (focusCamera) {
+      vehicleRenderer?.beginViewportTransition()
       mapView.focusIntersection(
         [manifest.origin.longitude, manifest.origin.latitude],
         manifest.intersectionId,
@@ -966,6 +1013,7 @@ async function initMap(): Promise<void> {
         state: current?.state ?? null,
         sequence: current?.sequence ?? -1,
         elapsedSeconds: current?.elapsed_seconds ?? 0,
+        laneRuntimeById: current?.intersections?.[activeIntersectionId.value]?.lanes ?? {},
       })
       if (stats) updateVehicleRenderStats(stats)
       roadsideFacilityRenderer?.updateSignals(value?.intersections ?? null)
@@ -1105,6 +1153,9 @@ onUnmounted(() => {
       <span v-if="sceneStatus === 'loading'">正在加载 {{ activeIntersectionId }} 高精度路口</span>
       <span v-else-if="sceneStatus === 'error'">{{ sceneError }}</span>
     </div>
+    <div v-if="vehicleBufferBusy" class="app-baidu-three-map__vehicle-status">
+      仿真计算繁忙，画面正在平滑缓冲
+    </div>
   </div>
 </template>
 
@@ -1175,6 +1226,21 @@ onUnmounted(() => {
   font-size: 11px;
   transform: translateX(-50%);
   pointer-events: none;
+}
+
+.app-baidu-three-map__vehicle-status {
+  position: absolute;
+  left: 50%;
+  bottom: 62px;
+  z-index: 2;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 190, 92, 0.36);
+  border-radius: 4px;
+  background: rgba(20, 13, 3, 0.82);
+  color: #ffd28a;
+  font-size: 11px;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
 .app-baidu-three-map__detail-status.is-ready .app-baidu-three-map__status-dot {

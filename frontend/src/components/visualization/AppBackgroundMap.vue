@@ -19,16 +19,22 @@ import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from '../../constants/mapDefault
 import { bindMapInstance, useAppMapView } from '../../composables/useAppMapView'
 import { useSimulationMap } from '../../composables/useSimulationMap'
 import { useSimulationStore } from '../../composables/useSimulationStore'
+import { useActiveIntersectionScene } from '../../composables/useActiveIntersectionScene'
 import { TrafficModelRegistry } from '../../cesium/traffic/TrafficModelRegistry'
 import { loadIntersectionTopologyCatalog, type IntersectionTopologyNode } from '../../mapv/intersectionTopology'
 import { DISTURBANCE_EVENT_OPTIONS } from '../../constants/scenarioOptions'
 import { useScenarioDraftStore, type ScenarioDraftDisturbanceEvent } from '../../composables/useScenarioDraftStore'
 import { formatIntersectionLabel } from '../../utils/intersectionLabels'
 import { buildDisturbanceWarningAggregates } from '../../utils/disturbanceWarnings'
+import {
+  resolveStableVehicleHeading,
+  type VehicleHeadingState,
+} from '../../mapv/vehicleOrientation'
 
 const mapEl = ref<HTMLElement | null>(null)
 const mapView = useAppMapView()
-const { geojson } = useSimulationMap()
+const { activeIntersectionId } = useActiveIntersectionScene()
+const { geojson, error: networkError } = useSimulationMap(activeIntersectionId)
 const { trafficView, snapshot } = useSimulationStore()
 const { disturbanceEvents, simulationStartTime } = useScenarioDraftStore()
 
@@ -40,6 +46,7 @@ let map: Map | null = null
 let resizeObserver: ResizeObserver | null = null
 let warningOverlay: Overlay | null = null
 let topologyNodes: IntersectionTopologyNode[] = []
+const vehicleHeadingHistory = new globalThis.Map<string, VehicleHeadingState>()
 
 const networkSource = new VectorSource()
 const vehicleSource = new VectorSource()
@@ -205,22 +212,42 @@ function renderVehicles() {
   vehicleSource.clear()
   const vehicles = trafficView.value?.vehicles ?? []
   const features: Feature[] = []
+  const activeIds = new Set<string>()
   for (const vehicle of vehicles) {
     if (vehicle.longitude == null || vehicle.latitude == null) {
       continue
     }
     const definition = modelRegistry.resolve(vehicle.vehicle_id, vehicle.lane_id)
+    const resolvedHeading = resolveStableVehicleHeading({
+      sumoAngleDegrees: vehicle.angle,
+      speedMetersPerSecond: vehicle.speed,
+      current: { longitude: vehicle.longitude, latitude: vehicle.latitude },
+      timeSeconds: trafficView.value?.elapsed_seconds ?? 0,
+    }, vehicleHeadingHistory.get(vehicle.vehicle_id) ?? null)
+    vehicleHeadingHistory.set(vehicle.vehicle_id, resolvedHeading.state)
+    activeIds.add(vehicle.vehicle_id)
     const feature = new Feature({
       geometry: new Point(fromLonLat([vehicle.longitude, vehicle.latitude])),
     })
     feature.set('color', definition.color)
     feature.set('vtype', definition.type)
-    // SUMO angle：正北为 0、顺时针为正（度）；三角形默认顶点朝上（北），
-    // OpenLayers rotation 为弧度、顺时针为正，可直接换算。
-    feature.set('rotation', (vehicle.angle * Math.PI) / 180)
+    feature.set('rotation', Math.PI / 2 - resolvedHeading.heading)
     features.push(feature)
   }
+  for (const id of vehicleHeadingHistory.keys()) {
+    if (!activeIds.has(id)) vehicleHeadingHistory.delete(id)
+  }
   vehicleSource.addFeatures(features)
+}
+
+function focusActiveIntersection(): void {
+  const node = topologyNodes.find((item) => item.intersectionId === activeIntersectionId.value)
+  if (!node) return
+  mapView.focusIntersection(
+    [node.longitude, node.latitude],
+    node.intersectionId,
+    { force: true, duration: 700 },
+  )
 }
 
 onMounted(() => {
@@ -262,6 +289,7 @@ onMounted(() => {
   renderVehicles()
   void loadIntersectionTopologyCatalog().then((nodes) => {
     topologyNodes = nodes
+    focusActiveIntersection()
     renderDisturbanceWarnings()
   }).catch((cause: unknown) => console.warn('[disturbance-warning] topology unavailable', cause))
 
@@ -273,6 +301,7 @@ onMounted(() => {
 
 watch(geojson, renderNetwork)
 watch(trafficView, renderVehicles, { deep: true })
+watch(activeIntersectionId, focusActiveIntersection)
 watch([disturbanceEvents, snapshot, simulationStartTime], renderDisturbanceWarnings, { deep: true })
 
 onUnmounted(() => {
@@ -290,6 +319,9 @@ onUnmounted(() => {
 <template>
   <div class="app-background-map">
     <div ref="mapEl" class="app-background-map__canvas" />
+    <div v-if="networkError" class="app-background-map__network-status">
+      当前路口路网加载失败，已保留深色底图定位
+    </div>
     <div ref="warningPopupRef" class="disturbance-warning-popup">
       <strong>{{ warningPopupTitle }}</strong>
       <div v-for="event in warningPopupEvents" :key="event.id">
@@ -311,6 +343,21 @@ onUnmounted(() => {
 .app-background-map__canvas {
   width: 100%;
   height: 100%;
+}
+
+.app-background-map__network-status {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  z-index: 10;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 190, 92, 0.42);
+  border-radius: 4px;
+  background: rgba(20, 13, 3, 0.86);
+  color: #ffd28a;
+  font-size: 11px;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
 .app-background-map__canvas :deep(.ol-attribution) {

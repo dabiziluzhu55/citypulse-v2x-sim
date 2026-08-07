@@ -128,6 +128,14 @@ export interface SimulationLaneRuntime {
   mean_speed: number
   waiting_time: number
   occupancy: number
+  edge_id?: string
+  lane_index?: number
+  role?: 'incoming' | 'outgoing' | 'internal' | string | null
+  approach_id?: string | null
+  downstream_lane_ids?: string[]
+  lane_has_green?: boolean | null
+  signal_state?: string | null
+  current_allowed_speed_mps?: number | null
 }
 
 export interface SimulationIntersectionRuntime {

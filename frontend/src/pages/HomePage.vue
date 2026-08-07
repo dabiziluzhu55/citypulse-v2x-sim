@@ -16,7 +16,7 @@ import type { CesiumCameraPresetId, MapDimension } from '../types/map'
 import type { StartSimulationRequest } from '../types/simulation'
 import { formatIntersectionLabel } from '../utils/intersectionLabels'
 import { detectMap3dCapability } from '../mapv/map3dCapabilities'
-import { isActiveSimulationState, shouldAutoPresentSimulation } from '../utils/simulationSessionState'
+import { shouldAutoPresentSimulation } from '../utils/simulationSessionState'
 
 const mapView = useOptionalAppMapView()
 const mapDimension = computed(() => mapView?.dimension.value ?? '2d')
@@ -75,11 +75,6 @@ const {
   stopRun,
   markRestoredSessionHandled,
 } = useSimulationStore()
-const isSimulationActive = computed(() => (
-  (!!sessionId.value && !state.value)
-  || isActiveSimulationState(state.value)
-))
-
 const { ready: healthReady, statusLabel: healthLabel } = useHealth()
 
 const { logEntries } = useSnapshotMetrics(sessionId, snapshot, wsConnected)
@@ -91,7 +86,11 @@ const {
   beginRun: beginComparisonRun,
   resetForConfiguration,
 } = useEvaluationComparison(sessionId, snapshot)
-const { communicationPanelOpen, closeCommunicationPanel } = useDashboardOverlay()
+const {
+  communicationPanelOpen,
+  sidePanelsCollapsed,
+  closeCommunicationPanel,
+} = useDashboardOverlay()
 interface ConfigurationChangeRequest {
   fingerprint: string
   apply: () => void
@@ -167,15 +166,17 @@ async function handleStop() {
 </script>
 
 <template>
-  <section class="dashboard-page">
+  <section
+    class="dashboard-page"
+    :class="{ 'is-side-panels-collapsed': sidePanelsCollapsed }"
+  >
     <div v-if="mapView" class="map-view-controls">
       <label class="intersection-picker">
         <span class="map-dimension-toggle__label">路口</span>
         <select
           :value="activeIntersectionId"
-          :disabled="isSimulationActive"
           aria-label="选择高精度路口"
-          :title="isSimulationActive ? '仿真运行期间不能切换路口' : '选择高精度路口'"
+          title="选择查看路口"
           @change="selectIntersection(($event.target as HTMLSelectElement).value)"
         >
           <option

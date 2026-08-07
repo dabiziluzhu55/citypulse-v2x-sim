@@ -2,11 +2,8 @@ const METERS_PER_DEGREE_LATITUDE = 110_900
 const TWO_PI = Math.PI * 2
 const TRAJECTORY_MIN_SPEED_MPS = 0.8
 const TRAJECTORY_MIN_DISTANCE_METERS = 0.25
-const TRAJECTORY_FALLBACK_ERROR_RADIANS = Math.PI / 4
 const STOP_SPEED_MPS = 0.35
 const START_SPEED_MPS = 0.8
-const MAX_TURN_RATE_RADIANS_PER_SECOND = 2.5
-const MAX_LANE_TURN_RATE_RADIANS_PER_SECOND = 6
 
 export interface GeographicPoint {
   longitude: number
@@ -78,12 +75,7 @@ export function resolveContinuousVehicleHeading(
   let target = sumoHeading
   if (previousPoint && speedMetersPerSecond >= TRAJECTORY_MIN_SPEED_MPS) {
     const movementHeading = trajectoryHeading(previousPoint, current)
-    if (
-      movementHeading != null
-      && Math.abs(shortestAngleDelta(sumoHeading, movementHeading)) > TRAJECTORY_FALLBACK_ERROR_RADIANS
-    ) {
-      target = movementHeading
-    }
+    if (movementHeading != null) target = movementHeading
   }
   return unwrapHeading(previousHeading, target)
 }
@@ -92,9 +84,8 @@ export function resolveStableVehicleHeading(
   input: StableVehicleHeadingInput,
   previous: VehicleHeadingState | null,
 ): StableVehicleHeadingResult {
-  const sumoHeading = sumoAngleToMapHeading(input.sumoAngleDegrees)
   if (!previous) {
-    const initial = input.laneHeading ?? sumoHeading
+    const initial = input.laneHeading ?? sumoAngleToMapHeading(input.sumoAngleDegrees)
     const heading = normalizeRadians(initial)
     return {
       heading,
@@ -113,24 +104,9 @@ export function resolveStableVehicleHeading(
     ? input.speedMetersPerSecond > STOP_SPEED_MPS && movementHeading != null
     : input.speedMetersPerSecond >= START_SPEED_MPS && movementHeading != null
   let target = previous.reliableHeading
-  if (moving) {
-    if (input.laneHeading != null) {
-      target = input.laneHeading
-    } else if (movementHeading != null) {
-      target = Math.abs(shortestAngleDelta(sumoHeading, movementHeading)) > TRAJECTORY_FALLBACK_ERROR_RADIANS
-        ? movementHeading
-        : sumoHeading
-    }
-  }
-
-  const elapsed = Math.max(0, input.timeSeconds - previous.timeSeconds)
-  const turnRate = input.laneHeading == null
-    ? MAX_TURN_RATE_RADIANS_PER_SECOND
-    : MAX_LANE_TURN_RATE_RADIANS_PER_SECOND
-  const maxTurn = Math.max(0.08, elapsed * turnRate)
-  const delta = shortestAngleDelta(previous.heading, target)
+  if (moving && movementHeading != null) target = movementHeading
   const heading = moving
-    ? previous.heading + Math.max(-maxTurn, Math.min(maxTurn, delta))
+    ? unwrapHeading(previous.heading, target)
     : previous.reliableHeading
   const reliableHeading = moving ? heading : previous.reliableHeading
   return {

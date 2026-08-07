@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-05T10:07:06.055Z",
+  "generatedAt": "2026-08-07T00:49:02.427Z",
   "sourceSha256": "493108a5f29a64b1bff31f57ae415e7c87e817878d92bd88c7ad482d45079de8",
   "thresholds": {
     "maximumSecondaryGapMeters": 20,
@@ -11,7 +11,7 @@
   "intersections": [
     {
       "intersectionId": "demo_1",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 15,
       "secondaryJointCount": 14,
       "eligibleConnectionCount": 56,
@@ -34,6 +34,8 @@
           "gapMeters": 25.998
         }
       ],
+      "repairedAuthoritativeGaps": [],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
@@ -46,6 +48,8 @@
       "eligibleConnectionCount": 8,
       "uncoveredEligibleConnections": [],
       "rejectedSourceGaps": [],
+      "repairedAuthoritativeGaps": [],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
@@ -58,13 +62,15 @@
       "eligibleConnectionCount": 12,
       "uncoveredEligibleConnections": [],
       "rejectedSourceGaps": [],
+      "repairedAuthoritativeGaps": [],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_4",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 7,
       "secondaryJointCount": 6,
       "eligibleConnectionCount": 18,
@@ -103,13 +109,15 @@
           "gapMeters": 20.597
         }
       ],
+      "repairedAuthoritativeGaps": [],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_5",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 31,
       "secondaryJointCount": 30,
       "eligibleConnectionCount": 167,
@@ -236,13 +244,15 @@
           "gapMeters": 26.73
         }
       ],
+      "repairedAuthoritativeGaps": [],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_6",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 12,
       "secondaryJointCount": 11,
       "eligibleConnectionCount": 46,
@@ -291,20 +301,23 @@
         {
           "junctionId": "3827",
           "edgeIds": [
-            "-50334",
-            "-56639"
-          ],
-          "gapMeters": 21.706
-        },
-        {
-          "junctionId": "3827",
-          "edgeIds": [
             "-50194",
             "-56639"
           ],
           "gapMeters": 24.317
         }
       ],
+      "repairedAuthoritativeGaps": [
+        {
+          "junctionId": "3827",
+          "edgeIds": [
+            "-50334",
+            "-56639"
+          ],
+          "gapMeters": 21.706
+        }
+      ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
@@ -317,6 +330,8 @@
       "eligibleConnectionCount": 26,
       "uncoveredEligibleConnections": [],
       "rejectedSourceGaps": [],
+      "repairedAuthoritativeGaps": [],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
@@ -324,11 +339,12 @@
     {
       "intersectionId": "demo_8",
       "status": "pass",
-      "roadJointCount": 8,
-      "secondaryJointCount": 7,
+      "roadJointCount": 10,
+      "secondaryJointCount": 9,
       "eligibleConnectionCount": 26,
       "uncoveredEligibleConnections": [],
-      "rejectedSourceGaps": [
+      "rejectedSourceGaps": [],
+      "repairedAuthoritativeGaps": [
         {
           "junctionId": "cluster_J158_J167",
           "edgeIds": [
@@ -370,6 +386,7 @@
           "gapMeters": 44.512
         }
       ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
@@ -381,7 +398,8 @@
       "secondaryJointCount": 12,
       "eligibleConnectionCount": 71,
       "uncoveredEligibleConnections": [],
-      "rejectedSourceGaps": [
+      "rejectedSourceGaps": [],
+      "repairedAuthoritativeGaps": [
         {
           "junctionId": "3689",
           "edgeIds": [
@@ -399,13 +417,14 @@
           "gapMeters": 20.372
         }
       ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_10",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 27,
       "secondaryJointCount": 26,
       "eligibleConnectionCount": 180,
@@ -426,14 +445,6 @@
             "-52365.65"
           ],
           "gapMeters": 21.591
-        },
-        {
-          "junctionId": "cluster_4173_4174",
-          "edgeIds": [
-            "-54862.369",
-            "-54863"
-          ],
-          "gapMeters": 20.227
         },
         {
           "junctionId": "cluster_4173_4174",
@@ -484,6 +495,17 @@
           "gapMeters": 20.826
         }
       ],
+      "repairedAuthoritativeGaps": [
+        {
+          "junctionId": "cluster_4173_4174",
+          "edgeIds": [
+            "-54862.369",
+            "-54863"
+          ],
+          "gapMeters": 20.227
+        }
+      ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
@@ -496,26 +518,20 @@
       "eligibleConnectionCount": 17,
       "uncoveredEligibleConnections": [],
       "rejectedSourceGaps": [],
+      "repairedAuthoritativeGaps": [],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_12",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 15,
       "secondaryJointCount": 14,
       "eligibleConnectionCount": 64,
       "uncoveredEligibleConnections": [],
       "rejectedSourceGaps": [
-        {
-          "junctionId": "cluster_J70_cluster_J68_J69",
-          "edgeIds": [
-            "-45669",
-            "-45669.217"
-          ],
-          "gapMeters": 23.459
-        },
         {
           "junctionId": "cluster_J65_cluster_1031_J64",
           "edgeIds": [
@@ -523,6 +539,24 @@
             "-56346.1185.207"
           ],
           "gapMeters": 20.46
+        },
+        {
+          "junctionId": "cluster_J65_cluster_1031_J64",
+          "edgeIds": [
+            "-52402",
+            "-56346.1185"
+          ],
+          "gapMeters": 22.128
+        }
+      ],
+      "repairedAuthoritativeGaps": [
+        {
+          "junctionId": "cluster_J70_cluster_J68_J69",
+          "edgeIds": [
+            "-45669",
+            "-45669.217"
+          ],
+          "gapMeters": 23.459
         },
         {
           "junctionId": "cluster_J70_cluster_J68_J69",
@@ -541,14 +575,6 @@
           "gapMeters": 20.783
         },
         {
-          "junctionId": "cluster_J65_cluster_1031_J64",
-          "edgeIds": [
-            "-52402",
-            "-56346.1185"
-          ],
-          "gapMeters": 22.128
-        },
-        {
           "junctionId": "cluster_189_J61",
           "edgeIds": [
             "-45675",
@@ -557,6 +583,7 @@
           "gapMeters": 20.788
         }
       ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
@@ -569,26 +596,20 @@
       "eligibleConnectionCount": 22,
       "uncoveredEligibleConnections": [],
       "rejectedSourceGaps": [],
+      "repairedAuthoritativeGaps": [],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_14",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 50,
       "secondaryJointCount": 49,
       "eligibleConnectionCount": 231,
       "uncoveredEligibleConnections": [],
       "rejectedSourceGaps": [
-        {
-          "junctionId": "868",
-          "edgeIds": [
-            "-46516",
-            "-46517"
-          ],
-          "gapMeters": 20.877
-        },
         {
           "junctionId": "881",
           "edgeIds": [
@@ -668,14 +689,6 @@
             "-52227"
           ],
           "gapMeters": 29.285
-        },
-        {
-          "junctionId": "868",
-          "edgeIds": [
-            "-52190",
-            "-52191"
-          ],
-          "gapMeters": 21
         },
         {
           "junctionId": "891",
@@ -862,22 +875,6 @@
           "gapMeters": 20.157
         },
         {
-          "junctionId": "4404",
-          "edgeIds": [
-            "-55831",
-            "-55839"
-          ],
-          "gapMeters": 21.504
-        },
-        {
-          "junctionId": "4404",
-          "edgeIds": [
-            "-55839",
-            "-57316"
-          ],
-          "gapMeters": 24.555
-        },
-        {
           "junctionId": "cluster_4333_4406",
           "edgeIds": [
             "-55854.101",
@@ -966,6 +963,72 @@
           "gapMeters": 41.81
         },
         {
+          "junctionId": "891",
+          "edgeIds": [
+            "-46537",
+            "-57395"
+          ],
+          "gapMeters": 20.275
+        },
+        {
+          "junctionId": "881",
+          "edgeIds": [
+            "-46546",
+            "-57396"
+          ],
+          "gapMeters": 21.632
+        },
+        {
+          "junctionId": "4334",
+          "edgeIds": [
+            "-57397.108",
+            "-57398"
+          ],
+          "gapMeters": 35.44
+        },
+        {
+          "junctionId": "4334",
+          "edgeIds": [
+            "-52230",
+            "-57397.108"
+          ],
+          "gapMeters": 33.3
+        }
+      ],
+      "repairedAuthoritativeGaps": [
+        {
+          "junctionId": "868",
+          "edgeIds": [
+            "-46516",
+            "-46517"
+          ],
+          "gapMeters": 20.877
+        },
+        {
+          "junctionId": "868",
+          "edgeIds": [
+            "-52190",
+            "-52191"
+          ],
+          "gapMeters": 21
+        },
+        {
+          "junctionId": "4404",
+          "edgeIds": [
+            "-55831",
+            "-55839"
+          ],
+          "gapMeters": 21.504
+        },
+        {
+          "junctionId": "4404",
+          "edgeIds": [
+            "-55839",
+            "-57316"
+          ],
+          "gapMeters": 24.555
+        },
+        {
           "junctionId": "4404",
           "edgeIds": [
             "-57315",
@@ -1012,47 +1075,16 @@
             "-57393"
           ],
           "gapMeters": 24.428
-        },
-        {
-          "junctionId": "891",
-          "edgeIds": [
-            "-46537",
-            "-57395"
-          ],
-          "gapMeters": 20.275
-        },
-        {
-          "junctionId": "881",
-          "edgeIds": [
-            "-46546",
-            "-57396"
-          ],
-          "gapMeters": 21.632
-        },
-        {
-          "junctionId": "4334",
-          "edgeIds": [
-            "-57397.108",
-            "-57398"
-          ],
-          "gapMeters": 35.44
-        },
-        {
-          "junctionId": "4334",
-          "edgeIds": [
-            "-52230",
-            "-57397.108"
-          ],
-          "gapMeters": 33.3
         }
       ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_15",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 48,
       "secondaryJointCount": 47,
       "eligibleConnectionCount": 235,
@@ -1073,22 +1105,6 @@
             "-56024"
           ],
           "gapMeters": 24.835
-        },
-        {
-          "junctionId": "876",
-          "edgeIds": [
-            "-46523",
-            "-50042"
-          ],
-          "gapMeters": 25.548
-        },
-        {
-          "junctionId": "876",
-          "edgeIds": [
-            "-46523",
-            "-55835"
-          ],
-          "gapMeters": 20.734
         },
         {
           "junctionId": "881",
@@ -1137,14 +1153,6 @@
             "-52229"
           ],
           "gapMeters": 23.865
-        },
-        {
-          "junctionId": "3254",
-          "edgeIds": [
-            "-49505",
-            "-49506"
-          ],
-          "gapMeters": 22.966
         },
         {
           "junctionId": "3286",
@@ -1291,14 +1299,6 @@
           "gapMeters": 23.416
         },
         {
-          "junctionId": "3254",
-          "edgeIds": [
-            "-55513",
-            "-55514"
-          ],
-          "gapMeters": 23.408
-        },
-        {
           "junctionId": "3286",
           "edgeIds": [
             "-55566",
@@ -1427,22 +1427,6 @@
           "gapMeters": 41.811
         },
         {
-          "junctionId": "876",
-          "edgeIds": [
-            "-52197",
-            "-56177"
-          ],
-          "gapMeters": 24.667
-        },
-        {
-          "junctionId": "876",
-          "edgeIds": [
-            "-56177",
-            "-57388"
-          ],
-          "gapMeters": 21.445
-        },
-        {
           "junctionId": "891",
           "edgeIds": [
             "-46537",
@@ -1473,6 +1457,56 @@
             "-57397.108"
           ],
           "gapMeters": 33.3
+        }
+      ],
+      "repairedAuthoritativeGaps": [
+        {
+          "junctionId": "876",
+          "edgeIds": [
+            "-46523",
+            "-50042"
+          ],
+          "gapMeters": 25.548
+        },
+        {
+          "junctionId": "876",
+          "edgeIds": [
+            "-46523",
+            "-55835"
+          ],
+          "gapMeters": 20.734
+        },
+        {
+          "junctionId": "3254",
+          "edgeIds": [
+            "-49505",
+            "-49506"
+          ],
+          "gapMeters": 22.966
+        },
+        {
+          "junctionId": "3254",
+          "edgeIds": [
+            "-55513",
+            "-55514"
+          ],
+          "gapMeters": 23.408
+        },
+        {
+          "junctionId": "876",
+          "edgeIds": [
+            "-52197",
+            "-56177"
+          ],
+          "gapMeters": 24.667
+        },
+        {
+          "junctionId": "876",
+          "edgeIds": [
+            "-56177",
+            "-57388"
+          ],
+          "gapMeters": 21.445
         },
         {
           "junctionId": "876",
@@ -1483,13 +1517,14 @@
           "gapMeters": 20.732
         }
       ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_16",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 36,
       "secondaryJointCount": 35,
       "eligibleConnectionCount": 194,
@@ -1528,22 +1563,6 @@
           "gapMeters": 25.935
         },
         {
-          "junctionId": "4225",
-          "edgeIds": [
-            "-50899",
-            "-50900"
-          ],
-          "gapMeters": 21.689
-        },
-        {
-          "junctionId": "4236",
-          "edgeIds": [
-            "-50923",
-            "-50924"
-          ],
-          "gapMeters": 23.259
-        },
-        {
           "junctionId": "cluster_4240_4241",
           "edgeIds": [
             "-50930",
@@ -1560,60 +1579,12 @@
           "gapMeters": 28.572
         },
         {
-          "junctionId": "cluster_4249_J87",
-          "edgeIds": [
-            "-50941",
-            "-50942"
-          ],
-          "gapMeters": 26.473
-        },
-        {
-          "junctionId": "cluster_4249_J87",
-          "edgeIds": [
-            "-50942",
-            "E8"
-          ],
-          "gapMeters": 24.497
-        },
-        {
           "junctionId": "4223",
           "edgeIds": [
             "-50895",
             "-51107"
           ],
           "gapMeters": 25.977
-        },
-        {
-          "junctionId": "4287",
-          "edgeIds": [
-            "-51108",
-            "-55540"
-          ],
-          "gapMeters": 30.376
-        },
-        {
-          "junctionId": "4287",
-          "edgeIds": [
-            "-51108",
-            "-52868"
-          ],
-          "gapMeters": 34.267
-        },
-        {
-          "junctionId": "4287",
-          "edgeIds": [
-            "-51108",
-            "-55539"
-          ],
-          "gapMeters": 20.126
-        },
-        {
-          "junctionId": "cluster_4249_J87",
-          "edgeIds": [
-            "-50941",
-            "-52823"
-          ],
-          "gapMeters": 22.708
         },
         {
           "junctionId": "4364",
@@ -1640,22 +1611,6 @@
           "gapMeters": 29.16
         },
         {
-          "junctionId": "4287",
-          "edgeIds": [
-            "-52867",
-            "-52868"
-          ],
-          "gapMeters": 33.368
-        },
-        {
-          "junctionId": "4287",
-          "edgeIds": [
-            "-52867",
-            "-55539"
-          ],
-          "gapMeters": 34.869
-        },
-        {
           "junctionId": "1",
           "edgeIds": [
             "-45490",
@@ -1680,22 +1635,6 @@
           "gapMeters": 34.093
         },
         {
-          "junctionId": "4287",
-          "edgeIds": [
-            "-55496",
-            "-57040"
-          ],
-          "gapMeters": 33.246
-        },
-        {
-          "junctionId": "4287",
-          "edgeIds": [
-            "-55496",
-            "-55540"
-          ],
-          "gapMeters": 35.643
-        },
-        {
           "junctionId": "4223",
           "edgeIds": [
             "-55524",
@@ -1710,22 +1649,6 @@
             "-55524"
           ],
           "gapMeters": 25.225
-        },
-        {
-          "junctionId": "4287",
-          "edgeIds": [
-            "-55538",
-            "-55539"
-          ],
-          "gapMeters": 29.096
-        },
-        {
-          "junctionId": "4287",
-          "edgeIds": [
-            "-55538",
-            "-57040"
-          ],
-          "gapMeters": 33.434
         },
         {
           "junctionId": "4223",
@@ -1814,6 +1737,120 @@
             "-57042"
           ],
           "gapMeters": 26.251
+        }
+      ],
+      "repairedAuthoritativeGaps": [
+        {
+          "junctionId": "4225",
+          "edgeIds": [
+            "-50899",
+            "-50900"
+          ],
+          "gapMeters": 21.689
+        },
+        {
+          "junctionId": "4236",
+          "edgeIds": [
+            "-50923",
+            "-50924"
+          ],
+          "gapMeters": 23.259
+        },
+        {
+          "junctionId": "cluster_4249_J87",
+          "edgeIds": [
+            "-50941",
+            "-50942"
+          ],
+          "gapMeters": 26.473
+        },
+        {
+          "junctionId": "cluster_4249_J87",
+          "edgeIds": [
+            "-50942",
+            "E8"
+          ],
+          "gapMeters": 24.497
+        },
+        {
+          "junctionId": "4287",
+          "edgeIds": [
+            "-51108",
+            "-55540"
+          ],
+          "gapMeters": 30.376
+        },
+        {
+          "junctionId": "4287",
+          "edgeIds": [
+            "-51108",
+            "-52868"
+          ],
+          "gapMeters": 34.267
+        },
+        {
+          "junctionId": "4287",
+          "edgeIds": [
+            "-51108",
+            "-55539"
+          ],
+          "gapMeters": 20.126
+        },
+        {
+          "junctionId": "cluster_4249_J87",
+          "edgeIds": [
+            "-50941",
+            "-52823"
+          ],
+          "gapMeters": 22.708
+        },
+        {
+          "junctionId": "4287",
+          "edgeIds": [
+            "-52867",
+            "-52868"
+          ],
+          "gapMeters": 33.368
+        },
+        {
+          "junctionId": "4287",
+          "edgeIds": [
+            "-52867",
+            "-55539"
+          ],
+          "gapMeters": 34.869
+        },
+        {
+          "junctionId": "4287",
+          "edgeIds": [
+            "-55496",
+            "-57040"
+          ],
+          "gapMeters": 33.246
+        },
+        {
+          "junctionId": "4287",
+          "edgeIds": [
+            "-55496",
+            "-55540"
+          ],
+          "gapMeters": 35.643
+        },
+        {
+          "junctionId": "4287",
+          "edgeIds": [
+            "-55538",
+            "-55539"
+          ],
+          "gapMeters": 29.096
+        },
+        {
+          "junctionId": "4287",
+          "edgeIds": [
+            "-55538",
+            "-57040"
+          ],
+          "gapMeters": 33.434
         },
         {
           "junctionId": "4225",
@@ -1848,34 +1885,19 @@
           "gapMeters": 22.881
         }
       ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_17",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 54,
       "secondaryJointCount": 53,
       "eligibleConnectionCount": 316,
       "uncoveredEligibleConnections": [],
       "rejectedSourceGaps": [
-        {
-          "junctionId": "37",
-          "edgeIds": [
-            "-45524",
-            "-45525"
-          ],
-          "gapMeters": 22.929
-        },
-        {
-          "junctionId": "37",
-          "edgeIds": [
-            "-51016",
-            "-51017"
-          ],
-          "gapMeters": 22.964
-        },
         {
           "junctionId": "4274",
           "edgeIds": [
@@ -1885,28 +1907,12 @@
           "gapMeters": 27.272
         },
         {
-          "junctionId": "4290",
-          "edgeIds": [
-            "-51119",
-            "-51120"
-          ],
-          "gapMeters": 20.324
-        },
-        {
           "junctionId": "4418",
           "edgeIds": [
             "-56200",
             "-57320"
           ],
           "gapMeters": 27.187
-        },
-        {
-          "junctionId": "4412",
-          "edgeIds": [
-            "-56037",
-            "-57314.177"
-          ],
-          "gapMeters": 23.13
         },
         {
           "junctionId": "4418",
@@ -1931,6 +1937,40 @@
             "-57332"
           ],
           "gapMeters": 24.035
+        }
+      ],
+      "repairedAuthoritativeGaps": [
+        {
+          "junctionId": "37",
+          "edgeIds": [
+            "-45524",
+            "-45525"
+          ],
+          "gapMeters": 22.929
+        },
+        {
+          "junctionId": "37",
+          "edgeIds": [
+            "-51016",
+            "-51017"
+          ],
+          "gapMeters": 22.964
+        },
+        {
+          "junctionId": "4290",
+          "edgeIds": [
+            "-51119",
+            "-51120"
+          ],
+          "gapMeters": 20.324
+        },
+        {
+          "junctionId": "4412",
+          "edgeIds": [
+            "-56037",
+            "-57314.177"
+          ],
+          "gapMeters": 23.13
         },
         {
           "junctionId": "4419",
@@ -1941,13 +1981,14 @@
           "gapMeters": 20.211
         }
       ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_18",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 79,
       "secondaryJointCount": 78,
       "eligibleConnectionCount": 365,
@@ -1968,14 +2009,6 @@
             "-57010"
           ],
           "gapMeters": 22.598
-        },
-        {
-          "junctionId": "19",
-          "edgeIds": [
-            "-45507",
-            "-45515"
-          ],
-          "gapMeters": 21.402
         },
         {
           "junctionId": "29",
@@ -2010,28 +2043,12 @@
           "gapMeters": 26.596
         },
         {
-          "junctionId": "48",
-          "edgeIds": [
-            "-45534",
-            "-45535"
-          ],
-          "gapMeters": 24.815
-        },
-        {
           "junctionId": "52",
           "edgeIds": [
             "-45539",
             "-56830.4"
           ],
           "gapMeters": 24.273
-        },
-        {
-          "junctionId": "55",
-          "edgeIds": [
-            "-45542",
-            "-45543"
-          ],
-          "gapMeters": 24.722
         },
         {
           "junctionId": "3590",
@@ -2050,22 +2067,6 @@
           "gapMeters": 25.529
         },
         {
-          "junctionId": "4222",
-          "edgeIds": [
-            "-50890",
-            "-50891"
-          ],
-          "gapMeters": 29.061
-        },
-        {
-          "junctionId": "4222",
-          "edgeIds": [
-            "-50891",
-            "-56004.184"
-          ],
-          "gapMeters": 23.545
-        },
-        {
           "junctionId": "10",
           "edgeIds": [
             "-50988",
@@ -2080,14 +2081,6 @@
             "-56013"
           ],
           "gapMeters": 23.729
-        },
-        {
-          "junctionId": "19",
-          "edgeIds": [
-            "-50999",
-            "-51007"
-          ],
-          "gapMeters": 21.389
         },
         {
           "junctionId": "29",
@@ -2122,30 +2115,6 @@
           "gapMeters": 25.431
         },
         {
-          "junctionId": "48",
-          "edgeIds": [
-            "-51027",
-            "-51028"
-          ],
-          "gapMeters": 24.093
-        },
-        {
-          "junctionId": "48",
-          "edgeIds": [
-            "-51027",
-            "-56053"
-          ],
-          "gapMeters": 20.694
-        },
-        {
-          "junctionId": "55",
-          "edgeIds": [
-            "-51036",
-            "-51037"
-          ],
-          "gapMeters": 23.792
-        },
-        {
           "junctionId": "cluster_4288_4467",
           "edgeIds": [
             "-51113",
@@ -2160,14 +2129,6 @@
             "-57076"
           ],
           "gapMeters": 52.753
-        },
-        {
-          "junctionId": "4289",
-          "edgeIds": [
-            "-51117",
-            "-51118"
-          ],
-          "gapMeters": 23.876
         },
         {
           "junctionId": "3590",
@@ -2218,14 +2179,6 @@
           "gapMeters": 23.805
         },
         {
-          "junctionId": "4222",
-          "edgeIds": [
-            "-56020",
-            "-57753"
-          ],
-          "gapMeters": 22.533
-        },
-        {
           "junctionId": "4411",
           "edgeIds": [
             "-56053.16",
@@ -2274,14 +2227,6 @@
           "gapMeters": 53.038
         },
         {
-          "junctionId": "4222",
-          "edgeIds": [
-            "-50890",
-            "-57005"
-          ],
-          "gapMeters": 23.621
-        },
-        {
           "junctionId": "10",
           "edgeIds": [
             "-50989",
@@ -2322,14 +2267,6 @@
           "gapMeters": 35.028
         },
         {
-          "junctionId": "48",
-          "edgeIds": [
-            "-51028",
-            "-57021"
-          ],
-          "gapMeters": 20.988
-        },
-        {
           "junctionId": "cluster_4288_4467",
           "edgeIds": [
             "-57074",
@@ -2354,14 +2291,6 @@
           "gapMeters": 25.631
         },
         {
-          "junctionId": "4414",
-          "edgeIds": [
-            "-57358",
-            "-57359"
-          ],
-          "gapMeters": 20.694
-        },
-        {
           "junctionId": "cluster_4288_4467",
           "edgeIds": [
             "-57355",
@@ -2378,6 +2307,128 @@
           "gapMeters": 53.633
         },
         {
+          "junctionId": "4254",
+          "edgeIds": [
+            "-56010",
+            "-57812"
+          ],
+          "gapMeters": 23.138
+        }
+      ],
+      "repairedAuthoritativeGaps": [
+        {
+          "junctionId": "19",
+          "edgeIds": [
+            "-45507",
+            "-45515"
+          ],
+          "gapMeters": 21.402
+        },
+        {
+          "junctionId": "48",
+          "edgeIds": [
+            "-45534",
+            "-45535"
+          ],
+          "gapMeters": 24.815
+        },
+        {
+          "junctionId": "55",
+          "edgeIds": [
+            "-45542",
+            "-45543"
+          ],
+          "gapMeters": 24.722
+        },
+        {
+          "junctionId": "4222",
+          "edgeIds": [
+            "-50890",
+            "-50891"
+          ],
+          "gapMeters": 29.061
+        },
+        {
+          "junctionId": "4222",
+          "edgeIds": [
+            "-50891",
+            "-56004.184"
+          ],
+          "gapMeters": 23.545
+        },
+        {
+          "junctionId": "19",
+          "edgeIds": [
+            "-50999",
+            "-51007"
+          ],
+          "gapMeters": 21.389
+        },
+        {
+          "junctionId": "48",
+          "edgeIds": [
+            "-51027",
+            "-51028"
+          ],
+          "gapMeters": 24.093
+        },
+        {
+          "junctionId": "48",
+          "edgeIds": [
+            "-51027",
+            "-56053"
+          ],
+          "gapMeters": 20.694
+        },
+        {
+          "junctionId": "55",
+          "edgeIds": [
+            "-51036",
+            "-51037"
+          ],
+          "gapMeters": 23.792
+        },
+        {
+          "junctionId": "4289",
+          "edgeIds": [
+            "-51117",
+            "-51118"
+          ],
+          "gapMeters": 23.876
+        },
+        {
+          "junctionId": "4222",
+          "edgeIds": [
+            "-56020",
+            "-57753"
+          ],
+          "gapMeters": 22.533
+        },
+        {
+          "junctionId": "4222",
+          "edgeIds": [
+            "-50890",
+            "-57005"
+          ],
+          "gapMeters": 23.621
+        },
+        {
+          "junctionId": "48",
+          "edgeIds": [
+            "-51028",
+            "-57021"
+          ],
+          "gapMeters": 20.988
+        },
+        {
+          "junctionId": "4414",
+          "edgeIds": [
+            "-57358",
+            "-57359"
+          ],
+          "gapMeters": 20.694
+        },
+        {
           "junctionId": "4222",
           "edgeIds": [
             "-57752",
@@ -2392,36 +2443,21 @@
             "-57752"
           ],
           "gapMeters": 22.394
-        },
-        {
-          "junctionId": "4254",
-          "edgeIds": [
-            "-56010",
-            "-57812"
-          ],
-          "gapMeters": 23.138
         }
       ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_19",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 43,
       "secondaryJointCount": 42,
       "eligibleConnectionCount": 226,
       "uncoveredEligibleConnections": [],
       "rejectedSourceGaps": [
-        {
-          "junctionId": "868",
-          "edgeIds": [
-            "-46516",
-            "-46517"
-          ],
-          "gapMeters": 20.877
-        },
         {
           "junctionId": "872",
           "edgeIds": [
@@ -2501,14 +2537,6 @@
             "-52227"
           ],
           "gapMeters": 29.284
-        },
-        {
-          "junctionId": "868",
-          "edgeIds": [
-            "-52190",
-            "-52191"
-          ],
-          "gapMeters": 20.999
         },
         {
           "junctionId": "872",
@@ -2671,22 +2699,6 @@
           "gapMeters": 22.241
         },
         {
-          "junctionId": "4404",
-          "edgeIds": [
-            "-55831",
-            "-55839"
-          ],
-          "gapMeters": 21.503
-        },
-        {
-          "junctionId": "4404",
-          "edgeIds": [
-            "-55839",
-            "-57316"
-          ],
-          "gapMeters": 24.553
-        },
-        {
           "junctionId": "cluster_895_J49",
           "edgeIds": [
             "-46541",
@@ -2743,6 +2755,64 @@
           "gapMeters": 20.905
         },
         {
+          "junctionId": "881",
+          "edgeIds": [
+            "-46546",
+            "-57396"
+          ],
+          "gapMeters": 21.631
+        },
+        {
+          "junctionId": "4334",
+          "edgeIds": [
+            "-57397.108",
+            "-57398"
+          ],
+          "gapMeters": 35.439
+        },
+        {
+          "junctionId": "4334",
+          "edgeIds": [
+            "-52230",
+            "-57397.108"
+          ],
+          "gapMeters": 33.3
+        }
+      ],
+      "repairedAuthoritativeGaps": [
+        {
+          "junctionId": "868",
+          "edgeIds": [
+            "-46516",
+            "-46517"
+          ],
+          "gapMeters": 20.877
+        },
+        {
+          "junctionId": "868",
+          "edgeIds": [
+            "-52190",
+            "-52191"
+          ],
+          "gapMeters": 20.999
+        },
+        {
+          "junctionId": "4404",
+          "edgeIds": [
+            "-55831",
+            "-55839"
+          ],
+          "gapMeters": 21.503
+        },
+        {
+          "junctionId": "4404",
+          "edgeIds": [
+            "-55839",
+            "-57316"
+          ],
+          "gapMeters": 24.553
+        },
+        {
           "junctionId": "4404",
           "edgeIds": [
             "-57315",
@@ -2789,39 +2859,16 @@
             "-57393"
           ],
           "gapMeters": 24.428
-        },
-        {
-          "junctionId": "881",
-          "edgeIds": [
-            "-46546",
-            "-57396"
-          ],
-          "gapMeters": 21.631
-        },
-        {
-          "junctionId": "4334",
-          "edgeIds": [
-            "-57397.108",
-            "-57398"
-          ],
-          "gapMeters": 35.439
-        },
-        {
-          "junctionId": "4334",
-          "edgeIds": [
-            "-52230",
-            "-57397.108"
-          ],
-          "gapMeters": 33.3
         }
       ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
     },
     {
       "intersectionId": "demo_20",
-      "status": "pass",
+      "status": "warning",
       "roadJointCount": 57,
       "secondaryJointCount": 56,
       "eligibleConnectionCount": 258,
@@ -2844,22 +2891,6 @@
           "gapMeters": 22.521
         },
         {
-          "junctionId": "36",
-          "edgeIds": [
-            "-45523",
-            "-45524"
-          ],
-          "gapMeters": 23.151
-        },
-        {
-          "junctionId": "37",
-          "edgeIds": [
-            "-45524",
-            "-45525"
-          ],
-          "gapMeters": 22.926
-        },
-        {
           "junctionId": "35",
           "edgeIds": [
             "-51014",
@@ -2874,22 +2905,6 @@
             "-57074"
           ],
           "gapMeters": 24.882
-        },
-        {
-          "junctionId": "36",
-          "edgeIds": [
-            "-51015",
-            "-51016"
-          ],
-          "gapMeters": 22.238
-        },
-        {
-          "junctionId": "37",
-          "edgeIds": [
-            "-51016",
-            "-51017"
-          ],
-          "gapMeters": 22.961
         },
         {
           "junctionId": "cluster_4288_4467",
@@ -2916,28 +2931,12 @@
           "gapMeters": 22.697
         },
         {
-          "junctionId": "36",
-          "edgeIds": [
-            "-51016",
-            "-57024"
-          ],
-          "gapMeters": 20.301
-        },
-        {
           "junctionId": "35",
           "edgeIds": [
             "-45522",
             "-57073"
           ],
           "gapMeters": 24.964
-        },
-        {
-          "junctionId": "4412",
-          "edgeIds": [
-            "-56037",
-            "-57314.177"
-          ],
-          "gapMeters": 23.128
         },
         {
           "junctionId": "4418",
@@ -2964,6 +2963,57 @@
           "gapMeters": 24.033
         }
       ],
+      "repairedAuthoritativeGaps": [
+        {
+          "junctionId": "36",
+          "edgeIds": [
+            "-45523",
+            "-45524"
+          ],
+          "gapMeters": 23.151
+        },
+        {
+          "junctionId": "37",
+          "edgeIds": [
+            "-45524",
+            "-45525"
+          ],
+          "gapMeters": 22.926
+        },
+        {
+          "junctionId": "36",
+          "edgeIds": [
+            "-51015",
+            "-51016"
+          ],
+          "gapMeters": 22.238
+        },
+        {
+          "junctionId": "37",
+          "edgeIds": [
+            "-51016",
+            "-51017"
+          ],
+          "gapMeters": 22.961
+        },
+        {
+          "junctionId": "36",
+          "edgeIds": [
+            "-51016",
+            "-57024"
+          ],
+          "gapMeters": 20.301
+        },
+        {
+          "junctionId": "4412",
+          "edgeIds": [
+            "-56037",
+            "-57314.177"
+          ],
+          "gapMeters": 23.128
+        }
+      ],
+      "valid": true,
       "invalidJoints": [],
       "jointSurfaceHeightMeters": 0.014,
       "roadSurfaceHeightMeters": 0
@@ -2971,10 +3021,11 @@
   ],
   "summary": {
     "checked": 20,
-    "passed": 20,
+    "passed": 7,
+    "warnings": 13,
     "failed": 0,
-    "roadJoints": 517,
+    "roadJoints": 519,
     "uncoveredEligibleConnections": 0,
-    "rejectedSourceGaps": 338
+    "rejectedSourceGaps": 253
   }
 }

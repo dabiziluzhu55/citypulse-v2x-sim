@@ -19,7 +19,7 @@ import {
 test('uses concrete algorithm names in the evaluation legend', () => {
   assert.deepEqual(
     METRICS_ALGORITHMS.map((item) => item.shortLabel),
-    ['固定配时', 'Max Pressure', 'SOTL'],
+    ['固定配时', 'Max Pressure', 'SOTL', 'IPPO', 'MAPPO'],
   )
 })
 
@@ -49,7 +49,7 @@ function payload(overrides = {}) {
     step_length: 0.2,
     realtime: true,
     gui: false,
-    snapshot_interval_seconds: 0.2,
+    snapshot_interval_seconds: 0.5,
     disturbance_targets: [],
     playback_speed: 1,
     ...overrides,
@@ -97,6 +97,8 @@ test('keeps only real algorithm values and leaves unrun algorithms empty', () =>
   assert.deepEqual(series.find((item) => item.id === 'fixed').values, [3, null])
   assert.deepEqual(series.find((item) => item.id === 'sotl').values, [null, 2])
   assert.equal(series.find((item) => item.id === 'max_pressure').source, 'missing')
+  assert.equal(series.find((item) => item.id === 'ippo').source, 'missing')
+  assert.equal(series.find((item) => item.id === 'mappo').source, 'missing')
 })
 
 test('replaces duplicate timestamps and caps stored real points', () => {
@@ -139,6 +141,40 @@ test('buckets provisional samples every five seconds and preserves null values',
   assert.equal(point.time, 10)
   assert.equal(point.fuel_consumption, null)
   assert.equal(point.finished, false)
+  assert.deepEqual(point.metric_status, {
+    queue: 'provisional',
+    waiting: 'provisional',
+    fuel: 'pending',
+  })
+})
+
+test('does not plot a contradictory real-time waiting zero as a confirmed value', () => {
+  const running = snapshot('RUNNING', 30, false)
+  running.evaluation.avg_waiting_time = 0
+  running.metrics.evaluation.avg_waiting_time = 0
+  running.metrics.total_waiting_time = 12
+  running.metrics.halting_vehicles = 3
+  const point = evaluationPoint(running)
+  assert.equal(point.avg_waiting_time, null)
+  assert.equal(point.metric_status.waiting, 'pending')
+})
+
+test('preserves a genuine real-time waiting zero when no vehicle is waiting', () => {
+  const running = snapshot('RUNNING', 30, false)
+  running.evaluation.avg_waiting_time = 0
+  running.metrics.evaluation.avg_waiting_time = 0
+  const point = evaluationPoint(running)
+  assert.equal(point.avg_waiting_time, 0)
+  assert.equal(point.metric_status.waiting, 'provisional')
+})
+
+test('marks null fuel unavailable as soon as the backend provides an explicit warning', () => {
+  const running = snapshot('RUNNING', 30, false)
+  running.evaluation.warnings = ['没有可用的燃油车辆行驶里程，燃油强度记为不可用。']
+  running.metrics.evaluation.warnings = [...running.evaluation.warnings]
+  const point = evaluationPoint(running)
+  assert.equal(point.fuel_consumption, null)
+  assert.equal(point.metric_status.fuel, 'unavailable')
 })
 
 test('rejects unfinished terminal metrics and records the TripInfo-completed final frame', () => {
@@ -153,4 +189,12 @@ test('rejects unfinished terminal metrics and records the TripInfo-completed fin
   assert.equal(point.avg_waiting_time, 7)
   assert.equal(point.metric_sources.avg_waiting_time_s, 'tripinfo_completed')
   assert.deepEqual(point.warnings, ['fuel unavailable'])
+  assert.equal(point.metric_status.waiting, 'final')
+  assert.equal(point.metric_status.fuel, 'unavailable')
+})
+
+test('a final TripInfo point replaces a provisional point in the same five-second bucket', () => {
+  const provisional = { time: 12, algorithm: 'fixed', avg_waiting_time: 0, avg_queue_length: 1, throughput: 4, fuel_consumption: null, finished: false }
+  const finalPoint = { ...provisional, time: 14, avg_waiting_time: 7, finished: true }
+  assert.deepEqual(appendRealEvaluationPoint([provisional], finalPoint), [finalPoint])
 })

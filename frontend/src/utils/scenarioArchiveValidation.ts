@@ -1,12 +1,19 @@
+import { scenarioPresetIntersectionIds } from './scenarioPresetRules.ts'
+
 interface ScenarioArchiveManifest {
+  schema_version?: number
   od_included?: boolean
   files?: Record<string, unknown>
   scenario_preset_id?: string
+  controlled_intersection_ids?: unknown[]
+  period?: string
+  control_mode?: string
 }
 
 export interface ScenarioArchiveValidationInput {
   scenarioPresetId: string
   period: string
+  controlMode: string
 }
 
 export interface ScenarioArchiveValidationResult {
@@ -30,6 +37,14 @@ function parseJson(text: string, label: string): Record<string, unknown> {
   }
 }
 
+function sortedIntersectionIds(values: string[]): string[] {
+  return [...values].sort((left, right) => left.localeCompare(
+    right,
+    undefined,
+    { numeric: true },
+  ))
+}
+
 export async function validateScenarioArchive(
   blob: Blob,
   input: ScenarioArchiveValidationInput,
@@ -43,11 +58,35 @@ export async function validateScenarioArchive(
     await manifestEntry.async('string'),
     'export_manifest.json',
   ) as ScenarioArchiveManifest
-  if (
-    typeof manifest.scenario_preset_id === 'string'
-    && manifest.scenario_preset_id !== input.scenarioPresetId
-  ) {
+  if (manifest.schema_version !== 1) {
+    throw new Error(`场景 ZIP Schema 不受支持：${String(manifest.schema_version)}`)
+  }
+  if (manifest.scenario_preset_id !== input.scenarioPresetId) {
     throw new Error(`场景 ZIP 预设不匹配：${manifest.scenario_preset_id}`)
+  }
+  if (manifest.period !== input.period) throw new Error(`场景 ZIP 时段不匹配：${manifest.period}`)
+  if (manifest.control_mode !== input.controlMode) {
+    throw new Error(`场景 ZIP 管控算法不匹配：${manifest.control_mode}`)
+  }
+
+  const expectedIntersectionIds = sortedIntersectionIds(
+    scenarioPresetIntersectionIds(input.scenarioPresetId),
+  )
+  const controlledIntersectionIds = Array.isArray(manifest.controlled_intersection_ids)
+    ? manifest.controlled_intersection_ids.filter((value): value is string => typeof value === 'string')
+    : []
+  if (
+    controlledIntersectionIds.length !== manifest.controlled_intersection_ids?.length
+    || JSON.stringify(sortedIntersectionIds(controlledIntersectionIds)) !== JSON.stringify(expectedIntersectionIds)
+  ) {
+    throw new Error(`场景 ZIP 路口范围不匹配：应为 ${expectedIntersectionIds.length} 个路口`)
+  }
+
+  const files = requireRecord(manifest.files, 'export_manifest.files')
+  for (const key of ['sumocfg', 'routes', 'additional', 'events', 'network']) {
+    const path = files[key]
+    if (typeof path !== 'string' || !path) throw new Error(`场景 manifest 缺少基础文件路径：${key}`)
+    if (!zip.file(path)) throw new Error(`场景 ZIP 缺少 ${path}`)
   }
 
   const odEntries = Object.keys(zip.files).filter((name) => name.startsWith('od/'))
@@ -63,7 +102,6 @@ export async function validateScenarioArchive(
     od_taz_json: 'od/taz_9_zones.json',
     od_heatmap_png: `od/od_heatmap_${input.period}.png`,
   } as const
-  const files = requireRecord(manifest.files, 'export_manifest.files')
   for (const [key, path] of Object.entries(expected)) {
     if (files[key] !== path) throw new Error(`场景 manifest 路径不匹配：${key}`)
     if (!zip.file(path)) throw new Error(`场景 ZIP 缺少 ${path}`)

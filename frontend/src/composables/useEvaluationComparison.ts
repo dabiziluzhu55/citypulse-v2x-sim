@@ -1,6 +1,11 @@
 import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { fetchSimulationMetrics } from '../api/simulation.ts'
-import type { MetricsTimeseriesPoint, MetricsTimeseriesResponse } from '../types/metrics'
+import type {
+  EvaluationMetricKey,
+  MetricPresentationStatus,
+  MetricsTimeseriesPoint,
+  MetricsTimeseriesResponse,
+} from '../types/metrics'
 import {
   TERMINAL_SIMULATION_STATES,
   type SimulationEvaluation,
@@ -103,6 +108,40 @@ function boundedEvaluationTime(value: number): number {
   return Math.min(EVALUATION_TIME_LIMIT_SECONDS, Math.max(0, value))
 }
 
+function metricStatus(
+  value: number | null | undefined,
+  finished: boolean,
+): MetricPresentationStatus {
+  if (typeof value === 'number') return finished ? 'final' : 'provisional'
+  return finished ? 'unavailable' : 'pending'
+}
+
+function evaluationMetricStatuses(
+  snapshot: SimulationSnapshot,
+  evaluation: SimulationEvaluation,
+): Record<EvaluationMetricKey, MetricPresentationStatus> {
+  const contradictoryWaitingZero = !evaluation.finished
+    && evaluation.avg_waiting_time === 0
+    && (
+      (snapshot.metrics.total_waiting_time ?? 0) > 0
+      || (snapshot.metrics.halting_vehicles ?? 0) > 0
+    )
+  const fuelExplicitlyUnavailable = evaluation.fuel_consumption == null
+    && (evaluation.warnings ?? []).some((warning) => (
+      /燃油|fuel|powertrain|里程/i.test(warning)
+      && /不可用|无法|缺少|不足|unavailable|missing|invalid/i.test(warning)
+    ))
+  return {
+    queue: metricStatus(evaluation.avg_queue_length, evaluation.finished),
+    waiting: contradictoryWaitingZero
+      ? 'pending'
+      : metricStatus(evaluation.avg_waiting_time, evaluation.finished),
+    fuel: fuelExplicitlyUnavailable
+      ? 'unavailable'
+      : metricStatus(evaluation.fuel_consumption, evaluation.finished),
+  }
+}
+
 export function evaluationPoint(
   snapshot: SimulationSnapshot,
   suppliedEvaluation?: SimulationEvaluation,
@@ -118,10 +157,13 @@ export function evaluationPoint(
   const time = evaluation.finished
     ? boundedTime
     : Math.floor(boundedTime / EVALUATION_BUCKET_SECONDS) * EVALUATION_BUCKET_SECONDS
+  const metricStatuses = evaluationMetricStatuses(snapshot, evaluation)
   return {
     time,
     algorithm: evaluation.algorithm,
-    avg_waiting_time: evaluation.avg_waiting_time,
+    avg_waiting_time: metricStatuses.waiting === 'pending'
+      ? null
+      : evaluation.avg_waiting_time,
     avg_travel_time: evaluation.avg_travel_time,
     avg_queue_length: evaluation.avg_queue_length,
     throughput: evaluation.throughput,
@@ -129,6 +171,7 @@ export function evaluationPoint(
     finished: evaluation.finished,
     metric_sources: { ...(evaluation.metric_sources ?? {}) },
     warnings: [...(evaluation.warnings ?? [])],
+    metric_status: metricStatuses,
   }
 }
 
@@ -143,7 +186,14 @@ export function appendRealEvaluationPoint(
   limit = MAX_POINTS_PER_RUN,
 ): MetricsTimeseriesPoint[] {
   const next = [...points]
-  const existingIndex = next.findIndex((entry) => Math.abs(entry.time - point.time) < 1e-6)
+  const existingIndex = next.findIndex((entry) => (
+    Math.abs(entry.time - point.time) < 1e-6
+    || (
+      point.finished
+      && Math.floor(entry.time / EVALUATION_BUCKET_SECONDS)
+        === Math.floor(point.time / EVALUATION_BUCKET_SECONDS)
+    )
+  ))
   if (existingIndex >= 0) next[existingIndex] = point
   else next.push(point)
   next.sort((left, right) => left.time - right.time)

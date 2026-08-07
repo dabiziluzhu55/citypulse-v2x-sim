@@ -29,7 +29,7 @@ export interface RealisticRoadJoint {
   connectedEdgeIds: string[]
   maxGapMeters: number
   overlapMeters: number
-  source: 'sumo_topology'
+  source: 'sumo_topology' | 'sumo_junction_shape'
   polygons: {
     sidewalk: Point2[]
     curb: Point2[]
