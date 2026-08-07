@@ -15,6 +15,7 @@ import {
   SIMULATION_SNAPSHOT_INTERVAL_MS,
   SUPPORTED_BACKEND_CONTROL_MODES,
   requireAvailableControlMode,
+  requirePeriodCompatibleControlMode,
   resolveDashboardControlModes,
 } from '../constants/simulationOptions'
 import type { CatalogIntersection, CatalogScenarioPreset } from '../types/catalog'
@@ -140,10 +141,14 @@ export function buildSimulationPayload(
       vehicleCount: event.vehicle_count,
     }
   })
-  const controlMode = requireAvailableControlMode(config.control_mode, controlModes)
+  const period = resolvePeriod(config, periods)
+  const controlMode = requirePeriodCompatibleControlMode(
+    requireAvailableControlMode(config.control_mode, controlModes),
+    period,
+  )
   return buildStartSimulationRequest({
     scenarioPresetId: config.scenario_preset_id,
-    period: resolvePeriod(config, periods),
+    period,
     windowStartSeconds: time.windowStartSeconds,
     durationSeconds: time.durationSeconds,
     controlMode,

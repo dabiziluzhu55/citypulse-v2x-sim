@@ -7,7 +7,7 @@ import {
   BALANCED_VISIBLE_VEHICLES,
   CONSTRAINED_VISIBLE_VEHICLES,
   MAX_VISIBLE_VEHICLES,
-  MISSING_SNAPSHOT_GRACE,
+  MAX_ROSTER_CHANGES_PER_SNAPSHOT,
   resolveVehicleRenderRadius,
   selectVisibleVehicles,
   StableVehicleSelector,
@@ -47,6 +47,14 @@ import {
   ELECTRIC_BICYCLE_MODEL_PROFILE,
   resolveVehicleModelProfile,
 } from '../src/mapv/vehicleModelProfiles.ts'
+import {
+  MAX_VISUAL_BACKTRACK_METERS,
+  minimumForwardTrackDistance,
+  resolveCrossedStopLine,
+  resolveVisualQueueConstraints,
+  shouldAllowStopClamp,
+} from '../src/mapv/vehiclePoseStability.ts'
+import { snapshotToTrafficView } from '../src/utils/trafficStateMerge.ts'
 
 test('keeps Twin presentation timestamps monotonic across repeated frames', () => {
   const clock = new VehiclePresentationClock()
@@ -276,30 +284,90 @@ test('retains selected vehicle ids across distance-order jitter', () => {
   )
 })
 
-test('keeps missing vehicles through short stream dropouts before removal', () => {
+test('removes missing vehicles from the selector without a second retention lifecycle', () => {
   const selector = new StableVehicleSelector()
   const center = [116, 39]
   selector.select([vehicle('held', 116.001, 39)], (coordinate) => [...coordinate], center, 500, 's:1')
-  for (let sequence = 2; sequence <= MISSING_SNAPSHOT_GRACE + 1; sequence += 1) {
-    assert.equal(
-      selector.select([], (coordinate) => [...coordinate], center, 500, `s:${sequence}`).length,
-      1,
-    )
-  }
   assert.equal(
-    selector.select([], (coordinate) => [...coordinate], center, 500, `s:${MISSING_SNAPSHOT_GRACE + 2}`).length,
+    selector.select([], (coordinate) => [...coordinate], center, 500, 's:2').length,
     0,
   )
 })
 
-test('does not age a retained vehicle on repeated viewport refreshes', () => {
+test('keeps a present vehicle during repeated viewport refreshes', () => {
   const selector = new StableVehicleSelector()
   const center = [116, 39]
-  selector.select([vehicle('held', 116.001, 39)], (coordinate) => [...coordinate], center, 500, 's:1')
-  for (let index = 0; index < MISSING_SNAPSHOT_GRACE * 2; index += 1) {
-    assert.equal(selector.select([], (coordinate) => [...coordinate], center, 500, 's:1').length, 1)
+  const present = vehicle('held', 116.001, 39)
+  selector.select([present], (coordinate) => [...coordinate], center, 500, 's:1')
+  for (let index = 0; index < 10; index += 1) {
+    assert.equal(selector.select([present], (coordinate) => [...coordinate], center, 500, 's:1').length, 1)
   }
-  assert.equal(selector.select([], (coordinate) => [...coordinate], center, 500, 's:2').length, 1)
+})
+
+test('limits roster churn to 32 vehicles when the performance tier changes', () => {
+  const selector = new StableVehicleSelector()
+  const center = [116, 39]
+  const vehicles = Array.from({ length: MAX_VISIBLE_VEHICLES }, (_, index) => (
+    vehicle(String(index), 116 + index * 0.000001, 39)
+  ))
+  const full = selector.select(vehicles, (coordinate) => [...coordinate], center, 1_400, 's:1', MAX_VISIBLE_VEHICLES)
+  const constrained = selector.select(vehicles, (coordinate) => [...coordinate], center, 1_400, 's:2', CONSTRAINED_VISIBLE_VEHICLES)
+  assert.equal(full.length - constrained.length, MAX_ROSTER_CHANGES_PER_SNAPSHOT)
+})
+
+test('preserves complete optional vehicle telemetry through the traffic view', () => {
+  const source = {
+    ...vehicle('telemetry', 116, 39),
+    acceleration: -1.2,
+    lane_index: 2,
+    lane_position: 34.5,
+    allowed_speed: 13.9,
+    route_id: 'route-a',
+    route_index: 3,
+    distance: 120.25,
+    next_intersection_id: 'demo_8',
+    target_speed: 8,
+    target_lane_index: 1,
+  }
+  const view = snapshotToTrafficView({
+    session_id: 'session', state: 'RUNNING', sequence: 1, elapsed_seconds: 1,
+    duration_seconds: 60, progress: 1 / 60, official_time: '14:30:01', playback_speed: 1,
+    intersections: {}, vehicles: [source], events: [], error: null,
+    metrics: { active_vehicles: 1, departed_vehicles: 1, arrived_vehicles: 0, remaining_vehicles: 0, halting_vehicles: 0, total_waiting_time: 0, mean_speed: 10 },
+  })
+  assert.deepEqual(view.vehicles[0], source)
+})
+
+test('prevents visual regression while backend route distance advances', () => {
+  const previous = {
+    backendDistance: 100, routeId: 'route-a', routeIndex: 2, laneId: 'lane-1',
+    trackKey: 'track-1', trackDistanceMeters: 40, crossedStopLine: false,
+    laneResolutionFailures: 0, longitude: 116, latitude: 39, heading: 0, lastSeenSequence: 1,
+  }
+  const next = { ...vehicle('car', 116, 39), distance: 101, route_id: 'route-a', route_index: 2 }
+  assert.equal(minimumForwardTrackDistance(previous, next), 40 - MAX_VISUAL_BACKTRACK_METERS)
+  assert.equal(minimumForwardTrackDistance(previous, { ...next, route_index: 3 }), undefined)
+})
+
+test('keeps mixed vehicle queues one metre apart and hides an impossible tail', () => {
+  const constraints = resolveVisualQueueConstraints([
+    { id: 'car', trackKey: 'lane', lanePosition: 50, naturalCenterDistanceMeters: 50, lengthMeters: 5 },
+    { id: 'bus', trackKey: 'lane', lanePosition: 48, naturalCenterDistanceMeters: 48, lengthMeters: 10 },
+    { id: 'tail', trackKey: 'lane', lanePosition: 35, naturalCenterDistanceMeters: 35, lengthMeters: 9, previousCenterDistanceMeters: 35 },
+  ])
+  assert.equal(constraints.get('bus').maximumCenterDistanceMeters, 41.5)
+  assert.equal(constraints.get('tail').hidden, true)
+})
+
+test('never pulls a vehicle back after it has crossed the stop boundary', () => {
+  const first = { ...vehicle('car', 116, 39), speed: 0, distance: 10, route_id: 'route-a', route_index: 0 }
+  assert.equal(resolveCrossedStopLine(null, first, 12, 10, false), true)
+  const crossed = {
+    backendDistance: 10, routeId: 'route-a', routeIndex: 0, laneId: first.lane_id,
+    trackKey: 'lane', trackDistanceMeters: 10, crossedStopLine: true,
+    laneResolutionFailures: 0, longitude: 116, latitude: 39, heading: 0, lastSeenSequence: 1,
+  }
+  assert.equal(shouldAllowStopClamp(crossed, first), false)
 })
 
 test('uses exit-radius hysteresis to absorb camera-boundary jitter', () => {

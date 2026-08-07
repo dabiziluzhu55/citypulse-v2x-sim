@@ -9,6 +9,10 @@ const simulationStoreSource = await readFile(
   new URL('../src/composables/useSimulationStore.ts', import.meta.url),
   'utf8',
 )
+const leftSidebarSource = await readFile(
+  new URL('../src/components/dashboard/LeftSidebarPanel.vue', import.meta.url),
+  'utf8',
+)
 
 function snapshot(sequence, elapsedSeconds, state = 'RUNNING', sessionId = 'session-1') {
   return {
@@ -47,6 +51,14 @@ test('keeps asynchronous backend failures actionable and preserves raw details',
     simulationSnapshotErrorMessage({ state: 'FAILED', error: 'tensor shape mismatch' }),
     /算法模型输入或动作契约不兼容.*tensor shape mismatch/,
   )
+  assert.match(
+    simulationSnapshotErrorMessage({ state: 'FAILED', error: "No module named 'torch'" }),
+    /后端启动环境缺少 PyTorch.*\.venv.*No module named 'torch'/,
+  )
+  assert.match(
+    simulationSnapshotErrorMessage({ state: 'FAILED', error: 'model checkpoint not found' }),
+    /算法模型文件缺失.*model checkpoint not found/,
+  )
   assert.equal(
     simulationSnapshotErrorMessage({ state: 'RUNNING', error: null }),
     null,
@@ -62,4 +74,8 @@ test('keeps asynchronous backend failures actionable and preserves raw details',
     applySnapshotBlock,
     /next\.state === 'FAILED' && !next\.error && statusError\.value[\s\S]*Keep the detailed error/,
   )
+  assert.match(simulationStoreSource, /unknown session/)
+  assert.match(leftSidebarSource, /runtimeFailureStage/)
+  assert.match(leftSidebarSource, /算法初始化/)
+  assert.match(leftSidebarSource, /后端原始错误/)
 })

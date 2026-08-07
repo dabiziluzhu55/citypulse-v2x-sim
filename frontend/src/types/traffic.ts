@@ -31,7 +31,16 @@ export interface TrafficVehicleView {
   road_id: string
   lane_id: string
   type_id?: string
+  acceleration?: number
+  lane_index?: number
   lane_position?: number
+  allowed_speed?: number
+  route_id?: string
+  route_index?: number
+  distance?: number
+  next_intersection_id?: string | null
+  target_speed?: number
+  target_lane_index?: number
 }
 
 export interface TrafficStateView {

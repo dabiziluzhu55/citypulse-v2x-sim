@@ -28,14 +28,17 @@ import { formatIntersectionLabel } from '../../utils/intersectionLabels'
 import { buildDisturbanceWarningAggregates } from '../../utils/disturbanceWarnings'
 import {
   resolveStableVehicleHeading,
+  shortestAngleDelta,
   type VehicleHeadingState,
 } from '../../mapv/vehicleOrientation'
+
+const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 
 const mapEl = ref<HTMLElement | null>(null)
 const mapView = useAppMapView()
 const { activeIntersectionId } = useActiveIntersectionScene()
 const { geojson, error: networkError } = useSimulationMap(activeIntersectionId)
-const { trafficView, snapshot } = useSimulationStore()
+const { trafficView, snapshot, renderSessionRevision } = useSimulationStore()
 const { disturbanceEvents, simulationStartTime } = useScenarioDraftStore()
 
 const warningPopupRef = ref<HTMLElement | null>(null)
@@ -47,12 +50,33 @@ let resizeObserver: ResizeObserver | null = null
 let warningOverlay: Overlay | null = null
 let topologyNodes: IntersectionTopologyNode[] = []
 const vehicleHeadingHistory = new globalThis.Map<string, VehicleHeadingState>()
+interface AnimatedVehicleFeature {
+  feature: Feature<Point>
+  from: [number, number]
+  to: [number, number]
+  fromRotation: number
+  toRotation: number
+  startedAt: number
+}
+const vehicleFeatures = new globalThis.Map<string, AnimatedVehicleFeature>()
+const vehicleMissingFrames = new globalThis.Map<string, number>()
+let vehicleAnimationFrame: number | null = null
+const VEHICLE_INTERPOLATION_MS = 500
 
 const networkSource = new VectorSource()
 const vehicleSource = new VectorSource()
 const disturbanceSource = new VectorSource()
 const geoJsonFormat = new GeoJSON()
 const modelRegistry = new TrafficModelRegistry()
+
+function clearVehiclePresentation(): void {
+  if (vehicleAnimationFrame !== null) cancelAnimationFrame(vehicleAnimationFrame)
+  vehicleAnimationFrame = null
+  vehicleSource.clear()
+  vehicleFeatures.clear()
+  vehicleHeadingHistory.clear()
+  vehicleMissingFrames.clear()
+}
 
 const VEHICLE_RADIUS: Record<string, number> = {
   passenger: 6,
@@ -208,11 +232,37 @@ function renderNetwork() {
   mapView.fitBounds([west, south, east, north], `map:${response.intersection_id}`)
 }
 
+function scheduleVehicleAnimation(): void {
+  if (!props.active || vehicleAnimationFrame !== null) return
+  vehicleAnimationFrame = requestAnimationFrame(animateVehicles)
+}
+
+function animateVehicles(now: number): void {
+  vehicleAnimationFrame = null
+  if (!props.active) return
+  let pending = false
+  for (const state of vehicleFeatures.values()) {
+    const ratio = Math.min(1, Math.max(0, (now - state.startedAt) / VEHICLE_INTERPOLATION_MS))
+    state.feature.getGeometry()?.setCoordinates([
+      state.from[0] + (state.to[0] - state.from[0]) * ratio,
+      state.from[1] + (state.to[1] - state.from[1]) * ratio,
+    ])
+    state.feature.set(
+      'rotation',
+      state.fromRotation + shortestAngleDelta(state.fromRotation, state.toRotation) * ratio,
+      true,
+    )
+    state.feature.changed()
+    if (ratio < 1) pending = true
+  }
+  if (pending) scheduleVehicleAnimation()
+}
+
 function renderVehicles() {
-  vehicleSource.clear()
+  if (!props.active) return
   const vehicles = trafficView.value?.vehicles ?? []
-  const features: Feature[] = []
   const activeIds = new Set<string>()
+  const now = performance.now()
   for (const vehicle of vehicles) {
     if (vehicle.longitude == null || vehicle.latitude == null) {
       continue
@@ -226,18 +276,45 @@ function renderVehicles() {
     }, vehicleHeadingHistory.get(vehicle.vehicle_id) ?? null)
     vehicleHeadingHistory.set(vehicle.vehicle_id, resolvedHeading.state)
     activeIds.add(vehicle.vehicle_id)
-    const feature = new Feature({
-      geometry: new Point(fromLonLat([vehicle.longitude, vehicle.latitude])),
-    })
+    vehicleMissingFrames.delete(vehicle.vehicle_id)
+    const target = fromLonLat([vehicle.longitude, vehicle.latitude]) as [number, number]
+    const existing = vehicleFeatures.get(vehicle.vehicle_id)
+    const feature = existing?.feature ?? new Feature<Point>({ geometry: new Point(target) })
     feature.set('color', definition.color)
     feature.set('vtype', definition.type)
-    feature.set('rotation', Math.PI / 2 - resolvedHeading.heading)
-    features.push(feature)
+    const targetRotation = Math.PI / 2 - resolvedHeading.heading
+    if (existing) {
+      const current = feature.getGeometry()?.getCoordinates() as [number, number] | undefined
+      existing.from = current ? [...current] as [number, number] : target
+      existing.to = target
+      existing.fromRotation = Number(feature.get('rotation') ?? targetRotation)
+      existing.toRotation = targetRotation
+      existing.startedAt = now
+    } else {
+      feature.set('rotation', targetRotation)
+      vehicleSource.addFeature(feature)
+      vehicleFeatures.set(vehicle.vehicle_id, {
+        feature,
+        from: target,
+        to: target,
+        fromRotation: targetRotation,
+        toRotation: targetRotation,
+        startedAt: now,
+      })
+    }
   }
   for (const id of vehicleHeadingHistory.keys()) {
-    if (!activeIds.has(id)) vehicleHeadingHistory.delete(id)
+    if (activeIds.has(id)) continue
+    const missingFrames = (vehicleMissingFrames.get(id) ?? 0) + 1
+    vehicleMissingFrames.set(id, missingFrames)
+    if (missingFrames <= 4) continue
+    vehicleMissingFrames.delete(id)
+    vehicleHeadingHistory.delete(id)
+    const state = vehicleFeatures.get(id)
+    if (state) vehicleSource.removeFeature(state.feature)
+    vehicleFeatures.delete(id)
   }
-  vehicleSource.addFeatures(features)
+  scheduleVehicleAnimation()
 }
 
 function focusActiveIntersection(): void {
@@ -301,6 +378,17 @@ onMounted(() => {
 
 watch(geojson, renderNetwork)
 watch(trafficView, renderVehicles, { deep: true })
+watch(renderSessionRevision, clearVehiclePresentation, { flush: 'sync' })
+watch(() => props.active, (active) => {
+  if (active) {
+    map?.updateSize()
+    renderVehicles()
+    map?.renderSync()
+  } else if (vehicleAnimationFrame !== null) {
+    cancelAnimationFrame(vehicleAnimationFrame)
+    vehicleAnimationFrame = null
+  }
+})
 watch(activeIntersectionId, focusActiveIntersection)
 watch([disturbanceEvents, snapshot, simulationStartTime], renderDisturbanceWarnings, { deep: true })
 
@@ -311,6 +399,7 @@ onUnmounted(() => {
   warningOverlay?.setPosition(undefined)
   warningOverlay = null
   topologyNodes = []
+  clearVehiclePresentation()
   map?.setTarget(undefined)
   map = null
 })

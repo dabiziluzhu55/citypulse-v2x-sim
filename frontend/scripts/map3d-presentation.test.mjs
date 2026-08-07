@@ -41,6 +41,18 @@ const appThreeMapLoaderSource = await readFile(
   'utf8',
 )
 const appSource = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+const backgroundMapSource = await readFile(
+  new URL('../src/components/visualization/AppBackgroundMap.vue', import.meta.url),
+  'utf8',
+)
+const cesiumMapSource = await readFile(
+  new URL('../src/components/visualization/CesiumMap.vue', import.meta.url),
+  'utf8',
+)
+const simulationStoreSource = await readFile(
+  new URL('../src/composables/useSimulationStore.ts', import.meta.url),
+  'utf8',
+)
 const indexSource = await readFile(new URL('../index.html', import.meta.url), 'utf8')
 const mainSource = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
 
@@ -325,12 +337,31 @@ test('mounts 3D lazily and preserves the engine across 2D/3D view switches', () 
   )
   assert.match(
     appSource,
-    /<div v-show="mapDimension === '2d'" class="app-map-layer">\s*<AppBackgroundMap/,
+    /<AppBackgroundMap :active="map2dActive"/,
   )
   assert.match(
     appSource,
-    /<div v-if="threeMapMounted" v-show="mapDimension === '3d'" class="app-map-layer">\s*<AppThreeMapLoader/,
+    /<AppThreeMapLoader\s*:active="map3dActive"/,
   )
+  assert.match(appSource, /await waitForRenderFrame\(\)[\s\S]*await waitForRenderFrame\(\)/)
+  assert.match(appSource, /transition: opacity 120ms linear/)
+  assert.match(baiduThreeMapSource, /vehicleRenderer\?\.setActive\(active\)/)
+  assert.match(baiduThreeMapSource, /props\.active && documentVisible/)
+  assert.match(backgroundMapSource, /const vehicleFeatures = new globalThis\.Map/)
+  assert.doesNotMatch(backgroundMapSource, /function renderVehicles\(\) \{\s*vehicleSource\.clear\(\)/)
+})
+
+test('clears 2D and 3D vehicle state exactly when a new backend session is accepted', () => {
+  const bindSessionBlock = simulationStoreSource.slice(
+    simulationStoreSource.indexOf('function bindSession'),
+    simulationStoreSource.indexOf('function ensureInitialized'),
+  )
+  assert.match(bindSessionBlock, /nextSessionId && nextSessionId !== sessionId\.value/)
+  assert.match(bindSessionBlock, /renderSessionRevision\.value \+= 1/)
+  assert.match(backgroundMapSource, /watch\(renderSessionRevision, clearVehiclePresentation, \{ flush: 'sync' \}\)/)
+  assert.match(baiduThreeMapSource, /watch\([\s\S]*renderSessionRevision[\s\S]*vehicleRenderer\?\.clear\(\)/)
+  assert.match(cesiumMapSource, /renderSessionRevision[\s\S]*vehicleRenderer\?\.clear\(\)/)
+  assert.doesNotMatch(bindSessionBlock, /TERMINAL_SIMULATION_STATES/)
 })
 
 test('provides a black pre-mount crash shell and clears it only after Vue mounts', () => {

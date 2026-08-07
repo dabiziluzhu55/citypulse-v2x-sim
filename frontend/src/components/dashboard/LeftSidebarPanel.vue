@@ -21,6 +21,7 @@ import {
 } from '../../utils/scenarioConfigMigration'
 import {
   DASHBOARD_CONTROL_MODES,
+  controlModePeriodCompatibility,
   resolveControlModeLabel,
 } from '../../constants/simulationOptions'
 import { exportScenarioArchive } from '../../api/scenario'
@@ -31,6 +32,7 @@ import {
   type CompactDisturbanceEvent,
 } from '../../composables/useCompactScenarioConfig'
 import {
+  comparisonContractDifferences,
   comparisonChangeRequiresConfirmation,
   createScenarioFingerprint,
 } from '../../composables/useEvaluationComparison'
@@ -72,6 +74,7 @@ const props = defineProps<{
   activeControlMode: string
   activePlaybackSpeed: number
   achievedPlaybackSpeed: number | null
+  displayedOfficialTime: string
   activeComparisonFingerprint: string
   hasActiveComparisonData: boolean
   healthReady: boolean
@@ -86,6 +89,7 @@ const emit = defineEmits<{
   dismissStatusError: []
   configChangeRequested: [request: {
     fingerprint: string
+    differences: string[]
     apply: () => void
   }]
 }>()
@@ -122,6 +126,7 @@ const feedback = ref<string | null>(null)
 const multiplierOpen = ref(false)
 const exporting = ref(false)
 const disturbanceModalOpen = ref(false)
+const runtimeErrorOpen = ref(false)
 const editingDisturbanceId = ref<string | null>(null)
 const disturbanceFormError = ref('')
 const disturbanceDraft = ref<{
@@ -161,12 +166,20 @@ const availableDisturbanceEventOptions = computed(() => DISTURBANCE_EVENT_OPTION
   ...option,
   disabled: !eventTypes.value.includes(option.eventType),
 })))
-const controlModeOptions = computed(() => DASHBOARD_CONTROL_MODES.map((option) => ({
-  ...option,
-  disabled: !controlModes.value.includes(option.value),
-})))
+const selectedPeriod = computed(() => (
+  config.value.flow_mode === 'flat' ? 'off_peak' : config.value.flow_mode
+))
+const controlModeOptions = computed(() => DASHBOARD_CONTROL_MODES.map((option) => {
+  const compatibility = controlModePeriodCompatibility(option.value, selectedPeriod.value)
+  return {
+    ...option,
+    disabled: !controlModes.value.includes(option.value) || !compatibility.compatible,
+  }
+}))
 function controlModeOptionTitle(option: { value: string; disabled: boolean }): string {
   if (!controlModes.value.includes(option.value)) return '当前后端未提供该算法'
+  const compatibility = controlModePeriodCompatibility(option.value, selectedPeriod.value)
+  if (!compatibility.compatible) return compatibility.reason
   return '真实后端算法'
 }
 const controlModeUnavailableMessage = computed(() => {
@@ -174,6 +187,11 @@ const controlModeUnavailableMessage = computed(() => {
   if (!controlModes.value.includes(config.value.control_mode)) {
     return `后端未提供当前管控算法：${config.value.control_mode}`
   }
+  const compatibility = controlModePeriodCompatibility(
+    config.value.control_mode,
+    selectedPeriod.value,
+  )
+  if (!compatibility.compatible) return compatibility.reason
   return ''
 })
 const startClockValues = computed(() => simulationStartClockValues(config.value.flow_mode))
@@ -250,14 +268,32 @@ function dismissStatusMessage(): void {
 const stateLabel = computed(() => simulationStateLabel(props.state)
   ?? (props.healthReady ? 'READY' : 'OFFLINE'))
 const officialTimeLabel = computed(() => {
-  const value = props.snapshot?.official_time
+  const value = props.displayedOfficialTime || props.snapshot?.official_time
   if (!value) return '--:--:--'
   const time = value.includes('T') ? value.split('T')[1] : value
   return time.slice(0, 8)
 })
+const achievedPlaybackLabel = computed(() => (
+  props.achievedPlaybackSpeed == null ? '--' : `${props.achievedPlaybackSpeed.toFixed(2)}×`
+))
+const playbackBusy = computed(() => (
+  props.state === 'RUNNING'
+  && props.achievedPlaybackSpeed != null
+  && props.achievedPlaybackSpeed < props.activePlaybackSpeed * 0.75
+))
 const activeVehicleLabel = computed(() => props.snapshot?.metrics.active_vehicles ?? 0)
 const algorithmLabel = computed(() => resolveControlModeLabel(
   props.activeControlMode || config.value.control_mode,
+))
+const runtimeFailureStage = computed(() => (
+  (props.snapshot?.sequence ?? 0) <= 0 ? '算法初始化' : '仿真运行'
+))
+const runtimeRawError = computed(() => (
+  props.snapshot?.error?.trim()
+  || props.statusError
+  || props.startError
+  || props.controlError
+  || '后端未提供原始错误详情'
 ))
 const playbackSpeedTitle = computed(() => `播放倍率：${config.value.playback_speed}×`)
 const startTitle = computed(() => {
@@ -276,6 +312,12 @@ watch(
     if (isSessionActive.value && playbackSpeeds.value.includes(value)) config.value.playback_speed = value
   },
   { immediate: true },
+)
+watch(
+  () => props.state,
+  (value) => {
+    if (value !== 'FAILED') runtimeErrorOpen.value = false
+  },
 )
 
 watch(
@@ -313,7 +355,10 @@ function applyConfiguration(next: CompactScenarioConfig, onApplied?: () => void)
 function requestConfiguration(next: CompactScenarioConfig, onApplied?: () => void): void {
   let fingerprint: string
   try {
-    fingerprint = createScenarioFingerprint(buildPayloadFor(next), activeIntersectionId.value)
+    fingerprint = createScenarioFingerprint(
+      buildPayloadFor(next),
+      scenarioPresetIntersectionIds(next.scenario_preset_id, scenarioPresets.value),
+    )
   } catch (error) {
     if (!props.healthReady || !intersection.value) {
       applyConfiguration(next, onApplied)
@@ -334,6 +379,10 @@ function requestConfiguration(next: CompactScenarioConfig, onApplied?: () => voi
   }
   emit('configChangeRequested', {
     fingerprint,
+    differences: comparisonContractDifferences(
+      props.activeComparisonFingerprint,
+      fingerprint,
+    ),
     apply: () => applyConfiguration(next, onApplied),
   })
 }
@@ -370,6 +419,10 @@ function requestFieldChange(key: string, value: unknown): void {
       start_time: time.start,
       end_time: time.end,
     }))
+    if (next.control_mode === 'ippo' && next.flow_mode !== 'flat') {
+      next.control_mode = 'fixed'
+      feedback.value = '当前 IPPO 模型仅兼容平峰拓扑，已切换为固定配时'
+    }
   }
   requestConfiguration(next, onApplied)
 }
@@ -814,14 +867,54 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
         <div class="left-sidebar__runtime-head">
           <strong><i aria-hidden="true" />{{ stateLabel }}</strong>
           <em>{{ algorithmLabel }}</em>
+          <button
+            v-if="state === 'FAILED'"
+            type="button"
+            class="left-sidebar__runtime-error-button"
+            @click="runtimeErrorOpen = true"
+          >查看原因</button>
         </div>
         <dl>
           <div><dt>仿真时间</dt><dd>{{ officialTimeLabel }}</dd></div>
           <div><dt>活动车辆</dt><dd>{{ activeVehicleLabel }}</dd></div>
-          <div><dt>运行进度</dt><dd>{{ Math.round(progressPercent) }}%</dd></div>
+          <div><dt>实际推进</dt><dd>{{ achievedPlaybackLabel }}</dd></div>
         </dl>
+        <p v-if="playbackBusy" class="left-sidebar__runtime-warning">仿真计算繁忙，时间推进慢于墙钟时间</p>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="runtimeErrorOpen"
+        class="runtime-error-modal"
+        role="presentation"
+        @mousedown.self="runtimeErrorOpen = false"
+      >
+        <section
+          class="runtime-error-modal__dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="runtime-error-title"
+        >
+          <header>
+            <div>
+              <span>仿真失败详情</span>
+              <h2 id="runtime-error-title">{{ algorithmLabel }}</h2>
+            </div>
+            <button type="button" aria-label="关闭失败详情" title="关闭" @click="runtimeErrorOpen = false">×</button>
+          </header>
+          <dl>
+            <div><dt>失败阶段</dt><dd>{{ runtimeFailureStage }}</dd></div>
+            <div><dt>会话状态</dt><dd>{{ stateLabel }}</dd></div>
+          </dl>
+          <p>{{ statusError || '仿真运行失败，请检查后端原始错误。' }}</p>
+          <details open>
+            <summary>后端原始错误</summary>
+            <pre>{{ runtimeRawError }}</pre>
+          </details>
+        </section>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div
@@ -1312,6 +1405,12 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__runtime-head strong { display: flex; align-items: center; gap: 6px; color: #d8eaff; font-size: 11px; }
 .left-sidebar__runtime-head strong i { width: 6px; height: 6px; border-radius: 50%; background: #8da3b5; box-shadow: 0 0 6px currentColor; }
 .left-sidebar__runtime-head em { min-width: 0; margin-left: auto; overflow: hidden; color: #8fc6e5; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.left-sidebar__runtime-error-button {
+  flex: 0 0 auto; min-width: 54px; height: 20px; padding: 0 7px; border: 1px solid rgba(255,107,107,.58);
+  background: rgba(77,12,22,.62); color: #ffd2d2; font-size: 9px; cursor: pointer;
+}
+.left-sidebar__runtime-error-button:hover,
+.left-sidebar__runtime-error-button:focus-visible { border-color: #ff8d8d; box-shadow: 0 0 8px rgba(255,107,107,.35); outline: none; }
 .left-sidebar__runtime.is-running .left-sidebar__runtime-head strong { color: #58f0ae; }
 .left-sidebar__runtime.is-running .left-sidebar__runtime-head strong i { background: #3ce69a; }
 .left-sidebar__runtime.is-queued .left-sidebar__runtime-head strong { color: #7fdfff; }
@@ -1322,10 +1421,41 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__runtime.is-stopping .left-sidebar__runtime-head strong i { background: #e8b94c; }
 .left-sidebar__runtime.is-failed .left-sidebar__runtime-head strong { color: #ff9d9d; }
 .left-sidebar__runtime.is-failed .left-sidebar__runtime-head strong i { background: #ff6b6b; }
-.left-sidebar__runtime dl { height: 45px; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 3px 0 0; }
+.left-sidebar__runtime dl { height: 39px; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 3px 0 0; }
 .left-sidebar__runtime dl div { min-width: 0; }
 .left-sidebar__runtime dt { color: #668fa9; font-size: 9px; white-space: nowrap; }
 .left-sidebar__runtime dd { margin: 3px 0 0; overflow: hidden; color: #eefaff; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.left-sidebar__runtime-warning { margin: 0; color: #ffd879; font-size: 9px; line-height: 1.2; white-space: nowrap; }
+
+.runtime-error-modal {
+  position: fixed; inset: 0; z-index: 3200; display: grid; place-items: center; padding: 24px;
+  background: rgba(0,8,20,.7); backdrop-filter: blur(4px);
+}
+.runtime-error-modal__dialog {
+  width: min(620px, calc(100vw - 48px)); max-height: min(620px, calc(100vh - 48px)); overflow: auto;
+  padding: 24px 28px; border: 1px solid rgba(95,194,255,.72);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  background: #071a30; box-shadow: 0 18px 60px rgba(0,0,0,.5), inset 0 0 36px rgba(39,131,214,.12);
+  color: #eaf7ff; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+.runtime-error-modal__dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.runtime-error-modal__dialog header span { color: #73cfff; font-size: 11px; }
+.runtime-error-modal__dialog h2 { margin: 5px 0 0; font-size: 19px; letter-spacing: 0; }
+.runtime-error-modal__dialog header > button {
+  width: 30px; height: 30px; padding: 0; border: 1px solid rgba(115,207,255,.55); border-radius: 50%;
+  background: #03101f; color: #d9f4ff; font-size: 20px; cursor: pointer;
+}
+.runtime-error-modal__dialog dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 22px 0 0; }
+.runtime-error-modal__dialog dl div { padding: 10px 12px; border: 1px solid rgba(79,148,199,.25); background: rgba(3,14,29,.55); }
+.runtime-error-modal__dialog dt { color: #6d9fbd; font-size: 10px; }
+.runtime-error-modal__dialog dd { margin: 4px 0 0; color: #fff; font-size: 13px; }
+.runtime-error-modal__dialog p { margin: 16px 0; color: #ffb0b0; font-size: 13px; line-height: 1.6; }
+.runtime-error-modal__dialog details { border-top: 1px solid rgba(79,148,199,.25); padding-top: 14px; }
+.runtime-error-modal__dialog summary { color: #91cde9; font-size: 11px; cursor: pointer; }
+.runtime-error-modal__dialog pre {
+  max-height: 240px; overflow: auto; margin: 10px 0 0; padding: 12px; background: #020b15;
+  color: #c8e6f5; font: 11px/1.55 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+}
 
 .disturbance-modal {
   position: fixed;

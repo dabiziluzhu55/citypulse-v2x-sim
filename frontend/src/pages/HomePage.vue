@@ -17,6 +17,7 @@ import type { StartSimulationRequest } from '../types/simulation'
 import { formatIntersectionLabel } from '../utils/intersectionLabels'
 import { detectMap3dCapability } from '../mapv/map3dCapabilities'
 import { shouldAutoPresentSimulation } from '../utils/simulationSessionState'
+import { scenarioPresetIntersectionIds } from '../utils/scenarioPresetRules'
 
 const mapView = useOptionalAppMapView()
 const mapDimension = computed(() => mapView?.dimension.value ?? '2d')
@@ -68,6 +69,7 @@ const {
   activeControlMode,
   activePlaybackSpeed,
   achievedPlaybackSpeed,
+  displayedOfficialTime,
   clearStatusError,
   launchRun,
   pauseRun,
@@ -94,6 +96,7 @@ const {
 } = useDashboardOverlay()
 interface ConfigurationChangeRequest {
   fingerprint: string
+  differences: string[]
   apply: () => void
 }
 const pendingConfigChange = ref<ConfigurationChangeRequest | null>(null)
@@ -137,8 +140,14 @@ onBeforeUnmount(() => {
 })
 
 async function handleStart(payload: StartSimulationRequest) {
-  const result = await launchRun(payload, activeIntersectionId.value)
-  if (result) beginComparisonRun(result.session_id, payload, activeIntersectionId.value)
+  const frozenFocusIntersectionId = activeIntersectionId.value
+  const controlledIntersectionIds = scenarioPresetIntersectionIds(
+    payload.scenario_preset_id,
+    catalog.value?.scenario_presets,
+  )
+  await launchRun(payload, frozenFocusIntersectionId, (result) => {
+    beginComparisonRun(result.session_id, payload, controlledIntersectionIds)
+  })
 }
 
 function handleConfigChangeRequested(request: ConfigurationChangeRequest) {
@@ -243,6 +252,7 @@ async function handleStop() {
         :active-control-mode="activeControlMode"
         :active-playback-speed="activePlaybackSpeed"
         :achieved-playback-speed="achievedPlaybackSpeed"
+        :displayed-official-time="displayedOfficialTime"
         :active-comparison-fingerprint="activeFingerprint"
         :has-active-comparison-data="hasActiveComparisonData"
         :health-ready="healthReady"
@@ -269,10 +279,15 @@ async function handleStop() {
         />
         <div class="config-change-notice" role="dialog" aria-modal="true" aria-labelledby="config-change-title">
           <div id="config-change-title" class="config-change-notice__title"><i aria-hidden="true" />参数变更确认</div>
-          <p>当前参数与右侧算法对比基线不一致。继续后将清空右侧已有算法曲线，再使用新参数开始对比。</p>
+          <p>以下仿真参数会改变评估基准。确认后切换到对应实验组，原有算法曲线仍会保留。</p>
+          <ul>
+            <li v-for="difference in pendingConfigChange.differences" :key="difference">
+              {{ difference }}
+            </li>
+          </ul>
           <div class="config-change-notice__actions">
             <button type="button" @click="cancelConfigChange">取消</button>
-            <button type="button" class="is-primary" @click="confirmConfigChange">确认并清空</button>
+            <button type="button" class="is-primary" @click="confirmConfigChange">确认切换</button>
           </div>
         </div>
       </div>

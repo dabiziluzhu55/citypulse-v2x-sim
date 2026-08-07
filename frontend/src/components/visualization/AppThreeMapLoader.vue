@@ -24,6 +24,8 @@ import { MAP3D_MODULE_LOAD_TIMEOUT_MS } from '../../mapv/map3dPresentationReadin
 const MAX_AUTO_RETRIES = 1
 const RETRY_DELAY_MS = 750
 
+const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
+
 const emit = defineEmits<{
   return2d: [failure: Map3dFailure | null]
   stateChange: [state: 'loading' | 'ready' | 'error']
@@ -107,6 +109,7 @@ watch(state, (nextState) => emit('stateChange', nextState), { immediate: true })
     v-if="componentVisible"
     :is="asyncBaiduThreeMap"
     :key="componentKey"
+    :active="props.active"
     @fatal="reportFailure"
     @loading="handleLoading"
     @ready="handleReady"

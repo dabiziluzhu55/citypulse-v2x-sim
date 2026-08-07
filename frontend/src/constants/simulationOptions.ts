@@ -18,6 +18,21 @@ export const SUPPORTED_BACKEND_CONTROL_MODES = [
 
 export type BackendControlMode = typeof SUPPORTED_BACKEND_CONTROL_MODES[number]
 
+export const IPPO_SUPPORTED_PERIODS = ['off_peak'] as const
+
+export function controlModePeriodCompatibility(
+  mode: string,
+  period: string,
+): { compatible: boolean; reason: string } {
+  if (mode !== 'ippo' || IPPO_SUPPORTED_PERIODS.includes(period as 'off_peak')) {
+    return { compatible: true, reason: '' }
+  }
+  return {
+    compatible: false,
+    reason: '当前 IPPO 模型仅兼容平峰拓扑，请选择平峰或改用其他算法',
+  }
+}
+
 export const CONTROL_MODE_LABELS: Record<string, string> = {
   fixed: '固定配时',
   max_pressure: 'Max Pressure',
@@ -54,6 +69,15 @@ export function requireAvailableControlMode(
   if (!isBackendControlMode(mode) || !catalogControlModes.includes(mode)) {
     throw new Error(`后端未提供管控算法：${mode}`)
   }
+  return mode
+}
+
+export function requirePeriodCompatibleControlMode(
+  mode: BackendControlMode,
+  period: string,
+): BackendControlMode {
+  const compatibility = controlModePeriodCompatibility(mode, period)
+  if (!compatibility.compatible) throw new Error(compatibility.reason)
   return mode
 }
 

@@ -65,7 +65,16 @@ export function snapshotToTrafficView(snapshot: SimulationSnapshot): TrafficStat
     road_id: vehicle.road_id,
     lane_id: vehicle.lane_id,
     type_id: vehicle.type_id,
+    acceleration: vehicle.acceleration,
+    lane_index: vehicle.lane_index,
     lane_position: vehicle.lane_position,
+    allowed_speed: vehicle.allowed_speed,
+    route_id: vehicle.route_id,
+    route_index: vehicle.route_index,
+    distance: vehicle.distance,
+    next_intersection_id: vehicle.next_intersection_id,
+    target_speed: vehicle.target_speed,
+    target_lane_index: vehicle.target_lane_index,
   }))
 
   return {

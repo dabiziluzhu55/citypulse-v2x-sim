@@ -25,6 +25,9 @@ export interface ResolvedLanePose {
   modelCenterResolved: boolean
   trackKey: string
   trackProgress: number
+  modelCenterDistanceMeters: number
+  naturalFrontDistanceMeters: number
+  stopFrontLimitDistanceMeters?: number
   stopClamped: boolean
 }
 export interface LanePoseRuntimeOptions {
@@ -32,6 +35,9 @@ export interface LanePoseRuntimeOptions {
   expectedHeading?: number | null
   laneRuntime?: SimulationLaneRuntime | null
   previousTrackProgress?: number
+  allowStopClamp?: boolean
+  minimumModelCenterDistanceMeters?: number
+  maximumModelCenterDistanceMeters?: number
 }
 export type LanePoseResolver = (
   laneId: string,
@@ -240,6 +246,12 @@ export function createIntersectionLanePoseResolver(
       : previousLaneId
         ? candidates.filter((candidate) => candidate.routeLaneIds.includes(previousLaneId))
         : []
+    if (
+      previousTrack?.routeKey
+      && previousLaneId
+      && previousLaneId !== laneId
+      && routeCandidates.length === 0
+    ) return null
     const resolvedCandidates = (routeCandidates.length ? routeCandidates : candidates)
       .map((track) => {
         const nearest = nearestPolylineProgress(local, track.sourcePoints)
@@ -275,8 +287,12 @@ export function createIntersectionLanePoseResolver(
     )
     let targetDistance = mappedFrontDistance - backtrackSceneUnits
     let stopClamped = false
+    const stopFrontLimitDistance = track.stopBoundaryDistance == null
+      ? undefined
+      : visualStopFrontLimitDistance(track.stopBoundaryDistance, horizontalScale)
     if (
       track.stopBoundaryDistance != null
+      && options?.allowStopClamp !== false
       && (options?.speedMetersPerSecond ?? Number.POSITIVE_INFINITY) <= 0.35
       && options?.laneRuntime?.role !== 'outgoing'
       && options?.laneRuntime?.role !== 'internal'
@@ -287,10 +303,7 @@ export function createIntersectionLanePoseResolver(
         || (runtime?.lane_has_green !== true && /^[ry]+$/.test(signalState))
       const lacksSignalDetail = !runtime
         || (runtime.lane_has_green == null && !signalState)
-      const maximumFrontDistance = visualStopFrontLimitDistance(
-        track.stopBoundaryDistance,
-        horizontalScale,
-      )
+      const maximumFrontDistance = stopFrontLimitDistance!
       const overrunMeters = (mappedFrontDistance - maximumFrontDistance) / horizontalScale
       const conservativeFallback = lacksSignalDetail
         && (options?.speedMetersPerSecond ?? Number.POSITIVE_INFINITY) <= 0.05
@@ -300,6 +313,21 @@ export function createIntersectionLanePoseResolver(
         targetDistance = maximumFrontDistance - backtrackSceneUnits
         stopClamped = true
       }
+    }
+    if (
+      previousTrackKey === track.key
+      && Number.isFinite(options?.minimumModelCenterDistanceMeters)
+    ) {
+      targetDistance = Math.max(
+        targetDistance,
+        Number(options?.minimumModelCenterDistanceMeters) * horizontalScale,
+      )
+    }
+    if (Number.isFinite(options?.maximumModelCenterDistanceMeters)) {
+      targetDistance = Math.min(
+        targetDistance,
+        Number(options?.maximumModelCenterDistanceMeters) * horizontalScale,
+      )
     }
     let activePoints = track.renderPoints
     let renderProgress = renderLength > 1e-6 ? Math.max(0, targetDistance / renderLength) : nearest.progress
@@ -324,6 +352,11 @@ export function createIntersectionLanePoseResolver(
       modelCenterResolved: modelCenterOffsetMeters > 0,
       trackKey: track.key,
       trackProgress: nearest.progress,
+      modelCenterDistanceMeters: targetDistance / horizontalScale,
+      naturalFrontDistanceMeters: mappedFrontDistance / horizontalScale,
+      stopFrontLimitDistanceMeters: stopFrontLimitDistance == null
+        ? undefined
+        : stopFrontLimitDistance / horizontalScale,
       stopClamped,
     }
   }

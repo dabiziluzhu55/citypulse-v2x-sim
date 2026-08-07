@@ -6,9 +6,7 @@ const MIN_RENDER_RADIUS_METERS = 420
 const MAX_RENDER_RADIUS_METERS = 1_650
 const CAMERA_RANGE_FACTOR = 1.2
 const EXIT_RADIUS_HYSTERESIS_METERS = 80
-// Keep a vehicle alive through short WebSocket gaps and camera-boundary jitter.
-// At the configured 500 ms snapshot cadence this is roughly 2.5 seconds.
-export const MISSING_SNAPSHOT_GRACE = 5
+export const MAX_ROSTER_CHANGES_PER_SNAPSHOT = 32
 
 export const MAX_VISIBLE_VEHICLES = 450
 export const BALANCED_VISIBLE_VEHICLES = 320
@@ -102,11 +100,6 @@ export interface VisibleVehicle {
   distanceMeters: number
 }
 
-interface RetainedVehicle {
-  visible: VisibleVehicle
-  missingSnapshots: number
-}
-
 function percentile(values: number[], ratio: number): number {
   if (values.length === 0) return 0
   const sorted = [...values].sort((left, right) => left - right)
@@ -155,8 +148,8 @@ export function selectVisibleVehicles(
 }
 
 export class StableVehicleSelector {
-  private retained = new Map<string, RetainedVehicle>()
-  private lastSnapshotKey = ''
+  private retained = new Map<string, VisibleVehicle>()
+  private lastLimit: number | null = null
 
   select(
     vehicles: TrafficVehicleView[],
@@ -172,8 +165,6 @@ export class StableVehicleSelector {
     }
     const entryRadius = resolveVehicleRenderRadius(cameraRange)
     const exitRadius = entryRadius + EXIT_RADIUS_HYSTERESIS_METERS
-    const advancesSnapshot = snapshotKey !== this.lastSnapshotKey
-    this.lastSnapshotKey = snapshotKey
     const current = new Map<string, VisibleVehicle>()
 
     for (const vehicle of vehicles) {
@@ -187,45 +178,42 @@ export class StableVehicleSelector {
       })
     }
 
-    const selected: VisibleVehicle[] = []
-    const nextRetained = new Map<string, RetainedVehicle>()
-    for (const [id, retained] of this.retained) {
-      const candidate = current.get(id)
-      if (candidate) {
-        if (candidate.distanceMeters > exitRadius) continue
-        selected.push(candidate)
-        nextRetained.set(id, { visible: candidate, missingSnapshots: 0 })
-        continue
-      }
-      const missingSnapshots = retained.missingSnapshots + (advancesSnapshot ? 1 : 0)
-      const distance = distanceMeters(cameraCenter, [retained.visible.longitude, retained.visible.latitude])
-      if (missingSnapshots > MISSING_SNAPSHOT_GRACE || distance > exitRadius) continue
-      const visible = { ...retained.visible, distanceMeters: distance }
-      selected.push(visible)
-      nextRetained.set(id, { visible, missingSnapshots })
-    }
-
-    selected.sort((a, b) => a.distanceMeters - b.distanceMeters)
-    if (selected.length > limit) selected.length = limit
-    const selectedIds = new Set(selected.map((item) => item.vehicle.vehicle_id))
-    const entrants = [...current.values()]
-      .filter((item) => item.distanceMeters <= entryRadius && !selectedIds.has(item.vehicle.vehicle_id))
+    const candidates = [...current.values()]
+      .filter((item) => item.distanceMeters <= entryRadius)
       .sort((a, b) => a.distanceMeters - b.distanceMeters)
-
-    for (const candidate of entrants) {
-      if (selected.length >= limit) break
-      selected.push(candidate)
-      nextRetained.set(candidate.vehicle.vehicle_id, { visible: candidate, missingSnapshots: 0 })
+    if (this.lastLimit == null || !snapshotKey) {
+      const desired = candidates.slice(0, limit)
+      this.retained = new Map(desired.map((item) => [item.vehicle.vehicle_id, item]))
+      this.lastLimit = limit
+      return desired
     }
-    for (const id of [...nextRetained.keys()]) {
-      if (!selected.some((item) => item.vehicle.vehicle_id === id)) nextRetained.delete(id)
-    }
-    this.retained = nextRetained
-    return selected
+    const selected = [...this.retained.keys()]
+      .map((id) => current.get(id))
+      .filter((item): item is VisibleVehicle => Boolean(item && item.distanceMeters <= exitRadius))
+    const selectedIds = new Set(selected.map((item) => item.vehicle.vehicle_id))
+    const maximumRemovals = this.lastLimit !== limit
+      ? MAX_ROSTER_CHANGES_PER_SNAPSHOT
+      : Number.POSITIVE_INFINITY
+    const excess = Math.max(0, selected.length - limit)
+    const removableIds = new Set(selected
+      .sort((left, right) => right.distanceMeters - left.distanceMeters)
+      .slice(0, Math.min(excess, maximumRemovals))
+      .map((item) => item.vehicle.vehicle_id))
+    const kept = selected.filter((item) => !removableIds.has(item.vehicle.vehicle_id))
+    const maximumAdditions = this.lastLimit !== limit
+      ? MAX_ROSTER_CHANGES_PER_SNAPSHOT
+      : Number.POSITIVE_INFINITY
+    const additions = candidates
+      .filter((item) => !selectedIds.has(item.vehicle.vehicle_id))
+      .slice(0, Math.min(Math.max(0, limit - kept.length), maximumAdditions))
+    const next = [...kept, ...additions].sort((a, b) => a.distanceMeters - b.distanceMeters)
+    this.retained = new Map(next.map((item) => [item.vehicle.vehicle_id, item]))
+    if (next.length === Math.min(limit, candidates.length)) this.lastLimit = limit
+    return next
   }
 
   reset(): void {
     this.retained.clear()
-    this.lastSnapshotKey = ''
+    this.lastLimit = null
   }
 }

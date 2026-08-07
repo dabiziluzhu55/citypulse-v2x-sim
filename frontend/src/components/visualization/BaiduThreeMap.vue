@@ -54,6 +54,7 @@ import {
   type StaticRoadTilesetManifest,
 } from '../../mapv/staticRoadTileset'
 import type { MapGeoJsonResponse } from '../../types/map'
+import { recordVehicleRuntimeDiagnostics } from '../../utils/simulationRuntimeDiagnostics'
 import { detectMap3dCapability } from '../../mapv/map3dCapabilities'
 import {
   cameraFlightWatchdogDelay,
@@ -84,6 +85,7 @@ const emit = defineEmits<{
   loading: [message: string]
   ready: []
 }>()
+const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 
 const ROAD_RENDER_RADIUS_METERS = 900
 const containerRef = ref<HTMLElement | null>(null)
@@ -99,7 +101,7 @@ const {
 } = useActiveIntersectionScene()
 const { isIntersectionSupported } = useCatalog(activeIntersectionId)
 const { geojson } = useSimulationMap(activeIntersectionId, ROAD_RENDER_RADIUS_METERS, isIntersectionSupported)
-const { snapshot, trafficView } = useSimulationStore()
+const { snapshot, trafficView, renderSessionRevision } = useSimulationStore()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -119,6 +121,11 @@ const vehicleStats = ref<VehicleRenderStats>({
   sourceGapP99Ms: 0,
   underrunCount: 0,
   underrunActive: false,
+  laneRecoveryCount: 0,
+  temporarilyHiddenCount: 0,
+  retainedMissingCount: 0,
+  confirmedRemovedCount: 0,
+  twinResetCount: 0,
 })
 const vehicleBufferBusy = computed(() => {
   const current = snapshot.value
@@ -198,6 +205,7 @@ const BUILDING_CACHE_BYTES = 384 * 1024 * 1024
 const buildingZOffsetMeters = Number(import.meta.env.VITE_XIONGAN_BUILDING_Z_OFFSET_METERS ?? 0)
 const enableBuildingContactShadows = import.meta.env.VITE_XIONGAN_BUILDING_CONTACT_SHADOWS !== 'false'
 const ACTIVE_FRAME_TIME_MS = 1000 / 60
+const SIMULATION_FRAME_TIME_MS = 1000 / 30
 
 function createBaiduProvider(): mapvthree.BaiduVectorTileProvider {
   baiduProvider = new mapvthree.BaiduVectorTileProvider({
@@ -231,7 +239,7 @@ function beginBuildingCameraRevision(): void {
 }
 
 function refreshIntersectionRoadLod(force = false): void {
-  if (!realisticIntersectionLayer) return
+  if (!props.active || !realisticIntersectionLayer) return
   const now = performance.now()
   if (!force && now - lastRoadLodRefreshAt < 100) return
   lastRoadLodRefreshAt = now
@@ -267,6 +275,7 @@ function markInteracting(): void {
 
 function updateVehicleRenderStats(stats: VehicleRenderStats): void {
   vehicleStats.value = stats
+  recordVehicleRuntimeDiagnostics(stats)
   const current = snapshot.value
   if (showRenderDiagnostics) {
     const diagnosticsWindow = window as Window & {
@@ -316,8 +325,8 @@ function syncAnimationLoop(): void {
   const state = snapshot.value?.state
   const simulationActive = state === 'STARTING' || state === 'RUNNING' || state === 'STOPPING'
   const topologyActive = Boolean(intersectionTopologyLayer?.animationActive)
-  const active = documentVisible && (simulationActive || topologyActive)
-  engine.rendering.animationLoopFrameTime = simulationActive ? ACTIVE_FRAME_TIME_MS : 1000 / 30
+  const active = props.active && documentVisible && (simulationActive || topologyActive)
+  engine.rendering.animationLoopFrameTime = simulationActive ? SIMULATION_FRAME_TIME_MS : 1000 / 30
   if (engine.rendering.enableAnimationLoop !== active) {
     engine.rendering.enableAnimationLoop = active
     engine.requestRender()
@@ -336,6 +345,7 @@ function configureBuildingShadows(tileset: mapvthree.Default3DTiles): void {
 }
 
 function updateTilesStatus(): void {
+  if (!props.active) return
   const activeTilesets = [buildingTileset, roadTileset].filter(
     (value): value is mapvthree.Default3DTiles => value !== null,
   )
@@ -407,6 +417,16 @@ function updateTilesStatus(): void {
   tilesStatus.value = 'loading'
   tilesMessage.value = `3D Tiles 加载中 · 请求 ${pending}`
   if (pending > 0) engine?.requestRender()
+}
+
+function stopTilesStatusTimer(): void {
+  if (tilesStatusTimer) clearInterval(tilesStatusTimer)
+  tilesStatusTimer = null
+}
+
+function startTilesStatusTimer(): void {
+  if (!props.active || tilesStatusTimer || (!enableLocalTileset && !roadTileset)) return
+  tilesStatusTimer = setInterval(updateTilesStatus, 500)
 }
 
 function syncRoadRendering(response: MapGeoJsonResponse | null): void {
@@ -959,7 +979,7 @@ async function initMap(): Promise<void> {
     clock?: { _setTimeLegacy?: (seconds: number) => void }
   }
   if (qualityEngine.rendering.features?.bloom) {
-    qualityEngine.rendering.features.bloom.enabled = true
+    qualityEngine.rendering.features.bloom.enabled = false
   }
   qualityEngine.clock?._setTimeLegacy?.(14.5 * 3600)
   sky = engine.add(new mapvthree.DefaultSky())
@@ -1040,7 +1060,31 @@ async function initMap(): Promise<void> {
     },
     { immediate: true },
   )
+  watch(
+    renderSessionRevision,
+    () => {
+      vehicleRenderer?.clear()
+      engine?.requestRender()
+    },
+    { flush: 'sync' },
+  )
   watch(snapshot, syncAnimationLoop, { immediate: true })
+  watch(
+    () => props.active,
+    (active) => {
+      vehicleRenderer?.setActive(active)
+      if (active) {
+        refreshIntersectionRoadLod(true)
+        updateTilesStatus()
+        if (presentationReady) startTilesStatusTimer()
+        engine?.requestRender()
+      } else {
+        stopTilesStatusTimer()
+      }
+      syncAnimationLoop()
+    },
+    { immediate: true },
+  )
   watch(
     geojson,
     syncMapRendering,
@@ -1087,7 +1131,7 @@ async function initMap(): Promise<void> {
   enableCameraInteraction()
   updateTilesStatus()
   if (enableLocalTileset || roadTileset) {
-    tilesStatusTimer = setInterval(updateTilesStatus, 500)
+    startTilesStatusTimer()
   }
   engine.requestRender()
   loading.value = false
@@ -1116,10 +1160,9 @@ onUnmounted(() => {
   unbindContainerInteraction(containerRef.value)
   containerRef.value?.removeEventListener('webglcontextlost', handleWebglContextLost, true)
   containerRef.value?.removeEventListener('webglcontextrestored', handleWebglContextRestored, true)
-  if (tilesStatusTimer) clearInterval(tilesStatusTimer)
+  stopTilesStatusTimer()
   if (interactionEndTimer) clearTimeout(interactionEndTimer)
   if (webglRecoveryTimer) clearTimeout(webglRecoveryTimer)
-  tilesStatusTimer = null
   interactionEndTimer = null
   webglRecoveryTimer = null
   roadRenderer?.destroy()

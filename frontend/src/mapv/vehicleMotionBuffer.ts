@@ -8,7 +8,6 @@ const MAX_PRESENTATION_STEP_SECONDS = 0.25
 const MAX_TIMING_SAMPLES = 30
 const MAX_SOURCE_FRAMES = 40
 const MAX_MEASURED_RATE = 8
-const MISSING_SAMPLE_GRACE_SECONDS = 1.4
 const MAX_TRACKED_SOURCE_GAP_MS = 10_000
 const METERS_PER_DEGREE_LATITUDE = 110_900
 const MIN_MOVEMENT_HEADING_DISTANCE_METERS = 0.04
@@ -94,7 +93,6 @@ export function interpolateVehicleTwinSample(
 
 export class VehicleMotionBuffer {
   private frames: VehicleMotionSourceFrame[] = []
-  private retainedSamples = new Map<string, { sample: VehicleTwinSample; elapsedSeconds: number }>()
   private arrivalIntervalsMs: number[] = []
   private renderElapsedSeconds: number | null = null
   private lastOutputWallTimeMs: number | null = null
@@ -110,8 +108,13 @@ export class VehicleMotionBuffer {
       || !Number.isFinite(frame.arrivalTimeMs)
     ) return false
 
-    const samples = this.retainMissingSamples(frame.samples, frame.elapsedSeconds)
-    const normalizedFrame = { ...frame, samples }
+    const normalizedFrame = {
+      ...frame,
+      samples: frame.samples.map((sample) => ({
+        ...sample,
+        point: [sample.point[0], sample.point[1], sample.point[2]] as [number, number, number],
+      })),
+    }
     const existingIndex = this.frames.findIndex((entry) => entry.sequence === frame.sequence)
     if (existingIndex >= 0) {
       this.frames[existingIndex] = normalizedFrame
@@ -179,7 +182,6 @@ export class VehicleMotionBuffer {
 
   reset(): void {
     this.frames = []
-    this.retainedSamples.clear()
     this.arrivalIntervalsMs = []
     this.renderElapsedSeconds = null
     this.lastOutputWallTimeMs = null
@@ -187,37 +189,6 @@ export class VehicleMotionBuffer {
     this.bufferSeconds = MIN_VEHICLE_BUFFER_SECONDS
     this.underrunCount = 0
     this.underrunActive = false
-  }
-
-  private retainMissingSamples(
-    samples: VehicleTwinSample[],
-    elapsedSeconds: number,
-  ): VehicleTwinSample[] {
-    const output = samples.map((sample) => ({
-      ...sample,
-      point: [sample.point[0], sample.point[1], sample.point[2]] as [number, number, number],
-    }))
-    const currentIds = new Set<string>()
-    for (const sample of output) {
-      currentIds.add(sample.id)
-      this.retainedSamples.set(sample.id, { sample, elapsedSeconds })
-    }
-    for (const [id, retained] of this.retainedSamples) {
-      if (currentIds.has(id)) continue
-      if (elapsedSeconds - retained.elapsedSeconds > MISSING_SAMPLE_GRACE_SECONDS) {
-        this.retainedSamples.delete(id)
-        continue
-      }
-      output.push({
-        ...retained.sample,
-        point: [
-          retained.sample.point[0],
-          retained.sample.point[1],
-          retained.sample.point[2],
-        ],
-      })
-    }
-    return output
   }
 
   stats(): VehicleMotionBufferStats {

@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 import {
   appendRealEvaluationPoint,
+  comparisonContractDifferences,
   comparisonChangeRequiresConfirmation,
   createScenarioFingerprint,
   evaluationPoint,
   requiresFinalEvaluationRecovery,
+  updateStoredRunFromSnapshot,
 } from '../src/composables/useEvaluationComparison.ts'
 import {
   EVALUATION_AXIS,
@@ -15,6 +18,16 @@ import {
   buildAlgorithmMetricSeries,
   evaluationTimes,
 } from '../src/constants/metricsEvaluation.ts'
+
+const evaluationSource = await readFile(
+  new URL('../src/composables/useEvaluationComparison.ts', import.meta.url),
+  'utf8',
+)
+const simulationStoreSource = await readFile(
+  new URL('../src/composables/useSimulationStore.ts', import.meta.url),
+  'utf8',
+)
+const homePageSource = await readFile(new URL('../src/pages/HomePage.vue', import.meta.url), 'utf8')
 
 test('uses concrete algorithm names in the evaluation legend', () => {
   assert.deepEqual(
@@ -62,6 +75,16 @@ test('comparison fingerprint ignores algorithm and playback speed', () => {
   assert.equal(fixed, sotl)
 })
 
+test('comparison fingerprint ignores viewed intersection, map transport, and realtime flags', () => {
+  const baseline = createScenarioFingerprint(payload(), 'demo_2')
+  const changedView = createScenarioFingerprint(payload({
+    snapshot_interval_seconds: 2,
+    realtime: false,
+    gui: true,
+  }), 'demo_8')
+  assert.equal(baseline, changedView)
+})
+
 test('comparison fingerprint ignores generated disturbance ids and target order', () => {
   const first = payload({
     disturbance_targets: [
@@ -81,10 +104,106 @@ test('comparison fingerprint ignores generated disturbance ids and target order'
   )
 })
 
+test('comparison fingerprint deduplicates unordered origin and lane collections', () => {
+  const first = payload({
+    origins: { demo_2: ['west', 'north'] },
+    disturbance_targets: [{
+      event_type: 'lane_closure', event_id: 'runtime-1', intersection_id: 'demo_8',
+      start_seconds: 60, end_seconds: 300, lane_ids: ['lane-b', 'lane-a'],
+    }],
+  })
+  const second = payload({
+    origins: { demo_2: ['north', 'west', 'north'] },
+    disturbance_targets: [{
+      event_type: 'lane_closure', event_id: 'runtime-2', intersection_id: 'demo_8',
+      start_seconds: 60, end_seconds: 300, lane_ids: ['lane-a', 'lane-b', 'lane-a'],
+    }],
+  })
+  assert.equal(
+    createScenarioFingerprint(first, ['demo_8', 'demo_2', 'demo_8']),
+    createScenarioFingerprint(second, ['demo_2', 'demo_8']),
+  )
+})
+
 test('comparison fingerprint changes for result-affecting configuration', () => {
-  const baseline = createScenarioFingerprint(payload(), 'demo_2')
-  assert.notEqual(baseline, createScenarioFingerprint(payload({ seed: 43 }), 'demo_2'))
-  assert.notEqual(baseline, createScenarioFingerprint(payload(), 'demo_3'))
+  const baseline = createScenarioFingerprint(payload(), ['demo_2', 'demo_8'])
+  assert.notEqual(baseline, createScenarioFingerprint(payload({ seed: 43 }), ['demo_2', 'demo_8']))
+  assert.notEqual(baseline, createScenarioFingerprint(payload(), ['demo_2']))
+  assert.notEqual(baseline, createScenarioFingerprint(payload({ step_length: 0.1 }), ['demo_2', 'demo_8']))
+})
+
+test('reports only result-affecting contract differences', () => {
+  const baseline = createScenarioFingerprint(payload(), ['demo_2'])
+  const candidate = createScenarioFingerprint(payload({ period: 'off_peak', duration_seconds: 60 }), ['demo_2'])
+  assert.deepEqual(comparisonContractDifferences(baseline, candidate), [
+    '交通时段：早高峰 → 平峰',
+    '展示窗口：07:00–07:15 → 07:00–07:01',
+  ])
+})
+
+test('describes changed event and clock windows in operator-facing terms', () => {
+  const baseline = createScenarioFingerprint(payload(), ['demo_2'])
+  const candidate = createScenarioFingerprint(payload({
+    window_start_seconds: 14 * 3600 + 30 * 60,
+    duration_seconds: 900,
+    disturbance_targets: [{
+      event_type: 'accident', event_id: 'runtime', intersection_id: 'demo_8',
+      start_seconds: 60, end_seconds: 300, lane_id: 'lane-a', position_ratio: 0.8,
+    }],
+  }), ['demo_2'])
+  assert.deepEqual(comparisonContractDifferences(baseline, candidate), [
+    '展示窗口：07:00–07:15 → 14:30–14:45',
+    '扰动事件：无 → 路口8 事故',
+  ])
+})
+
+test('registers the frozen comparison contract before binding the websocket session', () => {
+  const launchBlock = simulationStoreSource.slice(
+    simulationStoreSource.indexOf('async function launchRun'),
+    simulationStoreSource.indexOf('function clearStatusError'),
+  )
+  assert.ok(launchBlock.indexOf('onSessionAccepted?.(result)') < launchBlock.indexOf('bindSession('))
+  assert.match(homePageSource, /const frozenFocusIntersectionId = activeIntersectionId\.value/)
+  assert.match(homePageSource, /beginComparisonRun\(result\.session_id, payload, controlledIntersectionIds\)/)
+  assert.doesNotMatch(evaluationSource, /restored-session:/)
+  assert.match(evaluationSource, /readOnly: true/)
+  assert.match(evaluationSource, /citypulse\.evaluation_comparison\.v3/)
+  assert.match(evaluationSource, /citypulse\.evaluation_comparison\.v2/)
+})
+
+test('tracks each algorithm run independently and records terminal failure metadata', () => {
+  const run = {
+    sessionId: 'mappo-session',
+    algorithm: 'mappo',
+    updatedAt: 1,
+    points: [],
+    state: 'STARTING',
+    progress: 0,
+    lastSequence: -1,
+    startedAt: 1,
+    completedAt: null,
+    error: null,
+  }
+  const failed = updateStoredRunFromSnapshot(run, {
+    session_id: 'mappo-session',
+    state: 'FAILED',
+    progress: 0,
+    sequence: 0,
+    error: "No module named 'torch'",
+  }, 2)
+  assert.equal(failed.state, 'FAILED')
+  assert.equal(failed.progress, 0)
+  assert.equal(failed.lastSequence, 0)
+  assert.equal(failed.completedAt, 2)
+  assert.equal(failed.error, "No module named 'torch'")
+  assert.equal(run.state, 'STARTING')
+
+  const ingestBlock = evaluationSource.slice(
+    evaluationSource.indexOf('function ingest'),
+    evaluationSource.indexOf('const activeGroup'),
+  )
+  assert.ok(ingestBlock.indexOf('storeRunSnapshot(next)') < ingestBlock.indexOf('requiresFinalEvaluationRecovery(next)'))
+  assert.match(evaluationSource, /group\.runs\[payload\.control_mode\] = \{[\s\S]*points: \[\]/)
 })
 
 test('keeps only real algorithm values and leaves unrun algorithms empty', () => {

@@ -32,6 +32,8 @@ import {
 import {
   SUPPORTED_BACKEND_CONTROL_MODES,
   DASHBOARD_CONTROL_MODES,
+  controlModePeriodCompatibility,
+  requirePeriodCompatibleControlMode,
   resolveCatalogControlModes,
 } from '../src/constants/simulationOptions.ts'
 import {
@@ -219,6 +221,17 @@ test('allows IPPO and MAPPO in all three backend scene presets', () => {
   assert.equal(controlModeSupportsScenario('mappo', 'west_dense'), true)
   assert.equal(controlModeSupportsScenario('fixed', 'east_dense'), true)
   assert.equal(controlModeSupportsScenario('unknown', 'east_dense'), false)
+})
+
+test('limits the current IPPO checkpoint to off-peak without restricting MAPPO', () => {
+  assert.equal(controlModePeriodCompatibility('ippo', 'off_peak').compatible, true)
+  assert.equal(controlModePeriodCompatibility('ippo', 'morning_peak').compatible, false)
+  assert.equal(controlModePeriodCompatibility('ippo', 'evening_peak').compatible, false)
+  assert.equal(controlModePeriodCompatibility('mappo', 'morning_peak').compatible, true)
+  assert.throws(
+    () => requirePeriodCompatibleControlMode('ippo', 'morning_peak'),
+    /IPPO.*平峰/,
+  )
 })
 
 test('builds the backend v2 preset request without removed legacy fields', () => {

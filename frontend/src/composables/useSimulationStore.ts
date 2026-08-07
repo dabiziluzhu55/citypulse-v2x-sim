@@ -36,6 +36,15 @@ import type {
 } from '../types/simulation'
 import { TERMINAL_SIMULATION_STATES } from '../types/simulation'
 import type { TrafficSummary } from '../types/traffic'
+import {
+  ConfirmedSimulationClock,
+  formatOfficialTimeSeconds,
+} from '../utils/confirmedSimulationClock'
+import {
+  recordSimulationDiagnosticSnapshot,
+  recordSimulationDiagnosticConnection,
+  resetSimulationRuntimeDiagnostics,
+} from '../utils/simulationRuntimeDiagnostics'
 
 function isTerminal(state: SimulationState | null | undefined): boolean {
   return !!state && TERMINAL_SIMULATION_STATES.includes(state)
@@ -78,7 +87,7 @@ function readStoredSimulationContext(): StoredSimulationContext | null {
 }
 
 function isMissingSessionError(message: string): boolean {
-  return /(^|\s)404(\s|$)|not found|不存在|未找到/i.test(message)
+  return /(^|\s)404(\s|$)|not found|unknown session|不存在|未找到/i.test(message)
 }
 
 const sessionId = ref(localStorage.getItem(ACTIVE_SESSION_ID_KEY) ?? '')
@@ -109,11 +118,17 @@ const activeWebsocketUrl = ref(
 )
 const achievedPlaybackSpeed = ref<number | null>(null)
 const acceptedState = ref<SimulationState | null>(null)
+const displayedOfficialTime = ref('')
+// Changes only after the backend accepts a different session. Renderers use
+// this boundary to discard vehicles and interpolation state from the old run.
+const renderSessionRevision = ref(0)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let requestVersion = 0
 let initialized = false
 let playbackRateSamples: PlaybackRateSample[] = []
+let clockTimer: ReturnType<typeof setInterval> | null = null
+const confirmedClock = new ConfirmedSimulationClock()
 
 const trafficView = computed(() =>
   snapshot.value ? snapshotToTrafficView(snapshot.value) : null,
@@ -132,6 +147,19 @@ const state = computed<SimulationState | null>(() => snapshot.value?.state ?? ac
 function resetPlaybackRateTracking(): void {
   playbackRateSamples = []
   achievedPlaybackSpeed.value = null
+}
+
+function resetDisplayedClock(): void {
+  confirmedClock.reset()
+  displayedOfficialTime.value = ''
+}
+
+function tickDisplayedClock(): void {
+  const current = snapshot.value
+  if (!current) return
+  const value = confirmedClock.valueAt(Date.now())
+  if (value != null) displayedOfficialTime.value = formatOfficialTimeSeconds(value)
+  else displayedOfficialTime.value = current.official_time
 }
 
 function recordPlaybackRate(next: SimulationSnapshot): void {
@@ -155,8 +183,16 @@ function recordPlaybackRate(next: SimulationSnapshot): void {
 function applySnapshot(next: SimulationSnapshot) {
   if (!shouldApplySimulationSnapshot(snapshot.value, next, sessionId.value)) return
   recordPlaybackRate(next)
+  confirmedClock.accept({
+    sequence: next.sequence,
+    officialTime: next.official_time,
+    state: next.state,
+    arrivalTimeMs: Date.now(),
+  })
+  recordSimulationDiagnosticSnapshot(next, achievedPlaybackSpeed.value)
   const previousState = state.value
   snapshot.value = next
+  tickDisplayedClock()
   acceptedState.value = next.state
   if (typeof next.playback_speed === 'number') activePlaybackSpeed.value = next.playback_speed
   const snapshotFailure = simulationSnapshotErrorMessage(next)
@@ -253,6 +289,9 @@ function bindSession(
     initialState?: SimulationState
   },
 ) {
+  if (nextSessionId && nextSessionId !== sessionId.value) {
+    renderSessionRevision.value += 1
+  }
   sessionId.value = nextSessionId
   acceptedState.value = context?.initialState ?? null
   restoredSession.value = false
@@ -285,6 +324,8 @@ function bindSession(
   }
   snapshot.value = null
   resetPlaybackRateTracking()
+  resetDisplayedClock()
+  resetSimulationRuntimeDiagnostics(nextSessionId)
   statusError.value = null
   connectSimulationStream(nextSessionId, activeWebsocketUrl.value)
   startPolling()
@@ -295,6 +336,7 @@ function ensureInitialized() {
     return
   }
   initialized = true
+  if (clockTimer === null) clockTimer = setInterval(tickDisplayedClock, 100)
 
   registerSimulationStreamHandler((message) => {
     if (message.type === 'snapshot') {
@@ -303,6 +345,7 @@ function ensureInitialized() {
   })
   registerSimulationStreamConnectionListener((connected) => {
     wsConnected.value = connected
+    recordSimulationDiagnosticConnection(connected)
     if (connected) {
       stopPolling()
     } else if (sessionId.value && !isTerminal(snapshot.value?.state)) {
@@ -319,11 +362,13 @@ function ensureInitialized() {
 async function launchRun(
   payload: StartSimulationRequest,
   focusIntersectionId: string,
+  onSessionAccepted?: (result: StartSimulationResponse) => void,
 ): Promise<StartSimulationResponse | null> {
   starting.value = true
   startError.value = null
   try {
     const result = await startSimulation(payload)
+    onSessionAccepted?.(result)
     bindSession(result.session_id, {
       focusIntersectionId,
       scenarioPresetId: result.scenario_preset_id ?? payload.scenario_preset_id,
@@ -442,6 +487,8 @@ export function useSimulationStore() {
     activeControlMode,
     activePlaybackSpeed,
     achievedPlaybackSpeed,
+    displayedOfficialTime,
+    renderSessionRevision,
     launchRun,
     pauseRun,
     resumeRun,
