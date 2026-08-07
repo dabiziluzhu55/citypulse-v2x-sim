@@ -10,7 +10,7 @@ from ..hub import V2XHub
 from ..logger import LogRecord
 from .proposals import CollabConfig, DecisionMode, GuidanceEmissionMode
 from .records import InMemoryRecordCollector
-from config.scenario_presets import ResolvedScenarioScope
+from algorithms.config.scenario_presets import ResolvedScenarioScope
 
 GUIDANCE_FUNNEL_KEYS = (
     "connected_seen", "fresh_bsm", "next_signal_known", "next_signal_managed",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, Mapping, Optional
 
-from config.scenario_presets import (
+from algorithms.config.scenario_presets import (
     ALL_DEMO_INTERSECTION_IDS, ResolvedScenarioScope,
 )
 from ..config import V2XConfig

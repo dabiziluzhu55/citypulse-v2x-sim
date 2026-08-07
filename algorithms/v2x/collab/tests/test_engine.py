@@ -16,7 +16,7 @@ from algorithms.v2x.hub import V2XHub
 from algorithms.v2x.messages import MessageDraft
 from algorithms.v2x.protocol import build_bsm_draft, build_intent_draft, build_spat_draft
 from algorithms.v2x.config import V2XConfig
-from config.scenario_presets import ResolvedScenarioScope
+from algorithms.config.scenario_presets import ResolvedScenarioScope
 
 
 SCOPE = ResolvedScenarioScope(source="preset", preset_id="east_dense",

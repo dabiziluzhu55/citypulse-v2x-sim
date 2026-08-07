@@ -2,7 +2,7 @@
 
 ## 依赖
 
-- SUMO（需设置 `SUMO_HOME`）
+- SUMO 及其 Python `libsumo` binding（需设置 `SUMO_HOME`）
 - CARLA 0.9.16（联合仿真需设置 `CARLA_ROOT`）
 - Python 3.10
 - NumPy 1.23+ 和 SciPy 1.9+（routeSampler 全局优化）
@@ -14,6 +14,18 @@ export SUMO_HOME=/path/to/sumo
 export CARLA_ROOT=/path/to/CARLA_0.9.16
 ```
 
+生产 headless 会话严格使用 libsumo，不会在 binding 缺失时回退 TraCI。部署前验证：
+
+```bash
+python -c "import libsumo; import sumolib"
+```
+
+只有运行本地 `--gui` 调试的机器还需要验证：
+
+```bash
+python -c "import traci"
+```
+
 ## Python 依赖
 
 ```bash
@@ -21,7 +33,9 @@ pip install -r requirements.txt
 ```
 
 正式车流构建还会检查 `$SUMO_HOME/tools/routeSampler.py`、`duarouter`、`netconvert`
-和 `sumo`。开发机没有 SUMO 时可运行 `python -m simulation.sumo.build_tls --validate-only`
+和 `sumo`。部分 Linux 发行版需要单独安装 `python3-libsumo`，也可使用与服务器 SUMO
+版本一致的官方 `libsumo` Python 包。开发机没有 SUMO 时可运行
+`python -m simulation.sumo.build_tls --validate-only`
 完成只读数据与路网预检。
 
 较旧的 SUMO `routeSampler.py` 可能没有 `--no-sampling`。构建器会自动探测：新版会

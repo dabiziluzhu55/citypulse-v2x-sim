@@ -1,4 +1,4 @@
-"""Celery task that owns one SUMO/TraCI session."""
+"""Celery task that owns one isolated libsumo session."""
 
 from __future__ import annotations
 

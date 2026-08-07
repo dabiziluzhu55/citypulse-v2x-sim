@@ -72,3 +72,7 @@ logs/
 algorithms/mappo/runs/
 # Editor/merge backups
 *.orig
+/runs/
+
+# backend ignore
+backend/tests/

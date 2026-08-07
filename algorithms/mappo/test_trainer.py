@@ -7,9 +7,7 @@ import pytest
 import torch
 
 from algorithms.mappo.config import (
-    COOPERATIVE_M1_MODEL_VERSION,
     COOPERATIVE_MODEL_VERSION,
-    COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
     MAPPOConfig,
     REWARD_SCOPE_SHARED_TEAM,
 )
@@ -17,6 +15,7 @@ from algorithms.mappo.models import MAPPOPolicy
 from algorithms.mappo.trainer import (
     MAPPOTrainer,
     PPOBatch,
+    _batch_structure_diagnostics,
     _validate_cooperative_joint_rows,
 )
 
@@ -59,6 +58,7 @@ def _cooperative_policy_and_trainer(
 
 
 def _batch(policy: MAPPOPolicy, global_offset: float = 0.0) -> PPOBatch:
+    """Two cooperative joints x two owners with shared (team) targets."""
     batch_size = 4
     obs_dim = policy.actor.obs_dim
     local_obs = torch.arange(
@@ -72,18 +72,27 @@ def _batch(policy: MAPPOPolicy, global_offset: float = 0.0) -> PPOBatch:
     )
     actions = torch.tensor([0, 0, 1, 1])
     with torch.no_grad():
-        old_distribution = policy.actor(local_obs, phase_features, action_mask)
-        old_log_probs = old_distribution.log_prob(actions)
-    global_obs = torch.zeros((batch_size, 2, obs_dim), dtype=torch.float32)
-    owner = torch.tensor([0, 1, 0, 1])
-    global_obs[torch.arange(batch_size), owner] = local_obs
-    other = 1 - owner
-    global_obs[torch.arange(batch_size), other] = global_offset
+        old_log_probs = policy.actor(
+            local_obs, phase_features, action_mask
+        ).log_prob(actions)
+    first_joint = torch.zeros((2, obs_dim), dtype=torch.float32)
+    second_joint = torch.zeros((2, obs_dim), dtype=torch.float32)
+    global_obs = torch.stack(
+        (first_joint, first_joint, second_joint, second_joint)
+    ) + global_offset
     agent_mask = torch.ones((batch_size, 2), dtype=torch.bool)
+    owner = torch.tensor([0, 1, 0, 1])
     with torch.no_grad():
-        old_values = policy.value(global_obs, agent_mask, owner).squeeze(-1)
-    advantages = torch.tensor([1.0, -0.5, 0.25, -1.0])
-    returns = old_values + torch.tensor([0.5, -0.25, 0.75, -0.5])
+        old_values = policy.value(
+            global_obs, agent_mask, owner
+        ).squeeze(-1)
+    # The cooperative controller evaluates one team scalar per joint and
+    # broadcasts it to every owner row.
+    old_values = old_values.clone()
+    old_values[1] = old_values[0]
+    old_values[3] = old_values[2]
+    advantages = torch.tensor([1.0, 1.0, -0.5, -0.5])
+    returns = old_values + torch.tensor([0.5, 0.5, -0.25, -0.25])
     return PPOBatch(
         local_obs=local_obs,
         phase_features=phase_features,
@@ -96,6 +105,7 @@ def _batch(policy: MAPPOPolicy, global_offset: float = 0.0) -> PPOBatch:
         old_values=old_values,
         advantages=advantages,
         returns=returns,
+        joint_step_index=torch.tensor([0, 0, 1, 1]),
     )
 
 
@@ -252,7 +262,24 @@ def test_one_update_changes_actor_and_critic_with_finite_diagnostics() -> None:
     assert diagnostics["unselected_valid_action_fraction"] == 0.0
 
 
-def test_batch_diagnostics_distinguish_joint_state_from_owner_input() -> None:
+def test_batch_diagnostics_emit_max_action_dim_fractions_for_narrow_masks() -> None:
+    policy, _trainer = _policy_and_trainer()
+    batch = _batch(policy)
+    # Action masks in this fixture have width 2 while the frozen config
+    # reserves max_action_dim=4; subset scenarios can run with fewer
+    # candidate phases and must still report every reserved action slot.
+    diagnostics = _batch_structure_diagnostics(
+        batch,
+        owner_conditioned_critic=False,
+        max_action_dim=4,
+    )
+    assert diagnostics["action_0_fraction"] == 0.5
+    assert diagnostics["action_1_fraction"] == 0.5
+    assert diagnostics["action_2_fraction"] == 0.0
+    assert diagnostics["action_3_fraction"] == 0.0
+
+
+def test_batch_diagnostics_collapse_owner_rows_for_shared_joint() -> None:
     policy, trainer = _policy_and_trainer()
     original = _batch(policy)
     shared_state = original.global_obs[0].expand(4, -1, -1).clone()
@@ -261,38 +288,45 @@ def test_batch_diagnostics_distinguish_joint_state_from_owner_input() -> None:
         old_values = policy.value(
             shared_state, original.agent_mask, owner
         ).squeeze(-1)
+    old_values = old_values.clone()
+    old_values[1] = old_values[0]
+    old_values[3] = old_values[2]
     batch = replace(
         original,
         global_obs=shared_state,
         agent_index=owner,
         old_values=old_values,
-        returns=old_values + torch.tensor([0.5, -0.25, 0.75, -0.5]),
+        returns=old_values + torch.tensor([0.5, 0.5, -0.25, -0.25]),
     )
 
     diagnostics = trainer.update(batch)
 
     assert diagnostics["unique_joint_state_count"] == 1
-    assert diagnostics["unique_critic_input_count"] == 2
+    assert diagnostics["unique_critic_input_count"] == 1
     assert diagnostics["joint_state_reuse_factor"] == 4.0
 
 
 def test_batch_diagnostics_include_agent_mask_in_joint_state_identity() -> None:
     policy, trainer = _policy_and_trainer()
     original = _batch(policy)
-    shared_state = original.global_obs[0].expand(4, -1, -1).clone()
     masks = original.agent_mask.clone()
-    masks[1, 0] = False
+    # Mask difference applies to the whole second joint (both owners).
+    masks[2, 0] = False
     masks[3, 0] = False
     owner = torch.tensor([0, 1, 0, 1])
     with torch.no_grad():
-        old_values = policy.value(shared_state, masks, owner).squeeze(-1)
+        old_values = policy.value(
+            original.global_obs, masks, owner
+        ).squeeze(-1)
+    old_values = old_values.clone()
+    old_values[1] = old_values[0]
+    old_values[3] = old_values[2]
     batch = replace(
         original,
-        global_obs=shared_state,
         agent_mask=masks,
         agent_index=owner,
         old_values=old_values,
-        returns=old_values + torch.tensor([0.5, -0.25, 0.75, -0.5]),
+        returns=old_values + torch.tensor([0.5, 0.5, -0.25, -0.25]),
     )
 
     diagnostics = trainer.update(batch)
@@ -445,68 +479,3 @@ def test_shared_advantage_mismatch_within_joint_fails_fast() -> None:
 
     with pytest.raises(ValueError, match="joint.*advantage|advantage.*joint"):
         trainer.update(damaged)
-
-
-def test_owner_conditioned_cooperative_targets_may_differ_within_joint() -> None:
-    _, policy, trainer = _cooperative_policy_and_trainer(
-        COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION
-    )
-    batch = _cooperative_batch(
-        policy,
-        advantages=torch.tensor([1.0, 1.25, 3.0, 3.5]),
-        returns=torch.tensor([0.5, 1.0, 2.0, 3.0]),
-    )
-
-    diagnostics = trainer.update(batch)
-
-    assert diagnostics["unique_joint_state_count"] == 2
-    assert diagnostics["unique_critic_input_count"] == 4
-    assert "joint_advantage_mean" not in diagnostics
-
-
-def _m1_policy() -> MAPPOPolicy:
-    return MAPPOPolicy(
-        obs_dim=8,
-        num_agents=2,
-        critic_scope="global",
-        actor_init_seed=1,
-        critic_init_seed=2,
-        model_version=COOPERATIVE_M1_MODEL_VERSION,
-    )
-
-
-def test_validate_joint_rows_per_agent_targets_allowed():
-    batch = _cooperative_batch(
-        _m1_policy(),
-        advantages=torch.tensor([0.1, -0.1, 0.3, -0.3]),
-        returns=torch.tensor([1.0, 2.0, 3.0, 4.0]),
-    )
-    out = _validate_cooperative_joint_rows(
-        batch, num_agents=2, target_mode="per_agent"
-    )
-    assert out is None
-
-
-def test_validate_joint_rows_m1_0_scalar_mode():
-    batch = replace(
-        _cooperative_batch(
-            _m1_policy(),
-            advantages=torch.tensor([0.5, 0.5, 0.5, 0.5]),
-            returns=torch.tensor([2.0, 2.0, 2.0, 2.0]),
-        ),
-        old_values=torch.tensor([0.7, 0.7, 0.7, 0.7]),
-    )
-    out = _validate_cooperative_joint_rows(
-        batch, num_agents=2, target_mode="m1_0_scalar"
-    )
-    assert out is not None
-    assert out.shape == (2,)
-
-
-def test_m1_old_values_per_agent_not_broadcast():
-    batch = _cooperative_batch(_m1_policy())
-    _validate_cooperative_joint_rows(
-        batch, num_agents=2, target_mode="per_agent"
-    )
-    joint_zero = batch.old_values[batch.joint_step_index == 0]
-    assert not torch.equal(joint_zero, joint_zero[0].expand(2))

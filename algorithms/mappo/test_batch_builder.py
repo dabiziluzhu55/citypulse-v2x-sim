@@ -9,7 +9,6 @@ import torch
 import algorithms.mappo.parallel_train as parallel_train_module
 from algorithms.mappo.config import (
     COOPERATIVE_MODEL_VERSION,
-    COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
     MAPPOConfig,
     REWARD_SCOPE_SHARED_TEAM,
 )
@@ -22,61 +21,6 @@ from algorithms.mappo.parallel_train import (
     validate_joint_timeline,
 )
 from algorithms.mappo.rollout import Transition, compute_gae
-
-
-def _transition(
-    *,
-    reward: float,
-    value: float,
-    next_value: float,
-    decision_time: float,
-    terminated: bool = False,
-    truncated: bool = False,
-) -> Transition:
-    local = np.zeros(132, dtype=np.float32)
-    local[0] = decision_time
-    state = CentralizedState(
-        observations=local.reshape(1, -1),
-        agent_mask=np.ones(1, dtype=np.bool_),
-        intersection_ids=("demo_1",),
-    )
-    return Transition(
-        local_obs=local,
-        phase_features=np.zeros((2, 11), dtype=np.float32),
-        action_mask=np.ones(2, dtype=np.bool_),
-        global_state=state,
-        agent_index=0,
-        action=0,
-        requested_phase=0,
-        applied_phase=0,
-        log_prob=-0.5,
-        value=value,
-        reward=reward,
-        decision_time_s=decision_time,
-        applied_time_s=decision_time,
-        policy_generation=0,
-        next_local_obs=local.copy(),
-        next_global_state=state,
-        next_value=next_value,
-        terminated=terminated,
-        truncated=truncated,
-    )
-
-
-def _worker(seed: int, transitions: tuple[Transition, ...]) -> WorkerRollout:
-    return WorkerRollout(
-        seed=seed,
-        status="ok",
-        policy_generation=0,
-        policy_digest="digest",
-        config_signature="config",
-        local_observation_schema="local",
-        centralized_state_schema="global",
-        transitions=transitions,
-        pending_count=0,
-        invalid_reason=None,
-        error=None,
-    )
 
 
 COOPERATIVE_IDS = ("demo_1", "demo_2")
@@ -335,29 +279,32 @@ def _corrupt_joint_and_all_children(
 
 
 def test_build_ppo_batch_computes_gae_per_worker_trajectory() -> None:
-    config = MAPPOConfig(("demo_1",))
-    first = (
-        _transition(reward=1.0, value=0.2, next_value=0.3, decision_time=5.0),
-        _transition(
-            reward=2.0,
-            value=0.3,
-            next_value=0.4,
-            decision_time=20.0,
-            truncated=True,
-        ),
+    config = _cooperative_config(critic_scope="global")
+    first = _timeline_with_final_window(
+        config, final_end_s=35.0, terminated=False, truncated=True
     )
     second = (
-        _transition(
-            reward=10.0,
-            value=0.7,
-            next_value=999.0,
-            decision_time=5.0,
+        _joint_transition(
+            config,
+            joint_step_id=0,
+            state=_centralized_state(config, marker=5.0),
+            next_state=_centralized_state(config, marker=20.0),
+            values=(0.7, 0.7),
+            next_values=(999.0, 999.0),
+            team_reward=10.0,
+            window_start_s=5.0,
+            window_end_s=20.0,
             terminated=True,
+            truncated=False,
         ),
     )
 
     batch = build_ppo_batch(
-        (_worker(93001, first), _worker(93002, second)), config=config
+        (
+            _joint_worker(config, first, seed=93001),
+            _joint_worker(config, second, seed=93002),
+        ),
+        config=config,
     )
     expected_first = compute_gae(
         rewards=np.array([1.0, 2.0], dtype=np.float32),
@@ -369,14 +316,19 @@ def test_build_ppo_batch_computes_gae_per_worker_trajectory() -> None:
         gae_lambda=config.gae_lambda,
     )
 
-    assert batch.batch_size == 3
+    assert batch.batch_size == 6
     torch.testing.assert_close(
-        batch.advantages[:2], torch.from_numpy(expected_first[0])
+        batch.advantages[:4],
+        torch.from_numpy(expected_first[0]).repeat_interleave(2),
     )
-    torch.testing.assert_close(batch.returns[:2], torch.from_numpy(expected_first[1]))
-    assert batch.advantages[2].item() == pytest.approx(9.3)
-    assert batch.returns[2].item() == pytest.approx(10.0)
-    assert batch.local_obs[:, 0].tolist() == [5.0, 20.0, 5.0]
+    torch.testing.assert_close(
+        batch.returns[:4],
+        torch.from_numpy(expected_first[1]).repeat_interleave(2),
+    )
+    # Second worker is a true terminal: advantage = 10 - 0.7 = 9.3, return = 10.
+    assert batch.advantages[4:].tolist() == pytest.approx([9.3, 9.3])
+    assert batch.returns[4:].tolist() == pytest.approx([10.0, 10.0])
+    assert batch.local_obs[:, 0].tolist() == [5.0, 5.0, 20.0, 20.0, 5.0, 5.0]
 
 
 def test_validate_joint_timeline_accepts_fixed_ids_windows_and_state_chain() -> None:
@@ -753,70 +705,6 @@ def test_local_cooperative_ippo_uses_team_reward_with_owner_local_gae() -> None:
     )
     assert batch.agent_index.tolist() == [0, 1, 0, 1]
     assert batch.joint_step_index.tolist() == [0, 0, 1, 1]
-
-
-def test_owner_conditioned_global_mappo_uses_team_reward_with_owner_gae() -> None:
-    config = _cooperative_config(
-        critic_scope="global",
-        model_version=COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-    )
-    timeline = _two_step_joint_timeline(config)
-
-    batch = build_ppo_batch((_joint_worker(config, timeline),), config=config)
-
-    torch.testing.assert_close(
-        batch.advantages,
-        torch.tensor([3.068288, 3.0624665, 2.096, 2.093]),
-    )
-    torch.testing.assert_close(
-        batch.returns,
-        torch.tensor([3.268288, 3.5624665, 2.396, 2.693]),
-    )
-    assert batch.old_values.tolist() == pytest.approx([0.2, 0.5, 0.3, 0.6])
-
-
-def test_owner_conditioned_global_gae_calls_once_per_owner(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    config = _cooperative_config(
-        critic_scope="global",
-        model_version=COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-    )
-    timeline = _two_step_joint_timeline(config)
-    calls = 0
-    original_compute_gae = parallel_train_module.compute_gae
-
-    def recording_compute_gae(*args: object, **kwargs: object):
-        nonlocal calls
-        calls += 1
-        return original_compute_gae(*args, **kwargs)
-
-    monkeypatch.setattr(
-        parallel_train_module, "compute_gae", recording_compute_gae
-    )
-
-    build_ppo_batch((_joint_worker(config, timeline),), config=config)
-
-    assert calls == len(config.intersection_ids)
-
-
-def test_owner_conditioned_true_terminal_ignores_owner_bootstrap_values() -> None:
-    config = _cooperative_config(
-        critic_scope="global",
-        model_version=COOPERATIVE_OWNER_CONDITIONED_MODEL_VERSION,
-    )
-    timeline = _two_step_joint_timeline(config, terminal_last=True)
-
-    batch = build_ppo_batch((_joint_worker(config, timeline),), config=config)
-
-    torch.testing.assert_close(
-        batch.advantages,
-        torch.tensor([2.69585, 2.4107, 1.7, 1.4]),
-    )
-    torch.testing.assert_close(
-        batch.returns,
-        torch.tensor([2.89585, 2.9107, 2.0, 2.0]),
-    )
 
 
 def test_local_cooperative_gae_calls_compute_gae_once_per_owner(

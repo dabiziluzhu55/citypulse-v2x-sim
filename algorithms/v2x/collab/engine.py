@@ -24,7 +24,7 @@ from .records import (
 from .snapshot import ConnectedVehicleState, EdgeSnapshot, IntersectionStaticContext
 from .state import CloudIntersectionView, CloudStateStore
 from .stats import build_collab_summary
-from config.scenario_presets import ResolvedScenarioScope
+from algorithms.config.scenario_presets import ResolvedScenarioScope
 
 
 @dataclass(frozen=True, slots=True)

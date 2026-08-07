@@ -24,10 +24,10 @@ class StartSimulationRequest(BaseModel):
         description="模型别名；缺省按场景默认通用模型。仅 control_mode=ippo/mappo 时生效。",
     )
     seed: int = Field(default=42, ge=0)
-    step_length: float = Field(default=0.05, gt=0.0)
+    step_length: float = Field(default=0.1, gt=0.0)
     realtime: bool = True
     gui: bool = False
-    snapshot_interval_seconds: float = Field(default=0.2, gt=0.0)
+    snapshot_interval_seconds: float = Field(default=0.5, gt=0.0)
     disturbance_targets: list[DisturbanceTarget] = Field(default_factory=list)
     playback_speed: float | None = Field(
         default=None,
@@ -118,6 +118,9 @@ class MetricsResponse(BaseModel):
     avg_queue_length: float | None = None
     throughput: float | None = None
     fuel_consumption: float | None = None
+    fuel_intensity_L_per_100km: float | None = None
+    hard_braking_events: int | None = None
+    hard_braking_rate: float | None = None
     avg_decision_latency_ms: float | None = None
     departed: int = 0
     arrived: int = 0

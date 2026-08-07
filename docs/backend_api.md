@@ -1,6 +1,8 @@
 # 后端 API 映射建议
 
-本轮未实现 FastAPI。后端应直接包装 `SimulationManager`，不要自行启动 TraCI。
+本轮未实现 FastAPI。后端应直接包装 `SimulationManager`，不要导入或自行启动 libsumo、
+TraCI。后端把 `manager.subscribe()` 产生的 snapshot 转为 WebSocket 消息，前端只消费该
+消息实时渲染，不直接连接 SUMO runtime。
 
 | 未来 HTTP/WebSocket | 仿真内核调用 |
 |---|---|

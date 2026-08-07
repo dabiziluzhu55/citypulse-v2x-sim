@@ -50,7 +50,7 @@ class Settings(BaseSettings):
 
     default_intersection_id: str = "demo_2"
     default_map_radius_meters: float = 600.0
-    default_snapshot_interval_seconds: float = 0.2
+    default_snapshot_interval_seconds: float = 0.5
 
     mvp_intersection_ids: tuple[str, ...] = ("demo_2",)
 

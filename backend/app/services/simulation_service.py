@@ -210,6 +210,8 @@ class SimulationService:
                 "throughput",
                 "avg_travel_time",
                 "fuel_consumption",
+                "hard_braking_events",
+                "hard_braking_rate",
             ):
                 if evaluation.get(key) is not None:
                     metrics[key] = evaluation[key]
@@ -315,6 +317,9 @@ class SimulationService:
             "avg_queue_length": None,
             "throughput": None,
             "fuel_consumption": None,
+            "fuel_intensity_L_per_100km": None,
+            "hard_braking_events": None,
+            "hard_braking_rate": None,
             "avg_decision_latency_ms": latency,
             "departed": 0,
             "arrived": 0,

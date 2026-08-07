@@ -7,12 +7,11 @@ import torch
 
 from algorithms.mappo.checkpoint import CheckpointMetadata, save_checkpoint
 from algorithms.mappo.config import (
-    COOPERATIVE_MODEL_VERSION,
-    MAPPO_V2_RESIDUAL_MODEL_VERSION,
     MAPPOConfig,
     REWARD_SCOPE_SHARED_TEAM,
 )
 from algorithms.mappo.evaluate_checkpoint import (
+    _scenario_preset_intersections,
     _summarize,
     load_evaluation_checkpoint,
     validate_evaluation_seeds,
@@ -23,30 +22,36 @@ from algorithms.mappo.train import REWARD_DEFINITION
 from algorithms.mappo.trainer import MAPPOTrainer
 
 
+def test_scenario_preset_intersections_resolve_algorithm_side_registry() -> None:
+    assert _scenario_preset_intersections("xiongan_20") == tuple(
+        f"demo_{index}" for index in range(1, 21)
+    )
+    assert _scenario_preset_intersections("east_dense") == (
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9",
+    )
+    assert _scenario_preset_intersections("west_dense") == (
+        "demo_14",
+        "demo_15",
+        "demo_19",
+    )
+
+    with pytest.raises(ValueError, match="unknown scenario preset"):
+        _scenario_preset_intersections("unknown_preset")
+
+
 def _checkpoint(
-    tmp_path: Path, *, residual: bool = False, cooperative: bool = False
+    tmp_path: Path,
 ) -> tuple[Path, MAPPOConfig, MAPPOPolicy]:
-    if residual and cooperative:
-        raise ValueError("test checkpoint cannot be residual and cooperative")
     config = MAPPOConfig(
         ("demo_1", "demo_2"),
         hidden_dim=8,
-        model_version=(
-            COOPERATIVE_MODEL_VERSION
-            if cooperative
-            else (
-                MAPPO_V2_RESIDUAL_MODEL_VERSION
-                if residual
-                else "mappo_v1"
-            )
-        ),
-        actor_variant=("residual" if residual else "shared"),
-        reward_scope=(
-            REWARD_SCOPE_SHARED_TEAM if cooperative else "local"
-        ),
-        critic_target_scope=(
-            "team_return" if cooperative else "local_return"
-        ),
+        model_version="cooperative_joint_v1",
+        actor_variant="shared",
+        reward_scope=REWARD_SCOPE_SHARED_TEAM,
+        critic_target_scope="team_return",
     )
     policy = MAPPOPolicy(
         obs_dim=config.obs_dim,
@@ -58,9 +63,7 @@ def _checkpoint(
         phase_feature_dim=config.phase_feature_dim,
         model_version=config.model_version,
         actor_variant=config.actor_variant,
-        residual_hidden_dim=config.residual_hidden_dim,
         identity_offset=config.identity_offset,
-        residual_init_seed=56,
     )
     trainer = MAPPOTrainer(policy, config)
     metadata = CheckpointMetadata.from_config(
@@ -74,25 +77,10 @@ def _checkpoint(
         training_periods=("off_peak",),
         local_observation_schema=IPPO_V8_LOCAL_OBSERVATION_SCHEMA,
         reward_definition=REWARD_DEFINITION,
-        residual_init_seed=(56 if residual else None),
     )
     path = tmp_path / "mappo.pt"
     save_checkpoint(path, policy, trainer, metadata)
     return path, config, policy
-
-
-def test_evaluation_checkpoint_loads_residual_v2_snapshot(
-    tmp_path: Path,
-) -> None:
-    path, config, expected_policy = _checkpoint(tmp_path, residual=True)
-
-    snapshot = load_evaluation_checkpoint(path)
-
-    assert snapshot.config == config
-    assert snapshot.metadata.actor_variant == "residual"
-    assert snapshot.metadata.residual_init_seed == 56
-    for name, value in expected_policy.state_dict().items():
-        assert torch.equal(snapshot.policy_state[name], value)
 
 
 def test_evaluation_checkpoint_loads_validated_cpu_policy_snapshot(
@@ -115,7 +103,7 @@ def test_evaluation_checkpoint_loads_validated_cpu_policy_snapshot(
 def test_evaluation_checkpoint_reconstructs_cooperative_objective(
     tmp_path: Path,
 ) -> None:
-    path, config, expected_policy = _checkpoint(tmp_path, cooperative=True)
+    path, config, expected_policy = _checkpoint(tmp_path)
 
     snapshot = load_evaluation_checkpoint(path)
 

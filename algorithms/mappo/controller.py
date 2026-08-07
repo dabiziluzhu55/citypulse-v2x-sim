@@ -9,8 +9,7 @@ import torch
 
 from algorithms.mappo.checkpoint import policy_digest
 from algorithms.mappo.config import (
-    COOPERATIVE_M1_MODEL_VERSION,
-    COOPERATIVE_MODEL_VERSION,
+        COOPERATIVE_MODEL_VERSION,
     REWARD_SCOPE_SHARED_TEAM,
     MAPPOConfig,
     configuration_signature,
@@ -172,11 +171,7 @@ class MAPPOController:
         self._joint_rollout = JointExecutionAlignedRollout(
             len(self.intersection_ids),
             require_shared_values=config.requires_shared_values,
-            team_value_mode=(
-                "mean_of_values"
-                if config.model_version == COOPERATIVE_M1_MODEL_VERSION
-                else "scalar"
-            ),
+            team_value_mode="scalar",
             expected_state_schema=config.centralized_state_schema,
         )
         self._joint_transitions: list[JointTransition] = []
@@ -1035,11 +1030,7 @@ class MAPPOController:
         self._joint_rollout = JointExecutionAlignedRollout(
             len(self.intersection_ids),
             require_shared_values=self.config.requires_shared_values,
-            team_value_mode=(
-                "mean_of_values"
-                if self.config.model_version == COOPERATIVE_M1_MODEL_VERSION
-                else "scalar"
-            ),
+            team_value_mode="scalar",
             expected_state_schema=self.config.centralized_state_schema,
         )
         self._joint_transitions = []

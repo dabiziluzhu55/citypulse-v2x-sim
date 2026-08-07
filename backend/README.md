@@ -22,7 +22,7 @@
 |---|---|---|
 | API | `app/api/v1/` | 对外统一 REST / WebSocket |
 | 管控算法 | `app/controllers/` | fixed / max_pressure / sotl 等纯决策逻辑 |
-| 指标计算 | `app/metrics/` | 六指标采集、TripInfo 回填、结果持久化 |
+| 指标计算 | `app/metrics/` | 薄封装，转发至仓库根目录 `traffic_eval/` |
 | 会话元数据 | `app/services/session_metadata.py` | backend 独立 Redis/内存命名空间 |
 | 场景层 | `app/scenario/` | 场景预设与启动请求解析 |
 | 场景导出 | `app/services/scenario_export_service.py` / `od_export.py` | ZIP 含路网与九区域 OD |
@@ -114,17 +114,26 @@ pip install -r backend/requirements.txt
 
 ## 启动后端
 
-在仓库根目录执行：
+在仓库根目录执行（只需把仓库根加入 `PYTHONPATH`，**不要**依赖 `algorithms/`）：
 
 ```bash
+cd <repo-root>
+export PYTHONPATH=.
 uvicorn backend.app.main:app \
   --host 0.0.0.0 \
   --port 8000 \
   --workers 1
 ```
 
+或一行：
+
+```bash
+PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
 注意：
 
+- 场景预设定义在 `backend/app/scenario/presets.py`，与 `algorithms/` 训练代码完全解耦
 - 必须使用 `--workers 1`（算法控制器状态不跨进程共享）
 - **local 模式**下活动仿真运行时不要使用 `--reload`，否则 reload 会导致本机会话丢失
 - **redis 模式**下 reload/重启 API 不会停止已在 SUMO worker 中运行的会话
@@ -134,8 +143,36 @@ Swagger 文档：`http://localhost:8000/docs`
 ## 测试
 
 ```bash
-pytest backend/tests -q
+PYTHONPATH=. pytest backend/tests -q
 python -m compileall backend/app
+```
+
+## 命令行评估（管控算法对比）
+
+### A. 无 Backend（推荐算法团队日常批跑）
+
+直连 `SimulationManager` + `traffic_control`，指标走 `traffic_eval`：
+
+```bash
+python -m traffic_eval \
+  --preset xiongan_20 --period morning_peak --duration 900 \
+  --modes fixed,max_pressure,sotl --seed 42 \
+  --output outputs/eval_900_local.json
+```
+
+### B. 经 Backend HTTP（联调 / 与前端同路径）
+
+脚本位于 `backend/tools/eval.py`。无头默认走 **libsumo**（`gui=false`），默认步长 **0.1s**、快照间隔 **0.5s**；支持 `fixed / max_pressure / sotl / ippo / mappo`。
+
+```bash
+# 后端需已启动
+PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
+
+python backend/tools/eval.py
+python backend/tools/eval.py \
+  --preset xiongan_20 --period morning_peak --duration 900 \
+  --modes fixed,max_pressure,sotl,ippo,mappo --seed 42 \
+  --output outputs/eval_results.json
 ```
 
 ---
@@ -150,9 +187,9 @@ python -m compileall backend/app
 - WebSocket 可从 `QUEUED` 一直推送到终态
 - 未知 session → **404**；Redis 不可用 → **503**
 
-## B. 评估指标（六指标）
+## B. 评估指标
 
-统一口径（与 `algorithms/evaluation` 对齐），结果字段可为 `null`（不可用时不伪造 0）：
+统一口径，结果字段可为 `null`（不可用时不伪造 0；急刹车事件数为 0 时仍返回 0）：
 
 | 指标 | 字段（API） | 终态口径 |
 |------|-------------|----------|
@@ -161,7 +198,33 @@ python -m compileall backend/app
 | 平均排队长度 | `avg_queue_length` | 仅 `role=incoming` 进口道；每帧车道均值再对时间平均（veh/lane） |
 | 通行能力 | `throughput` | `arrived / evaluation_duration_s × 3600` |
 | 决策延迟 | `avg_decision_latency_ms` | `AlgorithmRuntimeStore` 的 perf_counter；Fixed 无样本为 `null` |
-| 燃油强度 | `fuel_consumption` | 仅 gasoline/diesel/hybrid，同批车辆 L/100km；缺元数据为 `null` |
+| 燃油强度 | `fuel_consumption` / `fuel_intensity_L_per_100km` | 见下方「百公里油耗」 |
+| 急刹车事件数 | `hard_braking_events` | 终态快照 `metrics.hard_braking_events`（单调累计，取终态/历史最大，禁止多帧相加） |
+| 急刹车率 | `hard_braking_rate` | `hard_braking_events / departed × 100`，单位「次/100辆」 |
+
+### 百公里油耗（终态正式结果）
+
+1. 直接解析 `outputs/sessions/{session_id}/tripinfo.xml`
+2. **不**把快照采样的 vehicle distance/fuel 作为终态正式结果（运行中可作 `snapshot_provisional` 临时值）
+3. 当前 SUMO 配置下 `emissions.fuel_abs` 单位按 **mg** 处理
+4. 从 `session_manifest` / `traffic_manifest` 读取车型 `powertrain` 与 `fuel_density_mg_per_ml`
+5. 只统计：**已完成**、**未 vaporized**、且 `powertrain ∈ {gasoline, diesel, hybrid}` 的同一批车辆；`electric` 等排除
+6. 单车：`fuel_ml = fuel_abs_mg / fuel_density_mg_per_ml`，`distance_m = tripinfo.routeLength`
+7. 汇总（禁止先算单车百公里再平均）：
+
+```text
+fuel_L_per_100km = (sum(fuel_ml) / 1000) / (sum(distance_m) / 100000)
+```
+
+8. 无 TripInfo、缺 emissions、未知 vType（空类型或未登记类型）、密度非法或总里程为 0 → `null` + `warnings`，**不抛 500**；`citypulse_*` 扰动/活动车跳过不计入
+9. `metric_sources["fuel_intensity_L_per_100km"] = "tripinfo_completed_fuel_vehicles"`
+
+### 急刹车率
+
+- 数据源：simulation 终态 `SimulationSnapshot.metrics.hard_braking_events`（backend **禁止**用低频快照加速度重估）
+- `hard_braking_rate = hard_braking_events / departed × 100`（「每 100 辆的事件次数」，**不是**发生过急刹车的车辆占比，数值可超过 100）
+- `departed=0` 或数据不可用 → `null` + warning；**0 次急刹车返回 0 而不是 null**
+- `metric_sources["hard_braking_rate"] = "final_snapshot_hard_braking_events_per_100_departed"`
 
 附加字段：
 
@@ -169,9 +232,9 @@ python -m compileall backend/app
 - `metric_sources`：各指标数据来源
 - `warnings`：缺失/不一致说明
 
-仿真进行中可返回快照临时行程/等待，并标记 `snapshot_provisional`；终态读取共享目录 `outputs/sessions/{session_id}/tripinfo.xml` 回填。TripInfo 缺失、解析失败或完成数与 `arrived` 不一致时对应指标为 `null` 并写入 warning，**不导致接口 500**。
+仿真进行中可返回快照临时行程/等待/燃油，并标记 `snapshot_provisional`；终态读取共享目录 `outputs/sessions/{session_id}/tripinfo.xml` 回填行程/等待与燃油。TripInfo 缺失、解析失败或完成数与 `arrived` 不一致时对应指标为 `null` 并写入 warning，**不导致接口 500**。
 
-WebSocket 进入终态时：先完成 TripInfo 解析、最终指标计算与持久化，再推送**一次**最终快照；该帧 `evaluation.finished=true`，行程/等待来源为 `tripinfo_completed`（不可用则为 `null`），不会把运行中临时指标伪装成终态结果。
+WebSocket 进入终态时：先完成 TripInfo 解析、最终指标计算与持久化，再推送**一次**最终快照；该帧 `evaluation.finished=true`，行程/等待来源为 `tripinfo_completed`、燃油来源为 `tripinfo_completed_fuel_vehicles`（不可用则为 `null`），不会把运行中临时指标伪装成终态结果。
 
 ## C. OD 场景导出
 
@@ -456,13 +519,18 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
   "avg_queue_length": 2.1,
   "throughput": 880.0,
   "fuel_consumption": 8.5,
+  "fuel_intensity_L_per_100km": 8.5,
+  "hard_braking_events": 42,
+  "hard_braking_rate": 12.0,
   "avg_decision_latency_ms": 1.234,
   "departed": 350,
   "arrived": 220,
   "completion_rate": 0.6286,
   "metric_sources": {
     "avg_queue_length_veh": "incoming_lane_halting_count",
-    "throughput_veh_per_h": "finish_totals"
+    "throughput_veh_per_h": "finish_totals",
+    "fuel_intensity_L_per_100km": "tripinfo_completed_fuel_vehicles",
+    "hard_braking_rate": "final_snapshot_hard_braking_events_per_100_departed"
   },
   "warnings": [],
   "finished": true
