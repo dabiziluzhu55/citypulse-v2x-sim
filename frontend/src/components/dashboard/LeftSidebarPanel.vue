@@ -83,6 +83,7 @@ const emit = defineEmits<{
   resume: []
   stop: []
   playbackSpeed: [value: number]
+  dismissStatusError: []
   configChangeRequested: [request: {
     fingerprint: string
     apply: () => void
@@ -241,6 +242,11 @@ const statusMessage = computed(() => (props.state === 'QUEUED' ? '排队中，�
   || controlModeUnavailableMessage.value
   || (!props.healthReady ? props.healthLabel : ''))
 const playbackSpeedOptions = computed(() => playbackSpeeds.value.map((value) => ({ label: `${value}x`, value })))
+
+function dismissStatusMessage(): void {
+  feedback.value = null
+  if (props.statusError) emit('dismissStatusError')
+}
 const stateLabel = computed(() => simulationStateLabel(props.state)
   ?? (props.healthReady ? 'READY' : 'OFFLINE'))
 const officialTimeLabel = computed(() => {
@@ -633,7 +639,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
       <LeftSidebarFrameSvg class="left-sidebar__frame" />
       <LeftSidebarSectionHeader title="仿真场景配置" variant="scenario" />
 
-      <button v-if="statusMessage" type="button" class="left-sidebar__status-dot" :class="{ 'is-feedback': feedback }" :title="statusMessage" :aria-label="statusMessage" @click="feedback = null" />
+      <button v-if="statusMessage" type="button" class="left-sidebar__status-dot" :class="{ 'is-feedback': feedback }" :title="statusMessage" :aria-label="statusMessage" @click="dismissStatusMessage" />
 
       <label
         v-for="(field, index) in fields"

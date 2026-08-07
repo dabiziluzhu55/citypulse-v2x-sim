@@ -38,6 +38,9 @@ export interface MetricsTimeseriesPoint {
   avg_queue_length: number | null
   throughput: number | null
   fuel_consumption?: number | null
+  fuel_intensity_L_per_100km?: number | null
+  hard_braking_events?: number | null
+  hard_braking_rate?: number | null
   finished?: boolean
   metric_sources?: Record<string, string>
   warnings?: string[]

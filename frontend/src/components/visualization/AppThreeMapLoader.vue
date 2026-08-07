@@ -1,11 +1,5 @@
 <script lang="ts">
-function loadBaiduThreeMap(
-  recoverModuleCache = false,
-): Promise<typeof import('./BaiduThreeMap.vue')> {
-  if (import.meta.env.DEV && recoverModuleCache) {
-    const sourceUrl = `/src/components/visualization/BaiduThreeMap.vue?map3dCacheRecovery=${Date.now()}`
-    return import(/* @vite-ignore */ sourceUrl) as Promise<typeof import('./BaiduThreeMap.vue')>
-  }
+function loadBaiduThreeMap(): Promise<typeof import('./BaiduThreeMap.vue')> {
   return import('./BaiduThreeMap.vue')
 }
 </script>
@@ -17,7 +11,6 @@ import {
   h,
   nextTick,
   onErrorCaptured,
-  onUnmounted,
   ref,
   shallowRef,
   watch,
@@ -26,13 +19,10 @@ import {
   classifyMap3dFailure,
   type Map3dFailure,
 } from '../../mapv/map3dLoadRecovery'
-import {
-  MAP3D_MODULE_LOAD_TIMEOUT_MS,
-  MAP3D_PRESENTATION_HARD_TIMEOUT_MS,
-} from '../../mapv/map3dPresentationReadiness'
+import { MAP3D_MODULE_LOAD_TIMEOUT_MS } from '../../mapv/map3dPresentationReadiness'
 
-const MAX_AUTO_RETRIES = 2
-const RETRY_DELAYS_MS = [500, 1500] as const
+const MAX_AUTO_RETRIES = 1
+const RETRY_DELAY_MS = 750
 
 const emit = defineEmits<{
   return2d: [failure: Map3dFailure | null]
@@ -44,50 +34,28 @@ const loadingMessage = ref('正在加载三维场景')
 const failure = ref<Map3dFailure | null>(null)
 const componentKey = ref(0)
 const componentVisible = ref(true)
-let timeoutId: ReturnType<typeof setTimeout> | null = null
 
 const EmptyFailurePlaceholder = defineComponent({
   name: 'Map3dFailurePlaceholder',
   setup: () => () => h('span', { 'aria-hidden': 'true' }),
 })
 
-function clearLoadTimeout(): void {
-  if (!timeoutId) return
-  clearTimeout(timeoutId)
-  timeoutId = null
-}
-
 function reportFailure(cause: unknown): void {
   if (state.value === 'error') return
-  clearLoadTimeout()
   failure.value = classifyMap3dFailure(cause)
   state.value = 'error'
 }
 
-function armSceneTimeout(): void {
-  clearLoadTimeout()
-  timeoutId = setTimeout(() => {
-    reportFailure(new Error(
-      `3D 场景加载超过 ${MAP3D_PRESENTATION_HARD_TIMEOUT_MS / 1000} 秒：${loadingMessage.value}`,
-    ))
-  }, MAP3D_PRESENTATION_HARD_TIMEOUT_MS)
-}
-
-function createAsyncBaiduThreeMap(recoverModuleCache = false) {
+function createAsyncBaiduThreeMap() {
   return defineAsyncComponent({
-    loader: async () => {
-      const module = await loadBaiduThreeMap(recoverModuleCache)
-      armSceneTimeout()
-      return module
-    },
+    loader: loadBaiduThreeMap,
     delay: 0,
     timeout: MAP3D_MODULE_LOAD_TIMEOUT_MS,
     suspensible: false,
     errorComponent: EmptyFailurePlaceholder,
     onError(error, retry, fail, attempts) {
       if (attempts <= MAX_AUTO_RETRIES) {
-        const delay = RETRY_DELAYS_MS[attempts - 1] ?? RETRY_DELAYS_MS.at(-1) ?? 0
-        window.setTimeout(retry, delay)
+        window.setTimeout(retry, RETRY_DELAY_MS)
         return
       }
       reportFailure(error)
@@ -99,33 +67,30 @@ function createAsyncBaiduThreeMap(recoverModuleCache = false) {
 const asyncBaiduThreeMap = shallowRef(createAsyncBaiduThreeMap())
 
 function handleLoading(message: string): void {
-  if (state.value === 'error') return
+  // A timed-out dynamic import can still finish and mount successfully. Its
+  // first loading event is authoritative and must clear the stale timeout UI.
+  failure.value = null
   loadingMessage.value = message || '正在加载三维场景'
-  if (state.value === 'ready' && timeoutId === null) armSceneTimeout()
   state.value = 'loading'
 }
 
 function handleReady(): void {
-  if (state.value === 'error') return
-  clearLoadTimeout()
+  failure.value = null
   state.value = 'ready'
 }
 
 async function retryThreeMap(): Promise<void> {
-  const recoverModuleCache = failure.value?.code === 'module-cache'
-  clearLoadTimeout()
   failure.value = null
   loadingMessage.value = '正在重新加载三维场景'
   state.value = 'loading'
   componentVisible.value = false
   await nextTick()
   componentKey.value += 1
-  asyncBaiduThreeMap.value = createAsyncBaiduThreeMap(recoverModuleCache)
+  asyncBaiduThreeMap.value = createAsyncBaiduThreeMap()
   componentVisible.value = true
 }
 
 function returnTo2d(): void {
-  clearLoadTimeout()
   emit('return2d', failure.value)
 }
 
@@ -135,7 +100,6 @@ onErrorCaptured((cause) => {
 })
 
 watch(state, (nextState) => emit('stateChange', nextState), { immediate: true })
-onUnmounted(clearLoadTimeout)
 </script>
 
 <template>

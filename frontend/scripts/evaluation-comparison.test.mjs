@@ -177,6 +177,20 @@ test('marks null fuel unavailable as soon as the backend provides an explicit wa
   assert.equal(point.metric_status.fuel, 'unavailable')
 })
 
+test('normalizes the new fuel alias and preserves optional hard-braking diagnostics', () => {
+  const running = snapshot('RUNNING', 30, false)
+  running.evaluation.fuel_intensity_L_per_100km = 7.25
+  running.evaluation.hard_braking_events = 4
+  running.evaluation.hard_braking_rate = 1.5
+  running.metrics.evaluation = running.evaluation
+  const point = evaluationPoint(running)
+  assert.equal(point.fuel_consumption, 7.25)
+  assert.equal(point.fuel_intensity_L_per_100km, 7.25)
+  assert.equal(point.hard_braking_events, 4)
+  assert.equal(point.hard_braking_rate, 1.5)
+  assert.equal(point.metric_status.fuel, 'provisional')
+})
+
 test('rejects unfinished terminal metrics and records the TripInfo-completed final frame', () => {
   const provisionalTerminal = snapshot('COMPLETED', 900, false)
   assert.equal(requiresFinalEvaluationRecovery(provisionalTerminal), true)

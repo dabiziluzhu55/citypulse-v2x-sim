@@ -180,6 +180,9 @@ export interface SimulationMetrics {
   avg_queue_length?: number | null
   throughput?: number | null
   fuel_consumption?: number | null
+  fuel_intensity_L_per_100km?: number | null
+  hard_braking_events?: number | null
+  hard_braking_rate?: number | null
   evaluation?: SimulationEvaluation
 }
 
@@ -191,6 +194,9 @@ export interface SimulationEvaluation {
   avg_queue_length: number | null
   throughput: number | null
   fuel_consumption: number | null
+  fuel_intensity_L_per_100km?: number | null
+  hard_braking_events?: number | null
+  hard_braking_rate?: number | null
   avg_decision_latency_ms: number | null
   departed: number
   arrived: number

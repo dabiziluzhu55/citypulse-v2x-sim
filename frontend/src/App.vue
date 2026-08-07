@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppBackgroundMap from './components/visualization/AppBackgroundMap.vue'
 import AppMapGradientMask from './components/visualization/AppMapGradientMask.vue'
@@ -12,9 +12,14 @@ const mapView = provideAppMapView()
 const mapDimension = computed(() => mapView.dimension.value)
 const isStandaloneRoute = computed(() => route.meta.standalone === true)
 const threeMapState = ref<'loading' | 'ready' | 'error'>('loading')
+const threeMapMounted = ref(false)
 const threeMapBlocked = computed(() => (
   mapDimension.value === '3d' && threeMapState.value !== 'ready'
 ))
+
+watch(mapDimension, (dimension) => {
+  if (dimension === '3d') threeMapMounted.value = true
+}, { immediate: true })
 
 function handleThreeMapState(nextState: 'loading' | 'ready' | 'error'): void {
   threeMapState.value = nextState
@@ -29,12 +34,15 @@ function returnTo2d(): void {
 <template>
   <router-view v-if="isStandaloneRoute" />
   <div v-else class="app-shell app-shell--dashboard">
-    <AppBackgroundMap v-if="mapDimension === '2d'" />
-    <AppThreeMapLoader
-      v-else
-      @return2d="returnTo2d"
-      @state-change="handleThreeMapState"
-    />
+    <div v-show="mapDimension === '2d'" class="app-map-layer">
+      <AppBackgroundMap />
+    </div>
+    <div v-if="threeMapMounted" v-show="mapDimension === '3d'" class="app-map-layer">
+      <AppThreeMapLoader
+        @return2d="returnTo2d"
+        @state-change="handleThreeMapState"
+      />
+    </div>
     <AppMapGradientMask />
 
     <DashboardChrome />
@@ -70,6 +78,11 @@ function returnTo2d(): void {
 .app-shell--dashboard {
   height: 100vh;
   overflow: hidden;
+}
+
+.app-map-layer {
+  position: absolute;
+  inset: 0;
 }
 
 .app-shell {

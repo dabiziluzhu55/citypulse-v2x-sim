@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 import { shouldApplySimulationSnapshot } from '../src/utils/snapshotOrdering.ts'
+import { simulationSnapshotErrorMessage } from '../src/utils/simulationSessionError.ts'
+
+const simulationStoreSource = await readFile(
+  new URL('../src/composables/useSimulationStore.ts', import.meta.url),
+  'utf8',
+)
 
 function snapshot(sequence, elapsedSeconds, state = 'RUNNING', sessionId = 'session-1') {
   return {
@@ -26,4 +33,33 @@ test('accepts playback state transitions published at the same sequence and time
   assert.equal(shouldApplySimulationSnapshot(current, snapshot(40, 8, 'PAUSED'), 'session-1'), true)
   assert.equal(shouldApplySimulationSnapshot(snapshot(40, 8, 'PAUSED'), snapshot(40, 8, 'RUNNING'), 'session-1'), true)
   assert.equal(shouldApplySimulationSnapshot(current, snapshot(40, 8, 'COMPLETED'), 'session-1'), true)
+})
+
+test('keeps asynchronous backend failures actionable and preserves raw details', () => {
+  assert.equal(
+    simulationSnapshotErrorMessage({
+      state: 'FAILED',
+      error: 'topology fingerprint mismatch: expected e3c6, got 1756',
+    }),
+    '算法模型与当前路网拓扑不匹配。后端详情：topology fingerprint mismatch: expected e3c6, got 1756',
+  )
+  assert.match(
+    simulationSnapshotErrorMessage({ state: 'FAILED', error: 'tensor shape mismatch' }),
+    /算法模型输入或动作契约不兼容.*tensor shape mismatch/,
+  )
+  assert.equal(
+    simulationSnapshotErrorMessage({ state: 'RUNNING', error: null }),
+    null,
+  )
+
+  const applySnapshotBlock = simulationStoreSource.slice(
+    simulationStoreSource.indexOf('function applySnapshot'),
+    simulationStoreSource.indexOf('function stopPolling'),
+  )
+  assert.match(applySnapshotBlock, /simulationSnapshotErrorMessage\(next\)/)
+  assert.match(applySnapshotBlock, /if \(snapshotFailure\) statusError\.value = snapshotFailure/)
+  assert.match(
+    applySnapshotBlock,
+    /next\.state === 'FAILED' && !next\.error && statusError\.value[\s\S]*Keep the detailed error/,
+  )
 })

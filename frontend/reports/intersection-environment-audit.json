@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-07T00:48:59.922Z",
+  "generatedAt": "2026-08-07T03:22:57.020Z",
   "reference": "huiyan-fe/mapv-three-showcases/src/pages/yizhuang",
   "policy": {
     "buildings": "one global local 3D Tiles source; Baidu native buildings disabled; sparse source areas are never fabricated",

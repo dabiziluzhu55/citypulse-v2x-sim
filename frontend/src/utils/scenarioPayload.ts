@@ -89,7 +89,7 @@ export function buildStartSimulationRequest(input: ScenarioPayloadInput): StartS
     duration_seconds: input.durationSeconds,
     control_mode: input.controlMode,
     seed: 42,
-    step_length: 0.05,
+    step_length: 0.1,
     realtime: true,
     gui: false,
     snapshot_interval_seconds: input.snapshotIntervalSeconds,

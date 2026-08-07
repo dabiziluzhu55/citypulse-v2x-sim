@@ -1,14 +1,10 @@
 export const MAP3D_MODULE_LOAD_TIMEOUT_MS = 15_000
-export const MAP3D_PRESENTATION_SOFT_TIMEOUT_MS = 30_000
 export const MAP3D_PRESENTATION_HARD_TIMEOUT_MS = 60_000
 export const MAP3D_STALL_WINDOW_MS = 10_000
 export const BUILDING_STABLE_SAMPLE_COUNT = 3
 export const BUILDING_STABLE_SAMPLE_INTERVAL_MS = 250
 export const FINAL_RENDER_FRAME_COUNT = 2
 export const BUILDING_MIN_READY_TILES = 128
-export const BUILDING_FULL_USABLE_COVERAGE = 0.97
-export const BUILDING_REDUCED_USABLE_COVERAGE = 0.94
-export const BUILDING_SOFT_USABLE_COVERAGE = 0.85
 
 export type Map3dRenderQuality = 'full' | 'reduced'
 export type Map3dPresentationDecision = 'wait' | 'present' | 'stalled' | 'hard-timeout'
@@ -79,16 +75,10 @@ export function minimumBuildingReadyTiles(totalTiles: number): number {
     : BUILDING_MIN_READY_TILES
 }
 
-export function buildingUsableCoverage(quality: Map3dRenderQuality): number {
-  return quality === 'reduced'
-    ? BUILDING_REDUCED_USABLE_COVERAGE
-    : BUILDING_FULL_USABLE_COVERAGE
-}
-
 export function advanceBuildingLoadTracker(
   previous: BuildingLoadTracker,
   sample: TilesetReadinessSample,
-  quality: Map3dRenderQuality,
+  _quality: Map3dRenderQuality,
 ): BuildingLoadTracker {
   const base = previous.cameraRevision === sample.cameraRevision
     ? previous
@@ -97,8 +87,8 @@ export function advanceBuildingLoadTracker(
   const pendingRequests = Math.floor(nonNegative(sample.pendingRequests))
   const processingTiles = Math.floor(nonNegative(sample.processingTiles))
   const attemptedRequests = Math.floor(nonNegative(sample.attemptedRequests))
-  const activeRequests = pendingRequests + processingTiles + attemptedRequests
-  const currentDemand = readyTiles + activeRequests
+  const activeRequests = pendingRequests + processingTiles
+  const currentDemand = readyTiles + activeRequests + attemptedRequests
   const demandedTiles = Math.max(base.demandedTiles, currentDemand)
   const coverage = demandedTiles > 0 ? Math.min(1, readyTiles / demandedTiles) : 0
   const totalTiles = Math.max(base.totalTiles, Math.floor(nonNegative(sample.totalTiles)))
@@ -108,7 +98,6 @@ export function advanceBuildingLoadTracker(
     || activeRequests !== base.previousActiveRequests
   const minimumReady = minimumBuildingReadyTiles(totalTiles)
   const usableNow = readyTiles >= minimumReady
-    && coverage >= buildingUsableCoverage(quality)
   const settledNow = readyTiles > 0 && activeRequests === 0
 
   return {
@@ -136,20 +125,11 @@ export function buildingPresentationSettled(tracker: BuildingLoadTracker): boole
   return tracker.settledSamples >= BUILDING_STABLE_SAMPLE_COUNT
 }
 
-export function buildingSoftPresentationUsable(
-  tracker: BuildingLoadTracker,
-  nowMs: number,
-): boolean {
-  return tracker.readyTiles >= minimumBuildingReadyTiles(tracker.totalTiles)
-    && tracker.coverage >= BUILDING_SOFT_USABLE_COVERAGE
-    && nowMs - tracker.lastProgressAtMs < MAP3D_STALL_WINDOW_MS
-}
-
 export function buildingLoadStalled(
   tracker: BuildingLoadTracker,
   nowMs: number,
 ): boolean {
-  return !buildingPresentationUsable(tracker)
+  return tracker.readyTiles === 0
     && nowMs - tracker.lastProgressAtMs >= MAP3D_STALL_WINDOW_MS
 }
 
@@ -174,16 +154,19 @@ export function resolveMap3dPresentationDecision(
 ): Map3dPresentationDecision {
   if (map3dPresentationReady(signals)) return 'present'
   if (
-    elapsedMs >= MAP3D_PRESENTATION_SOFT_TIMEOUT_MS
+    elapsedMs >= MAP3D_PRESENTATION_HARD_TIMEOUT_MS
     && corePresentationReady(signals)
-    && (!signals.buildingRequired || buildingSoftPresentationUsable(tracker, nowMs))
+    && (!signals.buildingRequired || tracker.readyTiles > 0)
   ) return 'present'
   if (
     corePresentationReady(signals)
     && signals.buildingRequired
     && buildingLoadStalled(tracker, nowMs)
   ) return 'stalled'
-  if (elapsedMs >= MAP3D_PRESENTATION_HARD_TIMEOUT_MS) return 'hard-timeout'
+  if (
+    elapsedMs >= MAP3D_PRESENTATION_HARD_TIMEOUT_MS
+    && !corePresentationReady(signals)
+  ) return 'hard-timeout'
   return 'wait'
 }
 

@@ -12,6 +12,7 @@ import {
   type SimulationSnapshot,
   type StartSimulationRequest,
 } from '../types/simulation.ts'
+import { simulationFuelIntensity } from '../utils/simulationEvaluation.ts'
 
 const STORAGE_KEY = 'citypulse.evaluation_comparison.v2'
 const LEGACY_STORAGE_KEY = 'citypulse.evaluation_comparison.v1'
@@ -120,13 +121,14 @@ function evaluationMetricStatuses(
   snapshot: SimulationSnapshot,
   evaluation: SimulationEvaluation,
 ): Record<EvaluationMetricKey, MetricPresentationStatus> {
+  const fuelIntensity = simulationFuelIntensity(evaluation)
   const contradictoryWaitingZero = !evaluation.finished
     && evaluation.avg_waiting_time === 0
     && (
       (snapshot.metrics.total_waiting_time ?? 0) > 0
       || (snapshot.metrics.halting_vehicles ?? 0) > 0
     )
-  const fuelExplicitlyUnavailable = evaluation.fuel_consumption == null
+  const fuelExplicitlyUnavailable = fuelIntensity == null
     && (evaluation.warnings ?? []).some((warning) => (
       /燃油|fuel|powertrain|里程/i.test(warning)
       && /不可用|无法|缺少|不足|unavailable|missing|invalid/i.test(warning)
@@ -138,7 +140,7 @@ function evaluationMetricStatuses(
       : metricStatus(evaluation.avg_waiting_time, evaluation.finished),
     fuel: fuelExplicitlyUnavailable
       ? 'unavailable'
-      : metricStatus(evaluation.fuel_consumption, evaluation.finished),
+      : metricStatus(fuelIntensity, evaluation.finished),
   }
 }
 
@@ -158,6 +160,7 @@ export function evaluationPoint(
     ? boundedTime
     : Math.floor(boundedTime / EVALUATION_BUCKET_SECONDS) * EVALUATION_BUCKET_SECONDS
   const metricStatuses = evaluationMetricStatuses(snapshot, evaluation)
+  const fuelIntensity = simulationFuelIntensity(evaluation)
   return {
     time,
     algorithm: evaluation.algorithm,
@@ -167,7 +170,10 @@ export function evaluationPoint(
     avg_travel_time: evaluation.avg_travel_time,
     avg_queue_length: evaluation.avg_queue_length,
     throughput: evaluation.throughput,
-    fuel_consumption: evaluation.fuel_consumption,
+    fuel_consumption: fuelIntensity,
+    fuel_intensity_L_per_100km: fuelIntensity,
+    hard_braking_events: evaluation.hard_braking_events ?? null,
+    hard_braking_rate: evaluation.hard_braking_rate ?? null,
     finished: evaluation.finished,
     metric_sources: { ...(evaluation.metric_sources ?? {}) },
     warnings: [...(evaluation.warnings ?? [])],

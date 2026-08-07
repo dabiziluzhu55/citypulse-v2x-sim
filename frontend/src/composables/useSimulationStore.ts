@@ -15,6 +15,7 @@ import {
 } from '../constants/simulationOptions'
 import { snapshotToTrafficView } from '../utils/trafficStateMerge'
 import { shouldApplySimulationSnapshot } from '../utils/snapshotOrdering'
+import { simulationSnapshotErrorMessage } from '../utils/simulationSessionError.ts'
 import {
   appendPlaybackRateSample,
   calculatePlaybackRate,
@@ -158,7 +159,11 @@ function applySnapshot(next: SimulationSnapshot) {
   snapshot.value = next
   acceptedState.value = next.state
   if (typeof next.playback_speed === 'number') activePlaybackSpeed.value = next.playback_speed
-  statusError.value = null
+  const snapshotFailure = simulationSnapshotErrorMessage(next)
+  if (next.state === 'FAILED' && !next.error && statusError.value) {
+    // Keep the detailed error from an earlier terminal snapshot.
+  } else if (snapshotFailure) statusError.value = snapshotFailure
+  else statusError.value = null
   if (isTerminal(next.state)) {
     stopPolling()
     localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
@@ -339,6 +344,10 @@ async function launchRun(
   }
 }
 
+function clearStatusError(): void {
+  statusError.value = null
+}
+
 async function runPlaybackControl(
   action: () => Promise<SimulationPlaybackResponse>,
   successMessage: string,
@@ -424,6 +433,7 @@ export function useSimulationStore() {
     startError,
     controlError,
     statusError,
+    clearStatusError,
     wsConnected,
     lastMessage,
     restoredSession,

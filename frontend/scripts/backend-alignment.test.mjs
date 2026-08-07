@@ -102,5 +102,11 @@ test('snapshot metrics use backend evaluation values without local estimation', 
     avg_queue_length: 4.25,
     throughput: 120,
     fuel_consumption: 6.2,
+    fuel_intensity_L_per_100km: 6.2,
+    hard_braking_events: null,
+    hard_braking_rate: null,
+    finished: false,
+    metric_sources: {},
+    warnings: [],
   }])
 })

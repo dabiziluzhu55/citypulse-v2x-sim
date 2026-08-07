@@ -68,6 +68,7 @@ const {
   activeControlMode,
   activePlaybackSpeed,
   achievedPlaybackSpeed,
+  clearStatusError,
   launchRun,
   pauseRun,
   resumeRun,
@@ -251,6 +252,7 @@ async function handleStop() {
         @resume="handleResume"
         @playback-speed="handlePlaybackSpeed"
         @stop="handleStop"
+        @dismiss-status-error="clearStatusError"
         @config-change-requested="handleConfigChangeRequested"
       />
     </div>

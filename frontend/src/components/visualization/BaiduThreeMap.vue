@@ -154,6 +154,7 @@ let intersectionTopologyLayer: IntersectionTopologyLayer | null = null
 let realisticDetailReady = false
 let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
+let webglRecoveryTimer: number | null = null
 let cameraFlightRevision = 0
 let cameraFlightActive = false
 let cameraFlightGuard: CameraFlightGuard | null = null
@@ -645,7 +646,9 @@ function createBuildingTileset(url: string): mapvthree.Default3DTiles {
     dynamicScreenSpaceError: false,
     foveatedScreenSpaceError: false,
     progressiveResolutionHeightFraction: 0.3,
-    cullRequestsWhileMoving: true,
+      // Keep the first batch alive while the overview camera and providers settle.
+      // Request culling is restored as soon as the black presentation gate opens.
+      cullRequestsWhileMoving: false,
     cullRequestsWhileMovingMultiplier: 60,
     cacheBytes: BUILDING_CACHE_BYTES,
   })) as mapvthree.Default3DTiles
@@ -655,7 +658,16 @@ function createBuildingTileset(url: string): mapvthree.Default3DTiles {
 }
 
 async function validateGlobalBuildingSource(): Promise<void> {
-  if (!import.meta.env.DEV || !enableLocalTileset) return
+  if (!enableLocalTileset) return
+  const tilesetResponse = await fetch(tilesetUrl)
+  if (!tilesetResponse.ok) {
+    throw new Error(`全域建筑 tileset 加载失败 (${tilesetResponse.status})`)
+  }
+  const tilesetJson = await tilesetResponse.json() as { asset?: unknown; root?: unknown }
+  if (!tilesetJson.asset || !tilesetJson.root) {
+    throw new Error('全域建筑 tileset 解析失败：缺少 asset 或 root')
+  }
+  if (!import.meta.env.DEV) return
   emit('loading', '正在检查全域本地建筑数据')
   const manifestUrl = buildingTilesetManifestUrl(tilesetUrl, window.location.href)
   const response = await fetch(manifestUrl)
@@ -868,9 +880,16 @@ function handleWebglContextLost(event: Event): void {
   presentationReady = false
   enableCameraInteraction()
   emit('loading', '三维图形上下文已丢失，正在恢复')
+  if (webglRecoveryTimer) clearTimeout(webglRecoveryTimer)
+  webglRecoveryTimer = window.setTimeout(() => {
+    webglRecoveryTimer = null
+    emit('fatal', new Error('三维图形上下文在 10 秒内未能恢复'))
+  }, 10_000)
 }
 
 function handleWebglContextRestored(): void {
+  if (webglRecoveryTimer) clearTimeout(webglRecoveryTimer)
+  webglRecoveryTimer = null
   error.value = null
   presentationStartedAt = performance.now()
   presentationReady = false
@@ -1064,6 +1083,7 @@ async function initMap(): Promise<void> {
   emit('loading', '正在完成三维场景渲染')
   if (!await waitForFinalRenderFrames()) return
   presentationReady = true
+  if (buildingTileset) buildingTileset.cullRequestsWhileMoving = true
   enableCameraInteraction()
   updateTilesStatus()
   if (enableLocalTileset || roadTileset) {
@@ -1098,8 +1118,10 @@ onUnmounted(() => {
   containerRef.value?.removeEventListener('webglcontextrestored', handleWebglContextRestored, true)
   if (tilesStatusTimer) clearInterval(tilesStatusTimer)
   if (interactionEndTimer) clearTimeout(interactionEndTimer)
+  if (webglRecoveryTimer) clearTimeout(webglRecoveryTimer)
   tilesStatusTimer = null
   interactionEndTimer = null
+  webglRecoveryTimer = null
   roadRenderer?.destroy()
   roadRenderer = null
   vehicleRenderer?.destroy()
