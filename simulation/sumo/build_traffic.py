@@ -1057,14 +1057,9 @@ def _filter_profile_candidates(
         for route in routes
         if _preferred_candidate(route, profile_id, policy)
     }
+    mode = policy.profiles[profile_id].candidate_mode
     fallback_reasons: dict[Tuple[str, ...], list[str]] = defaultdict(list)
     for location in sorted(required_locations, key=lambda item: item.location_id):
-        if any(
-            location.edges in route.covered_count_paths
-            or _route_contains(route.edges, location.edges)
-            for route in selected.values()
-        ):
-            continue
         matches = [
             route
             for route in routes
@@ -1076,15 +1071,43 @@ def _filter_profile_candidates(
                 f"{profile_id} candidate routes do not cover count path "
                 f"{location.location_id}: {location.edges}."
             )
-        chosen = min(
-            matches,
-            key=lambda route: _fallback_order(route, profile_id, policy),
+        covered_by_selected = any(
+            location.edges in route.covered_count_paths
+            or _route_contains(route.edges, location.edges)
+            for route in selected.values()
         )
-        selected[(chosen.kind, chosen.edges)] = chosen
-        fallback_reasons[chosen.edges].append(
-            f"{policy.profiles[profile_id].candidate_mode}:"
-            f"no_preferred_route_for_count_path:{location.location_id}"
-        )
+        if not covered_by_selected:
+            chosen = min(
+                matches,
+                key=lambda route: _fallback_order(route, profile_id, policy),
+            )
+            selected[(chosen.kind, chosen.edges)] = chosen
+            fallback_reasons[chosen.edges].append(
+                f"{mode}:no_preferred_route_for_count_path:"
+                f"{location.location_id}"
+            )
+
+        # Long pair routes couple multiple count equations. Keep one local
+        # degree of freedom per path so routeSampler can fit local residuals.
+        if mode == "long_pair":
+            local_matches = [route for route in matches if route.kind == "local"]
+            if local_matches:
+                residual = min(
+                    local_matches,
+                    key=lambda route: (
+                        route.distance_m,
+                        len(route.edges),
+                        route.edges,
+                        route.route_id,
+                    ),
+                )
+                selected[(residual.kind, residual.edges)] = residual
+                reason = (
+                    "long_pair:quality_residual_for_count_path:"
+                    f"{location.location_id}"
+                )
+                if reason not in fallback_reasons[residual.edges]:
+                    fallback_reasons[residual.edges].append(reason)
     ordered = tuple(
         sorted(
             selected.values(),
@@ -1500,6 +1523,10 @@ def _quality_report(
         "target_observation_pcu": sum(int(row["target_pcu"]) for row in rows),
         "actual_observation_pcu": sum(float(row["actual_pcu"]) for row in rows),
         "total_absolute_error_pcu": total_abs_error,
+        "failed_cell_count": sum(not bool(row["passed"]) for row in rows),
+        "failed_intersection_interval_total_count": sum(
+            not bool(item["passed"]) for item in intersection_totals
+        ),
         "geh_below_5_percentage": geh_ok_percentage,
         "sampled_vehicle_count": total_vehicles,
         "multi_intersection_vehicle_count": multi_count,
@@ -1915,6 +1942,23 @@ def _attempt_policy_score(attempt: Mapping[str, object]) -> Tuple[float, ...]:
         float(report["sampled_vehicle_count"]),
         float(attempt["seed"]),
         float(report["allocation_round"]),
+    )
+
+
+def _attempt_official_quality_score(
+    attempt: Mapping[str, object],
+) -> Tuple[float, ...]:
+    report = attempt["report"]
+    return (
+        float(report["failed_cell_count"]),
+        float(report["failed_intersection_interval_total_count"]),
+        float(report["total_absolute_error_pcu"]),
+        abs(
+            float(report["actual_observation_pcu"])
+            - float(report["target_observation_pcu"])
+        ),
+        -float(report["geh_below_5_percentage"]),
+        float(attempt["seed"]),
     )
 
 
@@ -2446,15 +2490,32 @@ def build_traffic_scenarios(
             round_passing = [
                 item for item in round_attempts if item["report"]["passed"]
             ]
-            if not round_passing:
-                break
-            passing_attempts.extend(round_passing)
-            round_selected = min(round_passing, key=_attempt_policy_score)
+            if round_passing:
+                passing_attempts.extend(round_passing)
+                round_selected = min(round_passing, key=_attempt_policy_score)
+            else:
+                round_selected = min(
+                    round_attempts,
+                    key=_attempt_official_quality_score,
+                )
             actual_shares = round_selected["report"]["vehicle_shares"]
             if _fleet_shares_within_tolerance(
                 actual_shares, desired_shares, policy
             ):
                 break
+            if allocation_round + 1 >= policy.mix_calibration_rounds:
+                break
+            if not round_passing:
+                closest_report = round_selected["report"]
+                print(
+                    f"WARNING: official traffic quality did not pass in "
+                    f"{period_id} allocation round {allocation_round}; using "
+                    f"closest seed {round_selected['seed']} only to calibrate "
+                    f"round {allocation_round + 1} "
+                    f"({closest_report['failed_cell_count']} failed cells, "
+                    f"{closest_report['failed_intersection_interval_total_count']} "
+                    "failed intersection totals)."
+                )
             allocation_shares = dict(
                 _calibrate_vehicle_shares(
                     allocation_shares,

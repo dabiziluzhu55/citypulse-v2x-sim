@@ -125,8 +125,17 @@ class TrafficGenerationPolicyTests(unittest.TestCase):
         bus, bus_fallbacks = _filter_profile_candidates(
             routes, "bus", (a, b, c), self.policy
         )
-        self.assertIn("pair_long", {route.route_id for route in bus})
-        self.assertIn("local_c", {route.route_id for route in bus})
+        self.assertEqual(
+            {route.route_id for route in bus},
+            {"pair_long", "local_a_short", "local_b_medium", "local_c"},
+        )
+        self.assertTrue(
+            any(
+                "quality_residual_for_count_path" in reason
+                for reasons in bus_fallbacks.values()
+                for reason in reasons
+            )
+        )
         self.assertIn(("c", "z"), bus_fallbacks)
 
         pair_only = CandidateRoute(

@@ -156,6 +156,22 @@ class RetrySumoToolchain(FakeSumoToolchain):
         return result
 
 
+class FirstRoundQualityFailureSumoToolchain(FakeSumoToolchain):
+    def __call__(self, command, **kwargs):
+        result = super().__call__(command, **kwargs)
+        if len(command) > 1 and command[1] == "fake-routeSampler.py":
+            output_path = _arg(command, "--output-file")
+            if "round0" in output_path.name:
+                root = ET.parse(output_path).getroot()
+                first = root.find("flow")
+                if first is not None:
+                    first.set("number", str(int(first.get("number")) + 10))
+                    ET.ElementTree(root).write(
+                        output_path, encoding="utf-8", xml_declaration=True
+                    )
+        return result
+
+
 class LegacyFlowWindowSumoToolchain(FakeSumoToolchain):
     def __call__(self, command, **kwargs):
         result = super().__call__(command, **kwargs)
@@ -985,6 +1001,45 @@ class GlobalTrafficTests(unittest.TestCase):
             ]
             self.assertEqual(sorted(set(sampler_seeds)), [42, 43, 44, 45, 46])
 
+    def test_failed_first_round_can_calibrate_into_passing_second_round(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            generated, manifest_intersections = _write_tls_fixture(
+                root, ("demo_a", "demo_b")
+            )
+            demand_path = root / "demands.json"
+            _write_demand(demand_path)
+            fake = FirstRoundQualityFailureSumoToolchain()
+            console = io.StringIO()
+            with redirect_stdout(console):
+                result = build_traffic_scenarios(
+                    {"intersections": manifest_intersections},
+                    demand_path=demand_path,
+                    vehicle_profile_path=PROFILES,
+                    output_dir=generated,
+                    command_runner=fake,
+                    tool_paths={
+                        "duarouter": "fake-duarouter",
+                        "sumo": "fake-sumo",
+                        "routeSampler": "fake-routeSampler.py",
+                    },
+                )
+
+            scenario = result["scenarios"]["global_morning_peak"]
+            report = json.loads(
+                (generated / scenario["quality_report"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(scenario["selected_allocation_round"], 1)
+            self.assertTrue(report["passed"])
+            self.assertEqual(report["failed_cell_count"], 0)
+            self.assertEqual(
+                report["failed_intersection_interval_total_count"], 0
+            )
+            self.assertIn(
+                "using closest seed 42 only to calibrate round 1",
+                console.getvalue(),
+            )
+
     def test_official_zero_movement_overflow_writes_failure_report(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1014,7 +1069,14 @@ class GlobalTrafficTests(unittest.TestCase):
                 generated / "reports" / "traffic_quality_morning_peak_failed.json"
             )
             failure = json.loads(failure_path.read_text(encoding="utf-8"))
-            self.assertEqual([item["seed"] for item in failure["attempts"]], [42, 43, 44, 45, 46])
+            self.assertEqual(
+                [item["seed"] for item in failure["attempts"]],
+                [42, 43, 44, 45, 46, 42, 43, 44, 45, 46],
+            )
+            self.assertEqual(
+                {item["allocation_round"] for item in failure["attempts"]},
+                {0, 1},
+            )
             zero_rows = [
                 row
                 for row in failure["attempts"][0]["cells"]
