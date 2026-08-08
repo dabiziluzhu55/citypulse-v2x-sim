@@ -25,6 +25,7 @@ from .config import (
 )
 from .network_validation import validate_source_compatibility
 from .traffic import TrafficDemandError, load_traffic_demands
+from .traffic_policy import TrafficGenerationPolicyError
 from .vehicle_profiles import VehicleProfileError
 
 
@@ -34,6 +35,7 @@ DEFAULT_MAPPING = SUMO_DIR / "TotalMap_20.intersections.json"
 DEFAULT_PLANS = SUMO_DIR / "official_tls_plans.json"
 DEFAULT_TOPOLOGY = SUMO_DIR / "official_tls_topology.json"
 DEFAULT_DEMANDS = SUMO_DIR / "official_traffic_demands.json"
+DEFAULT_TRAFFIC_POLICY = SUMO_DIR / "traffic_generation_policy.json"
 DEFAULT_BASE_NET = SUMO_DIR / "TotalMap_20.net.xml"
 DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
 
@@ -860,6 +862,7 @@ def build(
     source_net: Path = DEFAULT_BASE_NET,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     demand_path: Path = DEFAULT_DEMANDS,
+    traffic_policy_path: Path = DEFAULT_TRAFFIC_POLICY,
 ) -> Mapping[str, object]:
     configuration = load_signal_configuration(mapping_path, plans_path, topology_path)
     selected = configuration.select(
@@ -994,6 +997,7 @@ def build(
     build_traffic_scenarios(
         manifest,
         demand_path=demand_path,
+        traffic_policy_path=traffic_policy_path,
         output_dir=output_dir,
         intersection_ids=[item.intersection_id for item in selected],
     )
@@ -1012,6 +1016,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plans", type=Path, default=DEFAULT_PLANS)
     parser.add_argument("--topology", type=Path, default=DEFAULT_TOPOLOGY)
     parser.add_argument("--demand", type=Path, default=DEFAULT_DEMANDS)
+    parser.add_argument(
+        "--traffic-policy", type=Path, default=DEFAULT_TRAFFIC_POLICY
+    )
     parser.add_argument("--source-net", type=Path, default=DEFAULT_BASE_NET)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument(
@@ -1050,12 +1057,14 @@ def main() -> None:
             plans_path=args.plans,
             topology_path=args.topology,
             demand_path=args.demand,
+            traffic_policy_path=args.traffic_policy,
             source_net=args.source_net,
             output_dir=args.output_dir,
         )
     except (
         SignalConfigurationError,
         TrafficDemandError,
+        TrafficGenerationPolicyError,
         VehicleProfileError,
         RuntimeError,
         subprocess.CalledProcessError,

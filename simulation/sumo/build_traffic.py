@@ -28,6 +28,11 @@ from .traffic import (
     TrafficDemandError,
     load_traffic_demands,
 )
+from .traffic_policy import (
+    TrafficGenerationPolicy,
+    TrafficGenerationPolicyError,
+    load_traffic_generation_policy,
+)
 from .vehicle_profiles import (
     VehicleProfile,
     VehicleProfileError,
@@ -39,6 +44,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SUMO_DIR = PROJECT_ROOT / "data" / "maps" / "sumo"
 DEFAULT_DEMANDS = SUMO_DIR / "official_traffic_demands.json"
 DEFAULT_VEHICLE_PROFILES = SUMO_DIR / "vehicle_profiles.json"
+DEFAULT_TRAFFIC_POLICY = SUMO_DIR / "traffic_generation_policy.json"
 DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
 DEFAULT_MANIFEST = GeneratedArtifactLayout(DEFAULT_OUTPUT_DIR).tls_manifest
 ROUTE_SAMPLER_SEEDS = (42, 43, 44, 45, 46)
@@ -80,6 +86,7 @@ class RouteSamplerCapabilities:
 @dataclass(frozen=True)
 class NetworkRouteMetadata:
     edge_lengths: Mapping[str, float]
+    edge_speeds: Mapping[str, float]
     u_turn_pairs: frozenset[Tuple[str, str]]
     upstream_extensions: Mapping[str, str]
     downstream_extensions: Mapping[str, str]
@@ -94,6 +101,22 @@ class SampledFlow:
     end: float
     number: int
     edges: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CandidateRoute:
+    route_id: str
+    kind: str
+    edges: Tuple[str, ...]
+    distance_m: float
+    covered_count_paths: Tuple[Tuple[str, ...], ...] = ()
+
+
+@dataclass(frozen=True)
+class CandidatePool:
+    path: Path
+    fallback_routes: Mapping[Tuple[str, ...], Tuple[str, ...]]
+    candidate_count: int
 
 
 @dataclass(frozen=True)
@@ -683,6 +706,7 @@ def _inspect_route_network(
     endpoints = {}
     lane_counts = {}
     edge_lengths = {}
+    edge_speeds = {}
     for edge in root.findall("edge"):
         edge_id = edge.get("id")
         if (
@@ -699,6 +723,7 @@ def _inspect_route_network(
         lanes = edge.findall("lane")
         lane_counts[str(edge_id)] = len(lanes)
         lengths = []
+        speeds = []
         for lane in lanes:
             try:
                 length = float(str(lane.get("length", "")))
@@ -706,9 +731,18 @@ def _inspect_route_network(
                 continue
             if math.isfinite(length) and length > 0:
                 lengths.append(length)
+            try:
+                speed = float(str(lane.get("speed", "")))
+            except ValueError:
+                continue
+            if math.isfinite(speed) and speed > 0:
+                speeds.append(speed)
         if lengths:
             # Keep midpoint positions valid when parallel lanes differ slightly.
             edge_lengths[str(edge_id)] = min(lengths)
+        if speeds:
+            # A best-lane free-flow estimate is an intentional lower bound.
+            edge_speeds[str(edge_id)] = max(speeds)
 
     by_endpoints: dict[Tuple[str, str], list[str]] = defaultdict(list)
     for edge_id, edge_endpoints in endpoints.items():
@@ -880,6 +914,7 @@ def _inspect_route_network(
 
     return NetworkRouteMetadata(
         edge_lengths=edge_lengths,
+        edge_speeds=edge_speeds,
         u_turn_pairs=u_turn_pairs,
         upstream_extensions=upstream_extensions,
         downstream_extensions=downstream_extensions,
@@ -887,10 +922,29 @@ def _inspect_route_network(
     )
 
 
+def _route_distance_m(
+    edges: Sequence[str], network_metadata: NetworkRouteMetadata
+) -> float:
+    if not edges:
+        return 0.0
+    try:
+        lengths = [network_metadata.edge_lengths[edge_id] for edge_id in edges]
+    except KeyError as exc:
+        raise TrafficDemandError(
+            f"Candidate route references an edge without a positive length: {exc.args[0]!r}."
+        ) from exc
+    distance = sum(lengths)
+    if len(lengths) == 1:
+        return 0.0
+    return distance - lengths[0] * 0.5 - lengths[-1] * 0.5
+
+
 def _read_candidate_routes(
     path: Path,
+    network_metadata: NetworkRouteMetadata,
     u_turn_pairs: set[Tuple[str, str]] | None = None,
-) -> Tuple[Tuple[str, ...], ...]:
+    count_paths: Sequence[Tuple[str, ...]] = (),
+) -> Tuple[CandidateRoute, ...]:
     try:
         root = ET.parse(path).getroot()
     except (FileNotFoundError, ET.ParseError) as exc:
@@ -899,7 +953,7 @@ def _read_candidate_routes(
         str(item.get("id")): tuple(str(item.get("edges", "")).split())
         for item in root.findall("route")
     }
-    routes = set()
+    routes = {}
     forbidden_u_turns = u_turn_pairs or set()
     for vehicle in root.findall("vehicle"):
         route_node = vehicle.find("route")
@@ -907,26 +961,140 @@ def _read_candidate_routes(
             edges = tuple(str(route_node.get("edges", "")).split())
         else:
             edges = route_defs.get(str(vehicle.get("route")), ())
+        route_id = str(vehicle.get("id", ""))
+        kind = "pair" if route_id.startswith("pair_") else "local"
         has_u_turn = any(
             (first, second) in forbidden_u_turns
             for first, second in zip(edges, edges[1:])
         )
         if len(edges) >= 2 and len(set(edges)) == len(edges) and not has_u_turn:
-            routes.add(edges)
-    return tuple(sorted(routes))
+            key = (kind, edges)
+            routes[key] = CandidateRoute(
+                route_id=route_id or f"{kind}_{len(routes)}",
+                kind=kind,
+                edges=edges,
+                distance_m=_route_distance_m(edges, network_metadata),
+                covered_count_paths=tuple(
+                    sorted(
+                        path
+                        for path in count_paths
+                        if _route_contains(edges, path)
+                    )
+                ),
+            )
+    return tuple(
+        sorted(
+            routes.values(),
+            key=lambda item: (item.kind, item.distance_m, item.edges, item.route_id),
+        )
+    )
 
 
-def _write_candidate_routes(path: Path, routes: Sequence[Tuple[str, ...]]) -> None:
+def _write_candidate_routes(path: Path, routes: Sequence[CandidateRoute]) -> None:
     root = ET.Element("routes")
-    for index, edges in enumerate(routes):
+    for index, route in enumerate(routes):
         vehicle = ET.SubElement(
             root,
             "vehicle",
-            {"id": f"candidate_{index:06d}", "depart": str(index)},
+            {
+                "id": f"{route.kind}_{index:06d}",
+                "depart": str(index),
+            },
         )
-        ET.SubElement(vehicle, "route", {"edges": " ".join(edges)})
+        ET.SubElement(vehicle, "route", {"edges": " ".join(route.edges)})
     ET.indent(root, space="  ")
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+
+def _preferred_candidate(
+    route: CandidateRoute,
+    profile_id: str,
+    policy: TrafficGenerationPolicy,
+) -> bool:
+    profile_policy = policy.profiles[profile_id]
+    if profile_policy.candidate_mode == "local_short":
+        return (
+            route.kind == "local"
+            and profile_policy.maximum_local_distance_m is not None
+            and route.distance_m < profile_policy.maximum_local_distance_m
+        )
+    if profile_policy.candidate_mode == "local_and_near_pair":
+        return route.kind == "local" or (
+            route.kind == "pair"
+            and profile_policy.maximum_pair_distance_m is not None
+            and route.distance_m <= profile_policy.maximum_pair_distance_m
+        )
+    return (
+        route.kind == "pair"
+        and profile_policy.minimum_pair_distance_m is not None
+        and route.distance_m >= profile_policy.minimum_pair_distance_m
+    )
+
+
+def _fallback_order(
+    route: CandidateRoute,
+    profile_id: str,
+    policy: TrafficGenerationPolicy,
+) -> Tuple[int, float, int, Tuple[str, ...]]:
+    mode = policy.profiles[profile_id].candidate_mode
+    if mode == "local_short":
+        kind_rank = 0 if route.kind == "local" else 1
+    elif mode == "long_pair":
+        kind_rank = 0 if route.kind == "pair" else 1
+    else:
+        kind_rank = 0
+    return kind_rank, route.distance_m, len(route.edges), route.edges
+
+
+def _filter_profile_candidates(
+    routes: Sequence[CandidateRoute],
+    profile_id: str,
+    required_locations: Sequence[CountLocation],
+    policy: TrafficGenerationPolicy,
+) -> Tuple[Tuple[CandidateRoute, ...], Mapping[Tuple[str, ...], Tuple[str, ...]]]:
+    selected = {
+        (route.kind, route.edges): route
+        for route in routes
+        if _preferred_candidate(route, profile_id, policy)
+    }
+    fallback_reasons: dict[Tuple[str, ...], list[str]] = defaultdict(list)
+    for location in sorted(required_locations, key=lambda item: item.location_id):
+        if any(
+            location.edges in route.covered_count_paths
+            or _route_contains(route.edges, location.edges)
+            for route in selected.values()
+        ):
+            continue
+        matches = [
+            route
+            for route in routes
+            if location.edges in route.covered_count_paths
+            or _route_contains(route.edges, location.edges)
+        ]
+        if not matches:
+            raise TrafficDemandError(
+                f"{profile_id} candidate routes do not cover count path "
+                f"{location.location_id}: {location.edges}."
+            )
+        chosen = min(
+            matches,
+            key=lambda route: _fallback_order(route, profile_id, policy),
+        )
+        selected[(chosen.kind, chosen.edges)] = chosen
+        fallback_reasons[chosen.edges].append(
+            f"{policy.profiles[profile_id].candidate_mode}:"
+            f"no_preferred_route_for_count_path:{location.location_id}"
+        )
+    ordered = tuple(
+        sorted(
+            selected.values(),
+            key=lambda item: (item.kind, item.distance_m, item.edges, item.route_id),
+        )
+    )
+    return ordered, {
+        edges: tuple(reasons)
+        for edges, reasons in sorted(fallback_reasons.items())
+    }
 
 
 def _build_candidates(
@@ -934,11 +1102,11 @@ def _build_candidates(
     network_path: Path,
     network_metadata: NetworkRouteMetadata,
     compiled: CompiledGlobalDemand,
-    class_targets,
     profiles: Mapping[str, VehicleProfile],
+    policy: TrafficGenerationPolicy,
     tools: Mapping[str, str],
     runner,
-) -> Mapping[str, Path]:
+) -> Mapping[str, CandidatePool]:
     locations = tuple(sorted(compiled.locations.values(), key=lambda item: item.location_id))
     by_vclass: dict[str, list[str]] = defaultdict(list)
     for profile_id in sorted(profiles):
@@ -948,7 +1116,6 @@ def _build_candidates(
         profile = profiles[profile_ids[0]]
         trips_path = work_dir / f"candidate_{_safe_id(vclass)}.trips.xml"
         raw_path = work_dir / f"candidate_{_safe_id(vclass)}.raw.rou.xml"
-        clean_path = work_dir / f"candidate_{_safe_id(vclass)}.rou.xml"
         _write_candidate_trips(
             trips_path,
             profile,
@@ -974,28 +1141,36 @@ def _build_candidates(
             ],
             runner,
         )
-        routes = _read_candidate_routes(raw_path, set(network_metadata.u_turn_pairs))
+        routes = _read_candidate_routes(
+            raw_path,
+            network_metadata,
+            set(network_metadata.u_turn_pairs),
+            tuple(compiled.locations),
+        )
         if not routes:
             raise TrafficDemandError(f"duarouter produced no {vclass} candidate routes.")
-        _write_candidate_routes(clean_path, routes)
         for profile_id in profile_ids:
             required = {
                 edges
-                for intervals in class_targets.values()
+                for intervals in compiled.targets.values()
                 for interval in intervals
-                for edges, counts in interval.items()
-                if counts[profile_id] > 0
+                for edges, target in interval.items()
+                if target > 0
             }
-            missing = [
-                edges
-                for edges in sorted(required)
-                if not any(_route_contains(route, edges) for route in routes)
-            ]
-            if missing:
-                raise TrafficDemandError(
-                    f"{profile_id} candidate routes do not cover count paths: {missing[:10]}"
-                )
-            result[profile_id] = clean_path
+            required_locations = tuple(compiled.locations[edges] for edges in required)
+            filtered, fallbacks = _filter_profile_candidates(
+                routes,
+                profile_id,
+                required_locations,
+                policy,
+            )
+            profile_path = work_dir / f"candidate_{_safe_id(profile_id)}.rou.xml"
+            _write_candidate_routes(profile_path, filtered)
+            result[profile_id] = CandidatePool(
+                path=profile_path,
+                fallback_routes=fallbacks,
+                candidate_count=len(filtered),
+            )
     return result
 
 
@@ -1351,6 +1526,398 @@ def _quality_report(
     }
 
 
+def _weighted_quantile(
+    values: Sequence[Tuple[float, int]], quantile: float
+) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted((float(value), int(weight)) for value, weight in values if weight > 0)
+    total_weight = sum(weight for _, weight in ordered)
+    if total_weight <= 0:
+        return 0.0
+    target = min(max(float(quantile), 0.0), 1.0) * (total_weight - 1)
+    cumulative = 0
+    for value, weight in ordered:
+        cumulative += weight
+        if cumulative > target:
+            return value
+    return ordered[-1][0]
+
+
+def _route_freeflow_seconds(
+    edges: Sequence[str],
+    profile: VehicleProfile,
+    network_metadata: NetworkRouteMetadata,
+) -> float:
+    if len(edges) <= 1:
+        return 0.0
+    total = 0.0
+    for index, edge_id in enumerate(edges):
+        try:
+            length = network_metadata.edge_lengths[edge_id]
+        except KeyError as exc:
+            raise TrafficDemandError(
+                f"Sampled route references an edge without a positive length: "
+                f"{exc.args[0]!r}."
+            ) from exc
+        if index == 0 or index == len(edges) - 1:
+            length *= 0.5
+        edge_speed = network_metadata.edge_speeds.get(
+            edge_id, profile.max_speed_mps
+        )
+        speed = min(profile.max_speed_mps, edge_speed)
+        if speed <= 0:
+            raise TrafficDemandError(
+                f"Sampled route edge {edge_id!r} has no positive speed."
+            )
+        total += length / speed
+    return total
+
+
+def _route_distribution(
+    flows: Sequence[SampledFlow],
+    profile_by_type: Mapping[str, VehicleProfile],
+    network_metadata: NetworkRouteMetadata,
+    locations: Mapping[Tuple[str, ...], CountLocation],
+    policy: TrafficGenerationPolicy,
+    fallback_edges: frozenset[Tuple[str, ...]] = frozenset(),
+    fleet_total: int | None = None,
+) -> Mapping[str, object]:
+    vehicle_count = sum(flow.number for flow in flows if flow.number > 0)
+    weighted_distances = []
+    short_count = 0
+    medium_count = 0
+    long_count = 0
+    freeflow_vehicle_seconds = 0.0
+    covered_intersection_sum = 0
+    fallback_vehicle_count = 0
+    for flow in flows:
+        if flow.number <= 0:
+            continue
+        try:
+            profile = profile_by_type[flow.type_id]
+        except KeyError as exc:
+            raise TrafficDemandError(
+                f"Flow {flow.flow_id} references unknown type {flow.type_id!r}."
+            ) from exc
+        distance = _route_distance_m(flow.edges, network_metadata)
+        weighted_distances.append((distance, flow.number))
+        if distance < policy.short_route_max_m:
+            short_count += flow.number
+        elif distance < policy.long_route_min_m:
+            medium_count += flow.number
+        else:
+            long_count += flow.number
+        freeflow_vehicle_seconds += (
+            _route_freeflow_seconds(flow.edges, profile, network_metadata)
+            * flow.number
+        )
+        covered_intersections = {
+            location.intersection_id
+            for edges, location in locations.items()
+            if _route_contains(flow.edges, edges)
+        }
+        covered_intersection_sum += len(covered_intersections) * flow.number
+        if flow.edges in fallback_edges:
+            fallback_vehicle_count += flow.number
+
+    weighted_distance_sum = sum(
+        distance * count for distance, count in weighted_distances
+    )
+    denominator = vehicle_count if vehicle_count else 1
+    return {
+        "vehicle_count": vehicle_count,
+        "fleet_share": (
+            vehicle_count / fleet_total
+            if fleet_total is not None and fleet_total > 0
+            else (1.0 if vehicle_count else 0.0)
+        ),
+        "short_route_count": short_count,
+        "short_route_share": short_count / denominator if vehicle_count else 0.0,
+        "medium_route_count": medium_count,
+        "medium_route_share": medium_count / denominator if vehicle_count else 0.0,
+        "long_route_count": long_count,
+        "long_route_share": long_count / denominator if vehicle_count else 0.0,
+        "distance_m": {
+            "mean": weighted_distance_sum / denominator if vehicle_count else 0.0,
+            "median": _weighted_quantile(weighted_distances, 0.50),
+            "p90": _weighted_quantile(weighted_distances, 0.90),
+            "p95": _weighted_quantile(weighted_distances, 0.95),
+            "maximum": max(
+                (distance for distance, _ in weighted_distances), default=0.0
+            ),
+        },
+        "estimated_freeflow_vehicle_seconds": freeflow_vehicle_seconds,
+        "average_official_intersections_covered": (
+            covered_intersection_sum / denominator if vehicle_count else 0.0
+        ),
+        "fallback_vehicle_count": fallback_vehicle_count,
+        "fallback_vehicle_share": (
+            fallback_vehicle_count / denominator if vehicle_count else 0.0
+        ),
+    }
+
+
+def _policy_violation(
+    code: str,
+    actual: float,
+    target: float,
+    comparator: str,
+    deviation: float,
+    scale: float,
+    **context: object,
+) -> Mapping[str, object]:
+    return {
+        "code": code,
+        "actual": actual,
+        "target": target,
+        "comparator": comparator,
+        "deviation": deviation,
+        "normalized_deviation": deviation / max(scale, 1e-12),
+        **context,
+    }
+
+
+def _route_policy_report(
+    period_id: str,
+    period: DemandPeriod,
+    flows: Sequence[SampledFlow],
+    profiles: Mapping[str, VehicleProfile],
+    desired_shares: Mapping[str, float],
+    compiled: CompiledGlobalDemand,
+    network_metadata: NetworkRouteMetadata,
+    policy: TrafficGenerationPolicy,
+    candidate_pools: Mapping[str, CandidatePool],
+) -> Mapping[str, object]:
+    profile_by_type = {
+        f"official_{_safe_id(profile_id)}": profile
+        for profile_id, profile in profiles.items()
+    }
+    total_vehicles = sum(flow.number for flow in flows if flow.number > 0)
+    profile_reports = {}
+    fallback_details = {}
+    for profile_id, profile in sorted(profiles.items()):
+        own_flows = tuple(
+            flow
+            for flow in flows
+            if flow.type_id == f"official_{_safe_id(profile_id)}"
+        )
+        pool = candidate_pools[profile_id]
+        profile_reports[profile_id] = _route_distribution(
+            own_flows,
+            profile_by_type,
+            network_metadata,
+            compiled.locations,
+            policy,
+            frozenset(pool.fallback_routes),
+            total_vehicles,
+        )
+        selected_by_route: dict[Tuple[str, ...], int] = defaultdict(int)
+        for flow in own_flows:
+            selected_by_route[flow.edges] += flow.number
+        fallback_details[profile_id] = [
+            {
+                "edges": list(edges),
+                "reasons": list(reasons),
+                "selected_vehicle_count": selected_by_route.get(edges, 0),
+            }
+            for edges, reasons in sorted(pool.fallback_routes.items())
+        ]
+
+    overall = _route_distribution(
+        flows,
+        profile_by_type,
+        network_metadata,
+        compiled.locations,
+        policy,
+        fleet_total=total_vehicles,
+    )
+    baseline = policy.baselines[period_id]
+    maximum_vehicle_count = (
+        baseline.vehicle_count * policy.maximum_vehicle_count_multiplier
+    )
+    maximum_freeflow_seconds = (
+        baseline.freeflow_vehicle_seconds
+        * policy.maximum_freeflow_vehicle_seconds_ratio
+    )
+    freeflow_seconds = float(overall["estimated_freeflow_vehicle_seconds"])
+    load = {
+        "estimated_freeflow_vehicle_seconds": freeflow_seconds,
+        "estimated_average_active_vehicles": (
+            freeflow_seconds / period.duration if period.duration > 0 else 0.0
+        ),
+        "baseline_vehicle_count": baseline.vehicle_count,
+        "baseline_freeflow_vehicle_seconds": baseline.freeflow_vehicle_seconds,
+        "vehicle_count_ratio": (
+            total_vehicles / baseline.vehicle_count
+            if baseline.vehicle_count > 0
+            else 0.0
+        ),
+        "freeflow_vehicle_seconds_ratio": (
+            freeflow_seconds / baseline.freeflow_vehicle_seconds
+            if baseline.freeflow_vehicle_seconds > 0
+            else 0.0
+        ),
+        "maximum_vehicle_count": maximum_vehicle_count,
+        "maximum_freeflow_vehicle_seconds": maximum_freeflow_seconds,
+    }
+
+    violations = []
+    overall_long_share = float(overall["long_route_share"])
+    if overall_long_share > policy.overall_long_share_max + 1e-12:
+        violations.append(
+            _policy_violation(
+                "overall_long_route_share",
+                overall_long_share,
+                policy.overall_long_share_max,
+                "<=",
+                overall_long_share - policy.overall_long_share_max,
+                policy.overall_long_share_max,
+            )
+        )
+    for profile_id, report in profile_reports.items():
+        profile_policy = policy.profiles[profile_id]
+        actual_share = float(report["fleet_share"])
+        desired_share = float(desired_shares[profile_id])
+        tolerance = profile_policy.fleet_share_tolerance
+        fleet_deviation = abs(actual_share - desired_share)
+        if fleet_deviation > tolerance + 1e-12:
+            violations.append(
+                _policy_violation(
+                    "fleet_share",
+                    actual_share,
+                    desired_share,
+                    "+/-",
+                    fleet_deviation - tolerance,
+                    tolerance,
+                    profile_id=profile_id,
+                    tolerance=tolerance,
+                )
+            )
+        long_share = float(report["long_route_share"])
+        if (
+            profile_policy.minimum_long_share is not None
+            and long_share < profile_policy.minimum_long_share - 1e-12
+        ):
+            violations.append(
+                _policy_violation(
+                    "minimum_long_route_share",
+                    long_share,
+                    profile_policy.minimum_long_share,
+                    ">=",
+                    profile_policy.minimum_long_share - long_share,
+                    profile_policy.minimum_long_share,
+                    profile_id=profile_id,
+                )
+            )
+        if (
+            profile_policy.maximum_long_share is not None
+            and long_share > profile_policy.maximum_long_share + 1e-12
+        ):
+            violations.append(
+                _policy_violation(
+                    "maximum_long_route_share",
+                    long_share,
+                    profile_policy.maximum_long_share,
+                    "<=",
+                    long_share - profile_policy.maximum_long_share,
+                    profile_policy.maximum_long_share,
+                    profile_id=profile_id,
+                )
+            )
+    if total_vehicles > maximum_vehicle_count + 1e-12:
+        violations.append(
+            _policy_violation(
+                "maximum_vehicle_count",
+                total_vehicles,
+                maximum_vehicle_count,
+                "<=",
+                total_vehicles - maximum_vehicle_count,
+                maximum_vehicle_count,
+            )
+        )
+    if freeflow_seconds > maximum_freeflow_seconds + 1e-12:
+        violations.append(
+            _policy_violation(
+                "maximum_freeflow_vehicle_seconds",
+                freeflow_seconds,
+                maximum_freeflow_seconds,
+                "<=",
+                freeflow_seconds - maximum_freeflow_seconds,
+                maximum_freeflow_seconds,
+            )
+        )
+    return {
+        "passed": not violations,
+        "violation_count": len(violations),
+        "normalized_total_violation": sum(
+            float(item["normalized_deviation"]) for item in violations
+        ),
+        "violations": violations,
+        "distance_classes": {
+            "short": f"< {policy.short_route_max_m:g} m",
+            "medium": (
+                f">= {policy.short_route_max_m:g} m and "
+                f"< {policy.long_route_min_m:g} m"
+            ),
+            "long": f">= {policy.long_route_min_m:g} m",
+            "short_route_max_m": policy.short_route_max_m,
+            "long_route_min_m": policy.long_route_min_m,
+        },
+        "overall": overall,
+        "profiles": profile_reports,
+        "load": load,
+        "candidate_fallbacks": fallback_details,
+        "candidate_counts": {
+            profile_id: pool.candidate_count
+            for profile_id, pool in sorted(candidate_pools.items())
+        },
+    }
+
+
+def _fleet_shares_within_tolerance(
+    actual_shares: Mapping[str, float],
+    desired_shares: Mapping[str, float],
+    policy: TrafficGenerationPolicy,
+) -> bool:
+    return all(
+        abs(float(actual_shares.get(profile_id, 0.0)) - desired_share)
+        <= policy.profiles[profile_id].fleet_share_tolerance + 1e-12
+        for profile_id, desired_share in desired_shares.items()
+    )
+
+
+def _calibrate_vehicle_shares(
+    current_shares: Mapping[str, float],
+    desired_shares: Mapping[str, float],
+    actual_shares: Mapping[str, float],
+) -> Mapping[str, float]:
+    adjusted = {}
+    for profile_id in sorted(desired_shares):
+        actual = float(actual_shares.get(profile_id, 0.0))
+        correction = (
+            float(desired_shares[profile_id]) / actual if actual > 0 else 2.0
+        )
+        adjusted[profile_id] = float(current_shares[profile_id]) * correction
+    total = sum(adjusted.values())
+    if total <= 0:
+        raise TrafficDemandError("Vehicle share calibration produced zero total weight.")
+    return {profile_id: value / total for profile_id, value in adjusted.items()}
+
+
+def _attempt_policy_score(attempt: Mapping[str, object]) -> Tuple[float, ...]:
+    report = attempt["report"]
+    route_policy = report["route_policy"]
+    return (
+        float(route_policy["violation_count"]),
+        float(route_policy["normalized_total_violation"]),
+        float(route_policy["load"]["estimated_freeflow_vehicle_seconds"]),
+        float(report["sampled_vehicle_count"]),
+        float(attempt["seed"]),
+        float(report["allocation_round"]),
+    )
+
+
 def _write_quality_report(
     json_path: Path,
     csv_path: Path,
@@ -1620,12 +2187,14 @@ def build_traffic_scenarios(
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     intersection_ids: Sequence[str] | None = None,
     *,
+    traffic_policy_path: Path = DEFAULT_TRAFFIC_POLICY,
     command_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     tool_paths: Mapping[str, str] | None = None,
     validate_sumo: bool = True,
 ) -> Mapping[str, object]:
     configuration = load_traffic_demands(demand_path)
     all_profiles = load_vehicle_profiles(vehicle_profile_path)
+    policy = load_traffic_generation_policy(traffic_policy_path)
     referenced = set(configuration.vehicle_mix.shares)
     missing_profiles = referenced - set(all_profiles)
     if missing_profiles:
@@ -1633,6 +2202,12 @@ def build_traffic_scenarios(
             f"Traffic mix references unknown vehicle profiles: {sorted(missing_profiles)}"
         )
     profiles = {name: all_profiles[name] for name in sorted(referenced)}
+    if set(policy.profiles) != set(profiles):
+        raise TrafficGenerationPolicyError(
+            "Traffic generation policy profiles must exactly match the traffic "
+            f"mix profiles; policy={sorted(policy.profiles)}, "
+            f"traffic_mix={sorted(profiles)}."
+        )
     manifest_intersections = tls_manifest.get("intersections", {})
     requested = (
         tuple(intersection_ids)
@@ -1668,6 +2243,12 @@ def build_traffic_scenarios(
     compiled = _compile_global_demand(
         requested, manifest_intersections, configuration
     )
+    missing_baselines = set(compiled.periods) - set(policy.baselines)
+    if missing_baselines:
+        raise TrafficGenerationPolicyError(
+            "Traffic generation policy has no load baseline for periods: "
+            f"{sorted(missing_baselines)}."
+        )
     official_junction_ids = tuple(
         str(junction_id)
         for intersection_id in requested
@@ -1689,10 +2270,6 @@ def build_traffic_scenarios(
         configured_extensions,
     )
     tools = _toolchain(tool_paths)
-    class_targets = _class_targets(
-        compiled, configuration.vehicle_mix.shares, profiles
-    )
-
     layout.create_base_directories()
     traffic_root = output_dir / "traffic"
     if traffic_root.exists():
@@ -1706,13 +2283,13 @@ def build_traffic_scenarios(
     work_dir = traffic_root / ".work"
     work_dir.mkdir()
 
-    candidate_paths = _build_candidates(
+    candidate_pools = _build_candidates(
         work_dir,
         layout.network_file,
         network_metadata,
         compiled,
-        class_targets,
         profiles,
+        policy,
         tools,
         command_runner,
     )
@@ -1729,6 +2306,7 @@ def build_traffic_scenarios(
             "shares": dict(configuration.vehicle_mix.shares),
         },
         "vehicle_profile_source": str(vehicle_profile_path.resolve()),
+        "traffic_generation_policy_source": str(traffic_policy_path.resolve()),
         "vehicle_profile_schema_version": 2,
         "vehicle_profiles": {
             profile_id: asdict(profile)
@@ -1778,95 +2356,146 @@ def build_traffic_scenarios(
     }
 
     for period_id, period in compiled.periods.items():
-        counts_paths = {}
-        for profile_id in profiles:
-            counts_path = work_dir / f"counts_{period_id}_{profile_id}.xml"
-            _write_turn_counts(
-                counts_path,
-                period,
-                class_targets[period_id],
-                profile_id,
-            )
-            counts_paths[profile_id] = counts_path
-
+        desired_shares = dict(configuration.vehicle_mix.shares)
+        allocation_shares = dict(desired_shares)
         attempts = []
-        selected = None
-        seeds = ROUTE_SAMPLER_SEEDS
-        for seed_index, seed in enumerate(seeds):
-            sampled_flows = []
-            mismatch_paths = {}
+        passing_attempts = []
+        for allocation_round in range(policy.mix_calibration_rounds):
+            round_targets = _class_targets(
+                compiled, allocation_shares, profiles
+            )[period_id]
+            counts_paths = {}
             for profile_id in profiles:
-                sample_path = work_dir / f"sample_{period_id}_{profile_id}_{seed}.rou.xml"
-                mismatch_path = work_dir / f"mismatch_{period_id}_{profile_id}_{seed}.xml"
-                sampled_flows.extend(
-                    _run_route_sampler(
-                        tools,
-                        command_runner,
-                        candidate_paths[profile_id],
-                        counts_paths[profile_id],
-                        sample_path,
-                        mismatch_path,
-                        profile_id,
-                        period,
-                        configuration.interval_seconds,
-                        seed,
+                counts_path = work_dir / (
+                    f"counts_{period_id}_round{allocation_round}_{profile_id}.xml"
+                )
+                _write_turn_counts(
+                    counts_path,
+                    period,
+                    round_targets,
+                    profile_id,
+                )
+                counts_paths[profile_id] = counts_path
+
+            round_attempts = []
+            for seed_index, seed in enumerate(ROUTE_SAMPLER_SEEDS):
+                sampled_flows = []
+                mismatch_paths = {}
+                for profile_id in profiles:
+                    sample_path = work_dir / (
+                        f"sample_{period_id}_round{allocation_round}_"
+                        f"{profile_id}_{seed}.rou.xml"
+                    )
+                    mismatch_path = work_dir / (
+                        f"mismatch_{period_id}_round{allocation_round}_"
+                        f"{profile_id}_{seed}.xml"
+                    )
+                    sampled_flows.extend(
+                        _run_route_sampler(
+                            tools,
+                            command_runner,
+                            candidate_pools[profile_id].path,
+                            counts_paths[profile_id],
+                            sample_path,
+                            mismatch_path,
+                            profile_id,
+                            period,
+                            configuration.interval_seconds,
+                            seed,
+                        )
+                    )
+                    mismatch_paths[profile_id] = mismatch_path
+                report = dict(
+                    _quality_report(
+                        period_id,
+                        compiled,
+                        sampled_flows,
+                        profiles,
+                        round_targets,
                     )
                 )
-                mismatch_paths[profile_id] = mismatch_path
-            report = dict(
-                _quality_report(
+                report["seed"] = seed
+                report["allocation_round"] = allocation_round
+                report["allocation_shares"] = dict(sorted(allocation_shares.items()))
+                report["route_policy"] = _route_policy_report(
                     period_id,
-                    compiled,
+                    period,
                     sampled_flows,
                     profiles,
-                    class_targets[period_id],
+                    desired_shares,
+                    compiled,
+                    network_metadata,
+                    policy,
+                    candidate_pools,
+                )
+                report["route_sampler_mismatch_files"] = {
+                    profile_id: layout.relative(path)
+                    for profile_id, path in mismatch_paths.items()
+                }
+                attempt = {
+                    "seed": seed,
+                    "flows": tuple(sampled_flows),
+                    "mismatch_paths": mismatch_paths,
+                    "report": report,
+                }
+                attempts.append(attempt)
+                round_attempts.append(attempt)
+                if report["passed"] and seed_index == 0:
+                    break
+
+            round_passing = [
+                item for item in round_attempts if item["report"]["passed"]
+            ]
+            if not round_passing:
+                break
+            passing_attempts.extend(round_passing)
+            round_selected = min(round_passing, key=_attempt_policy_score)
+            actual_shares = round_selected["report"]["vehicle_shares"]
+            if _fleet_shares_within_tolerance(
+                actual_shares, desired_shares, policy
+            ):
+                break
+            allocation_shares = dict(
+                _calibrate_vehicle_shares(
+                    allocation_shares,
+                    desired_shares,
+                    actual_shares,
                 )
             )
-            report["seed"] = seed
-            report["route_sampler_mismatch_files"] = {
-                profile_id: layout.relative(path)
-                for profile_id, path in mismatch_paths.items()
-            }
-            attempt = {
-                "seed": seed,
-                "flows": tuple(sampled_flows),
-                "mismatch_paths": mismatch_paths,
-                "report": report,
-            }
-            attempts.append(attempt)
-            if report["passed"] and seed_index == 0:
-                selected = attempt
-                break
-        if selected is None:
-            passing = [item for item in attempts if item["report"]["passed"]]
-            if passing:
-                selected = min(
-                    passing,
-                    key=lambda item: (
-                        item["report"]["total_absolute_error_pcu"],
-                        item["report"]["sampled_vehicle_count"],
-                        -item["report"]["multi_intersection_vehicle_count"],
-                        item["seed"],
-                    ),
+
+        if not passing_attempts:
+            failure_path = layout.reports_dir / f"traffic_quality_{period_id}_failed.json"
+            failure_path.write_text(
+                json.dumps(
+                    {
+                        "period_id": period_id,
+                        "attempts": [item["report"] for item in attempts],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
                 )
-            else:
-                failure_path = layout.reports_dir / f"traffic_quality_{period_id}_failed.json"
-                failure_path.write_text(
-                    json.dumps(
-                        {
-                            "period_id": period_id,
-                            "attempts": [item["report"] for item in attempts],
-                        },
-                        ensure_ascii=False,
-                        indent=2,
-                    )
-                    + "\n",
-                    encoding="utf-8",
+                + "\n",
+                encoding="utf-8",
+            )
+            raise TrafficDemandError(
+                f"Global traffic quality thresholds failed for {period_id}; "
+                f"see {failure_path}."
+            )
+        selected = min(passing_attempts, key=_attempt_policy_score)
+        selected_policy = selected["report"]["route_policy"]
+        if not selected_policy["passed"]:
+            violation_codes = ", ".join(
+                (
+                    f"{item.get('profile_id')}:" if item.get("profile_id") else ""
                 )
-                raise TrafficDemandError(
-                    f"Global traffic quality thresholds failed for {period_id}; "
-                    f"see {failure_path}."
-                )
+                + str(item["code"])
+                for item in selected_policy["violations"]
+            )
+            print(
+                f"WARNING: traffic policy targets were not fully met for "
+                f"{period_id}; selected the best official-quality-passing "
+                f"attempt. Violations: {violation_codes}."
+            )
 
         scenario_dir = layout.global_traffic_scenario_dir(period_id)
         scenario_dir.mkdir(parents=True, exist_ok=True)
@@ -1933,6 +2562,8 @@ def build_traffic_scenarios(
             "demand_duration": period.duration,
             "simulation_end": simulation_end,
             "selected_seed": selected["seed"],
+            "selected_allocation_round": selected["report"]["allocation_round"],
+            "route_policy_passed": selected["report"]["route_policy"]["passed"],
             "departure_position": {
                 "strategy": "first_edge_midpoint",
                 "fraction": 0.5,
@@ -1994,6 +2625,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--vehicle-profiles", type=Path, default=DEFAULT_VEHICLE_PROFILES
     )
+    parser.add_argument(
+        "--traffic-policy", type=Path, default=DEFAULT_TRAFFIC_POLICY
+    )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--intersections", nargs="+", default=None)
     return parser.parse_args()
@@ -2006,10 +2640,15 @@ def main() -> None:
             _load_manifest(args.manifest),
             demand_path=args.demand,
             vehicle_profile_path=args.vehicle_profiles,
+            traffic_policy_path=args.traffic_policy,
             output_dir=args.output_dir,
             intersection_ids=args.intersections,
         )
-    except (TrafficDemandError, VehicleProfileError) as exc:
+    except (
+        TrafficDemandError,
+        TrafficGenerationPolicyError,
+        VehicleProfileError,
+    ) as exc:
         raise SystemExit(f"Traffic build failed: {exc}") from exc
     print("Built global traffic scenarios: " + ", ".join(result["scenarios"]))
 

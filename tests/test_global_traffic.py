@@ -1,9 +1,11 @@
+import io
 import json
 import re
 import subprocess
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from simulation.sumo.artifacts import GeneratedArtifactLayout
@@ -812,18 +814,20 @@ class GlobalTrafficTests(unittest.TestCase):
             }
             demand_path.write_text(json.dumps(raw_demand), encoding="utf-8")
             fake = FakeSumoToolchain()
-            result = build_traffic_scenarios(
-                {"intersections": manifest_intersections},
-                demand_path=demand_path,
-                vehicle_profile_path=PROFILES,
-                output_dir=generated,
-                command_runner=fake,
-                tool_paths={
-                    "duarouter": "fake-duarouter",
-                    "sumo": "fake-sumo",
-                    "routeSampler": "fake-routeSampler.py",
-                },
-            )
+            console = io.StringIO()
+            with redirect_stdout(console):
+                result = build_traffic_scenarios(
+                    {"intersections": manifest_intersections},
+                    demand_path=demand_path,
+                    vehicle_profile_path=PROFILES,
+                    output_dir=generated,
+                    command_runner=fake,
+                    tool_paths={
+                        "duarouter": "fake-duarouter",
+                        "sumo": "fake-sumo",
+                        "routeSampler": "fake-routeSampler.py",
+                    },
+                )
 
             self.assertEqual(result["schema_version"], 3)
             self.assertEqual(set(result["scenarios"]), {"global_morning_peak"})
@@ -901,6 +905,11 @@ class GlobalTrafficTests(unittest.TestCase):
             )
             self.assertTrue(report["passed"])
             self.assertEqual(report["total_absolute_error_pcu"], 0)
+            self.assertFalse(report["route_policy"]["passed"])
+            self.assertTrue(report["route_policy"]["violations"])
+            self.assertIn("WARNING: traffic policy targets", console.getvalue())
+            self.assertIn(scenario["selected_allocation_round"], (0, 1))
+            self.assertFalse(scenario["route_policy_passed"])
             od_report = json.loads(
                 (generated / scenario["od_report"]).read_text(encoding="utf-8")
             )
@@ -936,6 +945,13 @@ class GlobalTrafficTests(unittest.TestCase):
                     == "electric_bicycle_"
                     for command in sampler_commands
                 )
+            )
+            self.assertLessEqual(
+                max(
+                    int(re.search(r"round(\d+)", str(command)).group(1))
+                    for command in sampler_commands
+                ),
+                1,
             )
 
     def test_route_sampler_retries_after_seed_42_quality_failure(self):
