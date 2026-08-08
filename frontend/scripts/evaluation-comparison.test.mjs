@@ -287,13 +287,35 @@ test('preserves a genuine real-time waiting zero when no vehicle is waiting', ()
   assert.equal(point.metric_status.waiting, 'provisional')
 })
 
-test('marks null fuel unavailable as soon as the backend provides an explicit warning', () => {
+test('keeps running null fuel pending even when the backend explains the temporary gap', () => {
   const running = snapshot('RUNNING', 30, false)
   running.evaluation.warnings = ['没有可用的燃油车辆行驶里程，燃油强度记为不可用。']
   running.metrics.evaluation.warnings = [...running.evaluation.warnings]
   const point = evaluationPoint(running)
   assert.equal(point.fuel_consumption, null)
+  assert.equal(point.metric_status.fuel, 'pending')
+})
+
+test('marks null fuel unavailable only after the TripInfo final frame', () => {
+  const completed = snapshot('COMPLETED', 900, true)
+  completed.evaluation.warnings = ['没有可用的燃油车辆行驶里程，燃油强度记为不可用。']
+  completed.metrics.evaluation = completed.evaluation
+  const point = evaluationPoint(completed)
+  assert.equal(point.fuel_consumption, null)
   assert.equal(point.metric_status.fuel, 'unavailable')
+})
+
+test('keeps a completed MAPPO TripInfo fuel intensity as a final value', () => {
+  const completed = snapshot('COMPLETED', 900, true)
+  completed.evaluation.algorithm = 'mappo'
+  completed.evaluation.fuel_consumption = 15.45
+  completed.evaluation.fuel_intensity_L_per_100km = 15.45
+  completed.evaluation.metric_sources.fuel_intensity_L_per_100km = 'tripinfo_completed_fuel_vehicles'
+  completed.metrics.evaluation = completed.evaluation
+  const point = evaluationPoint(completed)
+  assert.equal(point.fuel_consumption, 15.45)
+  assert.equal(point.metric_status.fuel, 'final')
+  assert.equal(point.metric_sources.fuel_intensity_L_per_100km, 'tripinfo_completed_fuel_vehicles')
 })
 
 test('normalizes the new fuel alias and preserves optional hard-braking diagnostics', () => {

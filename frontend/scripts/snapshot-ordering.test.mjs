@@ -13,6 +13,14 @@ const leftSidebarSource = await readFile(
   new URL('../src/components/dashboard/LeftSidebarPanel.vue', import.meta.url),
   'utf8',
 )
+const websocketManagerSource = await readFile(
+  new URL('../src/utils/runWebSocketManager.ts', import.meta.url),
+  'utf8',
+)
+const snapshotWorkerSource = await readFile(
+  new URL('../src/workers/simulationSnapshotDecoder.worker.ts', import.meta.url),
+  'utf8',
+)
 
 function snapshot(sequence, elapsedSeconds, state = 'RUNNING', sessionId = 'session-1') {
   return {
@@ -37,6 +45,15 @@ test('accepts playback state transitions published at the same sequence and time
   assert.equal(shouldApplySimulationSnapshot(current, snapshot(40, 8, 'PAUSED'), 'session-1'), true)
   assert.equal(shouldApplySimulationSnapshot(snapshot(40, 8, 'PAUSED'), snapshot(40, 8, 'RUNNING'), 'session-1'), true)
   assert.equal(shouldApplySimulationSnapshot(current, snapshot(40, 8, 'COMPLETED'), 'session-1'), true)
+})
+
+test('decodes large websocket snapshots off the main thread and keeps the newest pair', () => {
+  assert.match(websocketManagerSource, /new Worker\(/)
+  assert.match(websocketManagerSource, /simulationSnapshotDecoder\.worker\.ts/)
+  assert.match(snapshotWorkerSource, /\.slice\(-2\)/)
+  assert.match(snapshotWorkerSource, /expectedSessionId/)
+  assert.match(snapshotWorkerSource, /coalescedSnapshotCount/)
+  assert.match(simulationStoreSource, /pollAbortController\?\.abort\(\)/)
 })
 
 test('keeps asynchronous backend failures actionable and preserves raw details', () => {

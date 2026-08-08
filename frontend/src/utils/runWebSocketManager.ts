@@ -1,4 +1,5 @@
 import type { SimulationWsMessage } from '../types/simulation'
+import { recordSnapshotDecodeDiagnostics } from './simulationRuntimeDiagnostics.ts'
 
 type MessageHandler = (message: SimulationWsMessage) => void
 
@@ -9,6 +10,9 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 const MAX_RECONNECT_DELAY_MS = 30_000
 let shouldReconnect = false
+let decoderWorker: Worker | null = null
+let decoderWorkerUnavailable = false
+let decodeGeneration = 0
 const handlers = new Set<MessageHandler>()
 const connectionListeners = new Set<(connected: boolean) => void>()
 
@@ -83,8 +87,63 @@ function isSimulationMessage(payload: unknown): payload is SimulationWsMessage {
   return type === 'snapshot' || type === 'heartbeat'
 }
 
+function dispatchMessage(message: SimulationWsMessage): void {
+  for (const handler of handlers) handler(message)
+}
+
+function ensureDecoderWorker(): Worker | null {
+  if (decoderWorker) return decoderWorker
+  if (decoderWorkerUnavailable || typeof Worker === 'undefined') return null
+  try {
+    decoderWorker = new Worker(
+      new URL('../workers/simulationSnapshotDecoder.worker.ts', import.meta.url),
+      { type: 'module' },
+    )
+    decoderWorker.onmessage = (event: MessageEvent<{
+      generation: number
+      messages: SimulationWsMessage[]
+      parseDurationMs: number
+      coalescedSnapshotCount: number
+    }>) => {
+      if (event.data.generation !== decodeGeneration) return
+      recordSnapshotDecodeDiagnostics(
+        event.data.parseDurationMs,
+        event.data.coalescedSnapshotCount,
+      )
+      for (const message of event.data.messages) dispatchMessage(message)
+    }
+    decoderWorker.onerror = () => {
+      decoderWorker?.terminate()
+      decoderWorker = null
+      decoderWorkerUnavailable = true
+    }
+    return decoderWorker
+  } catch {
+    decoderWorker = null
+    decoderWorkerUnavailable = true
+    return null
+  }
+}
+
+function decodeMessage(raw: string, expectedSessionId: string, generation: number): void {
+  const worker = ensureDecoderWorker()
+  if (worker) {
+    worker.postMessage({ raw, expectedSessionId, generation })
+    return
+  }
+  const startedAt = performance.now()
+  try {
+    const payload = JSON.parse(raw) as unknown
+    recordSnapshotDecodeDiagnostics(performance.now() - startedAt, 0)
+    if (isSimulationMessage(payload)) dispatchMessage(payload)
+  } catch {
+    // Malformed stream messages do not interrupt the active session.
+  }
+}
+
 export function connectSimulationStream(sessionId: string, backendStreamUrl = '') {
   if (!sessionId) {
+    decodeGeneration += 1
     shouldReconnect = false
     clearReconnectTimer()
     closeSocket()
@@ -105,6 +164,8 @@ export function connectSimulationStream(sessionId: string, backendStreamUrl = ''
     return
   }
 
+  const generation = ++decodeGeneration
+
   shouldReconnect = true
   currentSessionId = sessionId
   currentStreamUrl = nextStreamUrl
@@ -124,17 +185,7 @@ export function connectSimulationStream(sessionId: string, backendStreamUrl = ''
   }
 
   socket.onmessage = (event) => {
-    try {
-      const payload = JSON.parse(String(event.data)) as unknown
-      if (!isSimulationMessage(payload)) {
-        return
-      }
-      for (const handler of handlers) {
-        handler(payload)
-      }
-    } catch {
-      // ignore malformed payloads
-    }
+    decodeMessage(String(event.data), sessionId, generation)
   }
 
   socket.onerror = () => {

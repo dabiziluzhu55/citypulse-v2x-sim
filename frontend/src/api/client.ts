@@ -6,6 +6,7 @@ export interface ApiResponse<T> {
 export interface ApiRequestConfig {
   params?: Record<string, string | number | boolean | null | undefined>
   timeoutMs?: number
+  signal?: AbortSignal
 }
 
 export interface ApiBlobResponse {
@@ -89,7 +90,14 @@ async function request<T>(
 ): Promise<ApiResponse<T>> {
   const controller = new AbortController()
   const timeoutMs = config?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+  let timedOut = false
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  const abortFromCaller = () => controller.abort()
+  if (config?.signal?.aborted) controller.abort()
+  else config?.signal?.addEventListener('abort', abortFromCaller, { once: true })
 
   try {
     const response = await fetch(buildUrl(path, config), {
@@ -120,13 +128,14 @@ async function request<T>(
     }
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') {
-      throw new Error(`请求超时（${timeoutMs}ms）：${path}`)
+      throw new Error(timedOut ? `请求超时（${timeoutMs}ms）：${path}` : `请求已取消：${path}`)
     }
     if (cause instanceof TypeError) {
       throw new Error(`无法连接后端服务：${path}`)
     }
     throw cause
   } finally {
+    config?.signal?.removeEventListener('abort', abortFromCaller)
     window.clearTimeout(timeoutId)
   }
 }

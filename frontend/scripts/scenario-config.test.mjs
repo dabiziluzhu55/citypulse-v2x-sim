@@ -8,10 +8,13 @@ import {
   resolveCatalogEventTypes,
   resolveCatalogPlaybackSpeeds,
   SIMULATION_TIME_OPTIONS,
+  clampClockTime,
   clockPartOptions,
   disabledClockHours,
   disabledClockMinutes,
   maximumSimulationEndTime,
+  stepClockHour,
+  stepClockMinute,
   simulationEndClockValues,
   simulationStartClockValues,
   simulationTimeWindow,
@@ -131,6 +134,17 @@ test('builds disabled hour and minute sets for the two time pickers', () => {
   assert.equal(disabledClockMinutes(endingAtNine, 8).includes(56), false)
   assert.equal(disabledClockMinutes(endingAtNine, 9).includes(0), false)
   assert.equal(disabledClockMinutes(endingAtNine, 9).includes(1), true)
+})
+
+test('steps hours and minutes immediately while clamping to the active window', () => {
+  assert.equal(stepClockMinute('14:59', 1, '14:30', '15:15'), '15:00')
+  assert.equal(stepClockMinute('15:00', -1, '14:30', '15:15'), '14:59')
+  assert.equal(stepClockHour('14:45', 1, '14:30', '16:29'), '15:45')
+  assert.equal(stepClockHour('15:45', -1, '14:30', '16:29'), '14:45')
+  assert.equal(stepClockHour('15:45', 1, '14:30', '16:05'), '16:05')
+  assert.equal(stepClockMinute('14:30', -1, '14:30', '14:45'), '14:30')
+  assert.equal(stepClockMinute('14:45', 1, '14:30', '14:45'), '14:45')
+  assert.equal(clampClockTime('17:00', '17:30', '19:29'), '17:30')
 })
 
 test('formats demo labels without changing backend ids', () => {

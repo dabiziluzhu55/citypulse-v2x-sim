@@ -1219,7 +1219,7 @@ onUnmounted(() => {
       <span v-else-if="sceneStatus === 'error'">{{ sceneError }}</span>
     </div>
     <div v-if="vehicleBufferBusy" class="app-baidu-three-map__vehicle-status">
-      仿真计算繁忙，画面正在平滑缓冲
+      数据快照延迟，画面正在等待最新数据
     </div>
   </div>
 </template>

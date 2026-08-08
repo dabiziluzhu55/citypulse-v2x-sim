@@ -1,7 +1,7 @@
 import type { VehicleTwinSample } from './vehicleTwinSample'
 
-export const MIN_VEHICLE_BUFFER_SECONDS = 0.5
-export const MAX_VEHICLE_BUFFER_SECONDS = 2
+export const MIN_VEHICLE_BUFFER_SECONDS = 0.75
+export const MAX_VEHICLE_BUFFER_SECONDS = 3.5
 const BUFFER_INTERVAL_MULTIPLIER = 3
 const MAX_OUTPUT_STEP_SECONDS = 0.25
 const MAX_PRESENTATION_STEP_SECONDS = 0.25
@@ -139,9 +139,13 @@ export class VehicleMotionBuffer {
     if (this.frames.length < 2 || !Number.isFinite(wallTimeMs)) return null
     const first = this.frames[0]
     const latest = this.frames.at(-1)!
+    const startupBufferSeconds = Math.min(
+      this.bufferSeconds,
+      this.resolveSourceStepSeconds() * 3,
+    )
     if (
       this.renderElapsedSeconds == null
-      && latest.elapsedSeconds - first.elapsedSeconds + 1e-9 < this.bufferSeconds
+      && latest.elapsedSeconds - first.elapsedSeconds + 1e-9 < startupBufferSeconds
     ) return null
 
     if (this.renderElapsedSeconds == null) {

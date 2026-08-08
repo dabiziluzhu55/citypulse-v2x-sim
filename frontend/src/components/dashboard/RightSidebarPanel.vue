@@ -18,7 +18,7 @@ import RightSidebarSectionHeader from './RightSidebarSectionHeader.vue'
 import type { CollaborationLogEntry } from '../../types/collaboration'
 import type { MetricsTimeseriesResponse } from '../../types/metrics'
 
-const props = defineProps<{ runId: string; logEntries: CollaborationLogEntry[]; collaborationLoading: boolean; collaborationError: string | null; wsConnected: boolean; timeseries: MetricsTimeseriesResponse | null; timeseriesLoading: boolean; timeseriesError: string | null }>()
+const props = defineProps<{ runId: string; activeAlgorithm: string; logEntries: CollaborationLogEntry[]; collaborationLoading: boolean; collaborationError: string | null; wsConnected: boolean; timeseries: MetricsTimeseriesResponse | null; timeseriesLoading: boolean; timeseriesError: string | null }>()
 const chartRefs = ref<Record<EvaluationMetricKey, HTMLElement | null>>({ queue: null, waiting: null, fuel: null })
 const charts = new Map<EvaluationMetricKey, echarts.ECharts>()
 const layout = RIGHT_SIDEBAR_METRICS_LAYOUT
@@ -34,23 +34,52 @@ const backendWarnings = computed(() => points.value
   .flatMap((point) => point.warnings ?? [])
   .filter((warning, index, values) => values.indexOf(warning) === index))
 
+const currentAlgorithmId = computed(() => props.activeAlgorithm
+  || points.value.at(-1)?.algorithm
+  || '')
+const currentAlgorithmLabel = computed(() => METRICS_ALGORITHMS.find(
+  (algorithm) => algorithm.id === currentAlgorithmId.value,
+)?.shortLabel ?? currentAlgorithmId.value)
+const latestCurrentPoint = computed(() => points.value
+  .filter((point) => point.algorithm === currentAlgorithmId.value)
+  .at(-1) ?? null)
+
+function metricHasAnyValue(metric: EvaluationMetricKey): boolean {
+  return comparison.value[metric].some((series) => series.values.some((value) => (
+    typeof value === 'number'
+  )))
+}
+
+function pointMetricValue(metric: EvaluationMetricKey): number | null {
+  const point = latestCurrentPoint.value
+  if (!point) return null
+  if (metric === 'queue') return point.avg_queue_length
+  if (metric === 'waiting') return point.avg_waiting_time
+  return typeof point.fuel_consumption === 'number' ? point.fuel_consumption : null
+}
+
+function pointMetricStatus(metric: EvaluationMetricKey) {
+  const point = latestCurrentPoint.value
+  if (!point) return null
+  const explicit = point.metric_status?.[metric]
+  if (explicit) return explicit
+  if (typeof pointMetricValue(metric) === 'number') return point.finished ? 'final' : 'provisional'
+  return point.finished ? 'unavailable' : 'pending'
+}
+
 function metricStatusMessage(metric: EvaluationMetricKey): string {
-  const series = comparison.value[metric]
-  const latest = series.map((item) => ({
-    value: item.values.at(-1) ?? null,
-    status: item.statuses.at(-1) ?? 'pending',
-  }))
-  if (latest.some((item) => typeof item.value === 'number')) return ''
-  const statuses = latest.map((item) => item.status)
-  if (metric === 'fuel' && statuses.includes('unavailable')) return '后端未提供可用燃油强度'
-  if (statuses.includes('pending')) return '实时口径尚未回填'
+  const status = pointMetricStatus(metric)
+  if (!status || typeof pointMetricValue(metric) === 'number') return ''
+  const algorithm = currentAlgorithmLabel.value || '当前算法'
+  if (metric === 'fuel' && status === 'pending') return `${algorithm}运行中，等待 TripInfo 终态回填`
+  if (metric === 'fuel' && status === 'unavailable') return `${algorithm}终态未提供可用燃油强度`
+  if (status === 'pending') return `${algorithm}实时口径尚未回填`
   return ''
 }
 
 function metricStatusTitle(metric: EvaluationMetricKey): string {
   const matcher = metric === 'fuel' ? /燃油|fuel|powertrain|里程/i : /等待|waiting|TripInfo/i
-  return points.value
-    .flatMap((point) => point.warnings ?? [])
+  return (latestCurrentPoint.value?.warnings ?? [])
     .filter((warning) => matcher.test(warning))
     .filter((warning, index, values) => values.indexOf(warning) === index)
     .join('\n')
@@ -69,14 +98,31 @@ function chartOption(metric: typeof EVALUATION_METRICS[number]) {
     series: comparison.value[metric.key].map((series) => ({ name: `${series.shortLabel} ${series.label}`, type: 'line', smooth: .42, connectNulls: false, showSymbol: false, emphasis: { focus: 'series' }, lineStyle: { color: series.color, width: 1.9, type: series.statuses.includes('final') ? 'solid' : 'dashed' }, data: series.values.map((value, index) => [times[index] / 60, value]) })),
   }
 }
+let chartRenderTimer: ReturnType<typeof setTimeout> | null = null
+let lastChartRenderAt = 0
+
 function renderCharts() {
+  lastChartRenderAt = performance.now()
   void nextTick(() => EVALUATION_METRICS.forEach((metric) => {
     const element = chartRefs.value[metric.key]
     if (!element) return
     const chart = charts.get(metric.key) ?? echarts.init(element)
     charts.set(metric.key, chart)
-    chart.setOption(chartOption(metric), true)
+    chart.setOption(chartOption(metric), { notMerge: true, lazyUpdate: true })
   }))
+}
+function scheduleChartRender(immediate = false) {
+  if (chartRenderTimer !== null) clearTimeout(chartRenderTimer)
+  chartRenderTimer = null
+  const remaining = Math.max(0, 1_000 - (performance.now() - lastChartRenderAt))
+  if (immediate || remaining === 0) {
+    renderCharts()
+    return
+  }
+  chartRenderTimer = setTimeout(() => {
+    chartRenderTimer = null
+    renderCharts()
+  }, remaining)
 }
 function resizeCharts() { charts.forEach((chart) => chart.resize()) }
 function disposeCharts() { charts.forEach((chart) => chart.dispose()); charts.clear() }
@@ -112,8 +158,14 @@ function handleExport() {
 }
 
 onMounted(() => { renderCharts(); window.addEventListener('resize', resizeCharts) })
-onUnmounted(() => { window.removeEventListener('resize', resizeCharts); disposeCharts() })
-watch(() => props.timeseries, renderCharts, { deep: true })
+onUnmounted(() => {
+  if (chartRenderTimer !== null) clearTimeout(chartRenderTimer)
+  window.removeEventListener('resize', resizeCharts)
+  disposeCharts()
+})
+watch(() => props.timeseries, () => {
+  scheduleChartRender(latestCurrentPoint.value?.finished === true)
+}, { deep: true })
 </script>
 
 <template>
@@ -136,6 +188,7 @@ watch(() => props.timeseries, renderCharts, { deep: true })
               <div
                 v-if="metricStatusMessage(metric.key)"
                 class="right-sidebar__metric-status"
+                :class="{ 'has-comparison-data': metricHasAnyValue(metric.key) }"
                 :title="metricStatusTitle(metric.key)"
               >
                 <strong>--</strong>
@@ -175,6 +228,8 @@ watch(() => props.timeseries, renderCharts, { deep: true })
 .right-sidebar__chart { width: 100%; height: 174px; pointer-events: auto; }
 .right-sidebar__metric-status { position: absolute; left: 38px; right: 10px; top: 52px; bottom: 30px; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; background: rgba(5,18,39,.68); color: rgba(188,219,241,.82); font-size: 10px; text-align: center; pointer-events: auto; }
 .right-sidebar__metric-status strong { color: #d8f4ff; font-size: 18px; letter-spacing: 0; }
+.right-sidebar__metric-status.has-comparison-data { left: auto; right: 10px; top: 34px; bottom: auto; width: 170px; min-height: 34px; padding: 5px 8px; border: 1px solid rgba(82,194,250,.24); background: rgba(5,18,39,.88); align-items: flex-end; }
+.right-sidebar__metric-status.has-comparison-data strong { display: none; }
 .right-sidebar__source-note { position: absolute; z-index: 5; left: 55px; top: 770px; width: 355px; color: rgba(141,190,220,.65); font-size: 9px; text-align: right; }
 .right-sidebar__export { position: absolute; z-index: 6; left: 55px; top: 786px; width: 355px; height: 38px; border: 1px solid #52c2fa; clip-path: polygon(6px 0,100% 0,100% 100%,0 100%,0 7px); background: linear-gradient(180deg,#2e519e,#3c8de7); box-shadow: inset 0 1px 0 rgba(173,235,255,.55); color: #eefaff; font: 800 17px/1 'PingFang SC','Microsoft YaHei',sans-serif; text-shadow: 0 1px 3px rgba(0,25,64,.65); cursor: pointer; pointer-events: auto; transition: filter .2s ease,transform .2s ease; }
 .right-sidebar__export:hover, .right-sidebar__export:focus-visible { filter: brightness(1.14) drop-shadow(0 0 6px #52c2fa); outline: none; transform: translateY(-1px); }

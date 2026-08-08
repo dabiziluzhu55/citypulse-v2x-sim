@@ -13,6 +13,7 @@ import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style, Text } from '
 import { defaults as defaultControls, Attribution } from 'ol/control'
 import { defaults as defaultInteractions } from 'ol/interaction'
 import { fromLonLat } from 'ol/proj'
+import { buffer as bufferExtent, containsCoordinate } from 'ol/extent'
 import 'ol/ol.css'
 import { createBasemapLayer, DEFAULT_APP_BASEMAP } from '../../constants/mapBasemaps'
 import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from '../../constants/mapDefaults'
@@ -61,7 +62,20 @@ interface AnimatedVehicleFeature {
 const vehicleFeatures = new globalThis.Map<string, AnimatedVehicleFeature>()
 const vehicleMissingFrames = new globalThis.Map<string, number>()
 let vehicleAnimationFrame: number | null = null
-const VEHICLE_INTERPOLATION_MS = 500
+let vehicleInterpolationMs = 500
+let lastVehicleSnapshotSequence = -1
+let lastVehicleSnapshotArrivalMs: number | null = null
+let vehicleSnapshotIntervalsMs: number[] = []
+let snapVehiclePositions = false
+const MIN_VEHICLE_INTERPOLATION_MS = 500
+const MAX_VEHICLE_INTERPOLATION_MS = 3_500
+const VEHICLE_VIEWPORT_HYSTERESIS_METERS = 120
+
+function percentile(values: number[], ratio: number): number {
+  if (values.length === 0) return MIN_VEHICLE_INTERPOLATION_MS
+  const sorted = [...values].sort((left, right) => left - right)
+  return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio))]
+}
 
 const networkSource = new VectorSource()
 const vehicleSource = new VectorSource()
@@ -76,6 +90,11 @@ function clearVehiclePresentation(): void {
   vehicleFeatures.clear()
   vehicleHeadingHistory.clear()
   vehicleMissingFrames.clear()
+  vehicleInterpolationMs = MIN_VEHICLE_INTERPOLATION_MS
+  lastVehicleSnapshotSequence = -1
+  lastVehicleSnapshotArrivalMs = null
+  vehicleSnapshotIntervalsMs = []
+  snapVehiclePositions = false
 }
 
 const VEHICLE_RADIUS: Record<string, number> = {
@@ -242,7 +261,7 @@ function animateVehicles(now: number): void {
   if (!props.active) return
   let pending = false
   for (const state of vehicleFeatures.values()) {
-    const ratio = Math.min(1, Math.max(0, (now - state.startedAt) / VEHICLE_INTERPOLATION_MS))
+    const ratio = Math.min(1, Math.max(0, (now - state.startedAt) / vehicleInterpolationMs))
     state.feature.getGeometry()?.setCoordinates([
       state.from[0] + (state.to[0] - state.from[0]) * ratio,
       state.from[1] + (state.to[1] - state.from[1]) * ratio,
@@ -263,10 +282,33 @@ function renderVehicles() {
   const vehicles = trafficView.value?.vehicles ?? []
   const activeIds = new Set<string>()
   const now = performance.now()
+  const sequence = snapshot.value?.sequence ?? -1
+  const isNewSourceSnapshot = sequence !== lastVehicleSnapshotSequence
+  if (isNewSourceSnapshot) {
+    if (lastVehicleSnapshotArrivalMs != null) {
+      const interval = now - lastVehicleSnapshotArrivalMs
+      if (interval > 0 && interval < 10_000) {
+        vehicleSnapshotIntervalsMs.push(interval)
+        vehicleSnapshotIntervalsMs = vehicleSnapshotIntervalsMs.slice(-30)
+        vehicleInterpolationMs = Math.min(
+          MAX_VEHICLE_INTERPOLATION_MS,
+          Math.max(MIN_VEHICLE_INTERPOLATION_MS, percentile(vehicleSnapshotIntervalsMs, .95)),
+        )
+      }
+    }
+    lastVehicleSnapshotSequence = sequence
+    lastVehicleSnapshotArrivalMs = now
+  }
+  const mapSize = map?.getSize()
+  const visibleExtent = map && mapSize
+    ? bufferExtent(map.getView().calculateExtent(mapSize), VEHICLE_VIEWPORT_HYSTERESIS_METERS)
+    : null
   for (const vehicle of vehicles) {
     if (vehicle.longitude == null || vehicle.latitude == null) {
       continue
     }
+    const target = fromLonLat([vehicle.longitude, vehicle.latitude]) as [number, number]
+    if (visibleExtent && !containsCoordinate(visibleExtent, target)) continue
     const definition = modelRegistry.resolve(vehicle.vehicle_id, vehicle.lane_id)
     const resolvedHeading = resolveStableVehicleHeading({
       sumoAngleDegrees: vehicle.angle,
@@ -277,13 +319,23 @@ function renderVehicles() {
     vehicleHeadingHistory.set(vehicle.vehicle_id, resolvedHeading.state)
     activeIds.add(vehicle.vehicle_id)
     vehicleMissingFrames.delete(vehicle.vehicle_id)
-    const target = fromLonLat([vehicle.longitude, vehicle.latitude]) as [number, number]
     const existing = vehicleFeatures.get(vehicle.vehicle_id)
     const feature = existing?.feature ?? new Feature<Point>({ geometry: new Point(target) })
     feature.set('color', definition.color)
     feature.set('vtype', definition.type)
     const targetRotation = Math.PI / 2 - resolvedHeading.heading
     if (existing) {
+      if (snapVehiclePositions) {
+        existing.from = target
+        existing.to = target
+        existing.fromRotation = targetRotation
+        existing.toRotation = targetRotation
+        existing.startedAt = now
+        feature.getGeometry()?.setCoordinates(target)
+        feature.set('rotation', targetRotation)
+        feature.changed()
+        continue
+      }
       const current = feature.getGeometry()?.getCoordinates() as [number, number] | undefined
       existing.from = current ? [...current] as [number, number] : target
       existing.to = target
@@ -305,15 +357,17 @@ function renderVehicles() {
   }
   for (const id of vehicleHeadingHistory.keys()) {
     if (activeIds.has(id)) continue
+    if (!isNewSourceSnapshot && !snapVehiclePositions) continue
     const missingFrames = (vehicleMissingFrames.get(id) ?? 0) + 1
     vehicleMissingFrames.set(id, missingFrames)
-    if (missingFrames <= 4) continue
+    if (!snapVehiclePositions && missingFrames <= 4) continue
     vehicleMissingFrames.delete(id)
     vehicleHeadingHistory.delete(id)
     const state = vehicleFeatures.get(id)
     if (state) vehicleSource.removeFeature(state.feature)
     vehicleFeatures.delete(id)
   }
+  snapVehiclePositions = false
   scheduleVehicleAnimation()
 }
 
@@ -362,6 +416,7 @@ onMounted(() => {
     map.addOverlay(warningOverlay)
   }
   map.on('singleclick', handleMapClick)
+  map.on('moveend', renderVehicles)
   renderNetwork()
   renderVehicles()
   void loadIntersectionTopologyCatalog().then((nodes) => {
@@ -377,11 +432,12 @@ onMounted(() => {
 })
 
 watch(geojson, renderNetwork)
-watch(trafficView, renderVehicles, { deep: true })
+watch(trafficView, renderVehicles)
 watch(renderSessionRevision, clearVehiclePresentation, { flush: 'sync' })
 watch(() => props.active, (active) => {
   if (active) {
     map?.updateSize()
+    snapVehiclePositions = true
     renderVehicles()
     map?.renderSync()
   } else if (vehicleAnimationFrame !== null) {
@@ -396,6 +452,7 @@ onUnmounted(() => {
   resizeObserver?.disconnect()
   resizeObserver = null
   map?.un('singleclick', handleMapClick)
+  map?.un('moveend', renderVehicles)
   warningOverlay?.setPosition(undefined)
   warningOverlay = null
   topologyNodes = []

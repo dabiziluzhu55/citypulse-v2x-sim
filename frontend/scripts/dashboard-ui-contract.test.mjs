@@ -6,6 +6,10 @@ const sidebarSource = readFileSync(
   new URL('../src/components/dashboard/LeftSidebarPanel.vue', import.meta.url),
   'utf8',
 )
+const timeStepperSource = readFileSync(
+  new URL('../src/components/dashboard/HourMinuteStepper.vue', import.meta.url),
+  'utf8',
+)
 const dashboardCss = readFileSync(
   new URL('../src/assets/styles/dashboard.css', import.meta.url),
   'utf8',
@@ -39,15 +43,15 @@ const baiduThreeMapSource = readFileSync(
   'utf8',
 )
 
-test('uses two minute-only arrow time pickers and one five-mode algorithm dropdown', () => {
+test('uses four immediate dark hour-minute steppers and one five-mode algorithm dropdown', () => {
   assert.match(sidebarSource, />仿真展示时间</)
-  assert.equal(sidebarSource.match(/<el-time-picker/g)?.length, 2)
-  assert.equal(sidebarSource.match(/arrow-control/g)?.length, 2)
-  assert.equal(sidebarSource.match(/\sformat="HH:mm"/g)?.length, 2)
-  assert.equal(sidebarSource.match(/value-format="HH:mm"/g)?.length, 2)
-  for (const label of ['开始时间', '结束时间']) {
-    assert.match(sidebarSource, new RegExp(`aria-label="${label}"`))
-  }
+  assert.equal(sidebarSource.match(/<HourMinuteStepper/g)?.length, 4)
+  assert.doesNotMatch(sidebarSource, /<el-time-picker|<el-time-select/)
+  assert.match(timeStepperSource, /stepClockHour/)
+  assert.match(timeStepperSource, /stepClockMinute/)
+  assert.match(timeStepperSource, /background: #071f38/)
+  assert.match(timeStepperSource, /color: #fff/)
+  assert.match(timeStepperSource, /emit\('update:modelValue', next\)/)
   assert.match(sidebarSource, /class="left-sidebar__algorithm-select"/)
   assert.doesNotMatch(sidebarSource, /type="radio" name="sidebar-algorithm"/)
   assert.doesNotMatch(sidebarSource, /后端暂未提供MAPPO算法|IPPO 仅支持雄安20路口场景/)

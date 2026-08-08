@@ -99,6 +99,51 @@ export function minutesToClockTime(value: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 }
 
+export function clampClockTime(value: string, minimum: string, maximum: string): string {
+  const minimumMinutes = clockTimeToMinutes(minimum)
+  const maximumMinutes = clockTimeToMinutes(maximum)
+  const valueMinutes = clockTimeToMinutes(value)
+  if (
+    !Number.isFinite(minimumMinutes)
+    || !Number.isFinite(maximumMinutes)
+    || maximumMinutes < minimumMinutes
+  ) return minimum
+  if (!Number.isFinite(valueMinutes)) return minimum
+  return minutesToClockTime(Math.min(maximumMinutes, Math.max(minimumMinutes, valueMinutes)))
+}
+
+export function stepClockMinute(
+  value: string,
+  direction: -1 | 1,
+  minimum: string,
+  maximum: string,
+): string {
+  const current = clockTimeToMinutes(clampClockTime(value, minimum, maximum))
+  const minimumMinutes = clockTimeToMinutes(minimum)
+  const maximumMinutes = clockTimeToMinutes(maximum)
+  return minutesToClockTime(Math.min(
+    maximumMinutes,
+    Math.max(minimumMinutes, current + direction),
+  ))
+}
+
+export function stepClockHour(
+  value: string,
+  direction: -1 | 1,
+  minimum: string,
+  maximum: string,
+): string {
+  const current = clockTimeToMinutes(clampClockTime(value, minimum, maximum))
+  const minimumMinutes = clockTimeToMinutes(minimum)
+  const maximumMinutes = clockTimeToMinutes(maximum)
+  const targetHour = Math.floor(current / 60) + direction
+  const minimumTarget = Math.max(minimumMinutes, targetHour * 60)
+  const maximumTarget = Math.min(maximumMinutes, targetHour * 60 + 59)
+  if (minimumTarget > maximumTarget) return minutesToClockTime(current)
+  const preferred = targetHour * 60 + current % 60
+  return minutesToClockTime(Math.min(maximumTarget, Math.max(minimumTarget, preferred)))
+}
+
 function clockValuesBetween(startMinutes: number, endMinutes: number): string[] {
   if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || endMinutes < startMinutes) return []
   return Array.from(

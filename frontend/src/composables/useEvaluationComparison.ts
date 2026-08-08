@@ -274,6 +274,7 @@ function evaluationMetricStatuses(
       || (snapshot.metrics.halting_vehicles ?? 0) > 0
     )
   const fuelExplicitlyUnavailable = fuelIntensity == null
+    && evaluation.finished
     && (evaluation.warnings ?? []).some((warning) => (
       /燃油|fuel|powertrain|里程/i.test(warning)
       && /不可用|无法|缺少|不足|unavailable|missing|invalid/i.test(warning)

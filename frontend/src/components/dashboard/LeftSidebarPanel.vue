@@ -7,11 +7,8 @@ import {
   TRAFFIC_FLOW_MODE_OPTIONS,
   clockTimeToMinutes,
   defaultSimulationTimeWindow,
-  disabledClockHours,
-  disabledClockMinutes,
   maximumSimulationEndTime,
-  simulationEndClockValues,
-  simulationStartClockValues,
+  minutesToClockTime,
   type DisturbancePresetId,
 } from '../../constants/scenarioOptions'
 import {
@@ -45,6 +42,7 @@ import {
 import LeftSidebarFrameSvg from './LeftSidebarFrameSvg.vue'
 import LeftSidebarBottomChrome from './LeftSidebarBottomChrome.vue'
 import LeftSidebarSectionHeader from './LeftSidebarSectionHeader.vue'
+import HourMinuteStepper from './HourMinuteStepper.vue'
 import { LEFT_SIDEBAR_DESIGN_HEIGHT, LEFT_SIDEBAR_DESIGN_WIDTH, LEFT_SIDEBAR_REFERENCE_LAYOUT } from '../../constants/leftSidebarLayout'
 import type { SimulationSnapshot, SimulationState, StartSimulationRequest } from '../../types/simulation'
 import { formatIntersectionLabel } from '../../utils/intersectionLabels'
@@ -194,23 +192,30 @@ const controlModeUnavailableMessage = computed(() => {
   if (!compatibility.compatible) return compatibility.reason
   return ''
 })
-const startClockValues = computed(() => simulationStartClockValues(config.value.flow_mode))
-const endClockValues = computed(() => simulationEndClockValues(
+const simulationStartMinimum = computed(() => SIMULATION_PERIOD_RANGES[config.value.flow_mode].start)
+const simulationStartMaximum = computed(() => minutesToClockTime(
+  clockTimeToMinutes(SIMULATION_PERIOD_RANGES[config.value.flow_mode].end) - 1,
+))
+const simulationEndMinimum = computed(() => minutesToClockTime(
+  clockTimeToMinutes(config.value.simulation_start_time) + 1,
+))
+const simulationEndMaximum = computed(() => maximumSimulationEndTime(
   config.value.flow_mode,
   config.value.simulation_start_time,
 ))
-function startDisabledHours(_role: string): number[] {
-  return disabledClockHours(startClockValues.value)
-}
-function startDisabledMinutes(hour: number, _role: string): number[] {
-  return disabledClockMinutes(startClockValues.value, hour)
-}
-function endDisabledHours(_role: string): number[] {
-  return disabledClockHours(endClockValues.value)
-}
-function endDisabledMinutes(hour: number, _role: string): number[] {
-  return disabledClockMinutes(endClockValues.value, hour)
-}
+const disturbanceStartMinimum = computed(() => config.value.simulation_start_time)
+const disturbanceStartMaximum = computed(() => {
+  const outerStart = clockTimeToMinutes(config.value.simulation_start_time)
+  const outerEnd = clockTimeToMinutes(config.value.simulation_end_time)
+  const eventEnd = clockTimeToMinutes(disturbanceDraft.value.endTime)
+  return minutesToClockTime(Math.max(outerStart, Math.min(outerEnd - 1, eventEnd - 1)))
+})
+const disturbanceEndMinimum = computed(() => {
+  const outerEnd = clockTimeToMinutes(config.value.simulation_end_time)
+  const eventStart = clockTimeToMinutes(disturbanceDraft.value.startTime)
+  return minutesToClockTime(Math.min(outerEnd, eventStart + 1))
+})
+const disturbanceEndMaximum = computed(() => config.value.simulation_end_time)
 const fields = computed(() => [
   { key: 'scenario', label: '场景模式', options: scenarioOptions.value },
   { key: 'flow', label: '交通流模式', options: TRAFFIC_FLOW_MODE_OPTIONS },
@@ -595,12 +600,22 @@ function requestTimeChange(key: 'simulation_start_time' | 'simulation_end_time',
   requestConfiguration(next)
 }
 
-function handleTimePickerChange(
-  key: 'simulation_start_time' | 'simulation_end_time',
-  value: string | null,
-): void {
-  const values = key === 'simulation_start_time' ? startClockValues.value : endClockValues.value
-  if (value && values.includes(value)) requestTimeChange(key, value)
+function updateDisturbanceStartTime(value: string): void {
+  disturbanceDraft.value.startTime = value
+  const end = clockTimeToMinutes(disturbanceDraft.value.endTime)
+  const start = clockTimeToMinutes(value)
+  if (end <= start) {
+    disturbanceDraft.value.endTime = minutesToClockTime(Math.min(
+      clockTimeToMinutes(config.value.simulation_end_time),
+      start + 1,
+    ))
+  }
+  disturbanceFormError.value = ''
+}
+
+function updateDisturbanceEndTime(value: string): void {
+  disturbanceDraft.value.endTime = value
+  disturbanceFormError.value = ''
 }
 
 function requestControlModeChange(value: string): void {
@@ -748,38 +763,26 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
       >
         <span class="left-sidebar__field-label">仿真展示时间</span>
         <div class="left-sidebar__time-parts">
-          <label class="left-sidebar__time-picker-field">
+          <label class="left-sidebar__time-stepper-field">
             <span>开始时间</span>
-            <el-time-picker
+            <HourMinuteStepper
               :model-value="config.simulation_start_time"
+              :minimum="simulationStartMinimum"
+              :maximum="simulationStartMaximum"
               :disabled="isSessionActive"
-              :clearable="false"
-              :editable="false"
-              :disabled-hours="startDisabledHours"
-              :disabled-minutes="startDisabledMinutes"
-              arrow-control
-              format="HH:mm"
-              value-format="HH:mm"
-              aria-label="开始时间"
-              popper-class="left-sidebar-time-picker-popper"
-              @change="handleTimePickerChange('simulation_start_time', $event as string | null)"
+              label="开始时间"
+              @update:model-value="requestTimeChange('simulation_start_time', $event)"
             />
           </label>
-          <label class="left-sidebar__time-picker-field">
+          <label class="left-sidebar__time-stepper-field">
             <span>结束时间</span>
-            <el-time-picker
+            <HourMinuteStepper
               :model-value="config.simulation_end_time"
+              :minimum="simulationEndMinimum"
+              :maximum="simulationEndMaximum"
               :disabled="isSessionActive"
-              :clearable="false"
-              :editable="false"
-              :disabled-hours="endDisabledHours"
-              :disabled-minutes="endDisabledMinutes"
-              arrow-control
-              format="HH:mm"
-              value-format="HH:mm"
-              aria-label="结束时间"
-              popper-class="left-sidebar-time-picker-popper"
-              @change="handleTimePickerChange('simulation_end_time', $event as string | null)"
+              label="结束时间"
+              @update:model-value="requestTimeChange('simulation_end_time', $event)"
             />
           </label>
         </div>
@@ -969,25 +972,23 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
             <div class="disturbance-modal__event-settings">
             <label>
               <span>开始时间</span>
-              <el-time-select
-                v-model="disturbanceDraft.startTime"
-                :start="config.simulation_start_time"
-                step="00:01"
-                :end="config.simulation_end_time"
-                :max-time="disturbanceDraft.endTime"
-                placeholder="开始时间"
+              <HourMinuteStepper
+                :model-value="disturbanceDraft.startTime"
+                :minimum="disturbanceStartMinimum"
+                :maximum="disturbanceStartMaximum"
+                label="扰动开始时间"
+                @update:model-value="updateDisturbanceStartTime"
               />
             </label>
 
             <label>
               <span>结束时间</span>
-              <el-time-select
-                v-model="disturbanceDraft.endTime"
-                :start="config.simulation_start_time"
-                step="00:01"
-                :end="config.simulation_end_time"
-                :min-time="disturbanceDraft.startTime"
-                placeholder="结束时间"
+              <HourMinuteStepper
+                :model-value="disturbanceDraft.endTime"
+                :minimum="disturbanceEndMinimum"
+                :maximum="disturbanceEndMaximum"
+                label="扰动结束时间"
+                @update:model-value="updateDisturbanceEndTime"
               />
             </label>
             <label v-if="isMajorDisturbance" class="disturbance-modal__vehicle-count">
@@ -1177,55 +1178,34 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
-.left-sidebar__time-picker-field {
+.left-sidebar__time-stepper-field {
   min-width: 0;
   display: grid;
   gap: 4px;
 }
-.left-sidebar__time-picker-field > span {
+.left-sidebar__time-stepper-field > span {
   color: #83b9d7;
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
 }
-.left-sidebar__time-parts :deep(.el-date-editor) { width: 100%; }
-.left-sidebar__time-parts :deep(.el-input__wrapper) {
-  min-height: 34px;
-  padding: 3px 9px;
-  border: 1px solid rgba(27, 126, 242, .45);
-  border-radius: 5px;
-  background: linear-gradient(90deg, #043563, #03315b);
-  box-shadow: none;
-}
-.left-sidebar__time-parts :deep(.el-input__inner) {
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-}
-.left-sidebar__time-parts :deep(.el-input__prefix) { display: none; }
-.left-sidebar__time-parts :deep(.el-input__suffix) { color: #74dfff; }
+.left-sidebar__time-parts :deep(.hour-minute-stepper) { width: 100%; height: 34px; }
 
-:global(.left-sidebar-time-picker-popper.el-popper),
 :global(.left-sidebar-algorithm-popper.el-popper) {
   border: 1px solid rgba(82, 194, 250, .62) !important;
   border-radius: 6px !important;
   background: #061a31 !important;
   box-shadow: 0 10px 24px rgba(0, 6, 18, .58), inset 0 0 16px rgba(33, 139, 255, .08) !important;
 }
-:global(.left-sidebar-time-picker-popper .el-time-spinner__item),
 :global(.left-sidebar-algorithm-popper .el-select-dropdown__item) {
   color: #cce9f7;
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
-:global(.left-sidebar-time-picker-popper .el-time-spinner__item:hover:not(.is-disabled)),
-:global(.left-sidebar-time-picker-popper .el-time-spinner__item.is-active:not(.is-disabled)),
 :global(.left-sidebar-algorithm-popper .el-select-dropdown__item.is-hovering),
 :global(.left-sidebar-algorithm-popper .el-select-dropdown__item.is-selected) {
   background: rgba(33, 139, 255, .24);
   color: #fff;
 }
-:global(.left-sidebar-time-picker-popper .el-time-spinner__item.is-disabled) { color: #45657a; }
-:global(.left-sidebar-time-picker-popper .el-time-panel__footer) { border-top-color: rgba(82, 194, 250, .22); }
 :global(.left-sidebar-algorithm-popper .el-select-dropdown__item.is-disabled) {
   color: #66879d;
 }
@@ -1613,6 +1593,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   grid-template-columns: repeat(2, minmax(130px, 1fr));
   gap: 12px;
 }
+.disturbance-modal__event-settings :deep(.hour-minute-stepper) { width: 100%; height: 40px; }
 .disturbance-modal__vehicle-count { grid-column: 1 / -1; max-width: 260px; }
 .disturbance-modal__vehicle-count :deep(.el-input-number) { width: 100%; }
 .disturbance-modal__vehicle-count :deep(.el-input__wrapper) {
@@ -1633,8 +1614,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .disturbance-modal__vehicle-count :deep(.el-input-number__increase:hover) {
   color: #fff;
 }
-.disturbance-modal__form :deep(.el-select),
-.disturbance-modal__form :deep(.el-time-select) { width: 100%; }
+.disturbance-modal__form :deep(.el-select) { width: 100%; }
 .disturbance-modal__form :deep(.el-select__wrapper) {
   min-height: 40px;
   border: 1px solid rgba(82, 194, 250, .38);

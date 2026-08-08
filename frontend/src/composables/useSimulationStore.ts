@@ -124,6 +124,7 @@ const displayedOfficialTime = ref('')
 const renderSessionRevision = ref(0)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollAbortController: AbortController | null = null
 let requestVersion = 0
 let initialized = false
 let playbackRateSamples: PlaybackRateSample[] = []
@@ -219,6 +220,9 @@ function stopPolling() {
     clearInterval(pollTimer)
     pollTimer = null
   }
+  requestVersion += 1
+  pollAbortController?.abort()
+  pollAbortController = null
 }
 
 async function pollOnce() {
@@ -230,8 +234,11 @@ async function pollOnce() {
   }
 
   const version = ++requestVersion
+  pollAbortController?.abort()
+  const abortController = new AbortController()
+  pollAbortController = abortController
   try {
-    const next = await fetchSimulationStatus(sessionId.value)
+    const next = await fetchSimulationStatus(sessionId.value, abortController.signal)
     if (version !== requestVersion) {
       return
     }
@@ -260,6 +267,8 @@ async function pollOnce() {
       return
     }
     statusError.value = message
+  } finally {
+    if (pollAbortController === abortController) pollAbortController = null
   }
 }
 

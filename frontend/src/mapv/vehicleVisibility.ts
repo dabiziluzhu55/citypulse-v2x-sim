@@ -200,9 +200,7 @@ export class StableVehicleSelector {
       .slice(0, Math.min(excess, maximumRemovals))
       .map((item) => item.vehicle.vehicle_id))
     const kept = selected.filter((item) => !removableIds.has(item.vehicle.vehicle_id))
-    const maximumAdditions = this.lastLimit !== limit
-      ? MAX_ROSTER_CHANGES_PER_SNAPSHOT
-      : Number.POSITIVE_INFINITY
+    const maximumAdditions = MAX_ROSTER_CHANGES_PER_SNAPSHOT
     const additions = candidates
       .filter((item) => !selectedIds.has(item.vehicle.vehicle_id))
       .slice(0, Math.min(Math.max(0, limit - kept.length), maximumAdditions))

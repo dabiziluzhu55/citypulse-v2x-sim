@@ -56,6 +56,11 @@ import {
 } from '../src/mapv/vehiclePoseStability.ts'
 import { snapshotToTrafficView } from '../src/utils/trafficStateMerge.ts'
 
+const vehicleRendererSource = await readFile(
+  new URL('../src/mapv/BaiduVehicleRenderer.ts', import.meta.url),
+  'utf8',
+)
+
 test('keeps Twin presentation timestamps monotonic across repeated frames', () => {
   const clock = new VehiclePresentationClock()
   assert.equal(clock.next(1_000), 1_000)
@@ -191,7 +196,7 @@ test('adapts motion buffering to irregular source intervals and freezes on under
   const beforeUnderrun = buffer.stats().renderElapsedSeconds
   for (let wallTime = 3_500; wallTime <= 7_000; wallTime += 250) buffer.sample(wallTime)
   const stats = buffer.stats()
-  assert.ok(stats.bufferSeconds >= 0.5 && stats.bufferSeconds <= 2)
+  assert.ok(stats.bufferSeconds >= 0.75 && stats.bufferSeconds <= 3.5)
   assert.ok(stats.sourceGapP95Ms >= 750)
   assert.ok(stats.sourceGapP99Ms >= stats.sourceGapP95Ms)
   assert.equal(stats.underrunActive, true)
@@ -313,6 +318,13 @@ test('limits roster churn to 32 vehicles when the performance tier changes', () 
   const full = selector.select(vehicles, (coordinate) => [...coordinate], center, 1_400, 's:1', MAX_VISIBLE_VEHICLES)
   const constrained = selector.select(vehicles, (coordinate) => [...coordinate], center, 1_400, 's:2', CONSTRAINED_VISIBLE_VEHICLES)
   assert.equal(full.length - constrained.length, MAX_ROSTER_CHANGES_PER_SNAPSHOT)
+})
+
+test('throttles Twin output and counts empty grace by source snapshots', () => {
+  assert.match(vehicleRendererSource, /NORMAL_OUTPUT_FRAME_MS = 1_000 \/ 30/)
+  assert.match(vehicleRendererSource, /CONSTRAINED_OUTPUT_FRAME_MS = 1_000 \/ 20/)
+  assert.match(vehicleRendererSource, /recordSourceRoster\(context\.sequence/)
+  assert.doesNotMatch(vehicleRendererSource, /emptyRenderStreak \+= 1/)
 })
 
 test('preserves complete optional vehicle telemetry through the traffic view', () => {

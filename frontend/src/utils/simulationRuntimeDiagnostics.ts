@@ -28,6 +28,8 @@ interface RuntimeDiagnosticState {
   snapshotGapP50Ms: number
   snapshotGapP95Ms: number
   snapshotGapP99Ms: number
+  snapshotDecodeMs: number
+  coalescedSnapshotCount: number
   websocketConnected: boolean
   websocketDisconnectCount: number
   websocketReconnectCount: number
@@ -56,6 +58,8 @@ const state: RuntimeDiagnosticState = {
   snapshotGapP50Ms: 0,
   snapshotGapP95Ms: 0,
   snapshotGapP99Ms: 0,
+  snapshotDecodeMs: 0,
+  coalescedSnapshotCount: 0,
   websocketConnected: false,
   websocketDisconnectCount: 0,
   websocketReconnectCount: 0,
@@ -104,6 +108,8 @@ export function resetSimulationRuntimeDiagnostics(sessionId = ''): void {
   state.snapshotGapP50Ms = 0
   state.snapshotGapP95Ms = 0
   state.snapshotGapP99Ms = 0
+  state.snapshotDecodeMs = 0
+  state.coalescedSnapshotCount = 0
   state.renderFps = null
   state.longTaskCount = 0
   state.inputVehicles = 0
@@ -151,6 +157,19 @@ export function recordSimulationDiagnosticConnection(connected: boolean): void {
   connectionObserved = true
   previousConnection = connected
   state.websocketConnected = connected
+  publish()
+}
+
+export function recordSnapshotDecodeDiagnostics(
+  parseDurationMs: number,
+  coalescedSnapshotCount: number,
+): void {
+  if (Number.isFinite(parseDurationMs) && parseDurationMs >= 0) {
+    state.snapshotDecodeMs = parseDurationMs
+  }
+  if (Number.isFinite(coalescedSnapshotCount) && coalescedSnapshotCount > 0) {
+    state.coalescedSnapshotCount += Math.floor(coalescedSnapshotCount)
+  }
   publish()
 }
 

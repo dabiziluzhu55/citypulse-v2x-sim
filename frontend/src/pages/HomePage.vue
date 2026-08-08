@@ -323,6 +323,7 @@ async function handleStop() {
     <div class="dashboard-column right">
       <RightSidebarPanel
         :run-id="sessionId"
+        :active-algorithm="snapshot?.evaluation?.algorithm ?? snapshot?.metrics.evaluation?.algorithm ?? activeControlMode"
         :log-entries="logEntries"
         :collaboration-loading="false"
         :collaboration-error="null"

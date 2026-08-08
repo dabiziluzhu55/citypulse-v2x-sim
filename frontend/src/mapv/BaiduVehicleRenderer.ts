@@ -44,6 +44,8 @@ const TWIN_INTERPOLATION_DELAY_MS = 32
 const VEHICLE_HISTORY_TTL_SNAPSHOTS = 30
 const EMPTY_RENDER_GRACE_SNAPSHOTS = 4
 const LANE_RECOVERY_GRACE_SNAPSHOTS = 3
+const NORMAL_OUTPUT_FRAME_MS = 1_000 / 30
+const CONSTRAINED_OUTPUT_FRAME_MS = 1_000 / 20
 
 export interface VehicleRenderContext {
   sessionId: string
@@ -88,6 +90,7 @@ export class BaiduVehicleRenderer {
   private laneHeadingResolver: LaneHeadingResolver | null = null
   private lanePoseResolver: LanePoseResolver | null = null
   private lastVehicles: TrafficVehicleView[] = []
+  private lastSourceSamples: VehicleTwinSample[] = []
   private lastContext: VehicleRenderContext = {
     sessionId: '',
     state: null,
@@ -99,7 +102,9 @@ export class BaiduVehicleRenderer {
   private visibleCount = 0
   private primed = false
   private active = true
-  private emptyRenderStreak = 0
+  private emptySourceSnapshotStreak = 0
+  private lastRosterSequence = -1
+  private lastOutputFrameMs: number | null = null
   private laneRecoveryCount = 0
   private temporarilyHiddenCount = 0
   private retainedMissingCount = 0
@@ -186,12 +191,14 @@ export class BaiduVehicleRenderer {
     )
     this.visibleCount = visible.length
     if (visible.length === 0) {
+      this.lastSourceSamples = []
       this.motionBuffer.push({
         sequence: context.sequence,
         elapsedSeconds: context.elapsedSeconds,
         arrivalTimeMs: performance.now(),
         samples: [],
       })
+      this.recordSourceRoster(context.sequence, 0)
       this.pruneHistory(context.sequence)
       return this.stats(vehicles.length, radiusMeters)
     }
@@ -333,7 +340,9 @@ export class BaiduVehicleRenderer {
             )
           : previousPose?.crossedStopLine ?? false,
         laneResolutionFailures: draft.heldForLaneRecovery
-          ? (previousPose?.laneResolutionFailures ?? 0) + 1
+          ? previousPose?.lastSeenSequence === context.sequence
+            ? previousPose.laneResolutionFailures
+            : (previousPose?.laneResolutionFailures ?? 0) + 1
           : 0,
         longitude: renderLongitude,
         latitude: renderLatitude,
@@ -351,6 +360,7 @@ export class BaiduVehicleRenderer {
         lanePose?.modelCenterResolved ?? false,
       )]
     })
+    this.lastSourceSamples = samples
     this.pruneHistory(context.sequence, activeIds)
     this.motionBuffer.push({
       sequence: context.sequence,
@@ -358,6 +368,7 @@ export class BaiduVehicleRenderer {
       arrivalTimeMs: performance.now(),
       samples,
     })
+    this.recordSourceRoster(context.sequence, samples.length)
     if (!isVehicleAnimationActive(context.state) && samples.length > 0) {
       this.presentImmediate(samples)
     }
@@ -380,11 +391,10 @@ export class BaiduVehicleRenderer {
     if (active) {
       const startableTwin = this.twin as mapvthree.Twin & { start?: () => void }
       startableTwin.start?.()
-      this.motionBuffer.pause()
+      this.motionBuffer.reset()
       this.update(this.lastVehicles, this.lastContext, true)
       this.scheduleMotionFrame()
-      const samples = this.motionBuffer.sample(performance.now())
-      if (samples) this.presentImmediate(samples)
+      if (this.lastSourceSamples.length > 0) this.presentImmediate(this.lastSourceSamples)
     } else {
       if (this.outputFrameId !== null) cancelAnimationFrame(this.outputFrameId)
       this.outputFrameId = null
@@ -410,7 +420,10 @@ export class BaiduVehicleRenderer {
   private resetRuntime(): void {
     this.visibleCount = 0
     this.primed = false
-    this.emptyRenderStreak = 0
+    this.lastSourceSamples = []
+    this.emptySourceSnapshotStreak = 0
+    this.lastRosterSequence = -1
+    this.lastOutputFrameMs = null
     this.motionBuffer.reset()
     this.presentationClock.reset()
     this.selector.reset()
@@ -433,12 +446,19 @@ export class BaiduVehicleRenderer {
 
   private flushMotionFrame(wallTimeMs: number): void {
     if (!isVehicleAnimationActive(this.lastContext.state)) return
-    this.renderBudget.recordFrame(wallTimeMs)
+    const budget = this.renderBudget.recordFrame(wallTimeMs)
+    const frameInterval = budget.quality === 'constrained'
+      ? CONSTRAINED_OUTPUT_FRAME_MS
+      : NORMAL_OUTPUT_FRAME_MS
+    if (
+      this.lastOutputFrameMs != null
+      && wallTimeMs - this.lastOutputFrameMs < frameInterval - 1
+    ) return
+    this.lastOutputFrameMs = wallTimeMs
     const samples = this.motionBuffer.sample(wallTimeMs)
     if (samples === null) return
     if (samples.length === 0) {
-      this.emptyRenderStreak += 1
-      if (this.primed && this.emptyRenderStreak > EMPTY_RENDER_GRACE_SNAPSHOTS) {
+      if (this.primed && this.emptySourceSnapshotStreak > EMPTY_RENDER_GRACE_SNAPSHOTS) {
         this.twin.reset()
         this.twinResetCount += 1
         this.primed = false
@@ -447,7 +467,6 @@ export class BaiduVehicleRenderer {
       }
       return
     }
-    this.emptyRenderStreak = 0
     const time = this.presentationClock.next(Date.now())
     const timedSamples: VehicleTwinSample[] = samples.map((sample) => ({ ...sample, time }))
     if (!this.primed) {
@@ -459,6 +478,14 @@ export class BaiduVehicleRenderer {
     }
     this.twin.push(timedSamples)
     this.engine.requestRender()
+  }
+
+  private recordSourceRoster(sequence: number, sampleCount: number): void {
+    if (!Number.isFinite(sequence) || sequence === this.lastRosterSequence) return
+    this.lastRosterSequence = sequence
+    this.emptySourceSnapshotStreak = sampleCount === 0
+      ? this.emptySourceSnapshotStreak + 1
+      : 0
   }
 
   private presentImmediate(samples: VehicleTwinSample[]): void {

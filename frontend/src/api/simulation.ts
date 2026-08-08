@@ -23,8 +23,14 @@ export async function startSimulation(
   return data
 }
 
-export async function fetchSimulationStatus(sessionId: string): Promise<SimulationSnapshot> {
-  const { data } = await apiClient.get<SimulationSnapshot>(`/simulations/${sessionId}`)
+export async function fetchSimulationStatus(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<SimulationSnapshot> {
+  const { data } = await apiClient.get<SimulationSnapshot>(
+    `/simulations/${sessionId}`,
+    { signal },
+  )
   return data
 }
 
