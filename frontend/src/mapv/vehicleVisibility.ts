@@ -6,11 +6,92 @@ const MIN_RENDER_RADIUS_METERS = 420
 const MAX_RENDER_RADIUS_METERS = 1_650
 const CAMERA_RANGE_FACTOR = 1.2
 const EXIT_RADIUS_HYSTERESIS_METERS = 80
-// Keep a vehicle alive through short WebSocket gaps and camera-boundary jitter.
-// At the configured 200 ms snapshot cadence this is roughly 2.4 seconds.
-export const MISSING_SNAPSHOT_GRACE = 12
+export const MAX_ROSTER_CHANGES_PER_SNAPSHOT = 32
 
 export const MAX_VISIBLE_VEHICLES = 450
+export const BALANCED_VISIBLE_VEHICLES = 320
+export const CONSTRAINED_VISIBLE_VEHICLES = 220
+
+export type VehicleRenderQuality = 'full' | 'balanced' | 'constrained'
+
+const VEHICLE_LIMITS: Record<VehicleRenderQuality, number> = {
+  full: MAX_VISIBLE_VEHICLES,
+  balanced: BALANCED_VISIBLE_VEHICLES,
+  constrained: CONSTRAINED_VISIBLE_VEHICLES,
+}
+
+export interface VehicleRenderBudgetState {
+  quality: VehicleRenderQuality
+  limit: number
+  fps: number | null
+}
+
+export class AdaptiveVehicleRenderBudget {
+  private quality: VehicleRenderQuality = 'full'
+  private lastFrameTimeMs: number | null = null
+  private frameIntervalsMs: number[] = []
+  private lastEvaluationMs = 0
+  private degradeSamples = 0
+  private recoverSamples = 0
+  private fps: number | null = null
+
+  recordFrame(wallTimeMs: number): VehicleRenderBudgetState {
+    if (!Number.isFinite(wallTimeMs)) return this.state()
+    if (this.lastFrameTimeMs != null) {
+      const interval = wallTimeMs - this.lastFrameTimeMs
+      if (interval > 0 && interval < 500) {
+        this.frameIntervalsMs.push(interval)
+        this.frameIntervalsMs = this.frameIntervalsMs.slice(-120)
+      }
+    }
+    this.lastFrameTimeMs = wallTimeMs
+    if (wallTimeMs - this.lastEvaluationMs < 1_000 || this.frameIntervalsMs.length < 12) {
+      return this.state()
+    }
+    this.lastEvaluationMs = wallTimeMs
+    const p90 = percentile(this.frameIntervalsMs, 0.9)
+    this.fps = p90 > 0 ? Math.round(1_000 / p90) : null
+    const desired: VehicleRenderQuality = this.fps != null && this.fps < 28
+      ? 'constrained'
+      : this.fps != null && this.fps < 45
+        ? 'balanced'
+        : 'full'
+    const ranks: Record<VehicleRenderQuality, number> = { full: 0, balanced: 1, constrained: 2 }
+    if (ranks[desired] > ranks[this.quality]) {
+      this.degradeSamples += 1
+      this.recoverSamples = 0
+      if (this.degradeSamples >= 3) {
+        this.quality = desired
+        this.degradeSamples = 0
+      }
+    } else if (ranks[desired] < ranks[this.quality]) {
+      this.recoverSamples += 1
+      this.degradeSamples = 0
+      if (this.recoverSamples >= 8) {
+        this.quality = desired
+        this.recoverSamples = 0
+      }
+    } else {
+      this.degradeSamples = 0
+      this.recoverSamples = 0
+    }
+    return this.state()
+  }
+
+  state(): VehicleRenderBudgetState {
+    return { quality: this.quality, limit: VEHICLE_LIMITS[this.quality], fps: this.fps }
+  }
+
+  reset(): void {
+    this.quality = 'full'
+    this.lastFrameTimeMs = null
+    this.frameIntervalsMs = []
+    this.lastEvaluationMs = 0
+    this.degradeSamples = 0
+    this.recoverSamples = 0
+    this.fps = null
+  }
+}
 
 export interface VisibleVehicle {
   vehicle: TrafficVehicleView
@@ -19,9 +100,10 @@ export interface VisibleVehicle {
   distanceMeters: number
 }
 
-interface RetainedVehicle {
-  visible: VisibleVehicle
-  missingSnapshots: number
+function percentile(values: number[], ratio: number): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((left, right) => left - right)
+  return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio))]
 }
 
 export function resolveVehicleRenderRadius(cameraRange: number): number {
@@ -66,8 +148,8 @@ export function selectVisibleVehicles(
 }
 
 export class StableVehicleSelector {
-  private retained = new Map<string, RetainedVehicle>()
-  private lastSnapshotKey = ''
+  private retained = new Map<string, VisibleVehicle>()
+  private lastLimit: number | null = null
 
   select(
     vehicles: TrafficVehicleView[],
@@ -83,8 +165,6 @@ export class StableVehicleSelector {
     }
     const entryRadius = resolveVehicleRenderRadius(cameraRange)
     const exitRadius = entryRadius + EXIT_RADIUS_HYSTERESIS_METERS
-    const advancesSnapshot = snapshotKey !== this.lastSnapshotKey
-    this.lastSnapshotKey = snapshotKey
     const current = new Map<string, VisibleVehicle>()
 
     for (const vehicle of vehicles) {
@@ -98,45 +178,40 @@ export class StableVehicleSelector {
       })
     }
 
-    const selected: VisibleVehicle[] = []
-    const nextRetained = new Map<string, RetainedVehicle>()
-    for (const [id, retained] of this.retained) {
-      const candidate = current.get(id)
-      if (candidate) {
-        if (candidate.distanceMeters > exitRadius) continue
-        selected.push(candidate)
-        nextRetained.set(id, { visible: candidate, missingSnapshots: 0 })
-        continue
-      }
-      const missingSnapshots = retained.missingSnapshots + (advancesSnapshot ? 1 : 0)
-      const distance = distanceMeters(cameraCenter, [retained.visible.longitude, retained.visible.latitude])
-      if (missingSnapshots > MISSING_SNAPSHOT_GRACE || distance > exitRadius) continue
-      const visible = { ...retained.visible, distanceMeters: distance }
-      selected.push(visible)
-      nextRetained.set(id, { visible, missingSnapshots })
-    }
-
-    selected.sort((a, b) => a.distanceMeters - b.distanceMeters)
-    if (selected.length > limit) selected.length = limit
-    const selectedIds = new Set(selected.map((item) => item.vehicle.vehicle_id))
-    const entrants = [...current.values()]
-      .filter((item) => item.distanceMeters <= entryRadius && !selectedIds.has(item.vehicle.vehicle_id))
+    const candidates = [...current.values()]
+      .filter((item) => item.distanceMeters <= entryRadius)
       .sort((a, b) => a.distanceMeters - b.distanceMeters)
-
-    for (const candidate of entrants) {
-      if (selected.length >= limit) break
-      selected.push(candidate)
-      nextRetained.set(candidate.vehicle.vehicle_id, { visible: candidate, missingSnapshots: 0 })
+    if (this.lastLimit == null || !snapshotKey) {
+      const desired = candidates.slice(0, limit)
+      this.retained = new Map(desired.map((item) => [item.vehicle.vehicle_id, item]))
+      this.lastLimit = limit
+      return desired
     }
-    for (const id of [...nextRetained.keys()]) {
-      if (!selected.some((item) => item.vehicle.vehicle_id === id)) nextRetained.delete(id)
-    }
-    this.retained = nextRetained
-    return selected
+    const selected = [...this.retained.keys()]
+      .map((id) => current.get(id))
+      .filter((item): item is VisibleVehicle => Boolean(item && item.distanceMeters <= exitRadius))
+    const selectedIds = new Set(selected.map((item) => item.vehicle.vehicle_id))
+    const maximumRemovals = this.lastLimit !== limit
+      ? MAX_ROSTER_CHANGES_PER_SNAPSHOT
+      : Number.POSITIVE_INFINITY
+    const excess = Math.max(0, selected.length - limit)
+    const removableIds = new Set(selected
+      .sort((left, right) => right.distanceMeters - left.distanceMeters)
+      .slice(0, Math.min(excess, maximumRemovals))
+      .map((item) => item.vehicle.vehicle_id))
+    const kept = selected.filter((item) => !removableIds.has(item.vehicle.vehicle_id))
+    const maximumAdditions = MAX_ROSTER_CHANGES_PER_SNAPSHOT
+    const additions = candidates
+      .filter((item) => !selectedIds.has(item.vehicle.vehicle_id))
+      .slice(0, Math.min(Math.max(0, limit - kept.length), maximumAdditions))
+    const next = [...kept, ...additions].sort((a, b) => a.distanceMeters - b.distanceMeters)
+    this.retained = new Map(next.map((item) => [item.vehicle.vehicle_id, item]))
+    if (next.length === Math.min(limit, candidates.length)) this.lastLimit = limit
+    return next
   }
 
   reset(): void {
     this.retained.clear()
-    this.lastSnapshotKey = ''
+    this.lastLimit = null
   }
 }

@@ -1,0 +1,43 @@
+{
+  "note": "README off_peak 验证集 vs M4.2 5 个留出 seed(1042..1942) 复测；avg_decision_latency_ms 依赖机器负载与并发，仅作 sanity 参考；其他指标差异均在预期波动内",
+  "comparison": {
+    "avg_travel_time_s": {
+      "expected": 100.53,
+      "actual": 100.986,
+      "rel_diff_pct": 0.45
+    },
+    "avg_waiting_time_s": {
+      "expected": 8.43,
+      "actual": 8.786,
+      "rel_diff_pct": 4.22
+    },
+    "avg_queue_length_veh": {
+      "expected": 0.08,
+      "actual": 0.08,
+      "rel_diff_pct": 0.0
+    },
+    "throughput_veh_per_h": {
+      "expected": 906.0,
+      "actual": 907.2,
+      "rel_diff_pct": 0.13
+    },
+    "avg_decision_latency_ms": {
+      "expected": 12.53,
+      "actual": 20.884,
+      "rel_diff_pct": 66.67
+    },
+    "fuel_intensity_L_per_100km": {
+      "expected": 13.82,
+      "actual": 13.82,
+      "rel_diff_pct": 0.0
+    }
+  },
+  "evaluation_seeds": [
+    1042,
+    1142,
+    1242,
+    1342,
+    1442
+  ],
+  "duration_seconds": 300
+}

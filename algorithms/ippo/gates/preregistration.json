@@ -1,0 +1,53 @@
+{
+  "title": "IPPO 通用模型东4/西3零样本门禁预注册",
+  "nature": "engineering_criterion_not_industry_standard",
+  "frozen_at": "2026-08-04",
+  "primary_metric": "controlled_avg_waiting_time_s",
+  "primary_scope": "controlled_area",
+  "secondary_scope": "full_network_metrics_reported_non_gating",
+  "seeds": [1042, 1142, 1242, 1342, 1442, 1542, 1642, 1742, 1842, 1942],
+  "formal_seed_count": 10,
+  "min_valid_pairs": 8,
+  "wilcoxon": {
+    "type": "paired_signed_rank",
+    "alternative": "one_sided_less",
+    "h0": "median(Delta_s) >= 0",
+    "h1": "median(Delta_s) < 0",
+    "alpha": 0.05,
+    "ties_zeros_policy": "pre-registered sign-flip permutation",
+    "permutation_b": 10000,
+    "permutation_seed": 20260804,
+    "asymptotic_forbidden": true
+  },
+  "win_rule": {"min_win_rate": 0.70, "ceil_formula": "ceil(0.7*N)", "tie_counts_as_win": false},
+  "improvement": {"strong_pct": 3.0, "weak_range": "0-3%"},
+  "verdicts": ["strong", "weak", "fail", "insufficient"],
+  "non_inferiority": {
+    "lower_is_better": {
+      "avg_travel_time_s": 0.05,
+      "avg_queue_length_veh": 0.05,
+      "fuel_intensity_L_per_100km": 0.05
+    },
+    "throughput_veh_per_h": 0.05,
+    "queue_abs_cap_veh_per_lane": 0.5,
+    "max_seed_violation_ratio": 0.30,
+    "report": ["paired_mean", "paired_median", "worst_seed", "violation_count"]
+  },
+  "safety": {
+    "severe_conflict_exposure_per_10000": {"abs": 2.0, "rel": 0.20, "k": 10000},
+    "emergency_braking_exposure_per_1000": {"abs": 5.0, "rel": 0.20, "k": 1000},
+    "aggregation": "sum_events / sum_exposures * k",
+    "bootstrap_b": 2000,
+    "bootstrap_seed": 20260804,
+    "min_exposures": 5000,
+    "baseline_stable_min_events": 20,
+    "baseline_stable_min_exposures": 5000,
+    "unavailable_status": "incomplete",
+    "collision_metric_present": false
+  },
+  "multiplicity": {
+    "overall": "east_dense AND west_dense both pass",
+    "correction": "report raw p plus Holm-adjusted p per scenario as transparency; decision uses intersection rule without Bonferroni",
+    "auxiliary_metrics_no_significance_test": true
+  }
+}

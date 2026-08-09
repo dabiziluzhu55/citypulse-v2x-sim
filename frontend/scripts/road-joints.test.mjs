@@ -86,3 +86,41 @@ test('does not invent a secondary road when topology is absent or the gap exceed
     connections: [{ junctionId: 'secondary', fromEdge: 'left', toEdge: 'right' }],
   }), [])
 })
+
+test('uses an authoritative SUMO junction shape for a connected long road gap', () => {
+  const common = {
+    edges: [road('left', [[-60, 0], [-30, 0]]), road('right', [[30, 0], [60, 0]])],
+    endpoints: [
+      { edgeId: 'left', junctionId: 'secondary', endpoint: 'end' },
+      { edgeId: 'right', junctionId: 'secondary', endpoint: 'start' },
+    ],
+    connections: [{ junctionId: 'secondary', fromEdge: 'left', toEdge: 'right' }],
+    primaryJunctionId: 'primary',
+    primaryJunctionShape: [[-1, -1], [1, -1], [1, 1], [-1, 1]],
+    horizontalScale: 1,
+  }
+  assert.deepEqual(buildRoadJoints({
+    ...common,
+    authoritativeJunctions: [{
+      junctionId: 'secondary',
+      shape: [[-30, -4], [30, -4], [30, 4], [-30, 4]],
+      internalLaneIds: [],
+    }],
+  }), [])
+
+  const joints = buildRoadJoints({
+    ...common,
+    authoritativeJunctions: [{
+      junctionId: 'secondary',
+      shape: [[-30, -4], [30, -4], [30, 4], [-30, 4]],
+      internalLaneIds: [':secondary_0_0'],
+    }],
+  })
+  assert.equal(joints.length, 1)
+  assert.equal(joints[0].source, 'sumo_junction_shape')
+  assert.equal(joints[0].kind, 'junction')
+  assert.equal(joints[0].maxGapMeters, 60)
+  assert.equal(joints[0].overlapMeters, 0.5)
+  assert.ok(joints[0].polygons.asphalt.some(([x]) => x < -30))
+  assert.ok(joints[0].polygons.asphalt.some(([x]) => x > 30))
+})

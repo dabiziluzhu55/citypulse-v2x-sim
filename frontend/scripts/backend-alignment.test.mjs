@@ -11,25 +11,24 @@ import {
   resolveDashboardControlModes,
 } from '../src/constants/simulationOptions.ts'
 
-test('only the three implemented backend algorithms are exposed', () => {
+test('exposes all five algorithms registered by the main backend', () => {
   assert.equal(isBackendControlMode('fixed'), true)
   assert.equal(isBackendControlMode('max_pressure'), true)
   assert.equal(isBackendControlMode('sotl'), true)
-  assert.equal(isBackendControlMode('ippo'), false)
+  assert.equal(isBackendControlMode('ippo'), true)
+  assert.equal(isBackendControlMode('mappo'), true)
   assert.equal(isBackendControlMode('multi_agent_rl'), false)
   assert.deepEqual(
-    resolveDashboardControlModes(['sotl', 'ippo', 'fixed']).map((item) => item.value),
-    ['fixed', 'sotl'],
+    resolveDashboardControlModes(['sotl', 'ippo', 'mappo', 'fixed']).map((item) => item.value),
+    ['fixed', 'sotl', 'ippo', 'mappo'],
   )
   assert.equal(requireAvailableControlMode('sotl', ['fixed', 'sotl']), 'sotl')
   assert.throws(
     () => requireAvailableControlMode('sotl', ['fixed']),
     /后端未提供管控算法：sotl/,
   )
-  assert.throws(
-    () => requireAvailableControlMode('ippo', ['fixed', 'ippo']),
-    /后端未提供管控算法：ippo/,
-  )
+  assert.equal(requireAvailableControlMode('ippo', ['fixed', 'ippo']), 'ippo')
+  assert.equal(requireAvailableControlMode('mappo', ['fixed', 'mappo']), 'mappo')
 })
 
 test('the running backend algorithm owns the real metric series', () => {
@@ -48,6 +47,8 @@ test('the running backend algorithm owns the real metric series', () => {
   assert.equal(series.find((item) => item.id === 'max_pressure')?.source, 'backend')
   assert.equal(series.find((item) => item.id === 'fixed')?.source, 'missing')
   assert.equal(series.find((item) => item.id === 'sotl')?.source, 'missing')
+  assert.equal(series.find((item) => item.id === 'ippo')?.source, 'missing')
+  assert.equal(series.find((item) => item.id === 'mappo')?.source, 'missing')
   assert.deepEqual(series.find((item) => item.id === 'max_pressure')?.values, [12.5])
 })
 
@@ -101,5 +102,11 @@ test('snapshot metrics use backend evaluation values without local estimation', 
     avg_queue_length: 4.25,
     throughput: 120,
     fuel_consumption: 6.2,
+    fuel_intensity_L_per_100km: 6.2,
+    hard_braking_events: null,
+    hard_braking_rate: null,
+    finished: false,
+    metric_sources: {},
+    warnings: [],
   }])
 })

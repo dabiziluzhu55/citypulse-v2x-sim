@@ -15,7 +15,7 @@ import {
 } from '../src/mapv/showcaseLayers/sceneFacilities.ts'
 
 const roads = JSON.parse(await readFile(
-  new URL('../../data/maps/sumo/generated/geojson/demo_2.roads.wgs84.geojson', import.meta.url),
+  new URL('../public/showcase-data/demo_2.roads.wgs84.geojson', import.meta.url),
   'utf8',
 ))
 const tls = JSON.parse(await readFile(

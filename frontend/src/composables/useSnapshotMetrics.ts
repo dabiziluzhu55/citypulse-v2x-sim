@@ -2,6 +2,7 @@ import { ref, watch, type Ref } from 'vue'
 import type { MetricsTimeseriesResponse } from '../types/metrics'
 import type { CollaborationLogEntry } from '../types/collaboration'
 import type { SimulationSnapshot } from '../types/simulation'
+import { simulationFuelIntensity } from '../utils/simulationEvaluation.ts'
 
 const MAX_POINTS = 120
 const MAX_LOG_ENTRIES = 180
@@ -65,6 +66,7 @@ export function useSnapshotMetrics(
 
     const evaluation = next.evaluation ?? next.metrics.evaluation
     if (evaluation) {
+      const fuelIntensity = simulationFuelIntensity(evaluation)
       const point = {
         time: next.elapsed_seconds,
         algorithm: evaluation.algorithm,
@@ -72,7 +74,13 @@ export function useSnapshotMetrics(
         avg_travel_time: evaluation.avg_travel_time,
         avg_queue_length: evaluation.avg_queue_length,
         throughput: evaluation.throughput,
-        fuel_consumption: evaluation.fuel_consumption,
+        fuel_consumption: fuelIntensity,
+        fuel_intensity_L_per_100km: fuelIntensity,
+        hard_braking_events: evaluation.hard_braking_events ?? null,
+        hard_braking_rate: evaluation.hard_braking_rate ?? null,
+        finished: evaluation.finished,
+        metric_sources: { ...(evaluation.metric_sources ?? {}) },
+        warnings: [...(evaluation.warnings ?? [])],
       }
       const series = [...timeseries.value.series, point]
       timeseries.value = {

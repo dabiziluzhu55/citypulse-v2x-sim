@@ -18,7 +18,7 @@ import { CesiumVehicleRenderer } from '../../cesium/traffic/CesiumVehicleRendere
 
 const mapView = useAppMapView()
 const { geojson } = useSimulationMap()
-const { trafficView } = useSimulationStore()
+const { trafficView, renderSessionRevision } = useSimulationStore()
 const containerRef = ref<HTMLElement | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -433,12 +433,22 @@ const stopTrafficWatch = watch(trafficView, () => {
   }, VEHICLE_UPDATE_THROTTLE_MS)
 })
 
+const stopRenderSessionWatch = watch(
+  renderSessionRevision,
+  () => {
+    vehicleRenderer?.clear()
+    viewer?.scene.requestRender()
+  },
+  { flush: 'sync' },
+)
+
 onMounted(() => { void initViewer() })
 
 onUnmounted(() => {
   stopPresetWatch()
   stopGeojsonWatch()
   stopTrafficWatch()
+  stopRenderSessionWatch()
   if (vehicleUpdateTimer !== null) {
     clearTimeout(vehicleUpdateTimer)
     vehicleUpdateTimer = null

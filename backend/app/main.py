@@ -1,4 +1,4 @@
-"""FastAPI 应用启动入口"""
+"""FastAPI应用启动入口"""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     if worker_count is not None and worker_count > 1:
         logger.warning(
             "检测到 Uvicorn/Web worker=%s > 1；AlgorithmRuntimeStore 为进程内状态，"
-            "不支持跨进程共享。请使用 --workers %s（当前推荐）。",
+            "不支持跨进程共享。请使用 --workers %s",
             worker_count,
             recommended_uvicorn_workers(),
         )
@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Missing generated artifacts: %s", missing_files)
 
     session_root_ok = settings.session_root.exists() or True
-    # session_root 允许启动时不存在，首次仿真会创建；但路径父目录应可写
+    # session_root允许启动时不存在，首次仿真会创建；但路径父目录应可写
     try:
         settings.session_root.mkdir(parents=True, exist_ok=True)
         session_root_ok = True

@@ -1,0 +1,350 @@
+{
+  "status": "complete",
+  "model": "/home/kemove/devdata1/gsb/citypulse-v2x-sim/traffic_control/ippo/models/ippo_v8_20tls_ep160.pt",
+  "checkpoint_version": "v8",
+  "effective_demand_enabled": true,
+  "evaluation_seeds": [
+    1042,
+    1142,
+    1242,
+    1342,
+    1442
+  ],
+  "duration_seconds": 300,
+  "action_interval": 15.0,
+  "successful_runs": 5,
+  "failed_runs": 0,
+  "mean_arrived": 75.6,
+  "std_arrived": 0.5,
+  "mean_waiting": 448.5,
+  "best_arrived": 76,
+  "worst_arrived": 75,
+  "official_metrics_summary": {
+    "avg_travel_time_s": {
+      "available_runs": 5,
+      "missing_runs": 0,
+      "mean": 100.986,
+      "std": 0.435,
+      "min": 100.24,
+      "max": 101.55
+    },
+    "avg_waiting_time_s": {
+      "available_runs": 5,
+      "missing_runs": 0,
+      "mean": 8.786,
+      "std": 0.292,
+      "min": 8.26,
+      "max": 9.08
+    },
+    "avg_queue_length_veh": {
+      "available_runs": 5,
+      "missing_runs": 0,
+      "mean": 0.08,
+      "std": 0.0,
+      "min": 0.08,
+      "max": 0.08
+    },
+    "throughput_veh_per_h": {
+      "available_runs": 5,
+      "missing_runs": 0,
+      "mean": 907.2,
+      "std": 5.879,
+      "min": 900.0,
+      "max": 912.0
+    },
+    "avg_decision_latency_ms": {
+      "available_runs": 5,
+      "missing_runs": 0,
+      "mean": 20.884,
+      "std": 2.677,
+      "min": 18.566,
+      "max": 25.979
+    },
+    "fuel_intensity_L_per_100km": {
+      "available_runs": 5,
+      "missing_runs": 0,
+      "mean": 13.82,
+      "std": 0.017,
+      "min": 13.79,
+      "max": 13.84
+    },
+    "severe_conflict_exposure_per_10000": {
+      "available_runs": 0,
+      "missing_runs": 5,
+      "mean": null,
+      "std": null,
+      "min": null,
+      "max": null
+    },
+    "emergency_braking_exposure_per_1000": {
+      "available_runs": 0,
+      "missing_runs": 5,
+      "mean": null,
+      "std": null,
+      "min": null,
+      "max": null
+    }
+  },
+  "details": [
+    {
+      "seed": 1042,
+      "state": "COMPLETED",
+      "departed": 837,
+      "arrived": 76,
+      "waiting": 450.04999999999995,
+      "elapsed": 535.4,
+      "official_metrics": {
+        "avg_travel_time_s": 101.55,
+        "avg_waiting_time_s": 8.82,
+        "avg_queue_length_veh": 0.08,
+        "throughput_veh_per_h": 912.0,
+        "avg_decision_latency_ms": 19.194,
+        "fuel_intensity_L_per_100km": 13.84,
+        "severe_conflict_exposure_per_10000": null,
+        "emergency_braking_exposure_per_1000": null,
+        "controlled_intersection_passages": 783,
+        "severe_conflict_events": 157,
+        "emergency_braking_events": 3079,
+        "controlled_avg_waiting_time_s": 6.51,
+        "controlled_waiting_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "severe_conflict_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "emergency_braking_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "departed": 837,
+        "arrived": 76,
+        "metric_sources": {
+          "avg_queue_length_veh": "incoming_lane_halting_count",
+          "throughput_veh_per_h": "finish_totals",
+          "avg_decision_latency_ms": "algorithm_perf_counter",
+          "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+          "avg_travel_time_s": "tripinfo_completed",
+          "avg_waiting_time_s": "tripinfo_completed"
+        },
+        "warnings": [
+          "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+          "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+        ]
+      },
+      "missing_official_metrics": [
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000"
+      ]
+    },
+    {
+      "seed": 1142,
+      "state": "COMPLETED",
+      "departed": 837,
+      "arrived": 76,
+      "waiting": 445.4,
+      "elapsed": 559.7,
+      "official_metrics": {
+        "avg_travel_time_s": 101.05,
+        "avg_waiting_time_s": 8.74,
+        "avg_queue_length_veh": 0.08,
+        "throughput_veh_per_h": 912.0,
+        "avg_decision_latency_ms": 21.067,
+        "fuel_intensity_L_per_100km": 13.79,
+        "severe_conflict_exposure_per_10000": null,
+        "emergency_braking_exposure_per_1000": null,
+        "controlled_intersection_passages": 782,
+        "severe_conflict_events": 154,
+        "emergency_braking_events": 2990,
+        "controlled_avg_waiting_time_s": 6.4,
+        "controlled_waiting_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "severe_conflict_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "emergency_braking_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "departed": 837,
+        "arrived": 76,
+        "metric_sources": {
+          "avg_queue_length_veh": "incoming_lane_halting_count",
+          "throughput_veh_per_h": "finish_totals",
+          "avg_decision_latency_ms": "algorithm_perf_counter",
+          "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+          "avg_travel_time_s": "tripinfo_completed",
+          "avg_waiting_time_s": "tripinfo_completed"
+        },
+        "warnings": [
+          "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+          "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+        ]
+      },
+      "missing_official_metrics": [
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000"
+      ]
+    },
+    {
+      "seed": 1242,
+      "state": "COMPLETED",
+      "departed": 837,
+      "arrived": 75,
+      "waiting": 454.50000000000006,
+      "elapsed": 555.6,
+      "official_metrics": {
+        "avg_travel_time_s": 100.87,
+        "avg_waiting_time_s": 9.08,
+        "avg_queue_length_veh": 0.08,
+        "throughput_veh_per_h": 900.0,
+        "avg_decision_latency_ms": 25.979,
+        "fuel_intensity_L_per_100km": 13.82,
+        "severe_conflict_exposure_per_10000": null,
+        "emergency_braking_exposure_per_1000": null,
+        "controlled_intersection_passages": 782,
+        "severe_conflict_events": 161,
+        "emergency_braking_events": 3109,
+        "controlled_avg_waiting_time_s": 6.55,
+        "controlled_waiting_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "severe_conflict_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "emergency_braking_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "departed": 837,
+        "arrived": 75,
+        "metric_sources": {
+          "avg_queue_length_veh": "incoming_lane_halting_count",
+          "throughput_veh_per_h": "finish_totals",
+          "avg_decision_latency_ms": "algorithm_perf_counter",
+          "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+          "avg_travel_time_s": "tripinfo_completed",
+          "avg_waiting_time_s": "tripinfo_completed"
+        },
+        "warnings": [
+          "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+          "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+        ]
+      },
+      "missing_official_metrics": [
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000"
+      ]
+    },
+    {
+      "seed": 1342,
+      "state": "COMPLETED",
+      "departed": 837,
+      "arrived": 76,
+      "waiting": 448.40000000000003,
+      "elapsed": 561.8,
+      "official_metrics": {
+        "avg_travel_time_s": 100.24,
+        "avg_waiting_time_s": 8.26,
+        "avg_queue_length_veh": 0.08,
+        "throughput_veh_per_h": 912.0,
+        "avg_decision_latency_ms": 18.566,
+        "fuel_intensity_L_per_100km": 13.83,
+        "severe_conflict_exposure_per_10000": null,
+        "emergency_braking_exposure_per_1000": null,
+        "controlled_intersection_passages": 782,
+        "severe_conflict_events": 160,
+        "emergency_braking_events": 3104,
+        "controlled_avg_waiting_time_s": 6.48,
+        "controlled_waiting_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "severe_conflict_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "emergency_braking_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "departed": 837,
+        "arrived": 76,
+        "metric_sources": {
+          "avg_queue_length_veh": "incoming_lane_halting_count",
+          "throughput_veh_per_h": "finish_totals",
+          "avg_decision_latency_ms": "algorithm_perf_counter",
+          "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+          "avg_travel_time_s": "tripinfo_completed",
+          "avg_waiting_time_s": "tripinfo_completed"
+        },
+        "warnings": [
+          "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+          "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+        ]
+      },
+      "missing_official_metrics": [
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000"
+      ]
+    },
+    {
+      "seed": 1442,
+      "state": "COMPLETED",
+      "departed": 837,
+      "arrived": 75,
+      "waiting": 444.15000000000003,
+      "elapsed": 559.1,
+      "official_metrics": {
+        "avg_travel_time_s": 101.22,
+        "avg_waiting_time_s": 9.03,
+        "avg_queue_length_veh": 0.08,
+        "throughput_veh_per_h": 900.0,
+        "avg_decision_latency_ms": 19.613,
+        "fuel_intensity_L_per_100km": 13.82,
+        "severe_conflict_exposure_per_10000": null,
+        "emergency_braking_exposure_per_1000": null,
+        "controlled_intersection_passages": 782,
+        "severe_conflict_events": 165,
+        "emergency_braking_events": 3156,
+        "controlled_avg_waiting_time_s": 6.58,
+        "controlled_waiting_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "severe_conflict_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "emergency_braking_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "departed": 837,
+        "arrived": 75,
+        "metric_sources": {
+          "avg_queue_length_veh": "incoming_lane_halting_count",
+          "throughput_veh_per_h": "finish_totals",
+          "avg_decision_latency_ms": "algorithm_perf_counter",
+          "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+          "avg_travel_time_s": "tripinfo_completed",
+          "avg_waiting_time_s": "tripinfo_completed"
+        },
+        "warnings": [
+          "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。",
+          "未完整观测受控路口通行次数，两项安全暴露率记为不可用。"
+        ]
+      },
+      "missing_official_metrics": [
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000"
+      ]
+    }
+  ]
+}

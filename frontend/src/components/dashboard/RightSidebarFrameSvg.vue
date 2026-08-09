@@ -13,7 +13,7 @@ const { innerScreen } = RIGHT_SIDEBAR_SHELL
   <svg
     class="right-sidebar-frame"
     viewBox="0 0 560 990"
-    preserveAspectRatio="xMidYMid meet"
+    preserveAspectRatio="xMaxYMid meet"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
     aria-hidden="true"

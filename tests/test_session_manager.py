@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import time
 import unittest
 from dataclasses import replace
@@ -15,6 +16,7 @@ from simulation.sumo.session import (
     load_catalog,
 )
 from simulation.sumo.scenario import ScenarioCompilationError
+from simulation.sumo.runtime import SumoRuntime
 from test_session_scenario import write_fixture
 
 
@@ -83,6 +85,47 @@ class FakeSimulationManager(SimulationManager):
         self._publish(record, replace(record.snapshot, state="STOPPED"))
         with self._lock:
             self._active_session_id = None
+
+
+class _RuntimeApi:
+    def start(self, command):
+        pass
+
+    def close(self):
+        pass
+
+
+class RuntimeOwningSimulationManager(SimulationManager):
+    """Minimal worker used to exercise ownership across manager instances."""
+
+    def __init__(self, *, release: threading.Event, **kwargs):
+        super().__init__(**kwargs)
+        self.release = release
+        self.ready = threading.Event()
+
+    def _run_worker(self, record):
+        runtime = SumoRuntime(
+            None,
+            _RuntimeApi(),
+            backend="libsumo",
+            binary_name="sumo",
+        )
+        try:
+            runtime.start(["sumo"])
+            self._publish(record, replace(record.snapshot, state="RUNNING"))
+            self.ready.set()
+            self.release.wait(timeout=5)
+            self._publish(record, replace(record.snapshot, state="COMPLETED"))
+        except BaseException as exc:
+            self._publish(
+                record,
+                replace(record.snapshot, state="FAILED", error=str(exc)),
+            )
+        finally:
+            runtime.close()
+            self.ready.set()
+            with self._lock:
+                self._active_session_id = None
 
 
 class SessionManagerTests(unittest.TestCase):
@@ -213,6 +256,41 @@ class SessionManagerTests(unittest.TestCase):
             self.assertEqual(final.state, "STOPPED")
             self.assertEqual(subscription.get(timeout=1).state, "STOPPED")
             subscription.close()
+
+    def test_two_managers_cannot_own_libsumo_in_the_same_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            generated = complete_generated_fixture(root)
+            release = threading.Event()
+            first = RuntimeOwningSimulationManager(
+                generated_dir=generated,
+                session_root=root / "sessions-one",
+                release=release,
+            )
+            second = RuntimeOwningSimulationManager(
+                generated_dir=generated,
+                session_root=root / "sessions-two",
+                release=threading.Event(),
+            )
+            config = SimulationConfig(
+                intersection_ids=("demo_2",),
+                duration_seconds=60,
+            )
+
+            first_id = first.start(config)
+            self.assertTrue(first.ready.wait(timeout=2))
+            self.assertEqual(first.snapshot(first_id).state, "RUNNING")
+            try:
+                second_id = second.start(config)
+                second_final = second.wait(second_id, timeout=2)
+                self.assertEqual(second_final.state, "FAILED")
+                self.assertIn("already active", second_final.error)
+                self.assertEqual(first.snapshot(first_id).state, "RUNNING")
+            finally:
+                release.set()
+                first.wait(first_id, timeout=2)
+
+            self.assertEqual(first.snapshot(first_id).state, "COMPLETED")
 
     def test_pause_resume_and_runtime_speed_control(self):
         with tempfile.TemporaryDirectory() as directory:

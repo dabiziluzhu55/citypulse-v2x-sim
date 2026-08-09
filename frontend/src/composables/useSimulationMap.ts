@@ -11,6 +11,7 @@ export function useSimulationMap(
   const geojson = ref<MapGeoJsonResponse | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  let loadRevision = 0
 
   function resolveId(): string {
     return typeof intersectionId === 'string' ? intersectionId : intersectionId.value
@@ -21,6 +22,7 @@ export function useSimulationMap(
   }
 
   async function load() {
+    const revision = ++loadRevision
     const id = resolveId()
     if (!id || !isEnabled()) {
       geojson.value = null
@@ -31,12 +33,15 @@ export function useSimulationMap(
     loading.value = true
     error.value = null
     try {
-      geojson.value = await fetchMapGeoJson(id, radiusM)
+      const response = await fetchMapGeoJson(id, radiusM)
+      if (revision !== loadRevision || id !== resolveId()) return
+      geojson.value = response
     } catch (err) {
+      if (revision !== loadRevision) return
       error.value = err instanceof Error ? err.message : '加载路网地图失败'
       geojson.value = null
     } finally {
-      loading.value = false
+      if (revision === loadRevision) loading.value = false
     }
   }
 

@@ -21,9 +21,18 @@ export const SCENARIO_MODE_OPTIONS = [
   {
     label: '雄安20路口路网',
     value: 'xiongan_20',
+    intersectionIds: Array.from({ length: 20 }, (_, index) => `demo_${index + 1}`),
   },
-  { label: '东部密集路口场景', value: 'east_dense' },
-  { label: '西部密集路口场景', value: 'west_dense' },
+  {
+    label: '东部密集路口场景',
+    value: 'east_dense',
+    intersectionIds: ['demo_3', 'demo_5', 'demo_6', 'demo_9'],
+  },
+  {
+    label: '西部密集路口场景',
+    value: 'west_dense',
+    intersectionIds: ['demo_14', 'demo_15', 'demo_19'],
+  },
 ] as const
 
 export type ScenarioModeId = string
@@ -68,6 +77,14 @@ export const SIMULATION_PERIOD_RANGES: Record<TrafficFlowMode, SimulationPeriodR
   evening_peak: { start: '17:30', end: '19:30' },
 }
 
+export const MAX_SIMULATION_DURATION_MINUTES = 15
+export const MAX_SIMULATION_DURATION_SECONDS = MAX_SIMULATION_DURATION_MINUTES * 60
+
+export interface SimulationClockPartOptions {
+  hours: string[]
+  minutesByHour: Record<string, string[]>
+}
+
 export function clockTimeToMinutes(value: string): number {
   const match = /^(\d{2}):(\d{2})$/.exec(value)
   if (!match) return Number.NaN
@@ -75,6 +92,133 @@ export function clockTimeToMinutes(value: string): number {
   const minutes = Number(match[2])
   if (hours > 23 || minutes > 59) return Number.NaN
   return hours * 60 + minutes
+}
+
+export function minutesToClockTime(value: number): string {
+  const minutes = Math.max(0, Math.min(24 * 60 - 1, Math.round(value)))
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+}
+
+export function clampClockTime(value: string, minimum: string, maximum: string): string {
+  const minimumMinutes = clockTimeToMinutes(minimum)
+  const maximumMinutes = clockTimeToMinutes(maximum)
+  const valueMinutes = clockTimeToMinutes(value)
+  if (
+    !Number.isFinite(minimumMinutes)
+    || !Number.isFinite(maximumMinutes)
+    || maximumMinutes < minimumMinutes
+  ) return minimum
+  if (!Number.isFinite(valueMinutes)) return minimum
+  return minutesToClockTime(Math.min(maximumMinutes, Math.max(minimumMinutes, valueMinutes)))
+}
+
+export function stepClockMinute(
+  value: string,
+  direction: -1 | 1,
+  minimum: string,
+  maximum: string,
+): string {
+  const current = clockTimeToMinutes(clampClockTime(value, minimum, maximum))
+  const minimumMinutes = clockTimeToMinutes(minimum)
+  const maximumMinutes = clockTimeToMinutes(maximum)
+  return minutesToClockTime(Math.min(
+    maximumMinutes,
+    Math.max(minimumMinutes, current + direction),
+  ))
+}
+
+export function stepClockHour(
+  value: string,
+  direction: -1 | 1,
+  minimum: string,
+  maximum: string,
+): string {
+  const current = clockTimeToMinutes(clampClockTime(value, minimum, maximum))
+  const minimumMinutes = clockTimeToMinutes(minimum)
+  const maximumMinutes = clockTimeToMinutes(maximum)
+  const targetHour = Math.floor(current / 60) + direction
+  const minimumTarget = Math.max(minimumMinutes, targetHour * 60)
+  const maximumTarget = Math.min(maximumMinutes, targetHour * 60 + 59)
+  if (minimumTarget > maximumTarget) return minutesToClockTime(current)
+  const preferred = targetHour * 60 + current % 60
+  return minutesToClockTime(Math.min(maximumTarget, Math.max(minimumTarget, preferred)))
+}
+
+function clockValuesBetween(startMinutes: number, endMinutes: number): string[] {
+  if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || endMinutes < startMinutes) return []
+  return Array.from(
+    { length: endMinutes - startMinutes + 1 },
+    (_, index) => minutesToClockTime(startMinutes + index),
+  )
+}
+
+export function simulationStartClockValues(flowMode: TrafficFlowMode): string[] {
+  const range = SIMULATION_PERIOD_RANGES[flowMode]
+  return clockValuesBetween(
+    clockTimeToMinutes(range.start),
+    clockTimeToMinutes(range.end) - 1,
+  )
+}
+
+export function simulationEndClockValues(flowMode: TrafficFlowMode, start: string): string[] {
+  const rangeEnd = clockTimeToMinutes(SIMULATION_PERIOD_RANGES[flowMode].end)
+  const startMinutes = clockTimeToMinutes(start)
+  if (!Number.isFinite(startMinutes)) return []
+  return clockValuesBetween(
+    startMinutes + 1,
+    Math.min(rangeEnd, startMinutes + MAX_SIMULATION_DURATION_MINUTES),
+  )
+}
+
+export function disabledClockHours(allowedValues: string[]): number[] {
+  const allowedHours = new Set(
+    allowedValues
+      .map((value) => clockTimeToMinutes(value))
+      .filter(Number.isFinite)
+      .map((value) => Math.floor(value / 60)),
+  )
+  return Array.from({ length: 24 }, (_, hour) => hour)
+    .filter((hour) => !allowedHours.has(hour))
+}
+
+export function disabledClockMinutes(allowedValues: string[], hour: number): number[] {
+  const allowedMinutes = new Set(
+    allowedValues
+      .map((value) => clockTimeToMinutes(value))
+      .filter((value) => Number.isFinite(value) && Math.floor(value / 60) === hour)
+      .map((value) => value % 60),
+  )
+  return Array.from({ length: 60 }, (_, minute) => minute)
+    .filter((minute) => !allowedMinutes.has(minute))
+}
+
+export function clockPartOptions(values: string[]): SimulationClockPartOptions {
+  const minutesByHour: Record<string, string[]> = {}
+  values.forEach((value) => {
+    const [hour, minute] = value.split(':')
+    if (!hour || !minute) return
+    const minutes = minutesByHour[hour] ?? []
+    if (!minutes.includes(minute)) minutes.push(minute)
+    minutesByHour[hour] = minutes
+  })
+  return { hours: Object.keys(minutesByHour), minutesByHour }
+}
+
+export function clockTimeParts(value: string): { hour: string; minute: string } {
+  const [hour = '', minute = ''] = value.split(':')
+  return { hour, minute }
+}
+
+export function maximumSimulationEndTime(flowMode: TrafficFlowMode, start: string): string {
+  const rangeEnd = clockTimeToMinutes(SIMULATION_PERIOD_RANGES[flowMode].end)
+  const startMinutes = clockTimeToMinutes(start)
+  if (!Number.isFinite(startMinutes)) return SIMULATION_PERIOD_RANGES[flowMode].end
+  return minutesToClockTime(Math.min(rangeEnd, startMinutes + MAX_SIMULATION_DURATION_MINUTES))
+}
+
+export function defaultSimulationTimeWindow(flowMode: TrafficFlowMode): { start: string; end: string } {
+  const start = SIMULATION_PERIOD_RANGES[flowMode].start
+  return { start, end: maximumSimulationEndTime(flowMode, start) }
 }
 
 export function simulationTimeWindow(
@@ -93,8 +237,9 @@ export function simulationTimeWindow(
     || startMinutes < rangeStart
     || endMinutes > rangeEnd
     || endMinutes <= startMinutes
+    || endMinutes - startMinutes > MAX_SIMULATION_DURATION_MINUTES
   ) {
-    throw new Error(`Simulation time must stay within ${range.start}-${range.end}`)
+    throw new Error(`Simulation time must stay within ${range.start}-${range.end} and not exceed 15 minutes`)
   }
   return {
     windowStartSeconds: (startMinutes - rangeStart) * 60,
@@ -179,8 +324,8 @@ export interface DisturbanceEventOption extends SelectOption<DisturbancePresetId
 export const DISTURBANCE_EVENT_OPTIONS: DisturbanceEventOption[] = [
   { label: '施工占道', value: 'construction', eventType: 'lane_closure' },
   { label: '道路限速', value: 'speed_limit', eventType: 'speed_limit' },
-  { label: '大型活动散场', value: 'event_departure', eventType: 'lane_closure' },
-  { label: '大型活动开场', value: 'event_arrival', eventType: 'speed_limit' },
+  { label: '大型活动散场', value: 'event_departure', eventType: 'major_event_closing' },
+  { label: '大型活动开场', value: 'event_arrival', eventType: 'major_event_opening' },
   { label: '交通事故', value: 'accident', eventType: 'accident' },
 ]
 
@@ -188,6 +333,8 @@ export const DEFAULT_BACKEND_EVENT_TYPES: DisturbanceType[] = [
   'lane_closure',
   'speed_limit',
   'accident',
+  'major_event_opening',
+  'major_event_closing',
 ]
 
 export function resolveCatalogEventTypes(eventTypes: string[] | null | undefined): string[] {

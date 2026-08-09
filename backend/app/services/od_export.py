@@ -1,4 +1,4 @@
-"""九区域 OD 导出：读取官方 TAZ 与已生成 OD 报告，输出 CSV/JSON/热力图。"""
+"""九区域OD导出：读取官方TAZ与已生成OD报告，输出CSV/JSON/热力图"""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def write_od_bundle(
     duration_seconds: float,
     output_dir: Path,
 ) -> OdExportArtifacts:
-    """生成 od/ 目录内容并返回字节与相对来源说明。"""
+    """生成od/ 目录内容并返回字节与相对来源说明"""
 
     zones = load_and_validate_od_zones(project_root / OFFICIAL_DEMANDS_RELATIVE)
     report, report_rel, csv_rel = load_od_report(
@@ -389,29 +389,13 @@ def render_od_heatmap_png(
                 color="white" if value >= threshold and value > 0 else "black",
             )
 
-    zone_lines = [
-        f"{zone_id}: {', '.join(zones[zone_id])}" for zone_id in EXPECTED_ZONE_IDS
-    ]
-    same_zone = (
-        "intra-zone trips excluded from matrix; diagonal written as 0"
-        if "excluded" in diagonal_policy
-        else f"diagonal_policy={diagonal_policy!r}"
-    )
     caption = (
-        "Notes (OD matrix explanation)\n"
-        "1) Cell (i,j) = typical trips from origin TAZ i to destination TAZ j.\n"
-        "2) Y-axis = origin TAZ, X-axis = destination TAZ; fixed order zone_1..zone_9.\n"
-        f"3) Values are in PCU (passenger car unit); unit={unit}.\n"
-        "4) Nine zones / intersections:\n   "
-        + "\n   ".join(zone_lines)
-        + "\n"
-        f"5) Same-zone trips: {same_zone}.\n"
-        "6) Typical OD from final complete routes; not a unique true resident OD.\n"
-        "7) Time scope: FULL period OD for the selected traffic period "
-        f"(not sliced to export window "
-        f"[{window_start_seconds:g}, {window_start_seconds + duration_seconds:g})).\n"
-        "说明：OD矩阵=起点TAZ到终点TAZ的典型出行量；行列方向为纵原点横终点；"
-        "单位PCU；同区行程不进矩阵（对角线为0）；矩阵为全时段而非导出窗口切片。"
+        "典型出行需求（OD矩阵说明）\n"
+        "1) 单元格(i,j)表示从起点交通分析区（TAZ） i到终点交通分析区（TAZ） j的典型出行量\n"
+        "2) Y轴 = 起点TAZ，X轴 = 终点TAZ；区域顺序为1-9\n"
+        "3) 数值单位为PCU（客运车辆单位）\n"
+        "4) 时间范围：所选交通时段的全时段OD\n"
+        "说明：OD矩阵表示起点TAZ到终点TAZ的典型出行量；同区域行程不计入矩阵（对角线为0）"
     )
     fig.text(
         0.02,
@@ -423,7 +407,7 @@ def render_od_heatmap_png(
         wrap=True,
         fontproperties=font_manager.FontProperties(family=font_family or "DejaVu Sans"),
     )
-    fig.subplots_adjust(left=0.12, right=0.95, top=0.92, bottom=0.42)
+    fig.subplots_adjust(left=0.12, right=0.95, top=0.92, bottom=0.28)
 
     buffer = io.BytesIO()
     try:

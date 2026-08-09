@@ -1,8 +1,9 @@
-import { apiClient } from './client'
+import { apiClient } from './client.ts'
 import type {
   DisturbanceEventPayload,
   SimulationSnapshot,
   SimulationPlaybackResponse,
+  SimulationEvaluation,
   StartSimulationRequest,
   StartSimulationResponse,
   StopSimulationResponse,
@@ -22,8 +23,19 @@ export async function startSimulation(
   return data
 }
 
-export async function fetchSimulationStatus(sessionId: string): Promise<SimulationSnapshot> {
-  const { data } = await apiClient.get<SimulationSnapshot>(`/simulations/${sessionId}`)
+export async function fetchSimulationStatus(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<SimulationSnapshot> {
+  const { data } = await apiClient.get<SimulationSnapshot>(
+    `/simulations/${sessionId}`,
+    { signal },
+  )
+  return data
+}
+
+export async function fetchSimulationMetrics(sessionId: string): Promise<SimulationEvaluation> {
+  const { data } = await apiClient.get<SimulationEvaluation>(`/simulations/${sessionId}/metrics`)
   return data
 }
 

@@ -1,0 +1,71 @@
+2026-08-05 00:56:35,968 [eval] 评估: traffic_control/ippo/models/ippo_v8_20tls_ep160.pt
+Warning: Missing green phase in tlLogic '891', program 'demo_19_off_peak' for tl-index 7
+2026-08-05 00:56:43,860 [eval] IPPO v8 推理: /home/kemove/devdata1/gsb/citypulse-v2x-sim/traffic_control/ippo/models/ippo_v8_20tls_ep160.pt
+Warning: Vehicle 'passenger_0_17541.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=28.15.
+Warning: Vehicle 'bus_0_6720.0' performs emergency braking with decel=-7.00 wished=4.50 severity=1.00, time=53.30.
+Warning: Vehicle 'passenger_0_26030.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=53.40.
+Warning: Vehicle 'passenger_0_22273.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=74.80.
+Warning: Vehicle 'passenger_0_12093.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=142.75.
+Warning: Vehicle 'passenger_0_14353.2' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=173.00.
+Warning: Vehicle 'passenger_0_13080.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=173.00.
+Warning: Vehicle 'bus_0_7021.0' performs emergency braking with decel=-7.00 wished=4.50 severity=1.00, time=243.25.
+Warning: Vehicle 'passenger_0_19047.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=263.40.
+2026-08-05 01:05:31,344 [eval] seed=1042 dep=837 arr=76 wait=450 (535.4s)
+Warning: Missing green phase in tlLogic '891', program 'demo_19_off_peak' for tl-index 7
+2026-08-05 01:05:40,251 [eval] IPPO v8 推理: /home/kemove/devdata1/gsb/citypulse-v2x-sim/traffic_control/ippo/models/ippo_v8_20tls_ep160.pt
+Warning: Vehicle 'passenger_0_6847.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=23.30.
+Warning: Vehicle 'passenger_0_17541.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=28.15.
+Warning: Vehicle 'passenger_0_22273.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=74.80.
+Warning: Vehicle 'passenger_0_12093.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=142.95.
+Warning: Vehicle 'passenger_0_6621.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=143.00.
+Warning: Vehicle 'passenger_0_12093.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=143.15.
+Warning: Vehicle 'passenger_0_14353.2' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=173.00.
+Warning: Vehicle 'passenger_0_13080.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=173.00.
+Warning: Vehicle 'passenger_0_19047.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=263.40.
+2026-08-05 01:14:51,091 [eval] seed=1142 dep=837 arr=76 wait=445 (559.7s)
+Warning: Missing green phase in tlLogic '891', program 'demo_19_off_peak' for tl-index 7
+2026-08-05 01:14:59,337 [eval] IPPO v8 推理: /home/kemove/devdata1/gsb/citypulse-v2x-sim/traffic_control/ippo/models/ippo_v8_20tls_ep160.pt
+Warning: Vehicle 'passenger_0_17541.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=28.15.
+Warning: Vehicle 'passenger_0_26030.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=49.25.
+Warning: Vehicle 'passenger_0_22273.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=74.80.
+Warning: Vehicle 'passenger_0_12093.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=142.80.
+Warning: Vehicle 'passenger_0_6621.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=143.00.
+Warning: Vehicle 'passenger_0_14353.2' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=173.00.
+Warning: Vehicle 'passenger_0_13080.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=173.00.
+Warning: Vehicle 'passenger_0_19047.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=263.40.
+2026-08-05 01:24:06,677 [eval] seed=1242 dep=837 arr=75 wait=455 (555.6s)
+Warning: Missing green phase in tlLogic '891', program 'demo_19_off_peak' for tl-index 7
+2026-08-05 01:24:14,547 [eval] IPPO v8 推理: /home/kemove/devdata1/gsb/citypulse-v2x-sim/traffic_control/ippo/models/ippo_v8_20tls_ep160.pt
+Warning: Vehicle 'passenger_0_17541.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=28.15.
+Warning: Vehicle 'bus_0_6720.0' performs emergency braking with decel=-7.00 wished=4.50 severity=1.00, time=53.20.
+Warning: Vehicle 'passenger_0_26030.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=53.25.
+Warning: Vehicle 'passenger_0_22273.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=74.80.
+Warning: Vehicle 'passenger_0_12093.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=142.95.
+Warning: Vehicle 'passenger_0_6621.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=143.00.
+Warning: Vehicle 'passenger_0_12093.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=143.15.
+Warning: Vehicle 'passenger_0_14353.2' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=173.00.
+Warning: Vehicle 'passenger_0_13080.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=173.00.
+Warning: Vehicle 'bus_0_1293.0' performs emergency braking with decel=-7.00 wished=4.50 severity=1.00, time=186.85.
+Warning: Vehicle 'passenger_0_19047.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=263.40.
+2026-08-05 01:33:28,529 [eval] seed=1342 dep=837 arr=76 wait=448 (561.8s)
+Warning: Missing green phase in tlLogic '891', program 'demo_19_off_peak' for tl-index 7
+2026-08-05 01:33:37,196 [eval] IPPO v8 推理: /home/kemove/devdata1/gsb/citypulse-v2x-sim/traffic_control/ippo/models/ippo_v8_20tls_ep160.pt
+Warning: Vehicle 'passenger_0_17541.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=28.15.
+Warning: Vehicle 'bus_0_6720.0' performs emergency braking with decel=-7.00 wished=4.50 severity=1.00, time=53.30.
+Warning: Vehicle 'passenger_0_26030.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=53.50.
+Warning: Vehicle 'passenger_0_22273.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=74.80.
+Warning: Vehicle 'passenger_0_9934.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=101.60.
+Warning: Vehicle 'passenger_0_12093.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=142.95.
+Warning: Vehicle 'passenger_0_6621.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=143.00.
+Warning: Vehicle 'passenger_0_12093.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=143.15.
+Warning: Vehicle 'passenger_0_14353.2' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=173.00.
+Warning: Vehicle 'passenger_0_13080.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=173.00.
+Warning: Vehicle 'bus_0_7021.0' performs emergency braking with decel=-7.00 wished=4.50 severity=1.00, time=243.25.
+Warning: Vehicle 'passenger_0_19047.0' performs emergency braking with decel=-9.00 wished=4.50 severity=1.00, time=263.40.
+2026-08-05 01:42:47,592 [eval] seed=1442 dep=837 arr=75 wait=444 (559.1s)
+2026-08-05 01:42:47,593 [eval] 结果: status=complete success=5 failed=0 mean_arr=75.6 wait=448.5 | traffic_control/ippo/models/ippo_v8_20tls_ep160_eval.json
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds

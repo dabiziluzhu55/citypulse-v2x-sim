@@ -4,7 +4,12 @@ export type TrafficFlowMode = 'flat' | 'morning_peak' | 'evening_peak'
 
 export type TrafficLightPlan = 'fixed_time' | 'default_sumo' | 'custom'
 
-export type DisturbanceType = 'lane_closure' | 'accident' | 'speed_limit'
+export type DisturbanceType =
+  | 'lane_closure'
+  | 'accident'
+  | 'speed_limit'
+  | 'major_event_opening'
+  | 'major_event_closing'
 
 export interface ScenarioTemplate {
   template_id: string
@@ -77,10 +82,34 @@ export interface AccidentDisturbance {
   position_ratio: number
 }
 
+export interface MajorEventOpeningDisturbance {
+  event_type: 'major_event_opening'
+  event_id: string
+  start_seconds: number
+  end_seconds: number
+  venue_lane_id?: string
+  source_lane_ids?: string[]
+  vehicle_count: number
+  vehicle_type_id?: string
+}
+
+export interface MajorEventClosingDisturbance {
+  event_type: 'major_event_closing'
+  event_id: string
+  start_seconds: number
+  end_seconds: number
+  venue_lane_id?: string
+  destination_lane_ids?: string[]
+  vehicle_count: number
+  vehicle_type_id?: string
+}
+
 export type DisturbanceEvent =
   | LaneClosureDisturbance
   | SpeedLimitDisturbance
   | AccidentDisturbance
+  | MajorEventOpeningDisturbance
+  | MajorEventClosingDisturbance
 
 export interface CreateScenarioRequest {
   name: string

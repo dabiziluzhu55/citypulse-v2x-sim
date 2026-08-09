@@ -6,6 +6,8 @@ import {
   SIMULATION_TIME_OPTIONS,
   TRAFFIC_FLOW_MODE_OPTIONS,
   clockTimeToMinutes,
+  defaultSimulationTimeWindow,
+  maximumSimulationEndTime,
   simulationTimeWindow,
   type ScenarioModeId,
 } from '../constants/scenarioOptions'
@@ -13,15 +15,18 @@ import {
   SIMULATION_SNAPSHOT_INTERVAL_MS,
   SUPPORTED_BACKEND_CONTROL_MODES,
   requireAvailableControlMode,
+  requirePeriodCompatibleControlMode,
   resolveDashboardControlModes,
 } from '../constants/simulationOptions'
 import type { CatalogIntersection, CatalogScenarioPreset } from '../types/catalog'
 import type { StartSimulationRequest } from '../types/simulation'
 import type { TrafficFlowMode } from '../types/scenario'
-import { requireSimulatableIntersection } from './catalogCapabilities'
 import { buildStartSimulationRequest } from '../utils/scenarioPayload'
+import { scenarioPresetIntersectionIds } from '../utils/scenarioPresetRules'
 import {
   SCENARIO_CONFIG_EXPORT_VERSION,
+  DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
+  resolveMajorEventVehicleCount,
   resolveImportedDisturbanceTimes,
 } from '../utils/scenarioConfigMigration'
 import {
@@ -68,12 +73,13 @@ const FLOW_MODE_TO_PERIOD: Record<TrafficFlowMode, string> = {
 }
 
 function defaultCompactConfig(): CompactScenarioConfig {
+  const time = defaultSimulationTimeWindow('morning_peak')
   return {
     scenario_preset_id: 'xiongan_20',
     flow_mode: 'morning_peak',
     disturbance_events: [],
-    simulation_start_time: SIMULATION_PERIOD_RANGES.morning_peak.start,
-    simulation_end_time: SIMULATION_PERIOD_RANGES.morning_peak.end,
+    simulation_start_time: time.start,
+    simulation_end_time: time.end,
     playback_speed: 1,
     control_mode: 'fixed',
   }
@@ -86,30 +92,31 @@ function resolvePeriod(config: CompactScenarioConfig, periods: string[]): string
 
 export function buildSimulationPayload(
   config: CompactScenarioConfig,
-  intersection: CatalogIntersection | null,
+  _intersection: CatalogIntersection | null,
   periods: string[],
   scenarioPresets: CatalogScenarioPreset[] = [],
-  supportedIntersectionIds: string[] = [],
+  _supportedIntersectionIds: string[] = [],
   controlModes: string[] = [...SUPPORTED_BACKEND_CONTROL_MODES],
 ): StartSimulationRequest {
-  const simulatableIntersection = requireSimulatableIntersection(intersection)
   const time = simulationTimeWindow(
     config.flow_mode,
     config.simulation_start_time,
     config.simulation_end_time,
   )
-  const preset = scenarioPresets.find((item) => item.preset_id === config.scenario_preset_id)
-  const supported = new Set(supportedIntersectionIds.length
-    ? supportedIntersectionIds
-    : [simulatableIntersection.intersection_id])
+  const presetIntersectionIds = scenarioPresetIntersectionIds(
+    config.scenario_preset_id,
+    scenarioPresets,
+  )
+  if (presetIntersectionIds.length === 0) {
+    throw new Error(`未知场景预设：${config.scenario_preset_id}`)
+  }
+  const presetIntersections = new Set(presetIntersectionIds)
   const disturbanceEvents = config.disturbance_events.map((event) => {
     const option = DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === event.preset_id)
     if (!option || option.eventType !== event.event_type) throw new Error('扰动事件不受支持')
     const intersectionIds = [...new Set(event.intersection_ids)]
     if (intersectionIds.length === 0) throw new Error('请选择至少一个扰动路口')
-    const invalid = intersectionIds.filter((id) => (
-      !supported.has(id) || (preset && !preset.intersection_ids.includes(id))
-    ))
+    const invalid = intersectionIds.filter((id) => !presetIntersections.has(id))
     if (invalid.length > 0) throw new Error(`扰动路口不可用于当前场景：${invalid.join(', ')}`)
     const outerStartMinutes = clockTimeToMinutes(config.simulation_start_time)
     const eventStartMinutes = clockTimeToMinutes(event.start_time)
@@ -131,12 +138,17 @@ export function buildSimulationPayload(
       intersectionIds,
       startSeconds,
       endSeconds,
+      vehicleCount: event.vehicle_count,
     }
   })
-  const controlMode = requireAvailableControlMode(config.control_mode, controlModes)
+  const period = resolvePeriod(config, periods)
+  const controlMode = requirePeriodCompatibleControlMode(
+    requireAvailableControlMode(config.control_mode, controlModes),
+    period,
+  )
   return buildStartSimulationRequest({
     scenarioPresetId: config.scenario_preset_id,
-    period: resolvePeriod(config, periods),
+    period,
     windowStartSeconds: time.windowStartSeconds,
     durationSeconds: time.durationSeconds,
     controlMode,
@@ -168,6 +180,10 @@ export function useCompactScenarioConfig(
 ) {
   const config = ref<CompactScenarioConfig>(defaultCompactConfig())
   const activeTimeRange = computed(() => SIMULATION_PERIOD_RANGES[config.value.flow_mode])
+  const activeMaximumEndTime = computed(() => maximumSimulationEndTime(
+    config.value.flow_mode,
+    config.value.simulation_start_time,
+  ))
 
   watch(
     config,
@@ -182,42 +198,15 @@ export function useCompactScenarioConfig(
   watch(
     () => config.value.flow_mode,
     (mode) => {
-      const range = SIMULATION_PERIOD_RANGES[mode]
-      config.value.simulation_start_time = range.start
-      config.value.simulation_end_time = range.end
+      const time = defaultSimulationTimeWindow(mode)
+      config.value.simulation_start_time = time.start
+      config.value.simulation_end_time = time.end
       config.value.disturbance_events = config.value.disturbance_events.map((event) => ({
         ...event,
-        start_time: range.start,
-        end_time: range.end,
+        start_time: time.start,
+        end_time: time.end,
       }))
     },
-  )
-
-  watch(
-    scenarioPresets,
-    (presets) => {
-      if (presets.length > 0 && !presets.some((item) => item.preset_id === config.value.scenario_preset_id)) {
-        config.value.scenario_preset_id = presets[0].preset_id
-      }
-    },
-    { immediate: true },
-  )
-
-  watch(
-    [() => config.value.scenario_preset_id, scenarioPresets, supportedIntersectionIds],
-    ([presetId, presets, supportedIds]) => {
-      const preset = presets.find((item) => item.preset_id === presetId)
-      if (!preset) return
-      const supported = new Set(supportedIds)
-      const available = preset.intersection_ids.filter((id) => supported.has(id))
-      config.value.disturbance_events = config.value.disturbance_events
-        .map((event) => ({
-          ...event,
-          intersection_ids: event.intersection_ids.filter((id) => available.includes(id)),
-        }))
-        .filter((event) => event.intersection_ids.length > 0)
-    },
-    { immediate: true },
   )
 
   watch(
@@ -281,25 +270,29 @@ export function useCompactScenarioConfig(
     const playbackSpeed = candidate.playback_speed ?? candidate.flow_scale
     const controlMode = candidate.control_mode
 
-    const supportedPresetIds = scenarioPresets.value.length > 0
-      ? scenarioPresets.value.map((item) => item.preset_id)
-      : SCENARIO_MODE_OPTIONS.map((item) => item.value)
-    if (typeof scenarioPresetId !== 'string' || !supportedPresetIds.includes(scenarioPresetId)) throw new Error('场景模式不受支持')
+    if (
+      typeof scenarioPresetId !== 'string'
+      || !SCENARIO_MODE_OPTIONS.some((item) => item.value === scenarioPresetId)
+    ) throw new Error('场景模式不受支持')
     if (!TRAFFIC_FLOW_MODE_OPTIONS.some((item) => item.value === flowMode)) throw new Error('交通流模式不受支持')
-    const supportedControlModes: string[] = resolveDashboardControlModes(controlModes.value)
-      .map((item) => item.value)
-    if (supportedControlModes.length === 0) throw new Error('后端未提供可运行的管控算法')
-    if (typeof controlMode === 'string' && !supportedControlModes.includes(controlMode)) throw new Error('管控算法不受支持')
-
+    const supportedControlModes = [...SUPPORTED_BACKEND_CONTROL_MODES]
+    if (typeof controlMode === 'string' && !supportedControlModes.includes(controlMode as typeof supportedControlModes[number])) {
+      throw new Error('管控算法不受支持')
+    }
     const mode = flowMode as TrafficFlowMode
     const legacyTimes = legacyPresetTimes(candidate.time_preset)
     const range = SIMULATION_PERIOD_RANGES[mode]
     const startTime = typeof candidate.simulation_start_time === 'string'
       ? candidate.simulation_start_time
       : legacyTimes?.start ?? range.start
-    const endTime = typeof candidate.simulation_end_time === 'string'
+    let endTime = typeof candidate.simulation_end_time === 'string'
       ? candidate.simulation_end_time
-      : legacyTimes?.end ?? range.end
+      : legacyTimes?.end ?? maximumSimulationEndTime(mode, startTime)
+    const startMinutes = clockTimeToMinutes(startTime)
+    const endMinutes = clockTimeToMinutes(endTime)
+    if (Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && endMinutes - startMinutes > 15) {
+      endTime = maximumSimulationEndTime(mode, startTime)
+    }
     simulationTimeWindow(mode, startTime, endTime)
 
     const fallbackIntersectionIds = Array.isArray(candidate.disturbance_intersection_ids)
@@ -315,13 +308,28 @@ export function useCompactScenarioConfig(
           ? value.intersection_ids.filter((id): id is string => typeof id === 'string')
           : []
         const importedTimes = resolveImportedDisturbanceTimes(value, startTime, endTime)
+        const outerStart = clockTimeToMinutes(startTime)
+        const outerEnd = clockTimeToMinutes(endTime)
+        const importedStart = clockTimeToMinutes(importedTimes.startTime)
+        const importedEnd = clockTimeToMinutes(importedTimes.endTime)
+        const eventStartTime = Number.isFinite(importedStart) && importedStart >= outerStart && importedStart < outerEnd
+          ? importedTimes.startTime
+          : startTime
+        const eventEndTime = Number.isFinite(importedEnd) && importedEnd > clockTimeToMinutes(eventStartTime) && importedEnd <= outerEnd
+          ? importedTimes.endTime
+          : endTime
+        const isMajorEvent = preset.eventType === 'major_event_opening'
+          || preset.eventType === 'major_event_closing'
         return {
           event_id: typeof value.event_id === 'string' ? value.event_id : `ui_import_${index + 1}`,
           preset_id: preset.value,
           event_type: preset.eventType,
           intersection_ids: intersectionIds,
-          start_time: importedTimes.startTime,
-          end_time: importedTimes.endTime,
+          start_time: eventStartTime,
+          end_time: eventEndTime,
+          ...(isMajorEvent ? {
+            vehicle_count: resolveMajorEventVehicleCount(value.vehicle_count),
+          } : {}),
         }
       })
     } else if (typeof candidate.disturbance === 'string' && candidate.disturbance !== 'none') {
@@ -334,6 +342,12 @@ export function useCompactScenarioConfig(
         intersection_ids: fallbackIntersectionIds,
         start_time: startTime,
         end_time: endTime,
+        ...(
+          legacyPreset.eventType === 'major_event_opening'
+          || legacyPreset.eventType === 'major_event_closing'
+            ? { vehicle_count: DEFAULT_MAJOR_EVENT_VEHICLE_COUNT }
+            : {}
+        ),
       }]
     }
 
@@ -357,6 +371,14 @@ export function useCompactScenarioConfig(
   }
 
   function buildExport(): ScenarioConfigExport {
+    const backendRequest = buildSimulationPayload(
+      config.value,
+      null,
+      periods.value,
+      [],
+      [],
+      [...SUPPORTED_BACKEND_CONTROL_MODES],
+    )
     return {
       version: SCENARIO_CONFIG_EXPORT_VERSION,
       exported_at: new Date().toISOString(),
@@ -368,9 +390,11 @@ export function useCompactScenarioConfig(
         simulation_time: labels.value.time,
         algorithm: config.value.control_mode,
       },
-      backend_request: buildPayload(),
+      backend_request: backendRequest,
       data_sources: {
-        scenario: 'catalog',
+        scenario: scenarioPresets.value.some((item) => item.preset_id === config.value.scenario_preset_id)
+          ? 'catalog'
+          : 'compatibility_preset',
         disturbance: 'catalog',
         time: 'local_range',
         algorithm: 'backend',
@@ -383,6 +407,7 @@ export function useCompactScenarioConfig(
     labels,
     configNote,
     activeTimeRange,
+    activeMaximumEndTime,
     buildPayload,
     buildPayloadFor,
     parseImportedConfig,

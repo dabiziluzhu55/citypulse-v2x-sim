@@ -1,4 +1,4 @@
-"""基于sumolib的GeoJSON生成与坐标转换"""
+# 基于sumolib的GeoJSON生成与坐标转换
 
 from __future__ import annotations
 
@@ -32,6 +32,27 @@ class MapService:
             return round(float(lon), 7), round(float(lat), 7)
         except Exception:
             return None, None
+
+    def lane_center_lonlat(self, lane_id: str) -> tuple[float | None, float | None]:
+        net = self._load_net()
+        try:
+            lane = net.getLane(lane_id)
+        except Exception:
+            return None, None
+        shape = list(lane.getShape() or [])
+        if not shape:
+            return None, None
+        point_x, point_y = shape[len(shape) // 2]
+        return self.xy_to_lonlat(point_x, point_y)
+
+    def intersection_lonlat(
+        self, intersection_id: str
+    ) -> tuple[float | None, float | None]:
+        catalog = self._manager.catalog()
+        item = catalog.intersections.get(intersection_id)
+        if item is None or item.longitude is None or item.latitude is None:
+            return None, None
+        return float(item.longitude), float(item.latitude)
 
     def get_geojson(self, intersection_id: str, radius_m: float) -> MapGeoJsonResponse:
         artifact_path = self._generated_geojson_path(intersection_id)

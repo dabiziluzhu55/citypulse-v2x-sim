@@ -1588,7 +1588,7 @@ def _write_sumocfg(
     time_node = ET.SubElement(root, "time")
     ET.SubElement(time_node, "begin", {"value": "0"})
     ET.SubElement(time_node, "end", {"value": str(simulation_end)})
-    ET.SubElement(time_node, "step-length", {"value": "0.05"})
+    ET.SubElement(time_node, "step-length", {"value": "0.1"})
     processing = ET.SubElement(root, "processing")
     ET.SubElement(processing, "time-to-teleport", {"value": "-1"})
     ET.indent(root, space="  ")

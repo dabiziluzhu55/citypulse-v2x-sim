@@ -300,11 +300,12 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
 - 速度单位为 m/s，加速度为 m/s²，位置、里程和信号距离为米，角度为度。
 - `waiting_time_s` 是当前连续等待，`accumulated_waiting_time_s` 是车辆累计等待，
   `time_loss_s` 是相对理想行程损失的累计时间。
-- `fuel_rate_mg_s` 来自 SUMO HBEFA 排放模型；周期和累计油耗由仿真端逐步积分。
-- 急制动在加速度首次进入 `<= -3.0 m/s²` 时计一次，持续制动不重复计数。
+- `fuel_rate_mg_s` 来自 SUMO HBEFA 排放模型；决策请求中的周期和累计油耗是按观测周期
+  采样得到的在线估计，最终汇总由 SUMO tripinfo 的 emissions 结果覆盖。
+- 急制动在观测到加速度首次进入 `<= -3.0 m/s²` 时计一次，持续制动不重复计数。
 - `next_signal` 只返回下一处已选受控路口；不存在时为 `null`。
 - `leader_gap_m` 和 `follower_gap_m` 是同车道可观察车辆之间的保险杠间距；对应方向没有
-  可观察车辆时为 `null`。二者由已订阅的车道位置与车型长度计算，不额外逐车查询 TraCI。
+  可观察车辆时为 `null`。二者由决策前刷新的车道位置与车型长度计算。
 - `time_since_last_lane_change_s` 按仿真时间计算；车辆从未换道时为 `null`，换道发生帧为
   `0.0`。只有同一普通 edge 内 lane index 改变才记为换道，正常驶入下一条 edge 不会重置。
 - `active_vehicles` 等于本次 `vehicles` 中的官方可控车辆数，不包含事故占位车。
@@ -360,7 +361,8 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
 }
 ```
 
-`reason` 为 `completed`、`stopped` 或 `error`。服务返回任意 JSON 对象即可，例如
+`reason` 为 `completed`、`stopped` 或 `error`。`completed` 和 `stopped` 的车辆完成数及
+油耗来自已写完的 `tripinfo.xml`，不是在线遥测积分。服务返回任意 JSON 对象即可，例如
 `{"ok": true}`。
 
 ## 最小 FastAPI 服务

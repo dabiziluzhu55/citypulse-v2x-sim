@@ -1,4 +1,4 @@
-"""仿真管理器工厂：按配置选择 local SimulationManager 或 RedisSimulationManager。"""
+"""仿真管理器工厂：按配置选择local SimulationManager或RedisSimulationManager"""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 def create_simulation_manager(settings: Settings) -> Any:
-    """根据 simulation_manager_mode 创建管理器。
+    """根据simulation_manager_mode创建管理器
 
-    redis 模式连接失败时抛出 RedisUnavailableError，绝不静默降级为 local。
+    redis模式连接失败时抛出RedisUnavailableError，绝不静默降级为local
     """
 
     mode = settings.simulation_manager_mode
@@ -52,7 +52,7 @@ def create_simulation_manager(settings: Settings) -> Any:
 
 
 def probe_redis_manager(settings: Settings) -> tuple[bool, str | None]:
-    """探测 Redis 会话存储是否可用；不创建 Celery 任务。"""
+    """探测Redis会话存储是否可用；不创建Celery任务"""
 
     try:
         from simulation.sumo.distributed.store import RedisSessionStore

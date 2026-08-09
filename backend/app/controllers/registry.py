@@ -1,109 +1,68 @@
-"""管控算法注册表：业务control_mode → SUMO内核模式/算法名
+"""管控算法注册表：从 traffic_control.registry 读取模式配置
 
-新增基线算法时只改此处，Schema、catalog、Service、Runtime均从此读取
+新增基线算法时只改 traffic_control.registry；Schema、catalog、Service、Runtime
+均从此读取。本模块保留 create_controller 等旧接口兼容性。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Callable
 
-from .max_pressure import MaxPressureController
-from .sotl import SOTLController
-
-
-@dataclass(frozen=True)
-class ControlModeSpec:
-    """单个业务管控模式的静态描述"""
-
-    name: str
-    kernel_mode: str  # SUMO SimulationConfig.control_mode: fixed | algorithm
-    algorithm_name: str | None = None
-
-    @property
-    def needs_algorithm(self) -> bool:
-        return self.kernel_mode == "algorithm" and self.algorithm_name is not None
-
+from traffic_control.registry import (
+    CONTROL_MODE_REGISTRY,
+    ControlModeSpec,
+    get_control_mode,
+    is_supported_control_mode,
+    list_control_modes,
+    require_control_mode,
+    validate_enabled_modes,
+)
 
 ControllerFactory = Callable[[dict[str, Any]], Any]
 
-CONTROL_MODE_REGISTRY: dict[str, ControlModeSpec] = {
-    "fixed": ControlModeSpec(
-        name="fixed",
-        kernel_mode="fixed",
-        algorithm_name=None,
-    ),
-    "max_pressure": ControlModeSpec(
-        name="max_pressure",
-        kernel_mode="algorithm",
-        algorithm_name="max_pressure",
-    ),
-    "sotl": ControlModeSpec(
-        name="sotl",
-        kernel_mode="algorithm",
-        algorithm_name="sotl",
-    ),
+# 仅进程内Controller类（HTTP 内部协议 / 单元测试兼容）
+# IPPO使用local Protocol 2.0模块，不进入工厂表，避免FastAPI启动导入torch
+_CONTROLLER_IMPORTS: dict[str, tuple[str, str]] = {
+    "max_pressure": ("traffic_control.max_pressure", "MaxPressureController"),
+    "sotl": ("traffic_control.sotl", "SOTLController"),
 }
-
-# 算法名（仅算法型模式需要）
-CONTROLLER_FACTORIES: dict[str, ControllerFactory] = {
-    "max_pressure": MaxPressureController,
-    "sotl": SOTLController,
-}
-
-
-def list_control_modes() -> list[str]:
-    return list(CONTROL_MODE_REGISTRY.keys())
-
-
-def get_control_mode(name: str) -> ControlModeSpec | None:
-    return CONTROL_MODE_REGISTRY.get(name)
-
-
-def require_control_mode(name: str) -> ControlModeSpec:
-    spec = CONTROL_MODE_REGISTRY.get(name)
-    if spec is None:
-        raise ValueError(
-            f"Unsupported control_mode={name!r}. "
-            f"Allowed: {sorted(CONTROL_MODE_REGISTRY)}"
-        )
-    return spec
-
-
-def is_supported_control_mode(name: str) -> bool:
-    return name in CONTROL_MODE_REGISTRY
 
 
 def list_algorithm_names() -> list[str]:
-    return sorted(
-        {
-            spec.algorithm_name
-            for spec in CONTROL_MODE_REGISTRY.values()
-            if spec.algorithm_name
-        }
-    )
+    return sorted(_CONTROLLER_IMPORTS)
 
 
 def is_supported_algorithm(name: str) -> bool:
-    return name in CONTROLLER_FACTORIES
+    return name in _CONTROLLER_IMPORTS
 
 
 def create_controller(algorithm_name: str, metadata: dict[str, Any]) -> Any:
-    factory = CONTROLLER_FACTORIES.get(algorithm_name)
-    if factory is None:
+    spec = _CONTROLLER_IMPORTS.get(algorithm_name)
+    if spec is None:
         raise ValueError(f"No controller factory for algorithm={algorithm_name!r}")
+    module_name, attr_name = spec
+    import importlib
+
+    module = importlib.import_module(module_name)
+    factory = getattr(module, attr_name)
     return factory(metadata)
 
+CONTROLLER_FACTORIES: dict[str, ControllerFactory] = {
+    name: (lambda metadata, _n=name: create_controller(_n, metadata))
+    for name in _CONTROLLER_IMPORTS
+}
 
-def validate_enabled_modes(enabled: tuple[str, ...] | list[str]) -> tuple[str, ...]:
-    """校验启用白名单必须是注册表子集，返回规范化元组"""
-    modes = tuple(enabled)
-    unknown = [m for m in modes if m not in CONTROL_MODE_REGISTRY]
-    if unknown:
-        raise ValueError(
-            f"enabled_control_modes contains unknown modes {unknown}; "
-            f"registry has {sorted(CONTROL_MODE_REGISTRY)}"
-        )
-    if not modes:
-        raise ValueError("enabled_control_modes must not be empty")
-    return modes
+
+__all__ = [
+    "CONTROL_MODE_REGISTRY",
+    "CONTROLLER_FACTORIES",
+    "ControlModeSpec",
+    "create_controller",
+    "get_control_mode",
+    "is_supported_algorithm",
+    "is_supported_control_mode",
+    "list_algorithm_names",
+    "list_control_modes",
+    "require_control_mode",
+    "validate_enabled_modes",
+]

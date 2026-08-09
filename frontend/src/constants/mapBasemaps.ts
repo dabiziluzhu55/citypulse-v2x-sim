@@ -38,7 +38,7 @@ export const BASEMAP_OPTIONS: BasemapOption[] = [
 ]
 
 export const DEFAULT_PANEL_BASEMAP: BasemapVariant = 'osm'
-export const DEFAULT_APP_BASEMAP: BasemapVariant = 'osm'
+export const DEFAULT_APP_BASEMAP: BasemapVariant = 'carto_dark'
 
 const CARTO_ATTRIBUTION = '© OpenStreetMap contributors © CARTO'
 const TIANDITU_ATTRIBUTION = '© 天地图 · 国家地理信息公共服务平台'

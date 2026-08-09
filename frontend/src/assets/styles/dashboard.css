@@ -24,19 +24,21 @@
   --dashboard-bottom-rail-left-edge: 76px;
   --dashboard-bottom-rail-right-edge: 76px;
   --dashboard-bottom-rail-start: 106px;
-  --dashboard-bottom-dock-offset-y: 12px;
-  --dashboard-bottom-center-offset-y: 12px;
-  --dashboard-bottom-icons-offset-y: 20px;
+  --dashboard-bottom-dock-offset-y: 0px;
+  --dashboard-bottom-center-offset-y: 0px;
+  --dashboard-bottom-icons-offset-y: 0px;
   --dashboard-panel-inset: 30px;
   --dashboard-panel-inset-left: 30px;
   --dashboard-panel-inset-right: 30px;
   --dashboard-top-offset: 118px;
   --dashboard-bottom-offset: 92px;
   --dashboard-side-gap: 12px;
-  --dashboard-left-width: 560px;
+  /* 左右侧栏槽位与设计对称 */
+  --dashboard-left-width: 600px;
   --dashboard-right-width: 600px;
-  --dashboard-left-sidebar-design-width: 560px;
+  --dashboard-left-sidebar-design-width: 600px;
   --dashboard-right-sidebar-design-width: 600px;
+  --dashboard-sidebar-design-height: 990px;
 }
 
 .dashboard-page {
@@ -69,6 +71,21 @@
 .dashboard-column.left,
 .dashboard-column.right {
   pointer-events: none;
+  transition: transform 280ms ease, opacity 200ms ease, visibility 0s linear 0s;
+}
+
+.dashboard-page.is-side-panels-collapsed .dashboard-column.left {
+  transform: translateX(calc(-100% - var(--dashboard-panel-inset-left)));
+  opacity: 0;
+  visibility: hidden;
+  transition-delay: 0s, 0s, 280ms;
+}
+
+.dashboard-page.is-side-panels-collapsed .dashboard-column.right {
+  transform: translateX(calc(100% + var(--dashboard-panel-inset-right)));
+  opacity: 0;
+  visibility: hidden;
+  transition-delay: 0s, 0s, 280ms;
 }
 
 .dashboard-column.right {
@@ -207,9 +224,16 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-column.left,
+  .dashboard-column.right {
+    transition: none;
+  }
+}
+
 @media (min-width: 1321px) and (max-width: 1680px) {
   :root {
-    --dashboard-left-width: 470px;
+    --dashboard-left-width: 500px;
     --dashboard-right-width: 500px;
   }
 

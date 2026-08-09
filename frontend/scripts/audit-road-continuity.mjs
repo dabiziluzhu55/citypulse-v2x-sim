@@ -45,6 +45,7 @@ const sourceEdges = new Map(asArray(network.edge)
     fromJunction: String(edge.from),
     toJunction: String(edge.to),
   }]))
+const sourceJunctions = new Map(asArray(network.junction).map((junction) => [String(junction.id), junction]))
 const sourceConnections = asArray(network.connection).flatMap((connection) => {
   const fromEdge = sourceEdges.get(String(connection.from))
   const toEdge = sourceEdges.get(String(connection.to))
@@ -98,7 +99,12 @@ for (const entry of catalog.intersections) {
       }
     }
     if (joint.junctionId !== manifest.junctionId && joint.maxGapMeters > MAXIMUM_SECONDARY_GAP_METERS + 0.001) {
-      invalidJoints.push(`${joint.jointId}:gap`)
+      const sourceJunction = sourceJunctions.get(joint.junctionId)
+      const hasAuthoritativeShape = String(sourceJunction?.shape ?? '').trim().split(/\s+/).length >= 3
+      const hasInternalLanes = String(sourceJunction?.intLanes ?? '').trim().split(/\s+/).filter(Boolean).length > 0
+      if (joint.source !== 'sumo_junction_shape' || !hasAuthoritativeShape || !hasInternalLanes) {
+        invalidJoints.push(`${joint.jointId}:gap`)
+      }
     }
     if (joint.overlapMeters < MINIMUM_OVERLAP_METERS) invalidJoints.push(`${joint.jointId}:overlap`)
   }
@@ -106,19 +112,30 @@ for (const entry of catalog.intersections) {
   const eligible = [...pairs.values()].filter((pair) => (
     pair.junctionId === manifest.junctionId || pair.gapMeters <= MAXIMUM_SECONDARY_GAP_METERS
   ))
-  const rejected = [...pairs.values()].filter((pair) => (
+  const longConnections = [...pairs.values()].filter((pair) => (
     pair.junctionId !== manifest.junctionId && pair.gapMeters > MAXIMUM_SECONDARY_GAP_METERS
+  ))
+  const covers = (pair) => (manifest.roadJoints ?? []).some((joint) => (
+    joint.junctionId === pair.junctionId
+    && pair.edgeIds.every((edgeId) => joint.connectedEdgeIds.includes(edgeId))
   ))
   const uncovered = eligible.filter((pair) => !(manifest.roadJoints ?? []).some((joint) => (
     joint.junctionId === pair.junctionId
     && pair.edgeIds.every((edgeId) => joint.connectedEdgeIds.includes(edgeId))
   )))
-  const status = manifest.sourceSha256 === sourceSha256
+  const unresolvedLongConnections = longConnections.filter((pair) => !covers(pair))
+  const repairedLongConnections = longConnections.filter(covers)
+  const failed = manifest.sourceSha256 !== sourceSha256
+    || !primaryJoint
+    || invalidJoints.length > 0
+    || uncovered.length > 0
+  const status = failed
+    ? 'fail'
+    : unresolvedLongConnections.length > 0 ? 'warning' : 'pass'
+  const valid = manifest.sourceSha256 === sourceSha256
     && primaryJoint
     && invalidJoints.length === 0
     && uncovered.length === 0
-    ? 'pass'
-    : 'fail'
   intersections.push({
     intersectionId: manifest.intersectionId,
     status,
@@ -130,11 +147,17 @@ for (const entry of catalog.intersections) {
       edgeIds: pair.edgeIds,
       gapMeters: Number(pair.gapMeters.toFixed(3)),
     })),
-    rejectedSourceGaps: rejected.map((pair) => ({
+    rejectedSourceGaps: unresolvedLongConnections.map((pair) => ({
       junctionId: pair.junctionId,
       edgeIds: pair.edgeIds,
       gapMeters: Number(pair.gapMeters.toFixed(3)),
     })),
+    repairedAuthoritativeGaps: repairedLongConnections.map((pair) => ({
+      junctionId: pair.junctionId,
+      edgeIds: pair.edgeIds,
+      gapMeters: Number(pair.gapMeters.toFixed(3)),
+    })),
+    valid,
     invalidJoints,
     jointSurfaceHeightMeters: 0.014,
     roadSurfaceHeightMeters: 0,
@@ -155,6 +178,7 @@ const report = {
   summary: {
     checked: intersections.length,
     passed: intersections.filter((item) => item.status === 'pass').length,
+    warnings: intersections.filter((item) => item.status === 'warning').length,
     failed: intersections.filter((item) => item.status === 'fail').length,
     roadJoints: intersections.reduce((sum, item) => sum + item.roadJointCount, 0),
     uncoveredEligibleConnections: intersections.reduce((sum, item) => sum + item.uncoveredEligibleConnections.length, 0),

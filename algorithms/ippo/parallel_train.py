@@ -144,7 +144,7 @@ def _run_sumo_worker(request: Mapping[str, object]) -> dict:
             decision_interval=5.0,
             minimum_green=5.0,
             seed=seed,
-            step_length=0.05,
+            step_length=float(request["step_length"]),
         )
         session_id = manager.start(config)
         snapshot = manager.wait(
@@ -279,6 +279,7 @@ def _run_policy_batch(
     seeds: Sequence[int],
     intersections: Sequence[str],
     duration: int,
+    step_length: float,
     periods: Sequence[str],
     action_interval: float,
     effective_demand_enabled: bool,
@@ -290,6 +291,7 @@ def _run_policy_batch(
     request_base = {
         "intersection_ids": tuple(intersections),
         "duration": duration,
+        "step_length": float(step_length),
         "action_interval": action_interval,
         "effective_demand_enabled": effective_demand_enabled,
         "policy_seed": policy_seed,
@@ -329,8 +331,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--duration", type=int, default=300)
+    parser.add_argument(
+        "--step-length", type=float, default=0.1, help="SUMO simulation step (s)"
+    )
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--intersections", type=int, default=20)
+    parser.add_argument(
+        "--intersection-ids",
+        nargs="+",
+        default=None,
+        help="Explicit controlled intersection ids (subset of the canonical 20 slots); "
+        "mutually exclusive with --intersections.",
+    )
     parser.add_argument("--period", default="off_peak")
     parser.add_argument(
         "--periods",
@@ -353,20 +365,37 @@ def main(argv: list[str] | None = None) -> int:
         help="save an intermediate checkpoint after this many completed episodes",
     )
     parser.add_argument("--save", type=Path, default=None)
+    parser.add_argument(
+        "--no-reset-optimizer",
+        action="store_true",
+        help="resume with the checkpoint optimizer state (default: reset optimizer).",
+    )
     parser.add_argument("--resume", type=Path, default=None)
     args = parser.parse_args(argv)
 
-    for name in ("episodes", "duration", "workers", "intersections"):
+    for name in ("episodes", "duration", "workers", "intersections", "step_length"):
         _positive(parser, name, getattr(args, name))
     _positive(parser, "checkpoint-every", args.checkpoint_every)
     _positive(parser, "action-interval", args.action_interval)
-    if args.intersections > len(DEFAULT_INTERSECTION_IDS):
-        parser.error(f"intersections must be <= {len(DEFAULT_INTERSECTION_IDS)}")
+    if (args.intersection_ids is None) == (getattr(args, "intersections", None) is None):
+        # exactly one of --intersection-ids / --intersections must be given
+        if args.intersection_ids is None and getattr(args, "intersections", None) is None:
+            parser.error("either --intersections or --intersection-ids is required")
+    if args.intersection_ids is not None:
+        from traffic_control.ippo.identity import identity_slots_for
+
+        intersections = tuple(args.intersection_ids)
+        identity_slots_for(intersections)  # raises for ids outside the canonical 20 slots
+        if len(intersections) == 0:
+            parser.error("--intersection-ids must not be empty")
+    else:
+        if args.intersections > len(DEFAULT_INTERSECTION_IDS):
+            parser.error(f"intersections must be <= {len(DEFAULT_INTERSECTION_IDS)}")
+        intersections = tuple(DEFAULT_INTERSECTION_IDS[: args.intersections])
     workers = min(args.workers, args.episodes)
     periods = tuple(args.periods or (args.period,))
     if any(not str(period).strip() for period in periods):
         parser.error("training periods must be non-empty")
-    intersections = tuple(DEFAULT_INTERSECTION_IDS[: args.intersections])
     effective_demand_enabled = args.effective_demand == "on"
     save_path = args.save or (
         REPO_ROOT
@@ -400,8 +429,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         if checkpoint.get("phase_feature_schema") != PHASE_FEATURE_SCHEMA:
             parser.error("resume checkpoint phase feature schema does not match")
-        if tuple(checkpoint["intersection_ids"]) != intersections:
-            parser.error("resume checkpoint intersection_ids do not match this run")
+        if not set(intersections) <= set(str(iid) for iid in checkpoint["intersection_ids"]):
+            parser.error(
+                "resume checkpoint intersection_ids are not a superset of this run: "
+                f"{intersections}"
+            )
         if abs(float(checkpoint["action_interval"]) - args.action_interval) > 1e-9:
             parser.error("resume checkpoint action interval does not match this run")
         saved_periods = tuple(checkpoint.get("training_periods", ()))
@@ -418,6 +450,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         initial_policy_state = checkpoint["model_state_dict"]
 
+    reset_optimizer = not bool(getattr(args, "no_reset_optimizer", False))
+    os.environ["IPPO_RESET_OPTIMIZER"] = "1" if reset_optimizer else "0"
     os.environ["IPPO_MODE"] = "train"
     os.environ["IPPO_ACTION_INTERVAL"] = str(args.action_interval)
     os.environ["IPPO_EFFECTIVE_DEMAND"] = args.effective_demand
@@ -460,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
                 seeds=seeds,
                 intersections=intersections,
                 duration=args.duration,
+                step_length=args.step_length,
                 periods=_period_batch(
                     seeds,
                     periods=periods,

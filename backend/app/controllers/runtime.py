@@ -61,7 +61,7 @@ class AlgorithmRuntimeStore:
             controller=controller,
         )
         with self._lock:
-            # 同 id 重复 initialize：覆盖旧活动会话
+            # 同id重复initialize：覆盖旧活动会话
             self._active[episode_id] = episode
         logger.info("算法会话初始化: algorithm=%s episode=%s", algorithm, episode_id)
         return {
@@ -103,7 +103,7 @@ class AlgorithmRuntimeStore:
         with self._lock:
             episode = self._active.get(episode_id)
             if episode is None:
-                # 已完成过则仍返回 ok
+                # 已完成过则仍返回ok
                 completed = self._completed.get(episode_id)
                 if completed is not None:
                     return {"ok": True, "already_finished": True}

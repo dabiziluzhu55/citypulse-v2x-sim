@@ -145,3 +145,39 @@ def test_resolve_disturbance_targets_only(east_dense_catalog: SimulationCatalog)
     assert events[0].event_type == "speed_limit"
     assert events[0].lane_ids == ["-50_0"]
     assert events[0].max_speed == 4.0
+
+
+
+
+def test_resolve_mappo_east_dense_zero_shot(
+    east_dense_catalog: SimulationCatalog,
+) -> None:
+    request = StartSimulationRequest(
+        scenario_preset_id="east_dense",
+        period="morning_peak",
+        duration_seconds=600,
+        control_mode="mappo",
+    )
+
+    resolved = resolve_start_simulation(request, east_dense_catalog)
+
+    assert resolved.control_mode == "mappo"
+    assert resolved.intersection_ids == ("demo_3", "demo_5", "demo_6", "demo_9")
+    assert resolved.model_alias == "mappo_cooperative_20tls_ep160"
+
+
+def test_backend_presets_are_self_contained() -> None:
+    """backend 场景预设必须独立，不得依赖 algorithms/config。"""
+    assert SCENARIO_PRESET_REGISTRY["east_dense"].intersection_ids == (
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9",
+    )
+    assert SCENARIO_PRESET_REGISTRY["east_dense"].map_template == "east_dense"
+    assert SCENARIO_PRESET_REGISTRY["west_dense"].intersection_ids == (
+        "demo_14",
+        "demo_15",
+        "demo_19",
+    )
+    assert len(SCENARIO_PRESET_REGISTRY["xiongan_20"].intersection_ids) == 20

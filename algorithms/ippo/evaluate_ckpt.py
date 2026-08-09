@@ -10,7 +10,7 @@ import statistics
 import sys
 import time
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -47,7 +47,31 @@ OFFICIAL_METRIC_NAMES = (
     "throughput_veh_per_h",
     "avg_decision_latency_ms",
     "fuel_intensity_L_per_100km",
+    "severe_conflict_exposure_per_10000",
+    "emergency_braking_exposure_per_1000",
 )
+OPTIONAL_OFFICIAL_METRIC_NAMES = frozenset(
+    {
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000",
+    }
+)
+
+
+def _missing_official_metrics(
+    official_metrics: Mapping[str, object] | None,
+) -> tuple[list[str], list[str]]:
+    required_missing = sorted(
+        name
+        for name in set(OFFICIAL_METRIC_NAMES) - OPTIONAL_OFFICIAL_METRIC_NAMES
+        if official_metrics is None or official_metrics.get(name) is None
+    )
+    optional_missing = sorted(
+        name
+        for name in OPTIONAL_OFFICIAL_METRIC_NAMES
+        if official_metrics is None or official_metrics.get(name) is None
+    )
+    return required_missing, optional_missing
 
 
 def _summarize_official(rows: list[dict]) -> dict:
@@ -102,6 +126,7 @@ def evaluate(
     seeds: Iterable[int] = EVAL_SEEDS,
     duration: int = DEFAULT_DURATION,
     action_interval: float = DEFAULT_ACTION_INTERVAL,
+    step_length: float = 0.1,
 ) -> dict:
     checkpoint = Path(model_path).expanduser().resolve()
     metadata = load_checkpoint_metadata(checkpoint)
@@ -145,9 +170,10 @@ def evaluate(
             decision_interval=5.0,
             minimum_green=5.0,
             seed=seed,
-            step_length=0.05,
+            step_length=step_length,
             ai_observer_module="algorithms.evaluation.observer",
-            ai_frame_interval_seconds=1.0,
+            # Safety events need denser observations than queue/fuel metrics.
+            ai_frame_interval_seconds=0.2,
         )
         try:
             session_id = manager.start(config)
@@ -168,17 +194,14 @@ def evaluate(
                 official_metrics = (
                     official.to_dict() if official is not None else None
                 )
-                missing_official = [
-                    name
-                    for name in OFFICIAL_METRIC_NAMES
-                    if official_metrics is None
-                    or official_metrics.get(name) is None
-                ]
+                required_missing, optional_missing = _missing_official_metrics(
+                    official_metrics
+                )
                 result = {
                     "seed": seed,
                     "state": (
                         snapshot.state
-                        if not missing_official
+                        if not required_missing
                         else "INVALID_METRICS"
                     ),
                     "departed": snapshot.metrics.departed_vehicles,
@@ -186,13 +209,14 @@ def evaluate(
                     "waiting": snapshot.metrics.total_waiting_time,
                     "elapsed": round(elapsed, 1),
                     "official_metrics": official_metrics,
+                    "missing_official_metrics": optional_missing,
                 }
-                if missing_official:
+                if required_missing:
                     result["error"] = (
-                        "missing official metrics: " + ", ".join(missing_official)
+                        "missing official metrics: " + ", ".join(required_missing)
                     )
                 results.append(result)
-                if missing_official:
+                if required_missing:
                     logger.error("seed=%d INVALID: %s", seed, result["error"])
                 else:
                     logger.info(
@@ -251,10 +275,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", default="")
     parser.add_argument("--duration", type=int, default=DEFAULT_DURATION)
     parser.add_argument("--action-interval", type=float, default=DEFAULT_ACTION_INTERVAL)
+    parser.add_argument("--step-length", type=float, default=0.1)
     parser.add_argument("--seeds", type=int, nargs="+", default=list(EVAL_SEEDS))
     args = parser.parse_args(argv)
-    if args.duration <= 0 or args.action_interval <= 0:
-        parser.error("duration and action interval must be positive")
+    if args.duration <= 0 or args.action_interval <= 0 or args.step_length <= 0:
+        parser.error("duration, action interval and step length must be positive")
 
     try:
         logger.info("评估: %s", args.model_path)
@@ -263,6 +288,7 @@ def main(argv: list[str] | None = None) -> int:
             seeds=args.seeds,
             duration=args.duration,
             action_interval=args.action_interval,
+            step_length=args.step_length,
         )
         output_path = Path(args.output or args.model_path.replace(".pt", "_eval.json"))
         output_path.parent.mkdir(parents=True, exist_ok=True)

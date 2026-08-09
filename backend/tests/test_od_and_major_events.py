@@ -1,4 +1,4 @@
-"""OD 导出与大型活动事件单元测试。"""
+"""OD导出与大型活动事件单元测试"""
 
 from __future__ import annotations
 
@@ -302,6 +302,93 @@ def test_export_zip_contains_od_artifacts(
         assert events["events"][0]["vehicle_count"] == 20
         manifest = json.loads(archive.read("export_manifest.json"))
         assert "major_event_opening" in json.dumps(manifest["disturbance_targets"])
+        assert manifest["od_included"] is True
+        assert manifest["files"]["od_matrix_csv"] == "od/od_matrix_morning_peak.csv"
+
+
+def test_export_zip_skips_od_for_dense_presets(
+    mock_manager: MagicMock,
+    tmp_path: Path,
+) -> None:
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class _Bundle:
+        session_id: str
+        directory: Path
+        sumocfg: Path
+        route_file: Path
+        additional_file: Path
+        period: str
+        official_start_seconds: int
+        window_start_seconds: float
+        duration_seconds: float
+        planned_vehicle_count: int
+        selected_origins: dict
+        vehicle_type_profiles: dict
+        vehicle_profiles: dict
+
+    for preset_id in ("east_dense", "west_dense"):
+        bundle_dir = tmp_path / f"export-{preset_id}"
+        bundle_dir.mkdir()
+        sumocfg = bundle_dir / "session.sumocfg"
+        sumocfg.write_text(
+            "<?xml version='1.0' encoding='utf-8'?>\n"
+            "<configuration><input>"
+            "<net-file value='/abs/TotalMap_20.signals.net.xml'/>"
+            "</input></configuration>\n",
+            encoding="utf-8",
+        )
+        (bundle_dir / "session.rou.xml").write_text("<routes/>", encoding="utf-8")
+        (bundle_dir / "session.add.xml").write_text("<additional/>", encoding="utf-8")
+        export_bundle = _Bundle(
+            session_id=f"export-{preset_id}",
+            directory=bundle_dir,
+            sumocfg=sumocfg,
+            route_file=bundle_dir / "session.rou.xml",
+            additional_file=bundle_dir / "session.add.xml",
+            period="morning_peak",
+            official_start_seconds=0,
+            window_start_seconds=0.0,
+            duration_seconds=600.0,
+            planned_vehicle_count=1,
+            selected_origins={},
+            vehicle_type_profiles={},
+            vehicle_profiles={},
+        )
+
+        generated = _write_od_fixture(tmp_path)
+        net_path = generated / "network" / "TotalMap_20.signals.net.xml"
+        net_path.parent.mkdir(parents=True, exist_ok=True)
+        net_path.write_text("<net/>", encoding="utf-8")
+
+        settings = MagicMock()
+        settings.project_root = tmp_path
+        settings.generated_dir = generated
+        settings.signals_net_path = net_path
+        settings.scenario_export_root = tmp_path / f"exports-{preset_id}"
+        service = ScenarioExportService(settings, mock_manager)
+        mock_manager.catalog.return_value = _full_catalog()
+
+        request = StartSimulationRequest(
+            scenario_preset_id=preset_id,
+            period="morning_peak",
+            duration_seconds=600,
+            disturbance_targets=[],
+        )
+        with patch(
+            "backend.app.services.scenario_export_service.compile_session_scenario",
+            return_value=export_bundle,
+        ):
+            _, payload = service.export_zip(request)
+
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            names = set(archive.namelist())
+            assert not any(name.startswith("od/") for name in names)
+            manifest = json.loads(archive.read("export_manifest.json"))
+            assert manifest["od_included"] is False
+            assert "od_matrix_csv" not in manifest["files"]
+            assert manifest["scenario_preset_id"] == preset_id
 
 
 def test_major_event_request_conversion() -> None:

@@ -143,7 +143,7 @@ def test_state_adds_normalized_outgoing_congestion_summary(controller):
     second = builder.build("demo_1", congested_outgoing)
 
     assert not np.array_equal(first, second)
-    lane_start = controller.MAX_PHASES + 1 + 1
+    lane_start = controller.MAX_PHASES + 1 + len(controller.IDENTITY_SLOT_IDS)
     assert first[lane_start] == pytest.approx(0.5)  # 10 vehicles / 20 capacity
     assert first[lane_start + 1] == pytest.approx(0.25)
     assert first[lane_start + 3] == pytest.approx(0.5)
@@ -765,7 +765,7 @@ def test_checkpoint_with_different_intersections_is_rejected(
     controller = importlib.reload(controller)
     monkeypatch.setenv("IPPO_MODE", "model")
     monkeypatch.setenv("IPPO_MODEL_PATH", str(checkpoint))
-    with pytest.raises(ValueError, match="intersection_ids mismatch"):
+    with pytest.raises(ValueError, match="not trained on this intersection subset"):
         controller.initialize(_metadata(("demo_1", "demo_2"), (2, 1)))
 
 
@@ -1385,6 +1385,9 @@ def test_four_tls_checkpoint_uses_its_own_intersection_set(monkeypatch, tmp_path
             throughput_veh_per_h=1200.0,
             avg_decision_latency_ms=2.0,
             fuel_intensity_L_per_100km=8.0,
+            severe_conflict_exposure_per_10000=None,
+            emergency_braking_exposure_per_1000=None,
+            controlled_intersection_passages=100,
             departed=100,
             arrived=20,
         ),
@@ -1394,4 +1397,8 @@ def test_four_tls_checkpoint_uses_its_own_intersection_set(monkeypatch, tmp_path
     )
 
     assert summary["status"] == "complete"
+    assert summary["details"][0]["missing_official_metrics"] == [
+        "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000",
+    ]
     assert tuple(seen_configs[0].intersection_ids) == intersection_ids

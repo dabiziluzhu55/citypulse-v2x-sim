@@ -3,8 +3,11 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 import {
+  AdaptiveVehicleRenderBudget,
+  BALANCED_VISIBLE_VEHICLES,
+  CONSTRAINED_VISIBLE_VEHICLES,
   MAX_VISIBLE_VEHICLES,
-  MISSING_SNAPSHOT_GRACE,
+  MAX_ROSTER_CHANGES_PER_SNAPSHOT,
   resolveVehicleRenderRadius,
   selectVisibleVehicles,
   StableVehicleSelector,
@@ -30,6 +33,8 @@ import {
   createIntersectionLaneHeadingResolver,
   createIntersectionLanePoseResolver,
   mapSourceProgressToRenderDistance,
+  visualStopFrontLimitDistance,
+  VISUAL_STOP_BOUNDARY_CLEARANCE_METERS,
 } from '../src/mapv/realistic/intersectionLaneHeading.ts'
 import { samplePolyline } from '../src/mapv/realistic/intersectionRoadGeometry.ts'
 import {
@@ -39,8 +44,22 @@ import {
 } from '../src/mapv/sceneCoordinates.ts'
 import {
   CAR_MODEL_PROFILE,
+  ELECTRIC_BICYCLE_MODEL_PROFILE,
   resolveVehicleModelProfile,
 } from '../src/mapv/vehicleModelProfiles.ts'
+import {
+  MAX_VISUAL_BACKTRACK_METERS,
+  minimumForwardTrackDistance,
+  resolveCrossedStopLine,
+  resolveVisualQueueConstraints,
+  shouldAllowStopClamp,
+} from '../src/mapv/vehiclePoseStability.ts'
+import { snapshotToTrafficView } from '../src/utils/trafficStateMerge.ts'
+
+const vehicleRendererSource = await readFile(
+  new URL('../src/mapv/BaiduVehicleRenderer.ts', import.meta.url),
+  'utf8',
+)
 
 test('keeps Twin presentation timestamps monotonic across repeated frames', () => {
   const clock = new VehiclePresentationClock()
@@ -143,14 +162,62 @@ test('retains vehicle samples through short empty source gaps', () => {
   assert.ok(expired && !expired.some((sample) => sample.id === 'held'))
 })
 
-test('interpolates heading through the shortest turn instead of spinning backwards', () => {
+test('interpolates a stationary heading through the shortest turn instead of spinning backwards', () => {
   const degrees = (value) => value * Math.PI / 180
   const sample = interpolateVehicleTwinSample(
     motionSample('turning', 0, degrees(350)),
-    motionSample('turning', 1, degrees(10)),
+    motionSample('turning', 0, degrees(10)),
     0.5,
   )
   assert.ok(Math.abs(sample.dir - Math.PI * 2) < 1e-9)
+})
+
+test('aligns a moving model heading with its interpolated displacement', () => {
+  const sample = interpolateVehicleTwinSample(
+    motionSample('moving-east', 0, Math.PI / 2),
+    motionSample('moving-east', 0.001, Math.PI / 2),
+    0.5,
+  )
+  assert.ok(Math.abs(shortestAngleDelta(sample.vehicleHeading, 0)) < 1e-9)
+  assert.ok(Math.abs(shortestAngleDelta(sample.dir, 0)) < 1e-9)
+})
+
+test('adapts motion buffering to irregular source intervals and freezes on underrun', () => {
+  const buffer = new VehicleMotionBuffer()
+  const arrivals = [0, 500, 1_250, 1_750, 3_250]
+  arrivals.forEach((arrivalTimeMs, index) => buffer.push({
+    sequence: index,
+    elapsedSeconds: index * 0.5,
+    arrivalTimeMs,
+    samples: [motionSample('jittered', index)],
+  }))
+  const initial = buffer.sample(3_250)
+  assert.ok(initial)
+  const beforeUnderrun = buffer.stats().renderElapsedSeconds
+  for (let wallTime = 3_500; wallTime <= 7_000; wallTime += 250) buffer.sample(wallTime)
+  const stats = buffer.stats()
+  assert.ok(stats.bufferSeconds >= 0.75 && stats.bufferSeconds <= 3.5)
+  assert.ok(stats.sourceGapP95Ms >= 750)
+  assert.ok(stats.sourceGapP99Ms >= stats.sourceGapP95Ms)
+  assert.equal(stats.underrunActive, true)
+  assert.ok(stats.underrunCount >= 1)
+  assert.ok(stats.renderElapsedSeconds >= beforeUnderrun)
+  const frozen = stats.renderElapsedSeconds
+  buffer.sample(8_000)
+  assert.equal(buffer.stats().renderElapsedSeconds, frozen)
+})
+
+test('uses FPS hysteresis before reducing the visible vehicle budget', () => {
+  const budget = new AdaptiveVehicleRenderBudget()
+  let state = budget.state()
+  assert.equal(state.limit, MAX_VISIBLE_VEHICLES)
+  for (let wallTime = 0; wallTime <= 3_600; wallTime += 50) state = budget.recordFrame(wallTime)
+  assert.equal(state.quality, 'constrained')
+  assert.equal(state.limit, CONSTRAINED_VISIBLE_VEHICLES)
+  budget.reset()
+  for (let wallTime = 0; wallTime <= 3_600; wallTime += 30) state = budget.recordFrame(wallTime)
+  assert.equal(state.quality, 'balanced')
+  assert.equal(state.limit, BALANCED_VISIBLE_VEHICLES)
 })
 
 function vehicle(id, longitude, latitude) {
@@ -222,30 +289,97 @@ test('retains selected vehicle ids across distance-order jitter', () => {
   )
 })
 
-test('keeps missing vehicles through short stream dropouts before removal', () => {
+test('removes missing vehicles from the selector without a second retention lifecycle', () => {
   const selector = new StableVehicleSelector()
   const center = [116, 39]
   selector.select([vehicle('held', 116.001, 39)], (coordinate) => [...coordinate], center, 500, 's:1')
-  for (let sequence = 2; sequence <= MISSING_SNAPSHOT_GRACE + 1; sequence += 1) {
-    assert.equal(
-      selector.select([], (coordinate) => [...coordinate], center, 500, `s:${sequence}`).length,
-      1,
-    )
-  }
   assert.equal(
-    selector.select([], (coordinate) => [...coordinate], center, 500, `s:${MISSING_SNAPSHOT_GRACE + 2}`).length,
+    selector.select([], (coordinate) => [...coordinate], center, 500, 's:2').length,
     0,
   )
 })
 
-test('does not age a retained vehicle on repeated viewport refreshes', () => {
+test('keeps a present vehicle during repeated viewport refreshes', () => {
   const selector = new StableVehicleSelector()
   const center = [116, 39]
-  selector.select([vehicle('held', 116.001, 39)], (coordinate) => [...coordinate], center, 500, 's:1')
-  for (let index = 0; index < MISSING_SNAPSHOT_GRACE * 2; index += 1) {
-    assert.equal(selector.select([], (coordinate) => [...coordinate], center, 500, 's:1').length, 1)
+  const present = vehicle('held', 116.001, 39)
+  selector.select([present], (coordinate) => [...coordinate], center, 500, 's:1')
+  for (let index = 0; index < 10; index += 1) {
+    assert.equal(selector.select([present], (coordinate) => [...coordinate], center, 500, 's:1').length, 1)
   }
-  assert.equal(selector.select([], (coordinate) => [...coordinate], center, 500, 's:2').length, 1)
+})
+
+test('limits roster churn to 32 vehicles when the performance tier changes', () => {
+  const selector = new StableVehicleSelector()
+  const center = [116, 39]
+  const vehicles = Array.from({ length: MAX_VISIBLE_VEHICLES }, (_, index) => (
+    vehicle(String(index), 116 + index * 0.000001, 39)
+  ))
+  const full = selector.select(vehicles, (coordinate) => [...coordinate], center, 1_400, 's:1', MAX_VISIBLE_VEHICLES)
+  const constrained = selector.select(vehicles, (coordinate) => [...coordinate], center, 1_400, 's:2', CONSTRAINED_VISIBLE_VEHICLES)
+  assert.equal(full.length - constrained.length, MAX_ROSTER_CHANGES_PER_SNAPSHOT)
+})
+
+test('throttles Twin output and counts empty grace by source snapshots', () => {
+  assert.match(vehicleRendererSource, /NORMAL_OUTPUT_FRAME_MS = 1_000 \/ 30/)
+  assert.match(vehicleRendererSource, /CONSTRAINED_OUTPUT_FRAME_MS = 1_000 \/ 20/)
+  assert.match(vehicleRendererSource, /recordSourceRoster\(context\.sequence/)
+  assert.doesNotMatch(vehicleRendererSource, /emptyRenderStreak \+= 1/)
+})
+
+test('preserves complete optional vehicle telemetry through the traffic view', () => {
+  const source = {
+    ...vehicle('telemetry', 116, 39),
+    acceleration: -1.2,
+    lane_index: 2,
+    lane_position: 34.5,
+    allowed_speed: 13.9,
+    route_id: 'route-a',
+    route_index: 3,
+    distance: 120.25,
+    next_intersection_id: 'demo_8',
+    target_speed: 8,
+    target_lane_index: 1,
+  }
+  const view = snapshotToTrafficView({
+    session_id: 'session', state: 'RUNNING', sequence: 1, elapsed_seconds: 1,
+    duration_seconds: 60, progress: 1 / 60, official_time: '14:30:01', playback_speed: 1,
+    intersections: {}, vehicles: [source], events: [], error: null,
+    metrics: { active_vehicles: 1, departed_vehicles: 1, arrived_vehicles: 0, remaining_vehicles: 0, halting_vehicles: 0, total_waiting_time: 0, mean_speed: 10 },
+  })
+  assert.deepEqual(view.vehicles[0], source)
+})
+
+test('prevents visual regression while backend route distance advances', () => {
+  const previous = {
+    backendDistance: 100, routeId: 'route-a', routeIndex: 2, laneId: 'lane-1',
+    trackKey: 'track-1', trackDistanceMeters: 40, crossedStopLine: false,
+    laneResolutionFailures: 0, longitude: 116, latitude: 39, heading: 0, lastSeenSequence: 1,
+  }
+  const next = { ...vehicle('car', 116, 39), distance: 101, route_id: 'route-a', route_index: 2 }
+  assert.equal(minimumForwardTrackDistance(previous, next), 40 - MAX_VISUAL_BACKTRACK_METERS)
+  assert.equal(minimumForwardTrackDistance(previous, { ...next, route_index: 3 }), undefined)
+})
+
+test('keeps mixed vehicle queues one metre apart and hides an impossible tail', () => {
+  const constraints = resolveVisualQueueConstraints([
+    { id: 'car', trackKey: 'lane', lanePosition: 50, naturalCenterDistanceMeters: 50, lengthMeters: 5 },
+    { id: 'bus', trackKey: 'lane', lanePosition: 48, naturalCenterDistanceMeters: 48, lengthMeters: 10 },
+    { id: 'tail', trackKey: 'lane', lanePosition: 35, naturalCenterDistanceMeters: 35, lengthMeters: 9, previousCenterDistanceMeters: 35 },
+  ])
+  assert.equal(constraints.get('bus').maximumCenterDistanceMeters, 41.5)
+  assert.equal(constraints.get('tail').hidden, true)
+})
+
+test('never pulls a vehicle back after it has crossed the stop boundary', () => {
+  const first = { ...vehicle('car', 116, 39), speed: 0, distance: 10, route_id: 'route-a', route_index: 0 }
+  assert.equal(resolveCrossedStopLine(null, first, 12, 10, false), true)
+  const crossed = {
+    backendDistance: 10, routeId: 'route-a', routeIndex: 0, laneId: first.lane_id,
+    trackKey: 'lane', trackDistanceMeters: 10, crossedStopLine: true,
+    laneResolutionFailures: 0, longitude: 116, latitude: 39, heading: 0, lastSeenSequence: 1,
+  }
+  assert.equal(shouldAllowStopClamp(crossed, first), false)
 })
 
 test('uses exit-radius hysteresis to absorb camera-boundary jitter', () => {
@@ -473,7 +607,7 @@ test('smoothly absorbs visual path length differences away from lane boundaries'
   }
 })
 
-test('uses the visual lane tangent as the moving turn heading', () => {
+test('uses actual rendered movement ahead of a conflicting lane tangent', () => {
   const previous = resolveStableVehicleHeading({
     sumoAngleDegrees: 90,
     speedMetersPerSecond: 8,
@@ -488,7 +622,7 @@ test('uses the visual lane tangent as the moving turn heading', () => {
     laneHeading: Math.PI / 2,
   }, previous.state)
 
-  assert.ok(Math.abs(shortestAngleDelta(turning.heading, Math.PI / 2)) < 1e-9)
+  assert.ok(Math.abs(shortestAngleDelta(turning.heading, 0)) < 1e-9)
 })
 
 test('moves the model center behind the front bumper in cardinal directions', () => {
@@ -505,6 +639,68 @@ test('uses the simulation vehicle type instead of lane hashing', () => {
   assert.equal(resolveVehicleModelProfile('global_official_passenger').modelType, 3)
   assert.equal(resolveVehicleModelProfile('city_bus').modelType, 6)
   assert.equal(resolveVehicleModelProfile('delivery_truck').modelType, 10)
+  assert.equal(resolveVehicleModelProfile('official_electric_bicycle').modelType, ELECTRIC_BICYCLE_MODEL_PROFILE.modelType)
+  assert.notEqual(ELECTRIC_BICYCLE_MODEL_PROFILE.modelType, CAR_MODEL_PROFILE.modelType)
+})
+
+test('keeps a stationary red-light vehicle behind the visual stop line', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
+    'utf8',
+  ))
+  const incomingEdge = manifest.edges.find((edge) => (
+    edge.incoming && edge.lanes.some((lane) => lane.kind !== 'pedestrian' && lane.kind !== 'bicycle')
+  ))
+  const lane = incomingEdge.lanes.find((item) => item.kind !== 'pedestrian' && item.kind !== 'bicycle')
+  const sourcePoint = lane.points.at(-1)
+  const coordinate = unprojectWebMercatorToBd09([
+    manifest.origin.webMercator[0] + sourcePoint[0],
+    manifest.origin.webMercator[1] + sourcePoint[1],
+  ])
+  const resolver = createIntersectionLanePoseResolver(manifest, projectSimulationCoordinateToBaiduMap)
+  const redPose = resolver(lane.id, coordinate, CAR_MODEL_PROFILE.targetLengthMeters / 2, undefined, undefined, {
+    speedMetersPerSecond: 0,
+    laneRuntime: { vehicle_count: 1, halting_count: 1, mean_speed: 0, waiting_time: 5, occupancy: 0.1, role: 'incoming', lane_has_green: false, signal_state: 'r' },
+  })
+  const greenPose = resolver(lane.id, coordinate, CAR_MODEL_PROFILE.targetLengthMeters / 2, undefined, undefined, {
+    speedMetersPerSecond: 0,
+    laneRuntime: { vehicle_count: 1, halting_count: 1, mean_speed: 0, waiting_time: 5, occupancy: 0.1, role: 'incoming', lane_has_green: true, signal_state: 'G' },
+  })
+  const movingPose = resolver(lane.id, coordinate, CAR_MODEL_PROFILE.targetLengthMeters / 2, undefined, undefined, {
+    speedMetersPerSecond: 1,
+    laneRuntime: { vehicle_count: 1, halting_count: 0, mean_speed: 1, waiting_time: 0, occupancy: 0.1, role: 'incoming', lane_has_green: false, signal_state: 'r' },
+  })
+  assert.ok(redPose?.stopClamped)
+  assert.equal(greenPose?.stopClamped, false)
+  assert.equal(movingPose?.stopClamped, false)
+  assert.equal(visualStopFrontLimitDistance(10, 1), 10 - 0.21 - VISUAL_STOP_BOUNDARY_CLEARANCE_METERS)
+})
+
+test('clamps stationary red-light entry lanes across all 20 intersections', async () => {
+  for (let index = 1; index <= 20; index += 1) {
+    const manifest = JSON.parse(await readFile(
+      new URL(`../public/intersections/v3/demo_${index}/manifest.json`, import.meta.url),
+      'utf8',
+    ))
+    const incomingLanes = manifest.edges
+      .filter((edge) => edge.incoming)
+      .flatMap((edge) => edge.lanes)
+      .filter((lane) => lane.kind !== 'pedestrian' && lane.kind !== 'bicycle')
+    assert.ok(incomingLanes.length > 0, `demo_${index} has no motorized entry lanes`)
+    const resolver = createIntersectionLanePoseResolver(manifest, projectSimulationCoordinateToBaiduMap)
+    for (const lane of incomingLanes) {
+      const sourcePoint = lane.points.at(-1)
+      const coordinate = unprojectWebMercatorToBd09([
+        manifest.origin.webMercator[0] + sourcePoint[0],
+        manifest.origin.webMercator[1] + sourcePoint[1],
+      ])
+      const pose = resolver(lane.id, coordinate, CAR_MODEL_PROFILE.targetLengthMeters / 2, undefined, undefined, {
+        speedMetersPerSecond: 0,
+        laneRuntime: { vehicle_count: 1, halting_count: 1, mean_speed: 0, waiting_time: 2, occupancy: 0.1, role: 'incoming', lane_has_green: false, signal_state: 'r' },
+      })
+      assert.ok(pose?.stopClamped, `demo_${index}:${lane.id} was not kept behind its stop line`)
+    }
+  }
 })
 
 test('creates the point-based payload required by MapV Twin interpolation', () => {

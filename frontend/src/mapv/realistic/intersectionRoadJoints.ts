@@ -23,10 +23,17 @@ export interface RoadConnectionTopology {
   toEdge: string
 }
 
+export interface AuthoritativeRoadJunction {
+  junctionId: string
+  shape: Point2[]
+  internalLaneIds: string[]
+}
+
 export interface RoadJointBuildInput {
   edges: RealisticRoadEdge[]
   endpoints: RoadEndpointTopology[]
   connections: RoadConnectionTopology[]
+  authoritativeJunctions?: AuthoritativeRoadJunction[]
   primaryJunctionId: string
   primaryJunctionShape: Point2[]
   horizontalScale: number
@@ -99,11 +106,14 @@ function joint(
   overlapMeters: number,
   horizontalScale: number,
   extraBoundary: Point2[] = [],
+  source: RealisticRoadJoint['source'] = 'sumo_topology',
 ): RealisticRoadJoint | null {
-  const asphalt = convexHull([
-    ...extraBoundary,
-    ...endpoints.flatMap((endpoint) => endpoint.cap),
-  ])
+  const asphalt = source === 'sumo_junction_shape'
+    ? expandPolygon(extraBoundary, overlapMeters * horizontalScale)
+    : convexHull([
+      ...extraBoundary,
+      ...endpoints.flatMap((endpoint) => endpoint.cap),
+    ])
   if (asphalt.length < 3 || polygonArea(asphalt) < 0.05 * horizontalScale * horizontalScale) return null
   return {
     jointId,
@@ -112,7 +122,7 @@ function joint(
     connectedEdgeIds: [...new Set(endpoints.map((endpoint) => endpoint.edgeId))].sort(),
     maxGapMeters: Number(maxGapMeters.toFixed(3)),
     overlapMeters,
-    source: 'sumo_topology',
+    source,
     polygons: {
       sidewalk: expandPolygon(asphalt, 3.18 * horizontalScale),
       curb: expandPolygon(asphalt, 0.18 * horizontalScale),
@@ -130,6 +140,14 @@ export function buildRoadJoints(input: RoadJointBuildInput): RealisticRoadJoint[
   const edges = new Map(input.edges
     .filter((edge) => edge.lanes.some((lane) => lane.kind === 'driving'))
     .map((edge) => [edge.id, edge]))
+  const authoritativeJunctions = new Map((input.authoritativeJunctions ?? [])
+    .filter((junction) => (
+      junction.junctionId !== input.primaryJunctionId
+      && junction.shape.length >= 3
+      && junction.internalLaneIds.length > 0
+      && polygonArea(junction.shape) >= 0.05 * horizontalScale * horizontalScale
+    ))
+    .map((junction) => [junction.junctionId, junction]))
   const endpointMap = new Map<string, EndpointGeometry>()
   for (const topology of input.endpoints) {
     const edge = edges.get(topology.edgeId)
@@ -167,7 +185,8 @@ export function buildRoadJoints(input: RoadJointBuildInput): RealisticRoadJoint[
     const from = endpointMap.get(`${connection.junctionId}:${connection.fromEdge}`)
     const to = endpointMap.get(`${connection.junctionId}:${connection.toEdge}`)
     if (!from || !to) continue
-    if (distance(from.sourceCenter, to.sourceCenter) / horizontalScale > maximumGapMeters) continue
+    const gapMeters = distance(from.sourceCenter, to.sourceCenter) / horizontalScale
+    if (gapMeters > maximumGapMeters && !authoritativeJunctions.has(connection.junctionId)) continue
     const group = byJunction.get(connection.junctionId) ?? []
     group.push(connection)
     byJunction.set(connection.junctionId, group)
@@ -213,14 +232,20 @@ export function buildRoadJoints(input: RoadJointBuildInput): RealisticRoadJoint[
         endpointMap.get(`${junctionId}:${connection.fromEdge}`)!.sourceCenter,
         endpointMap.get(`${junctionId}:${connection.toEdge}`)!.sourceCenter,
       ) / horizontalScale)
+      const maximumComponentGap = Math.max(0, ...gaps)
+      const authoritativeJunction = maximumComponentGap > maximumGapMeters
+        ? authoritativeJunctions.get(junctionId)
+        : undefined
       const created = joint(
         `${junctionId}:${++componentIndex}`,
         junctionId,
-        endpoints.length === 2 ? 'continuation' : 'junction',
+        endpoints.length === 2 && !authoritativeJunction ? 'continuation' : 'junction',
         endpoints,
-        Math.max(0, ...gaps),
+        maximumComponentGap,
         overlapMeters,
         horizontalScale,
+        authoritativeJunction?.shape,
+        authoritativeJunction ? 'sumo_junction_shape' : 'sumo_topology',
       )
       if (created) result.push(created)
     }

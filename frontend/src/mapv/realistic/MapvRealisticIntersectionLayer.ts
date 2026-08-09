@@ -19,7 +19,6 @@ import {
 } from './intersectionManifest'
 import {
   buildCollisionFreeIntersectionApproaches,
-  pointAndTangent,
   SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS,
   signalPoleBase,
   type PositionedIntersectionApproach,
@@ -39,6 +38,16 @@ import {
   buildRoadTransitionSections,
   roadBoundaryFadeFlags,
 } from './roadTransition'
+import {
+  LANE_ARROW_MAX_VISIBLE_RANGE_METERS,
+  LANE_ARROW_RENDER_ORDER,
+  LANE_ARROW_SURFACE_Z,
+  buildLaneDirectionArrows,
+  createLaneArrowGeometry,
+  createLaneArrowMaterial,
+  laneArrowsAvailableForLod,
+  type LaneArrowPattern,
+} from './laneDirectionArrows'
 
 interface SignalHeadMaterials {
   tlsId: string
@@ -282,21 +291,9 @@ function setLens(
   glow.opacity = active ? 0.72 : 0
 }
 
-function arrowShape(direction: RealisticConnection['direction']): THREE.Shape {
-  const shape = new THREE.Shape()
-  const points: Point2[] = direction === 'l'
-    ? [[-0.2, -2.6], [0.2, -2.6], [0.2, 0.7], [-0.7, 0.7], [-0.7, 0.2], [-1.5, 1], [-0.7, 1.8], [-0.7, 1.3], [-0.2, 1.3]]
-    : direction === 'r'
-      ? [[0.2, -2.6], [-0.2, -2.6], [-0.2, 0.7], [0.7, 0.7], [0.7, 0.2], [1.5, 1], [0.7, 1.8], [0.7, 1.3], [0.2, 1.3]]
-      : [[-0.2, -2.6], [0.2, -2.6], [0.2, 1], [0.7, 1], [0, 2.4], [-0.7, 1], [-0.2, 1]]
-  shape.moveTo(...points[0])
-  points.slice(1).forEach((point) => shape.lineTo(...point))
-  shape.closePath()
-  return shape
-}
-
 class RealisticIntersectionObject {
   readonly group = new THREE.Group()
+  private readonly arrowGroup = new THREE.Group()
   private readonly signalHeads: SignalHeadMaterials[] = []
   private readonly glowTexture = makeGlowTexture()
   private readonly approaches: PositionedIntersectionApproach[]
@@ -311,7 +308,9 @@ class RealisticIntersectionObject {
     )
     this.group.name = `realistic-intersection-${detail}:${manifest.intersectionId}`
     this.group.renderOrder = 30
-    this.buildRoads(detail === 'full')
+    this.arrowGroup.name = `lane-direction-arrows:${manifest.intersectionId}:${detail}`
+    this.group.add(this.arrowGroup)
+    this.buildRoads(detail === 'full', laneArrowsAvailableForLod(detail))
     if (detail === 'full') this.buildSignals()
     this.updateSignalState(null)
   }
@@ -336,6 +335,10 @@ class RealisticIntersectionObject {
     }
   }
 
+  setArrowsVisible(visible: boolean): void {
+    this.arrowGroup.visible = visible
+  }
+
   dispose(): void {
     this.group.traverse((object) => {
       if (!(object instanceof THREE.Mesh || object instanceof THREE.Sprite)) return
@@ -350,7 +353,7 @@ class RealisticIntersectionObject {
     this.group.clear()
   }
 
-  private buildRoads(includeFineMarkings: boolean): void {
+  private buildRoads(includeFineMarkings: boolean, includeDirectionArrows: boolean): void {
     const scale = this.horizontalScale
     const radiusSceneUnits = this.manifest.radiusSceneUnits ?? this.manifest.radiusMeters * scale
     const transitionLength = 20 * scale
@@ -444,7 +447,9 @@ class RealisticIntersectionObject {
       this.group.add(polygonMesh(apronPoints, junctionMaterial, 0.012, 29))
     }
 
-    for (const { edge, geometry: approach } of this.approaches) {
+    if (includeDirectionArrows) this.buildDirectionArrows()
+
+    for (const { geometry: approach } of this.approaches) {
       const { tangent, normal, stopLineCenter, halfWidth } = approach
       this.group.add(lineMesh(
         [stopLineCenter[0] - normal[0] * halfWidth, stopLineCenter[1] - normal[1] * halfWidth],
@@ -461,20 +466,6 @@ class RealisticIntersectionObject {
         ))
       }
       if (includeFineMarkings) {
-        for (const lane of edge.lanes.filter((candidate) => candidate.kind !== 'bicycle' && candidate.kind !== 'pedestrian')) {
-          const connection = this.manifest.connections.find(
-            (item) => item.fromEdge === edge.id && item.fromLane === lane.index,
-          )
-          if (!connection) continue
-          const sample = pointAndTangent(lane, 25 * scale, true)
-          const arrowGeometry = new THREE.ShapeGeometry(arrowShape(connection.direction))
-          arrowGeometry.scale(scale, scale, 1)
-          const arrow = new THREE.Mesh(arrowGeometry, white)
-          arrow.position.set(sample.point[0], sample.point[1], 0.07)
-          arrow.rotation.z = Math.atan2(sample.tangent[1], sample.tangent[0]) - Math.PI / 2
-          arrow.renderOrder = 33
-          this.group.add(arrow)
-        }
         const guideStart: Point2 = [
           stopLineCenter[0] + normal[0] * (halfWidth + 0.15 * scale),
           stopLineCenter[1] + normal[1] * (halfWidth + 0.15 * scale),
@@ -486,6 +477,35 @@ class RealisticIntersectionObject {
           yellow,
         ))
       }
+    }
+  }
+
+  private buildDirectionArrows(): void {
+    const arrows = buildLaneDirectionArrows(this.manifest)
+    const byPattern = new Map<LaneArrowPattern, typeof arrows>()
+    for (const arrow of arrows) {
+      byPattern.set(arrow.pattern, [...(byPattern.get(arrow.pattern) ?? []), arrow])
+    }
+    const transform = new THREE.Object3D()
+    for (const [pattern, instances] of byPattern) {
+      const mesh = new THREE.InstancedMesh(
+        createLaneArrowGeometry(pattern),
+        createLaneArrowMaterial(),
+        instances.length,
+      )
+      mesh.name = `lane-direction-arrow:${pattern}`
+      mesh.renderOrder = LANE_ARROW_RENDER_ORDER
+      instances.forEach((arrow, index) => {
+        transform.position.set(arrow.point[0], arrow.point[1], LANE_ARROW_SURFACE_Z)
+        transform.rotation.set(0, 0, arrow.headingRadians)
+        transform.scale.setScalar(arrow.scale)
+        transform.updateMatrix()
+        mesh.setMatrixAt(index, transform.matrix)
+      })
+      mesh.instanceMatrix.needsUpdate = true
+      mesh.computeBoundingBox()
+      mesh.computeBoundingSphere()
+      this.arrowGroup.add(mesh)
     }
   }
 
@@ -765,9 +785,13 @@ export class MapvRealisticIntersectionLayer {
       const detail = this.cache.get(candidate.intersectionId)
       const actual = desired === 'full' && !detail ? 'medium' : desired
       if (overview) overview.object.group.visible = actual === 'overview'
-      if (medium) medium.object.group.visible = actual === 'medium'
+      if (medium) {
+        medium.object.group.visible = actual === 'medium'
+        medium.object.setArrowsVisible(viewport.rangeMeters <= LANE_ARROW_MAX_VISIBLE_RANGE_METERS)
+      }
       if (detail) {
         detail.object.group.visible = actual === 'full'
+        detail.object.setArrowsVisible(viewport.rangeMeters <= LANE_ARROW_MAX_VISIBLE_RANGE_METERS)
         if (actual === 'full') detail.usedAt = performance.now()
       }
       if (desired === 'full' && !detail) {

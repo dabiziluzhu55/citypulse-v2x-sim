@@ -33,14 +33,23 @@ export interface ExperimentComparisonResponse {
 export interface MetricsTimeseriesPoint {
   time: number
   algorithm?: string
-  avg_waiting_time: number
-  avg_travel_time?: number
-  avg_queue_length: number
-  throughput: number
-  fuel_consumption?: number
+  avg_waiting_time: number | null
+  avg_travel_time?: number | null
+  avg_queue_length: number | null
+  throughput: number | null
+  fuel_consumption?: number | null
+  fuel_intensity_L_per_100km?: number | null
+  hard_braking_events?: number | null
+  hard_braking_rate?: number | null
+  finished?: boolean
+  metric_sources?: Record<string, string>
+  warnings?: string[]
+  metric_status?: Partial<Record<EvaluationMetricKey, MetricPresentationStatus>>
 }
 
 export type MetricSeriesSource = 'backend' | 'missing'
+export type MetricPresentationStatus = 'pending' | 'provisional' | 'final' | 'unavailable'
+export type EvaluationMetricKey = 'queue' | 'waiting' | 'fuel'
 
 export interface AlgorithmMetricSeries {
   id: string
@@ -49,6 +58,7 @@ export interface AlgorithmMetricSeries {
   color: string
   source: MetricSeriesSource
   values: Array<number | null>
+  statuses: MetricPresentationStatus[]
 }
 
 export interface MetricsTimeseriesResponse {

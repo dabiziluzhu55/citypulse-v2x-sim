@@ -1,0 +1,351 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-07T04:35:26.998Z",
+  "sourceSha256": "493108a5f29a64b1bff31f57ae415e7c87e817878d92bd88c7ad482d45079de8",
+  "contract": {
+    "controlledLaneCount": 120,
+    "multiMovementLaneCount": 96,
+    "arrowsPerControlledLane": 1,
+    "maximumLaneWidthRatio": 0.8
+  },
+  "totals": {
+    "controlledLaneCount": 120,
+    "multiMovementLaneCount": 96,
+    "arrowCount": 120,
+    "patternCounts": {
+      "s+r": 35,
+      "l+s": 30,
+      "l+s+r": 26,
+      "s": 15,
+      "r": 3,
+      "l": 6,
+      "l+r": 5
+    }
+  },
+  "baselineErrors": [],
+  "intersections": [
+    {
+      "intersectionId": "demo_1",
+      "controlledLaneCount": 6,
+      "multiMovementLaneCount": 6,
+      "arrowCount": 6,
+      "patternCounts": {
+        "l+s": 2,
+        "l+s+r": 2,
+        "s+r": 2
+      },
+      "warnings": [
+        "-56907:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_2",
+      "controlledLaneCount": 11,
+      "multiMovementLaneCount": 3,
+      "arrowCount": 11,
+      "patternCounts": {
+        "l": 3,
+        "l+s": 1,
+        "r": 2,
+        "s": 3,
+        "s+r": 2
+      },
+      "warnings": [
+        "-56734:0: SUMO-controlled lane is classified as bicycle",
+        "-57228:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_3",
+      "controlledLaneCount": 4,
+      "multiMovementLaneCount": 4,
+      "arrowCount": 4,
+      "patternCounts": {
+        "l+s+r": 4
+      },
+      "warnings": [
+        "-50816:0: SUMO-controlled lane is classified as bicycle",
+        "-57582:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_4",
+      "controlledLaneCount": 7,
+      "multiMovementLaneCount": 6,
+      "arrowCount": 7,
+      "patternCounts": {
+        "l": 1,
+        "l+s": 2,
+        "l+s+r": 1,
+        "s+r": 3
+      },
+      "warnings": [
+        "-57229:0: SUMO-controlled lane is classified as bicycle",
+        "-56732:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_5",
+      "controlledLaneCount": 5,
+      "multiMovementLaneCount": 3,
+      "arrowCount": 5,
+      "patternCounts": {
+        "l+r": 1,
+        "l+s": 1,
+        "s": 2,
+        "s+r": 1
+      },
+      "warnings": [
+        "-57586:0: SUMO-controlled lane is classified as bicycle",
+        "-56392:0: SUMO-controlled lane is classified as bicycle",
+        "-50182:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_6",
+      "controlledLaneCount": 4,
+      "multiMovementLaneCount": 4,
+      "arrowCount": 4,
+      "patternCounts": {
+        "l+s+r": 4
+      },
+      "warnings": [
+        "-57584:0: SUMO-controlled lane is classified as bicycle",
+        "-50819:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_7",
+      "controlledLaneCount": 3,
+      "multiMovementLaneCount": 3,
+      "arrowCount": 3,
+      "patternCounts": {
+        "l+r": 1,
+        "l+s": 1,
+        "s+r": 1
+      },
+      "warnings": [],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_8",
+      "controlledLaneCount": 8,
+      "multiMovementLaneCount": 8,
+      "arrowCount": 8,
+      "patternCounts": {
+        "l+s": 4,
+        "s+r": 4
+      },
+      "warnings": [
+        "-57234:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_9",
+      "controlledLaneCount": 7,
+      "multiMovementLaneCount": 7,
+      "arrowCount": 7,
+      "patternCounts": {
+        "l+s": 2,
+        "l+s+r": 3,
+        "s+r": 2
+      },
+      "warnings": [
+        "-56369:0: SUMO-controlled lane is classified as bicycle",
+        "-50339:0: SUMO-controlled lane is classified as bicycle",
+        "-57214:0: SUMO-controlled lane is classified as bicycle",
+        "-56619:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_10",
+      "controlledLaneCount": 3,
+      "multiMovementLaneCount": 3,
+      "arrowCount": 3,
+      "patternCounts": {
+        "l+r": 1,
+        "l+s": 1,
+        "s+r": 1
+      },
+      "warnings": [],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_11",
+      "controlledLaneCount": 9,
+      "multiMovementLaneCount": 6,
+      "arrowCount": 9,
+      "patternCounts": {
+        "l": 1,
+        "l+s": 2,
+        "l+s+r": 1,
+        "s": 2,
+        "s+r": 3
+      },
+      "warnings": [
+        "-56346:0: SUMO-controlled lane is classified as bicycle",
+        "-51264:0: SUMO-controlled lane is classified as bicycle",
+        "-57053:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_12",
+      "controlledLaneCount": 8,
+      "multiMovementLaneCount": 8,
+      "arrowCount": 8,
+      "patternCounts": {
+        "l+s": 4,
+        "s+r": 4
+      },
+      "warnings": [
+        "-51253:0: SUMO-controlled lane is classified as bicycle",
+        "-50293:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_13",
+      "controlledLaneCount": 4,
+      "multiMovementLaneCount": 1,
+      "arrowCount": 4,
+      "patternCounts": {
+        "r": 1,
+        "s": 2,
+        "s+r": 1
+      },
+      "warnings": [
+        "-56457:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_14",
+      "controlledLaneCount": 3,
+      "multiMovementLaneCount": 3,
+      "arrowCount": 3,
+      "patternCounts": {
+        "l+r": 1,
+        "l+s": 1,
+        "s+r": 1
+      },
+      "warnings": [
+        "-52216:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_15",
+      "controlledLaneCount": 6,
+      "multiMovementLaneCount": 6,
+      "arrowCount": 6,
+      "patternCounts": {
+        "l+s": 2,
+        "l+s+r": 2,
+        "s+r": 2
+      },
+      "warnings": [],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_16",
+      "controlledLaneCount": 4,
+      "multiMovementLaneCount": 4,
+      "arrowCount": 4,
+      "patternCounts": {
+        "l+s+r": 4
+      },
+      "warnings": [
+        "-50943:0: SUMO-controlled lane is classified as bicycle",
+        "-50930:0: SUMO-controlled lane is classified as bicycle",
+        "-57802:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_17",
+      "controlledLaneCount": 5,
+      "multiMovementLaneCount": 3,
+      "arrowCount": 5,
+      "patternCounts": {
+        "l+r": 1,
+        "l+s": 1,
+        "s": 2,
+        "s+r": 1
+      },
+      "warnings": [],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_18",
+      "controlledLaneCount": 10,
+      "multiMovementLaneCount": 8,
+      "arrowCount": 10,
+      "patternCounts": {
+        "l+s": 4,
+        "s": 2,
+        "s+r": 4
+      },
+      "warnings": [],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_19",
+      "controlledLaneCount": 4,
+      "multiMovementLaneCount": 4,
+      "arrowCount": 4,
+      "patternCounts": {
+        "l+s+r": 4
+      },
+      "warnings": [
+        "-52215:0: SUMO-controlled lane is classified as bicycle",
+        "-46538:0: SUMO-controlled lane is classified as bicycle"
+      ],
+      "errors": [],
+      "status": "pass"
+    },
+    {
+      "intersectionId": "demo_20",
+      "controlledLaneCount": 9,
+      "multiMovementLaneCount": 6,
+      "arrowCount": 9,
+      "patternCounts": {
+        "l": 1,
+        "l+s": 2,
+        "l+s+r": 1,
+        "s": 2,
+        "s+r": 3
+      },
+      "warnings": [],
+      "errors": [],
+      "status": "pass"
+    }
+  ],
+  "status": "pass"
+}

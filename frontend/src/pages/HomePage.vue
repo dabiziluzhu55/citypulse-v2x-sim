@@ -16,6 +16,8 @@ import type { CesiumCameraPresetId, MapDimension } from '../types/map'
 import type { StartSimulationRequest } from '../types/simulation'
 import { formatIntersectionLabel } from '../utils/intersectionLabels'
 import { detectMap3dCapability } from '../mapv/map3dCapabilities'
+import { shouldAutoPresentSimulation } from '../utils/simulationSessionState'
+import { scenarioPresetIntersectionIds } from '../utils/scenarioPresetRules'
 
 const mapView = useOptionalAppMapView()
 const mapDimension = computed(() => mapView?.dimension.value ?? '2d')
@@ -67,6 +69,8 @@ const {
   activeControlMode,
   activePlaybackSpeed,
   achievedPlaybackSpeed,
+  displayedOfficialTime,
+  clearStatusError,
   launchRun,
   pauseRun,
   resumeRun,
@@ -74,14 +78,6 @@ const {
   stopRun,
   markRestoredSessionHandled,
 } = useSimulationStore()
-const isSimulationActive = computed(() => (
-  (!!sessionId.value && !state.value)
-  || state.value === 'STARTING'
-  || state.value === 'RUNNING'
-  || state.value === 'PAUSED'
-  || state.value === 'STOPPING'
-))
-
 const { ready: healthReady, statusLabel: healthLabel } = useHealth()
 
 const { logEntries } = useSnapshotMetrics(sessionId, snapshot, wsConnected)
@@ -89,33 +85,41 @@ const {
   timeseries,
   activeFingerprint,
   hasActiveComparisonData,
+  finalizationWarning,
   beginRun: beginComparisonRun,
   resetForConfiguration,
 } = useEvaluationComparison(sessionId, snapshot)
-const { communicationPanelOpen, closeCommunicationPanel } = useDashboardOverlay()
+const {
+  communicationPanelOpen,
+  sidePanelsCollapsed,
+  closeCommunicationPanel,
+} = useDashboardOverlay()
 interface ConfigurationChangeRequest {
   fingerprint: string
+  differences: string[]
   apply: () => void
 }
 const pendingConfigChange = ref<ConfigurationChangeRequest | null>(null)
 
-watch(
-  [snapshot, restoredSession],
-  ([nextSnapshot, shouldRestore]) => {
-    if (
-      !shouldRestore
-      || !nextSnapshot
-      || !['STARTING', 'RUNNING', 'PAUSED', 'STOPPING'].includes(nextSnapshot.state)
-    ) return
+const autoPresentedSessionId = ref('')
 
-    const intersectionId = sessionIntersectionId.value
-      || Object.keys(nextSnapshot.intersections)[0]
-    if (intersectionId) selectIntersection(intersectionId)
-    setMapDimension('3d')
-    markRestoredSessionHandled()
-  },
-  { immediate: true },
-)
+watch([snapshot, restoredSession], ([nextSnapshot, shouldRestore]) => {
+  if (!shouldRestore || !nextSnapshot) return
+  const intersectionId = sessionIntersectionId.value || Object.keys(nextSnapshot.intersections)[0]
+  if (intersectionId) selectIntersection(intersectionId)
+  markRestoredSessionHandled()
+}, { immediate: true })
+
+watch([sessionId, state], ([nextSessionId, nextState]) => {
+  if (
+    !nextSessionId
+    || autoPresentedSessionId.value === nextSessionId
+    || !nextState
+    || !shouldAutoPresentSimulation(nextState)
+  ) return
+  autoPresentedSessionId.value = nextSessionId
+  setMapDimension('3d')
+}, { immediate: true })
 
 function handleOverlayKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
@@ -136,9 +140,14 @@ onBeforeUnmount(() => {
 })
 
 async function handleStart(payload: StartSimulationRequest) {
-  setMapDimension('3d')
-  const result = await launchRun(payload, activeIntersectionId.value)
-  if (result) beginComparisonRun(result.session_id, payload, activeIntersectionId.value)
+  const frozenFocusIntersectionId = activeIntersectionId.value
+  const controlledIntersectionIds = scenarioPresetIntersectionIds(
+    payload.scenario_preset_id,
+    catalog.value?.scenario_presets,
+  )
+  await launchRun(payload, frozenFocusIntersectionId, (result) => {
+    beginComparisonRun(result.session_id, payload, controlledIntersectionIds)
+  })
 }
 
 function handleConfigChangeRequested(request: ConfigurationChangeRequest) {
@@ -167,15 +176,17 @@ async function handleStop() {
 </script>
 
 <template>
-  <section class="dashboard-page">
+  <section
+    class="dashboard-page"
+    :class="{ 'is-side-panels-collapsed': sidePanelsCollapsed }"
+  >
     <div v-if="mapView" class="map-view-controls">
       <label class="intersection-picker">
         <span class="map-dimension-toggle__label">路口</span>
         <select
           :value="activeIntersectionId"
-          :disabled="isSimulationActive"
           aria-label="选择高精度路口"
-          :title="isSimulationActive ? '仿真运行期间不能切换路口' : '选择高精度路口'"
+          title="选择查看路口"
           @change="selectIntersection(($event.target as HTMLSelectElement).value)"
         >
           <option
@@ -241,6 +252,7 @@ async function handleStop() {
         :active-control-mode="activeControlMode"
         :active-playback-speed="activePlaybackSpeed"
         :achieved-playback-speed="achievedPlaybackSpeed"
+        :displayed-official-time="displayedOfficialTime"
         :active-comparison-fingerprint="activeFingerprint"
         :has-active-comparison-data="hasActiveComparisonData"
         :health-ready="healthReady"
@@ -250,6 +262,7 @@ async function handleStop() {
         @resume="handleResume"
         @playback-speed="handlePlaybackSpeed"
         @stop="handleStop"
+        @dismiss-status-error="clearStatusError"
         @config-change-requested="handleConfigChangeRequested"
       />
     </div>
@@ -266,10 +279,15 @@ async function handleStop() {
         />
         <div class="config-change-notice" role="dialog" aria-modal="true" aria-labelledby="config-change-title">
           <div id="config-change-title" class="config-change-notice__title"><i aria-hidden="true" />参数变更确认</div>
-          <p>当前参数与右侧算法对比基线不一致。继续后将清空右侧已有算法曲线，再使用新参数开始对比。</p>
+          <p>以下仿真参数会改变评估基准。确认后切换到对应实验组，原有算法曲线仍会保留。</p>
+          <ul>
+            <li v-for="difference in pendingConfigChange.differences" :key="difference">
+              {{ difference }}
+            </li>
+          </ul>
           <div class="config-change-notice__actions">
             <button type="button" @click="cancelConfigChange">取消</button>
-            <button type="button" class="is-primary" @click="confirmConfigChange">确认并清空</button>
+            <button type="button" class="is-primary" @click="confirmConfigChange">确认切换</button>
           </div>
         </div>
       </div>
@@ -305,13 +323,14 @@ async function handleStop() {
     <div class="dashboard-column right">
       <RightSidebarPanel
         :run-id="sessionId"
+        :active-algorithm="snapshot?.evaluation?.algorithm ?? snapshot?.metrics.evaluation?.algorithm ?? activeControlMode"
         :log-entries="logEntries"
         :collaboration-loading="false"
         :collaboration-error="null"
         :ws-connected="wsConnected"
         :timeseries="timeseries"
         :timeseries-loading="false"
-        :timeseries-error="null"
+        :timeseries-error="finalizationWarning"
       />
     </div>
   </section>

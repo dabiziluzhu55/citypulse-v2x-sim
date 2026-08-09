@@ -94,14 +94,14 @@ class SimulationConfig:
     decision_interval: float = 5.0
     minimum_green: float = 5.0
     seed: int = 42
-    step_length: float = 0.05
+    step_length: float = 0.2
     gui: bool = False
     realtime: bool = False
     playback_speed: float | None = None
     start_paused: bool = False
-    snapshot_interval_seconds: float = 0.5
+    snapshot_interval_seconds: float = 1
     ai_observer_module: str = ""
-    ai_frame_interval_seconds: float = 0.1
+    ai_frame_interval_seconds: float = 1
     ai_observer_shutdown_timeout: float = 5.0
     initial_events: tuple[DisturbanceEvent, ...] = ()
 
@@ -630,7 +630,6 @@ class SimulationManager:
             _build_controllers,
             _build_metadata,
             _load_manifest,
-            _load_sumo_modules,
             _select_programs,
             _select_program_manifests,
             _selected_manifest,
@@ -644,10 +643,12 @@ class SimulationManager:
             VehicleTelemetryTracker,
             build_vehicle_type_metadata,
         )
+        from .tripinfo import load_tripinfo_totals
+        from .runtime import load_sumo_runtime
 
         config = record.config
         scenario = record.scenario
-        traci = None
+        runtime = None
         client = None
         client_initialized = False
         ai_observer = None
@@ -662,8 +663,9 @@ class SimulationManager:
         total_departed = 0
         total_arrived = 0
         sequence = 0
+        runtime_started = False
         try:
-            sumolib, traci = _load_sumo_modules()
+            runtime = load_sumo_runtime(gui=config.gui)
             configuration = load_signal_configuration(
                 DEFAULT_MAPPING, DEFAULT_PLANS, DEFAULT_TOPOLOGY
             )
@@ -690,20 +692,25 @@ class SimulationManager:
             downstream_extensions = endpoint_policy.get("downstream_extensions", {})
             if not isinstance(downstream_extensions, Mapping):
                 downstream_extensions = {}
-            command = [
-                sumolib.checkBinary("sumo-gui" if config.gui else "sumo"),
-                "--configuration-file",
-                str(scenario.sumocfg),
-                "--step-length",
-                str(config.step_length),
-                "--seed",
-                str(config.seed),
-                "--no-step-log",
-                "true",
-                "--collision.action",
-                "warn",
-            ]
-            traci.start(command)
+            command = runtime.command(
+                [
+                    "--configuration-file",
+                    str(scenario.sumocfg),
+                    "--step-length",
+                    str(config.step_length),
+                    "--seed",
+                    str(config.seed),
+                    "--no-step-log",
+                    "true",
+                    # 急刹Warning刷屏；急刹次数由VehicleTelemetryTracker统计，不在终端输出
+                    "--no-warnings",
+                    "true",
+                    "--collision.action",
+                    "warn",
+                ]
+            )
+            runtime.start(command)
+            runtime_started = True
             vehicle_types = build_vehicle_type_metadata(
                 scenario.vehicle_type_profiles,
                 scenario.vehicle_profiles,
@@ -714,12 +721,12 @@ class SimulationManager:
                 for tls_id in item["tls_ids"]
             }
             vehicle_tracker = VehicleTelemetryTracker(
-                traci, vehicle_types, tls_to_intersection
+                runtime, vehicle_types, tls_to_intersection
             )
-            lane_change_guard = StoppedLaneChangeGuard(traci, vehicle_tracker)
-            lane_targets = _lane_targets(traci, selected_manifest)
+            lane_change_guard = StoppedLaneChangeGuard(runtime, vehicle_tracker)
+            lane_targets = _lane_targets(runtime, selected_manifest)
             scheduler = DisturbanceScheduler(
-                traci,
+                runtime,
                 lane_targets,
                 scenario.duration_seconds,
                 upstream_extensions=upstream_extensions,
@@ -732,9 +739,9 @@ class SimulationManager:
                 for own_config in selected_configs:
                     program_id = programs[own_config.intersection_id].program_id
                     for tls_id in selected_manifest[own_config.intersection_id]["tls_ids"]:
-                        traci.trafficlight.setProgram(tls_id, program_id)
+                        runtime.trafficlight.setProgram(tls_id, program_id)
                 fixed_tracker = _FixedSignalTracker(selected_manifest)
-                fixed_tracker.tick(traci, 0.0)
+                fixed_tracker.tick(runtime, 0.0)
             else:
                 controllers = _build_controllers(
                     selected_configs,
@@ -743,15 +750,15 @@ class SimulationManager:
                     minimum_green=config.minimum_green,
                 )
                 vehicle_action_controller = VehicleActionController(
-                    traci, vehicle_tracker
+                    runtime, vehicle_tracker
                 )
                 for intersection_id, controller in controllers.items():
                     _apply_controller_state(
-                        traci, selected_manifest[intersection_id], controller
+                        runtime, selected_manifest[intersection_id], controller
                     )
 
             metadata = _build_metadata(
-                traci,
+                runtime,
                 selected_manifest,
                 programs,
                 config.period,
@@ -793,10 +800,10 @@ class SimulationManager:
             departed_since_ai_frame = 0
             arrived_since_ai_frame = 0
             while (
-                traci.simulation.getMinExpectedNumber() > 0
-                and traci.simulation.getTime() < scenario.duration_seconds
+                runtime.simulation.getMinExpectedNumber() > 0
+                and runtime.simulation.getTime() < scenario.duration_seconds
             ):
-                current_time = float(traci.simulation.getTime())
+                current_time = float(runtime.simulation.getTime())
                 stop_requested, sequence = self._process_commands(
                     record,
                     scheduler,
@@ -812,15 +819,20 @@ class SimulationManager:
                 if record.paused:
                     continue
                 loop_started = time.perf_counter()
-                traci.simulationStep()
-                elapsed = float(traci.simulation.getTime())
+                runtime.simulationStep()
+                elapsed = float(runtime.simulation.getTime())
                 scheduler.tick(elapsed)
-                vehicle_tracker.tick(elapsed)
-                lane_change_guard.tick()
                 if fixed_tracker is not None:
-                    fixed_tracker.tick(traci, elapsed)
-                departed = int(traci.simulation.getDepartedNumber())
-                arrived = int(traci.simulation.getArrivedNumber())
+                    fixed_tracker.tick(runtime, elapsed)
+                departed_ids = tuple(runtime.simulation.getDepartedIDList())
+                arrived_ids = tuple(runtime.simulation.getArrivedIDList())
+                vehicle_tracker.update_vehicle_set(
+                    departed_ids,
+                    arrived_ids,
+                    elapsed,
+                )
+                departed = len(departed_ids)
+                arrived = len(arrived_ids)
                 total_departed += departed
                 total_arrived += arrived
                 departed_since_decision += departed
@@ -828,17 +840,34 @@ class SimulationManager:
                 departed_since_ai_frame += departed
                 arrived_since_ai_frame += arrived
 
+                decision_due = (
+                    config.control_mode == "algorithm"
+                    and elapsed + 1e-9 >= next_decision
+                )
+                ai_frame_id = (
+                    ai_frame_clock.poll(elapsed)
+                    if ai_observer is not None
+                    else None
+                )
+                vehicle_observations = None
+                if decision_due or ai_frame_id is not None:
+                    vehicle_tracker.refresh_observations(elapsed)
+                    vehicle_observations = vehicle_tracker.observations(
+                        reset_interval=decision_due
+                    )
+
                 if config.control_mode == "algorithm":
                     for intersection_id, controller in controllers.items():
                         if controller.advance(elapsed):
                             _apply_controller_state(
-                                traci, selected_manifest[intersection_id], controller
+                                runtime, selected_manifest[intersection_id], controller
                             )
-                    if elapsed + 1e-9 >= next_decision:
+                    if decision_due:
                         from .run import _observe
 
+                        lane_change_guard.tick()
                         observation = _observe(
-                            traci,
+                            runtime,
                             elapsed,
                             decision_step,
                             metadata,
@@ -850,6 +879,7 @@ class SimulationManager:
                             previous_action_results=(
                                 vehicle_action_controller.previous_results()
                             ),
+                            vehicle_observations=vehicle_observations,
                         )
                         decision = client.decide(observation)
                         signal_actions = _validate_actions(
@@ -861,7 +891,7 @@ class SimulationManager:
                         for intersection_id, target in signal_actions.items():
                             if controllers[intersection_id].request_phase(target, elapsed):
                                 _apply_controller_state(
-                                    traci,
+                                    runtime,
                                     selected_manifest[intersection_id],
                                     controllers[intersection_id],
                                 )
@@ -876,16 +906,11 @@ class SimulationManager:
                         while next_decision <= elapsed + 1e-9:
                             next_decision += config.decision_interval
 
-                ai_frame_id = (
-                    ai_frame_clock.poll(elapsed)
-                    if ai_observer is not None
-                    else None
-                )
                 if ai_observer is not None and ai_frame_id is not None:
                     from .run import _observe_ai_frame
 
                     frame = _observe_ai_frame(
-                        traci,
+                        runtime,
                         elapsed,
                         ai_frame_id,
                         metadata,
@@ -900,6 +925,7 @@ class SimulationManager:
                             if vehicle_action_controller is not None
                             else None
                         ),
+                        vehicle_observations=vehicle_observations,
                     )
                     ai_observer.publish(frame)
                     departed_since_ai_frame = 0
@@ -909,7 +935,7 @@ class SimulationManager:
                     sequence += 1
                     last_snapshot = _capture_snapshot(
                         record,
-                        traci,
+                        runtime,
                         selected_manifest,
                         controllers,
                         fixed_tracker,
@@ -934,10 +960,10 @@ class SimulationManager:
                     if delay > 0:
                         time.sleep(delay)
             sequence += 1
-            final_elapsed = float(traci.simulation.getTime())
+            final_elapsed = float(runtime.simulation.getTime())
             last_snapshot = _capture_snapshot(
                 record,
-                traci,
+                runtime,
                 selected_manifest,
                 controllers,
                 fixed_tracker,
@@ -955,9 +981,10 @@ class SimulationManager:
             if ai_observer is not None:
                 from .run import _observe_ai_frame
 
+                vehicle_tracker.refresh_observations(final_elapsed)
                 ai_observer.publish(
                     _observe_ai_frame(
-                        traci,
+                        runtime,
                         final_elapsed,
                         ai_frame_clock.reserve(),
                         metadata,
@@ -986,10 +1013,44 @@ class SimulationManager:
             if scheduler is not None:
                 scheduler.close()
                 last_snapshot = replace(last_snapshot, events=scheduler.snapshots())
+            cleanup_error = None
+            if vehicle_action_controller is not None:
+                try:
+                    vehicle_action_controller.release()
+                except Exception:
+                    pass
+            if runtime is not None:
+                try:
+                    runtime.close()
+                except Exception:
+                    pass
+            if runtime_started:
+                try:
+                    tripinfo = load_tripinfo_totals(
+                        scenario.tripinfo_file,
+                        vehicle_types,
+                    )
+                    total_departed = tripinfo.departed_vehicles
+                    total_arrived = tripinfo.arrived_vehicles
+                    last_snapshot = replace(
+                        last_snapshot,
+                        metrics=replace(
+                            last_snapshot.metrics,
+                            departed_vehicles=total_departed,
+                            arrived_vehicles=total_arrived,
+                            fuel_consumed_mg=tripinfo.fuel_consumed_mg,
+                            fuel_consumed_ml=tripinfo.fuel_consumed_ml,
+                        ),
+                    )
+                except BaseException as exc:
+                    # Preserve the original runtime failure when tripinfo is also
+                    # unavailable or incomplete after an exceptional shutdown.
+                    if finish_reason != "error":
+                        cleanup_error = exc
             finish_payload = {
                 "protocol_version": PROTOCOL_VERSION,
                 "episode_id": record.session_id,
-                "reason": finish_reason,
+                "reason": "error" if cleanup_error is not None else finish_reason,
                 "simulation_time": last_snapshot.elapsed_seconds,
                 "departed_vehicles": total_departed,
                 "arrived_vehicles": total_arrived,
@@ -997,7 +1058,6 @@ class SimulationManager:
                 "fuel_consumed_ml": last_snapshot.metrics.fuel_consumed_ml,
                 "hard_braking_events": last_snapshot.metrics.hard_braking_events,
             }
-            cleanup_error = None
             if ai_observer is not None:
                 try:
                     ai_observer.close(
@@ -1005,23 +1065,14 @@ class SimulationManager:
                         config.ai_observer_shutdown_timeout,
                     )
                 except BaseException as exc:
-                    cleanup_error = exc
+                    if cleanup_error is None:
+                        cleanup_error = exc
             if client is not None and client_initialized:
                 try:
                     client.finish(finish_payload)
                 except BaseException as exc:
                     if isinstance(client, LocalAlgorithmClient) and cleanup_error is None:
                         cleanup_error = exc
-            if vehicle_action_controller is not None:
-                try:
-                    vehicle_action_controller.release()
-                except Exception:
-                    pass
-            if traci is not None:
-                try:
-                    traci.close()
-                except Exception:
-                    pass
             if cleanup_error is not None:
                 finish_reason = "error"
                 last_snapshot = replace(
@@ -1324,51 +1375,48 @@ def _capture_snapshot(
             stage_elapsed=signal[3],
             lanes=lanes,
         )
-    telemetry = vehicle_tracker.observations(reset_interval=False)
     vehicle_values = []
     speeds = []
     for vehicle_id in traci.vehicle.getIDList():
         vehicle_id = str(vehicle_id)
-        observation = telemetry.get(vehicle_id)
-        if observation is not None:
+        x, y = traci.vehicle.getPosition(vehicle_id)
+        speed = float(traci.vehicle.getSpeed(vehicle_id))
+        angle = float(traci.vehicle.getAngle(vehicle_id))
+        road_id = str(traci.vehicle.getRoadID(vehicle_id))
+        lane_id = str(traci.vehicle.getLaneID(vehicle_id))
+        speeds.append(speed)
+        telemetry = vehicle_tracker.runtime_fields(vehicle_id)
+        if telemetry is not None:
             action = (
                 vehicle_action_controller.current_action(vehicle_id)
                 if vehicle_action_controller is not None
                 else None
             )
-            speed = observation.motion.speed_mps
-            speeds.append(speed)
             vehicle_values.append(
                 VehicleRuntimeSnapshot(
                     vehicle_id=vehicle_id,
-                    x=observation.position.x_m,
-                    y=observation.position.y_m,
+                    x=float(x),
+                    y=float(y),
                     speed=speed,
-                    angle=observation.motion.angle_deg,
-                    road_id=observation.location.road_id,
-                    lane_id=observation.location.lane_id,
+                    angle=angle,
+                    road_id=road_id,
+                    lane_id=lane_id,
                     controllable=True,
-                    type_id=observation.type_id,
-                    acceleration=observation.motion.acceleration_mps2,
-                    lane_index=observation.location.lane_index,
-                    lane_position=observation.location.lane_position_m,
-                    allowed_speed=observation.motion.allowed_speed_mps,
-                    route_id=observation.location.route_id,
-                    route_index=observation.location.route_index,
-                    waiting_time=observation.traffic.accumulated_waiting_time_s,
-                    time_loss=observation.traffic.time_loss_s,
-                    distance=observation.traffic.distance_m,
-                    fuel_rate_mg_s=observation.energy.fuel_rate_mg_s,
-                    fuel_total_mg=observation.energy.fuel_total_mg,
-                    fuel_total_ml=observation.energy.fuel_total_ml,
-                    hard_braking_events=(
-                        observation.driving_events.hard_braking_total
-                    ),
-                    next_intersection_id=(
-                        observation.next_signal.intersection_id
-                        if observation.next_signal
-                        else None
-                    ),
+                    type_id=str(telemetry["type_id"]),
+                    acceleration=float(telemetry["acceleration"]),
+                    lane_index=int(telemetry["lane_index"]),
+                    lane_position=float(telemetry["lane_position"]),
+                    allowed_speed=float(telemetry["allowed_speed"]),
+                    route_id=str(telemetry["route_id"]),
+                    route_index=int(telemetry["route_index"]),
+                    waiting_time=float(telemetry["waiting_time"]),
+                    time_loss=float(telemetry["time_loss"]),
+                    distance=float(telemetry["distance"]),
+                    fuel_rate_mg_s=float(telemetry["fuel_rate_mg_s"]),
+                    fuel_total_mg=float(telemetry["fuel_total_mg"]),
+                    fuel_total_ml=float(telemetry["fuel_total_ml"]),
+                    hard_braking_events=int(telemetry["hard_braking_events"]),
+                    next_intersection_id=telemetry["next_intersection_id"],
                     target_speed=(action.target_speed_mps if action else None),
                     target_lane_index=(
                         action.target_lane_index if action else None
@@ -1376,18 +1424,21 @@ def _capture_snapshot(
                 )
             )
             continue
-        x, y = traci.vehicle.getPosition(vehicle_id)
-        speed = float(traci.vehicle.getSpeed(vehicle_id))
-        speeds.append(speed)
         vehicle_values.append(
             VehicleRuntimeSnapshot(
                 vehicle_id=str(vehicle_id),
                 x=float(x),
                 y=float(y),
                 speed=speed,
-                angle=float(traci.vehicle.getAngle(vehicle_id)),
-                road_id=str(traci.vehicle.getRoadID(vehicle_id)),
-                lane_id=str(traci.vehicle.getLaneID(vehicle_id)),
+                angle=angle,
+                road_id=road_id,
+                lane_id=lane_id,
+                controllable=vehicle_tracker.contains(vehicle_id),
+                type_id=(
+                    vehicle_tracker.type_metadata(vehicle_id).type_id
+                    if vehicle_tracker.contains(vehicle_id)
+                    else ""
+                ),
             )
         )
     halting = sum(int(traci.lane.getLastStepHaltingNumber(lane)) for lane in unique_lanes)

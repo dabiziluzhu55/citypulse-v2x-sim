@@ -1,4 +1,4 @@
-"""仿真请求与响应 Schema：control_mode 从管控模式注册表校验。"""
+# 仿真请求与响应Schema由control_mode注册表校验
 
 from __future__ import annotations
 
@@ -19,11 +19,15 @@ class StartSimulationRequest(BaseModel):
     window_start_seconds: float = Field(default=0.0, ge=0.0)
     duration_seconds: float = Field(gt=0.0)
     control_mode: str = "fixed"
+    model_alias: str | None = Field(
+        default=None,
+        description="模型别名；缺省按场景默认通用模型。仅 control_mode=ippo/mappo 时生效。",
+    )
     seed: int = Field(default=42, ge=0)
-    step_length: float = Field(default=0.05, gt=0.0)
+    step_length: float = Field(default=0.1, gt=0.0)
     realtime: bool = True
     gui: bool = False
-    snapshot_interval_seconds: float = Field(default=0.2, gt=0.0)
+    snapshot_interval_seconds: float = Field(default=0.5, gt=0.0)
     disturbance_targets: list[DisturbanceTarget] = Field(default_factory=list)
     playback_speed: float | None = Field(
         default=None,
@@ -62,6 +66,7 @@ class StartSimulationResponse(BaseModel):
     status_url: str
     websocket_url: str
     metrics_url: str | None = None
+    intelligence_url: str | None = None
     scenario_preset_id: str | None = None
 
 
@@ -71,7 +76,7 @@ class StopSimulationResponse(BaseModel):
 
 
 class SimulationPlaybackResponse(BaseModel):
-    """暂停/恢复等播放控制操作的统一响应。"""
+    """暂停/恢复等播放控制操作的统一响应"""
 
     session_id: str
     state: str
@@ -101,11 +106,14 @@ class SimulationStatusResponse(BaseModel):
     events: list[dict[str, Any]]
     metrics: dict[str, Any]
     evaluation: dict[str, Any] | None = None
+    event_detection: dict[str, Any] | None = None
+    prediction: dict[str, Any] | None = None
+    traffic_style: dict[str, Any] | None = None
     error: str | None = None
 
 
 class MetricsResponse(BaseModel):
-    """统一评估指标响应；算法字段仅标识 control_mode，不拆多套接口。"""
+    """统一评估指标响应；算法字段仅标识control_mode，不拆多套接口"""
 
     episode_id: str
     algorithm: str
@@ -114,6 +122,9 @@ class MetricsResponse(BaseModel):
     avg_queue_length: float | None = None
     throughput: float | None = None
     fuel_consumption: float | None = None
+    fuel_intensity_L_per_100km: float | None = None
+    hard_braking_events: int | None = None
+    hard_braking_rate: float | None = None
     avg_decision_latency_ms: float | None = None
     departed: int = 0
     arrived: int = 0

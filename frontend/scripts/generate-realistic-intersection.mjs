@@ -296,6 +296,27 @@ for (const intersectionId of availableIntersectionIds) {
       )),
     })).filter((lane) => lane.points.length >= 2).sort((a, b) => a.index - b.index),
   })).filter((edge) => edge.lanes.length > 0).sort((a, b) => a.id.localeCompare(b.id))
+  const renderedJunctionIds = new Set(renderedEdges
+    .filter((edge) => edge.lanes.some((lane) => lane.kind === 'driving'))
+    .flatMap((edge) => [edge.fromJunction, edge.toJunction]))
+  const authoritativeJunctions = [...renderedJunctionIds].flatMap((candidateId) => {
+    if (candidateId === junctionId) return []
+    const candidate = junctions.get(candidateId)
+    const shape = parseShape(String(candidate?.shape ?? ''))
+    const internalLaneIds = String(candidate?.intLanes ?? '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((laneId) => {
+        const metadata = lanesById.get(laneId)
+        return metadata && laneKind(metadata.lane) === 'driving'
+      })
+    if (!candidate || shape.length < 3 || internalLaneIds.length === 0) return []
+    return [{
+      junctionId: candidateId,
+      internalLaneIds,
+      points: roundShape(toLocalShape(shape, sumoOrigin)),
+    }]
+  })
 
   const connections = asArray(topology.connections).map((connection) => {
     const tlsId = String(connection.tls_id)
@@ -347,6 +368,7 @@ for (const intersectionId of availableIntersectionIds) {
 
   pending.push({
     sumoOrigin,
+    authoritativeJunctions,
     requestedOrigin: [Number(location.lon), Number(location.lat)],
     manifest: {
       schemaVersion: 3,
@@ -398,6 +420,12 @@ for (const item of pending) {
     [sumoOrigin[0] + point[0], sumoOrigin[1] + point[1]],
     (value) => { item.junctionWgs84 ??= []; item.junctionWgs84[index] = value },
   ))
+  item.authoritativeJunctions.forEach((junction) => {
+    junction.points.forEach((point, index) => registerPoint(
+      [sumoOrigin[0] + point[0], sumoOrigin[1] + point[1]],
+      (value) => { junction.wgs84 ??= []; junction.wgs84[index] = value },
+    ))
+  })
   for (const edge of manifest.edges) {
     for (const lane of edge.lanes) {
       lane.points.forEach((point, index) => registerPoint(
@@ -425,7 +453,9 @@ const existingCatalog = await readFile(path.resolve(outputDirectory, 'catalog.js
   .catch(() => ({ intersections: [] }))
 const catalog = {
   schemaVersion: 3,
-  generatedAt: new Date().toISOString(),
+  generatedAt: requestedIntersectionId && existingCatalog.generatedAt
+    ? existingCatalog.generatedAt
+    : new Date().toISOString(),
   sourceSha256,
   intersections: existingCatalog.intersections.filter(
     (entry) => !availableIntersectionIds.includes(entry.intersectionId),
@@ -454,6 +484,14 @@ for (const item of pending) {
   manifest.junctionShape = roundShape(item.junctionWgs84.map((point) => {
     const projected = toWebMercator(point)
     return [projected[0] - originPlane[0], projected[1] - originPlane[1]]
+  }))
+  const authoritativeJunctions = item.authoritativeJunctions.map((junction) => ({
+    junctionId: junction.junctionId,
+    internalLaneIds: junction.internalLaneIds,
+    shape: roundShape(junction.wgs84.map((point) => {
+      const projected = toWebMercator(point)
+      return [projected[0] - originPlane[0], projected[1] - originPlane[1]]
+    })),
   }))
   for (const edge of manifest.edges) {
     for (const lane of edge.lanes) {
@@ -549,6 +587,7 @@ for (const item of pending) {
     edges: manifest.edges,
     endpoints,
     connections: jointConnections,
+    authoritativeJunctions,
     primaryJunctionId: manifest.junctionId,
     primaryJunctionShape: manifest.junctionShape,
     horizontalScale: manifest.horizontalScale,

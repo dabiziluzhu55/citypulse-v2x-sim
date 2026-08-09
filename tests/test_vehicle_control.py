@@ -78,35 +78,59 @@ class FakeVehicleDomain:
     def getTypeID(self, vehicle_id):
         return self.states[vehicle_id]["type_id"]
 
-    def subscribe(self, vehicle_id, variables):
-        self.subscriptions[vehicle_id] = tuple(variables)
+    def getPosition(self, vehicle_id):
+        return self.states[vehicle_id]["position"]
 
-    def getSubscriptionResults(self, vehicle_id):
-        state = self.states[vehicle_id]
-        names = {
-            value: name.removeprefix("VAR_").lower()
-            for name, value in vars(FakeConstants).items()
-            if name.startswith("VAR_")
-        }
-        aliases = {
-            "laneposition": "lane_position",
-            "allowedspeed": "allowed_speed",
-            "routeid": "route_id",
-            "routeindex": "route_index",
-            "waitingtime": "waiting_time",
-            "accumulatedwaitingtime": "accumulated_waiting_time",
-            "timeloss": "time_loss",
-            "fuelconsumption": "fuel_rate",
-            "edges": "route",
-            "next_tls": "next_tls",
-            "lane_index": "lane_index",
-            "roadid": "road_id",
-            "laneid": "lane_id",
-        }
-        return {
-            variable: state[aliases.get(names[variable], names[variable])]
-            for variable in self.subscriptions[vehicle_id]
-        }
+    def getSpeed(self, vehicle_id):
+        return self.states[vehicle_id]["speed"]
+
+    def getAcceleration(self, vehicle_id):
+        return self.states[vehicle_id]["acceleration"]
+
+    def getAngle(self, vehicle_id):
+        return self.states[vehicle_id]["angle"]
+
+    def getRoadID(self, vehicle_id):
+        return self.states[vehicle_id]["road_id"]
+
+    def getLaneID(self, vehicle_id):
+        return self.states[vehicle_id]["lane_id"]
+
+    def getLaneIndex(self, vehicle_id):
+        return self.states[vehicle_id]["lane_index"]
+
+    def getLanePosition(self, vehicle_id):
+        return self.states[vehicle_id]["lane_position"]
+
+    def getAllowedSpeed(self, vehicle_id):
+        return self.states[vehicle_id]["allowed_speed"]
+
+    def getRouteID(self, vehicle_id):
+        return self.states[vehicle_id]["route_id"]
+
+    def getRouteIndex(self, vehicle_id):
+        return self.states[vehicle_id]["route_index"]
+
+    def getRoute(self, vehicle_id):
+        return self.states[vehicle_id]["route"]
+
+    def getNextTLS(self, vehicle_id):
+        return self.states[vehicle_id]["next_tls"]
+
+    def getWaitingTime(self, vehicle_id):
+        return self.states[vehicle_id]["waiting_time"]
+
+    def getAccumulatedWaitingTime(self, vehicle_id):
+        return self.states[vehicle_id]["accumulated_waiting_time"]
+
+    def getTimeLoss(self, vehicle_id):
+        return self.states[vehicle_id]["time_loss"]
+
+    def getDistance(self, vehicle_id):
+        return self.states[vehicle_id]["distance"]
+
+    def getFuelConsumption(self, vehicle_id):
+        return self.states[vehicle_id]["fuel_rate"]
 
     def setSpeed(self, vehicle_id, speed):
         self.speed_commands.append((vehicle_id, speed))
@@ -159,8 +183,23 @@ class VehicleTelemetryTests(unittest.TestCase):
             self.traci, vehicle_types, {"tls-317": "demo_2"}
         )
 
-    def test_fuel_is_integrated_and_braking_counts_threshold_entries(self):
-        self.tracker.tick(1.0)
+    def refresh_tracker(self, elapsed):
+        active_ids = {
+            vehicle_id
+            for vehicle_id, state in self.traci.vehicle.states.items()
+            if state["type_id"] in self.tracker.vehicle_types
+        }
+        tracked_ids = set(self.tracker.active_vehicle_ids())
+        self.tracker.update_vehicle_set(
+            active_ids - tracked_ids,
+            tracked_ids - active_ids,
+            elapsed,
+        )
+        self.tracker.refresh_observations(elapsed)
+
+    def test_sampled_fuel_and_braking_do_not_integrate_arrival_cleanup(self):
+        self.tracker.update_vehicle_set(("car.0",), (), 0.0)
+        self.tracker.refresh_observations(1.0)
         first = self.tracker.observations(reset_interval=True)["car.0"]
         self.assertAlmostEqual(first.energy.fuel_since_last_decision_mg, 100.0)
         self.assertAlmostEqual(first.energy.fuel_total_ml, 100.0 / 745.0)
@@ -168,23 +207,34 @@ class VehicleTelemetryTests(unittest.TestCase):
         self.assertEqual(first.next_signal.intersection_id, "demo_2")
         self.assertNotIn("event_vehicle_crash", self.tracker.observations(reset_interval=False))
 
-        self.tracker.tick(2.0)
+        self.refresh_tracker(2.0)
         second = self.tracker.observations(reset_interval=True)["car.0"]
         self.assertAlmostEqual(second.energy.fuel_since_last_decision_mg, 100.0)
         self.assertEqual(second.driving_events.hard_braking_total, 1)
         self.assertEqual(second.driving_events.hard_braking_since_last_decision, 0)
 
         self.traci.vehicle.states["car.0"]["acceleration"] = 0.0
-        self.tracker.tick(3.0)
+        self.refresh_tracker(3.0)
         self.traci.vehicle.states["car.0"]["acceleration"] = -4.0
-        self.tracker.tick(4.0)
+        self.refresh_tracker(4.0)
         fourth = self.tracker.observations(reset_interval=False)["car.0"]
         self.assertEqual(fourth.driving_events.hard_braking_total, 2)
         self.assertAlmostEqual(self.tracker.totals()[0], 400.0)
 
         self.traci.vehicle.states.pop("car.0")
-        self.tracker.tick(5.0)
-        self.assertAlmostEqual(self.tracker.totals()[0], 500.0)
+        self.refresh_tracker(5.0)
+        self.assertAlmostEqual(self.tracker.totals()[0], 400.0)
+
+    def test_lifecycle_updates_do_not_read_full_vehicle_state(self):
+        self.tracker.update_vehicle_set(("car.0",), (), 0.1)
+        self.assertTrue(self.tracker.contains("car.0"))
+        self.assertEqual(self.tracker.observations(reset_interval=False), {})
+        self.assertEqual(self.traci.vehicle.subscriptions, {})
+
+        self.tracker.refresh_observations(5.0)
+        self.assertIn("car.0", self.tracker.observations(reset_interval=False))
+        self.tracker.update_vehicle_set((), ("car.0",), 5.1)
+        self.assertFalse(self.tracker.contains("car.0"))
 
     def test_neighbor_gaps_and_time_since_lane_change_use_cached_telemetry(self):
         second = deepcopy(self.traci.vehicle.states["car.0"])
@@ -192,7 +242,7 @@ class VehicleTelemetryTests(unittest.TestCase):
         second["position"] = (23.0, 20.0)
         self.traci.vehicle.states["car.1"] = second
 
-        self.tracker.tick(1.0)
+        self.refresh_tracker(1.0)
         observations = self.tracker.observations(reset_interval=False)
         self.assertEqual(observations["car.0"].leader_gap_m, 8.0)
         self.assertIsNone(observations["car.0"].follower_gap_m)
@@ -202,24 +252,24 @@ class VehicleTelemetryTests(unittest.TestCase):
 
         self.traci.vehicle.states["car.0"]["lane_id"] = "edge_1"
         self.traci.vehicle.states["car.0"]["lane_index"] = 1
-        self.tracker.tick(2.0)
+        self.refresh_tracker(2.0)
         changed = self.tracker.observations(reset_interval=False)["car.0"]
         self.assertEqual(changed.time_since_last_lane_change_s, 0.0)
         self.assertIsNone(changed.leader_gap_m)
 
-        self.tracker.tick(3.5)
+        self.refresh_tracker(3.5)
         later = self.tracker.observations(reset_interval=False)["car.0"]
         self.assertEqual(later.time_since_last_lane_change_s, 1.5)
 
         self.traci.vehicle.states["car.0"]["road_id"] = "out"
         self.traci.vehicle.states["car.0"]["lane_id"] = "out_0"
         self.traci.vehicle.states["car.0"]["lane_index"] = 0
-        self.tracker.tick(4.0)
+        self.refresh_tracker(4.0)
         next_edge = self.tracker.observations(reset_interval=False)["car.0"]
         self.assertEqual(next_edge.time_since_last_lane_change_s, 2.0)
 
     def test_speed_and_lane_actions_are_validated_leased_and_reported(self):
-        self.tracker.tick(1.0)
+        self.refresh_tracker(1.0)
         controller = VehicleActionController(self.traci, self.tracker)
         actions = controller.validate(
             {"car.0": {"target_speed_mps": 8.0, "target_lane_index": 1}}
@@ -233,7 +283,7 @@ class VehicleTelemetryTests(unittest.TestCase):
         self.assertEqual(result.lane_change_status, "not_completed")
 
         self.traci.vehicle.states["car.0"]["lane_index"] = 1
-        self.tracker.tick(2.0)
+        self.refresh_tracker(2.0)
         self.assertEqual(controller.speed_control_summary("edge_1"), (1, 8.0, 8.0))
         self.assertEqual(
             controller.previous_results().vehicles["car.0"].lane_change_status,
@@ -245,7 +295,7 @@ class VehicleTelemetryTests(unittest.TestCase):
     def test_stopped_lane_change_guard_locks_and_restores_stopped_vehicles(self):
         self.traci.vehicle.states["car.0"]["speed"] = 0.0
         self.traci.vehicle.lane_change_modes["car.0"] = 0
-        self.tracker.tick(1.0)
+        self.refresh_tracker(1.0)
         guard = StoppedLaneChangeGuard(self.traci, self.tracker)
 
         guard.tick()
@@ -259,7 +309,7 @@ class VehicleTelemetryTests(unittest.TestCase):
         )
 
         self.traci.vehicle.states["car.0"]["speed"] = 0.2
-        self.tracker.tick(2.0)
+        self.refresh_tracker(2.0)
         guard.tick()
         self.assertEqual(
             self.traci.vehicle.lane_change_mode_commands[-1],
@@ -269,12 +319,12 @@ class VehicleTelemetryTests(unittest.TestCase):
 
     def test_stopped_lane_change_guard_cleans_up_arrived_vehicles(self):
         self.traci.vehicle.states["car.0"]["speed"] = 0.0
-        self.tracker.tick(1.0)
+        self.refresh_tracker(1.0)
         guard = StoppedLaneChangeGuard(self.traci, self.tracker)
         guard.tick()
 
         self.traci.vehicle.states.pop("car.0")
-        self.tracker.tick(2.0)
+        self.refresh_tracker(2.0)
         guard.tick()
 
         self.assertEqual(
@@ -284,14 +334,14 @@ class VehicleTelemetryTests(unittest.TestCase):
 
     def test_stopped_vehicles_cannot_receive_lane_change_actions(self):
         self.traci.vehicle.states["car.0"]["speed"] = 0.0
-        self.tracker.tick(1.0)
+        self.refresh_tracker(1.0)
         controller = VehicleActionController(self.traci, self.tracker)
         with self.assertRaisesRegex(ValueError, "cannot change lanes while stopped"):
             controller.validate({"car.0": {"target_lane_index": 1}})
         self.assertEqual(self.traci.vehicle.lane_commands, [])
 
     def test_lane_change_action_cannot_stop_the_vehicle(self):
-        self.tracker.tick(1.0)
+        self.refresh_tracker(1.0)
         controller = VehicleActionController(self.traci, self.tracker)
         with self.assertRaisesRegex(ValueError, "cannot change lanes while stopped"):
             controller.validate(
@@ -301,7 +351,7 @@ class VehicleTelemetryTests(unittest.TestCase):
         self.assertEqual(self.traci.vehicle.lane_commands, [])
 
     def test_invalid_vehicle_action_is_rejected_before_application(self):
-        self.tracker.tick(1.0)
+        self.refresh_tracker(1.0)
         controller = VehicleActionController(self.traci, self.tracker)
         with self.assertRaisesRegex(ValueError, "between 0"):
             controller.validate({"car.0": {"target_speed_mps": 20.0}})
@@ -310,7 +360,7 @@ class VehicleTelemetryTests(unittest.TestCase):
         self.assertEqual(self.traci.vehicle.speed_commands, [])
 
     def test_lane_disallow_all_rejects_vehicle_action(self):
-        self.tracker.tick(1.0)
+        self.refresh_tracker(1.0)
         self.traci.lane.getDisallowed = (
             lambda lane_id: ("all",) if lane_id == "edge_1" else ()
         )

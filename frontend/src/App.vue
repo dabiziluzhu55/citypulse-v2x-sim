@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppBackgroundMap from './components/visualization/AppBackgroundMap.vue'
 import AppMapGradientMask from './components/visualization/AppMapGradientMask.vue'
@@ -11,7 +11,46 @@ const route = useRoute()
 const mapView = provideAppMapView()
 const mapDimension = computed(() => mapView.dimension.value)
 const isStandaloneRoute = computed(() => route.meta.standalone === true)
+const threeMapState = ref<'loading' | 'ready' | 'error'>('loading')
+const threeMapMounted = ref(false)
+const displayedMapDimension = ref<'2d' | '3d'>(mapDimension.value)
+const map2dActive = ref(mapDimension.value === '2d')
+const map3dActive = ref(mapDimension.value === '3d')
+let mapTransitionRevision = 0
+const threeMapBlocked = computed(() => (
+  mapDimension.value === '3d' && threeMapState.value !== 'ready'
+))
+
+function waitForRenderFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+}
+
+watch(mapDimension, async (dimension) => {
+  const revision = ++mapTransitionRevision
+  if (dimension === '3d') {
+    threeMapMounted.value = true
+    map3dActive.value = true
+  } else {
+    map2dActive.value = true
+  }
+  await nextTick()
+  await waitForRenderFrame()
+  await waitForRenderFrame()
+  if (revision !== mapTransitionRevision) return
+  displayedMapDimension.value = dimension
+  window.setTimeout(() => {
+    if (revision !== mapTransitionRevision) return
+    map2dActive.value = dimension === '2d'
+    map3dActive.value = dimension === '3d'
+  }, 120)
+}, { immediate: true })
+
+function handleThreeMapState(nextState: 'loading' | 'ready' | 'error'): void {
+  threeMapState.value = nextState
+}
+
 function returnTo2d(): void {
+  threeMapState.value = 'loading'
   mapView.setDimension('2d')
 }
 </script>
@@ -19,13 +58,31 @@ function returnTo2d(): void {
 <template>
   <router-view v-if="isStandaloneRoute" />
   <div v-else class="app-shell app-shell--dashboard">
-    <AppBackgroundMap v-if="mapDimension === '2d'" />
-    <AppThreeMapLoader v-else @return2d="returnTo2d" />
+    <div
+      class="app-map-layer"
+      :class="{ 'is-visible': displayedMapDimension === '2d' }"
+    >
+      <AppBackgroundMap :active="map2dActive" />
+    </div>
+    <div
+      v-if="threeMapMounted"
+      class="app-map-layer"
+      :class="{ 'is-visible': displayedMapDimension === '3d' }"
+    >
+      <AppThreeMapLoader
+        :active="map3dActive"
+        @return2d="returnTo2d"
+        @state-change="handleThreeMapState"
+      />
+    </div>
     <AppMapGradientMask />
 
     <DashboardChrome />
 
-    <div class="app-content app-content--dashboard">
+    <div
+      class="app-content app-content--dashboard"
+      :class="{ 'app-content--map3d-blocked': threeMapBlocked }"
+    >
       <main class="app-main app-main--dashboard">
         <router-view />
       </main>
@@ -53,6 +110,19 @@ function returnTo2d(): void {
 .app-shell--dashboard {
   height: 100vh;
   overflow: hidden;
+}
+
+.app-map-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms linear;
+}
+
+.app-map-layer.is-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .app-shell {
@@ -105,6 +175,15 @@ function returnTo2d(): void {
 .app-content :deep(.map-dimension-toggle),
 .app-content :deep(.dashboard-bottom-icons__btn) {
   pointer-events: auto;
+}
+
+.app-content--map3d-blocked :deep(*) {
+  pointer-events: none !important;
+}
+
+.app-content--map3d-blocked :deep(.map-dimension-toggle),
+.app-content--map3d-blocked :deep(.map-dimension-toggle *) {
+  pointer-events: auto !important;
 }
 
 .app-main {

@@ -1,6 +1,12 @@
 import type { BackendControlMode } from '../constants/simulationOptions'
+import type {
+  EventDetectionPayload,
+  PredictionPayload,
+  TrafficStylePayload,
+} from './intelligence'
 
 export type SimulationState =
+  | 'QUEUED'
   | 'STARTING'
   | 'RUNNING'
   | 'PAUSED'
@@ -9,16 +15,40 @@ export type SimulationState =
   | 'COMPLETED'
   | 'FAILED'
 
-export interface DisturbanceEventPayload {
-  event_type: 'lane_closure' | 'speed_limit' | 'accident'
+interface DisturbanceEventBase {
   event_id: string
   start_seconds: number
   end_seconds: number
+}
+
+export interface StandardDisturbanceEventPayload extends DisturbanceEventBase {
+  event_type: 'lane_closure' | 'speed_limit' | 'accident'
   lane_ids?: string[]
   lane_id?: string
   max_speed?: number
   position_ratio?: number
 }
+
+export interface MajorEventOpeningPayload extends DisturbanceEventBase {
+  event_type: 'major_event_opening'
+  vehicle_count: number
+  venue_lane_id?: string
+  source_lane_ids?: string[]
+  vehicle_type_id?: string
+}
+
+export interface MajorEventClosingPayload extends DisturbanceEventBase {
+  event_type: 'major_event_closing'
+  vehicle_count: number
+  venue_lane_id?: string
+  destination_lane_ids?: string[]
+  vehicle_type_id?: string
+}
+
+export type DisturbanceEventPayload =
+  | StandardDisturbanceEventPayload
+  | MajorEventOpeningPayload
+  | MajorEventClosingPayload
 
 interface DisturbanceTargetBase {
   intersection_id: string
@@ -44,10 +74,28 @@ export interface AccidentDisturbanceTarget extends DisturbanceTargetBase {
   position_ratio?: number
 }
 
+export interface MajorEventOpeningDisturbanceTarget extends DisturbanceTargetBase {
+  event_type: 'major_event_opening'
+  vehicle_count: number
+  venue_lane_id?: string
+  source_lane_ids?: string[]
+  vehicle_type_id?: string
+}
+
+export interface MajorEventClosingDisturbanceTarget extends DisturbanceTargetBase {
+  event_type: 'major_event_closing'
+  vehicle_count: number
+  venue_lane_id?: string
+  destination_lane_ids?: string[]
+  vehicle_type_id?: string
+}
+
 export type DisturbanceTargetPayload =
   | LaneClosureDisturbanceTarget
   | SpeedLimitDisturbanceTarget
   | AccidentDisturbanceTarget
+  | MajorEventOpeningDisturbanceTarget
+  | MajorEventClosingDisturbanceTarget
 
 export interface StartSimulationRequest {
   scenario_preset_id: string
@@ -71,6 +119,7 @@ export interface StartSimulationResponse {
   status_url: string
   websocket_url: string
   metrics_url: string | null
+  intelligence_url?: string | null
   scenario_preset_id: string | null
 }
 
@@ -85,6 +134,14 @@ export interface SimulationLaneRuntime {
   mean_speed: number
   waiting_time: number
   occupancy: number
+  edge_id?: string
+  lane_index?: number
+  role?: 'incoming' | 'outgoing' | 'internal' | string | null
+  approach_id?: string | null
+  downstream_lane_ids?: string[]
+  lane_has_green?: boolean | null
+  signal_state?: string | null
+  current_allowed_speed_mps?: number | null
 }
 
 export interface SimulationIntersectionRuntime {
@@ -107,7 +164,16 @@ export interface SimulationVehicle {
   road_id: string
   lane_id: string
   type_id?: string
+  acceleration?: number
+  lane_index?: number
   lane_position?: number
+  allowed_speed?: number
+  route_id?: string
+  route_index?: number
+  distance?: number
+  next_intersection_id?: string | null
+  target_speed?: number
+  target_lane_index?: number
 }
 
 export interface SimulationPlaybackResponse {
@@ -124,25 +190,34 @@ export interface SimulationMetrics {
   halting_vehicles: number
   total_waiting_time: number
   mean_speed: number
-  avg_waiting_time?: number
-  avg_travel_time?: number
-  avg_queue_length?: number
-  throughput?: number
-  fuel_consumption?: number
+  avg_waiting_time?: number | null
+  avg_travel_time?: number | null
+  avg_queue_length?: number | null
+  throughput?: number | null
+  fuel_consumption?: number | null
+  fuel_intensity_L_per_100km?: number | null
+  hard_braking_events?: number | null
+  hard_braking_rate?: number | null
   evaluation?: SimulationEvaluation
 }
 
 export interface SimulationEvaluation {
   episode_id: string
   algorithm: string
-  avg_waiting_time: number
-  avg_travel_time: number
-  avg_queue_length: number
-  throughput: number
-  fuel_consumption: number
-  avg_decision_latency_ms: number
+  avg_waiting_time: number | null
+  avg_travel_time: number | null
+  avg_queue_length: number | null
+  throughput: number | null
+  fuel_consumption: number | null
+  fuel_intensity_L_per_100km?: number | null
+  hard_braking_events?: number | null
+  hard_braking_rate?: number | null
+  avg_decision_latency_ms: number | null
   departed: number
   arrived: number
+  completion_rate: number | null
+  metric_sources: Record<string, string>
+  warnings: string[]
   finished: boolean
 }
 
@@ -166,7 +241,12 @@ export interface SimulationSnapshot {
   playback_speed: number | null
   intersections: Record<string, SimulationIntersectionRuntime>
   vehicles: SimulationVehicle[]
+  /** 用户扰动事件，与算法识别无关 */
   events: SimulationEvent[]
+  /** 算法事件识别结果，与用户扰动events无关 */
+  event_detection?: EventDetectionPayload | null
+  prediction?: PredictionPayload | null
+  traffic_style?: TrafficStylePayload | null
   metrics: SimulationMetrics
   evaluation?: SimulationEvaluation | null
   error: string | null

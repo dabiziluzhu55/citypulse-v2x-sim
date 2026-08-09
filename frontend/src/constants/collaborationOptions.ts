@@ -8,6 +8,7 @@ export const ALGORITHM_LABELS: Record<string, string> = {
   max_pressure: 'Max-Pressure',
   fixed_time: '固定配时',
   ippo: 'IPPO 强化学习',
+  mappo: 'MAPPO 强化学习',
   rule: '规则控制',
 }
 

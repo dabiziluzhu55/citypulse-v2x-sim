@@ -1,4 +1,4 @@
-"""仿真应用服务：多会话并发、元数据持久化、指标 watcher 与生命周期管理。"""
+# 仿真应用服务含多会话元数据指标watcher与智能分析挂载
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ import threading
 from datetime import datetime, timezone
 from queue import Empty
 from typing import Any, Iterable
-from urllib.parse import urljoin
-
 from simulation.sumo import (
     AccidentEvent,
     LaneClosureEvent,
@@ -37,6 +35,7 @@ from ..schemas.events import (
 from ..scenario.presets import list_scenario_presets, supported_intersection_ids
 from ..scenario.resolver import ResolvedStartSimulation, resolve_start_simulation
 from ..schemas.simulations import StartSimulationRequest
+from .intelligence_runtime import IntelligenceHub
 from .session_metadata import (
     SessionMetadata,
     SessionMetadataStore,
@@ -50,7 +49,6 @@ logger = logging.getLogger(__name__)
 TERMINAL_STATES = frozenset({"STOPPED", "COMPLETED", "FAILED"})
 QUEUED_STATE = "QUEUED"
 ACTIVE_COMMAND_STATES = frozenset({"STARTING", "RUNNING", "PAUSED", "STOPPING"})
-INTERNAL_ALGORITHM_PATH_PREFIX = "api/v1/internal/algorithm"
 METRICS_LOCK_TTL_SECONDS = 30
 
 
@@ -92,6 +90,17 @@ class SimulationService:
         self._watcher_owners: dict[str, str] = {}
         self._watcher_stop: set[str] = set()
         self._lock = threading.RLock()
+        converter = serializer._coordinate_converter
+        self._intelligence = IntelligenceHub(
+            tls_manifest_path=settings.generated_dir
+            / "manifests"
+            / "tls_manifest.json",
+            sample_seconds=settings.intelligence_sample_seconds,
+            history_frames=settings.intelligence_history_frames,
+            horizon_seconds=settings.prediction_horizon_seconds,
+            lane_lonlat=getattr(converter, "lane_center_lonlat", None),
+            intersection_lonlat=getattr(converter, "intersection_lonlat", None),
+        )
 
     # ------------------------------------------------------------------
     # Catalog / list
@@ -154,8 +163,26 @@ class SimulationService:
                 ),
                 status_code=422,
             )
+        mode_spec = require_control_mode(resolved.control_mode)
+        if not mode_spec.allows_preset(resolved.scenario_preset_id):
+            allowed = list(mode_spec.supported_presets or ())
+            raise AppError(
+                code="INVALID_CONTROL_MODE_PRESET",
+                message=(
+                    f"control_mode={resolved.control_mode!r} only supports "
+                    f"scenario presets {allowed}; got {resolved.scenario_preset_id!r}."
+                ),
+                status_code=422,
+            )
 
         config = self._build_config(resolved)
+        if resolved.model_alias:
+            # Celery prefork: 每个 worker 进程同一时刻只跑一个 SUMO 会话，
+            # 进程级环境变量不会串到其他会话。
+            if resolved.control_mode == "mappo":
+                os.environ["MAPPO_MODEL_ALIAS"] = resolved.model_alias
+            else:
+                os.environ["IPPO_MODEL_ALIAS"] = resolved.model_alias
         logger.info(
             "启动仿真: mode=%s preset=%s intersections=%s period=%s control_mode=%s",
             self._settings.normalized_manager_mode(),
@@ -195,12 +222,37 @@ class SimulationService:
                 "throughput",
                 "avg_travel_time",
                 "fuel_consumption",
+                "hard_braking_events",
+                "hard_braking_rate",
             ):
                 if evaluation.get(key) is not None:
                     metrics[key] = evaluation[key]
             payload["metrics"] = metrics
             payload["evaluation"] = evaluation
+        intelligence = self._intelligence.observe(snapshot)
+        payload["event_detection"] = intelligence["event_detection"]
+        payload["prediction"] = intelligence["prediction"]
+        payload["traffic_style"] = intelligence["traffic_style"]
         return payload
+
+    def get_intelligence(self, session_id: str) -> dict[str, Any]:
+        snapshot = self._manager.snapshot(session_id)
+        if snapshot.state not in {QUEUED_STATE}:
+            return self._intelligence.observe(snapshot)
+        return self._intelligence.get(session_id)
+
+    def serialize_terminal_snapshot(
+        self, snapshot: SimulationSnapshot
+    ) -> dict[str, Any]:
+        """终态快照：先完成TripInfo回填与指标持久化，再序列化唯一最终帧
+
+        WebSocket应调用本方法发送终态，避免把运行中临时指标伪装成finished结果
+        """
+
+        if snapshot.state not in TERMINAL_STATES:
+            return self.serialize_snapshot(snapshot)
+        self._finalize_session(snapshot)
+        return self.serialize_snapshot(snapshot)
 
     def stop(self, session_id: str) -> SimulationSnapshot:
         logger.info("停止仿真: %s", session_id)
@@ -254,7 +306,7 @@ class SimulationService:
         self._manager.cancel_event(session_id, event_id)
 
     def subscribe(self, session_id: str):
-        # 未知会话由 manager 抛 UnknownSessionError
+        # 未知会话由manager抛UnknownSessionError
         return self._manager.subscribe(session_id)
 
     def get_metrics(self, session_id: str) -> dict[str, Any]:
@@ -278,6 +330,7 @@ class SimulationService:
 
         meta = self._metadata.get(session_id)
         mode = meta.control_mode if meta is not None else "fixed"
+        # 无已结算指标时即使仿真已终态也不finished，避免前端过早断开
         return {
             "episode_id": session_id,
             "algorithm": mode,
@@ -286,17 +339,20 @@ class SimulationService:
             "avg_queue_length": None,
             "throughput": None,
             "fuel_consumption": None,
+            "fuel_intensity_L_per_100km": None,
+            "hard_braking_events": None,
+            "hard_braking_rate": None,
             "avg_decision_latency_ms": latency,
             "departed": 0,
             "arrived": 0,
             "completion_rate": None,
             "metric_sources": {},
             "warnings": [],
-            "finished": bool(finished_hint),
+            "finished": False,
         }
 
     def recover_sessions(self) -> int:
-        """后端重启后，为未完成会话重新建立指标 watcher。"""
+        """后端重启后，为未完成会话重新建立指标watcher"""
 
         recovered = 0
         for meta in self._metadata.list_non_terminal():
@@ -336,10 +392,10 @@ class SimulationService:
         return recovered
 
     def shutdown(self) -> None:
-        """进程关闭钩子。
+        """进程关闭钩子
 
-        local：停止本机活动会话。
-        redis：只停止本地 watcher，不停止 SUMO worker 中的会话。
+        local：停止本机活动会话
+        redis：只停止本地watcher，不停止SUMO worker中的会话
         """
 
         mode = self._settings.normalized_manager_mode()
@@ -368,6 +424,7 @@ class SimulationService:
                     )
             self._algorithm_store.clear_all()
             self._metrics_hub.clear_all()
+            self._intelligence.clear_all()
         else:
             logger.info(
                 "redis 关闭：保留 SUMO worker 会话，仅停止本地指标 watcher"
@@ -382,7 +439,7 @@ class SimulationService:
         self.shutdown()
 
     def get_active_session_id(self) -> str | None:
-        """兼容旧接口：返回任意一个非终态会话（不保证唯一）。"""
+        """兼容旧接口：返回任意一个非终态会话（不保证唯一）"""
 
         active = self._metadata.list_non_terminal()
         return active[0].session_id if active else None
@@ -446,9 +503,10 @@ class SimulationService:
                 except Empty:
                     continue
                 self._sync_metadata_from_snapshot(snapshot)
-                # QUEUED/STARTING 也可能推送；采集器可安全忽略空车辆帧
+                # QUEUED/STARTING也可能推送；采集器可安全忽略空车辆帧
                 if snapshot.state not in {QUEUED_STATE}:
                     self._metrics_hub.observe(snapshot)
+                    self._intelligence.observe(snapshot)
                 if snapshot.state in TERMINAL_STATES:
                     self._finalize_session(snapshot)
                     break
@@ -488,6 +546,7 @@ class SimulationService:
             self._metrics_hub.abort_without_snapshot(
                 session_id, decision_latency_ms=latency
             )
+        self._intelligence.observe(snapshot)
         self._sync_metadata_from_snapshot(snapshot)
 
     def _sync_metadata_from_snapshot(self, snapshot: SimulationSnapshot) -> None:
@@ -533,13 +592,21 @@ class SimulationService:
 
     def _build_config(self, request: ResolvedStartSimulation) -> SimulationConfig:
         spec = require_control_mode(request.control_mode)
+        algorithm_transport = ""
+        algorithm_module = ""
         algorithm_endpoint = ""
         if spec.needs_algorithm:
-            assert spec.algorithm_name is not None
-            algorithm_endpoint = urljoin(
-                self._settings.algorithm_base_url.rstrip("/") + "/",
-                f"{INTERNAL_ALGORITHM_PATH_PREFIX}/{spec.algorithm_name}",
-            )
+            algorithm_transport = spec.algorithm_transport or "local"
+            algorithm_module = spec.algorithm_module
+            if not algorithm_module:
+                raise AppError(
+                    code="INVALID_CONTROL_MODE",
+                    message=(
+                        f"control_mode={spec.name!r} is missing algorithm_module "
+                        "in traffic_control.registry."
+                    ),
+                    status_code=422,
+                )
 
         return SimulationConfig(
             intersection_ids=request.intersection_ids,
@@ -549,6 +616,8 @@ class SimulationService:
             duration_seconds=request.duration_seconds,
             flow_multiplier=1.0,
             control_mode=spec.kernel_mode,
+            algorithm_transport=algorithm_transport or "http",
+            algorithm_module=algorithm_module,
             algorithm_endpoint=algorithm_endpoint,
             algorithm_timeout=self._settings.algorithm_timeout,
             decision_interval=self._settings.decision_interval,

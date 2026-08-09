@@ -19,18 +19,23 @@
     "generate:showcase-landcover": "node scripts/generate-showcase-landcover.mjs",
     "audit:intersections": "node scripts/audit-intersection-environments.mjs --output=reports/intersection-environment-audit.json",
     "audit:road-continuity": "node scripts/audit-road-continuity.mjs --output=reports/road-continuity-audit.json",
+    "audit:lane-arrows": "node scripts/audit-lane-direction-arrows.mjs --output=reports/lane-direction-arrow-audit.json",
     "test:roadside-facilities": "node --test scripts/roadside-facilities.test.mjs",
     "test:showcase-layers": "node --test scripts/showcase-layers.test.mjs",
     "test:vegetation": "node --test scripts/vegetation.test.mjs",
     "test:vehicles": "node --test scripts/vehicle-visibility.test.mjs",
     "test:evaluation-comparison": "node --test scripts/evaluation-comparison.test.mjs",
     "test:playback-rate": "node --test scripts/playback-rate.test.mjs",
-    "test:roads": "node --test scripts/road-geometry.test.mjs scripts/road-tileset.test.mjs",
+    "test:roads": "node --test scripts/road-geometry.test.mjs scripts/road-tileset.test.mjs scripts/road-joints.test.mjs",
     "test:intersection-demo": "node --test scripts/realistic-intersection.test.mjs",
     "test:intersection-scene": "node --test scripts/intersection-scene.test.mjs",
     "test:intersection-topology": "node --test scripts/intersection-topology.test.mjs",
+    "test:intersection-markers": "node --test scripts/intersection-marker.test.mjs",
+    "test:lane-arrows": "node --test scripts/lane-direction-arrows.test.mjs",
     "test:intersection-environment": "node --test scripts/intersection-environment-audit.test.mjs",
     "test:scenario-config": "node --test scripts/scenario-config.test.mjs",
+    "test:scenario-archive": "node --test scripts/scenario-archive.test.mjs",
+    "test:simulation-queue": "node --test scripts/simulation-queue.test.mjs",
     "test:simulation-contract": "node --test scripts/simulation-contract.test.mjs",
     "test:backend-alignment": "node --test scripts/backend-alignment.test.mjs scripts/websocket-url.test.mjs",
     "test:snapshot-ordering": "node --test scripts/snapshot-ordering.test.mjs",
@@ -38,10 +43,11 @@
     "test:buildings": "node --test scripts/building-tileset.test.mjs"
   },
   "dependencies": {
-    "@baidumap/mapv-three": "^1.6.4-beta.5",
+    "@baidumap/mapv-three": "^1.6.4",
     "cesium": "^1.131.0",
     "echarts": "^5.6.0",
     "element-plus": "^2.10.4",
+    "jszip": "^3.10.1",
     "ol": "^10.6.1",
     "three": "^0.180.0",
     "vue": "^3.5.17",
@@ -57,5 +63,8 @@
     "vite": "^7.0.4",
     "vite-plugin-cesium": "^1.2.23",
     "vue-tsc": "^3.0.1"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
   }
 }
