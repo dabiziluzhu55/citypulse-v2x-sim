@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from algorithms.prediction.build_official20_results_table import build_rows, write_results
+from algorithms.prediction.archive.aggregation.build_official20_results_table import build_rows, write_results
 
 
 class Official20ResultsTableTests(unittest.TestCase):

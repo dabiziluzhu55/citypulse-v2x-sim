@@ -164,4 +164,4 @@ if [[ -n "$xgb_pid" ]]; then
   wait "$xgb_pid"
 fi
 
-"$PYTHON" -m algorithms.prediction.build_official20_results_table --formal-dir "$FORMAL_DIR"
+"$PYTHON" -m algorithms.prediction.archive.aggregation.build_official20_results_table --formal-dir "$FORMAL_DIR"

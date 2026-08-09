@@ -38,14 +38,14 @@ fi
 cd "$PROJECT_DIR"
 if [[ ! -s "$TLS_MANIFEST" ]]; then
   [[ ! -e "$TLS_MANIFEST.partial" ]] || { echo "partial TLS manifest exists: $TLS_MANIFEST.partial" >&2; exit 2; }
-  "$PYTHON" -m algorithms.prediction.build_tls100_junction_manifest     --net "$NET" --output "$TLS_MANIFEST" > "$BASE_DIR/tls100_manifest.log"
+  "$PYTHON" -m algorithms.prediction.archive.aggregation.build_tls100_junction_manifest     --net "$NET" --output "$TLS_MANIFEST" > "$BASE_DIR/tls100_manifest.log"
 else
   require_file "$TLS_MANIFEST"
 fi
 
 if [[ ! -s "$ADJACENCY" ]]; then
   [[ ! -e "$ADJACENCY.partial.npz" ]] || { echo "partial adjacency exists: $ADJACENCY.partial.npz" >&2; exit 2; }
-  "$PYTHON" -m algorithms.prediction.build_tls100_junction_adjacency     --tls-manifest "$TLS_MANIFEST" --net "$NET" --output "$ADJACENCY"     --report-dir "$REPORT_DIR" > "$BASE_DIR/adjacency.log"
+  "$PYTHON" -m algorithms.prediction.archive.aggregation.build_tls100_junction_adjacency     --tls-manifest "$TLS_MANIFEST" --net "$NET" --output "$ADJACENCY"     --report-dir "$REPORT_DIR" > "$BASE_DIR/adjacency.log"
 else
   require_file "$ADJACENCY"
   require_file "$REPORT_DIR/tls100_junction_adjacency_summary.json"
@@ -147,7 +147,7 @@ elif [[ -e "$first_output" || -e "$first_output.metadata.json" || -e "$first_out
   exit 2
 else
   printf '%s\t%s\tstarted\n' "$(date -u +%FT%TZ)" "$FIRST_ID" >> "$STATUS"
-  "$PYTHON" -m algorithms.prediction.aggregate_tls100_junction_snapshots     --input "$first_source" --tls-manifest "$TLS_MANIFEST"     --output "$first_output" --metadata "$first_output.metadata.json"     > "$PREFLIGHT_DIR/$FIRST_ID.json"
+  "$PYTHON" -m algorithms.prediction.archive.aggregation.aggregate_tls100_junction_snapshots     --input "$first_source" --tls-manifest "$TLS_MANIFEST"     --output "$first_output" --metadata "$first_output.metadata.json"     > "$PREFLIGHT_DIR/$FIRST_ID.json"
   verify_aggregate "$first_output" "$first_output.metadata.json"
   printf '%s\t%s\tcompleted\n' "$(date -u +%FT%TZ)" "$FIRST_ID" >> "$STATUS"
 fi
@@ -164,7 +164,7 @@ while IFS=$'\t' read -r id split source_file output_file; do
     exit 2
   fi
   printf '%s\t%s\tstarted\n' "$(date -u +%FT%TZ)" "$id" >> "$STATUS"
-  "$PYTHON" -m algorithms.prediction.aggregate_tls100_junction_snapshots     --input "$source" --tls-manifest "$TLS_MANIFEST"     --output "$output" --metadata "$output.metadata.json"     >> "$BASE_DIR/aggregate.log" 2>&1
+  "$PYTHON" -m algorithms.prediction.archive.aggregation.aggregate_tls100_junction_snapshots     --input "$source" --tls-manifest "$TLS_MANIFEST"     --output "$output" --metadata "$output.metadata.json"     >> "$BASE_DIR/aggregate.log" 2>&1
   verify_aggregate "$output" "$output.metadata.json"
   printf '%s\t%s\tcompleted\n' "$(date -u +%FT%TZ)" "$id" >> "$STATUS"
 done < <(

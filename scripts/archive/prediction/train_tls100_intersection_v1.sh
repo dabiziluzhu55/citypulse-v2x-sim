@@ -159,4 +159,4 @@ if ! metrics_have_smape "$STGCN_OUTPUT/metrics.json"; then
   fi
 fi
 
-"$PYTHON" -m algorithms.prediction.build_tls100_results_table --formal-dir "$FORMAL_DIR"
+  "$PYTHON" -m algorithms.prediction.archive.aggregation.build_tls100_results_table --formal-dir "$FORMAL_DIR"

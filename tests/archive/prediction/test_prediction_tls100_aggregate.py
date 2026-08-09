@@ -2,7 +2,7 @@ import csv
 
 import pytest
 
-from algorithms.prediction.aggregate_tls100_junction_snapshots import aggregate
+from algorithms.prediction.archive.aggregation.aggregate_tls100_junction_snapshots import aggregate
 
 
 def _write_manifest(path):

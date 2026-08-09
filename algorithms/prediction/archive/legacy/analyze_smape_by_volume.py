@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from .train_stgcn_stage1 import _build_model, _load_split
+from ...train_stgcn_stage1 import _build_model, _load_split
 
 
 VOLUME_BANDS = (

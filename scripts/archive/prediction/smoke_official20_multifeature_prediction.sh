@@ -44,7 +44,7 @@ PY
 [[ -n "$TRAIN" ]] || { echo "smoke manifest has no train episode" >&2; exit 2; }
 
 cd "$PROJECT_DIR"
-"$PYTHON" -m algorithms.prediction.filter_active_lanes --train-input "$TRAIN" "${ARGS[@]}" \
+"$PYTHON" -m algorithms.prediction.archive.legacy.filter_active_lanes --train-input "$TRAIN" "${ARGS[@]}" \
   --output-dir "$SMOKE_DIR/filtered" --min-active-samples 3 --min-active-ratio 0.01
 "$PYTHON" -m algorithms.prediction.prepare_stgcn_episode_dataset \
   --manifest "$SMOKE_DIR/manifest.json" --input-dir "$SMOKE_DIR/filtered" --output-dir "$SMOKE_DIR/tensors" --net "$NET" \

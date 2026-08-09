@@ -1,4 +1,4 @@
-# TLS100 junction prediction: comparable 60-second results
+# [Archived] TLS100 junction prediction: comparable 60-second results
 
 All methods predict `vehicle_count` 60 seconds ahead on the same 100 traffic-light junction nodes and episode splits.
 

@@ -1,6 +1,6 @@
 import json
 
-from algorithms.prediction.build_tls100_junction_manifest import build_manifest
+from algorithms.prediction.archive.aggregation.build_tls100_junction_manifest import build_manifest
 
 
 def _write_network(path):

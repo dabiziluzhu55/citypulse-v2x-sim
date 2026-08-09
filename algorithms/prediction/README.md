@@ -1,45 +1,39 @@
 # 交通流预测模块
 
-当前正式预测主线是 **官方 20 路口 206 入口车道预测（v1）**。TLS100 路口级方案保留为归档，官方 20 路口聚合方案也保留为历史对照；三套方案的节点粒度和指标不能直接混用。
+当前正式预测主线是 **NarrowNet-TDP（窄路密网拓扑感知方向传播网络）**，任务为官方 20 路口的 206 条入口车道预测。正式方法、数据契约、结果和复现说明见：
 
-## 当前主线：官方 20 路口 206 入口车道预测（v1）
+- `docs/prediction_current_official20_lane206_v1.md`
+- `docs/prediction_static_directional_lane_v1.md`
+- `docs/results/prediction_current_official20_lane206_results_60s.csv`
 
-这套方案以官方 20 个路口 TLS manifest 中的 **206 条入口车道**为节点，不是全网 2,714 条车道，也不是把车道聚合成路口。模型使用过去 60 秒的 `vehicle_count`、`halting_count`、`mean_speed` 和 `occupancy` 四个特征，预测每条入口车道未来 60 秒的 `vehicle_count`。
+## 当前正式主线
 
-STGCN 输入形状为 `[batch, 4, 12, 206]`，输出每个车道一个未来 60 秒预测值。归一化只使用训练集拟合，窗口不跨 episode；评估统一报告 MAE、RMSE、sMAPE、WMAPE，MAPE 仅作补充。
+NarrowNet-TDP 以 TLS manifest 中固定顺序的 206 条入口车道为节点，输入过去 12 帧、4 个车道特征，预测未来 60 秒的 `vehicle_count`。模型保留静态 Chebyshev 时空主干，并加入从 SUMO 拓扑提取的下游传播和上游回溢方向残差。
 
-主要入口：
+核心程序：
 
-- `build_official20_lane_adjacency.py`：从 SUMO 网络和 TLS manifest 生成 206 车道拓扑；
-- `filter_official20_lane_snapshots.py`：将全车道快照固定到模型所需的 206 条车道顺序；
-- `prepare_stgcn_episode_dataset.py`：按 episode 构造无泄漏的时序张量；
-- `evaluate_stage1_baselines.py`、`train_xgboost_stage1.py`、`train_stgcn_stage1.py`：基线、XGBoost 和 STGCN 训练评估；
-- `scripts/train_official20_lane_v1.sh`：完整训练入口；
-- `tests/test_prediction_official20_lane_adjacency.py`、`tests/test_prediction_filter_official20_lane_snapshots.py`：车道图和快照顺序约束测试。
+- `build_official20_lane_adjacency.py`：生成 206 车道静态图；
+- `filter_official20_lane_snapshots.py`：固定车道顺序并过滤快照；
+- `prepare_stgcn_episode_dataset.py`：构造不跨 episode 的时序数据；
+- `build_dynamic_lane_graph.py`：提供可审计的候选图和公共图工具；
+- `build_directional_lane_graph.py`：生成下游、上游及关系分支图；
+- `static_cheb_lane_model.py`：静态 Cheb 对照主干；
+- `static_directional_lane_model.py`：NarrowNet-TDP 方向残差模型；
+- `train_narrow_net_tdp.py`：固定使用 `static_directional` 的正式训练入口；
+- `preflight_official20_lane206.py`：检查数据、图和基线契约。
 
-当前交接文档见 `docs/prediction_current_official20_lane206_v1.md`，正式结果表见 `docs/results/prediction_current_official20_lane206_results_60s.csv`。
+基线训练仍保留在 `train_stgcn_stage1.py`、`train_xgboost_stage1.py` 和 `evaluate_stage1_baselines.py` 中，用于结果对照。完整数据准备入口是 `scripts/train_official20_lane_v1.sh`。
 
-## 归档：TLS100 路口级预测（v1）
+正式入口目前通过一个很薄的兼容层复用归档的多模式训练实现，以避免复制约 1,000 行训练与结果封装逻辑；它对外只接受 NarrowNet-TDP 的 `static_directional` 模式。历史动态、Cheb gate 和层级模式不会从正式入口启动。
 
-TLS100 方案以 SUMO `traffic_light` junction 为节点，将全车道 5 秒快照聚合为 100 个路口状态，预测未来 60 秒的路口 `vehicle_count`。这是路口级任务，不是道路级或车道级任务；目前不作为默认预测入口。
+## 目录约定
 
-- `build_tls100_junction_manifest.py`：生成稳定的 100 路口节点清单；
-- `aggregate_tls100_junction_snapshots.py`：校验并聚合全车道快照；
-- `build_tls100_junction_adjacency.py`：构建路口拓扑；
-- `build_tls100_results_table.py`：生成统一结果表；
-- `scripts/aggregate_tls100_intersection_v1.sh`、`scripts/smoke_tls100_intersection_v1.sh`、`scripts/train_tls100_intersection_v1.sh`：准备、冒烟和训练入口；
-- `tests/test_prediction_tls100_*.py`：TLS100 节点、聚合和拓扑约束测试。
+当前目录只放正式主线、必要的基线和公共工具。历史实验统一放在：
 
-归档交接文档见 `docs/prediction_archive_tls100_intersection_v1.md`，结果表见 `docs/results/prediction_archive_tls100_intersection_results_60s.csv` 和同名 Markdown 文件。
+- `algorithms/prediction/archive/experiments/`：动态图、层级模型和多模式旧训练入口；
+- `algorithms/prediction/archive/aggregation/`：TLS100、20 路口聚合和旧结果表；
+- `algorithms/prediction/archive/legacy/`：旧基线、活动车道过滤和 sMAPE 分析工具；
+- `docs/archive/prediction/`、`docs/results/archive/prediction/`：历史交接文档和结果；
+- `scripts/archive/prediction/`：历史数据聚合、冒烟和训练脚本。
 
-## 归档：官方 20 路口聚合预测
-
-这套历史方案将车道快照聚合为 `demo_1`--`demo_20` 的 20 个路口，保留用于旧实验结果对照和兼容，不作为当前正式预测主线。
-
-- `aggregate_intersection20_snapshots.py`：将车道快照聚合为 20 个路口；
-- `prepare_stgcn_episode_dataset.py`：按 episode 构造无泄漏 NPZ 数据集；
-- `evaluate_stage1_baselines.py`：计算基础对照；
-- `train_xgboost_stage1.py`、`train_stgcn_stage1.py`：训练模型；
-- `build_official20_results_table.py`：生成 20 路口结果表。
-
-归档交接文档见 `docs/prediction_archive_official20_intersection20_v1.md`，结果表见 `docs/results/prediction_archive_official20_intersection20_results_60s.csv`。
+归档文件保留用于复现和审计，不属于当前默认预测入口。当前正式结果只报告 MAE、RMSE 和 WMAPE，不再把 sMAPE 作为主结果指标。

@@ -1,4 +1,4 @@
-# 归档：TLS100 路口级预测：训练与交接
+# [Archived] 归档：TLS100 路口级预测：训练与交接
 
 更新时间：2026-08-04（Asia/Shanghai）
 
@@ -36,13 +36,13 @@
 
 ## 代码入口
 
-- `algorithms/prediction/build_tls100_junction_manifest.py`：生成并校验 100 路口 manifest；
-- `algorithms/prediction/aggregate_tls100_junction_snapshots.py`：单 episode 预检和聚合，拒绝重复、缺失、时间轴不连续及不完整输出；
-- `algorithms/prediction/build_tls100_junction_adjacency.py`：生成路口拓扑和报告，不使用 kNN fallback；
-- `algorithms/prediction/build_tls100_results_table.py`：生成统一的 60 秒结果表；
-- `scripts/aggregate_tls100_intersection_v1.sh`：CPU 侧 manifest、拓扑和 30 个 episode 聚合；
-- `scripts/smoke_tls100_intersection_v1.sh`：小规模 XGBoost/STGCN 冒烟；
-- `scripts/train_tls100_intersection_v1.sh`：正式 baseline、XGBoost 和 STGCN 训练；
+- `algorithms/prediction/archive/aggregation/build_tls100_junction_manifest.py`：生成并校验 100 路口 manifest；
+- `algorithms/prediction/archive/aggregation/aggregate_tls100_junction_snapshots.py`：单 episode 预检和聚合，拒绝重复、缺失、时间轴不连续及不完整输出；
+- `algorithms/prediction/archive/aggregation/build_tls100_junction_adjacency.py`：生成路口拓扑和报告，不使用 kNN fallback；
+- `algorithms/prediction/archive/aggregation/build_tls100_results_table.py`：生成统一的 60 秒结果表；
+- `scripts/archive/prediction/aggregate_tls100_intersection_v1.sh`：CPU 侧 manifest、拓扑和 30 个 episode 聚合；
+- `scripts/archive/prediction/smoke_tls100_intersection_v1.sh`：小规模 XGBoost/STGCN 冒烟；
+- `scripts/archive/prediction/train_tls100_intersection_v1.sh`：正式 baseline、XGBoost 和 STGCN 训练；
 - `tests/test_prediction_tls100_manifest.py`、`test_prediction_tls100_aggregate.py`、`test_prediction_tls100_adjacency.py`：核心约束测试。
 
 ## 复现顺序
@@ -54,7 +54,7 @@ PROJECT_DIR=/path/to/citypulse-v2x-sim \
 SNAPSHOT_DIR=/path/to/official20-stage1/source-simulation-sumo-1686970 \
 EXPERIMENT_DIR=/path/to/official20-prediction-v1 \
 PYTHON=/path/to/python \
-bash scripts/aggregate_tls100_intersection_v1.sh
+bash scripts/archive/prediction/aggregate_tls100_intersection_v1.sh
 ```
 
 准备完成后执行冒烟和正式训练：
@@ -65,21 +65,21 @@ EXPERIMENT_DIR=/path/to/official20-prediction-v1 \
 STGCN_DIR=/path/to/STGCN \
 PYTHON=/path/to/python \
 GPU_ID=0 \
-bash scripts/smoke_tls100_intersection_v1.sh
+bash scripts/archive/prediction/smoke_tls100_intersection_v1.sh
 
 PROJECT_DIR=/path/to/citypulse-v2x-sim \
 EXPERIMENT_DIR=/path/to/official20-prediction-v1 \
 STGCN_DIR=/path/to/STGCN \
 PYTHON=/path/to/python \
 GPU_ID=0 ALLOW_ACTUAL_SPLITS=1 EPOCHS=100 PATIENCE=15 \
-bash scripts/train_tls100_intersection_v1.sh
+bash scripts/archive/prediction/train_tls100_intersection_v1.sh
 ```
 
 脚本会复用已完成产物，并在发现 partial 或不完整产物时停止而不是覆盖。正式模型权重、NPZ 张量、聚合 CSV 和拓扑二进制文件不进入 Git；它们通过独立的训练交接包交付。Git 中保留可复现的源码、脚本、测试和轻量级结果表。
 
 ## 正式结果摘要
 
-STGCN 最优 epoch 为 58。三个评估划分上的结果如下；完整方法对比见 `docs/results/prediction_archive_tls100_intersection_results_60s.md`。
+STGCN 最优 epoch 为 58。三个评估划分上的结果如下；完整方法对比见 `docs/results/archive/prediction/prediction_archive_tls100_intersection_results_60s.md`。
 
 | 划分 | MAE | RMSE | sMAPE | WMAPE |
 | --- | ---: | ---: | ---: | ---: |

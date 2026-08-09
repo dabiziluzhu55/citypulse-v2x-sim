@@ -103,7 +103,7 @@ PY
 
 cd "$PROJECT_DIR"
 if [[ ! -s "$FORMAL_DIR/filtered/active_lane_metadata.json" ]]; then
-  "$PYTHON" -m algorithms.prediction.filter_active_lanes \
+  "$PYTHON" -m algorithms.prediction.archive.legacy.filter_active_lanes \
     "${TRAIN_ARGS[@]}" "${INPUT_ARGS[@]}" \
     --output-dir "$FORMAL_DIR/filtered" --min-active-samples 1 --min-active-ratio 0
 fi
@@ -161,4 +161,4 @@ if [[ -n "$xgb_pid" ]]; then
   wait "$xgb_pid"
 fi
 
-"$PYTHON" -m algorithms.prediction.build_official20_results_table --formal-dir "$FORMAL_DIR"
+"$PYTHON" -m algorithms.prediction.archive.aggregation.build_official20_results_table --formal-dir "$FORMAL_DIR"

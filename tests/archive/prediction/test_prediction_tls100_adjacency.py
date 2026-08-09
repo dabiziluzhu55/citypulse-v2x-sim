@@ -2,8 +2,8 @@ import json
 
 import numpy as np
 
-from algorithms.prediction.build_tls100_junction_adjacency import build
-from algorithms.prediction.build_tls100_junction_manifest import build_manifest
+from algorithms.prediction.archive.aggregation.build_tls100_junction_adjacency import build
+from algorithms.prediction.archive.aggregation.build_tls100_junction_manifest import build_manifest
 from tests.test_prediction_tls100_manifest import _write_network
 
 
