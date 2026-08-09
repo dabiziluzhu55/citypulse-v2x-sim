@@ -627,7 +627,7 @@ class SimulationManager:
             _selected_manifest,
             _validate_actions,
         )
-        from ..building.config import load_signal_configuration
+        from ..building.tls import load_signal_configuration
         from ..building.build_tls import DEFAULT_MAPPING, DEFAULT_PLANS, DEFAULT_TOPOLOGY
         from .vehicle import (
             StoppedLaneChangeGuard,
