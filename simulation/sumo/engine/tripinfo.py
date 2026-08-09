@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
-from .policy import VehicleTypeMetadata
+from ..policy import VehicleTypeMetadata
 
 
 class TripInfoError(RuntimeError):

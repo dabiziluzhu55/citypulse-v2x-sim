@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, MutableMapping, Sequence, Tuple
 
 from .artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
-from .config import (
+from .tls import (
     IntersectionConfiguration,
     PhaseMovement,
     SignalConfigurationError,

@@ -8,7 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import DefaultDict, Dict, List, Mapping, Sequence, Set, Tuple
 
-from .config import IntersectionConfiguration, SignalConfigurationError
+from .tls import IntersectionConfiguration, SignalConfigurationError
 from .traffic import TrafficDemandConfiguration, TrafficDemandError
 
 

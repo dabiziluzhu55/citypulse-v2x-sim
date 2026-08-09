@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Sequence
 
 from ..building.config import SignalConfigurationError, SignalProgram
-from .controller import SafePhaseController, SignalStage, TransitionTiming
+from .signal import SafePhaseController, SignalStage, TransitionTiming
 from ..policy import (
     AIFrameObservation,
     PROTOCOL_VERSION,
