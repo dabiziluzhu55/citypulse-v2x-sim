@@ -35,8 +35,10 @@ Thumbs.db
 *.log
 outputs/
 
-# Official data
-data/maps/sumo/official/
+# Keep official SUMO sources tracked (required at runtime after refactor).
+# Ignore only local scratch under official/, not the committed map/tls/traffic trees.
+data/maps/sumo/official/**/*.bak
+data/maps/sumo/official/**/*.tmp
 *.bak
 
 # Local run artifacts & backups (kept on disk, not committed)
@@ -70,5 +72,3 @@ algorithms/mappo/runs/
 *.orig
 /runs/
 
-# backend ignore
-backend/tests/

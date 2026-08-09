@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from simulation.sumo.session import SimulationCatalog, SimulationManager
+from simulation.sumo.engine.session import SimulationCatalog, SimulationManager
 
 from ..core.config import Settings
 from ..core.exceptions import AppError

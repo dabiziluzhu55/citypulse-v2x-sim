@@ -6,7 +6,7 @@ from dataclasses import asdict, is_dataclass
 from enum import Enum
 from typing import Any
 
-from simulation.sumo.session import SimulationSnapshot, VehicleRuntimeSnapshot
+from simulation.sumo.engine.session import SimulationSnapshot, VehicleRuntimeSnapshot
 
 
 class SnapshotSerializer:

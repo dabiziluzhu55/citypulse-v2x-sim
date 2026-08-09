@@ -16,8 +16,8 @@ from simulation.sumo import (
     SimulationConfig,
     SpeedLimitEvent,
 )
-from simulation.sumo.events import DisturbanceEvent
-from simulation.sumo.session import SimulationSnapshot, UnknownSessionError
+from simulation.sumo.engine.events import DisturbanceEvent
+from simulation.sumo.engine.session import SimulationSnapshot, UnknownSessionError
 
 from ..controllers.registry import require_control_mode
 from ..controllers.runtime import AlgorithmRuntimeStore
@@ -594,12 +594,20 @@ class SimulationService:
 
     def _build_config(self, request: ResolvedStartSimulation) -> SimulationConfig:
         spec = require_control_mode(request.control_mode)
-        algorithm_transport = ""
+        algorithm_transport = "local"
         algorithm_module = ""
-        algorithm_endpoint = ""
         if spec.needs_algorithm:
             algorithm_transport = spec.algorithm_transport or "local"
             algorithm_module = spec.algorithm_module
+            if algorithm_transport != "local":
+                raise AppError(
+                    code="INVALID_CONTROL_MODE",
+                    message=(
+                        f"control_mode={spec.name!r} requires algorithm_transport='local' "
+                        f"after SUMO refactor; got {algorithm_transport!r}."
+                    ),
+                    status_code=422,
+                )
             if not algorithm_module:
                 raise AppError(
                     code="INVALID_CONTROL_MODE",
@@ -618,10 +626,8 @@ class SimulationService:
             duration_seconds=request.duration_seconds,
             flow_multiplier=1.0,
             control_mode=spec.kernel_mode,
-            algorithm_transport=algorithm_transport or "http",
+            algorithm_transport=algorithm_transport,
             algorithm_module=algorithm_module,
-            algorithm_endpoint=algorithm_endpoint,
-            algorithm_timeout=self._settings.algorithm_timeout,
             decision_interval=self._settings.decision_interval,
             seed=request.seed,
             step_length=request.step_length,

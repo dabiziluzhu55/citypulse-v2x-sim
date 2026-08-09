@@ -50,7 +50,29 @@
 
 ## 快速开始
 
+克隆后请先拉取 Git LFS 大文件（官方路网 `TotalMap_20.net.xml`）：
+
+```bash
+git lfs install
+git lfs pull
+```
+
+仿真启动依赖官方源数据目录（已入库，勿再忽略）：
+
+```text
+data/maps/sumo/official/
+├── map/TotalMap_20.intersections.json
+├── map/TotalMap_20.net.xml
+├── tls/official_tls_plans.json
+├── tls/official_tls_topology.json
+└── traffic/...
+```
+
+若缺少上述文件，前端会在「算法初始化」阶段失败并报 `Configuration file not found`。
+
 ### 1. 构建路网与车流
+
+仓库已包含可用的 `data/maps/sumo/generated/` 时，本地联调可跳过本步。需要重建时：
 
 ```bash
 export SUMO_HOME=/usr/share/sumo

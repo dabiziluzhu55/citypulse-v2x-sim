@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-from simulation.sumo.session import SimulationSnapshot
+from simulation.sumo.engine.session import SimulationSnapshot
 
 from .models import EvalResult
 from .powertrain import VehicleTypeFuelMeta

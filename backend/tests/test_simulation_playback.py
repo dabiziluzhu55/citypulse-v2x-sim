@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from simulation.sumo.session import SessionMetrics, SimulationSnapshot, UnknownSessionError
+from simulation.sumo.engine.session import SessionMetrics, SimulationSnapshot, UnknownSessionError
 
 
 def _running_snapshot(session_id: str = "session-1", playback_speed: float | None = 1.0) -> SimulationSnapshot:

@@ -16,7 +16,7 @@ from backend.app.services.map_service import MapService
 from backend.app.services.scenario_export_service import ScenarioExportService
 from backend.app.services.simulation_service import SimulationService
 from backend.app.services.snapshot_serializer import SnapshotSerializer
-from simulation.sumo.session import (
+from simulation.sumo.engine.session import (
     IntersectionCapability,
     LaneCapability,
     OriginCapability,

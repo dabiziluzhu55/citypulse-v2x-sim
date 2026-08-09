@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
-from simulation.sumo.artifacts import DEFAULT_GENERATED_DIR, PROJECT_ROOT
-from simulation.sumo.scenario import DEFAULT_SESSION_ROOT
-from simulation.sumo.session import SimulationConfig, SimulationManager, SimulationSnapshot
+from simulation.sumo.building.artifacts import DEFAULT_GENERATED_DIR, PROJECT_ROOT
+from simulation.sumo.engine.scenario import DEFAULT_SESSION_ROOT
+from simulation.sumo.engine.session import SimulationConfig, SimulationManager, SimulationSnapshot
 from traffic_control.registry import CONTROL_MODE_REGISTRY, require_control_mode
 
 from .session_hub import SessionMetricsHub

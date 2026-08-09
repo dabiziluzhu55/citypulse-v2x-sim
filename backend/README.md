@@ -8,7 +8,7 @@
 ## 架构边界
 
 - FastAPI **不直接** import 或调用 `traci`
-- FastAPI **不通过 subprocess** 启动 `python -m simulation.sumo.run`
+- FastAPI **不通过 subprocess** 启动 `python -m simulation.sumo.engine.run`
 - FastAPI **不自行**启动 `sumo` / `sumo-gui`
 - TraCI 由 `simulation` 层的仿真管理器持有：
   - `local` 模式：`SimulationManager`（本机进程内）
@@ -86,8 +86,8 @@ cp backend/.env.example backend/.env
 在仓库根目录执行（20 路口示例）：
 
 ```bash
-python -m simulation.sumo.build_tls
-python -m simulation.sumo.build_traffic
+python -m simulation.sumo.building.build_tls
+python -m simulation.sumo.building.build_traffic
 ```
 
 生成目录：

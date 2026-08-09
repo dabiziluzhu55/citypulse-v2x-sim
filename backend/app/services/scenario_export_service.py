@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from simulation.sumo.scenario import ScenarioCompilationError, compile_session_scenario
-from simulation.sumo.session import SimulationManager
+from simulation.sumo.engine.scenario import ScenarioCompilationError, compile_session_scenario
+from simulation.sumo.engine.session import SimulationManager
 
 from ..core.config import Settings
 from ..core.exceptions import AppError

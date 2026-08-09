@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock
 
 from backend.app.services.snapshot_serializer import SnapshotSerializer
-from simulation.sumo.session import SessionMetrics, SimulationSnapshot, VehicleRuntimeSnapshot
+from simulation.sumo.engine.session import SessionMetrics, SimulationSnapshot, VehicleRuntimeSnapshot
 
 
 def test_snapshot_serialization(coordinate_converter: MagicMock) -> None:
@@ -42,7 +42,7 @@ def test_snapshot_serialization(coordinate_converter: MagicMock) -> None:
 
 
 def test_session_busy_maps_to_409(client, mock_manager: MagicMock) -> None:
-    from simulation.sumo.session import SessionBusyError
+    from simulation.sumo.engine.session import SessionBusyError
 
     mock_manager.start.side_effect = SessionBusyError("A SUMO simulation is already active.")
     response = client.post(
