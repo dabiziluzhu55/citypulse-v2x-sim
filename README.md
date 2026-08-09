@@ -18,7 +18,7 @@ SUMO+CARLA联合仿真与交通协同管控平台。
 ## 架构说明
 
 **仿真与算法分离**：`simulation/` 在生产环境独占进程内 libsumo；Max Pressure、IPPO 和多路口
-强化学习通过 HTTP/JSON 协议 2.0 接收路口、单车及油耗状态，并返回官方目标相位、
+强化学习通过本地 Python 协议 2.0 接收路口、单车及油耗状态，并返回官方目标相位、
 单车目标速度和换道请求。后端只转发 snapshot，前端不直接连接 SUMO。TraCI 仅保留给
 本地 `sumo-gui` 调试。
 
@@ -29,12 +29,12 @@ SUMO+CARLA联合仿真与交通协同管控平台。
 ```bash
 export SUMO_HOME=/path/to/sumo
 cd /home/kemove/devdata1/zrl/citypulse-v2x-sim
-python -m simulation.sumo.build_tls
-python -m simulation.sumo.run --mode fixed \
+python -m simulation.sumo.building.build_tls
+python -m simulation.sumo.engine.run --mode fixed \
   --intersection demo_2 --period morning_peak
 
 # 需要观察 SUMO 原生窗口时使用本地 GUI 调试旁路
-python -m simulation.sumo.run --gui --realtime --mode fixed \
+python -m simulation.sumo.engine.run --gui --realtime --mode fixed \
   --intersection demo_2 --period morning_peak
 ```
 

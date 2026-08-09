@@ -1,4 +1,4 @@
-"""Shared validation for HTTP and in-process algorithm transports."""
+"""Shared validation for in-process algorithm modules."""
 
 from __future__ import annotations
 

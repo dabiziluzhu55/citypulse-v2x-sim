@@ -14,7 +14,7 @@ app = Celery(
     backend=os.getenv(
         "CITYPULSE_CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/2"
     ),
-    include=("simulation.sumo.distributed.tasks",),
+    include=("simulation.sumo.engine.distributed.tasks",),
 )
 app.conf.update(
     task_serializer="json",

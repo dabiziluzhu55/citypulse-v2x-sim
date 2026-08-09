@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
-from ..policy import (
+from ..algorithm.policy import (
     NextSignalObservation,
     PreviousActionResults,
     PreviousVehicleActionResult,

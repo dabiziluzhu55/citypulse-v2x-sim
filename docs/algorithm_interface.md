@@ -1,18 +1,18 @@
-# 算法组 HTTP 接口（协议 2.0）
+# 算法组本地接口（协议 2.0）
 
-算法服务不需要安装 SUMO、读取地图 XML 或调用 TraCI。仿真端独占 TraCI，通过同步
-HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信号灯和车辆动作。
+算法模块不需要安装 SUMO、读取地图 XML 或调用 TraCI。仿真端独占 TraCI，通过同进程
+Python 函数调用把路口和单车状态发送给算法，并执行算法返回的信号灯和车辆动作。
 
-协议 2.0 不兼容旧版 1.0。请求和响应均使用 `Content-Type: application/json`；非 2xx、
-超时、非法 JSON、版本或 episode/step 回显错误以及非法动作都会终止本轮仿真。
+协议 2.0 不兼容旧版 1.0。算法模块通过普通 `dict/list` 收发数据；模块导入失败、函数缺失、
+函数抛出异常、版本或 episode/step 回显错误以及非法动作都会终止本轮仿真。
 
 ## 接口概览
 
-| 接口 | 调用次数 | 用途 |
+| 函数 | 调用次数 | 用途 |
 |---|---:|---|
-| `POST /initialize` | 每轮 1 次 | 接收路口拓扑、相位、车道、车型和控制能力 |
-| `POST /step` | 每个决策周期 1 次 | 接收路口与单车实时状态，返回全部动作 |
-| `POST /finish` | 每轮 1 次 | 接收结束原因和汇总指标 |
+| `initialize(payload)` | 每轮 1 次 | 接收路口拓扑、相位、车道、车型和控制能力 |
+| `step(payload)` | 每个决策周期 1 次 | 接收路口与单车实时状态，返回全部动作 |
+| `finish(payload)` | 每轮 1 次 | 接收结束原因和汇总指标 |
 
 ## 1. 初始化
 
@@ -365,62 +365,51 @@ HTTP/JSON 把路口和单车状态发送给算法，并执行算法返回的信�
 油耗来自已写完的 `tripinfo.xml`，不是在线遥测积分。服务返回任意 JSON 对象即可，例如
 `{"ok": true}`。
 
-## 最小 FastAPI 服务
+## 最小本地算法模块
 
 ```python
-from fastapi import FastAPI
-
-app = FastAPI()
-
-
-@app.post("/initialize")
-def initialize(body: dict):
+def initialize(payload: dict):
     return {
         "protocol_version": "2.0",
-        "episode_id": body["episode_id"],
+        "episode_id": payload["episode_id"],
         "ready": True,
     }
 
 
-@app.post("/step")
-def step(body: dict):
+def step(payload: dict):
     signal_actions = {
         intersection_id: {"target_phase": state["current_phase"]}
-        for intersection_id, state in body["intersections"].items()
+        for intersection_id, state in payload["intersections"].items()
     }
     return {
         "protocol_version": "2.0",
-        "episode_id": body["episode_id"],
-        "step_id": body["step_id"],
+        "episode_id": payload["episode_id"],
+        "step_id": payload["step_id"],
         "actions": {"signals": signal_actions, "vehicles": {}},
     }
 
 
-@app.post("/finish")
-def finish(body: dict):
+def finish(payload: dict):
     return {"ok": True}
 ```
 
 ```bash
-pip install fastapi uvicorn
-uvicorn algorithm_server:app --host 0.0.0.0 --port 8001
-
-python -m simulation.sumo.run --mode algorithm --gui --realtime \
-  --algorithm-endpoint http://127.0.0.1:8001 \
+python -m simulation.sumo.engine.run --mode algorithm --gui \
+  --algorithm-transport local \
+  --algorithm-module algorithms.local_policy_example \
   --intersection demo_2 --period morning_peak --decision-interval 1
 ```
 
-算法与 SUMO 可以位于不同机器，只需将 endpoint 换成算法服务可访问地址。多轮训练时改变
-`--seed`；每轮都会生成新的 `episode_id` 并调用 initialize/step/finish。
+多轮训练时改变 `--seed`；每轮都会生成新的 `episode_id` 并调用 initialize/step/finish。
 
-## 同进程本地算法
+## 本地算法
 
-本地算法与 HTTP 使用同一协议校验和完全相同的 JSON 形状字典，但不经过网络或 JSON 编解码。
+本地算法使用协议 2.0 校验和完全相同的 JSON 形状字典，但不经过网络或 JSON 编解码。
 模块实现 `initialize(payload)`、`step(payload)`、`finish(payload)`，示例见
 `algorithms/local_policy_example.py`：
 
 ```bash
-python -m simulation.sumo.run --mode algorithm --gui \
+python -m simulation.sumo.engine.run --mode algorithm --gui \
   --algorithm-transport local \
   --algorithm-module algorithms.local_policy_example \
   --intersection demo_2 --period morning_peak

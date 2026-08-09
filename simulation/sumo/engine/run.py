@@ -1,4 +1,4 @@
-"""Run official fixed timing or an external signal-control algorithm."""
+"""Run official fixed timing or a local signal-control algorithm."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Dict, Sequence
 
 from ..building.tls import SignalConfigurationError, SignalProgram
 from .signal import SafePhaseController, SignalStage, TransitionTiming
-from ..policy import (
+from ..algorithm.policy import (
     AIFrameObservation,
     PROTOCOL_VERSION,
     IntersectionMetadata,
@@ -40,7 +40,7 @@ def _load_manifest(path: Path) -> Mapping[str, object]:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise RuntimeError(
-            f"Generated manifest not found: {path}. Run simulation.sumo.build_tls first."
+            f"Generated manifest not found: {path}. Run simulation.sumo.building.build_tls first."
         ) from exc
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"Invalid generated manifest {path}: {exc}") from exc
@@ -792,9 +792,7 @@ def run(args: argparse.Namespace) -> None:
         flow_multiplier=args.flow_multiplier,
         control_mode=args.mode,
         algorithm_transport=args.algorithm_transport,
-        algorithm_endpoint=args.algorithm_endpoint,
         algorithm_module=args.algorithm_module,
-        algorithm_timeout=args.algorithm_timeout,
         decision_interval=args.decision_interval,
         minimum_green=args.minimum_green,
         seed=args.seed,
@@ -850,14 +848,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--duration", type=float, default=None)
     parser.add_argument("--flow-multiplier", type=float, default=1.0)
     parser.add_argument("--event-file", type=Path, default=None)
-    parser.add_argument("--algorithm-endpoint", default="")
     parser.add_argument(
         "--algorithm-transport",
-        choices=("http", "local"),
-        default="http",
+        choices=("local",),
+        default="local",
     )
     parser.add_argument("--algorithm-module", default="")
-    parser.add_argument("--algorithm-timeout", type=float, default=2.0)
     parser.add_argument("--ai-observer-module", default="")
     parser.add_argument("--ai-frame-interval", type=float, default=0.5)
     parser.add_argument("--ai-observer-shutdown-timeout", type=float, default=5.0)
@@ -889,8 +885,6 @@ def parse_args() -> argparse.Namespace:
         parser.error("end time must be positive.")
     if args.minimum_green < 0:
         parser.error("minimum green cannot be negative.")
-    if args.algorithm_timeout <= 0:
-        parser.error("algorithm timeout must be positive.")
     if args.ai_frame_interval + 1e-9 < args.step_length:
         parser.error("AI frame interval cannot be smaller than the SUMO step length.")
     if args.ai_observer_shutdown_timeout <= 0:

@@ -1,4 +1,4 @@
-"""Stable data contract between SUMO and external signal-control algorithms."""
+"""Stable data contract between SUMO and local signal-control algorithms."""
 
 from __future__ import annotations
 

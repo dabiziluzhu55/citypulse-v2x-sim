@@ -35,7 +35,7 @@ pip install -r requirements.txt
 正式车流构建还会检查 `$SUMO_HOME/tools/routeSampler.py`、`duarouter`、`netconvert`
 和 `sumo`。部分 Linux 发行版需要单独安装 `python3-libsumo`，也可使用与服务器 SUMO
 版本一致的官方 `libsumo` Python 包。开发机没有 SUMO 时可运行
-`python -m simulation.sumo.build_tls --validate-only`
+`python -m simulation.sumo.building.build_tls --validate-only`
 完成只读数据与路网预检。
 
 较旧的 SUMO `routeSampler.py` 可能没有 `--no-sampling`。构建器会自动探测：新版会

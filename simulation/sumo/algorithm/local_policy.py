@@ -1,4 +1,4 @@
-"""In-process algorithm transport with the same dictionary contract as HTTP."""
+"""In-process algorithm transport using the shared algorithm dictionary contract."""
 
 from __future__ import annotations
 

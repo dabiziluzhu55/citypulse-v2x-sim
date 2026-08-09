@@ -117,6 +117,8 @@ def dumps_config(config: SimulationConfig) -> str:
 
 def loads_config(raw: str | bytes) -> SimulationConfig:
     data = dict(_loads(raw, "simulation_config"))
+    data.pop("algorithm_endpoint", None)
+    data.pop("algorithm_timeout", None)
     data["intersection_ids"] = tuple(str(item) for item in data["intersection_ids"])
     data["origins"] = {
         str(key): tuple(str(item) for item in values)

@@ -153,7 +153,7 @@ def _load_manifest(path: Path) -> Mapping[str, object]:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise TrafficDemandError(
-            f"TLS manifest not found: {path}. Run simulation.sumo.build_tls first."
+            f"TLS manifest not found: {path}. Run simulation.sumo.building.build_tls first."
         ) from exc
     except json.JSONDecodeError as exc:
         raise TrafficDemandError(f"Invalid TLS manifest {path}: {exc}") from exc

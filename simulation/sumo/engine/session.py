@@ -26,10 +26,9 @@ from .events import (
     MajorEventOpeningEvent,
     SpeedLimitEvent,
 )
-from ..external_policy import HttpAlgorithmClient
-from ..local_policy import LocalAlgorithmClient
-from ..ai_observer import LocalAIObserver, SimulationTimeFrameClock
-from ..policy import PROTOCOL_VERSION
+from ..algorithm.local_policy import LocalAlgorithmClient
+from ..algorithm.ai_observer import LocalAIObserver, SimulationTimeFrameClock
+from ..algorithm.policy import PROTOCOL_VERSION
 from .scenario import (
     DEFAULT_GENERATED_DIR,
     DEFAULT_SESSION_ROOT,
@@ -87,10 +86,8 @@ class SimulationConfig:
     duration_seconds: float | None = None
     flow_multiplier: float = 1.0
     control_mode: str = "fixed"
-    algorithm_transport: str = "http"
-    algorithm_endpoint: str = ""
+    algorithm_transport: str = "local"
     algorithm_module: str = ""
-    algorithm_timeout: float = 2.0
     decision_interval: float = 5.0
     minimum_green: float = 5.0
     seed: int = 42
@@ -504,16 +501,12 @@ class SimulationManager:
             raise ScenarioCompilationError(f"Unknown intersections: {sorted(unknown)}")
         if config.control_mode not in {"fixed", "algorithm"}:
             raise ScenarioCompilationError("control_mode must be fixed or algorithm.")
-        if config.algorithm_transport not in {"http", "local"}:
+        if config.algorithm_transport not in {"local"}:
             raise ScenarioCompilationError(
-                "algorithm_transport must be http or local."
+                "algorithm_transport must be local."
             )
         if config.control_mode == "algorithm":
-            if config.algorithm_transport == "http" and not config.algorithm_endpoint:
-                raise ScenarioCompilationError(
-                    "algorithm_endpoint is required for HTTP algorithm transport."
-                )
-            if config.algorithm_transport == "local" and not config.algorithm_module:
+            if not config.algorithm_module:
                 raise ScenarioCompilationError(
                     "algorithm_module is required for local algorithm transport."
                 )
@@ -758,12 +751,7 @@ class SimulationManager:
                 vehicle_types=vehicle_types,
             )
             if config.control_mode == "algorithm":
-                if config.algorithm_transport == "local":
-                    client = LocalAlgorithmClient(config.algorithm_module)
-                else:
-                    client = HttpAlgorithmClient(
-                        config.algorithm_endpoint, config.algorithm_timeout
-                    )
+                client = LocalAlgorithmClient(config.algorithm_module)
                 client.initialize(metadata)
                 client_initialized = True
             if config.ai_observer_module:

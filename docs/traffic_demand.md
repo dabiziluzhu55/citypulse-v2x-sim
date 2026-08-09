@@ -427,7 +427,7 @@ PCU 之和严格等于官方右转值，奇数值时两路最多相差 1 PCU。`
 没有 SUMO 的开发环境先执行全量只读预检：
 
 ```bash
-python -m simulation.sumo.build_tls --validate-only \
+python -m simulation.sumo.building.build_tls --validate-only \
   --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
 ```
 
@@ -436,7 +436,7 @@ edge，不调用 `sumo/netconvert`，不写文件，也不会清空已有生成�
 `SUMO_HOME` 后执行正式构建：
 
 ```bash
-python -m simulation.sumo.build_tls
+python -m simulation.sumo.building.build_tls
 ```
 
 不传 `--intersections` 时默认构建全部 20 个路口，并生成 3 个全局交通场景：
@@ -584,13 +584,13 @@ sumo-gui -c data/maps/sumo/generated/traffic/global/morning_peak/simulation.sumo
 固定配时 runner（默认就是 `demo_2` 早高峰）：
 
 ```bash
-python -m simulation.sumo.run --gui --realtime --mode fixed
+python -m simulation.sumo.engine.run --gui --realtime --mode fixed
 ```
 
 平峰或晚高峰通过 `period` 选择；runner 会自动编译对应会话场景：
 
 ```bash
-python -m simulation.sumo.run --gui --mode fixed \
+python -m simulation.sumo.engine.run --gui --mode fixed \
   --intersection demo_4 --period off_peak
 ```
 
