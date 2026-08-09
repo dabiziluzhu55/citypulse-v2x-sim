@@ -55,8 +55,8 @@
 ```bash
 export SUMO_HOME=/usr/share/sumo
 cd /path/to/citypulse-v2x-sim
-python -m simulation.sumo.build_tls
-python -m simulation.sumo.build_traffic
+python -m simulation.sumo.building.build_tls
+python -m simulation.sumo.building.build_traffic
 ```
 
 ### 2. 安装依赖
@@ -92,18 +92,17 @@ PYTHONPATH=. python -m traffic_eval \
 ### 4. 仅CLI跑SUMO
 
 ```bash
-python -m simulation.sumo.run --mode fixed --intersection demo_2 --period morning_peak
-python -m simulation.sumo.run --mode algorithm \
+python -m simulation.sumo.engine.run --mode fixed --intersection demo_2 --period morning_peak
+python -m simulation.sumo.engine.run --mode algorithm \
   --algorithm-transport local \
   --algorithm-module traffic_control.sotl \
   --intersection demo_2 --period morning_peak
 
-python -m simulation.sumo.run --mode fixed \
+python -m simulation.sumo.engine.run --mode fixed \
   --intersection demo_2 --period morning_peak
 
 # 需要观察 SUMO 原生窗口时使用本地 GUI 调试旁路
-python -m simulation.sumo.run --gui --realtime --mode fixed \
->>>>>>> origin/feature/simulation-sumo
+python -m simulation.sumo.engine.run --gui --realtime --mode fixed \
   --intersection demo_2 --period morning_peak
 ```
 
@@ -112,7 +111,7 @@ python -m simulation.sumo.run --gui --realtime --mode fixed \
 ```bash
 docker compose -f compose.redis.yml up -d
 # Backend设 SIMULATION_MANAGER_MODE=redis
-celery -A simulation.sumo.distributed.celery_app:app worker \
+celery -A simulation.sumo.engine.distributed.celery_app:app worker \
   --queues citypulse-sumo --pool prefork --concurrency 4
 ```
 

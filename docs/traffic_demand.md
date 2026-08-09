@@ -427,7 +427,7 @@ PCU 之和严格等于官方右转值，奇数值时两路最多相差 1 PCU。`
 没有 SUMO 的开发环境先执行全量只读预检：
 
 ```bash
-python -m simulation.sumo.build_tls --validate-only \
+python -m simulation.sumo.building.build_tls --validate-only \
   --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
 ```
 
@@ -436,7 +436,7 @@ edge，不调用 `sumo/netconvert`，不写文件，也不会清空已有生成�
 `SUMO_HOME` 后执行正式构建：
 
 ```bash
-python -m simulation.sumo.build_tls
+python -m simulation.sumo.building.build_tls
 ```
 
 不传 `--intersections` 时默认构建全部 20 个路口，并生成 3 个全局交通场景：
@@ -505,6 +505,42 @@ generated/
 仍按相同规则计算。实际识别出的近端到远端边映射记录在 `traffic_manifest.json` 的
 `route_endpoint_policy` 中，每个场景同时记录使用远端起点和终点的车辆数。
 
+## 车型长短途策略与负载报告
+
+`data/maps/sumo/traffic_generation_policy.json` 只控制候选路线、车型比例校准和结果选择，不修改
+官方路口流量。路线距离按生成路网中每条 edge 的最短车道长度计算；由于 flow 在首 edge 中点
+生成、在末 edge 中点移除，首末 edge 各只计一半。短途为 `<5 km`，中途为 `5-10 km`，
+长途为 `>=10 km`。
+
+- 电动自行车优先使用短于 5 km 的局部路线。
+- 小客车可使用全部局部路线及不超过 15 km 的跨路口路线。
+- 公交车和货车优先使用至少 10 km 的跨路口路线。
+- 任一车型的候选集都必须覆盖所有正流量官方计数路径；首选集合不能覆盖时，按车型规则加入
+  最短可行 fallback，并在报告中记录路径、原因和最终使用车辆数。
+- 公交车和货车还会为每个正流量计数路径保留一条最短 local 残差路线。长 pair 路线仍由
+  routeSampler 的车辆数最小化目标优先使用，local 残差只为解除多路口计数方程之间的耦合，
+  避免为了长途比例而失去精确拟合官方转向流量的能力。
+
+最终车型比例按 `routes.rou.xml` 中的 `flow.number` 汇总，而不是只看计数点分配。目标仍为小客车
+80%、电动自行车 5%、公交车 10%、货车 5%；小客车允许误差为 1 个百分点，其余车型为
+0.5 个百分点。首轮超差时，构建器最多再执行一轮乘法权重校准和半 PCU 精确分配。
+如果首轮五个种子都没有通过官方质量门槛，但最终车型比例已经超差，构建器会按失败单元数、
+失败路口总量数和绝对误差选择最接近合格的一次，仅用于计算第二轮权重；失败结果不会进入最终
+候选。两轮结束后仍没有官方质量合格结果时，构建仍然失败。
+
+`traffic_quality_PERIOD.json` 的原有顶层 `passed` 仍只表示官方流量硬门槛。新增的
+`route_policy` 分别报告全体和各车型的车辆数、占比、短中长途分布、平均/中位/P90/P95/最大
+距离、平均覆盖重点路口数、fallback、预计自由流车辆秒和平均同时在网车辆数。全体长途不超过
+30%、电动自行车长途不超过 5%、公交车和货车长途分别不少于 60%；总车辆数不超过既有基线
+115%，预计自由流车辆秒不超过基线 75%。这些是减负政策目标：未全部达到时构建器从官方质量
+合格结果中按违规项数量、归一化偏差、自由流车辆秒、车辆数和种子确定性选择最优结果，输出醒目
+警告但不放宽或绕过官方质量硬门槛。
+顶层报告还提供 `failed_cell_count` 和 `failed_intersection_interval_total_count`，用于直接区分
+转向单元误差与路口 15 分钟总量误差。
+
+OD 不参与候选过滤、车型分配、尝试评分或构建成败，仍只在最终路线选定后按首末官方计数位置
+反推。
+
 ## 九区域 OD 矩阵
 
 需求文件顶层的 `od_zones` 固定保存以下区域划分；加载需求时会验证 20 个路口恰好各属于
@@ -548,13 +584,13 @@ sumo-gui -c data/maps/sumo/generated/traffic/global/morning_peak/simulation.sumo
 固定配时 runner（默认就是 `demo_2` 早高峰）：
 
 ```bash
-python -m simulation.sumo.run --gui --realtime --mode fixed
+python -m simulation.sumo.engine.run --gui --realtime --mode fixed
 ```
 
 平峰或晚高峰通过 `period` 选择；runner 会自动编译对应会话场景：
 
 ```bash
-python -m simulation.sumo.run --gui --mode fixed \
+python -m simulation.sumo.engine.run --gui --mode fixed \
   --intersection demo_4 --period off_peak
 ```
 

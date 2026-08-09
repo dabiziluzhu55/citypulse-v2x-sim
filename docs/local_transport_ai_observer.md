@@ -1,8 +1,8 @@
 # 本地算法传输与 AI 观察者
 
 本地算法和 AI 观察者都是可信 Python 模块，与 SUMO 仿真 worker 位于同一进程。它们不调用
-libsumo 或 TraCI；仿真内核把普通 `dict/list` 数据传入模块。本地算法与 HTTP 协议 2.0 的字段和校验完全
-一致，只省去网络及 JSON 编解码。后端快照、WebSocket 和前端接口不受影响。
+libsumo 或 TraCI；仿真内核把普通 `dict/list` 数据传入模块。算法接口继续使用协议 2.0
+的字段和校验，但不再经过网络及 JSON 编解码。后端快照、WebSocket 和前端接口不受影响。
 
 ## 本地管控算法
 
@@ -14,19 +14,19 @@ def step(payload: dict) -> dict: ...
 def finish(payload: dict) -> object: ...
 ```
 
-`initialize` 接收 `SimulationMetadata` 并返回 `ready=true`；`step` 接收与 HTTP `/step` 相同的
+`initialize` 接收 `SimulationMetadata` 并返回 `ready=true`；`step` 接收协议 2.0 的
 路口、车道、车辆和汇总状态，并返回 `actions.signals` 与 `actions.vehicles`；`finish` 接收结束
 原因及汇总指标。本地 `step` 在 SUMO worker 中同步执行，因此仿真会等待控制动作。
 
 ```bash
-python -m simulation.sumo.run --mode algorithm \
+python -m simulation.sumo.engine.run --mode algorithm \
   --algorithm-transport local \
   --algorithm-module algorithms.local_policy_example \
   --intersection demo_2 --period morning_peak
 ```
 
-HTTP 仍是默认方式。使用 HTTP 时继续传 `--algorithm-endpoint`，不需要改算法服务。模块导入
-失败、缺少函数、函数抛出异常或协议响应非法都会使本轮会话进入 `FAILED`。
+当前算法控制仅支持本地 Python 模块。模块导入失败、缺少函数、函数抛出异常或协议响应非法
+都会使本轮会话进入 `FAILED`。
 
 ## AI 观察者
 
@@ -38,10 +38,10 @@ def on_frame(frame: dict) -> None: ...
 def finish(summary: dict) -> None: ...
 ```
 
-它可与固定配时、HTTP 算法或本地算法同时启用：
+它可与固定配时或本地算法同时启用：
 
 ```bash
-python -m simulation.sumo.run --mode fixed \
+python -m simulation.sumo.engine.run --mode fixed \
   --ai-observer-module algorithms.ai_observer_example \
   --ai-frame-interval 0.1 \
   --intersection demo_2 --period morning_peak

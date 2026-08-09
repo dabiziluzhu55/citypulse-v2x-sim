@@ -35,12 +35,8 @@ Thumbs.db
 *.log
 outputs/
 
-# Rebuildable SUMO artifacts
-data/maps/sumo/generated/manifests/
-data/maps/sumo/generated/network/
-data/maps/sumo/generated/reports/
-data/maps/sumo/generated/signals/
-data/maps/sumo/generated/traffic/
+# Official data
+data/maps/sumo/official/
 *.bak
 
 # Local run artifacts & backups (kept on disk, not committed)
