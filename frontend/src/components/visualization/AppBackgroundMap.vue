@@ -5,6 +5,7 @@ import Overlay from 'ol/Overlay'
 import View from 'ol/View'
 import Feature from 'ol/Feature'
 import type MapBrowserEvent from 'ol/MapBrowserEvent'
+import LineString from 'ol/geom/LineString'
 import Point from 'ol/geom/Point'
 import VectorLayer from 'ol/layer/Vector'
 import VectorSource from 'ol/source/Vector'
@@ -23,6 +24,7 @@ import { useSimulationStore } from '../../composables/useSimulationStore'
 import { useActiveIntersectionScene } from '../../composables/useActiveIntersectionScene'
 import { TrafficModelRegistry } from '../../cesium/traffic/TrafficModelRegistry'
 import { loadIntersectionTopologyCatalog, type IntersectionTopologyNode } from '../../mapv/intersectionTopology'
+import { loadIntersectionTopologyRoutes } from '../../mapv/intersectionTopologyRoutes'
 import { DISTURBANCE_EVENT_OPTIONS } from '../../constants/scenarioOptions'
 import { useScenarioDraftStore, type ScenarioDraftDisturbanceEvent } from '../../composables/useScenarioDraftStore'
 import { formatIntersectionLabel } from '../../utils/intersectionLabels'
@@ -35,6 +37,8 @@ import {
 import type { CongestionLevel } from '../../types/intelligence'
 import {
   CONGESTION_FLOW_COLORS,
+  buildIntersectionCongestionLevels,
+  buildRouteCongestionLevels,
   normalizeCongestionLevel,
 } from '../../utils/topologyCongestion'
 import {
@@ -66,8 +70,61 @@ let map: Map | null = null
 let resizeObserver: ResizeObserver | null = null
 let warningOverlay: Overlay | null = null
 let detectedOverlay: Overlay | null = null
+let hoveredDetectedEventId: string | null = null
 let topologyNodes: IntersectionTopologyNode[] = []
 let edgeCongestionLevels: Record<string, CongestionLevel> = {}
+let routeCongestionLevels: Record<string, CongestionLevel> = {}
+
+function detectedEventIconPixelSize(zoom: number): number {
+  // 默认视野约14级；缩小时更小，放大时略放大，避免256源图按固定scale显得过大
+  return Math.max(16, Math.min(34, 18 + (zoom - 13) * 4))
+}
+
+function createDetectedEventStyle(): Style {
+  const zoom = map?.getView().getZoom() ?? DEFAULT_MAP_ZOOM
+  const size = detectedEventIconPixelSize(zoom)
+  return new Style({
+    image: new Icon({
+      src: DETECTED_EVENT_ICON_URL,
+      anchor: [0.5, 0.92],
+      width: size,
+      height: size,
+    }),
+  })
+}
+
+function findDetectedFeatureById(eventId: string | null): Feature | null {
+  if (!eventId) return null
+  return detectedSource.getFeatures().find((feature) => (
+    String(feature.get('eventId') ?? '') === eventId
+  )) ?? null
+}
+
+function showDetectedEventPopup(feature: Feature): void {
+  if (!detectedOverlay) return
+  hoveredDetectedEventId = String(feature.get('eventId') ?? '') || null
+  detectedPopupClock.value = String(feature.get('clock') ?? '')
+  detectedPopupType.value = String(feature.get('typeLabel') ?? '')
+  detectedPopupFlow.value = String(feature.get('flowSummary') ?? '')
+  const geometry = feature.getGeometry()
+  if (!(geometry instanceof Point)) return
+  warningOverlay?.setPosition(undefined)
+  detectedOverlay.setPosition(geometry.getCoordinates())
+}
+
+function hideDetectedEventPopup(): void {
+  hoveredDetectedEventId = null
+  detectedOverlay?.setPosition(undefined)
+}
+
+function syncDetectedEventHover(): void {
+  const feature = findDetectedFeatureById(hoveredDetectedEventId)
+  if (!feature) {
+    hideDetectedEventPopup()
+    return
+  }
+  showDetectedEventPopup(feature)
+}
 const vehicleHeadingHistory = new globalThis.Map<string, VehicleHeadingState>()
 interface AnimatedVehicleFeature {
   feature: Feature<Point>
@@ -96,11 +153,35 @@ function percentile(values: number[], ratio: number): number {
 }
 
 const networkSource = new VectorSource()
+const topologyFlowSource = new VectorSource()
 const vehicleSource = new VectorSource()
 const disturbanceSource = new VectorSource()
 const detectedSource = new VectorSource()
 const geoJsonFormat = new GeoJSON()
 const modelRegistry = new TrafficModelRegistry()
+
+const topologyBaseLayer = new VectorLayer({
+  source: topologyFlowSource,
+  style: () => new Style({
+    stroke: new Stroke({ color: 'rgba(8, 125, 255, 0.28)', width: 5 }),
+  }),
+  zIndex: 3,
+})
+
+const topologyFlowLayer = new VectorLayer({
+  source: topologyFlowSource,
+  style: (feature) => {
+    const routeId = String(feature.get('routeId') ?? '')
+    const level = normalizeCongestionLevel(routeCongestionLevels[routeId] ?? 'free')
+    return new Style({
+      stroke: new Stroke({
+        color: CONGESTION_FLOW_COLORS[level],
+        width: level === 'free' ? 2.5 : 3.5,
+      }),
+    })
+  },
+  zIndex: 4,
+})
 
 function clearVehiclePresentation(): void {
   if (vehicleAnimationFrame !== null) cancelAnimationFrame(vehicleAnimationFrame)
@@ -217,13 +298,7 @@ const disturbanceLayer = new VectorLayer({
 
 const detectedLayer = new VectorLayer({
   source: detectedSource,
-  style: () => new Style({
-    image: new Icon({
-      src: DETECTED_EVENT_ICON_URL,
-      anchor: [0.5, 0.92],
-      scale: 0.55,
-    }),
-  }),
+  style: () => createDetectedEventStyle(),
   zIndex: 10,
 })
 
@@ -252,7 +327,6 @@ function renderDisturbanceWarnings(): void {
 
 function renderDetectedEvents(): void {
   detectedSource.clear()
-  detectedOverlay?.setPosition(undefined)
   const cards = activeDetectedEventCards(snapshot.value?.event_detection?.cards)
   for (const card of cards) {
     const feature = new Feature({
@@ -267,6 +341,8 @@ function renderDetectedEvents(): void {
     })
     detectedSource.addFeature(feature)
   }
+  // 快照刷新时保留悬停卡片，避免仿真推送把蓝卡立刻清掉
+  syncDetectedEventHover()
 }
 
 function syncEdgeCongestion(): void {
@@ -279,20 +355,66 @@ function syncEdgeCongestion(): void {
   networkLayer.changed()
 }
 
+function syncTopologyCongestion(): void {
+  const current = snapshot.value
+  const intersectionLevels = buildIntersectionCongestionLevels(
+    current,
+    current?.traffic_style,
+  )
+  const routeIds = topologyFlowSource.getFeatures().map((feature) => (
+    String(feature.get('routeId') ?? '')
+  )).filter(Boolean)
+  routeCongestionLevels = buildRouteCongestionLevels(routeIds, intersectionLevels)
+  topologyFlowLayer.changed()
+}
+
+function refreshIntelligenceLayers(): void {
+  renderDetectedEvents()
+  syncEdgeCongestion()
+  syncTopologyCongestion()
+}
+
+async function loadTopologyOverview(): Promise<void> {
+  const [nodes, routeManifest] = await Promise.all([
+    loadIntersectionTopologyCatalog(),
+    loadIntersectionTopologyRoutes(),
+  ])
+  topologyNodes = nodes
+  topologyFlowSource.clear()
+  for (const route of routeManifest.routes) {
+    const feature = new Feature({
+      geometry: new LineString(
+        route.coordinates.map(([longitude, latitude]) => fromLonLat([longitude, latitude])),
+      ),
+    })
+    feature.set('routeId', route.routeId)
+    topologyFlowSource.addFeature(feature)
+  }
+  syncTopologyCongestion()
+  renderDisturbanceWarnings()
+  renderDetectedEvents()
+}
+
+function pickDetectedFeatureAtPixel(pixel: MapBrowserEvent['pixel']): Feature | null {
+  if (!map) return null
+  return map.forEachFeatureAtPixel(
+    pixel,
+    (candidate) => candidate as Feature,
+    {
+      hitTolerance: 14,
+      layerFilter: (layer) => layer === detectedLayer,
+    },
+  ) ?? null
+}
+
 function handleMapClick(event: MapBrowserEvent): void {
   if (!map) return
-  const detectedFeature = map.forEachFeatureAtPixel(event.pixel, (candidate, layer) => (
-    layer === detectedLayer ? candidate : undefined
-  ))
-  if (detectedFeature && detectedOverlay) {
-    warningOverlay?.setPosition(undefined)
-    detectedPopupClock.value = String(detectedFeature.get('clock') ?? '')
-    detectedPopupType.value = String(detectedFeature.get('typeLabel') ?? '')
-    detectedPopupFlow.value = String(detectedFeature.get('flowSummary') ?? '')
-    detectedOverlay.setPosition((detectedFeature.getGeometry() as Point).getCoordinates())
+  const detectedFeature = pickDetectedFeatureAtPixel(event.pixel)
+  if (detectedFeature) {
+    showDetectedEventPopup(detectedFeature)
     return
   }
-  detectedOverlay?.setPosition(undefined)
+  hideDetectedEventPopup()
   if (!warningOverlay) return
   const feature = map.forEachFeatureAtPixel(event.pixel, (candidate, layer) => (
     layer === disturbanceLayer ? candidate : undefined
@@ -468,6 +590,8 @@ onMounted(() => {
     target: mapEl.value,
     layers: [
       createBasemapLayer(DEFAULT_APP_BASEMAP),
+      topologyBaseLayer,
+      topologyFlowLayer,
       networkLayer,
       vehicleLayer,
       disturbanceLayer,
@@ -511,15 +635,13 @@ onMounted(() => {
   map.on('singleclick', handleMapClick)
   map.on('pointermove', handleDetectedPointerMove)
   map.on('moveend', renderVehicles)
+  map.getView().on('change:resolution', handleDetectedIconZoom)
   renderNetwork()
   renderVehicles()
-  renderDetectedEvents()
-  syncEdgeCongestion()
-  void loadIntersectionTopologyCatalog().then((nodes) => {
-    topologyNodes = nodes
-    focusActiveIntersection()
-    renderDisturbanceWarnings()
-  }).catch((cause: unknown) => console.warn('[disturbance-warning] topology unavailable', cause))
+  refreshIntelligenceLayers()
+  void loadTopologyOverview()
+    .then(() => focusActiveIntersection())
+    .catch((cause: unknown) => console.warn('[detected-event] 2d topology unavailable', cause))
 
   resizeObserver = new ResizeObserver(() => {
     map?.updateSize()
@@ -535,6 +657,7 @@ watch(() => props.active, (active) => {
     map?.updateSize()
     snapVehiclePositions = true
     renderVehicles()
+    refreshIntelligenceLayers()
     map?.renderSync()
   } else if (vehicleAnimationFrame !== null) {
     cancelAnimationFrame(vehicleAnimationFrame)
@@ -543,26 +666,24 @@ watch(() => props.active, (active) => {
 })
 watch(activeIntersectionId, focusActiveIntersection)
 watch([disturbanceEvents, snapshot, simulationStartTime], renderDisturbanceWarnings, { deep: true })
-watch(snapshot, () => {
-  renderDetectedEvents()
-  syncEdgeCongestion()
-})
+watch(snapshot, refreshIntelligenceLayers)
+
+function handleDetectedIconZoom(): void {
+  detectedLayer.changed()
+}
 
 function handleDetectedPointerMove(event: MapBrowserEvent): void {
   if (!map || !detectedOverlay) return
   if (event.dragging) return
-  const feature = map.forEachFeatureAtPixel(event.pixel, (candidate, layer) => (
-    layer === detectedLayer ? candidate : undefined
-  ))
+  const target = map.getTargetElement()
+  const feature = pickDetectedFeatureAtPixel(event.pixel)
   if (!feature) {
-    detectedOverlay.setPosition(undefined)
+    if (target) target.style.cursor = ''
+    hideDetectedEventPopup()
     return
   }
-  warningOverlay?.setPosition(undefined)
-  detectedPopupClock.value = String(feature.get('clock') ?? '')
-  detectedPopupType.value = String(feature.get('typeLabel') ?? '')
-  detectedPopupFlow.value = String(feature.get('flowSummary') ?? '')
-  detectedOverlay.setPosition((feature.getGeometry() as Point).getCoordinates())
+  if (target) target.style.cursor = 'pointer'
+  showDetectedEventPopup(feature)
 }
 
 onUnmounted(() => {
@@ -571,11 +692,14 @@ onUnmounted(() => {
   map?.un('singleclick', handleMapClick)
   map?.un('pointermove', handleDetectedPointerMove)
   map?.un('moveend', renderVehicles)
+  map?.getView().un('change:resolution', handleDetectedIconZoom)
   warningOverlay?.setPosition(undefined)
   warningOverlay = null
-  detectedOverlay?.setPosition(undefined)
+  hideDetectedEventPopup()
   detectedOverlay = null
   topologyNodes = []
+  topologyFlowSource.clear()
+  routeCongestionLevels = {}
   clearVehiclePresentation()
   map?.setTarget(undefined)
   map = null
@@ -666,6 +790,7 @@ onUnmounted(() => {
   box-shadow: 0 8px 24px rgba(0, 20, 40, 0.45), 0 0 18px rgba(33, 230, 255, 0.18);
   color: #e8f8ff;
   font: 12px/1.45 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  pointer-events: none;
 }
 
 .detected-event-popup:empty { display: none; }

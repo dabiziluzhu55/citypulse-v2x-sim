@@ -126,15 +126,15 @@ def _congestion_level(
     mean_speed: float,
     occupancy: float,
 ) -> tuple[str, float]:
-    # TraCI占有率为0-100
+    # 本场景车道占有率实测约为0-1（非百分数）
     if vehicle_count <= 0:
         return "free", 0.0
     halt_ratio = halting_count / max(vehicle_count, 1)
-    if mean_speed <= 1.0 and (occupancy >= 35.0 or halt_ratio >= 0.6):
+    if mean_speed <= 1.0 and (occupancy >= 0.35 or halt_ratio >= 0.6):
         return "severe", 1.0
-    if mean_speed <= 3.0 and (occupancy >= 20.0 or halt_ratio >= 0.4):
+    if mean_speed <= 3.0 and (occupancy >= 0.2 or halt_ratio >= 0.4):
         return "congested", 0.75
-    if mean_speed <= 8.0 and occupancy >= 10.0:
+    if mean_speed <= 8.0 and occupancy >= 0.1:
         return "slow", 0.45
     return "free", 0.15
 
@@ -198,6 +198,13 @@ class _SessionIntelligence:
             self._last_bucket = bucket
             states = snapshot_to_states(snapshot)
             self._states.extend(states)
+            # 只保留近期帧，避免全量重算膨胀；并覆盖红灯打断后的连帧窗口
+            history_span = max(self.sample_seconds * 36.0, 180.0)
+            cutoff = elapsed - history_span
+            if cutoff > 0:
+                self._states = [
+                    item for item in self._states if item.elapsed_seconds >= cutoff
+                ]
             detections = detect_states(self._states, config=self.rule_config)
             cards = build_event_cards(detections)
             node_counts = self._aggregate_nodes(snapshot)
@@ -365,10 +372,26 @@ class IntelligenceHub:
             lambda _intersection_id: (None, None)
         )
         self.nodes, self.lane_to_node = _load_lane_to_node(tls_manifest_path)
-        # 连帧确认更适合在线快照；CUSUM更依赖封闭残差
+        # 在线快照：红灯会打断连帧，consecutive_points不宜过高；
+        # 占有率按本场景0-1量级配置（默认规则里的25更像百分数阈值）。
         self.rule_config = RuleConfig(
             use_cusum=False,
-            consecutive_points=7,
+            consecutive_points=2,
+            min_occupancy=0.15,
+            min_vehicle_count=3,
+            min_halting_count=3,
+            low_speed_mps=1.5,
+            soft_closure_min_occupancy=0.05,
+            soft_closure_max_occupancy=0.8,
+            queue_blockage_min_vehicle_count=5,
+            queue_blockage_min_halting_count=3,
+            queue_blockage_max_mean_speed=8.0,
+            queue_blockage_min_waiting_time=60.0,
+            queue_blockage_min_waiting_delta=1.0,
+            speed_restriction_min_occupancy=0.05,
+            speed_restriction_max_occupancy=0.5,
+            speed_restriction_max_mean_speed=3.0,
+            speed_restriction_max_halting_count=2,
             enable_empty_lane_closure=False,
             enable_queue_blockage=True,
             enable_speed_restriction=True,
