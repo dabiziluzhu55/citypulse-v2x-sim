@@ -1,4 +1,4 @@
-// 根据traffic_style与停车数计算拓扑蓝线拥堵等级
+// 拓扑蓝线拥堵等级：有traffic_style时只消费后端结果，前端不再用另一套阈值重算
 
 import type { CongestionLevel, TrafficStylePayload } from '../types/intelligence'
 import type { SimulationSnapshot } from '../types/simulation'
@@ -33,35 +33,28 @@ export function worseCongestionLevel(
   return CONGESTION_LEVEL_RANK[left] >= CONGESTION_LEVEL_RANK[right] ? left : right
 }
 
-function levelFromLaneMetrics(input: {
-  vehicle_count: number
-  halting_count: number
-  mean_speed: number
-  occupancy: number
-}): CongestionLevel {
-  if (input.vehicle_count <= 0) return 'free'
-  const haltRatio = input.halting_count / Math.max(input.vehicle_count, 1)
-  if (input.mean_speed <= 1 && (input.occupancy >= 35 || haltRatio >= 0.6)) return 'severe'
-  if (input.mean_speed <= 3 && (input.occupancy >= 20 || haltRatio >= 0.4)) return 'congested'
-  if (input.mean_speed <= 8 && (input.occupancy >= 10 || haltRatio >= 0.2)) return 'slow'
-  return 'free'
-}
-
 export function buildIntersectionCongestionLevels(
   snapshot: SimulationSnapshot | null | undefined,
   trafficStyle?: TrafficStylePayload | null,
 ): Record<string, CongestionLevel> {
   const levels: Record<string, CongestionLevel> = {}
   if (!snapshot) return levels
+
+  const edges = trafficStyle?.edges
+  if (!edges || Object.keys(edges).length === 0) {
+    for (const intersectionId of Object.keys(snapshot.intersections ?? {})) {
+      levels[intersectionId] = 'free'
+    }
+    return levels
+  }
+
   for (const [intersectionId, intersection] of Object.entries(snapshot.intersections ?? {})) {
     let level: CongestionLevel = 'free'
     for (const [laneId, lane] of Object.entries(intersection.lanes ?? {})) {
       const edgeId = String(lane.edge_id || laneId.replace(/_\d+$/, ''))
-      const styled = trafficStyle?.edges?.[edgeId]
-      const laneLevel = styled
-        ? normalizeCongestionLevel(styled.level)
-        : levelFromLaneMetrics(lane)
-      level = worseCongestionLevel(level, laneLevel)
+      const styled = edges[edgeId]
+      if (!styled) continue
+      level = worseCongestionLevel(level, normalizeCongestionLevel(styled.level))
     }
     levels[intersectionId] = level
   }

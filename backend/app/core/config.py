@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     intelligence_sample_seconds: float = 5.0
     intelligence_history_frames: int = 12
     prediction_horizon_seconds: float = 60.0
+    # STGCN模型包目录（含stgcn_best.pt等）；空则仅moving_average
+    prediction_model_dir: str = ""
+    # 外部STGCN参考实现根目录（含model/models.py）；空则尝试从PYTHONPATH导入
+    stgcn_root: str = ""
 
     cesium_ion_token: str | None = None
     tianditu_token: str | None = None

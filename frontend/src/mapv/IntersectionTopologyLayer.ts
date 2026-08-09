@@ -3,7 +3,6 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import type { RoadCoordinateProjector } from './roadGeometry'
 import {
-  buildIntersectionTopologyLinks,
   loadIntersectionTopologyCatalog,
   type IntersectionTopologyNode,
 } from './intersectionTopology'
@@ -11,6 +10,7 @@ import {
   loadIntersectionTopologyRoutes,
   type IntersectionTopologyRoute,
 } from './intersectionTopologyRoutes'
+import { expandDirectedTopologyRoutes } from './directedTopologyRoutes'
 import { formatIntersectionLabel } from '../utils/intersectionLabels'
 import { distanceMeters as geographicDistanceMeters } from './vehicleVisibility'
 import { topologyFlowHeight } from './topologyFlowElevation'
@@ -29,9 +29,9 @@ import {
 import type { CongestionLevel } from '../types/intelligence'
 import {
   CONGESTION_FLOW_COLORS,
-  CONGESTION_LEVEL_RANK,
   normalizeCongestionLevel,
 } from '../utils/topologyCongestion'
+import { topologyDistanceMeters } from './intersectionTopology'
 
 const FLOW_LEVELS: CongestionLevel[] = ['free', 'slow', 'congested', 'severe']
 
@@ -209,12 +209,8 @@ export class IntersectionTopologyLayer {
       loadIntersectionTopologyRoutes(routeUrl),
       this.loadMarkerModels(),
     ])
-    const links = buildIntersectionTopologyLinks(nodes)
-    const routesById = new Map(routeManifest.routes.map((route) => [route.routeId, route]))
-    const missingRoutes = links.filter((link) => !routesById.has(link.id))
-    if (missingRoutes.length > 0) {
-      throw new Error(`Intersection topology routes are missing: ${missingRoutes.map((link) => link.id).join(', ')}`)
-    }
+    const directedRoutes = expandDirectedTopologyRoutes(routeManifest.routes)
+    const nodeById = new Map(nodes.map((node) => [node.intersectionId, node]))
     const pointFeatures: IntersectionMarkerFeature[] = nodes.map((node) => {
       const elevation = REALISTIC_INTERSECTION_SURFACE_Z + INTERSECTION_MARKER_SURFACE_OFFSET_METERS
       const coordinates = this.projector([
@@ -233,7 +229,14 @@ export class IntersectionTopologyLayer {
     })
     this.nodes = nodes
     this.markerFeatures = pointFeatures
-    this.routeEntries = links.map((link) => this.routeEntry(routesById.get(link.id)!, link.distanceMeters))
+    this.routeEntries = directedRoutes.map((route) => {
+      const from = nodeById.get(route.from)
+      const to = nodeById.get(route.to)
+      const distanceMeters = from && to
+        ? topologyDistanceMeters(from, to)
+        : route.lengthMeters
+      return this.routeEntry(route, distanceMeters)
+    })
     this.visibleRouteIds = this.routeEntries.map((entry) => entry.id)
     this.refreshMarkerSources()
     this.baseLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({
@@ -246,6 +249,10 @@ export class IntersectionTopologyLayer {
     this.refreshViewport()
     this.engine.requestRender()
     return nodes
+  }
+
+  getRouteIds(): string[] {
+    return [...this.visibleRouteIds]
   }
 
   setRouteCongestion(levels: Record<string, CongestionLevel | string>): void {
@@ -262,19 +269,6 @@ export class IntersectionTopologyLayer {
     const visible = this.routeEntries.filter((entry) => this.visibleRouteIds.includes(entry.id))
     this.applyFlowLineData(visible.length ? visible : this.routeEntries)
     this.engine.requestRender()
-  }
-
-  setIntersectionCongestion(levels: Record<string, CongestionLevel | string>): void {
-    const routeLevels: Record<string, CongestionLevel> = {}
-    for (const entry of this.routeEntries) {
-      const [from, to] = entry.id.split(':')
-      const fromLevel = normalizeCongestionLevel(levels[from] ?? 'free')
-      const toLevel = normalizeCongestionLevel(levels[to] ?? 'free')
-      routeLevels[entry.id] = CONGESTION_LEVEL_RANK[fromLevel] >= CONGESTION_LEVEL_RANK[toLevel]
-        ? fromLevel
-        : toLevel
-    }
-    this.setRouteCongestion(routeLevels)
   }
 
   refreshViewport(

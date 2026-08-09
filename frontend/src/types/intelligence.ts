@@ -51,7 +51,11 @@ export interface PredictionPayload {
   horizon_seconds: number
   as_of_seconds: number
   model: string
+  model_version?: string
   ready: boolean
+  fallback?: boolean
+  fallback_reason?: string
+  inference_latency_ms?: number | null
   intersections: Record<string, IntersectionPrediction>
 }
 
@@ -59,7 +63,10 @@ export interface EdgeTrafficStyle {
   level: CongestionLevel | string
   score: number
   mean_speed: number
-  occupancy: number
+  /** 占有率百分数，口径0～100 */
+  occupancy_pct: number
+  /** 兼容字段，与occupancy_pct同值 */
+  occupancy?: number
   vehicle_count: number
   halting_count: number
 }

@@ -510,10 +510,10 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 状态与 WebSocket 快照额外包含（与扰动 `events` 分离）：
 
 - `event_detection`：算法识别事件卡片（含经纬度、`display_label`、`prediction_summary`）
-- `prediction`：官方路口未来约 60 秒 `vehicle_count`（当前为 `moving_average`）
-- `traffic_style.edges`：按 `edge_id` 的拥堵等级，供蓝线着色，独立于事件图标
+- `prediction`：官方路口未来约 60 秒 `vehicle_count`；`PREDICTION_MODEL_DIR` 可用时为 STGCN，否则 `moving_average` 降级（含 `fallback`/`fallback_reason`）
+- `traffic_style.edges`：后端唯一计算的拥堵等级（`occupancy_pct` 为 0～100），供蓝线着色，独立于事件图标
 
-`traffic_state` 展示约定：`localized_blockage`=局部占道，`spillback`=排队溢出，`unknown_abnormal`=交通异常
+`traffic_state` 展示约定：`localized_blockage`=疑似局部阻塞，`spillback`=排队溢出，`unknown_abnormal`=交通异常
 
 ### 6.2.1 查询事件识别与短时预测
 
