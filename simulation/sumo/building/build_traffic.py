@@ -26,11 +26,9 @@ from .traffic import (
     RoutePath,
     RouteSplit,
     TrafficDemandError,
-    load_traffic_demands,
-)
-from .traffic_policy import (
     TrafficGenerationPolicy,
     TrafficGenerationPolicyError,
+    load_traffic_demands,
     load_traffic_generation_policy,
 )
 from .vehicle_profiles import (
