@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 from uuid import uuid4
 
-from .building.artifacts import GeneratedArtifactLayout
+from ..building.artifacts import GeneratedArtifactLayout
 from .events import (
     AccidentEvent,
     DisturbanceEvent,
@@ -26,10 +26,10 @@ from .events import (
     MajorEventOpeningEvent,
     SpeedLimitEvent,
 )
-from .external_policy import HttpAlgorithmClient
-from .local_policy import LocalAlgorithmClient
-from .ai_observer import LocalAIObserver, SimulationTimeFrameClock
-from .policy import PROTOCOL_VERSION
+from ..external_policy import HttpAlgorithmClient
+from ..local_policy import LocalAlgorithmClient
+from ..ai_observer import LocalAIObserver, SimulationTimeFrameClock
+from ..policy import PROTOCOL_VERSION
 from .scenario import (
     DEFAULT_GENERATED_DIR,
     DEFAULT_SESSION_ROOT,
@@ -627,8 +627,8 @@ class SimulationManager:
             _selected_manifest,
             _validate_actions,
         )
-        from .building.config import load_signal_configuration
-        from .building.build_tls import DEFAULT_MAPPING, DEFAULT_PLANS, DEFAULT_TOPOLOGY
+        from ..building.config import load_signal_configuration
+        from ..building.build_tls import DEFAULT_MAPPING, DEFAULT_PLANS, DEFAULT_TOPOLOGY
         from .vehicle import (
             StoppedLaneChangeGuard,
             VehicleActionController,

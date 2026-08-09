@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
-from .policy import (
+from ..policy import (
     NextSignalObservation,
     PreviousActionResults,
     PreviousVehicleActionResult,
@@ -20,7 +20,7 @@ from .policy import (
     VehicleTrafficObservation,
     VehicleTypeMetadata,
 )
-from .building.vehicle_profiles import VehicleProfile
+from ..building.vehicle_profiles import VehicleProfile
 
 
 STOPPED_SPEED_EPSILON_MPS = 1e-3

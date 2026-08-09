@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from .building.artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
+from ..building.artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
 from .events import DEFAULT_ACTIVITY_VEHICLE_TYPE_ID
-from .building.vehicle_profiles import VehicleProfile, VehicleProfileError, parse_vehicle_profiles
+from ..building.vehicle_profiles import VehicleProfile, VehicleProfileError, parse_vehicle_profiles
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SESSION_ROOT = PROJECT_ROOT / "outputs" / "sessions"
