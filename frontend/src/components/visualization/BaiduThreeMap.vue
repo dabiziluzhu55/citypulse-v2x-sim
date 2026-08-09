@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as mapvthree from '@baidumap/mapv-three'
-import { Color } from 'three'
+import { Color, Vector3 } from 'three'
+import DetectedEventOverlay from './DetectedEventOverlay.vue'
+import { REALISTIC_INTERSECTION_SURFACE_Z } from '../../mapv/sceneElevation'
+import { buildIntersectionCongestionLevels } from '../../utils/topologyCongestion'
+import { activeDetectedEventCards } from '../../utils/detectedEventDisplay'
 import { useAppMapView } from '../../composables/useAppMapView'
 import { useSimulationMap } from '../../composables/useSimulationMap'
 import { useSimulationStore } from '../../composables/useSimulationStore'
@@ -102,6 +106,14 @@ const {
 const { isIntersectionSupported } = useCatalog(activeIntersectionId)
 const { geojson } = useSimulationMap(activeIntersectionId, ROAD_RENDER_RADIUS_METERS, isIntersectionSupported)
 const { snapshot, trafficView, renderSessionRevision } = useSimulationStore()
+
+const detectedEventCards = computed(() => (
+  activeDetectedEventCards(snapshot.value?.event_detection?.cards)
+))
+const detectedOverlayActive = computed(() => {
+  const state = snapshot.value?.state
+  return state === 'RUNNING' || state === 'PAUSED' || state === 'STARTING' || state === 'STOPPING'
+})
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -206,6 +218,42 @@ const buildingZOffsetMeters = Number(import.meta.env.VITE_XIONGAN_BUILDING_Z_OFF
 const enableBuildingContactShadows = import.meta.env.VITE_XIONGAN_BUILDING_CONTACT_SHADOWS !== 'false'
 const ACTIVE_FRAME_TIME_MS = 1000 / 60
 const SIMULATION_FRAME_TIME_MS = 1000 / 30
+const projectScratch = new Vector3()
+
+function projectDetectedEventToOverlay(
+  longitude: number,
+  latitude: number,
+): { x: number; y: number } | null {
+  if (!engine || !containerRef.value) return null
+  const scene = coordinateProjector([
+    longitude,
+    latitude,
+    REALISTIC_INTERSECTION_SURFACE_Z + 18,
+  ])
+  const camera = (engine as unknown as { camera?: import('three').Camera }).camera
+  if (!camera) return null
+  projectScratch.set(scene[0], scene[1], scene[2] ?? 0).project(camera)
+  if (!Number.isFinite(projectScratch.x) || !Number.isFinite(projectScratch.y)) return null
+  if (projectScratch.z < -1 || projectScratch.z > 1) return null
+  const width = containerRef.value.clientWidth
+  const height = containerRef.value.clientHeight
+  return {
+    x: (projectScratch.x * 0.5 + 0.5) * width,
+    y: (-projectScratch.y * 0.5 + 0.5) * height,
+  }
+}
+
+function syncTopologyCongestion(): void {
+  if (!intersectionTopologyLayer) return
+  const current = snapshot.value
+  if (!current || !detectedOverlayActive.value) {
+    intersectionTopologyLayer.setIntersectionCongestion({})
+    return
+  }
+  intersectionTopologyLayer.setIntersectionCongestion(
+    buildIntersectionCongestionLevels(current, current.traffic_style),
+  )
+}
 
 function createBaiduProvider(): mapvthree.BaiduVectorTileProvider {
   baiduProvider = new mapvthree.BaiduVectorTileProvider({
@@ -1070,6 +1118,13 @@ async function initMap(): Promise<void> {
   )
   watch(snapshot, syncAnimationLoop, { immediate: true })
   watch(
+    snapshot,
+    () => {
+      syncTopologyCongestion()
+    },
+    { immediate: true },
+  )
+  watch(
     () => props.active,
     (active) => {
       vehicleRenderer?.setActive(active)
@@ -1201,6 +1256,12 @@ onUnmounted(() => {
 <template>
   <div class="app-baidu-three-map">
     <div ref="containerRef" class="app-baidu-three-map__canvas" />
+    <DetectedEventOverlay
+      :cards="detectedEventCards"
+      :snapshot="snapshot"
+      :project="projectDetectedEventToOverlay"
+      :active="detectedOverlayActive && !loading && !error"
+    />
     <div v-if="loading" class="app-baidu-three-map__overlay">正在加载百度底图与本地 3D 建筑…</div>
     <div
       v-else-if="error"

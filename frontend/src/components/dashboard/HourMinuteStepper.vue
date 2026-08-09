@@ -72,7 +72,6 @@ function stepMinute(direction: -1 | 1): void {
         :disabled="disabled || currentHour <= minimumHour"
         @click="stepHour(-1)"
       ><i aria-hidden="true" /></button>
-      <span>时</span>
     </div>
     <b aria-hidden="true">:</b>
     <div class="hour-minute-stepper__part">
@@ -91,7 +90,6 @@ function stepMinute(direction: -1 | 1): void {
         :disabled="disabled || currentMinutes <= minimumMinutes"
         @click="stepMinute(-1)"
       ><i aria-hidden="true" /></button>
-      <span>分</span>
     </div>
   </div>
 </template>
@@ -115,7 +113,7 @@ function stepMinute(direction: -1 | 1): void {
 }
 .hour-minute-stepper__part {
   display: grid;
-  grid-template-columns: 18px minmax(22px, 1fr) 18px 12px;
+  grid-template-columns: 18px minmax(22px, 1fr) 18px;
   align-items: center;
   min-width: 0;
   height: 100%;
@@ -127,10 +125,6 @@ function stepMinute(direction: -1 | 1): void {
   font: 700 14px/1 'DIN Alternate', 'Microsoft YaHei', sans-serif;
   letter-spacing: 0;
   text-align: center;
-}
-.hour-minute-stepper__part > span {
-  color: rgba(158, 220, 242, .74);
-  font-size: 9px;
 }
 .hour-minute-stepper > b {
   color: rgba(158, 220, 242, .78);

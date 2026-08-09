@@ -9,7 +9,7 @@ import Point from 'ol/geom/Point'
 import VectorLayer from 'ol/layer/Vector'
 import VectorSource from 'ol/source/Vector'
 import GeoJSON from 'ol/format/GeoJSON'
-import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style, Text } from 'ol/style'
+import { Circle as CircleStyle, Fill, Icon, RegularShape, Stroke, Style, Text } from 'ol/style'
 import { defaults as defaultControls, Attribution } from 'ol/control'
 import { defaults as defaultInteractions } from 'ol/interaction'
 import { fromLonLat } from 'ol/proj'
@@ -32,6 +32,18 @@ import {
   shortestAngleDelta,
   type VehicleHeadingState,
 } from '../../mapv/vehicleOrientation'
+import type { CongestionLevel } from '../../types/intelligence'
+import {
+  CONGESTION_FLOW_COLORS,
+  normalizeCongestionLevel,
+} from '../../utils/topologyCongestion'
+import {
+  DETECTED_EVENT_ICON_URL,
+  activeDetectedEventCards,
+  detectedEventClockTime,
+  detectedEventFlowSummary,
+  detectedEventTypeLabel,
+} from '../../utils/detectedEventDisplay'
 
 const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 
@@ -45,11 +57,17 @@ const { disturbanceEvents, simulationStartTime } = useScenarioDraftStore()
 const warningPopupRef = ref<HTMLElement | null>(null)
 const warningPopupTitle = ref('')
 const warningPopupEvents = ref<Array<{ id: string; label: string; time: string }>>([])
+const detectedPopupRef = ref<HTMLElement | null>(null)
+const detectedPopupClock = ref('')
+const detectedPopupType = ref('')
+const detectedPopupFlow = ref('')
 
 let map: Map | null = null
 let resizeObserver: ResizeObserver | null = null
 let warningOverlay: Overlay | null = null
+let detectedOverlay: Overlay | null = null
 let topologyNodes: IntersectionTopologyNode[] = []
+let edgeCongestionLevels: Record<string, CongestionLevel> = {}
 const vehicleHeadingHistory = new globalThis.Map<string, VehicleHeadingState>()
 interface AnimatedVehicleFeature {
   feature: Feature<Point>
@@ -80,6 +98,7 @@ function percentile(values: number[], ratio: number): number {
 const networkSource = new VectorSource()
 const vehicleSource = new VectorSource()
 const disturbanceSource = new VectorSource()
+const detectedSource = new VectorSource()
 const geoJsonFormat = new GeoJSON()
 const modelRegistry = new TrafficModelRegistry()
 
@@ -116,8 +135,13 @@ const networkLayer = new VectorLayer({
         }),
       })
     }
+    const edgeId = String(feature.get('edge_id') ?? '')
+    const level = normalizeCongestionLevel(edgeCongestionLevels[edgeId] ?? 'free')
     return new Style({
-      stroke: new Stroke({ color: 'rgba(90, 180, 255, 0.55)', width: 2 }),
+      stroke: new Stroke({
+        color: level === 'free' ? 'rgba(90, 180, 255, 0.55)' : CONGESTION_FLOW_COLORS[level],
+        width: level === 'free' ? 2 : 3,
+      }),
     })
   },
   zIndex: 5,
@@ -191,6 +215,18 @@ const disturbanceLayer = new VectorLayer({
   zIndex: 9,
 })
 
+const detectedLayer = new VectorLayer({
+  source: detectedSource,
+  style: () => new Style({
+    image: new Icon({
+      src: DETECTED_EVENT_ICON_URL,
+      anchor: [0.5, 0.92],
+      scale: 0.55,
+    }),
+  }),
+  zIndex: 10,
+})
+
 function renderDisturbanceWarnings(): void {
   disturbanceSource.clear()
   if (topologyNodes.length === 0 || disturbanceEvents.value.length === 0) return
@@ -214,8 +250,50 @@ function renderDisturbanceWarnings(): void {
   }
 }
 
+function renderDetectedEvents(): void {
+  detectedSource.clear()
+  detectedOverlay?.setPosition(undefined)
+  const cards = activeDetectedEventCards(snapshot.value?.event_detection?.cards)
+  for (const card of cards) {
+    const feature = new Feature({
+      geometry: new Point(fromLonLat([Number(card.longitude), Number(card.latitude)])),
+    })
+    feature.setProperties({
+      kind: 'detected_event',
+      eventId: card.event_id,
+      clock: detectedEventClockTime(snapshot.value, card.start_seconds),
+      typeLabel: detectedEventTypeLabel(card),
+      flowSummary: detectedEventFlowSummary(card),
+    })
+    detectedSource.addFeature(feature)
+  }
+}
+
+function syncEdgeCongestion(): void {
+  const next: Record<string, CongestionLevel> = {}
+  const edges = snapshot.value?.traffic_style?.edges ?? {}
+  for (const [edgeId, style] of Object.entries(edges)) {
+    next[edgeId] = normalizeCongestionLevel(style.level)
+  }
+  edgeCongestionLevels = next
+  networkLayer.changed()
+}
+
 function handleMapClick(event: MapBrowserEvent): void {
-  if (!map || !warningOverlay) return
+  if (!map) return
+  const detectedFeature = map.forEachFeatureAtPixel(event.pixel, (candidate, layer) => (
+    layer === detectedLayer ? candidate : undefined
+  ))
+  if (detectedFeature && detectedOverlay) {
+    warningOverlay?.setPosition(undefined)
+    detectedPopupClock.value = String(detectedFeature.get('clock') ?? '')
+    detectedPopupType.value = String(detectedFeature.get('typeLabel') ?? '')
+    detectedPopupFlow.value = String(detectedFeature.get('flowSummary') ?? '')
+    detectedOverlay.setPosition((detectedFeature.getGeometry() as Point).getCoordinates())
+    return
+  }
+  detectedOverlay?.setPosition(undefined)
+  if (!warningOverlay) return
   const feature = map.forEachFeatureAtPixel(event.pixel, (candidate, layer) => (
     layer === disturbanceLayer ? candidate : undefined
   ))
@@ -388,7 +466,13 @@ onMounted(() => {
 
   map = new Map({
     target: mapEl.value,
-    layers: [createBasemapLayer(DEFAULT_APP_BASEMAP), networkLayer, vehicleLayer, disturbanceLayer],
+    layers: [
+      createBasemapLayer(DEFAULT_APP_BASEMAP),
+      networkLayer,
+      vehicleLayer,
+      disturbanceLayer,
+      detectedLayer,
+    ],
     view: new View({
       center: fromLonLat(DEFAULT_MAP_CENTER),
       zoom: DEFAULT_MAP_ZOOM,
@@ -415,10 +499,22 @@ onMounted(() => {
     })
     map.addOverlay(warningOverlay)
   }
+  if (detectedPopupRef.value) {
+    detectedOverlay = new Overlay({
+      element: detectedPopupRef.value,
+      positioning: 'bottom-left',
+      offset: [16, -18],
+      stopEvent: false,
+    })
+    map.addOverlay(detectedOverlay)
+  }
   map.on('singleclick', handleMapClick)
+  map.on('pointermove', handleDetectedPointerMove)
   map.on('moveend', renderVehicles)
   renderNetwork()
   renderVehicles()
+  renderDetectedEvents()
+  syncEdgeCongestion()
   void loadIntersectionTopologyCatalog().then((nodes) => {
     topologyNodes = nodes
     focusActiveIntersection()
@@ -447,14 +543,38 @@ watch(() => props.active, (active) => {
 })
 watch(activeIntersectionId, focusActiveIntersection)
 watch([disturbanceEvents, snapshot, simulationStartTime], renderDisturbanceWarnings, { deep: true })
+watch(snapshot, () => {
+  renderDetectedEvents()
+  syncEdgeCongestion()
+})
+
+function handleDetectedPointerMove(event: MapBrowserEvent): void {
+  if (!map || !detectedOverlay) return
+  if (event.dragging) return
+  const feature = map.forEachFeatureAtPixel(event.pixel, (candidate, layer) => (
+    layer === detectedLayer ? candidate : undefined
+  ))
+  if (!feature) {
+    detectedOverlay.setPosition(undefined)
+    return
+  }
+  warningOverlay?.setPosition(undefined)
+  detectedPopupClock.value = String(feature.get('clock') ?? '')
+  detectedPopupType.value = String(feature.get('typeLabel') ?? '')
+  detectedPopupFlow.value = String(feature.get('flowSummary') ?? '')
+  detectedOverlay.setPosition((feature.getGeometry() as Point).getCoordinates())
+}
 
 onUnmounted(() => {
   resizeObserver?.disconnect()
   resizeObserver = null
   map?.un('singleclick', handleMapClick)
+  map?.un('pointermove', handleDetectedPointerMove)
   map?.un('moveend', renderVehicles)
   warningOverlay?.setPosition(undefined)
   warningOverlay = null
+  detectedOverlay?.setPosition(undefined)
+  detectedOverlay = null
   topologyNodes = []
   clearVehiclePresentation()
   map?.setTarget(undefined)
@@ -474,6 +594,12 @@ onUnmounted(() => {
         <span>{{ event.label }}</span>
         <time>{{ event.time }}</time>
       </div>
+    </div>
+    <div ref="detectedPopupRef" class="detected-event-popup">
+      <strong>事件识别</strong>
+      <div><span>事件检测时间</span><time>{{ detectedPopupClock }}</time></div>
+      <div><span>事件类型</span><b>{{ detectedPopupType }}</b></div>
+      <div class="detected-event-popup__flow"><span>预计未来车流</span><b>{{ detectedPopupFlow }}</b></div>
     </div>
   </div>
 </template>
@@ -527,4 +653,26 @@ onUnmounted(() => {
 .disturbance-warning-popup strong { color: #ff9aaa; font-size: 13px; }
 .disturbance-warning-popup div { display: flex; justify-content: space-between; gap: 14px; }
 .disturbance-warning-popup time { color: #ffc3ca; white-space: nowrap; }
+
+.detected-event-popup {
+  min-width: 220px;
+  max-width: 300px;
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid rgba(82, 194, 250, 0.55);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(8, 42, 68, 0.96), rgba(2, 16, 31, 0.96));
+  box-shadow: 0 8px 24px rgba(0, 20, 40, 0.45), 0 0 18px rgba(33, 230, 255, 0.18);
+  color: #e8f8ff;
+  font: 12px/1.45 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.detected-event-popup:empty { display: none; }
+.detected-event-popup strong { color: #52c2fa; font-size: 13px; }
+.detected-event-popup div { display: grid; grid-template-columns: 88px 1fr; gap: 8px; }
+.detected-event-popup span { color: #8fd8ff; }
+.detected-event-popup b,
+.detected-event-popup time { color: #f4fcff; font-weight: 600; }
+.detected-event-popup__flow { align-items: start; }
 </style>

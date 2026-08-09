@@ -43,7 +43,7 @@
     "test:buildings": "node --test scripts/building-tileset.test.mjs"
   },
   "dependencies": {
-    "@baidumap/mapv-three": "^1.6.4-beta.5",
+    "@baidumap/mapv-three": "^1.6.4",
     "cesium": "^1.131.0",
     "echarts": "^5.6.0",
     "element-plus": "^2.10.4",
@@ -63,5 +63,8 @@
     "vite": "^7.0.4",
     "vite-plugin-cesium": "^1.2.23",
     "vue-tsc": "^3.0.1"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
   }
 }

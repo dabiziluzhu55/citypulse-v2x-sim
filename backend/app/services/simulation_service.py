@@ -1,4 +1,4 @@
-"""仿真应用服务：多会话并发、元数据持久化、指标watcher与生命周期管理"""
+# 仿真应用服务含多会话元数据指标watcher与智能分析挂载
 
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ from ..schemas.events import (
 from ..scenario.presets import list_scenario_presets, supported_intersection_ids
 from ..scenario.resolver import ResolvedStartSimulation, resolve_start_simulation
 from ..schemas.simulations import StartSimulationRequest
+from .intelligence_runtime import IntelligenceHub
 from .session_metadata import (
     SessionMetadata,
     SessionMetadataStore,
@@ -89,6 +90,17 @@ class SimulationService:
         self._watcher_owners: dict[str, str] = {}
         self._watcher_stop: set[str] = set()
         self._lock = threading.RLock()
+        converter = serializer._coordinate_converter
+        self._intelligence = IntelligenceHub(
+            tls_manifest_path=settings.generated_dir
+            / "manifests"
+            / "tls_manifest.json",
+            sample_seconds=settings.intelligence_sample_seconds,
+            history_frames=settings.intelligence_history_frames,
+            horizon_seconds=settings.prediction_horizon_seconds,
+            lane_lonlat=getattr(converter, "lane_center_lonlat", None),
+            intersection_lonlat=getattr(converter, "intersection_lonlat", None),
+        )
 
     # ------------------------------------------------------------------
     # Catalog / list
@@ -217,7 +229,17 @@ class SimulationService:
                     metrics[key] = evaluation[key]
             payload["metrics"] = metrics
             payload["evaluation"] = evaluation
+        intelligence = self._intelligence.observe(snapshot)
+        payload["event_detection"] = intelligence["event_detection"]
+        payload["prediction"] = intelligence["prediction"]
+        payload["traffic_style"] = intelligence["traffic_style"]
         return payload
+
+    def get_intelligence(self, session_id: str) -> dict[str, Any]:
+        snapshot = self._manager.snapshot(session_id)
+        if snapshot.state not in {QUEUED_STATE}:
+            return self._intelligence.observe(snapshot)
+        return self._intelligence.get(session_id)
 
     def serialize_terminal_snapshot(
         self, snapshot: SimulationSnapshot
@@ -402,6 +424,7 @@ class SimulationService:
                     )
             self._algorithm_store.clear_all()
             self._metrics_hub.clear_all()
+            self._intelligence.clear_all()
         else:
             logger.info(
                 "redis 关闭：保留 SUMO worker 会话，仅停止本地指标 watcher"
@@ -483,6 +506,7 @@ class SimulationService:
                 # QUEUED/STARTING也可能推送；采集器可安全忽略空车辆帧
                 if snapshot.state not in {QUEUED_STATE}:
                     self._metrics_hub.observe(snapshot)
+                    self._intelligence.observe(snapshot)
                 if snapshot.state in TERMINAL_STATES:
                     self._finalize_session(snapshot)
                     break
@@ -522,6 +546,7 @@ class SimulationService:
             self._metrics_hub.abort_without_snapshot(
                 session_id, decision_latency_ms=latency
             )
+        self._intelligence.observe(snapshot)
         self._sync_metadata_from_snapshot(snapshot)
 
     def _sync_metadata_from_snapshot(self, snapshot: SimulationSnapshot) -> None:

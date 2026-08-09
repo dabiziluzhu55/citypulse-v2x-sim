@@ -26,6 +26,14 @@ import {
   shouldShowIntersectionMarkerLabel,
   type IntersectionMarkerFeature,
 } from './intersectionMarkerStyle'
+import type { CongestionLevel } from '../types/intelligence'
+import {
+  CONGESTION_FLOW_COLORS,
+  CONGESTION_LEVEL_RANK,
+  normalizeCongestionLevel,
+} from '../utils/topologyCongestion'
+
+const FLOW_LEVELS: CongestionLevel[] = ['free', 'slow', 'congested', 'severe']
 
 interface RenderMaterialOwner {
   material?: THREE.Material
@@ -107,7 +115,7 @@ function configureOverlayMaterial(layer: unknown, opacity: number): void {
 
 export class IntersectionTopologyLayer {
   private readonly baseLine: mapvthree.Polyline
-  private readonly flowLine: mapvthree.Polyline
+  private readonly flowLines: Record<CongestionLevel, mapvthree.Polyline>
   private readonly markers: mapvthree.EffectModelPoint
   private readonly activeMarker: mapvthree.EffectModelPoint
   private readonly waves: mapvthree.EffectPoint
@@ -117,12 +125,15 @@ export class IntersectionTopologyLayer {
   private nodes: IntersectionTopologyNode[] = []
   private markerFeatures: IntersectionMarkerFeature[] = []
   private routeEntries: TopologyRouteEntry[] = []
+  private routeCongestion: Record<string, CongestionLevel> = {}
   private visibleRouteKey = ''
+  private congestionKey = ''
   private visibleRouteCount = 0
   private activeIntersectionId: string | null = null
   private currentRangeMeters = Number.POSITIVE_INFINITY
   private activeLabelKey = ''
   private destroyed = false
+  private visibleRouteIds: string[] = []
 
   constructor(
     private readonly engine: mapvthree.Engine,
@@ -138,27 +149,30 @@ export class IntersectionTopologyLayer {
       opacity: 0.24,
       height: 0,
     }))
-    this.flowLine = engine.add(new mapvthree.Polyline({
-      flat: true,
-      isCurve: false,
-      color: new THREE.Color('#00d9ff'),
-      lineWidth: 2,
-      keepSize: true,
-      transparent: true,
-      opacity: 0.9,
-      enableAnimation: true,
-      enableAnimationChaos: false,
-      animationInterval: 2,
-      animationTailType: 1,
-      animationTailRatio: 0.16,
-      animationSpeed: 0.85,
-      animationIdle: 1_600,
-      height: 0,
-    }))
     configureOverlayMaterial(this.baseLine, 0.24)
-    configureOverlayMaterial(this.flowLine, 0.9)
     this.baseLine.renderOrder = 34
-    this.flowLine.renderOrder = 35
+    this.flowLines = Object.fromEntries(FLOW_LEVELS.map((level, index) => {
+      const line = engine.add(new mapvthree.Polyline({
+        flat: true,
+        isCurve: false,
+        color: new THREE.Color(CONGESTION_FLOW_COLORS[level]),
+        lineWidth: 2,
+        keepSize: true,
+        transparent: true,
+        opacity: 0.9,
+        enableAnimation: true,
+        enableAnimationChaos: false,
+        animationInterval: 2,
+        animationTailType: 1,
+        animationTailRatio: 0.16,
+        animationSpeed: 0.85,
+        animationIdle: 1_600,
+        height: 0,
+      }))
+      configureOverlayMaterial(line, 0.9)
+      line.renderOrder = 35 + index
+      return [level, line]
+    })) as Record<CongestionLevel, mapvthree.Polyline>
 
     this.markers = engine.add(new mapvthree.EffectModelPoint(INTERSECTION_MARKER_EFFECT_OPTIONS))
     this.markers.model = this.markerModel
@@ -220,16 +234,47 @@ export class IntersectionTopologyLayer {
     this.nodes = nodes
     this.markerFeatures = pointFeatures
     this.routeEntries = links.map((link) => this.routeEntry(routesById.get(link.id)!, link.distanceMeters))
-    const baseFeatures = this.routeEntries.map((entry) => entry.baseFeature)
-    const flowFeatures = this.routeEntries.map((entry) => entry.flowFeature)
+    this.visibleRouteIds = this.routeEntries.map((entry) => entry.id)
     this.refreshMarkerSources()
-    this.baseLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: baseFeatures })
-    this.flowLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features: flowFeatures })
-    this.visibleRouteKey = this.routeEntries.map((entry) => entry.id).join('|')
+    this.baseLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({
+      type: 'FeatureCollection',
+      features: this.routeEntries.map((entry) => entry.baseFeature),
+    })
+    this.visibleRouteKey = this.visibleRouteIds.join('|')
     this.visibleRouteCount = this.routeEntries.length
+    this.applyFlowLineData(this.routeEntries)
     this.refreshViewport()
     this.engine.requestRender()
     return nodes
+  }
+
+  setRouteCongestion(levels: Record<string, CongestionLevel | string>): void {
+    const normalized: Record<string, CongestionLevel> = {}
+    for (const [routeId, level] of Object.entries(levels)) {
+      normalized[routeId] = normalizeCongestionLevel(level)
+    }
+    const key = this.visibleRouteIds
+      .map((routeId) => `${routeId}:${normalized[routeId] ?? 'free'}`)
+      .join('|')
+    if (key === this.congestionKey) return
+    this.routeCongestion = normalized
+    this.congestionKey = key
+    const visible = this.routeEntries.filter((entry) => this.visibleRouteIds.includes(entry.id))
+    this.applyFlowLineData(visible.length ? visible : this.routeEntries)
+    this.engine.requestRender()
+  }
+
+  setIntersectionCongestion(levels: Record<string, CongestionLevel | string>): void {
+    const routeLevels: Record<string, CongestionLevel> = {}
+    for (const entry of this.routeEntries) {
+      const [from, to] = entry.id.split(':')
+      const fromLevel = normalizeCongestionLevel(levels[from] ?? 'free')
+      const toLevel = normalizeCongestionLevel(levels[to] ?? 'free')
+      routeLevels[entry.id] = CONGESTION_LEVEL_RANK[fromLevel] >= CONGESTION_LEVEL_RANK[toLevel]
+        ? fromLevel
+        : toLevel
+    }
+    this.setRouteCongestion(routeLevels)
   }
 
   refreshViewport(
@@ -247,19 +292,19 @@ export class IntersectionTopologyLayer {
         geographicDistanceMeters(center, sample) <= visibleRadius
       )))
     const key = visible.map((entry) => entry.id).join('|')
-    if (key === this.visibleRouteKey) return
-    const baseCollection = {
+    if (key === this.visibleRouteKey) {
+      this.applyFlowLineData(visible)
+      return
+    }
+    this.baseLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON({
       type: 'FeatureCollection',
       features: visible.map((entry) => entry.baseFeature),
-    }
-    const flowCollection = {
-      type: 'FeatureCollection',
-      features: visible.map((entry) => entry.flowFeature),
-    }
-    this.baseLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON(baseCollection)
-    this.flowLine.dataSource = mapvthree.GeoJSONDataSource.fromGeoJSON(flowCollection)
+    })
+    this.visibleRouteIds = visible.map((entry) => entry.id)
     this.visibleRouteKey = key
     this.visibleRouteCount = visible.length
+    this.congestionKey = ''
+    this.applyFlowLineData(visible)
     this.engine.requestRender()
   }
 
@@ -275,13 +320,15 @@ export class IntersectionTopologyLayer {
   destroy(): void {
     this.destroyed = true
     this.baseLine.dataSource?.clear()
-    this.flowLine.dataSource?.clear()
+    for (const line of Object.values(this.flowLines)) {
+      line.dataSource?.clear()
+      this.engine.remove(line)
+    }
     this.markers.dataSource?.clear()
     this.activeMarker.dataSource?.clear()
     this.waves.dataSource?.clear()
     this.labels.dataSource?.clear()
     this.engine.remove(this.baseLine)
-    this.engine.remove(this.flowLine)
     this.engine.remove(this.markers)
     this.engine.remove(this.activeMarker)
     this.engine.remove(this.waves)
@@ -290,10 +337,32 @@ export class IntersectionTopologyLayer {
     this.nodes = []
     this.markerFeatures = []
     this.routeEntries = []
+    this.routeCongestion = {}
+    this.visibleRouteIds = []
     this.visibleRouteKey = ''
+    this.congestionKey = ''
     this.visibleRouteCount = 0
     this.activeIntersectionId = null
     this.activeLabelKey = ''
+  }
+
+  private applyFlowLineData(entries: TopologyRouteEntry[]): void {
+    const buckets: Record<CongestionLevel, Record<string, unknown>[]> = {
+      free: [],
+      slow: [],
+      congested: [],
+      severe: [],
+    }
+    for (const entry of entries) {
+      const level = normalizeCongestionLevel(this.routeCongestion[entry.id] ?? 'free')
+      buckets[level].push(entry.flowFeature)
+    }
+    for (const level of FLOW_LEVELS) {
+      const features = buckets[level]
+      this.flowLines[level].dataSource = features.length
+        ? mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features })
+        : null
+    }
   }
 
   private async loadMarkerModels(): Promise<void> {

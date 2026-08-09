@@ -47,10 +47,10 @@ const layout = computed(() => RIGHT_SIDEBAR_SECTION_HEADERS[props.variant])
         </linearGradient>
         <linearGradient
           :id="`rs-sh-edge-${uid}`"
-          x1="32"
-          y1="12"
-          x2="274"
-          y2="12"
+          x1="32.325"
+          y1="13.235"
+          x2="274.55"
+          y2="13.235"
           gradientUnits="userSpaceOnUse"
         >
           <stop stop-color="#67B7FD" stop-opacity="0.7" />
@@ -61,10 +61,10 @@ const layout = computed(() => RIGHT_SIDEBAR_SECTION_HEADERS[props.variant])
         </linearGradient>
         <linearGradient
           :id="`rs-sh-accent-${uid}`"
-          x1="166"
-          y1="6"
-          x2="364"
-          y2="6"
+          x1="166.837"
+          y1="6.618"
+          x2="364.74"
+          y2="6.618"
           gradientUnits="userSpaceOnUse"
         >
           <stop stop-color="#5575E2" stop-opacity="0.55" />
@@ -72,10 +72,10 @@ const layout = computed(() => RIGHT_SIDEBAR_SECTION_HEADERS[props.variant])
         </linearGradient>
         <linearGradient
           :id="`rs-sh-stripe-${uid}`"
-          x1="305"
-          y1="24"
-          x2="306"
-          y2="36"
+          x1="305.041"
+          y1="25.142"
+          x2="306.554"
+          y2="36.984"
           gradientUnits="userSpaceOnUse"
         >
           <stop offset="0.116" stop-color="#5D7BFB" stop-opacity="0" />
@@ -83,10 +83,10 @@ const layout = computed(() => RIGHT_SIDEBAR_SECTION_HEADERS[props.variant])
         </linearGradient>
         <linearGradient
           :id="`rs-sh-bottom-${uid}`"
-          x1="0"
-          y1="40"
-          x2="368"
-          y2="40"
+          x1="-0.143"
+          y1="45.004"
+          x2="367.832"
+          y2="45.004"
           gradientUnits="userSpaceOnUse"
         >
           <stop stop-color="#557FE9" stop-opacity="0.05" />
@@ -118,29 +118,29 @@ const layout = computed(() => RIGHT_SIDEBAR_SECTION_HEADERS[props.variant])
           width="160"
           :height="layout.height"
         >
-          <rect x="1" y="0" width="158.732" :height="layout.height" fill="#D9D9D9" />
+          <rect x="0.888" y="0" width="158.734" :height="layout.height" fill="#D9D9D9" />
         </mask>
       </defs>
 
       <path
-        d="M159.763 0H7.215L0 8.235V39.024H368V22.955L357.692 11.478H169.554L159.763 0Z"
+        d="M159.776 0H7.216L0 8.235V40H368V23.529L357.692 11.765H169.569L159.776 0Z"
         fill="#1D3373"
         fill-opacity="0.64"
       />
       <path
-        d="M159.763 0H7.215L0 8.235V39.024H368V22.955L357.692 11.478H169.554L159.763 0Z"
+        d="M159.776 0H7.216L0 8.235V40H368V23.529L357.692 11.765H169.569L159.776 0Z"
         :fill="`url(#rs-sh-fill-${uid})`"
       />
 
       <g :filter="`url(#rs-sh-cyan-glow-${uid})`">
         <path
-          d="M9.1 2.295H159.908L169.7 13.773H357.839L366.939 23.906L369 22.955L358.693 11.478H170.585L160.793 0H8.246L1.031 8.034L3.092 8.985L9.1 2.295Z"
+          d="M8.957 2.647H159.768L169.56 15.882H357.701L366.801 27.567L368.863 26.471L358.555 13.235H170.445L160.653 0H8.103L0.888 9.265L2.949 10.361L8.957 2.647Z"
           fill="#60B7FC"
           fill-opacity="0.47"
           shape-rendering="crispEdges"
         />
         <path
-          d="M9.1 2.295H159.908L169.7 13.773H357.839L366.939 23.906L369 22.955L358.693 11.478H170.585L160.793 0H8.246L1.031 8.034L3.092 8.985L9.1 2.295Z"
+          d="M8.957 2.647H159.768L169.56 15.882H357.701L366.801 27.567L368.863 26.471L358.555 13.235H170.445L160.653 0H8.103L0.888 9.265L2.949 10.361L8.957 2.647Z"
           :fill="`url(#rs-sh-edge-${uid})`"
           shape-rendering="crispEdges"
         />
@@ -148,29 +148,29 @@ const layout = computed(() => RIGHT_SIDEBAR_SECTION_HEADERS[props.variant])
 
       <g :mask="`url(#rs-sh-halo-mask-${uid})`">
         <ellipse
-          cx="80"
-          cy="1.3"
-          rx="42.8"
-          ry="21.2"
+          cx="80.77"
+          cy="1.324"
+          rx="42.776"
+          ry="21.176"
           fill="#3B5DD4"
           fill-opacity="0.49"
           :filter="`url(#rs-sh-halo-lg-${uid})`"
         />
         <ellipse
-          cx="80"
-          cy="1.3"
-          rx="17"
-          ry="9.3"
+          cx="80.77"
+          cy="1.324"
+          rx="17.007"
+          ry="9.265"
           fill="#3B5DD4"
           fill-opacity="0.99"
           :filter="`url(#rs-sh-halo-sm-${uid})`"
         />
       </g>
 
-      <rect x="0" y="38.8" width="368" height="1.15" :fill="`url(#rs-sh-bottom-${uid})`" />
+      <rect x="-0.143" y="43.677" width="367.975" height="1.324" :fill="`url(#rs-sh-bottom-${uid})`" />
 
       <path
-        d="M166.837 0H364.74L369.877 6.619H171.991L166.837 0Z"
+        d="M166.837 0H359.586L364.74 6.618H171.991L166.837 0Z"
         :fill="`url(#rs-sh-accent-${uid})`"
       />
 

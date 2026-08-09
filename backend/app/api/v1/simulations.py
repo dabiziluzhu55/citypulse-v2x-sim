@@ -1,4 +1,4 @@
-"""仿真生命周期接口与WebSocket实时推送：委托统一SimulationService"""
+# 仿真生命周期接口与WebSocket实时推送SimulationService
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from queue import Empty
 from fastapi import APIRouter, Depends, Query, Response, WebSocket, WebSocketDisconnect, status
 
 from ...schemas.events import EventCreatedResponse, EventRequest
+from ...schemas.intelligence import IntelligencePayload
 from ...schemas.simulations import (
     MetricsResponse,
     SetPlaybackSpeedRequest,
@@ -54,6 +55,7 @@ def start_simulation(
         status_url=f"/api/v1/simulations/{session_id}",
         websocket_url=f"/api/v1/simulations/{session_id}/stream",
         metrics_url=f"/api/v1/simulations/{session_id}/metrics",
+        intelligence_url=f"/api/v1/simulations/{session_id}/intelligence",
         scenario_preset_id=request_body.scenario_preset_id,
     )
 
@@ -72,6 +74,33 @@ def get_simulation_metrics(
     service: SimulationService = Depends(get_simulation_service),
 ) -> MetricsResponse:
     return MetricsResponse(**service.get_metrics(session_id))
+
+
+@router.get(
+    "/simulations/{session_id}/intelligence",
+    response_model=IntelligencePayload,
+)
+def get_simulation_intelligence(
+    session_id: str,
+    service: SimulationService = Depends(get_simulation_service),
+) -> IntelligencePayload:
+    return IntelligencePayload(**service.get_intelligence(session_id))
+
+
+@router.get("/simulations/{session_id}/event-detection")
+def get_simulation_event_detection(
+    session_id: str,
+    service: SimulationService = Depends(get_simulation_service),
+) -> dict:
+    return service.get_intelligence(session_id)["event_detection"]
+
+
+@router.get("/simulations/{session_id}/prediction")
+def get_simulation_prediction(
+    session_id: str,
+    service: SimulationService = Depends(get_simulation_service),
+) -> dict:
+    return service.get_intelligence(session_id)["prediction"]
 
 
 @router.post("/simulations/{session_id}/stop", response_model=StopSimulationResponse)

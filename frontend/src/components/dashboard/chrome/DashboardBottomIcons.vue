@@ -29,7 +29,7 @@ const {
       <span class="dashboard-bottom-icons__crop" aria-hidden="true"><img :src="bottomIconsBg" alt="" /></span>
       <strong>车路云通信记录</strong>
     </button>
-    <span class="dashboard-bottom-icons__label dashboard-bottom-icons__label--right">路测设备</span>
+    <span class="dashboard-bottom-icons__label dashboard-bottom-icons__label--right">路侧设备</span>
   </div>
 </template>
 
@@ -84,6 +84,7 @@ const {
 }
 .dashboard-bottom-icons__side-toggle {
   left: 4px;
+  bottom: 12px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -102,7 +103,10 @@ const {
 .dashboard-bottom-icons__communication:hover .dashboard-bottom-icons__crop,
 .dashboard-bottom-icons__communication:focus-visible .dashboard-bottom-icons__crop { transform: translateX(-50%) translateY(-2px); filter: drop-shadow(0 0 9px #21e6ff); }
 .dashboard-bottom-icons__communication:focus-visible { outline: none; }
-.dashboard-bottom-icons__label--right { right: 12px; }
+.dashboard-bottom-icons__label--right {
+  right: 12px;
+  bottom: 12px;
+}
 @media (max-width: 1320px) {
   .dashboard-bottom-icons { transform: translateX(-50%) scale(.9); transform-origin: center bottom; }
 }

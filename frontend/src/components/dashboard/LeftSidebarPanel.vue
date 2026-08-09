@@ -43,7 +43,17 @@ import LeftSidebarFrameSvg from './LeftSidebarFrameSvg.vue'
 import LeftSidebarBottomChrome from './LeftSidebarBottomChrome.vue'
 import LeftSidebarSectionHeader from './LeftSidebarSectionHeader.vue'
 import HourMinuteStepper from './HourMinuteStepper.vue'
-import { LEFT_SIDEBAR_DESIGN_HEIGHT, LEFT_SIDEBAR_DESIGN_WIDTH, LEFT_SIDEBAR_REFERENCE_LAYOUT } from '../../constants/leftSidebarLayout'
+import {
+  LEFT_SIDEBAR_CONTENT_HEIGHT,
+  LEFT_SIDEBAR_CONTENT_OFFSET_X,
+  LEFT_SIDEBAR_CONTENT_OFFSET_Y,
+  LEFT_SIDEBAR_CONTENT_SCALE,
+  LEFT_SIDEBAR_CONTENT_WIDTH,
+  LEFT_SIDEBAR_DESIGN_HEIGHT,
+  LEFT_SIDEBAR_DESIGN_WIDTH,
+  LEFT_SIDEBAR_DESIGN_WIDTH_BASE,
+  LEFT_SIDEBAR_REFERENCE_LAYOUT,
+} from '../../constants/leftSidebarLayout'
 import type { SimulationSnapshot, SimulationState, StartSimulationRequest } from '../../types/simulation'
 import { formatIntersectionLabel } from '../../utils/intersectionLabels'
 import { validateScenarioArchive } from '../../utils/scenarioArchiveValidation'
@@ -698,13 +708,41 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 <template>
   <section class="left-sidebar" aria-label="左侧数据面板">
     <div
-      class="left-sidebar__canvas"
+      class="left-sidebar__scaler"
+      :style="{
+        width: `${LEFT_SIDEBAR_DESIGN_WIDTH}px`,
+        height: `${LEFT_SIDEBAR_DESIGN_HEIGHT}px`,
+        '--dashboard-left-sidebar-design-width': `${LEFT_SIDEBAR_DESIGN_WIDTH}px`,
+        '--dashboard-sidebar-design-height': `${LEFT_SIDEBAR_DESIGN_HEIGHT}px`,
+      }"
+    >
+    <div
+      class="left-sidebar__shell"
       :style="{
         width: `${LEFT_SIDEBAR_DESIGN_WIDTH}px`,
         height: `${LEFT_SIDEBAR_DESIGN_HEIGHT}px`,
       }"
     >
-      <LeftSidebarFrameSvg class="left-sidebar__frame" />
+      <!-- 外框单独拉宽到与右侧一致的 560，不拉伸内部控件 -->
+      <div
+        class="left-sidebar__frame-slot"
+        :style="{
+          width: `${LEFT_SIDEBAR_DESIGN_WIDTH_BASE}px`,
+          height: `${LEFT_SIDEBAR_DESIGN_HEIGHT}px`,
+        }"
+      >
+        <LeftSidebarFrameSvg class="left-sidebar__frame" />
+      </div>
+      <div
+        class="left-sidebar__content"
+        :style="{
+          width: `${LEFT_SIDEBAR_CONTENT_WIDTH}px`,
+          height: `${LEFT_SIDEBAR_CONTENT_HEIGHT}px`,
+          left: `${LEFT_SIDEBAR_CONTENT_OFFSET_X}px`,
+          top: `${LEFT_SIDEBAR_CONTENT_OFFSET_Y}px`,
+          transform: `scale(${LEFT_SIDEBAR_CONTENT_SCALE})`,
+        }"
+      >
       <LeftSidebarSectionHeader title="仿真场景配置" variant="scenario" />
 
       <button v-if="statusMessage" type="button" class="left-sidebar__status-dot" :class="{ 'is-feedback': feedback }" :title="statusMessage" :aria-label="statusMessage" @click="dismissStatusMessage" />
@@ -736,9 +774,9 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
       <div
         class="left-sidebar__disturbance"
         :style="{
-          left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fields[2].left}px`,
+          left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.disturbanceTargets.left}px`,
           top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.disturbanceTargets.top}px`,
-          width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.timeRange.width}px`,
+          width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.disturbanceTargets.width}px`,
         }"
       >
         <span class="left-sidebar__field-label">扰动事件</span>
@@ -788,17 +826,43 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
         </div>
       </div>
 
-      <div class="left-sidebar__config-summary" :title="configNote">
+      <div
+        class="left-sidebar__config-summary"
+        :title="configNote"
+        :style="{
+          left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.summary.left}px`,
+          top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.summary.top}px`,
+          width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.summary.width}px`,
+          height: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.summary.height}px`,
+        }"
+      >
         <span v-for="line in configNote.split('\n')" :key="line">{{ line }}</span>
       </div>
 
-      <div class="left-sidebar__file-actions">
+      <div
+        class="left-sidebar__file-actions"
+        :style="{
+          left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.left}px`,
+          top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.top}px`,
+          width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.width}px`,
+          height: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.height}px`,
+          gap: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.gap}px`,
+          gridTemplateColumns: `repeat(2, ${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.buttonWidth}px)`,
+        }"
+      >
         <button type="button" @click="saveConfig">保存仿真场景</button>
         <button type="button" :disabled="exporting" @click="exportConfig">{{ exporting ? '导出中…' : '导出当前仿真场景' }}</button>
       </div>
 
       <LeftSidebarSectionHeader title="管控算法选择" variant="algorithm" />
-      <div class="left-sidebar__algorithm-select">
+      <div
+        class="left-sidebar__algorithm-select"
+        :style="{
+          left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.algorithmSelect.left}px`,
+          top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.algorithmSelect.top}px`,
+          width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.algorithmSelect.width}px`,
+        }"
+      >
         <el-select
           :model-value="config.control_mode"
           :disabled="isSessionActive"
@@ -840,8 +904,14 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
             aria-haspopup="listbox"
             :title="playbackSpeedTitle"
             :aria-label="playbackSpeedTitle"
+            :style="{
+              left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.speedBadge.left}px`,
+              top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.speedBadge.top}px`,
+              width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.speedBadge.width}px`,
+              height: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.speedBadge.height}px`,
+            }"
           >
-            <span>×{{ config.playback_speed }}</span>
+            <span>倍速：×{{ config.playback_speed }}</span>
           </button>
           <template #dropdown>
             <el-dropdown-menu aria-label="仿真播放倍速">
@@ -866,7 +936,17 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
         <button type="button" :disabled="!sessionId || !canStop || controlling" @click="emit('stop')">结束仿真</button>
       </div>
 
-      <div class="left-sidebar__runtime" :class="`is-${state?.toLowerCase() ?? 'ready'}`" aria-live="polite">
+      <div
+        class="left-sidebar__runtime"
+        :class="`is-${state?.toLowerCase() ?? 'ready'}`"
+        aria-live="polite"
+        :style="{
+          left: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.runtime.left}px`,
+          top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.runtime.top}px`,
+          width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.runtime.width}px`,
+          height: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.runtime.height}px`,
+        }"
+      >
         <div class="left-sidebar__runtime-head">
           <strong><i aria-hidden="true" />{{ stateLabel }}</strong>
           <em>{{ algorithmLabel }}</em>
@@ -884,6 +964,8 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
         </dl>
         <p v-if="playbackBusy" class="left-sidebar__runtime-warning">仿真计算繁忙，时间推进慢于墙钟时间</p>
       </div>
+      </div>
+    </div>
     </div>
 
     <Teleport to="body">
@@ -910,9 +992,9 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
             <div><dt>失败阶段</dt><dd>{{ runtimeFailureStage }}</dd></div>
             <div><dt>会话状态</dt><dd>{{ stateLabel }}</dd></div>
           </dl>
-          <p>{{ statusError || '仿真运行失败，请检查后端原始错误。' }}</p>
+          <p>{{ statusError || '仿真运行失败，请检查错误信息。' }}</p>
           <details open>
-            <summary>后端原始错误</summary>
+            <summary>错误信息</summary>
             <pre>{{ runtimeRawError }}</pre>
           </details>
         </section>
@@ -1034,27 +1116,49 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 <style scoped>
 .left-sidebar {
   container-type: size;
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
   width: 100%;
   height: 100%;
   min-height: 0;
+  padding-left: 4px;
   overflow: hidden;
   pointer-events: auto;
 }
 
-.left-sidebar__canvas {
-  --ls-scale: min(1, calc(100cqw / 439px), calc(100cqh / 870px));
-  position: relative;
-  color: #fff;
-  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  transform: scale(var(--ls-scale));
+.left-sidebar__scaler {
   transform-origin: top left;
+  transform: scale(min(1, 100cqw / var(--dashboard-left-sidebar-design-width, 600px), 100cqh / var(--dashboard-sidebar-design-height, 990px)));
+}
+
+.left-sidebar__shell {
+  position: relative;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.left-sidebar__frame-slot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .left-sidebar__frame {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
+}
+
+.left-sidebar__content {
+  position: absolute;
+  z-index: 1;
+  color: #fff;
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  transform-origin: top left;
 }
 
 .left-sidebar__status {
@@ -1176,12 +1280,12 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__time-parts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 25px;
 }
 .left-sidebar__time-stepper-field {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 8px; 
 }
 .left-sidebar__time-stepper-field > span {
   color: #83b9d7;
@@ -1213,10 +1317,6 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__config-summary {
   position: absolute;
   z-index: 3;
-  left: 28px;
-  top: 342px;
-  width: 358px;
-  height: 53px;
   display: grid;
   grid-template-columns: 66px minmax(0, 1fr);
   align-items: center;
@@ -1226,6 +1326,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   border-radius: 26px;
   background: linear-gradient(180deg, rgba(4, 49, 91, 0.86), rgba(2, 24, 54, 0.76));
   box-shadow: inset 0 -1px 0 rgba(206, 240, 255, 0.35), 0 0 12px rgba(0, 102, 255, 0.12);
+  box-sizing: border-box;
 }
 
 .left-sidebar__summary-kicker { color: #8ec8ef; font-size: 12px; letter-spacing: 0.08em; }
@@ -1243,9 +1344,6 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__algorithm-select {
   position: absolute;
   z-index: 3;
-  left: 35px;
-  top: 546px;
-  width: 328px;
 }
 .left-sidebar__algorithm-select :deep(.el-select) { width: 100%; }
 .left-sidebar__algorithm-select :deep(.el-select__wrapper) {
@@ -1313,25 +1411,26 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__controls button:disabled { opacity: 0.42; cursor: not-allowed; }
 
 
-/* 第二张参考图 439×870 精确布局覆盖 */
+/* 内容画布 439×870 精确布局（内容等比缩放；外框单独拉宽至 560） */
 .left-sidebar__status-dot {
   position: absolute; z-index: 8; top: 49px; right: 50px; width: 8px; height: 8px; padding: 0;
   border: 0; border-radius: 50%; background: #ffb458; box-shadow: 0 0 8px #ffb458; cursor: help;
 }
 .left-sidebar__status-dot.is-feedback { background: #62e9ff; box-shadow: 0 0 8px #21e6ff; }
 .left-sidebar__field { width: auto; gap: 5px; }
+.left-sidebar__field.left-sidebar__field--time { gap: 8px; } /* 「仿真展示时间」与下方标签间距 +3px */
 .left-sidebar__field-label { height: 19px; color: #accde6; font-size: 15px; font-weight: 600; line-height: 19px; }
 .left-sidebar__select :deep(.el-select__wrapper) { min-height: 36px; padding: 4px 12px; border-color: rgba(27,126,242,.45); }
 .left-sidebar__select :deep(.el-select__selected-item), .left-sidebar__select :deep(.el-select__placeholder) { font-weight: 600; }
 .left-sidebar__config-summary {
-  left: 32px; top: 345px; width: 330px; height: 43px; display: flex; flex-direction: column;
+  display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 0; padding: 5px 12px; border-color: rgba(98,190,255,.7);
   background: linear-gradient(180deg,rgba(3,38,73,.88),rgba(1,20,46,.82)); color: #edf8ff;
   font-size: 12px; font-weight: 600; line-height: 1.35; white-space: nowrap;
 }
 .left-sidebar__file-actions {
-  position: absolute; z-index: 4; left: 28px; top: 400px; width: 334px; height: 38px;
-  display: grid; grid-template-columns: 161px 161px; gap: 12px;
+  position: absolute; z-index: 4;
+  display: grid;
 }
 .left-sidebar__file-actions input { display: none; }
 .left-sidebar__file-actions button, .left-sidebar__controls button {
@@ -1344,10 +1443,10 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__controls button:hover:not(:disabled), .left-sidebar__controls button:focus-visible {
   filter: brightness(1.14) drop-shadow(0 0 5px #52c2fa); outline: none; transform: translateY(-1px);
 }
-.left-sidebar__progress { left: 25px; top: 680px; width: 263px; height: 3px; }
+.left-sidebar__progress { left: 25px; top: 665px; width: 263px; height: 3px; }
 .left-sidebar__progress-knob { width: 7px; height: 7px; }
 .left-sidebar__speed-badge {
-  position: absolute; z-index: 12; left: 295px; top: 663px; width: 88px; height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px;
+  position: absolute; z-index: 12; display: flex; align-items: center; justify-content: center; gap: 6px;
   padding: 0; border: 1px solid rgba(89,147,255,.7); border-radius: 18px; background: rgba(2,19,42,.9);
   box-shadow: inset 0 0 9px rgba(33,139,255,.14), 0 0 7px rgba(33,139,255,.12);
   color: #fff; font: 600 14px/1 inherit; cursor: pointer;
@@ -1375,14 +1474,14 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   background: rgba(33,139,255,.24); color: #fff; text-shadow: 0 0 7px #21e6ff;
 }
 .left-sidebar__mock-note { position: absolute; z-index: 4; left: 35px; top: 647px; color: #8eb5cf; font-size: 9px; }
-.left-sidebar__controls { left: 21px; top: 703px; width: 382px; height: 40px; }
+.left-sidebar__controls { left: 21px; top: 688px; width: 382px; height: 40px; }
 .left-sidebar__controls button { border-width: 1px; display: grid; place-items: center; font-size: 18px; font-weight: 800; line-height: 1; letter-spacing: .02em; text-shadow: 0 1px 3px rgba(0,25,64,.65), 0 0 6px rgba(92,228,255,.2); white-space: nowrap; }
 .left-sidebar__runtime {
-  position: absolute; z-index: 4; left: 28px; top: 758px; width: 356px; height: 82px;
+  position: absolute; z-index: 4; box-sizing: border-box;
   padding-top: 8px; border-top: 1px solid rgba(82,194,250,.28); color: #b9d9ec;
 }
-.left-sidebar__runtime-head { height: 22px; display: flex; align-items: center; gap: 10px; font-size: 10px; }
-.left-sidebar__runtime-head strong { display: flex; align-items: center; gap: 6px; color: #d8eaff; font-size: 11px; }
+.left-sidebar__runtime-head { height: 22px; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.left-sidebar__runtime-head strong { display: flex; align-items: center; gap: 6px; color: #d8eaff; font-size: 14px; }
 .left-sidebar__runtime-head strong i { width: 6px; height: 6px; border-radius: 50%; background: #8da3b5; box-shadow: 0 0 6px currentColor; }
 .left-sidebar__runtime-head em { min-width: 0; margin-left: auto; overflow: hidden; color: #8fc6e5; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .left-sidebar__runtime-error-button {
@@ -1401,10 +1500,20 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .left-sidebar__runtime.is-stopping .left-sidebar__runtime-head strong i { background: #e8b94c; }
 .left-sidebar__runtime.is-failed .left-sidebar__runtime-head strong { color: #ff9d9d; }
 .left-sidebar__runtime.is-failed .left-sidebar__runtime-head strong i { background: #ff6b6b; }
-.left-sidebar__runtime dl { height: 39px; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 3px 0 0; }
-.left-sidebar__runtime dl div { min-width: 0; }
-.left-sidebar__runtime dt { color: #668fa9; font-size: 9px; white-space: nowrap; }
-.left-sidebar__runtime dd { margin: 3px 0 0; overflow: hidden; color: #eefaff; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+/*
+ * 三项按内容宽度排布 + space-between：
+ * 左贴「仿真时间」、右贴「实际推进」（与上方算法名右缘对齐），中间等分空隙。
+ */
+.left-sidebar__runtime dl {
+  height: 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin: 3px 0 0;
+}
+.left-sidebar__runtime dl div { flex: 0 0 auto; min-width: 0; }
+.left-sidebar__runtime dt { color: #668fa9; font-size: 12px; white-space: nowrap; }
+.left-sidebar__runtime dd { margin: 3px 0 0; overflow: hidden; color: #eefaff; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .left-sidebar__runtime-warning { margin: 0; color: #ffd879; font-size: 9px; line-height: 1.2; white-space: nowrap; }
 
 .runtime-error-modal {

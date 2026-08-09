@@ -1,4 +1,9 @@
 import type { BackendControlMode } from '../constants/simulationOptions'
+import type {
+  EventDetectionPayload,
+  PredictionPayload,
+  TrafficStylePayload,
+} from './intelligence'
 
 export type SimulationState =
   | 'QUEUED'
@@ -114,6 +119,7 @@ export interface StartSimulationResponse {
   status_url: string
   websocket_url: string
   metrics_url: string | null
+  intelligence_url?: string | null
   scenario_preset_id: string | null
 }
 
@@ -235,7 +241,12 @@ export interface SimulationSnapshot {
   playback_speed: number | null
   intersections: Record<string, SimulationIntersectionRuntime>
   vehicles: SimulationVehicle[]
+  /** 用户扰动事件，与算法识别无关 */
   events: SimulationEvent[]
+  /** 算法事件识别结果，与用户扰动events无关 */
+  event_detection?: EventDetectionPayload | null
+  prediction?: PredictionPayload | null
+  traffic_style?: TrafficStylePayload | null
   metrics: SimulationMetrics
   evaluation?: SimulationEvaluation | null
   error: string | null

@@ -1,4 +1,4 @@
-"""Max Pressure 兼容导入包装；实现位于 traffic_control.max_pressure。"""
+"""Max Pressure兼容导入；实现位于traffic_control.max_pressure"""
 
 from __future__ import annotations
 

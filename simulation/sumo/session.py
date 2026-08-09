@@ -94,14 +94,14 @@ class SimulationConfig:
     decision_interval: float = 5.0
     minimum_green: float = 5.0
     seed: int = 42
-    step_length: float = 0.1
+    step_length: float = 0.2
     gui: bool = False
     realtime: bool = False
     playback_speed: float | None = None
     start_paused: bool = False
-    snapshot_interval_seconds: float = 0.5
+    snapshot_interval_seconds: float = 1
     ai_observer_module: str = ""
-    ai_frame_interval_seconds: float = 0.5
+    ai_frame_interval_seconds: float = 1
     ai_observer_shutdown_timeout: float = 5.0
     initial_events: tuple[DisturbanceEvent, ...] = ()
 

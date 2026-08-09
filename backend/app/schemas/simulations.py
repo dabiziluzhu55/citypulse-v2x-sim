@@ -1,4 +1,4 @@
-"""仿真请求与响应Schema：control_mode从管控模式注册表校验"""
+# 仿真请求与响应Schema由control_mode注册表校验
 
 from __future__ import annotations
 
@@ -66,6 +66,7 @@ class StartSimulationResponse(BaseModel):
     status_url: str
     websocket_url: str
     metrics_url: str | None = None
+    intelligence_url: str | None = None
     scenario_preset_id: str | None = None
 
 
@@ -105,6 +106,9 @@ class SimulationStatusResponse(BaseModel):
     events: list[dict[str, Any]]
     metrics: dict[str, Any]
     evaluation: dict[str, Any] | None = None
+    event_detection: dict[str, Any] | None = None
+    prediction: dict[str, Any] | None = None
+    traffic_style: dict[str, Any] | None = None
     error: str | None = None
 
 

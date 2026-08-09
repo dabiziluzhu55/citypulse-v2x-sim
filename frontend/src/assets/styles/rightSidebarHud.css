@@ -48,6 +48,7 @@
   font-size: calc(13px / var(--rs-content-scale, 1));
 }
 
+/* 与左侧「仿真场景配置」标题字号一致（21px），不再按 content-scale 放大 */
 .rs-section-header__title {
-  font-size: var(--rs-font-section);
+  font-size: 21px;
 }

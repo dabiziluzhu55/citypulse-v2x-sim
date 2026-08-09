@@ -114,7 +114,7 @@ pip install -r backend/requirements.txt
 
 ## 启动后端
 
-在仓库根目录执行（只需把仓库根加入 `PYTHONPATH`，**不要**依赖 `algorithms/`）：
+在仓库根目录执行（把仓库根加入 `PYTHONPATH`；事件识别会 import `algorithms.event_detection`）：
 
 ```bash
 cd <repo-root>
@@ -494,6 +494,7 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
   "status_url": "/api/v1/simulations/session-a1b2c3d4",
   "websocket_url": "/api/v1/simulations/session-a1b2c3d4/stream",
   "metrics_url": "/api/v1/simulations/session-a1b2c3d4/metrics",
+  "intelligence_url": "/api/v1/simulations/session-a1b2c3d4/intelligence",
   "scenario_preset_id": "east_dense"
 }
 ```
@@ -505,6 +506,22 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 **接口：** `GET /api/v1/simulations/{session_id}`
 
 **`state`：** `QUEUED` / `STARTING` / `RUNNING` / `PAUSED` / `STOPPING` / `STOPPED` / `COMPLETED` / `FAILED`
+
+状态与 WebSocket 快照额外包含（与扰动 `events` 分离）：
+
+- `event_detection`：算法识别事件卡片（含经纬度、`display_label`、`prediction_summary`）
+- `prediction`：官方路口未来约 60 秒 `vehicle_count`（当前为 `moving_average`）
+- `traffic_style.edges`：按 `edge_id` 的拥堵等级，供蓝线着色，独立于事件图标
+
+`traffic_state` 展示约定：`localized_blockage`=局部占道，`spillback`=排队溢出，`unknown_abnormal`=交通异常
+
+### 6.2.1 查询事件识别与短时预测
+
+**接口：**
+
+- `GET /api/v1/simulations/{session_id}/intelligence`：完整智能分析结果
+- `GET /api/v1/simulations/{session_id}/event-detection`：仅事件卡片
+- `GET /api/v1/simulations/{session_id}/prediction`：仅短时预测
 
 ### 6.3 查询仿真指标
 
@@ -706,6 +723,9 @@ Worker 应回调 `ALGORITHM_BASE_URL` + `/api/v1/internal/algorithm/{name}/...`
 | 6 Simulations | POST | `/simulations` |
 | 6 Simulations | GET | `/simulations/{id}` |
 | 6 Simulations | GET | `/simulations/{id}/metrics` |
+| 6 Simulations | GET | `/simulations/{id}/intelligence` |
+| 6 Simulations | GET | `/simulations/{id}/event-detection` |
+| 6 Simulations | GET | `/simulations/{id}/prediction` |
 | 6 Simulations | POST | `/simulations/{id}/stop` |
 | 6 Simulations | POST | `/simulations/{id}/pause` |
 | 6 Simulations | POST | `/simulations/{id}/resume` |

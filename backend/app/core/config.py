@@ -1,4 +1,4 @@
-"""仿真配置与环境设置"""
+# 仿真配置与环境设置
 
 from __future__ import annotations
 
@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     algorithm_base_url: str = "http://127.0.0.1:8000"
     algorithm_timeout: float = 2.0
     decision_interval: float = 5.0
+
+    # 事件识别与短时预测采样
+    intelligence_sample_seconds: float = 5.0
+    intelligence_history_frames: int = 12
+    prediction_horizon_seconds: float = 60.0
 
     cesium_ion_token: str | None = None
     tianditu_token: str | None = None

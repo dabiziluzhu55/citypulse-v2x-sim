@@ -33,10 +33,12 @@
   --dashboard-top-offset: 118px;
   --dashboard-bottom-offset: 92px;
   --dashboard-side-gap: 12px;
-  --dashboard-left-width: 560px;
+  /* 左右侧栏槽位与设计对称 */
+  --dashboard-left-width: 600px;
   --dashboard-right-width: 600px;
-  --dashboard-left-sidebar-design-width: 560px;
+  --dashboard-left-sidebar-design-width: 600px;
   --dashboard-right-sidebar-design-width: 600px;
+  --dashboard-sidebar-design-height: 990px;
 }
 
 .dashboard-page {
@@ -231,7 +233,7 @@
 
 @media (min-width: 1321px) and (max-width: 1680px) {
   :root {
-    --dashboard-left-width: 470px;
+    --dashboard-left-width: 500px;
     --dashboard-right-width: 500px;
   }
 
