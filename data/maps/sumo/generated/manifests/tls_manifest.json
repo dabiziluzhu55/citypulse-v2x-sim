@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "source_net": "/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/TotalMap_20.net.xml",
+  "source_net": "/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/official/map/TotalMap_20.net.xml",
   "source_net_sha256": "c42ab960738b4efabe75f078c8cda3011b1adba2b3b6040d64adecb9269edf4b",
   "netconvert_version": "Eclipse SUMO netconvert Version 1.12.0",
   "sumo_version": "Eclipse SUMO sumo Version 1.12.0",

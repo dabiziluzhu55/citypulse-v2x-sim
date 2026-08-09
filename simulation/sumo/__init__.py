@@ -1,6 +1,6 @@
 """Official CityPulse SUMO signal build and runtime package."""
 
-from .config import load_signal_configuration
+from .building.config import load_signal_configuration
 from .controller import SafePhaseController, SignalStage
 from .events import (
     AccidentEvent,

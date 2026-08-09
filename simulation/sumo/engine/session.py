@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 from uuid import uuid4
 
-from .artifacts import GeneratedArtifactLayout
+from .building.artifacts import GeneratedArtifactLayout
 from .events import (
     AccidentEvent,
     DisturbanceEvent,
@@ -298,7 +298,7 @@ def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatal
         raise SessionError("Rebuild traffic artifacts to obtain manifest schema_version 3.")
     if int(tls.get("schema_version", 0)) != 2:
         raise SessionError("Rebuild signal artifacts to obtain manifest schema_version 2.")
-    mapping_path = generated_dir.parent / "TotalMap_20.intersections.json"
+    mapping_path = generated_dir.parent / "official" / "map" / "TotalMap_20.intersections.json"
     mapping = _read_json(mapping_path)
     traffic_intersections = traffic.get("intersections", {})
     tls_intersections = tls.get("intersections", {})
@@ -627,8 +627,8 @@ class SimulationManager:
             _selected_manifest,
             _validate_actions,
         )
-        from .config import load_signal_configuration
-        from .build_tls import DEFAULT_MAPPING, DEFAULT_PLANS, DEFAULT_TOPOLOGY
+        from .building.config import load_signal_configuration
+        from .building.build_tls import DEFAULT_MAPPING, DEFAULT_PLANS, DEFAULT_TOPOLOGY
         from .vehicle import (
             StoppedLaneChangeGuard,
             VehicleActionController,

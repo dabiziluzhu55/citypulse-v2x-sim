@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Dict, Sequence
 
-from .config import SignalConfigurationError, SignalProgram
+from .building.config import SignalConfigurationError, SignalProgram
 from .controller import SafePhaseController, SignalStage, TransitionTiming
 from .policy import (
     AIFrameObservation,

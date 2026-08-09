@@ -29,7 +29,7 @@ from .traffic_policy import TrafficGenerationPolicyError
 from .vehicle_profiles import VehicleProfileError
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SUMO_DIR = PROJECT_ROOT / "data" / "maps" / "sumo" / "official"
 DEFAULT_MAPPING = SUMO_DIR / "map" / "TotalMap_20.intersections.json"
 DEFAULT_BASE_NET = SUMO_DIR / "map" / "TotalMap_20.net.xml"

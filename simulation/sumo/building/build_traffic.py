@@ -40,11 +40,11 @@ from .vehicle_profiles import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SUMO_DIR = PROJECT_ROOT / "data" / "maps" / "sumo"
-DEFAULT_DEMANDS = SUMO_DIR / "official_traffic_demands.json"
-DEFAULT_VEHICLE_PROFILES = SUMO_DIR / "vehicle_profiles.json"
-DEFAULT_TRAFFIC_POLICY = SUMO_DIR / "traffic_generation_policy.json"
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+SUMO_DIR = PROJECT_ROOT / "data" / "maps" / "sumo" / "official"
+DEFAULT_DEMANDS = SUMO_DIR / "traffic" / "official_traffic_demands.json"
+DEFAULT_VEHICLE_PROFILES = SUMO_DIR / "traffic" / "vehicle_profiles.json"
+DEFAULT_TRAFFIC_POLICY = SUMO_DIR / "traffic" / "traffic_generation_policy.json"
 DEFAULT_OUTPUT_DIR = DEFAULT_GENERATED_DIR
 DEFAULT_MANIFEST = GeneratedArtifactLayout(DEFAULT_OUTPUT_DIR).tls_manifest
 ROUTE_SAMPLER_SEEDS = (42, 43, 44, 45, 46)

@@ -20,7 +20,7 @@ from .policy import (
     VehicleTrafficObservation,
     VehicleTypeMetadata,
 )
-from .vehicle_profiles import VehicleProfile
+from .building.vehicle_profiles import VehicleProfile
 
 
 STOPPED_SPEED_EPSILON_MPS = 1e-3
