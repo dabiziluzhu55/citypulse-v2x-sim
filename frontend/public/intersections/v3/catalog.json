@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 3,
+  "generatedAt": "2026-08-01T15:32:59.042Z",
+  "sourceSha256": "493108a5f29a64b1bff31f57ae415e7c87e817878d92bd88c7ad482d45079de8",
+  "intersections": [
+    {
+      "intersectionId": "demo_1",
+      "junctionId": "4427",
+      "tlsIds": [
+        "4427"
+      ],
+      "longitude": 116.10226663297253,
+      "latitude": 39.00465074763003,
+      "horizontalScale": 1.286844155512418,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_1/manifest.json"
+    },
+    {
+      "intersectionId": "demo_2",
+      "junctionId": "317",
+      "tlsIds": [
+        "317"
+      ],
+      "longitude": 116.12675965447777,
+      "latitude": 38.99114715117407,
+      "horizontalScale": 1.2865986009638224,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_2/manifest.json"
+    },
+    {
+      "intersectionId": "demo_3",
+      "junctionId": "citypulse_demo_3",
+      "tlsIds": [
+        "citypulse_demo_3"
+      ],
+      "longitude": 116.07027241525815,
+      "latitude": 38.97680025459062,
+      "horizontalScale": 1.2863378924456101,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_3/manifest.json"
+    },
+    {
+      "intersectionId": "demo_4",
+      "junctionId": "3935",
+      "tlsIds": [
+        "3935"
+      ],
+      "longitude": 116.1255620109444,
+      "latitude": 38.98582386570558,
+      "horizontalScale": 1.286501845697153,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_4/manifest.json"
+    },
+    {
+      "intersectionId": "demo_5",
+      "junctionId": "3807",
+      "tlsIds": [
+        "3807"
+      ],
+      "longitude": 116.09068035919238,
+      "latitude": 38.99231994691652,
+      "horizontalScale": 1.2866199209790221,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_5/manifest.json"
+    },
+    {
+      "intersectionId": "demo_6",
+      "junctionId": "3936",
+      "tlsIds": [
+        "3936"
+      ],
+      "longitude": 116.09011436816664,
+      "latitude": 38.98367933020957,
+      "horizontalScale": 1.2864628741800834,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_6/manifest.json"
+    },
+    {
+      "intersectionId": "demo_7",
+      "junctionId": "610",
+      "tlsIds": [
+        "610"
+      ],
+      "longitude": 116.17430501605378,
+      "latitude": 39.03967144709492,
+      "horizontalScale": 1.2874817556064442,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_7/manifest.json"
+    },
+    {
+      "intersectionId": "demo_8",
+      "junctionId": "4393",
+      "tlsIds": [
+        "J1"
+      ],
+      "longitude": 116.11790768069226,
+      "latitude": 39.01999504707965,
+      "horizontalScale": 1.2871233826931008,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_8/manifest.json"
+    },
+    {
+      "intersectionId": "demo_9",
+      "junctionId": "3864",
+      "tlsIds": [
+        "3864"
+      ],
+      "longitude": 116.09952185774969,
+      "latitude": 38.98402142723796,
+      "horizontalScale": 1.286469090650582,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_9/manifest.json"
+    },
+    {
+      "intersectionId": "demo_10",
+      "junctionId": "4162",
+      "tlsIds": [
+        "4162"
+      ],
+      "longitude": 116.14677475468618,
+      "latitude": 39.01899784214636,
+      "horizontalScale": 1.2871052296158856,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_10/manifest.json"
+    },
+    {
+      "intersectionId": "demo_11",
+      "junctionId": "4306",
+      "tlsIds": [
+        "4306"
+      ],
+      "longitude": 115.84048543525937,
+      "latitude": 39.069587277958085,
+      "horizontalScale": 1.288027296409214,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_11/manifest.json"
+    },
+    {
+      "intersectionId": "demo_12",
+      "junctionId": "182",
+      "tlsIds": [
+        "182"
+      ],
+      "longitude": 115.84084676241758,
+      "latitude": 39.06119998268326,
+      "horizontalScale": 1.2878742648406627,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_12/manifest.json"
+    },
+    {
+      "intersectionId": "demo_13",
+      "junctionId": "1204",
+      "tlsIds": [
+        "1204"
+      ],
+      "longitude": 115.90459978716477,
+      "latitude": 39.07338819537085,
+      "horizontalScale": 1.2880966676442336,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_13/manifest.json"
+    },
+    {
+      "intersectionId": "demo_14",
+      "junctionId": "892",
+      "tlsIds": [
+        "892"
+      ],
+      "longitude": 115.91790845273727,
+      "latitude": 39.049874797372325,
+      "horizontalScale": 1.2876677310575344,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_14/manifest.json"
+    },
+    {
+      "intersectionId": "demo_15",
+      "junctionId": "1117",
+      "tlsIds": [
+        "1117"
+      ],
+      "longitude": 115.92139069725552,
+      "latitude": 39.04982675218359,
+      "horizontalScale": 1.2876668551210602,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_15/manifest.json"
+    },
+    {
+      "intersectionId": "demo_16",
+      "junctionId": "3279",
+      "tlsIds": [
+        "3279"
+      ],
+      "longitude": 115.94381787827305,
+      "latitude": 39.06083206086729,
+      "horizontalScale": 1.2878675533361155,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_16/manifest.json"
+    },
+    {
+      "intersectionId": "demo_17",
+      "junctionId": "3702",
+      "tlsIds": [
+        "3702"
+      ],
+      "longitude": 115.91002243682276,
+      "latitude": 39.06021687838958,
+      "horizontalScale": 1.2878563316616232,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_17/manifest.json"
+    },
+    {
+      "intersectionId": "demo_18",
+      "junctionId": "4409",
+      "tlsIds": [
+        "4409"
+      ],
+      "longitude": 115.91641959445278,
+      "latitude": 39.06908969159511,
+      "horizontalScale": 1.2880182158427054,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_18/manifest.json"
+    },
+    {
+      "intersectionId": "demo_19",
+      "junctionId": "891",
+      "tlsIds": [
+        "891"
+      ],
+      "longitude": 115.91713911613819,
+      "latitude": 39.051529714619285,
+      "horizontalScale": 1.2876979039827885,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_19/manifest.json"
+    },
+    {
+      "intersectionId": "demo_20",
+      "junctionId": "3637",
+      "tlsIds": [
+        "3637"
+      ],
+      "longitude": 115.9069186942489,
+      "latitude": 39.066230224288574,
+      "horizontalScale": 1.287966037139592,
+      "radiusMeters": 520,
+      "assetUrl": "/intersections/v3/demo_20/manifest.json"
+    }
+  ]
+}

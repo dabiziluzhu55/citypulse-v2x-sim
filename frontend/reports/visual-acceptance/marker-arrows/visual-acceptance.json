@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-03T14:11:55.2902365Z",
+  "status": "pass_with_runtime_viewport_note",
+  "capture": {
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "plannedViewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "note": "The in-app browser was fixed at 1280x720. All captures share the same viewport and camera preset, so the 20-intersection comparison remains consistent."
+  },
+  "markerContract": {
+    "model": "/models/yizhuang_cross_1.glb",
+    "keepSize": false,
+    "worldSizeMeters": 30,
+    "rotationPeriodMs": 8000,
+    "normalAndActiveSourcesMutuallyExclusive": true,
+    "selectedWaveOnly": true
+  },
+  "laneArrowContract": {
+    "auditReport": "../../lane-direction-arrow-audit.json",
+    "controlledLaneCount": 120,
+    "multiMovementLaneCount": 96,
+    "arrowCount": 120,
+    "classificationWarnings": 29,
+    "patternCounts": {
+      "l": 6,
+      "r": 3,
+      "s": 15,
+      "l+s": 30,
+      "s+r": 35,
+      "l+r": 5,
+      "l+s+r": 26
+    },
+    "note": "The 29 warnings are SUMO-connected lanes classified as bicycle in the generated manifests. They retain arrows because the source SUMO network explicitly defines their movements; lanes without SUMO movement evidence do not receive arrows."
+  },
+  "artifacts": {
+    "markerContactSheet": "marker-contact-sheet.png",
+    "arrowContactSheet": "arrow-contact-sheet.png"
+  },
+  "intersections": [
+    { "id": "demo_1", "marker": "marker/demo_1.png", "arrow": "arrow/demo_1.png", "status": "pass" },
+    { "id": "demo_2", "marker": "marker/demo_2.png", "arrow": "arrow/demo_2.png", "status": "pass" },
+    { "id": "demo_3", "marker": "marker/demo_3.png", "arrow": "arrow/demo_3.png", "status": "pass" },
+    { "id": "demo_4", "marker": "marker/demo_4.png", "arrow": "arrow/demo_4.png", "status": "pass" },
+    { "id": "demo_5", "marker": "marker/demo_5.png", "arrow": "arrow/demo_5.png", "status": "pass", "note": "Recaptured after rejecting an earlier WebGL-timeout frame." },
+    { "id": "demo_6", "marker": "marker/demo_6.png", "arrow": "arrow/demo_6.png", "status": "pass" },
+    { "id": "demo_7", "marker": "marker/demo_7.png", "arrow": "arrow/demo_7.png", "status": "pass" },
+    { "id": "demo_8", "marker": "marker/demo_8.png", "arrow": "arrow/demo_8.png", "status": "pass" },
+    { "id": "demo_9", "marker": "marker/demo_9.png", "arrow": "arrow/demo_9.png", "status": "pass" },
+    { "id": "demo_10", "marker": "marker/demo_10.png", "arrow": "arrow/demo_10.png", "status": "pass" },
+    { "id": "demo_11", "marker": "marker/demo_11.png", "arrow": "arrow/demo_11.png", "status": "pass" },
+    { "id": "demo_12", "marker": "marker/demo_12.png", "arrow": "arrow/demo_12.png", "status": "pass" },
+    { "id": "demo_13", "marker": "marker/demo_13.png", "arrow": "arrow/demo_13.png", "status": "pass" },
+    { "id": "demo_14", "marker": "marker/demo_14.png", "arrow": "arrow/demo_14.png", "status": "pass" },
+    { "id": "demo_15", "marker": "marker/demo_15.png", "arrow": "arrow/demo_15.png", "status": "pass" },
+    { "id": "demo_16", "marker": "marker/demo_16.png", "arrow": "arrow/demo_16.png", "status": "pass" },
+    { "id": "demo_17", "marker": "marker/demo_17.png", "arrow": "arrow/demo_17.png", "status": "pass" },
+    { "id": "demo_18", "marker": "marker/demo_18.png", "arrow": "arrow/demo_18.png", "status": "pass" },
+    { "id": "demo_19", "marker": "marker/demo_19.png", "arrow": "arrow/demo_19.png", "status": "pass" },
+    { "id": "demo_20", "marker": "marker/demo_20.png", "arrow": "arrow/demo_20.png", "status": "pass" }
+  ]
+}

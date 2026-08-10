@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-02T01:00:00+08:00",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "baseline": {
+    "branch": "devFronted",
+    "commit": "d74e7700b42280720f22415a356cc45764c19efd",
+    "remote": "origin/devFronted",
+    "fixesCommittedOrPushed": false
+  },
+  "acceptancePolicy": {
+    "nearView": "approximately 900 meter oblique intersection view",
+    "topView": "elevated approach and Baidu base-road transition view",
+    "maximumVisibleRoadBreakPixels": 3,
+    "buildingPolicy": "local 3D Tiles only; sparse source coverage is reported and never fabricated",
+    "roadPolicy": "topology-backed joints fill gaps up to 20 meters; Baidu roads bridge long-distance source gaps"
+  },
+  "roadContinuityAudit": {
+    "asset": "../../road-continuity-audit.json",
+    "sourceSha256": "493108a5f29a64b1bff31f57ae415e7c87e817878d92bd88c7ad482d45079de8",
+    "checkedIntersections": 20,
+    "passedIntersections": 20,
+    "roadJointCount": 517,
+    "secondaryJointCount": 497,
+    "eligibleConnectionCount": 2538,
+    "uncoveredEligibleConnectionCount": 0,
+    "invalidJointCount": 0,
+    "sourceConnectionsOver20Meters": 338,
+    "sourceConnectionsOver20MetersPolicy": "reported as source data gaps and never fabricated"
+  },
+  "topologyRoutes": {
+    "asset": "../../../public/intersections/v3/topology-routes.json",
+    "schemaVersion": 1,
+    "sourceSha256": "493108a5f29a64b1bff31f57ae415e7c87e817878d92bd88c7ad482d45079de8",
+    "routeCount": 26,
+    "coordinateCount": 7200,
+    "baiduRoadBaseAndFlowMeters": [0.39, 0.45],
+    "localRoadBaseAndFlowMeters": [1.18, 1.24],
+    "transitionMeters": 20,
+    "depthTest": true,
+    "depthWrite": false,
+    "straightLineFallback": false,
+    "screenshot": "flow-light-road-surface.png"
+  },
+  "simulation": {
+    "status": "pass",
+    "sessionId": "43dd4169-9018-4d59-94f2-8d8d2a9224d9",
+    "preset": "demo_2_single",
+    "period": "off_peak",
+    "algorithm": "fixed",
+    "durationSeconds": 180,
+    "playbackRate": 5,
+    "finalState": "COMPLETED",
+    "finalSequence": 902,
+    "visibleVehicles": 436,
+    "throughput": 520,
+    "averageWaitingSeconds": 4.63,
+    "averageTravelSeconds": 68.22,
+    "departedVehicles": 462,
+    "arrivedVehicles": 26,
+    "signalPhaseChanged": true
+  },
+  "loadResilience": {
+    "status": "pass",
+    "regressionIntersection": "demo_14",
+    "cameraCompletionWatchdog": true,
+    "optionalEnvironmentResourcesBlockRoadActivation": false,
+    "continuousSwitchingThroughDemo20": true
+  },
+  "intersections": [
+    {"id":"demo_1","near":"road-continuity/near/demo_1.png","top":"road-continuity/top/demo_1.png","buildingCoverage":"dense","roadTransition":"local-overlap","visibleRoadBreak":"pass"},
+    {"id":"demo_2","near":"road-continuity/near/demo_2.png","top":"road-continuity/top/demo_2.png","buildingCoverage":"sparse-source","roadTransition":"local-overlap","visibleRoadBreak":"pass"},
+    {"id":"demo_3","near":"road-continuity/near/demo_3.png","top":"road-continuity/top/demo_3.png","buildingCoverage":"moderate","roadTransition":"local-overlap","visibleRoadBreak":"pass"},
+    {"id":"demo_4","near":"road-continuity/near/demo_4.png","top":"road-continuity/top/demo_4.png","buildingCoverage":"moderate","roadTransition":"local-overlap","visibleRoadBreak":"pass"},
+    {"id":"demo_5","near":"road-continuity/near/demo_5.png","top":"road-continuity/top/demo_5.png","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass"},
+    {"id":"demo_6","near":"road-continuity/near/demo_6.png","top":"road-continuity/top/demo_6.png","buildingCoverage":"dense","roadTransition":"local-overlap","visibleRoadBreak":"pass"},
+    {"id":"demo_7","near":"road-continuity/near/demo_7.png","top":"road-continuity/top/demo_7.png","buildingCoverage":"sparse-source","roadTransition":"local-overlap","visibleRoadBreak":"pass"},
+    {"id":"demo_8","near":"road-continuity/near/demo_8.png","top":"road-continuity/top/demo_8.png","buildingCoverage":"sparse-source","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass"},
+    {"id":"demo_9","near":"road-continuity/near/demo_9.png","top":"road-continuity/top/demo_9.png","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass"},
+    {"id":"demo_10","near":"road-continuity/near/demo_10.png","top":"road-continuity/top/demo_10.png","buildingCoverage":"moderate","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass"},
+    {"id":"demo_11","near":"road-continuity/near/demo_11.png","top":"road-continuity/top/demo_11.png","buildingCoverage":"sparse-source","roadTransition":"local-overlap","visibleRoadBreak":"pass"},
+    {"id":"demo_12","near":"road-continuity/near/demo_12.png","top":"road-continuity/top/demo_12.png","buildingCoverage":"moderate","roadTransition":"local-overlap","visibleRoadBreak":"pass"},
+    {"id":"demo_13","near":"road-continuity/near/demo_13.png","top":"road-continuity/top/demo_13.png","buildingCoverage":"sparse-source","roadTransition":"local-overlap","visibleRoadBreak":"pass"},
+    {"id":"demo_14","near":"road-continuity/near/demo_14.png","top":"road-continuity/top/demo_14.png","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass"},
+    {"id":"demo_15","near":"road-continuity/near/demo_15.png","top":"road-continuity/top/demo_15.png","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass","visualWarning":"persistent distant black land-surface bands in steep elevated view; local road joints remain continuous"},
+    {"id":"demo_16","near":"road-continuity/near/demo_16.png","top":"road-continuity/top/demo_16.png","buildingCoverage":"moderate","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass"},
+    {"id":"demo_17","near":"road-continuity/near/demo_17.png","top":"road-continuity/top/demo_17.png","buildingCoverage":"moderate","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass"},
+    {"id":"demo_18","near":"road-continuity/near/demo_18.png","top":"road-continuity/top/demo_18.png","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass"},
+    {"id":"demo_19","near":"road-continuity/near/demo_19.png","top":"road-continuity/top/demo_19.png","buildingCoverage":"dense","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass"},
+    {"id":"demo_20","near":"road-continuity/near/demo_20.png","top":"road-continuity/top/demo_20.png","buildingCoverage":"moderate","roadTransition":"baidu-base-dependent","visibleRoadBreak":"pass"}
+  ],
+  "summary": {
+    "checked": 20,
+    "roadContinuityPassed": 20,
+    "roadContinuityFailed": 0,
+    "visualWarnings": ["demo_15 elevated distant land-surface bands"],
+    "sparseBuildingSources": ["demo_2", "demo_7", "demo_8", "demo_11", "demo_13"],
+    "baiduRoadDependent": ["demo_5", "demo_8", "demo_9", "demo_10", "demo_14", "demo_15", "demo_16", "demo_17", "demo_18", "demo_19", "demo_20"],
+    "nearContactSheet": "road-continuity/near-contact-sheet.png",
+    "topContactSheet": "road-continuity/top-contact-sheet.png"
+  }
+}

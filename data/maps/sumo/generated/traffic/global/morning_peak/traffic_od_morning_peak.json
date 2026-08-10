@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "period_id": "morning_peak",
+  "unit": "pcu",
+  "row_axis": "origin_zone",
+  "column_axis": "destination_zone",
+  "endpoint_assignment": "first_and_last_official_count_location",
+  "intermediate_zones_ignored": true,
+  "diagonal_policy": "excluded_and_written_as_zero",
+  "zones": [
+    {
+      "zone_id": "zone_1",
+      "intersection_ids": [
+        "demo_1",
+        "demo_8",
+        "demo_10"
+      ]
+    },
+    {
+      "zone_id": "zone_2",
+      "intersection_ids": [
+        "demo_2",
+        "demo_4"
+      ]
+    },
+    {
+      "zone_id": "zone_3",
+      "intersection_ids": [
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9"
+      ]
+    },
+    {
+      "zone_id": "zone_4",
+      "intersection_ids": [
+        "demo_7"
+      ]
+    },
+    {
+      "zone_id": "zone_5",
+      "intersection_ids": [
+        "demo_11",
+        "demo_12"
+      ]
+    },
+    {
+      "zone_id": "zone_6",
+      "intersection_ids": [
+        "demo_13"
+      ]
+    },
+    {
+      "zone_id": "zone_7",
+      "intersection_ids": [
+        "demo_14",
+        "demo_15",
+        "demo_19"
+      ]
+    },
+    {
+      "zone_id": "zone_8",
+      "intersection_ids": [
+        "demo_16"
+      ]
+    },
+    {
+      "zone_id": "zone_9",
+      "intersection_ids": [
+        "demo_17",
+        "demo_18",
+        "demo_20"
+      ]
+    }
+  ],
+  "matrix_pcu": [
+    [
+      0.0,
+      889.0,
+      1362.5,
+      758.0,
+      127.0,
+      41.0,
+      266.0,
+      153.5,
+      253.0
+    ],
+    [
+      987.5,
+      0.0,
+      497.5,
+      139.5,
+      34.0,
+      6.5,
+      49.5,
+      16.5,
+      36.5
+    ],
+    [
+      1107.5,
+      361.0,
+      0.0,
+      57.5,
+      186.5,
+      36.0,
+      332.0,
+      188.5,
+      226.5
+    ],
+    [
+      525.5,
+      138.0,
+      68.5,
+      0.0,
+      33.5,
+      8.5,
+      37.0,
+      35.5,
+      89.5
+    ],
+    [
+      138.5,
+      38.5,
+      182.0,
+      37.0,
+      0.0,
+      214.5,
+      1075.0,
+      422.0,
+      188.5
+    ],
+    [
+      29.5,
+      4.5,
+      15.5,
+      8.5,
+      254.0,
+      0.0,
+      8.0,
+      72.0,
+      45.0
+    ],
+    [
+      243.0,
+      55.5,
+      159.0,
+      118.0,
+      1107.0,
+      84.0,
+      0.0,
+      661.0,
+      1122.0
+    ],
+    [
+      188.0,
+      21.0,
+      141.5,
+      74.5,
+      455.0,
+      152.0,
+      734.0,
+      0.0,
+      753.0
+    ],
+    [
+      274.0,
+      45.0,
+      129.0,
+      81.5,
+      338.0,
+      277.5,
+      1099.0,
+      629.0,
+      0.0
+    ]
+  ],
+  "matrix_vehicle_count": [
+    [
+      0,
+      809,
+      1180,
+      737,
+      58,
+      20,
+      123,
+      71,
+      116
+    ],
+    [
+      907,
+      0,
+      493,
+      106,
+      16,
+      3,
+      23,
+      8,
+      17
+    ],
+    [
+      1007,
+      336,
+      0,
+      30,
+      88,
+      17,
+      155,
+      88,
+      105
+    ],
+    [
+      509,
+      110,
+      34,
+      0,
+      15,
+      4,
+      17,
+      16,
+      42
+    ],
+    [
+      64,
+      18,
+      86,
+      17,
+      0,
+      192,
+      904,
+      315,
+      168
+    ],
+    [
+      14,
+      2,
+      7,
+      4,
+      243,
+      0,
+      8,
+      63,
+      45
+    ],
+    [
+      113,
+      25,
+      73,
+      55,
+      913,
+      84,
+      0,
+      661,
+      1122
+    ],
+    [
+      88,
+      10,
+      65,
+      35,
+      385,
+      152,
+      734,
+      0,
+      752
+    ],
+    [
+      127,
+      22,
+      59,
+      37,
+      300,
+      274,
+      1099,
+      627,
+      0
+    ]
+  ],
+  "total_sampled_vehicle_count": 31933,
+  "total_sampled_pcu": 36651.0,
+  "interzonal_pcu": 20723.5,
+  "interzonal_vehicle_count": 17222,
+  "excluded_intra_zone_pcu": 15927.5,
+  "excluded_intra_zone_vehicle_count": 14711
+}

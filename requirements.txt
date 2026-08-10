@@ -1,0 +1,6 @@
+numpy>=1.23,<3
+scipy>=1.9,<2
+celery[redis]>=5.4,<6
+redis>=5,<7
+# SUMO Worker 本地算法依赖（IPPO）；勿放入 backend/requirements，避免 FastAPI 启动导入 torch
+torch>=2.0.0

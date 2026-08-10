@@ -1,0 +1,199 @@
+import type { SimulationSnapshot } from '../types/simulation'
+
+const MAX_INTERVAL_SAMPLES = 60
+
+export interface VehicleRuntimeDiagnosticUpdate {
+  inputCount: number
+  visibleCount: number
+  fps: number | null
+  bufferSeconds: number
+  sourceRate: number
+  sourceGapP95Ms: number
+  sourceGapP99Ms: number
+  underrunCount: number
+  underrunActive: boolean
+  laneRecoveryCount: number
+  temporarilyHiddenCount: number
+  retainedMissingCount: number
+  confirmedRemovedCount: number
+  twinResetCount: number
+}
+
+interface RuntimeDiagnosticState {
+  sessionId: string
+  officialTime: string
+  backendElapsedSeconds: number
+  requestedPlaybackSpeed: number
+  achievedPlaybackSpeed: number | null
+  snapshotGapP50Ms: number
+  snapshotGapP95Ms: number
+  snapshotGapP99Ms: number
+  snapshotDecodeMs: number
+  coalescedSnapshotCount: number
+  websocketConnected: boolean
+  websocketDisconnectCount: number
+  websocketReconnectCount: number
+  renderFps: number | null
+  longTaskCount: number
+  inputVehicles: number
+  visibleVehicles: number
+  clippedVehicles: number
+  laneRecoveryVehicles: number
+  temporarilyHiddenVehicles: number
+  retainedMissingVehicles: number
+  confirmedRemovedVehicles: number
+  motionBufferSeconds: number
+  motionBufferUnderruns: number
+  motionBufferUnderrunActive: boolean
+  twinResetCount: number
+  capturedAt: string
+}
+
+const state: RuntimeDiagnosticState = {
+  sessionId: '',
+  officialTime: '',
+  backendElapsedSeconds: 0,
+  requestedPlaybackSpeed: 1,
+  achievedPlaybackSpeed: null,
+  snapshotGapP50Ms: 0,
+  snapshotGapP95Ms: 0,
+  snapshotGapP99Ms: 0,
+  snapshotDecodeMs: 0,
+  coalescedSnapshotCount: 0,
+  websocketConnected: false,
+  websocketDisconnectCount: 0,
+  websocketReconnectCount: 0,
+  renderFps: null,
+  longTaskCount: 0,
+  inputVehicles: 0,
+  visibleVehicles: 0,
+  clippedVehicles: 0,
+  laneRecoveryVehicles: 0,
+  temporarilyHiddenVehicles: 0,
+  retainedMissingVehicles: 0,
+  confirmedRemovedVehicles: 0,
+  motionBufferSeconds: 0,
+  motionBufferUnderruns: 0,
+  motionBufferUnderrunActive: false,
+  twinResetCount: 0,
+  capturedAt: '',
+}
+
+let snapshotIntervalsMs: number[] = []
+let lastSnapshotArrivalMs: number | null = null
+let connectionObserved = false
+let previousConnection = false
+
+function percentile(values: number[], ratio: number): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((left, right) => left - right)
+  return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio))]
+}
+
+function publish(): void {
+  state.capturedAt = new Date().toISOString()
+  if (typeof window === 'undefined' || !import.meta.env?.DEV) return
+  const diagnosticWindow = window as Window & {
+    __CITYPULSE_VEHICLE_DIAGNOSTICS__?: RuntimeDiagnosticState
+  }
+  diagnosticWindow.__CITYPULSE_VEHICLE_DIAGNOSTICS__ = { ...state }
+}
+
+export function resetSimulationRuntimeDiagnostics(sessionId = ''): void {
+  state.sessionId = sessionId
+  state.officialTime = ''
+  state.backendElapsedSeconds = 0
+  state.requestedPlaybackSpeed = 1
+  state.achievedPlaybackSpeed = null
+  state.snapshotGapP50Ms = 0
+  state.snapshotGapP95Ms = 0
+  state.snapshotGapP99Ms = 0
+  state.snapshotDecodeMs = 0
+  state.coalescedSnapshotCount = 0
+  state.renderFps = null
+  state.longTaskCount = 0
+  state.inputVehicles = 0
+  state.visibleVehicles = 0
+  state.clippedVehicles = 0
+  state.laneRecoveryVehicles = 0
+  state.temporarilyHiddenVehicles = 0
+  state.retainedMissingVehicles = 0
+  state.confirmedRemovedVehicles = 0
+  state.motionBufferSeconds = 0
+  state.motionBufferUnderruns = 0
+  state.motionBufferUnderrunActive = false
+  state.twinResetCount = 0
+  snapshotIntervalsMs = []
+  lastSnapshotArrivalMs = null
+  publish()
+}
+
+export function recordSimulationDiagnosticSnapshot(
+  snapshot: SimulationSnapshot,
+  achievedPlaybackSpeed: number | null,
+  arrivalTimeMs = Date.now(),
+): void {
+  if (state.sessionId !== snapshot.session_id) resetSimulationRuntimeDiagnostics(snapshot.session_id)
+  if (lastSnapshotArrivalMs != null && arrivalTimeMs > lastSnapshotArrivalMs) {
+    snapshotIntervalsMs.push(arrivalTimeMs - lastSnapshotArrivalMs)
+    snapshotIntervalsMs = snapshotIntervalsMs.slice(-MAX_INTERVAL_SAMPLES)
+  }
+  lastSnapshotArrivalMs = arrivalTimeMs
+  state.officialTime = snapshot.official_time
+  state.backendElapsedSeconds = snapshot.elapsed_seconds
+  state.requestedPlaybackSpeed = snapshot.playback_speed ?? 1
+  state.achievedPlaybackSpeed = achievedPlaybackSpeed
+  state.snapshotGapP50Ms = percentile(snapshotIntervalsMs, 0.5)
+  state.snapshotGapP95Ms = percentile(snapshotIntervalsMs, 0.95)
+  state.snapshotGapP99Ms = percentile(snapshotIntervalsMs, 0.99)
+  publish()
+}
+
+export function recordSimulationDiagnosticConnection(connected: boolean): void {
+  if (connectionObserved && connected !== previousConnection) {
+    if (connected) state.websocketReconnectCount += 1
+    else state.websocketDisconnectCount += 1
+  }
+  connectionObserved = true
+  previousConnection = connected
+  state.websocketConnected = connected
+  publish()
+}
+
+export function recordSnapshotDecodeDiagnostics(
+  parseDurationMs: number,
+  coalescedSnapshotCount: number,
+): void {
+  if (Number.isFinite(parseDurationMs) && parseDurationMs >= 0) {
+    state.snapshotDecodeMs = parseDurationMs
+  }
+  if (Number.isFinite(coalescedSnapshotCount) && coalescedSnapshotCount > 0) {
+    state.coalescedSnapshotCount += Math.floor(coalescedSnapshotCount)
+  }
+  publish()
+}
+
+export function recordVehicleRuntimeDiagnostics(update: VehicleRuntimeDiagnosticUpdate): void {
+  state.renderFps = update.fps
+  state.inputVehicles = update.inputCount
+  state.visibleVehicles = update.visibleCount
+  state.clippedVehicles = Math.max(0, update.inputCount - update.visibleCount)
+  state.laneRecoveryVehicles = update.laneRecoveryCount
+  state.temporarilyHiddenVehicles = update.temporarilyHiddenCount
+  state.retainedMissingVehicles = update.retainedMissingCount
+  state.confirmedRemovedVehicles = update.confirmedRemovedCount
+  state.motionBufferSeconds = update.bufferSeconds
+  state.motionBufferUnderruns = update.underrunCount
+  state.motionBufferUnderrunActive = update.underrunActive
+  state.twinResetCount = update.twinResetCount
+  publish()
+}
+
+export function recordSimulationLongTasks(count: number): void {
+  if (Number.isFinite(count) && count > 0) state.longTaskCount += Math.floor(count)
+  publish()
+}
+
+export function runtimeDiagnosticsSnapshot(): Readonly<RuntimeDiagnosticState> {
+  return { ...state }
+}

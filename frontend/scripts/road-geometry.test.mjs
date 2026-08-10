@@ -1,0 +1,194 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import test from 'node:test'
+
+import { buildDetailedRoadData, excludeRoadCore } from '../src/mapv/roadGeometry.ts'
+import * as mapDefaults from '../src/constants/mapDefaults.ts'
+import {
+  projectSimulationCoordinateToBaiduMap,
+  projectSimulationCoordinateToBaiduXiongan,
+  placeBaiduCameraTarget,
+  resolveSimulationCoordinateProjector,
+  DEMO_2_SOURCE_CENTER_BD09,
+  XIONGAN_SCENE_ANCHOR_BD09,
+} from '../src/mapv/sceneCoordinates.ts'
+
+const realGeoJson = JSON.parse(readFileSync(
+  new URL('../public/showcase-data/demo_2.roads.wgs84.geojson', import.meta.url),
+  'utf8',
+))
+
+function response(features, metadata = {}) {
+  return {
+    intersection_id: 'demo_2',
+    center: { longitude: 116.126756, latitude: 38.99115 },
+    radius_m: 600,
+    bounds: { west: 116.12, south: 38.98, east: 116.14, north: 39 },
+    geojson: { type: 'FeatureCollection', metadata, features },
+  }
+}
+
+function straightRoad(laneCount = 3) {
+  return {
+    type: 'Feature',
+    properties: {
+      edge_id: 'straight',
+      lane_count: laneCount,
+      width_m: laneCount * 3.35,
+      speed: 22.22,
+      priority: 2,
+    },
+    geometry: {
+      type: 'LineString',
+      coordinates: [
+        [116.125, 38.991],
+        [116.128, 38.991],
+      ],
+    },
+  }
+}
+
+function assertClosedFinitePolygons(features) {
+  for (const feature of features) {
+    const ring = feature.geometry.coordinates[0]
+    assert.ok(ring.length >= 4)
+    assert.deepEqual(ring[0], ring.at(-1))
+    assert.ok(ring.flat().every(Number.isFinite))
+  }
+}
+
+test('a three-lane SUMO centerline becomes stable layered road geometry', () => {
+  const data = buildDetailedRoadData(response([straightRoad()]))
+
+  assert.equal(data.shoulders.length, 1)
+  assert.equal(data.mainSurfaces.length, 1)
+  assert.equal(data.secondarySurfaces.length, 0)
+  assert.equal(data.outerBoundaries.length, 2)
+  assert.equal(data.laneDividers.length, 2)
+  assert.equal(data.medians.length, 0)
+  assertClosedFinitePolygons([...data.shoulders, ...data.mainSurfaces])
+  const longitudes = data.mainSurfaces[0].geometry.coordinates[0].map((point) => point[0])
+  const [expectedLongitude] = projectSimulationCoordinateToBaiduMap([116.1265, 38.991])
+  assert.ok(Math.abs(longitudes.reduce((sum, value) => sum + value, 0) / longitudes.length - expectedLongitude) < 0.005)
+})
+
+test('a realistic intersection core is cut out without removing the surrounding road', () => {
+  const source = response([straightRoad()])
+  const clipped = excludeRoadCore(source, {
+    center: [116.1265, 38.991],
+    radiusMeters: 60,
+  })
+
+  assert.equal(clipped.geojson.features.length, 2)
+  assert.ok(clipped.geojson.features.every((feature) => feature.properties.realistic_core_excluded))
+  for (const feature of clipped.geojson.features) {
+    assert.ok(feature.geometry.coordinates.length >= 2)
+  }
+  const rebuilt = buildDetailedRoadData(clipped)
+  assert.equal(rebuilt.mainSurfaces.length, 2)
+})
+
+test('real SUMO GeoJSON produces lanes, paired medians, and junction markings', () => {
+  const data = buildDetailedRoadData(response(realGeoJson.features, realGeoJson.metadata))
+
+  assert.equal(data.mainSurfaces.length + data.secondarySurfaces.length, 16)
+  assert.equal(data.outerBoundaries.length, 32)
+  assert.equal(data.laneDividers.length, 24)
+  assert.ok(data.medians.length >= 3)
+  assert.ok(data.junctionSurfaces.length >= 1)
+  assert.ok(data.stopLines.length >= 3)
+  assert.ok(data.crosswalkStripes.length >= 12)
+  assertClosedFinitePolygons([
+    ...data.shoulders,
+    ...data.mainSurfaces,
+    ...data.secondarySurfaces,
+    ...data.junctionSurfaces,
+    ...data.stopLines,
+    ...data.crosswalkStripes,
+  ])
+})
+
+test('junction surfaces follow approach boundaries instead of circular patches', () => {
+  const data = buildDetailedRoadData(response(realGeoJson.features, realGeoJson.metadata))
+
+  assert.ok(data.junctionSurfaces.length > 0)
+  for (const surface of data.junctionSurfaces) {
+    const ring = surface.geometry.coordinates[0]
+    assert.notEqual(ring.length, 25, 'a junction must not use the old 24-segment circle')
+    assert.ok(ring.length >= 4 && ring.length <= 13)
+    assert.equal(surface.properties.geometry_kind, 'approach-boundary-hull')
+  }
+})
+
+test('generated zebra bars run with traffic and are distributed across the carriageway', () => {
+  const data = buildDetailedRoadData(response(realGeoJson.features, realGeoJson.metadata))
+
+  assert.ok(data.crosswalkStripes.length >= 12)
+  for (const stripe of data.crosswalkStripes) {
+    assert.equal(stripe.properties.bar_length_m, 4)
+    assert.equal(stripe.properties.bar_width_m, 0.5)
+    assert.deepEqual(stripe.properties.distribution_axis, [
+      -stripe.properties.road_tangent[1],
+      stripe.properties.road_tangent[0],
+    ])
+    const sourceWidth = Number(stripe.properties.width_m)
+    if (Number.isFinite(sourceWidth)) {
+      assert.ok(stripe.properties.bar_length_m < sourceWidth || sourceWidth < 4)
+    }
+  }
+})
+
+test('road geometry is deterministic when backend feature order changes', () => {
+  const original = buildDetailedRoadData(response(realGeoJson.features, realGeoJson.metadata))
+  const reversed = buildDetailedRoadData(response([...realGeoJson.features].reverse(), realGeoJson.metadata))
+
+  assert.deepEqual(reversed, original)
+})
+
+test('road geometry uses the supplied scene projector', () => {
+  const projector = ([longitude, latitude, height]) => [
+    longitude + 1,
+    latitude + 2,
+    height,
+  ]
+  const data = buildDetailedRoadData(response([straightRoad()]), projector)
+  const points = data.mainSurfaces[0].geometry.coordinates[0]
+
+  assert.ok(points.every(([longitude]) => longitude > 117))
+  assert.ok(points.every(([, latitude]) => latitude > 40))
+})
+
+test('scene placement resolves only the explicit Xiongan demo mode', () => {
+  assert.equal(resolveSimulationCoordinateProjector('xiongan-demo'), projectSimulationCoordinateToBaiduXiongan)
+  assert.equal(resolveSimulationCoordinateProjector('actual'), projectSimulationCoordinateToBaiduMap)
+  assert.equal(resolveSimulationCoordinateProjector(undefined), projectSimulationCoordinateToBaiduMap)
+})
+
+test('camera targets are translated once in Xiongan demo mode', () => {
+  const translated = placeBaiduCameraTarget([...DEMO_2_SOURCE_CENTER_BD09, 0], 'xiongan-demo')
+  assert.ok(
+    Math.hypot(
+      translated[0] - XIONGAN_SCENE_ANCHOR_BD09[0],
+      translated[1] - XIONGAN_SCENE_ANCHOR_BD09[1],
+    ) < 1e-12,
+  )
+  assert.deepEqual(
+    placeBaiduCameraTarget([...XIONGAN_SCENE_ANCHOR_BD09, 0], 'xiongan-demo'),
+    [...XIONGAN_SCENE_ANCHOR_BD09, 0],
+  )
+  assert.deepEqual(
+    placeBaiduCameraTarget([...DEMO_2_SOURCE_CENTER_BD09, 0], 'actual'),
+    [...DEMO_2_SOURCE_CENTER_BD09, 0],
+  )
+})
+
+test('3D camera presets preserve free zoom across the twenty-intersection scene', () => {
+  assert.equal(mapDefaults.DEFAULT_CESIUM_CAMERA_HEIGHT, 1800)
+  assert.equal(mapDefaults.BAIDU_3D_MIN_RANGE, 80)
+  assert.equal(mapDefaults.BAIDU_3D_MAX_RANGE, 48000)
+  assert.ok(mapDefaults.CESIUM_CAMERA_PRESETS.every(
+    (preset) => preset.height <= mapDefaults.BAIDU_3D_MAX_RANGE,
+  ))
+  assert.ok(mapDefaults.resolveCesiumCameraPreset('road-cruise').pitchDegrees <= -60)
+  assert.ok(mapDefaults.resolveCesiumCameraPreset('intersection').pitchDegrees <= -55)
+})

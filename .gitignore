@@ -5,13 +5,23 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.*
+!.env.example
 
 # Node
 node_modules/
 dist/
+.vite/
+coverage/
+*.tsbuildinfo
 
 # RL checkpoints
 algorithms/rl/checkpoints/
+
+# IPPO generated experiment artifacts
+algorithms/ippo/runs/
+algorithms/ippo/checkpoints/
+algorithms/ippo/*.pt
 
 # IDE
 .idea/
@@ -19,10 +29,49 @@ algorithms/rl/checkpoints/
 
 # OS
 .DS_Store
+Thumbs.db
 
-# Logs & outputs
+# Logs, outputs, and local verification artifacts
 *.log
 outputs/
+
+# Keep official SUMO sources tracked (required at runtime after refactor).
+# Ignore only local scratch under official/, not the committed map/tls/traffic trees.
+data/maps/sumo/official/**/*.bak
+data/maps/sumo/official/**/*.tmp
+*.bak
+
+# Local run artifacts & backups (kept on disk, not committed)
+.codex-backups/
+algorithms/coslight/runs/
+algorithms/ippo/runs/
+algorithms/ippo/checkpoints/
+
+# Frontend UI capture artifacts
+current-ui*.png
+historical-ui-contact-sheet.jpg
+assets/preview/
+
+# Local browser and verification artifacts
+.playwright-cli/
+_sid.txt
+output/
+# IPPO regression/gate local artifacts (not committed)
+algorithms/ippo/regression_tmp/
+algorithms/ippo/gate_outputs/
+
+# Local rollback backups (not committed)
+.codex-backups/
+
+# Experiment logs (remote scratch)
+logs/
+
+# M1/cooperative run artifacts (kept on disk, not committed)
+algorithms/mappo/runs/
+# Editor/merge backups
+*.orig
+/runs/
+
 
 # CARLA Maps
 data/maps/carla/*

@@ -1,0 +1,137 @@
+export type NetworkSource = 'osm_import' | 'prebuilt_sumo' | 'manual_netedit'
+
+export type TrafficFlowMode = 'flat' | 'morning_peak' | 'evening_peak'
+
+export type TrafficLightPlan = 'fixed_time' | 'default_sumo' | 'custom'
+
+export type DisturbanceType =
+  | 'lane_closure'
+  | 'accident'
+  | 'speed_limit'
+  | 'major_event_opening'
+  | 'major_event_closing'
+
+export interface ScenarioTemplate {
+  template_id: string
+  name: string
+  intersection_count: number
+  description: string
+  map_center?: [number, number]
+  map_bounds?: [number, number, number, number]
+  default_zoom?: number
+}
+
+export interface ScenarioTemplatesResponse {
+  templates: ScenarioTemplate[]
+}
+
+export interface VehicleTypeRatio {
+  car: number
+  bus: number
+  truck: number
+  bike: number
+}
+
+export interface TrafficFlowConfig {
+  mode: TrafficFlowMode
+  flow_scale: number
+  vehicle_types: VehicleTypeRatio
+  duration: number
+}
+
+export interface OdGroup {
+  od_id: string
+  origin: string
+  destination: string
+  vehicles_per_hour: number
+  start_time: number
+  end_time: number
+}
+
+export interface TrafficLightConfig {
+  initial_plan: TrafficLightPlan
+  cycle_length: number
+  min_green: number
+  max_green: number
+  yellow_time: number
+}
+
+export interface LaneClosureDisturbance {
+  event_type: 'lane_closure'
+  event_id: string
+  start_seconds: number
+  end_seconds: number
+  lane_ids: string[]
+}
+
+export interface SpeedLimitDisturbance {
+  event_type: 'speed_limit'
+  event_id: string
+  start_seconds: number
+  end_seconds: number
+  lane_ids: string[]
+  max_speed: number
+}
+
+export interface AccidentDisturbance {
+  event_type: 'accident'
+  event_id: string
+  start_seconds: number
+  end_seconds: number
+  lane_id: string
+  position_ratio: number
+}
+
+export interface MajorEventOpeningDisturbance {
+  event_type: 'major_event_opening'
+  event_id: string
+  start_seconds: number
+  end_seconds: number
+  venue_lane_id?: string
+  source_lane_ids?: string[]
+  vehicle_count: number
+  vehicle_type_id?: string
+}
+
+export interface MajorEventClosingDisturbance {
+  event_type: 'major_event_closing'
+  event_id: string
+  start_seconds: number
+  end_seconds: number
+  venue_lane_id?: string
+  destination_lane_ids?: string[]
+  vehicle_count: number
+  vehicle_type_id?: string
+}
+
+export type DisturbanceEvent =
+  | LaneClosureDisturbance
+  | SpeedLimitDisturbance
+  | AccidentDisturbance
+  | MajorEventOpeningDisturbance
+  | MajorEventClosingDisturbance
+
+export interface CreateScenarioRequest {
+  name: string
+  template_id: string
+  network_source: NetworkSource
+  traffic_flow: TrafficFlowConfig
+  od_groups: OdGroup[]
+  traffic_light: TrafficLightConfig
+  disturbances: DisturbanceEvent[]
+}
+
+export interface CreateScenarioResponse {
+  scenario_id: string
+  status: string
+  files: {
+    net: string
+    route: string
+    config: string
+  }
+}
+
+export interface NetworkConfigForm {
+  template_id: string
+  network_source: NetworkSource
+}

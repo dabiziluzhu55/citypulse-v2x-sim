@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "intersectionId": "demo_1",
+  "facilitiesUrl": "/intersections/v3/demo_1/facilities.json",
+  "streetlight": {
+    "modelUrl": "/assets/roadside/streetlight.glb",
+    "heightMeters": 7.5,
+    "modelYawDegrees": 180
+  },
+  "buildingTilesetUrl": "/3dtiles/intersections/demo_1/tileset.json",
+  "geojson": {
+    "green": "/intersections/v3/demo_1/green.geojson",
+    "water": "/intersections/v3/demo_1/water.geojson"
+  }
+}
