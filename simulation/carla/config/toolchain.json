@@ -1,0 +1,9 @@
+{
+  "sumo_home": "/usr/share/sumo",
+  "carla_root": "/home/kemove/devdata1/zrl/software/carla-0.9.16-src/",
+  "sumo_toolkit_dir": "/home/kemove/devdata1/zrl/software/carla-0.9.16-src/Co-Simulation/Sumo",
+  "exports_dir": "../../data/exports",
+  "maps_xodr_dir": "../../data/maps/xodr",
+  "maps_carla_dir": "../../data/maps/carla",
+  "totalmap_net": "../../data/maps/sumo/generated/network/TotalMap_20.signals.net.xml"
+}

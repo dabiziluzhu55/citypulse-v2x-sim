@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "description": "TAZ（典型场景区域）配置 — 将多个路口合并为一个场景进行裁剪。路口名称需与 config.json 中的 intersections 列表对应。",
+  "taz_groups": [
+    {
+      "name": "EastZone",
+      "intersections": ["demo_3", "demo_5", "demo_6", "demo_9"]
+    },
+    {
+      "name": "WestZone",
+      "intersections": ["demo_14", "demo_15", "demo_19"]
+    }
+  ]
+}

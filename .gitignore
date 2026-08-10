@@ -23,3 +23,7 @@ algorithms/rl/checkpoints/
 # Logs & outputs
 *.log
 outputs/
+
+# CARLA Maps
+data/maps/carla/*
+data/maps/xodr/*
