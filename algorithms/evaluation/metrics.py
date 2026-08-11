@@ -232,14 +232,55 @@ def apply_tripinfo_completed_metrics(
     if not all_records:
         return result
 
+    total_waiting = 0.0
+    unfinished_waiting = 0.0
+    for trip in all_records:
+        waiting = float(trip.get("waitingTime", 0.0))
+        total_waiting += waiting
+        if (
+            float(trip.get("arrival", -1)) < 0
+            or str(trip.get("vaporized", "false")).lower() == "true"
+        ):
+            unfinished_waiting += waiting
+
     result.avg_travel_time_s = sum(
         float(trip.get("duration", 0.0)) for trip in all_records
     ) / len(all_records)
-    result.avg_waiting_time_s = sum(
-        float(trip.get("waitingTime", 0.0)) for trip in all_records
-    ) / len(all_records)
+    result.avg_waiting_time_s = total_waiting / len(all_records)
     result.metric_sources["avg_travel_time_s"] = "tripinfo_all_departed"
     result.metric_sources["avg_waiting_time_s"] = "tripinfo_all_departed"
+
+    # Unified per-run schema totals (Task A).
+    result.all_waiting_total_s = total_waiting
+    result.unfinished_waiting_total_s = unfinished_waiting
+    result.end_waiting_total_s = total_waiting
+    result.departed_count = len(all_records)
+    result.arrived_count = len(completed)
+    result.trip_records = len(all_records)
+    result.provenance.update(
+        {
+            "all_waiting_total_s": "tripinfo_all_departed",
+            "unfinished_waiting_total_s": "tripinfo_unfinished",
+            "end_waiting_total_s": (
+                "tripinfo_all_departed (== all_waiting_total_s, frozen redundancy)"
+            ),
+            "departed_count": "tripinfo_records",
+            "arrived_count": "tripinfo_completed",
+            "avg_travel_time_s": "tripinfo_all_departed",
+            "avg_waiting_time_s": "tripinfo_all_departed",
+        }
+    )
+    result.availability.update(
+        {
+            "all_waiting_total_s": "available",
+            "unfinished_waiting_total_s": "available",
+            "end_waiting_total_s": "available",
+            "departed_count": "available",
+            "arrived_count": "available",
+            "avg_travel_time_s": "available",
+            "avg_waiting_time_s": "available",
+        }
+    )
     result.warnings = [
         warning
         for warning in result.warnings

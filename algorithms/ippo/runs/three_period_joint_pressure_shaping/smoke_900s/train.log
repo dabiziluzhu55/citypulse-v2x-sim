@@ -1,0 +1,504 @@
+2026-08-11 02:37:42,863 [MainProcess:ippo.parallel] INFO: IPPO v8 同步并行训练: 12 episodes × 900s, workers=6, tls=20, periods=['morning_peak', 'off_peak', 'evening_peak'], effective_demand=on, seeds=95502..95513
+2026-08-11 02:37:50,820 [SpawnProcess-3:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:37:50,820 [SpawnProcess-1:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:37:50,926 [SpawnProcess-5:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:37:50,928 [SpawnProcess-2:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:37:51,107 [SpawnProcess-6:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:37:51,107 [SpawnProcess-4:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_morning_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_morning_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_morning_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_morning_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_morning_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_morning_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_morning_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_morning_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_morning_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_morning_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_evening_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_evening_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_evening_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_evening_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_evening_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_evening_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_evening_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_evening_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_evening_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_evening_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+2026-08-11 02:37:56,042 [SpawnProcess-1:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95506
+2026-08-11 02:37:56,086 [SpawnProcess-3:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95503
+2026-08-11 02:37:56,571 [SpawnProcess-2:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95502
+2026-08-11 02:37:56,737 [SpawnProcess-5:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95505
+2026-08-11 02:37:56,870 [SpawnProcess-4:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95507
+2026-08-11 02:37:57,104 [SpawnProcess-6:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95504
+Warning: Vehicle 'passenger_0_4037.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=38.90.
+Warning: Vehicle 'passenger_0_10248.0' performs emergency braking on lane ':891_7_0' with decel=9.00, wished=4.50, severity=1.00, time=40.00.
+Warning: Vehicle 'passenger_0_4038.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=68.90.
+Warning: Vehicle 'passenger_0_4043.0' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=68.90.
+Warning: Vehicle 'passenger_0_5990.0' performs emergency braking on lane ':4306_7_1' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'bus_0_13829.0' performs emergency braking on lane ':4306_26_0' with decel=7.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'passenger_0_9915.0' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=113.90.
+Warning: Vehicle 'passenger_0_8093.0' performs emergency braking on lane ':4306_26_0' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'passenger_0_4105.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=116.50.
+Warning: Vehicle 'passenger_0_4486.0' performs emergency braking on lane ':citypulse_demo_3_0_2' with decel=9.00, wished=4.50, severity=1.00, time=110.20.
+Warning: Vehicle 'passenger_0_4038.1' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=146.60.
+Warning: Vehicle 'passenger_0_7275.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=152.40.
+Warning: Vehicle 'bus_0_6655.0' performs emergency braking on lane '-52216_1' with decel=7.00, wished=4.50, severity=1.00, time=144.30.
+Warning: Vehicle 'passenger_0_9914.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=158.90.
+Warning: Vehicle 'passenger_0_6012.0' performs emergency braking on lane '-56369_1' with decel=9.00, wished=4.50, severity=1.00, time=171.20.
+Warning: Vehicle 'truck_0_13429.1' performs emergency braking on lane ':4409_4_0' with decel=7.00, wished=4.50, severity=1.00, time=173.00.
+Warning: Vehicle 'passenger_0_5337.0' performs emergency braking on lane ':4409_22_0' with decel=9.00, wished=4.50, severity=1.00, time=218.00.
+Warning: Vehicle 'passenger_0_5341.0' performs emergency braking on lane ':4409_22_0' with decel=9.00, wished=4.50, severity=1.00, time=176.70.
+Warning: Vehicle 'passenger_0_6021.0' performs emergency braking on lane ':3864_2_1' with decel=9.00, wished=4.50, severity=1.00, time=221.90.
+Warning: Vehicle 'passenger_0_9978.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=188.90.
+Warning: Vehicle 'passenger_0_4036.0' performs emergency braking on lane '-52227_3' with decel=9.00, wished=4.50, severity=1.00, time=233.90.
+Warning: Vehicle 'bus_0_13512.0' performs emergency braking on lane ':4409_22_0' with decel=7.00, wished=4.50, severity=1.00, time=189.20.
+Warning: Vehicle 'passenger_0_9980.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=203.90.
+Warning: Vehicle 'passenger_0_9914.1' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=208.60.
+Warning: Vehicle 'passenger_0_10109.0' performs emergency braking on lane 'E7_0' with decel=9.00, wished=4.50, severity=1.00, time=203.00.
+Warning: Vehicle 'passenger_0_9927.0' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=203.90.
+Warning: Vehicle 'passenger_0_10973.0' performs emergency braking on lane ':3279_12_0' with decel=9.00, wished=4.50, severity=1.00, time=206.90.
+Warning: Vehicle 'passenger_0_4066.0' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=293.90.
+Warning: Vehicle 'passenger_0_8545.0' performs emergency braking on lane ':4409_4_0' with decel=9.00, wished=4.50, severity=1.00, time=252.80.
+Warning: Vehicle 'passenger_0_5932.0' performs emergency braking on lane ':4306_5_0' with decel=9.00, wished=4.50, severity=1.00, time=310.90.
+Warning: Vehicle 'passenger_0_7364.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=266.30.
+Warning: Vehicle 'passenger_0_8146.9' performs emergency braking on lane ':4306_21_0' with decel=9.00, wished=4.50, severity=1.00, time=257.10.
+Warning: Vehicle 'passenger_0_9606.1' performs emergency braking on lane '-57303_0' with decel=9.00, wished=4.50, severity=1.00, time=262.20.
+Warning: Vehicle 'passenger_0_9606.1' performs emergency braking on lane ':4306_29_1' with decel=9.00, wished=4.50, severity=1.00, time=263.70.
+Warning: Vehicle 'passenger_0_4038.1' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=263.90.
+Warning: Vehicle 'truck_0_4433.0' performs emergency braking on lane ':3936_17_0' with decel=7.00, wished=4.50, severity=1.00, time=327.00.
+Warning: Vehicle 'passenger_0_4105.1' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=281.50.
+Warning: Vehicle 'passenger_0_8628.0' performs emergency braking on lane ':4393_0_2' with decel=9.00, wished=4.50, severity=1.00, time=325.90.
+Warning: Vehicle 'passenger_0_9248.0' performs emergency braking on lane ':3935_28_0' with decel=9.00, wished=4.50, severity=1.00, time=270.00.
+Warning: Vehicle 'passenger_0_7000.0' performs emergency braking on lane ':3935_26_0' with decel=9.00, wished=4.50, severity=1.00, time=270.70.
+Warning: Vehicle 'passenger_0_4077.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=271.40.
+Warning: Vehicle 'passenger_0_8626.1' performs emergency braking on lane '-57109_2' with decel=9.00, wished=4.50, severity=1.00, time=331.20.
+Warning: Vehicle 'truck_0_18519.0' performs emergency braking on lane ':3279_14_0' with decel=7.00, wished=4.50, severity=1.00, time=289.30.
+Warning: Vehicle 'passenger_0_4053.0' performs emergency braking on lane '-52227_3' with decel=9.00, wished=4.50, severity=1.00, time=293.80.
+Warning: Vehicle 'passenger_0_9606.5' performs emergency braking on lane ':4306_29_1' with decel=9.00, wished=4.50, severity=1.00, time=368.70.
+Warning: Vehicle 'bus_0_5727.1' performs emergency braking on lane ':4306_17_0' with decel=7.00, wished=4.50, severity=1.00, time=371.90.
+Warning: Vehicle 'passenger_0_4150.1' performs emergency braking on lane '-52227_0' with decel=9.00, wished=4.50, severity=1.00, time=308.50.
+Warning: Vehicle 'passenger_0_7309.0' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=308.90.
+Warning: Vehicle 'electric_bicycle_0_69.0' performs emergency braking on lane ':891_30_0' with decel=7.00, wished=3.00, severity=1.00, time=311.00.
+Warning: Vehicle 'passenger_0_8088.2' performs emergency braking on lane ':4306_49_0' with decel=9.00, wished=4.50, severity=1.00, time=311.30.
+Warning: Vehicle 'passenger_0_4038.3' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=326.50.
+Warning: Vehicle 'truck_0_5810.0' performs emergency braking on lane ':4306_17_0' with decel=7.00, wished=4.50, severity=1.00, time=383.00.
+Warning: Vehicle 'passenger_0_9915.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=316.50.
+Warning: Vehicle 'passenger_0_4037.3' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=332.90.
+Warning: Vehicle 'passenger_0_7261.1' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=320.00.
+Warning: Vehicle 'passenger_0_9915.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=323.90.
+Warning: Vehicle 'passenger_0_4169.1' performs emergency braking on lane '-52227_0' with decel=9.00, wished=4.50, severity=1.00, time=324.70.
+Warning: Vehicle 'passenger_0_4043.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=339.30.
+Warning: Vehicle 'passenger_0_4362.1' performs emergency braking on lane ':citypulse_demo_3_24_0' with decel=9.00, wished=4.50, severity=1.00, time=340.50.
+Warning: Vehicle 'passenger_0_8630.0' performs emergency braking on lane '-57109_2' with decel=9.00, wished=4.50, severity=1.00, time=418.30.
+Warning: Vehicle 'passenger_0_7349.0' performs emergency braking on lane ':4409_28_2' with decel=9.00, wished=4.50, severity=1.00, time=418.70.
+Warning: Vehicle 'passenger_0_7349.0' performs emergency braking on lane ':4409_28_2' with decel=9.00, wished=4.50, severity=1.00, time=421.20.
+Warning: Vehicle 'passenger_0_10904.1' performs emergency braking on lane ':3279_14_0' with decel=9.00, wished=4.50, severity=1.00, time=361.80.
+Warning: Vehicle 'passenger_0_9971.0' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=353.90.
+Warning: Vehicle 'passenger_0_9932.1' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=368.90.
+Warning: Vehicle 'passenger_0_6993.1' performs emergency braking on lane ':3935_2_1' with decel=9.00, wished=4.50, severity=1.00, time=429.40.
+Warning: Vehicle 'passenger_0_5989.4' performs emergency braking on lane ':4306_4_0' with decel=9.00, wished=4.50, severity=1.00, time=358.30.
+Warning: Vehicle 'passenger_0_9914.4' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=376.40.
+Warning: Vehicle 'passenger_0_9957.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=398.90.
+Warning: Vehicle 'passenger_0_5505.1' performs emergency braking on lane ':1117_14_0' with decel=9.00, wished=4.50, severity=1.00, time=400.90.
+Warning: Vehicle 'passenger_0_9932.1' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=403.90.
+Warning: Vehicle 'passenger_0_9915.2' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=408.40.
+Warning: Vehicle 'passenger_0_553.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=413.90.
+Warning: Vehicle 'passenger_0_11010.0' performs emergency braking on lane '-46787_1' with decel=9.00, wished=4.50, severity=1.00, time=413.00.
+Warning: Vehicle 'passenger_0_8632.0' performs emergency braking on lane ':4393_0_2' with decel=9.00, wished=4.50, severity=1.00, time=415.90.
+Warning: Vehicle 'passenger_0_9786.0' performs emergency braking on lane '-57333_2' with decel=9.00, wished=4.50, severity=1.00, time=431.20.
+Warning: Vehicle 'passenger_0_5339.0' performs emergency braking on lane ':4409_22_0' with decel=9.00, wished=4.50, severity=1.00, time=506.70.
+Warning: Vehicle 'passenger_0_9915.1' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=503.90.
+Warning: Vehicle 'passenger_0_5333.2' performs emergency braking on lane ':4409_22_0' with decel=9.00, wished=4.50, severity=1.00, time=511.40.
+Warning: Vehicle 'passenger_0_5849.0' performs emergency braking on lane ':4306_7_1' with decel=9.00, wished=4.50, severity=1.00, time=443.00.
+Warning: Vehicle 'passenger_0_3261.15' performs emergency braking on lane ':4306_17_0' with decel=9.00, wished=4.50, severity=1.00, time=518.00.
+Warning: Vehicle 'passenger_0_9606.4' performs emergency braking on lane ':4306_29_1' with decel=9.00, wished=4.50, severity=1.00, time=447.70.
+Warning: Vehicle 'passenger_0_9629.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=428.90.
+Warning: Vehicle 'bus_0_9588.0' performs emergency braking on lane ':1117_14_0' with decel=7.00, wished=4.50, severity=1.00, time=433.30.
+Warning: Vehicle 'truck_0_7294.0' performs emergency braking on lane ':891_20_1' with decel=7.00, wished=4.50, severity=1.00, time=434.40.
+Warning: Vehicle 'passenger_0_9925.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=458.90.
+Warning: Vehicle 'passenger_0_4055.2' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=458.90.
+Warning: Vehicle 'passenger_0_5341.1' performs emergency braking on lane ':4409_38_0' with decel=9.00, wished=4.50, severity=1.00, time=537.40.
+Warning: Vehicle 'truck_0_14735.0' performs emergency braking on lane ':4393_0_3' with decel=7.00, wished=4.50, severity=1.00, time=461.30.
+Warning: Vehicle 'passenger_0_5395.1' performs emergency braking on lane ':4409_38_0' with decel=9.00, wished=4.50, severity=1.00, time=463.00.
+Warning: Vehicle 'passenger_0_9932.2' performs emergency braking on lane '-57333_2' with decel=9.00, wished=4.50, severity=1.00, time=464.00.
+Warning: Vehicle 'passenger_0_10902.0' performs emergency braking on lane ':3279_14_0' with decel=9.00, wished=4.50, severity=1.00, time=467.90.
+Warning: Vehicle 'passenger_0_4037.5' performs emergency braking on lane '-52227_3' with decel=9.00, wished=4.50, severity=1.00, time=473.90.
+Warning: Vehicle 'passenger_0_6030.0' performs emergency braking on lane '-56369_1' with decel=9.00, wished=4.50, severity=1.00, time=458.90.
+Warning: Vehicle 'passenger_0_8636.6' performs emergency braking on lane '-57109_2' with decel=9.00, wished=4.50, severity=1.00, time=493.30.
+Warning: Vehicle 'bus_0_13811.0' performs emergency braking on lane ':4306_26_0' with decel=7.00, wished=4.50, severity=1.00, time=503.00.
+Warning: Vehicle 'passenger_0_8626.2' performs emergency braking on lane ':4393_0_2' with decel=9.00, wished=4.50, severity=1.00, time=595.90.
+Warning: Vehicle 'passenger_0_5047.2' performs emergency braking on lane '-55837_0' with decel=9.00, wished=4.50, severity=1.00, time=485.10.
+Warning: Vehicle 'passenger_0_5397.5' performs emergency braking on lane ':4409_22_0' with decel=9.00, wished=4.50, severity=1.00, time=596.10.
+Warning: Vehicle 'passenger_0_9972.0' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=488.90.
+Warning: Vehicle 'passenger_0_10969.0' performs emergency braking on lane ':3279_12_0' with decel=9.00, wished=4.50, severity=1.00, time=494.70.
+Warning: Vehicle 'passenger_0_9932.2' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=518.90.
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=493.50.
+Warning: Vehicle 'passenger_0_9914.6' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=526.40.
+Warning: Vehicle 'passenger_0_554.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=503.90.
+Warning: Vehicle 'passenger_0_771.2' performs emergency braking on lane ':citypulse_demo_3_28_0' with decel=9.00, wished=4.50, severity=1.00, time=535.60.
+Warning: Vehicle 'truck_0_8865.0' performs emergency braking on lane ':3279_17_1' with decel=7.00, wished=4.50, severity=1.00, time=535.80.
+Warning: Vehicle 'passenger_0_4037.1' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=510.00.
+Warning: Vehicle 'passenger_0_771.2' performs emergency braking on lane ':citypulse_demo_3_28_0' with decel=9.00, wished=4.50, severity=1.00, time=550.50.
+Warning: Vehicle 'passenger_0_8626.0' performs emergency braking on lane ':4393_0_2' with decel=9.00, wished=4.50, severity=1.00, time=550.90.
+Warning: Vehicle 'electric_bicycle_0_126.0' performs emergency braking on lane '-56732_0' with decel=7.00, wished=3.00, severity=1.00, time=554.50.
+Warning: Vehicle 'passenger_0_7342.0' performs emergency braking on lane ':4409_28_2' with decel=9.00, wished=4.50, severity=1.00, time=555.50.
+Warning: Vehicle 'passenger_0_9914.7' performs emergency braking on lane '-57333_2' with decel=9.00, wished=4.50, severity=1.00, time=556.60.
+Warning: Vehicle 'passenger_0_9938.0' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=563.90.
+Warning: Vehicle 'passenger_0_9957.0' performs emergency braking on lane ':3637_16_0' with decel=9.00, wished=4.50, severity=1.00, time=566.60.
+Warning: Vehicle 'passenger_0_4040.0' performs emergency braking on lane '-52227_3' with decel=9.00, wished=4.50, severity=1.00, time=536.40.
+Warning: Vehicle 'passenger_0_9929.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=668.90.
+Warning: Vehicle 'bus_0_9588.0' performs emergency braking on lane ':1117_14_0' with decel=7.00, wished=4.50, severity=1.00, time=541.10.
+Warning: Vehicle 'passenger_0_10710.0' performs emergency braking on lane ':3809_16_1' with decel=9.00, wished=4.50, severity=1.00, time=681.50.
+Warning: Vehicle 'passenger_0_4855.0' performs emergency braking on lane ':1117_14_0' with decel=9.00, wished=4.50, severity=1.00, time=550.00.
+Warning: Vehicle 'passenger_0_5337.4' performs emergency braking on lane ':4409_38_0' with decel=9.00, wished=4.50, severity=1.00, time=686.80.
+Warning: Vehicle 'passenger_0_4043.4' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=582.30.
+Warning: Vehicle 'passenger_0_5990.11' performs emergency braking on lane ':4306_7_1' with decel=9.00, wished=4.50, severity=1.00, time=698.00.
+Warning: Vehicle 'passenger_0_10477.20' performs emergency braking on lane ':citypulse_demo_3_21_0' with decel=9.00, wished=4.50, severity=1.00, time=596.20.
+Warning: Vehicle 'passenger_0_9606.8' performs emergency braking on lane ':4306_29_1' with decel=9.00, wished=4.50, severity=1.00, time=581.10.
+Warning: Vehicle 'passenger_0_6452.0' performs emergency braking on lane '-50221_0' with decel=9.00, wished=4.50, severity=1.00, time=581.10.
+Warning: Vehicle 'passenger_0_9606.8' performs emergency braking on lane ':4306_29_1' with decel=9.00, wished=4.50, severity=1.00, time=582.70.
+Warning: Vehicle 'passenger_0_5935.0' performs emergency braking on lane ':4306_2_0' with decel=9.00, wished=4.50, severity=1.00, time=625.90.
+Warning: Vehicle 'passenger_0_6106.1' performs emergency braking on lane '-57582_1' with decel=9.00, wished=4.50, severity=1.00, time=630.50.
+Warning: Vehicle 'passenger_0_6843.1' performs emergency braking on lane ':3848_6_0' with decel=9.00, wished=4.50, severity=1.00, time=637.10.
+Warning: Vehicle 'passenger_0_3261.24' performs emergency braking on lane ':4306_17_0' with decel=9.00, wished=4.50, severity=1.00, time=758.00.
+Warning: Vehicle 'bus_0_2341.0' performs emergency braking on lane '-50241_1' with decel=7.00, wished=4.50, severity=1.00, time=644.30.
+Warning: Vehicle 'passenger_0_6851.1' performs emergency braking on lane ':3827_26_0' with decel=9.00, wished=4.50, severity=1.00, time=613.90.
+Warning: Vehicle 'passenger_0_6632.0' performs emergency braking on lane ':3864_38_0' with decel=9.00, wished=4.50, severity=1.00, time=647.10.
+Warning: Vehicle 'passenger_0_7291.2' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=622.50.
+Warning: Vehicle 'passenger_0_7342.1' performs emergency braking on lane ':4409_28_2' with decel=9.00, wished=4.50, severity=1.00, time=659.00.
+Warning: Vehicle 'passenger_0_9606.9' performs emergency braking on lane '-57303_0' with decel=9.00, wished=4.50, severity=1.00, time=625.90.
+Warning: Vehicle 'passenger_0_9606.6' performs emergency braking on lane ':4306_29_1' with decel=9.00, wished=4.50, severity=1.00, time=665.60.
+Warning: Vehicle 'passenger_0_11002.0' performs emergency braking on lane ':3279_12_0' with decel=9.00, wished=4.50, severity=1.00, time=674.40.
+Warning: Vehicle 'passenger_0_4271.0' performs emergency braking on lane ':3279_17_1' with decel=9.00, wished=4.50, severity=1.00, time=674.80.
+Warning: Vehicle 'passenger_0_5849.4' performs emergency braking on lane ':4306_7_1' with decel=9.00, wished=4.50, severity=1.00, time=683.00.
+Warning: Vehicle 'bus_0_10421.2' performs emergency braking on lane ':4306_7_0' with decel=7.00, wished=4.50, severity=1.00, time=683.00.
+Warning: Vehicle 'passenger_0_5571.0' performs emergency braking on lane ':4409_38_0' with decel=9.00, wished=4.50, severity=1.00, time=822.20.
+Warning: Vehicle 'bus_0_16953.0' performs emergency braking on lane '-57333_2' with decel=7.00, wished=4.50, severity=1.00, time=654.30.
+Warning: Vehicle 'passenger_0_6660.0' performs emergency braking on lane ':3864_38_0' with decel=9.00, wished=4.50, severity=1.00, time=654.80.
+Warning: Vehicle 'passenger_0_6006.1' performs emergency braking on lane ':3864_2_1' with decel=9.00, wished=4.50, severity=1.00, time=654.80.
+Warning: Vehicle 'passenger_0_6660.0' performs emergency braking on lane ':3864_38_0' with decel=9.00, wished=4.50, severity=1.00, time=654.80.
+Warning: Vehicle 'passenger_0_6204.0' performs emergency braking on lane ':4427_2_3' with decel=9.00, wished=4.50, severity=1.00, time=700.90.
+Warning: Vehicle 'passenger_0_9915.4' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=708.90.
+Warning: Vehicle 'passenger_0_6077.1' performs emergency braking on lane '-56384_2' with decel=9.00, wished=4.50, severity=1.00, time=705.60.
+Warning: Vehicle 'passenger_0_9914.7' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=707.00.
+Warning: Vehicle 'passenger_0_5323.0' performs emergency braking on lane ':3637_16_0' with decel=9.00, wished=4.50, severity=1.00, time=672.50.
+Warning: Vehicle 'passenger_0_5961.0' performs emergency braking on lane ':4306_5_0' with decel=9.00, wished=4.50, severity=1.00, time=715.90.
+Warning: Vehicle 'passenger_0_9185.0' performs emergency braking on lane ':3864_11_0' with decel=9.00, wished=4.50, severity=1.00, time=863.60.
+Warning: Vehicle 'bus_0_6237.0' performs emergency braking on lane ':3935_28_0' with decel=7.00, wished=4.50, severity=1.00, time=675.00.
+Warning: Vehicle 'bus_0_2573.0' performs emergency braking on lane '-55928.115_2' with decel=7.00, wished=4.50, severity=1.00, time=676.60.
+Warning: Vehicle 'truck_0_13722.0' performs emergency braking on lane '-55928.115_2' with decel=7.00, wished=4.50, severity=1.00, time=722.50.
+Warning: Vehicle 'passenger_0_6223.0' performs emergency braking on lane ':4427_2_4' with decel=9.00, wished=4.50, severity=1.00, time=685.90.
+Warning: Vehicle 'passenger_0_1328.1' performs emergency braking on lane '-50241_1' with decel=9.00, wished=4.50, severity=1.00, time=689.10.
+Warning: Vehicle 'passenger_0_4858.0' performs emergency braking on lane '-56026_1' with decel=9.00, wished=4.50, severity=1.00, time=742.20.
+Warning: Vehicle 'passenger_0_9914.8' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=743.90.
+Warning: Vehicle 'truck_0_13697.0' performs emergency braking on lane '-55928.115_2' with decel=7.00, wished=4.50, severity=1.00, time=698.70.
+Warning: Vehicle 'passenger_0_8442.0' performs emergency braking on lane '-56026_0' with decel=9.00, wished=4.50, severity=1.00, time=745.40.
+Warning: Vehicle 'passenger_0_9933.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=748.80.
+2026-08-11 02:41:18,634 [SpawnProcess-3:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.073 switch=669/669 forced=21 dominance=0.478
+2026-08-11 02:41:18,943 [SpawnProcess-1:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.076 switch=687/687 forced=8 dominance=0.477
+Warning: Vehicle 'passenger_0_9625.0' performs emergency braking on lane ':4409_19_2' with decel=9.00, wished=4.50, severity=1.00, time=704.20.
+Warning: Vehicle 'passenger_0_3819.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=754.10.
+Warning: Vehicle 'passenger_0_7066.0' performs emergency braking on lane '-51425_0' with decel=9.00, wished=4.50, severity=1.00, time=758.00.
+Warning: Vehicle 'passenger_0_3261.28' performs emergency braking on lane ':4306_17_0' with decel=9.00, wished=4.50, severity=1.00, time=773.00.
+Warning: Vehicle 'bus_0_18696.0' performs emergency braking on lane '-57802_1' with decel=7.00, wished=4.50, severity=1.00, time=734.20.
+Warning: Vehicle 'passenger_0_8146.16' performs emergency braking on lane ':4306_46_0' with decel=9.00, wished=4.50, severity=1.00, time=782.00.
+Warning: Vehicle 'passenger_0_5849.7' performs emergency braking on lane ':4306_39_0' with decel=9.00, wished=4.50, severity=1.00, time=782.20.
+Warning: Vehicle 'passenger_0_4034.2' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=803.90.
+Warning: Vehicle 'passenger_0_2693.0' performs emergency braking on lane ':3279_9_0' with decel=9.00, wished=4.50, severity=1.00, time=824.20.
+Warning: Vehicle 'truck_0_2305.0' performs emergency braking on lane '-50241_1' with decel=7.00, wished=4.50, severity=1.00, time=774.20.
+Warning: Vehicle 'passenger_0_9629.1' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=836.00.
+Warning: Vehicle 'passenger_0_9786.2' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=833.90.
+Warning: Vehicle 'passenger_0_9916.1' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=843.10.
+Warning: Vehicle 'passenger_0_9920.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=793.60.
+Warning: Vehicle 'passenger_0_9629.1' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=840.40.
+Warning: Vehicle 'passenger_0_8633.0' performs emergency braking on lane ':4393_0_3' with decel=9.00, wished=4.50, severity=1.00, time=790.90.
+Warning: Vehicle 'passenger_0_9932.3' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=848.70.
+Warning: Vehicle 'passenger_0_8466.0' performs emergency braking on lane ':3637_12_0' with decel=9.00, wished=4.50, severity=1.00, time=854.30.
+Warning: Vehicle 'passenger_0_9933.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=858.50.
+Warning: Vehicle 'passenger_0_3261.39' performs emergency braking on lane ':4306_17_0' with decel=9.00, wished=4.50, severity=1.00, time=863.00.
+Warning: Vehicle 'truck_0_13697.0' performs emergency braking on lane '-55928.115_2' with decel=7.00, wished=4.50, severity=1.00, time=812.10.
+Warning: Vehicle 'passenger_0_2284.10' performs emergency braking on lane ':citypulse_demo_3_8_0' with decel=9.00, wished=4.50, severity=1.00, time=818.90.
+Warning: Vehicle 'bus_0_16960.0' performs emergency braking on lane '-57333_1' with decel=7.00, wished=4.50, severity=1.00, time=819.30.
+2026-08-11 02:42:27,428 [SpawnProcess-2:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.087 switch=687/687 forced=9 dominance=0.457
+2026-08-11 02:42:29,511 [SpawnProcess-5:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.089 switch=703/703 forced=14 dominance=0.450
+Warning: Vehicle 'truck_0_5810.1' performs emergency braking on lane ':4306_17_0' with decel=7.00, wished=4.50, severity=1.00, time=878.00.
+2026-08-11 02:42:53,928 [SpawnProcess-4:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.106 switch=692/692 forced=12 dominance=0.478
+2026-08-11 02:42:55,549 [SpawnProcess-6:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.103 switch=659/659 forced=12 dominance=0.456
+2026-08-11 02:43:02,113 [MainProcess:algorithms.ippo.controller] INFO: IPPO v8 训练: obs=132 act=4 路口=20 action_interval=15.0s max_green=2.0x effective_demand=on
+2026-08-11 02:43:05,701 [MainProcess:algorithms.ippo.controller] INFO: PPO 更新: samples=7200 rew_raw=-0.089±0.092 D=0.098 F=0.076 B=0.000 H=-0.000 ret=-1.36±0.92 val=-0.16±0.24 ev=-0.059 actor=-0.0042 critic=0.3599 ent=0.892 kl=0.0031 clip=0.013 grad_actor=0.055 grad_critic=0.875 demand_near=0.2348/0.763/1.000 demand_far=0.1851/0.650/1.000
+2026-08-11 02:43:05,720 [MainProcess:ippo.parallel] INFO: BATCH1 OK seeds=[95502, 95503, 95504, 95505, 95506, 95507] period_counts={'morning_peak': 2, 'off_peak': 2, 'evening_peak': 2} episodes=6 samples=7200 wall=322.9s worker_mean=267.4s worker_max=308.9s arrived=1414.8 waiting=16499.8
+2026-08-11 02:43:15,157 [SpawnProcess-7:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:43:15,157 [SpawnProcess-9:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:43:15,157 [SpawnProcess-12:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:43:15,157 [SpawnProcess-10:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:43:15,157 [SpawnProcess-11:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:43:15,157 [SpawnProcess-8:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_morning_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_morning_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_morning_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_evening_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_morning_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_evening_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_morning_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_morning_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_evening_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_evening_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_morning_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_evening_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_evening_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_morning_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_evening_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_evening_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_morning_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_evening_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_evening_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_morning_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+2026-08-11 02:43:20,902 [SpawnProcess-8:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95511
+2026-08-11 02:43:20,992 [SpawnProcess-9:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95509
+2026-08-11 02:43:21,092 [SpawnProcess-10:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95512
+2026-08-11 02:43:21,178 [SpawnProcess-12:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95510
+2026-08-11 02:43:21,231 [SpawnProcess-11:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95508
+2026-08-11 02:43:21,243 [SpawnProcess-7:algorithms.ippo.controller] INFO: IPPO v8 并行采样: obs=132 act=4 路口=20 rollout_seed=95513
+Warning: Vehicle 'passenger_0_4068.0' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=23.90.
+Warning: Vehicle 'passenger_0_4037.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=38.90.
+Warning: Vehicle 'passenger_0_10935.0' performs emergency braking on lane ':3279_12_0' with decel=9.00, wished=4.50, severity=1.00, time=36.50.
+Warning: Vehicle 'electric_bicycle_0_88.0' performs emergency braking on lane ':3279_17_0' with decel=7.00, wished=3.00, severity=1.00, time=37.60.
+Warning: Vehicle 'passenger_0_10248.0' performs emergency braking on lane ':891_7_0' with decel=9.00, wished=4.50, severity=1.00, time=40.00.
+Warning: Vehicle 'passenger_0_4038.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=53.90.
+Warning: Vehicle 'passenger_0_4043.0' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=53.90.
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'passenger_0_9915.0' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=98.90.
+Warning: Vehicle 'electric_bicycle_0_181.0' performs emergency braking on lane '-57395_0' with decel=7.00, wished=3.00, severity=1.00, time=84.30.
+Warning: Vehicle 'passenger_0_5472.0' performs emergency braking on lane '-56026_0' with decel=9.00, wished=4.50, severity=1.00, time=143.90.
+Warning: Vehicle 'passenger_0_543.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=141.90.
+Warning: Vehicle 'bus_0_12556.0' performs emergency braking on lane ':4409_31_2' with decel=7.00, wished=4.50, severity=1.00, time=173.00.
+Warning: Vehicle 'passenger_0_543.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=146.50.
+Warning: Vehicle 'passenger_0_4061.0' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=159.00.
+Warning: Vehicle 'truck_0_13429.1' performs emergency braking on lane ':4409_4_0' with decel=7.00, wished=4.50, severity=1.00, time=173.00.
+Warning: Vehicle 'truck_0_13429.1' performs emergency braking on lane ':4409_4_0' with decel=7.00, wished=4.50, severity=1.00, time=173.00.
+Warning: Vehicle 'passenger_0_9927.0' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=173.90.
+Warning: Vehicle 'passenger_0_5337.0' performs emergency braking on lane ':4409_22_0' with decel=9.00, wished=4.50, severity=1.00, time=218.00.
+Warning: Vehicle 'passenger_0_10973.0' performs emergency braking on lane ':3279_12_0' with decel=9.00, wished=4.50, severity=1.00, time=206.90.
+Warning: Vehicle 'passenger_0_9976.0' performs emergency braking on lane '-57333_2' with decel=9.00, wished=4.50, severity=1.00, time=221.30.
+Warning: Vehicle 'passenger_0_9606.2' performs emergency braking on lane ':4306_29_1' with decel=9.00, wished=4.50, severity=1.00, time=229.30.
+Warning: Vehicle 'passenger_0_3261.5' performs emergency braking on lane ':4306_17_0' with decel=9.00, wished=4.50, severity=1.00, time=230.00.
+Warning: Vehicle 'passenger_0_3261.4' performs emergency braking on lane ':4306_44_0' with decel=9.00, wished=4.50, severity=1.00, time=230.00.
+Warning: Vehicle 'passenger_0_4066.0' performs emergency braking on lane '-52227_3' with decel=9.00, wished=4.50, severity=1.00, time=285.00.
+Warning: Vehicle 'passenger_0_9930.0' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=248.90.
+Warning: Vehicle 'passenger_0_9914.1' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=256.40.
+Warning: Vehicle 'passenger_0_7287.1' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=248.00.
+Warning: Vehicle 'passenger_0_4044.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=263.90.
+Warning: Vehicle 'passenger_0_8419.0' performs emergency braking on lane ':4409_13_0' with decel=9.00, wished=4.50, severity=1.00, time=323.00.
+Warning: Vehicle 'passenger_0_8419.0' performs emergency braking on lane ':4409_13_0' with decel=9.00, wished=4.50, severity=1.00, time=323.00.
+Warning: Vehicle 'passenger_0_4077.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=274.00.
+Warning: Vehicle 'passenger_0_9917.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=278.90.
+Warning: Vehicle 'passenger_0_9917.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=278.90.
+Warning: Vehicle 'passenger_0_4110.0' performs emergency braking on lane '-52227_0' with decel=9.00, wished=4.50, severity=1.00, time=281.10.
+Warning: Vehicle 'passenger_0_9921.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=283.70.
+Warning: Vehicle 'passenger_0_9921.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=283.90.
+Warning: Vehicle 'passenger_0_5990.3' performs emergency braking on lane ':4306_7_1' with decel=9.00, wished=4.50, severity=1.00, time=340.90.
+Warning: Vehicle 'passenger_0_4915.1' performs emergency braking on lane ':3279_19_0' with decel=9.00, wished=4.50, severity=1.00, time=344.00.
+Warning: Vehicle 'passenger_0_9980.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=308.90.
+Warning: Vehicle 'bus_0_14642.0' performs emergency braking on lane '-57109_3' with decel=7.00, wished=4.50, severity=1.00, time=295.90.
+Warning: Vehicle 'passenger_0_9915.1' performs emergency braking on lane '-57333_2' with decel=9.00, wished=4.50, severity=1.00, time=311.10.
+Warning: Vehicle 'passenger_0_9930.0' performs emergency braking on lane '-57333_2' with decel=9.00, wished=4.50, severity=1.00, time=315.90.
+Warning: Vehicle 'passenger_0_4332.0' performs emergency braking on lane ':1117_7_0' with decel=9.00, wished=4.50, severity=1.00, time=301.40.
+Warning: Vehicle 'passenger_0_9914.2' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=317.10.
+Warning: Vehicle 'passenger_0_3852.0' performs emergency braking on lane '-52216_1' with decel=9.00, wished=4.50, severity=1.00, time=370.90.
+Warning: Vehicle 'passenger_0_7364.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=322.40.
+Warning: Vehicle 'passenger_0_9607.17' performs emergency braking on lane ':4306_32_0' with decel=9.00, wished=4.50, severity=1.00, time=312.60.
+Warning: Vehicle 'passenger_0_9932.1' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=330.90.
+Warning: Vehicle 'passenger_0_9957.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=332.50.
+Warning: Vehicle 'passenger_0_9248.0' performs emergency braking on lane ':3935_28_0' with decel=9.00, wished=4.50, severity=1.00, time=332.40.
+Warning: Vehicle 'passenger_0_9780.1' performs emergency braking on lane ':4409_4_0' with decel=9.00, wished=4.50, severity=1.00, time=402.80.
+Warning: Vehicle 'passenger_0_694.0' performs emergency braking on lane '-46787_1' with decel=9.00, wished=4.50, severity=1.00, time=338.00.
+Warning: Vehicle 'passenger_0_4055.1' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=353.90.
+Warning: Vehicle 'bus_0_9393.1' performs emergency braking on lane ':4409_22_0' with decel=7.00, wished=4.50, severity=1.00, time=419.60.
+Warning: Vehicle 'passenger_0_4065.1' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=363.50.
+Warning: Vehicle 'electric_bicycle_0_69.0' performs emergency braking on lane ':891_30_0' with decel=7.00, wished=3.00, severity=1.00, time=352.00.
+Warning: Vehicle 'bus_0_9393.1' performs emergency braking on lane ':4409_22_0' with decel=7.00, wished=4.50, severity=1.00, time=445.80.
+Warning: Vehicle 'passenger_0_7362.0' performs emergency braking on lane ':4409_28_2' with decel=9.00, wished=4.50, severity=1.00, time=447.50.
+Warning: Vehicle 'passenger_0_1470.2' performs emergency braking on lane ':4306_7_1' with decel=9.00, wished=4.50, severity=1.00, time=383.00.
+Warning: Vehicle 'passenger_0_5505.1' performs emergency braking on lane ':1117_14_0' with decel=9.00, wished=4.50, severity=1.00, time=400.00.
+Warning: Vehicle 'passenger_0_3261.13' performs emergency braking on lane ':4306_17_0' with decel=9.00, wished=4.50, severity=1.00, time=413.00.
+Warning: Vehicle 'passenger_0_4055.2' performs emergency braking on lane '-52227_3' with decel=9.00, wished=4.50, severity=1.00, time=412.30.
+Warning: Vehicle 'passenger_0_2506.0' performs emergency braking on lane ':3936_17_1' with decel=9.00, wished=4.50, severity=1.00, time=409.50.
+Warning: Vehicle 'bus_0_9393.2' performs emergency braking on lane ':4409_22_0' with decel=7.00, wished=4.50, severity=1.00, time=503.00.
+Warning: Vehicle 'passenger_0_4349.3' performs emergency braking on lane ':citypulse_demo_3_24_0' with decel=9.00, wished=4.50, severity=1.00, time=430.20.
+Warning: Vehicle 'bus_0_7812.1' performs emergency braking on lane ':citypulse_demo_3_3_0' with decel=7.00, wished=4.50, severity=1.00, time=446.10.
+Warning: Vehicle 'passenger_0_9629.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=428.90.
+Warning: Vehicle 'passenger_0_9932.1' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=448.70.
+Warning: Vehicle 'passenger_0_5992.0' performs emergency braking on lane ':3864_2_0' with decel=9.00, wished=4.50, severity=1.00, time=430.80.
+Warning: Vehicle 'passenger_0_6843.0' performs emergency braking on lane ':3848_6_0' with decel=9.00, wished=4.50, severity=1.00, time=451.80.
+Warning: Vehicle 'bus_0_8890.0' performs emergency braking on lane ':3279_19_0' with decel=7.00, wished=4.50, severity=1.00, time=529.20.
+Warning: Vehicle 'passenger_0_9914.4' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=453.10.
+Warning: Vehicle 'bus_0_7812.1' performs emergency braking on lane ':citypulse_demo_3_3_0' with decel=7.00, wished=4.50, severity=1.00, time=457.40.
+Warning: Vehicle 'passenger_0_1334.1' performs emergency braking on lane '-50241_1' with decel=9.00, wished=4.50, severity=1.00, time=437.00.
+Warning: Vehicle 'passenger_0_10958.0' performs emergency braking on lane ':3279_12_0' with decel=9.00, wished=4.50, severity=1.00, time=463.30.
+Warning: Vehicle 'passenger_0_1468.1' performs emergency braking on lane ':4306_2_0' with decel=9.00, wished=4.50, severity=1.00, time=445.90.
+Warning: Vehicle 'passenger_0_9957.0' performs emergency braking on lane ':3637_16_0' with decel=9.00, wished=4.50, severity=1.00, time=465.10.
+Warning: Vehicle 'truck_0_1271.0' performs emergency braking on lane ':1117_17_0' with decel=7.00, wished=4.50, severity=1.00, time=549.30.
+Warning: Vehicle 'passenger_0_4105.2' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=473.90.
+Warning: Vehicle 'passenger_0_3972.0' performs emergency braking on lane ':4409_31_0' with decel=9.00, wished=4.50, severity=1.00, time=553.30.
+Warning: Vehicle 'passenger_0_5120.0' performs emergency braking on lane ':1117_7_0' with decel=9.00, wished=4.50, severity=1.00, time=474.30.
+Warning: Vehicle 'truck_0_14724.0' performs emergency braking on lane ':4393_0_2' with decel=7.00, wished=4.50, severity=1.00, time=476.30.
+Warning: Vehicle 'bus_0_11113.0' performs emergency braking on lane ':3936_15_0' with decel=7.00, wished=4.50, severity=1.00, time=477.70.
+Warning: Vehicle 'passenger_0_9914.5' performs emergency braking on lane '-57333_2' with decel=9.00, wished=4.50, severity=1.00, time=476.20.
+Warning: Vehicle 'passenger_0_7293.0' performs emergency braking on lane ':4409_31_2' with decel=9.00, wished=4.50, severity=1.00, time=458.00.
+Warning: Vehicle 'passenger_0_4983.0' performs emergency braking on lane '-55837_0' with decel=9.00, wished=4.50, severity=1.00, time=455.00.
+Warning: Vehicle 'passenger_0_4068.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=458.90.
+Warning: Vehicle 'bus_0_5727.2' performs emergency braking on lane ':4306_17_0' with decel=7.00, wished=4.50, severity=1.00, time=563.00.
+Warning: Vehicle 'passenger_0_1729.1' performs emergency braking on lane ':citypulse_demo_3_20_0' with decel=9.00, wished=4.50, severity=1.00, time=563.90.
+Warning: Vehicle 'passenger_0_10505.0' performs emergency braking on lane ':citypulse_demo_3_30_0' with decel=9.00, wished=4.50, severity=1.00, time=469.30.
+Warning: Vehicle 'passenger_0_9929.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=578.90.
+Warning: Vehicle 'passenger_0_7293.1' performs emergency braking on lane ':4409_31_2' with decel=9.00, wished=4.50, severity=1.00, time=477.40.
+Warning: Vehicle 'passenger_0_4068.0' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=476.50.
+Warning: Vehicle 'passenger_0_9915.3' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=503.90.
+Warning: Vehicle 'passenger_0_7347.0' performs emergency braking on lane ':4409_28_2' with decel=9.00, wished=4.50, severity=1.00, time=480.30.
+Warning: Vehicle 'passenger_0_9972.0' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=593.90.
+Warning: Vehicle 'passenger_0_7852.0' performs emergency braking on lane ':4409_4_0' with decel=9.00, wished=4.50, severity=1.00, time=479.70.
+Warning: Vehicle 'bus_0_5727.2' performs emergency braking on lane ':4306_17_0' with decel=7.00, wished=4.50, severity=1.00, time=593.00.
+Warning: Vehicle 'bus_0_9278.3' performs emergency braking on lane ':4409_19_2' with decel=7.00, wished=4.50, severity=1.00, time=481.50.
+Warning: Vehicle 'passenger_0_9914.6' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=508.80.
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=493.40.
+Warning: Vehicle 'passenger_0_9813.0' performs emergency braking on lane ':1117_14_0' with decel=9.00, wished=4.50, severity=1.00, time=610.90.
+Warning: Vehicle 'passenger_0_9932.2' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=518.90.
+Warning: Vehicle 'bus_0_9393.4' performs emergency braking on lane ':4409_22_0' with decel=7.00, wished=4.50, severity=1.00, time=623.00.
+Warning: Vehicle 'passenger_0_5990.12' performs emergency braking on lane ':4306_7_1' with decel=9.00, wished=4.50, severity=1.00, time=623.00.
+Warning: Vehicle 'passenger_0_9914.6' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=526.60.
+Warning: Vehicle 'passenger_0_5990.12' performs emergency braking on lane ':4306_7_1' with decel=9.00, wished=4.50, severity=1.00, time=623.00.
+Warning: Vehicle 'passenger_0_9938.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=530.90.
+Warning: Vehicle 'passenger_0_8636.7' performs emergency braking on lane ':4393_0_3' with decel=9.00, wished=4.50, severity=1.00, time=535.90.
+Warning: Vehicle 'passenger_0_5525.0' performs emergency braking on lane '-56026_2' with decel=9.00, wished=4.50, severity=1.00, time=638.70.
+Warning: Vehicle 'passenger_0_553.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=518.90.
+Warning: Vehicle 'passenger_0_5934.0' performs emergency braking on lane '-56346_1' with decel=9.00, wished=4.50, severity=1.00, time=551.30.
+Warning: Vehicle 'passenger_0_7342.0' performs emergency braking on lane ':4409_28_2' with decel=9.00, wished=4.50, severity=1.00, time=555.70.
+Warning: Vehicle 'passenger_0_4377.1' performs emergency braking on lane '-52565_1' with decel=9.00, wished=4.50, severity=1.00, time=530.00.
+Warning: Vehicle 'passenger_0_6107.0' performs emergency braking on lane ':citypulse_demo_3_30_0' with decel=9.00, wished=4.50, severity=1.00, time=533.00.
+Warning: Vehicle 'passenger_0_9927.1' performs emergency braking on lane ':3637_1_1' with decel=9.00, wished=4.50, severity=1.00, time=533.90.
+Warning: Vehicle 'passenger_0_6041.0' performs emergency braking on lane ':3864_2_1' with decel=9.00, wished=4.50, severity=1.00, time=539.10.
+Warning: Vehicle 'passenger_0_10477.7' performs emergency braking on lane ':citypulse_demo_3_21_0' with decel=9.00, wished=4.50, severity=1.00, time=536.30.
+Warning: Vehicle 'passenger_0_10662.0' performs emergency braking on lane ':citypulse_demo_3_28_0' with decel=9.00, wished=4.50, severity=1.00, time=536.30.
+Warning: Vehicle 'truck_0_5810.2' performs emergency braking on lane ':4306_17_0' with decel=7.00, wished=4.50, severity=1.00, time=668.00.
+Warning: Vehicle 'passenger_0_4247.0' performs emergency braking on lane ':3279_4_0' with decel=9.00, wished=4.50, severity=1.00, time=537.20.
+Warning: Vehicle 'passenger_0_6046.0' performs emergency braking on lane ':317_7_0' with decel=9.00, wished=4.50, severity=1.00, time=567.40.
+Warning: Vehicle 'passenger_0_7296.0' performs emergency braking on lane ':4409_31_2' with decel=9.00, wished=4.50, severity=1.00, time=567.40.
+Warning: Vehicle 'passenger_0_8636.7' performs emergency braking on lane '-57109_2' with decel=9.00, wished=4.50, severity=1.00, time=568.30.
+Warning: Vehicle 'passenger_0_9629.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=541.50.
+Warning: Vehicle 'passenger_0_7082.0' performs emergency braking on lane '-50819_1' with decel=9.00, wished=4.50, severity=1.00, time=683.90.
+Warning: Vehicle 'passenger_0_546.0' performs emergency braking on lane ':4409_4_0' with decel=9.00, wished=4.50, severity=1.00, time=685.60.
+Warning: Vehicle 'passenger_0_2389.2' performs emergency braking on lane '-50334_0' with decel=9.00, wished=4.50, severity=1.00, time=579.40.
+Warning: Vehicle 'passenger_0_5232.0' performs emergency braking on lane ':4409_19_1' with decel=9.00, wished=4.50, severity=1.00, time=689.40.
+Warning: Vehicle 'passenger_0_5337.4' performs emergency braking on lane ':4409_38_0' with decel=9.00, wished=4.50, severity=1.00, time=686.90.
+Warning: Vehicle 'passenger_0_8514.0' performs emergency braking on lane ':4409_10_1' with decel=9.00, wished=4.50, severity=1.00, time=687.10.
+Warning: Vehicle 'passenger_0_8514.0' performs emergency braking on lane ':4409_10_1' with decel=9.00, wished=4.50, severity=1.00, time=691.40.
+Warning: Vehicle 'bus_0_7515.0' performs emergency braking on lane ':1117_7_0' with decel=7.00, wished=4.50, severity=1.00, time=554.90.
+Warning: Vehicle 'bus_0_13891.1' performs emergency braking on lane ':4306_21_0' with decel=7.00, wished=4.50, severity=1.00, time=585.60.
+Warning: Vehicle 'bus_0_7515.0' performs emergency braking on lane ':1117_7_0' with decel=7.00, wished=4.50, severity=1.00, time=556.70.
+Warning: Vehicle 'bus_0_7515.0' performs emergency braking on lane ':1117_7_0' with decel=7.00, wished=4.50, severity=1.00, time=559.20.
+Warning: Vehicle 'passenger_0_9914.7' performs emergency braking on lane '-57333_2' with decel=9.00, wished=4.50, severity=1.00, time=596.10.
+Warning: Vehicle 'passenger_0_9786.2' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=596.50.
+Warning: Vehicle 'passenger_0_3206.1' performs emergency braking on lane ':4306_14_2' with decel=9.00, wished=4.50, severity=1.00, time=600.00.
+Warning: Vehicle 'bus_0_13811.0' performs emergency braking on lane ':4306_49_0' with decel=7.00, wished=4.50, severity=1.00, time=602.10.
+Warning: Vehicle 'truck_0_5670.0' performs emergency braking on lane ':4306_14_0' with decel=7.00, wished=4.50, severity=1.00, time=602.60.
+Warning: Vehicle 'passenger_0_9629.1' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=605.80.
+Warning: Vehicle 'passenger_0_1340.0' performs emergency braking on lane ':4427_2_4' with decel=9.00, wished=4.50, severity=1.00, time=610.90.
+Warning: Vehicle 'passenger_0_4114.0' performs emergency braking on lane ':3279_19_0' with decel=9.00, wished=4.50, severity=1.00, time=628.60.
+Warning: Vehicle 'bus_0_2341.0' performs emergency braking on lane '-50241_1' with decel=7.00, wished=4.50, severity=1.00, time=631.20.
+Warning: Vehicle 'passenger_0_6903.0' performs emergency braking on lane ':3936_12_0' with decel=9.00, wished=4.50, severity=1.00, time=595.80.
+Warning: Vehicle 'passenger_0_4375.0' performs emergency braking on lane ':3936_17_0' with decel=9.00, wished=4.50, severity=1.00, time=596.70.
+Warning: Vehicle 'passenger_0_2506.2' performs emergency braking on lane ':3936_17_1' with decel=9.00, wished=4.50, severity=1.00, time=597.60.
+Warning: Vehicle 'passenger_0_9915.4' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=641.00.
+Warning: Vehicle 'passenger_0_8636.6' performs emergency braking on lane ':4393_0_2' with decel=9.00, wished=4.50, severity=1.00, time=610.90.
+Warning: Vehicle 'passenger_0_9933.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=646.30.
+Warning: Vehicle 'truck_0_10025.0' performs emergency braking on lane '-55928.115_2' with decel=7.00, wished=4.50, severity=1.00, time=613.40.
+Warning: Vehicle 'bus_0_5475.0' performs emergency braking on lane '-55928.115_2' with decel=7.00, wished=4.50, severity=1.00, time=650.60.
+Warning: Vehicle 'passenger_0_9916.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=653.90.
+Warning: Vehicle 'passenger_0_7721.0' performs emergency braking on lane '-57234_1' with decel=9.00, wished=4.50, severity=1.00, time=655.90.
+Warning: Vehicle 'passenger_0_9936.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=658.80.
+Warning: Vehicle 'passenger_0_7334.0' performs emergency braking on lane ':4409_28_2' with decel=9.00, wished=4.50, severity=1.00, time=659.00.
+Warning: Vehicle 'passenger_0_8088.13' performs emergency braking on lane ':4306_26_0' with decel=9.00, wished=4.50, severity=1.00, time=788.00.
+Warning: Vehicle 'passenger_0_3972.7' performs emergency braking on lane '-52227_3' with decel=9.00, wished=4.50, severity=1.00, time=789.10.
+Warning: Vehicle 'passenger_0_4082.0' performs emergency braking on lane '-52227_3' with decel=9.00, wished=4.50, severity=1.00, time=810.00.
+Warning: Vehicle 'passenger_0_2455.12' performs emergency braking on lane ':3936_17_0' with decel=9.00, wished=4.50, severity=1.00, time=634.50.
+Warning: Vehicle 'bus_0_13773.0' performs emergency braking on lane ':4306_49_0' with decel=7.00, wished=4.50, severity=1.00, time=673.50.
+Warning: Vehicle 'passenger_0_3025.0' performs emergency braking on lane '-55928.115_2' with decel=9.00, wished=4.50, severity=1.00, time=646.70.
+Warning: Vehicle 'passenger_0_330.0' performs emergency braking on lane ':4334_12_1' with decel=9.00, wished=4.50, severity=1.00, time=688.30.
+Warning: Vehicle 'bus_0_12169.1' performs emergency braking on lane ':3935_4_0' with decel=7.00, wished=4.50, severity=1.00, time=686.30.
+Warning: Vehicle 'passenger_0_3308.0' performs emergency braking on lane ':4306_7_1' with decel=9.00, wished=4.50, severity=1.00, time=848.00.
+Warning: Vehicle 'passenger_0_3838.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=668.90.
+Warning: Vehicle 'passenger_0_8634.3' performs emergency braking on lane ':4393_0_2' with decel=9.00, wished=4.50, severity=1.00, time=670.90.
+Warning: Vehicle 'passenger_0_423.0' performs emergency braking on lane ':1117_8_0' with decel=9.00, wished=4.50, severity=1.00, time=867.20.
+Warning: Vehicle 'passenger_0_5682.0' performs emergency braking on lane ':3637_1_0' with decel=9.00, wished=4.50, severity=1.00, time=878.90.
+Warning: Vehicle 'passenger_0_3261.29' performs emergency braking on lane ':4306_17_0' with decel=9.00, wished=4.50, severity=1.00, time=893.00.
+Warning: Vehicle 'passenger_0_3837.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=888.20.
+2026-08-11 02:46:40,668 [SpawnProcess-9:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.063 switch=739/739 forced=8 dominance=0.462
+Warning: Vehicle 'passenger_0_3002.0' performs emergency braking on lane '-55928.115_2' with decel=9.00, wished=4.50, severity=1.00, time=746.90.
+Warning: Vehicle 'passenger_0_1499.0' performs emergency braking on lane '-55928.115_2' with decel=9.00, wished=4.50, severity=1.00, time=702.10.
+2026-08-11 02:46:42,592 [SpawnProcess-10:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.065 switch=740/740 forced=9 dominance=0.452
+Warning: Vehicle 'passenger_0_9552.0' performs emergency braking on lane '-55928.115_2' with decel=9.00, wished=4.50, severity=1.00, time=716.80.
+Warning: Vehicle 'passenger_0_9263.0' performs emergency braking on lane ':3935_28_0' with decel=9.00, wished=4.50, severity=1.00, time=720.10.
+Warning: Vehicle 'passenger_0_8837.0' performs emergency braking on lane ':3935_28_0' with decel=9.00, wished=4.50, severity=1.00, time=721.80.
+Warning: Vehicle 'passenger_0_9538.0' performs emergency braking on lane '-55928.115_2' with decel=9.00, wished=4.50, severity=1.00, time=719.60.
+Warning: Vehicle 'passenger_0_10016.0' performs emergency braking on lane ':3637_3_0' with decel=9.00, wished=4.50, severity=1.00, time=773.00.
+Warning: Vehicle 'bus_0_18696.0' performs emergency braking on lane '-57802_1' with decel=7.00, wished=4.50, severity=1.00, time=734.40.
+Warning: Vehicle 'passenger_0_1959.0' performs emergency braking on lane ':4427_2_4' with decel=9.00, wished=4.50, severity=1.00, time=730.90.
+Warning: Vehicle 'passenger_0_10874.0' performs emergency braking on lane ':882_14_0' with decel=9.00, wished=4.50, severity=1.00, time=742.50.
+Warning: Vehicle 'passenger_0_10874.0' performs emergency braking on lane ':882_14_0' with decel=9.00, wished=4.50, severity=1.00, time=744.30.
+Warning: Vehicle 'passenger_0_5048.2' performs emergency braking on lane ':882_11_0' with decel=9.00, wished=4.50, severity=1.00, time=748.20.
+Warning: Vehicle 'passenger_0_2693.0' performs emergency braking on lane ':1117_10_1' with decel=9.00, wished=4.50, severity=1.00, time=752.40.
+Warning: Vehicle 'truck_0_12735.0' performs emergency braking on lane ':4409_31_1' with decel=7.00, wished=4.50, severity=1.00, time=758.00.
+Warning: Vehicle 'passenger_0_3952.0' performs emergency braking on lane ':891_15_0' with decel=9.00, wished=4.50, severity=1.00, time=760.00.
+Warning: Vehicle 'passenger_0_11235.0' performs emergency braking on lane ':891_10_0' with decel=9.00, wished=4.50, severity=1.00, time=767.70.
+Warning: Vehicle 'passenger_0_8146.28' performs emergency braking on lane ':4306_46_0' with decel=9.00, wished=4.50, severity=1.00, time=826.80.
+Warning: Vehicle 'passenger_0_5849.7' performs emergency braking on lane ':4306_39_0' with decel=9.00, wished=4.50, severity=1.00, time=827.00.
+Warning: Vehicle 'passenger_0_4094.0' performs emergency braking on lane ':3279_9_0' with decel=9.00, wished=4.50, severity=1.00, time=831.80.
+Warning: Vehicle 'passenger_0_5499.2' performs emergency braking on lane ':1117_14_0' with decel=9.00, wished=4.50, severity=1.00, time=793.50.
+Warning: Vehicle 'passenger_0_4826.0' performs emergency braking on lane ':4274_28_1' with decel=9.00, wished=4.50, severity=1.00, time=859.00.
+Warning: Vehicle 'passenger_0_4826.0' performs emergency braking on lane ':4274_28_1' with decel=9.00, wished=4.50, severity=1.00, time=861.60.
+Warning: Vehicle 'passenger_0_8629.0' performs emergency braking on lane '-57109_3' with decel=9.00, wished=4.50, severity=1.00, time=808.30.
+Warning: Vehicle 'passenger_0_1470.5' performs emergency braking on lane ':4306_7_0' with decel=9.00, wished=4.50, severity=1.00, time=863.00.
+Warning: Vehicle 'passenger_0_1470.7' performs emergency braking on lane ':4306_7_1' with decel=9.00, wished=4.50, severity=1.00, time=863.00.
+Warning: Vehicle 'passenger_0_215.0' performs emergency braking on lane ':891_2_1' with decel=9.00, wished=4.50, severity=1.00, time=865.50.
+Warning: Vehicle 'passenger_0_4180.0' performs emergency braking on lane '-52227_0' with decel=9.00, wished=4.50, severity=1.00, time=870.10.
+Warning: Vehicle 'passenger_0_2752.0' performs emergency braking on lane ':3279_7_0' with decel=9.00, wished=4.50, severity=1.00, time=827.50.
+Warning: Vehicle 'passenger_0_11052.0' performs emergency braking on lane ':3279_13_0' with decel=9.00, wished=4.50, severity=1.00, time=827.80.
+Warning: Vehicle 'passenger_0_6063.0' performs emergency braking on lane '-57109_3' with decel=9.00, wished=4.50, severity=1.00, time=883.30.
+Warning: Vehicle 'passenger_0_3951.18' performs emergency braking on lane ':1117_5_0' with decel=9.00, wished=4.50, severity=1.00, time=883.90.
+Warning: Vehicle 'electric_bicycle_0_9.0' performs emergency braking on lane ':1117_16_0' with decel=7.00, wished=3.00, severity=1.00, time=893.00.
+Warning: Vehicle 'passenger_0_11096.1' performs emergency braking on lane '-50334_0' with decel=9.00, wished=4.50, severity=1.00, time=848.90.
+2026-08-11 02:47:49,673 [SpawnProcess-8:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.079 switch=737/737 forced=3 dominance=0.455
+Warning: Vehicle 'bus_0_7401.0' performs emergency braking on lane ':1117_8_0' with decel=7.00, wished=4.50, severity=1.00, time=850.70.
+2026-08-11 02:47:52,143 [SpawnProcess-11:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.081 switch=745/745 forced=5 dominance=0.444
+Warning: Vehicle 'passenger_0_9975.0' performs emergency braking on lane '-57333_1' with decel=9.00, wished=4.50, severity=1.00, time=866.40.
+Warning: Vehicle 'passenger_0_8088.5' performs emergency braking on lane ':4306_49_0' with decel=9.00, wished=4.50, severity=1.00, time=883.70.
+Warning: Vehicle 'passenger_0_11295.0' performs emergency braking on lane ':3637_3_0' with decel=9.00, wished=4.50, severity=1.00, time=881.20.
+Warning: Vehicle 'passenger_0_11295.0' performs emergency braking on lane ':3637_3_0' with decel=9.00, wished=4.50, severity=1.00, time=883.80.
+2026-08-11 02:48:16,047 [SpawnProcess-12:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.093 switch=732/732 forced=8 dominance=0.465
+2026-08-11 02:48:16,547 [SpawnProcess-7:algorithms.ippo.controller] INFO: 并行 rollout 完成: samples=1200 pending_dropped=0 reward=-0.091 switch=753/753 forced=9 dominance=0.460
+2026-08-11 02:48:23,421 [MainProcess:algorithms.ippo.controller] INFO: PPO 更新: samples=7200 rew_raw=-0.079±0.084 D=0.088 F=0.077 B=0.000 H=-0.000 ret=-2.28±1.27 val=-1.33±0.64 ev=0.629 actor=-0.0082 critic=0.2276 ent=0.873 kl=0.0077 clip=0.068 grad_actor=0.063 grad_critic=0.762 demand_near=0.2366/0.764/1.000 demand_far=0.1858/0.653/1.000
+2026-08-11 02:48:23,450 [MainProcess:ippo.parallel] INFO: BATCH2 OK seeds=[95508, 95509, 95510, 95511, 95512, 95513] period_counts={'morning_peak': 2, 'off_peak': 2, 'evening_peak': 2} episodes=6 samples=7200 wall=317.7s worker_mean=265.2s worker_max=305.5s arrived=1467.5 waiting=12697.0
+2026-08-11 02:48:24,065 [MainProcess:algorithms.ippo.controller] INFO: Checkpoint: algorithms/ippo/runs/three_period_joint_pressure_shaping/smoke_900s/checkpoints/ippo_v8_parallel_ep12.pt
+2026-08-11 02:48:24,783 [MainProcess:algorithms.ippo.controller] INFO: Checkpoint: algorithms/ippo/runs/three_period_joint_pressure_shaping/smoke_900s/ippo_3period_900s_smoke_ep12.pt
+2026-08-11 02:48:24,787 [MainProcess:ippo.parallel] INFO: 并行训练完成: episodes=12 wall=641.9s model=algorithms/ippo/runs/three_period_joint_pressure_shaping/smoke_900s/ippo_3period_900s_smoke_ep12.pt

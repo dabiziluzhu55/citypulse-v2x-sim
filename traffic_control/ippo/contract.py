@@ -15,10 +15,20 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from traffic_control.common.environment_contract import (
+    ENVIRONMENT_CONTRACT_VERSION,
+    MULTISCENARIO_ENVIRONMENT_CONTRACT_VERSION,
+    validate_checkpoint_binding,
+    validate_checkpoint_environment,
+)
+
 from .identity import IDENTITY_SLOT_IDS
 from .model import PHASE_FEATURES
 
 CHECKPOINT_CONTRACT_VERSION = 2
+MULTIPERIOD_CHECKPOINT_CONTRACT_VERSION = 3
+MULTISCENARIO_CHECKPOINT_CONTRACT_VERSION = 4
+MULTIPERIOD_MAX_ACTION_DIM = 4
 
 OBSERVATION_SCHEMA: dict[str, Any] = {
     "phase_one_hot": 8,
@@ -35,6 +45,10 @@ NORMALIZATION: dict[str, str] = {
 }
 
 COLLAB_MESSAGE_SCHEMA: Any = None
+
+MAX_LANES = 20
+VEHICLE_LENGTH_WITH_GAP_M = 7.5
+SATURATION_FLOW_PER_LANE = 0.5
 
 CONTRACT_KEYS: tuple[str, ...] = (
     "checkpoint_contract_version",
@@ -53,6 +67,38 @@ CONTRACT_KEYS: tuple[str, ...] = (
     "intersection_ids",
     "per_intersection_fingerprints",
 )
+
+
+def build_ippo_policy_spec(
+    *,
+    obs_dim: int,
+    act_dim: int,
+    action_interval: float,
+    max_green_factor: float,
+    phase_feature_schema: str,
+    effective_demand_enabled: bool,
+    model_version: str,
+) -> dict[str, Any]:
+    """Build the fixed IPPO candidate-policy tensor contract."""
+    return {
+        "algorithm_family": "ippo_candidate_ppo",
+        "model_version": str(model_version),
+        "identity_slots": list(IDENTITY_SLOT_IDS),
+        "observation_schema": dict(OBSERVATION_SCHEMA),
+        "obs_dim": int(obs_dim),
+        "phase_feature_schema": str(phase_feature_schema),
+        "phase_feature_dim": int(PHASE_FEATURES),
+        "max_action_dim": int(act_dim),
+        "max_lanes": MAX_LANES,
+        "vehicle_length_with_gap_m": VEHICLE_LENGTH_WITH_GAP_M,
+        "saturation_flow_per_lane": SATURATION_FLOW_PER_LANE,
+        "action_interval_s": float(action_interval),
+        "max_green_factor": float(max_green_factor),
+        "effective_demand_enabled": bool(effective_demand_enabled),
+        "normalization": dict(NORMALIZATION),
+        "collab_message_schema": COLLAB_MESSAGE_SCHEMA,
+        "action_representation": "program_local_candidate_offset_v1",
+    }
 
 
 def checkpoint_sha256(path: str | Path) -> str:
@@ -166,15 +212,78 @@ def load_contract(
 ) -> tuple[int, dict[str, Any]]:
     """Return ``(contract_version, contract_view)``.
 
-    Inline v2 checkpoints are used directly.  v1 checkpoints require a sidecar;
-    missing sidecar, SHA-256 mismatch, or wrong contract version is a hard error.
+    Inline v2 checkpoints use the legacy fingerprint view.  Inline v3
+    checkpoints carry a complete multiperiod environment contract.  v1
+    checkpoints require a sidecar.
     """
     inline_version = checkpoint.get("checkpoint_contract_version")
     if inline_version is not None:
-        if int(inline_version) != CHECKPOINT_CONTRACT_VERSION:
+        version = int(inline_version)
+        if version in {
+            MULTIPERIOD_CHECKPOINT_CONTRACT_VERSION,
+            MULTISCENARIO_CHECKPOINT_CONTRACT_VERSION,
+        }:
+            environment_contract = checkpoint.get("environment_contract")
+            if not isinstance(environment_contract, Mapping):
+                raise ValueError(
+                    f"Inline contract v{version} is missing environment_contract"
+                )
+            if (
+                int(environment_contract.get("environment_contract_version", 0))
+                != version
+            ):
+                raise ValueError(
+                    "checkpoint_contract_version and environment contract version "
+                    "must match"
+                )
+            validate_checkpoint_binding(
+                environment_contract,
+                periods=checkpoint.get("training_periods", ()),
+                policy_spec=build_ippo_policy_spec(
+                    obs_dim=int(checkpoint["obs_dim"]),
+                    act_dim=int(checkpoint["act_dim"]),
+                    action_interval=float(checkpoint["action_interval"]),
+                    max_green_factor=float(
+                        checkpoint.get("max_green_factor", 2.0)
+                    ),
+                    phase_feature_schema=str(
+                        checkpoint.get("phase_feature_schema", "")
+                    ),
+                    effective_demand_enabled=bool(
+                        checkpoint.get("effective_demand_enabled", True)
+                    ),
+                    model_version=str(checkpoint.get("model_version", "")),
+                ),
+                intersection_ids=checkpoint.get("intersection_ids", ()),
+            )
+            if version == MULTISCENARIO_CHECKPOINT_CONTRACT_VERSION:
+                from traffic_control.common.checkpoint_package import (
+                    CAPABILITY_SCHEMA_VERSION,
+                    state_dict_sha256,
+                )
+
+                if int(checkpoint.get("capability_schema_version", 0)) != (
+                    CAPABILITY_SCHEMA_VERSION
+                ):
+                    raise ValueError("IPPO v4 capability schema version mismatch")
+                if not str(checkpoint.get("model_id", "")).strip():
+                    raise ValueError("IPPO v4 checkpoint is missing model_id")
+                expected_weights = str(checkpoint.get("weights_sha256", ""))
+                live_weights = state_dict_sha256(
+                    checkpoint.get("model_state_dict", {})
+                )
+                if expected_weights != live_weights:
+                    raise ValueError(
+                        "IPPO v4 checkpoint policy weight digest mismatch"
+                    )
+            return version, dict(environment_contract)
+        if version != CHECKPOINT_CONTRACT_VERSION:
             raise ValueError(
                 f"Unsupported checkpoint_contract_version={inline_version!r}; "
-                f"expected {CHECKPOINT_CONTRACT_VERSION}"
+                "supported versions are "
+                f"{CHECKPOINT_CONTRACT_VERSION} and "
+                f"{MULTIPERIOD_CHECKPOINT_CONTRACT_VERSION} and "
+                f"{MULTISCENARIO_CHECKPOINT_CONTRACT_VERSION}"
             )
         missing = sorted(set(CONTRACT_KEYS) - set(checkpoint))
         if missing:
@@ -210,8 +319,34 @@ def validate_contract(
     phase_feature_schema: str,
     effective_demand_enabled: bool,
     model_version: str,
+    metadata: Mapping[str, Any] | None = None,
 ) -> None:
     """Validate a contract view against the live subset metadata."""
+    if int(contract_view.get("environment_contract_version", 0)) in {
+        ENVIRONMENT_CONTRACT_VERSION,
+        MULTISCENARIO_ENVIRONMENT_CONTRACT_VERSION,
+    }:
+        if metadata is None:
+            raise ValueError(
+                "IPPO contract v3/v4 validation requires live metadata"
+            )
+        policy_spec = build_ippo_policy_spec(
+            obs_dim=obs_dim,
+            act_dim=act_dim,
+            action_interval=action_interval,
+            max_green_factor=max_green_factor,
+            phase_feature_schema=phase_feature_schema,
+            effective_demand_enabled=effective_demand_enabled,
+            model_version=model_version,
+        )
+        validate_checkpoint_environment(
+            contract_view,
+            metadata,
+            policy_spec=policy_spec,
+            controlled_intersection_ids=intersection_ids,
+        )
+        return
+
     if list(contract_view.get("identity_slots", ())) != list(IDENTITY_SLOT_IDS):
         raise ValueError(
             "Checkpoint identity slots do not match the canonical 20-slot table."

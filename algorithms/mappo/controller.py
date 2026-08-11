@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import math
 import time
 from typing import Any, Mapping
@@ -80,7 +81,7 @@ class MAPPOController:
         if float(expected_duration_s) <= 0.0:
             raise ValueError("expected duration must be positive")
 
-        self.metadata = dict(metadata)
+        self.metadata = deepcopy(dict(metadata))
         self.config = config
         self.policy = policy
         self._shared_team = (
@@ -147,7 +148,7 @@ class MAPPOController:
         }
         if any(not phases for phases in self._phase_orders.values()):
             raise ValueError("every controlled intersection must have phases")
-        self._act_dim = self._feature_builder.max_phases
+        self._act_dim = config.max_action_dim
         self._central_builder = CentralizedStateBuilder(
             self.intersection_ids, config.obs_dim
         )
@@ -160,6 +161,18 @@ class MAPPOController:
             self._decision_interval,
             self._minimum_green,
         )
+
+        self._pressure_shapers: dict[str, "PressureShaper"] = {}
+        if config.pressure_shaping_enabled:
+            from algorithms.common.pressure_shaping import PressureShaper
+            for intersection_id in self.intersection_ids:
+                phase_conns = self._feature_builder.get_phase_connections(
+                    intersection_id
+                )
+                self._pressure_shapers[intersection_id] = PressureShaper(
+                    phase_conns,
+                    epsilon=config.pressure_shaping_epsilon,
+                )
 
         self._rollouts = {
             intersection_id: ExecutionAlignedRollout()
@@ -338,6 +351,23 @@ class MAPPOController:
                 intersection_id
             )
         )
+
+    def _pre_action_density(
+        self, intersection_id: str, intersection: Mapping[str, Any]
+    ) -> float:
+        lanes = intersection.get("lanes", {})
+        if not isinstance(lanes, Mapping):
+            return 0.0
+        incoming = self._feature_builder.get_incoming_lanes(intersection_id)
+        if not incoming:
+            return 0.0
+        total, count = 0.0, 0
+        for lane_id in incoming:
+            lane = lanes.get(lane_id, {})
+            if isinstance(lane, Mapping):
+                total += float(lane.get("occupancy", 0.0))
+                count += 1
+        return total / count if count else 0.0
 
     def _new_reward(
         self, intersection_id: str, intersection: Mapping[str, Any]
@@ -626,6 +656,7 @@ class MAPPOController:
         staged_actions: list[
             tuple[str, np.ndarray, np.ndarray, int, float, int]
         ] = []
+        _sp_contexts: dict[str, tuple[float, float]] = {}
         for intersection_id in self.intersection_ids:
             intersection = intersections[intersection_id]
             local_features = self._feature_builder.build_phase_features(
@@ -660,6 +691,33 @@ class MAPPOController:
                 action_mask,
             )
             target_phase = self._phase_orders[intersection_id][action_index]
+            _sp_regret: float = 0.0
+            _sp_alpha: float = 0.0
+            if (
+                self.config.pressure_shaping_enabled
+                and intersection_id in self._pressure_shapers
+            ):
+                shaper = self._pressure_shapers[intersection_id]
+                legal_phase_ids = [
+                    self._phase_orders[intersection_id][i]
+                    for i, m in enumerate(local_mask) if m
+                ]
+                result = shaper.compute_pressure_regret(
+                    intersections[intersection_id].get("lanes", {}),
+                    legal_phases=legal_phase_ids,
+                    selected_phase=target_phase,
+                )
+                _sp_regret = result.regret
+                occupancy_pct = self._pre_action_density(
+                    intersection_id, intersections[intersection_id]
+                )
+                from algorithms.common.pressure_shaping import density_gate
+                _density, _sp_alpha = density_gate(
+                    occupancy_pct,
+                    threshold=self.config.pressure_shaping_density_threshold,
+                    alpha_base=self.config.pressure_shaping_alpha_base,
+                    density_decay=self.config.pressure_shaping_density_decay,
+                )
             staged_actions.append(
                 (
                     intersection_id,
@@ -670,6 +728,8 @@ class MAPPOController:
                     target_phase,
                 )
             )
+            if self.config.pressure_shaping_enabled:
+                _sp_contexts[intersection_id] = (_sp_regret, _sp_alpha)
 
         if not self._inference_only:
             if global_state is None:
@@ -685,6 +745,12 @@ class MAPPOController:
                 )
                 for intersection_id in self.intersection_ids
             }
+            if self.config.pressure_shaping_enabled:
+                for intersection_id, (regret, alpha) in _sp_contexts.items():
+                    if intersection_id in staged_rewards:
+                        staged_rewards[intersection_id].set_pressure_context(
+                            regret=regret, alpha=alpha,
+                        )
             pendings = tuple(
                 PendingTransition(
                     local_obs=local_states[intersection_id],
@@ -970,6 +1036,34 @@ class MAPPOController:
                     selected_action=action_index,
                 )
                 target_phase = self._phase_orders[intersection_id][action_index]
+                _pressure_regret: float = 0.0
+                _pressure_alpha: float = 0.0
+                if (
+                    self.config.pressure_shaping_enabled
+                    and intersection_id in self._pressure_shapers
+                    and not self._inference_only
+                ):
+                    shaper = self._pressure_shapers[intersection_id]
+                    legal_phase_ids = [
+                        self._phase_orders[intersection_id][i]
+                        for i, m in enumerate(local_mask) if m
+                    ]
+                    result = shaper.compute_pressure_regret(
+                        intersection.get("lanes", {}),
+                        legal_phases=legal_phase_ids,
+                        selected_phase=target_phase,
+                    )
+                    _pressure_regret = result.regret
+                    occupancy_pct = self._pre_action_density(
+                        intersection_id, intersection
+                    )
+                    from algorithms.common.pressure_shaping import density_gate
+                    _density, _pressure_alpha = density_gate(
+                        occupancy_pct,
+                        threshold=self.config.pressure_shaping_density_threshold,
+                        alpha_base=self.config.pressure_shaping_alpha_base,
+                        density_decay=self.config.pressure_shaping_density_decay,
+                    )
                 if not self._inference_only:
                     if global_state is None:
                         raise RuntimeError(
@@ -996,6 +1090,10 @@ class MAPPOController:
                     self._rewards[intersection_id] = self._new_reward(
                         intersection_id, intersection
                     )
+                    if self.config.pressure_shaping_enabled:
+                        self._rewards[intersection_id].set_pressure_context(
+                            regret=_pressure_regret, alpha=_pressure_alpha,
+                        )
                     current_phase = int(
                         intersection.get("current_phase", target_phase)
                     )
@@ -1124,6 +1222,8 @@ class MAPPOController:
             reward_scope=self.config.reward_scope,
             team_reward_schema=self.config.team_reward_schema,
             joint_step_schema=self.config.joint_step_schema,
+            period=str(self.metadata.get("period", "")),
+            metadata=deepcopy(self.metadata),
         )
 
     def finish(self, payload: Mapping[str, Any]) -> WorkerRollout | None:
@@ -1210,4 +1310,6 @@ class MAPPOController:
             reward_scope=self.config.reward_scope,
             team_reward_schema=self.config.team_reward_schema,
             joint_step_schema=self.config.joint_step_schema,
+            period=str(self.metadata.get("period", "")),
+            metadata=deepcopy(self.metadata),
         )

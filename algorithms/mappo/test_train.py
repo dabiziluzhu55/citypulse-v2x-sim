@@ -20,6 +20,7 @@ from algorithms.mappo.train import (
     _checkpoint_metadata,
     _default_checkpoint_path,
     _failed_worker_rollout,
+    _group_metrics_by_period,
     _periodic_checkpoint_path,
     _period_batch,
     _parse_training_args,
@@ -27,6 +28,7 @@ from algorithms.mappo.train import (
     _should_save_periodic_checkpoint,
     _training_run_label,
     _training_seed_range,
+    _validate_joint_run_shape,
     _write_training_diagnostics,
 )
 
@@ -42,6 +44,41 @@ def test_seed_batches_cover_each_training_seed_exactly_once() -> None:
     ) == ("off_peak", "morning_peak", "off_peak")
 
 
+
+def test_training_metrics_are_grouped_by_period_without_hiding_a_period() -> None:
+    periods = (
+        "morning_peak",
+        "off_peak",
+        "evening_peak",
+        "morning_peak",
+        "off_peak",
+        "evening_peak",
+    )
+    results = [
+        {
+            "metrics": {
+                "departed": 100 + index,
+                "arrived": 90 + index,
+                "waiting": 10.0 + index,
+            }
+        }
+        for index in range(6)
+    ]
+
+    grouped = _group_metrics_by_period(results, periods)
+
+    assert tuple(grouped) == (
+        "morning_peak",
+        "off_peak",
+        "evening_peak",
+        "overall",
+    )
+    assert grouped["morning_peak"]["episode_count"] == 2
+    assert grouped["morning_peak"]["metrics_mean"]["departed"] == 101.5
+    assert grouped["off_peak"]["metrics_mean"]["waiting"] == 12.5
+    assert grouped["evening_peak"]["metrics_mean"]["arrived"] == 93.5
+    assert grouped["overall"]["episode_count"] == 6
+
 def test_failed_worker_rollout_is_generation_and_schema_identified() -> None:
     config = MAPPOConfig(("demo_1",))
     rollout = _failed_worker_rollout(
@@ -50,6 +87,7 @@ def test_failed_worker_rollout_is_generation_and_schema_identified() -> None:
         policy_generation=4,
         expected_policy_digest="abc",
         config=config,
+        period="evening_peak",
     )
 
     assert rollout.seed == 93001
@@ -67,6 +105,8 @@ def test_failed_worker_rollout_is_generation_and_schema_identified() -> None:
     assert rollout.joint_step_schema == config.joint_step_schema
     assert rollout.transitions == ()
     assert rollout.error == "SUMO failed"
+    assert rollout.period == "evening_peak"
+    assert rollout.metadata is None
 
 
 def test_resume_training_seeds_must_continue_after_saved_range() -> None:
@@ -379,3 +419,162 @@ def test_main_prevalidates_resume_contract_before_checkpoint_mutation(
         )
 
     assert not load_called
+
+
+@pytest.mark.parametrize(
+    ("workers", "episodes"),
+    [(6, 12), (9, 18), (12, 24)],
+)
+def test_joint_run_shape_accepts_only_complete_balanced_batches(
+    workers: int, episodes: int
+) -> None:
+    assert _validate_joint_run_shape(
+        periods=("morning_peak", "off_peak", "evening_peak"),
+        workers=workers,
+        episodes=episodes,
+    ) == workers
+    for seeds in _seed_batches(
+        base_seed=95001,
+        episodes=episodes,
+        workers=workers,
+    ):
+        periods = _period_batch(
+            seeds,
+            periods=("morning_peak", "off_peak", "evening_peak"),
+            training_seed_start=95001,
+        )
+        assert periods.count("morning_peak") == workers // 3
+        assert periods.count("off_peak") == workers // 3
+        assert periods.count("evening_peak") == workers // 3
+
+
+@pytest.mark.parametrize(
+    ("periods", "workers", "episodes", "message"),
+    [
+        (("off_peak",), 6, 12, "periods"),
+        (("morning_peak", "off_peak", "evening_peak"), 4, 12, "6, 9, or 12"),
+        (("morning_peak", "off_peak", "evening_peak"), 6, 13, "complete"),
+        (("morning_peak", "off_peak", "evening_peak"), 6, 486, "480"),
+    ],
+)
+def test_joint_run_shape_rejects_non_frozen_or_tail_batches(
+    periods: tuple[str, ...],
+    workers: int,
+    episodes: int,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _validate_joint_run_shape(
+            periods=periods,
+            workers=workers,
+            episodes=episodes,
+        )
+
+
+def test_sumo_worker_passes_frozen_contract_to_collector_before_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class StopBeforeSumo(RuntimeError):
+        pass
+
+    captured = {}
+
+    def capture_collector(**kwargs):
+        captured.update(kwargs)
+        raise StopBeforeSumo("collector preflight reached")
+
+    monkeypatch.setattr(
+        train_module.entrypoint,
+        "prepare_collector",
+        capture_collector,
+    )
+    contract = {"environment_contract_version": 3}
+    request = {
+        "seed": 93001,
+        "config": MAPPOConfig(("demo_1",)),
+        "policy_generation": 4,
+        "policy_digest": "digest",
+        "policy_state": {},
+        "actor_init_seed": 42,
+        "critic_init_seed": 43,
+        "duration": 120,
+        "period": "morning_peak",
+        "step_length": 0.1,
+        "environment_contract": contract,
+    }
+
+    with pytest.raises(StopBeforeSumo):
+        train_module._run_sumo_worker(request)
+
+    assert captured["environment_contract"] is contract
+
+
+def test_joint_resume_cannot_exceed_480_cumulative_episodes(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_training_config(("demo_1",))
+    metadata = _checkpoint_metadata(
+        config=config,
+        episode=480,
+        policy_generation=80,
+        actor_init_seed=42,
+        critic_init_seed=43,
+        training_seed_start=93001,
+        training_seed_end=93480,
+        training_periods=(
+            "morning_peak",
+            "off_peak",
+            "evening_peak",
+        ),
+        training_workers=6,
+        episode_duration_s=120,
+    )
+    checkpoint_path = tmp_path / "joint-ep480.pt"
+    checkpoint_path.touch()
+    monkeypatch.setattr(
+        train_module,
+        "read_checkpoint_metadata",
+        lambda _path: metadata,
+    )
+    monkeypatch.setattr(
+        train_module,
+        "read_checkpoint_environment_contract",
+        lambda _path: {},
+    )
+    load_calls = []
+
+    def should_not_restore(*_args, **_kwargs):
+        load_calls.append(True)
+        raise AssertionError("checkpoint state must not be restored")
+
+    monkeypatch.setattr(
+        train_module,
+        "load_checkpoint",
+        should_not_restore,
+    )
+
+    with pytest.raises(SystemExit) as error:
+        train_module.main(
+            [
+                "--base-seed",
+                "93481",
+                "--episodes",
+                "6",
+                "--workers",
+                "6",
+                "--intersections",
+                "1",
+                "--duration",
+                "120",
+                "--periods",
+                "morning_peak",
+                "off_peak",
+                "evening_peak",
+                "--resume",
+                str(checkpoint_path),
+            ]
+        )
+
+    assert error.value.code == 2
+    assert load_calls == []

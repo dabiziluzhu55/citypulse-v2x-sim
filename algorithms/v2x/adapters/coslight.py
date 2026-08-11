@@ -80,12 +80,33 @@ class CoslightV2XBridge:
                 config=self.config,
                 sink=JSONLSink(log_path) if log_path else None)
         self._engine: Optional[CollabDecisionEngine] = None
+        self._delivered_bsm_buffer: list[dict] = []
+        self._v2x_context_enabled = os.environ.get("COSLIGHT_V2X_CONTEXT", "") == "1"
+        # Subscribe to BSM/INTENT deliveries for V2X context consumption
+        self._hub.subscribe("BSM", self._on_bsm_delivered)
+        self._hub.subscribe("INTENT", self._on_bsm_delivered)
         self._scope: Optional[ResolvedScenarioScope] = None
         self._collab_summary: Optional[dict] = None
         self._capabilities: dict[str, VehicleCapability] = {}
         self._vehicle_class_by_type: dict[str, str] = {}
         self._init_payload: Optional[Mapping[str, Any]] = None
         self._rsu_ids: set[str] = set()
+
+    def _on_bsm_delivered(self, message) -> None:
+        msg = message.to_dict() if hasattr(message, "to_dict") else dict(message)
+        if os.environ.get("COSLIGHT_V2X_PROBE", "0") == "1" and len(self._delivered_bsm_buffer) < 3:
+            print(
+                "V2X probe bsm sample:",
+                {k: msg.get(k) for k in ("message_type", "sim_time", "source_id")},
+                "payload_keys=", list((msg.get("payload") or {}).keys()),
+            )
+        if msg.get("message_type") == "BSM":
+            self._delivered_bsm_buffer.append(msg)
+
+    def get_delivered_bsm_messages(self) -> list[dict]:
+        msgs = list(self._delivered_bsm_buffer)
+        self._delivered_bsm_buffer.clear()
+        return msgs
 
     def on_initialize(self, payload: Mapping[str, Any], *, run_id: str,
                       episode_id: str, scenario: Optional[Mapping[str, Any]] = None,
@@ -121,15 +142,11 @@ class CoslightV2XBridge:
             scenario=scenario, initial_sim_time=initial_sim_time)
         self._rsu_ids = set((payload.get("intersections") or {}).keys())
 
-    def on_step(self, payload: Mapping[str, Any],
-                actions: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    def step_upstream(self, payload: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+        """决策前: 生成并发布上行消息 (BSM/INTENT/SPaT/RSM)。"""
         sim_time = float(payload.get("simulation_time", 0.0))
         hub = self._hub
         frame = hub.ingest_step(payload)
-        # 兼容控制器返回两种形状：{"actions": {...}} 或扁平 {...}
-        raw_actions = actions
-        if isinstance(actions, Mapping) and isinstance(actions.get("actions"), Mapping):
-            raw_actions = actions["actions"]
         # --- 上行消息 ---
         intersections = payload.get("intersections") or {}
         vehicles = payload.get("vehicles") or {}
@@ -202,6 +219,19 @@ class CoslightV2XBridge:
             if hub.should_send(hub._episode_id or "", rid, "RSM", sim_time):
                 hub.publish(rsm, frame_id=frame.frame_id)
                 hub.mark_sent(hub._episode_id or "", rid, "RSM", sim_time)
+        return frame
+
+    def step_post(self, payload: Mapping[str, Any],
+                  actions: Mapping[str, Any]) -> None:
+        """决策后: 消费 actions (signal control / RSI 下发)。"""
+        sim_time = float(payload.get("simulation_time", 0.0))
+        hub = self._hub
+        frame = hub._last_step_frame
+        raw_actions = actions
+        if isinstance(actions, Mapping) and isinstance(actions.get("actions"), Mapping):
+            raw_actions = actions["actions"]
+        if frame is None:
+            return
         # --- 下行影子记录（collab 拥有 RSI 发射权；signal control 仍走 hub）---
         if self._engine is not None:
             result = self._engine.tick(
@@ -211,9 +241,8 @@ class CoslightV2XBridge:
                 key: value for key, value in result.protocol_actions.items()
                 if key != "vehicles"}
             hub.ingest_actions(actions_for_hub, frame=frame)
-            return result.protocol_actions  # shadow == baseline；供未来 active 替换
+            return
         hub.ingest_actions(raw_actions, frame=frame)
-        return None
 
     def on_finish(self, final_sim_time: float) -> dict:
         network_summary = self._hub.finish_episode(
@@ -260,6 +289,13 @@ def hub_rsu(hub: V2XHub, rsu_id: str) -> RSU:
     return RSU(rsu_id=rsu_id, covered_lane_ids=covered[rsu_id], position=position)
 
 
+def get_delivered_bsm_messages() -> list[dict]:
+    global _bridge
+    if _bridge is not None:
+        return _bridge.get_delivered_bsm_messages()
+    return []
+
+
 def reset_bridge() -> None:
     global _bridge, _last_collab_summary
     if _bridge is not None:
@@ -274,7 +310,8 @@ def reset_bridge() -> None:
 def _ensure_bridge() -> Optional[CoslightV2XBridge]:
     global _bridge
     log_path = os.environ.get("COSLIGHT_V2X_LOG")
-    if not log_path and not _env_collab_enabled():
+    v2x_context = os.environ.get("COSLIGHT_V2X_CONTEXT", "") == "1"
+    if not log_path and not _env_collab_enabled() and not v2x_context:
         return None
     if _bridge is None:
         _bridge = CoslightV2XBridge(
@@ -292,12 +329,19 @@ def bridge_initialize(payload: Mapping[str, Any]) -> None:
                          scenario={"source": "coslight"})
 
 
+def bridge_step_upstream(payload: Mapping[str, Any]) -> None:
+    bridge = _ensure_bridge()
+    if bridge is None:
+        return
+    bridge.step_upstream(payload)
+
+
 def bridge_step(payload: Mapping[str, Any],
                 actions: Mapping[str, Any]) -> None:
     bridge = _ensure_bridge()
     if bridge is None:
         return
-    bridge.on_step(payload, actions)
+    bridge.step_post(payload, actions)
 
 
 def bridge_finish(payload: Mapping[str, Any]) -> None:
@@ -309,6 +353,9 @@ def bridge_finish(payload: Mapping[str, Any]) -> None:
         final_sim_time = float(payload.get("simulation_time", 0.0))
     else:
         final_sim_time = float(payload)
+    if final_sim_time <= 0.0 and bridge._hub is not None:
+        # payload 缺失 simulation_time 时用 hub 内部时间, 避免 time regression
+        final_sim_time = bridge._hub._sim_time
     summary = bridge.on_finish(final_sim_time)
     reset_bridge()
     # reset 会清空 _last_collab_summary；这里在 reset 之后保存，保证可查询最近一次 episode

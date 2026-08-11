@@ -32,6 +32,13 @@ class ScenarioAlias:
 
 
 MODEL_ALIASES: dict[str, ModelAlias] = {
+    "mappo_cooperative_20tls_ep360": ModelAlias(
+        alias="mappo_cooperative_20tls_ep360",
+        checkpoint_path=Path(__file__).resolve().parent
+        / "models"
+        / "mappo_cooperative_20tls_ep360.pt",
+        training_intersection_ids=IDENTITY_SLOT_IDS,
+    ),
     "mappo_cooperative_20tls_ep160": ModelAlias(
         alias="mappo_cooperative_20tls_ep160",
         checkpoint_path=Path(__file__).resolve().parent
@@ -45,19 +52,19 @@ SCENARIO_ALIASES: dict[str, ScenarioAlias] = {
     "xiongan_20": ScenarioAlias(
         alias="xiongan_20",
         scenario_preset_id="xiongan_20",
-        model_alias="mappo_cooperative_20tls_ep160",
+        model_alias="mappo_cooperative_20tls_ep360",
         description="雄安 20 路口全集，通用 20 路口 MAPPO 协同模型",
     ),
     "east_dense": ScenarioAlias(
         alias="east_dense",
         scenario_preset_id="east_dense",
-        model_alias="mappo_cooperative_20tls_ep160",
+        model_alias="mappo_cooperative_20tls_ep360",
         description="东部密集路口（demo_3/5/6/9）零样本推理，20 路口 MAPPO 协同模型",
     ),
     "west_dense": ScenarioAlias(
         alias="west_dense",
         scenario_preset_id="west_dense",
-        model_alias="mappo_cooperative_20tls_ep160",
+        model_alias="mappo_cooperative_20tls_ep360",
         description="西部密集路口（demo_14/15/19）零样本推理，20 路口 MAPPO 协同模型",
     ),
 }

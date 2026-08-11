@@ -38,6 +38,7 @@ from algorithms.mappo.checkpoint import (  # noqa: E402
     CheckpointMetadata,
     load_checkpoint,
     policy_digest,
+    read_checkpoint_environment_contract,
     read_checkpoint_metadata,
     save_checkpoint,
 )
@@ -57,6 +58,11 @@ from algorithms.mappo.diagnostics import (  # noqa: E402
     reward_metric_alignment,
 )
 from algorithms.mappo.models import MAPPOPolicy
+from traffic_control.common.environment_contract import (
+    JOINT_PERIODS,
+    validate_training_periods,
+)
+from traffic_control.mappo.contract import build_mappo_policy_spec
 from traffic_control.ippo.identity import IDENTITY_SLOT_IDS  # noqa: E402
 from algorithms.mappo.parallel_train import (  # noqa: E402
     CentralUpdateCoordinator,
@@ -64,7 +70,7 @@ from algorithms.mappo.parallel_train import (  # noqa: E402
     build_ppo_batch,
 )
 from algorithms.mappo.trainer import MAPPOTrainer  # noqa: E402
-from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
+from simulation.sumo import SimulationConfig, SimulationManager  # noqa: E402
 
 
 DEFAULT_INTERSECTION_IDS = tuple(f"demo_{index}" for index in range(1, 21))
@@ -95,6 +101,25 @@ def _period_batch(
         str(periods[(int(seed) - int(training_seed_start)) % len(periods)])
         for seed in seeds
     )
+
+
+def _validate_joint_run_shape(
+    *,
+    periods: Sequence[str],
+    workers: int,
+    episodes: int,
+) -> int:
+    validate_training_periods(periods)
+    if workers not in {6, 9, 12}:
+        raise ValueError("joint MAPPO workers must be one of 6, 9, or 12")
+    if episodes > 480:
+        raise ValueError("joint MAPPO training is capped at 480 episodes")
+    if episodes % workers != 0:
+        raise ValueError(
+            "joint MAPPO episodes must form complete synchronous batches "
+            f"(episodes={episodes}, workers={workers})"
+        )
+    return workers
 
 
 def _training_seed_range(
@@ -190,6 +215,13 @@ def _checkpoint_metadata(
     )
 
 
+def _joint_policy_spec(config: MAPPOConfig) -> dict[str, object]:
+    values = asdict(config)
+    values["obs_dim"] = config.obs_dim
+    values["local_observation_schema"] = IPPO_V8_LOCAL_OBSERVATION_SCHEMA
+    return build_mappo_policy_spec(values)
+
+
 def _failed_worker_rollout(
     *,
     seed: int,
@@ -197,6 +229,7 @@ def _failed_worker_rollout(
     policy_generation: int,
     expected_policy_digest: str,
     config: MAPPOConfig,
+    period: str,
 ) -> WorkerRollout:
     return WorkerRollout(
         seed=int(seed),
@@ -213,6 +246,8 @@ def _failed_worker_rollout(
         reward_scope=config.reward_scope,
         team_reward_schema=config.team_reward_schema,
         joint_step_schema=config.joint_step_schema,
+        period=str(period),
+        metadata=None,
     )
 
 
@@ -225,6 +260,55 @@ def _metrics_dict(snapshot: object) -> dict[str, float | int]:
         "hard_braking": int(metrics.hard_braking_events),
         "fuel_mg": float(metrics.fuel_consumed_mg),
     }
+
+
+def _group_metrics_by_period(
+    results: Sequence[Mapping[str, object]],
+    periods: Sequence[str],
+) -> dict[str, dict[str, object]]:
+    """Group successful worker metrics without using aggregate to hide a period."""
+    period_values = tuple(str(period) for period in periods)
+    if len(results) != len(period_values):
+        raise ValueError("metrics and periods must have equal lengths")
+    unknown = sorted(set(period_values) - set(JOINT_PERIODS))
+    if unknown:
+        raise ValueError(f"unsupported diagnostic periods: {unknown}")
+
+    def summarize(indices: Sequence[int]) -> dict[str, object]:
+        if not indices:
+            raise ValueError("every joint period must have diagnostic metrics")
+        metric_rows: list[Mapping[str, object]] = []
+        for index in indices:
+            metrics = results[index].get("metrics")
+            if not isinstance(metrics, Mapping):
+                raise ValueError(
+                    f"worker metric payload is missing at index {index}"
+                )
+            metric_rows.append(metrics)
+        metric_names = tuple(sorted(str(name) for name in metric_rows[0]))
+        for row in metric_rows[1:]:
+            if tuple(sorted(str(name) for name in row)) != metric_names:
+                raise ValueError("worker metric schemas do not match")
+        return {
+            "episode_count": len(indices),
+            "metrics_mean": {
+                name: float(np.mean([float(row[name]) for row in metric_rows]))
+                for name in metric_names
+            },
+        }
+
+    grouped = {
+        period: summarize(
+            [
+                index
+                for index, value in enumerate(period_values)
+                if value == period
+            ]
+        )
+        for period in JOINT_PERIODS
+    }
+    grouped["overall"] = summarize(list(range(len(results))))
+    return grouped
 
 
 def _stop_timed_out_session(
@@ -264,6 +348,7 @@ def _run_sumo_worker(request: Mapping[str, object]) -> dict[str, object]:
         expected_duration_s=float(request["duration"]),
         mode="collect",
         record_evaluation=False,
+        environment_contract=request.get("environment_contract"),
     )
 
     manager = SimulationManager()
@@ -301,6 +386,7 @@ def _run_sumo_worker(request: Mapping[str, object]) -> dict[str, object]:
         return {
             "status": "complete",
             "seed": seed,
+            "period": str(request["period"]),
             "elapsed": time.time() - started_at,
             "metrics": _metrics_dict(snapshot),
             "rollout": rollout,
@@ -316,6 +402,7 @@ def _run_sumo_worker(request: Mapping[str, object]) -> dict[str, object]:
     return {
         "status": "failed",
         "seed": seed,
+        "period": str(request["period"]),
         "elapsed": time.time() - started_at,
         "metrics": None,
         "rollout": _failed_worker_rollout(
@@ -324,6 +411,7 @@ def _run_sumo_worker(request: Mapping[str, object]) -> dict[str, object]:
             policy_generation=generation,
             expected_policy_digest=expected_digest,
             config=config,
+            period=str(request["period"]),
         ),
     }
 
@@ -339,6 +427,7 @@ def _run_policy_batch(
     policy_generation: int,
     actor_init_seed: int,
     critic_init_seed: int,
+    environment_contract: Mapping[str, object] | None = None,
 ) -> list[dict[str, object]]:
     if len(seeds) != len(periods):
         raise ValueError("periods must contain one value per worker")
@@ -356,6 +445,7 @@ def _run_policy_batch(
         "policy_digest": digest,
         "actor_init_seed": int(actor_init_seed),
         "critic_init_seed": int(critic_init_seed),
+        "environment_contract": environment_contract,
     }
     context = multiprocessing.get_context("spawn")
     results: list[dict[str, object]] = []
@@ -366,11 +456,11 @@ def _run_policy_batch(
             executor.submit(
                 _run_sumo_worker,
                 {**base_request, "seed": int(seed), "period": str(period)},
-            ): int(seed)
-            for seed, period in zip(seeds, periods)
+            ): (int(seed), str(period))
+            for seed, period in zip(seeds, periods, strict=True)
         }
         for future in as_completed(futures):
-            seed = futures[future]
+            seed, period = futures[future]
             try:
                 results.append(future.result())
             except BaseException as error:
@@ -379,6 +469,7 @@ def _run_policy_batch(
                     {
                         "status": "failed",
                         "seed": seed,
+                        "period": period,
                         "elapsed": 0.0,
                         "metrics": None,
                         "rollout": _failed_worker_rollout(
@@ -387,6 +478,7 @@ def _run_policy_batch(
                             policy_generation=policy_generation,
                             expected_policy_digest=digest,
                             config=config,
+                            period=period,
                         ),
                     }
                 )
@@ -406,6 +498,8 @@ def _training_arg_parser() -> argparse.ArgumentParser:
         default=COOPERATIVE_MODEL_VERSION,
     )
     parser.add_argument("--critic-scope", choices=("local", "global"), default="global")
+    parser.add_argument("--pressure-shaping", action="store_true", default=False,
+                        help="Enable MaxPressure phase regret as auxiliary reward")
     parser.add_argument("--init", choices=("random",), default="random")
     from algorithms.presets import SCENARIO_PRESET_REGISTRY
 
@@ -450,6 +544,7 @@ def _build_training_config(
     *,
     critic_scope: str = "global",
     model_version: str = COOPERATIVE_MODEL_VERSION,
+    pressure_shaping_enabled: bool = False,
 ) -> MAPPOConfig:
     actor_variant = MODEL_ACTOR_VARIANTS[model_version]
     return MAPPOConfig(
@@ -459,6 +554,7 @@ def _build_training_config(
         actor_variant=actor_variant,
         reward_scope=REWARD_SCOPE_SHARED_TEAM,
         critic_target_scope="team_return",
+        pressure_shaping_enabled=pressure_shaping_enabled,
     )
 
 
@@ -484,6 +580,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for name in ("episodes", "workers", "duration", "checkpoint_every", "step_length"):
         _positive(parser, name, getattr(args, name))
+    joint_period_training = args.periods is not None
     periods = tuple(str(value) for value in (args.periods or (args.period,)))
     if any(not value.strip() for value in periods):
         parser.error("training periods must be non-empty")
@@ -504,12 +601,23 @@ def main(argv: list[str] | None = None) -> int:
         intersections = DEFAULT_INTERSECTION_IDS[
             : (args.intersections or len(DEFAULT_INTERSECTION_IDS))
         ]
-    workers = min(args.workers, args.episodes)
+    if joint_period_training:
+        try:
+            workers = _validate_joint_run_shape(
+                periods=periods,
+                workers=args.workers,
+                episodes=args.episodes,
+            )
+        except ValueError as error:
+            parser.error(str(error))
+    else:
+        workers = min(args.workers, args.episodes)
     try:
         config = _build_training_config(
             intersections,
             critic_scope=args.critic_scope,
             model_version=args.model_version,
+            pressure_shaping_enabled=args.pressure_shaping,
         )
     except (KeyError, ValueError) as error:
         parser.error(str(error))
@@ -545,6 +653,7 @@ def main(argv: list[str] | None = None) -> int:
     previous_end: int | None = None
     resume_path = args.resume.expanduser().resolve() if args.resume else None
     resume_metadata: CheckpointMetadata | None = None
+    resume_environment_contract: Mapping[str, object] | None = None
     if resume_path is not None:
         if not resume_path.is_file():
             parser.error(f"resume checkpoint does not exist: {resume_path}")
@@ -555,6 +664,17 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("resume checkpoint critic init seed does not match")
         if resume_metadata.training_periods != periods:
             parser.error("resume checkpoint training periods do not match")
+        if joint_period_training:
+            try:
+                resume_environment_contract = (
+                    read_checkpoint_environment_contract(resume_path)
+                )
+            except ValueError as error:
+                parser.error(str(error))
+            if resume_environment_contract is None:
+                parser.error(
+                    "joint MAPPO resume requires a format v3 checkpoint"
+                )
         if (
             resume_metadata.training_workers is not None
             and resume_metadata.training_workers != workers
@@ -578,6 +698,11 @@ def main(argv: list[str] | None = None) -> int:
         previous_start = resume_metadata.training_seed_start
         previous_end = resume_metadata.training_seed_end
 
+    if joint_period_training and completed_episodes + args.episodes > 480:
+        parser.error(
+            "joint MAPPO training is capped at 480 cumulative episodes"
+        )
+
     try:
         training_seed_start, training_seed_end = _training_seed_range(
             base_seed=args.base_seed,
@@ -597,6 +722,7 @@ def main(argv: list[str] | None = None) -> int:
             expected_local_observation_schema=IPPO_V8_LOCAL_OBSERVATION_SCHEMA,
             expected_reward_definition=REWARD_DEFINITION,
             expected_metadata=resume_metadata,
+            expected_environment_contract=resume_environment_contract,
         )
 
     coordinator = CentralUpdateCoordinator(
@@ -609,6 +735,10 @@ def main(argv: list[str] | None = None) -> int:
         reward_scope=config.reward_scope,
         team_reward_schema=config.team_reward_schema,
         joint_step_schema=config.joint_step_schema,
+        policy_spec=(
+            _joint_policy_spec(config) if joint_period_training else None
+        ),
+        environment_contract=resume_environment_contract,
         digest_provider=lambda: policy_digest(policy),
         batch_builder=lambda rollouts: build_ppo_batch(
             rollouts, config=config
@@ -663,13 +793,14 @@ def main(argv: list[str] | None = None) -> int:
             start=1,
         ):
             batch_started = time.time()
+            batch_periods = _period_batch(
+                seeds,
+                periods=periods,
+                training_seed_start=training_seed_start,
+            )
             results = _run_policy_batch(
                 seeds=seeds,
-                periods=_period_batch(
-                    seeds,
-                    periods=periods,
-                    training_seed_start=training_seed_start,
-                ),
+                periods=batch_periods,
                 config=config,
                 duration=args.duration,
                 step_length=args.step_length,
@@ -677,10 +808,15 @@ def main(argv: list[str] | None = None) -> int:
                 policy_generation=coordinator.policy_generation,
                 actor_init_seed=args.actor_init_seed,
                 critic_init_seed=args.critic_init_seed,
-                    )
+                environment_contract=coordinator.environment_contract,
+            )
             rollouts = [result["rollout"] for result in results]
             diagnostics = coordinator.update_from_workers(
-                rollouts, expected_seeds=seeds
+                rollouts,
+                expected_seeds=seeds,
+                expected_periods=(
+                    batch_periods if joint_period_training else None
+                ),
             )
             completed_episodes += len(seeds)
             samples = sum(len(rollout.transitions) for rollout in rollouts)
@@ -759,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             logger.info(
                 "BATCH%d reward mean=%.6f raw_mean=%.6f clip=%.6f "
-                "D=%.6f F_safe=%.6f B=%.6f H=%.6f "
+                "D=%.6f F_safe=%.6f B=%.6f H=%.6f MP_regret=%.6f MP_alpha=%.6f "
                 "corr_arrived=%s corr_waiting=%s",
                 batch_number,
                 reward_summary["reward"]["mean"],
@@ -769,6 +905,8 @@ def main(argv: list[str] | None = None) -> int:
                 reward_summary["components"]["F_safe"]["mean"],
                 reward_summary["components"]["B"]["mean"],
                 reward_summary["components"]["H"]["mean"],
+                reward_summary["components"].get("MP_regret", {}).get("mean", 0.0),
+                reward_summary["components"].get("MP_alpha", {}).get("mean", 0.0),
                 (
                     "N/A"
                     if correlations.get("arrived") is None
@@ -826,6 +964,20 @@ def main(argv: list[str] | None = None) -> int:
                     all(np.isfinite(value) for value in scalar_diagnostics.values())
                 ),
             }
+            if joint_period_training:
+                period_counts = diagnostics.get("period_counts")
+                if not isinstance(period_counts, Mapping):
+                    raise RuntimeError(
+                        "joint MAPPO update returned no period counts"
+                    )
+                batch_record["period_counts"] = {
+                    period: int(period_counts[period])
+                    for period in JOINT_PERIODS
+                }
+                batch_record["metrics_by_period"] = _group_metrics_by_period(
+                    results,
+                    batch_periods,
+                )
             diagnostic_batches.append(batch_record)
             if diagnostics_path is not None:
                 _write_training_diagnostics(
@@ -845,14 +997,18 @@ def main(argv: list[str] | None = None) -> int:
                     policy_generation=coordinator.policy_generation,
                     actor_init_seed=args.actor_init_seed,
                     critic_init_seed=args.critic_init_seed,
-                                training_seed_start=training_seed_start,
+                    training_seed_start=training_seed_start,
                     training_seed_end=int(seeds[-1]),
                     training_periods=periods,
                     training_workers=workers,
                     episode_duration_s=args.duration,
                 )
                 save_checkpoint(
-                    periodic_path, policy, trainer, periodic_metadata
+                    periodic_path,
+                    policy,
+                    trainer,
+                    periodic_metadata,
+                    environment_contract=coordinator.environment_contract,
                 )
                 last_periodic_checkpoint_episode = completed_episodes
                 logger.info("periodic checkpoint saved: %s", periodic_path)
@@ -886,7 +1042,13 @@ def main(argv: list[str] | None = None) -> int:
         training_workers=workers,
         episode_duration_s=args.duration,
     )
-    save_checkpoint(save_path, policy, trainer, metadata)
+    save_checkpoint(
+        save_path,
+        policy,
+        trainer,
+        metadata,
+        environment_contract=coordinator.environment_contract,
+    )
     diagnostic_payload["status"] = "complete"
     diagnostic_payload["completed_episodes"] = completed_episodes
     diagnostic_payload["final_policy_generation"] = (

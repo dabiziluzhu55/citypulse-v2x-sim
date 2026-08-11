@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -19,6 +20,13 @@ from algorithms.mappo.features import CentralizedState
 from algorithms.mappo.joint_rollout import JointTransition
 from algorithms.mappo.rollout import Transition, compute_gae
 from algorithms.mappo.trainer import PPOBatch
+from traffic_control.common.environment_contract import (
+    EnvironmentContractError,
+    build_environment_contract,
+    validate_balanced_period_batch,
+    validate_checkpoint_environment,
+    validate_contract_integrity,
+)
 from traffic_control.ippo.identity import IDENTITY_SLOT_IDS, identity_slots_for
 
 
@@ -45,6 +53,8 @@ class WorkerRollout:
     reward_scope: str = REWARD_SCOPE_SHARED_TEAM
     team_reward_schema: str = TEAM_REWARD_SCHEMA
     joint_step_schema: str = JOINT_STEP_SCHEMA
+    period: str | None = None
+    metadata: Mapping[str, Any] | None = None
 
 
 def build_ppo_batch(
@@ -634,6 +644,84 @@ def _validate_flat_transition(
     return transition_action_dimension
 
 
+def _worker_period(worker: WorkerRollout) -> str:
+    period = str(worker.period or "").strip()
+    if not period:
+        raise BatchValidationError(
+            f"worker {worker.seed} is missing its scheduled period"
+        )
+    if worker.status == "ok":
+        if not isinstance(worker.metadata, Mapping):
+            raise BatchValidationError(
+                f"worker {worker.seed} is missing successful rollout metadata"
+            )
+        metadata_period = str(worker.metadata.get("period", "")).strip()
+        if metadata_period != period:
+            raise BatchValidationError(
+                f"worker {worker.seed} metadata period mismatch: "
+                f"scheduled={period!r}, metadata={metadata_period!r}"
+            )
+    return period
+
+
+def _validate_worker_environment_batch(
+    workers: tuple[WorkerRollout, ...],
+    *,
+    expected_periods: Iterable[str],
+    policy_spec: Mapping[str, Any],
+    expected_environment_contract: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, int]]:
+    scheduled = tuple(str(period) for period in expected_periods)
+    if len(scheduled) != len(workers):
+        raise BatchValidationError(
+            "expected periods must contain one value per worker"
+        )
+    try:
+        period_counts = validate_balanced_period_batch(scheduled)
+    except EnvironmentContractError as error:
+        raise BatchValidationError(str(error)) from error
+
+    metadata_by_period: dict[str, dict[str, Any]] = {}
+    for worker, expected_period in zip(workers, scheduled, strict=True):
+        actual_period = _worker_period(worker)
+        if actual_period != expected_period:
+            raise BatchValidationError(
+                f"worker {worker.seed} scheduled period mismatch: "
+                f"expected={expected_period!r}, actual={actual_period!r}"
+            )
+        if not isinstance(worker.metadata, Mapping):
+            raise BatchValidationError(
+                f"worker {worker.seed} is missing successful rollout metadata"
+            )
+        metadata_by_period.setdefault(
+            actual_period, deepcopy(dict(worker.metadata))
+        )
+
+    try:
+        batch_contract = build_environment_contract(
+            metadata_by_period,
+            policy_spec=policy_spec,
+        )
+        if expected_environment_contract is None:
+            environment_contract = batch_contract
+        else:
+            validate_contract_integrity(expected_environment_contract)
+            environment_contract = deepcopy(dict(expected_environment_contract))
+        for worker in workers:
+            assert isinstance(worker.metadata, Mapping)
+            validate_checkpoint_environment(
+                environment_contract,
+                worker.metadata,
+                policy_spec=policy_spec,
+            )
+    except (EnvironmentContractError, TypeError, ValueError) as error:
+        raise BatchValidationError(
+            f"worker environment contract validation failed: {error}"
+        ) from error
+
+    return environment_contract, metadata_by_period, period_counts
+
+
 def validate_worker_batch(
     results: Iterable[WorkerRollout],
     *,
@@ -646,6 +734,9 @@ def validate_worker_batch(
     expected_reward_scope: str | None = None,
     expected_team_reward_schema: str | None = None,
     expected_joint_step_schema: str | None = None,
+    expected_periods: Iterable[str] | None = None,
+    policy_spec: Mapping[str, Any] | None = None,
+    expected_environment_contract: Mapping[str, Any] | None = None,
 ) -> tuple[WorkerRollout, ...]:
     workers = tuple(results)
     required_seeds = tuple(int(seed) for seed in expected_seeds)
@@ -675,6 +766,7 @@ def validate_worker_batch(
     ordered = tuple(by_seed[seed] for seed in required_seeds)
     for worker in ordered:
         prefix = f"worker {worker.seed}"
+        _worker_period(worker)
         if worker.status != "ok":
             detail = worker.error or worker.status
             raise BatchValidationError(f"{prefix} failed: {detail}")
@@ -739,6 +831,17 @@ def validate_worker_batch(
             raise BatchValidationError(
                 f"{prefix} dropped {worker.dropped_pending} pending joint actions"
             )
+    if expected_periods is not None:
+        if policy_spec is None:
+            raise BatchValidationError(
+                "joint worker validation requires a policy specification"
+            )
+        _validate_worker_environment_batch(
+            ordered,
+            expected_periods=expected_periods,
+            policy_spec=policy_spec,
+            expected_environment_contract=expected_environment_contract,
+        )
     return ordered
 
 
@@ -759,6 +862,8 @@ class CentralUpdateCoordinator:
         reward_scope: str | None = None,
         team_reward_schema: str | None = None,
         joint_step_schema: str | None = None,
+        policy_spec: Mapping[str, Any] | None = None,
+        environment_contract: Mapping[str, Any] | None = None,
     ) -> None:
         self.trainer = trainer
         self.policy_generation = int(policy_generation)
@@ -775,6 +880,19 @@ class CentralUpdateCoordinator:
         self.joint_step_schema = (
             None if joint_step_schema is None else str(joint_step_schema)
         )
+        self.policy_spec = (
+            None if policy_spec is None else deepcopy(dict(policy_spec))
+        )
+        self.environment_contract = (
+            None
+            if environment_contract is None
+            else deepcopy(dict(environment_contract))
+        )
+        if self.environment_contract is not None:
+            if self.policy_spec is None:
+                raise ValueError("environment contract requires a policy specification")
+            validate_contract_integrity(self.environment_contract)
+        self.metadata_by_period: dict[str, dict[str, Any]] = {}
         self._digest_provider = digest_provider
         self._batch_builder = batch_builder
 
@@ -783,7 +901,13 @@ class CentralUpdateCoordinator:
         results: Iterable[WorkerRollout],
         *,
         expected_seeds: Iterable[int],
-    ) -> dict[str, float | int]:
+        expected_periods: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        period_values = (
+            None
+            if expected_periods is None
+            else tuple(str(period) for period in expected_periods)
+        )
         workers = validate_worker_batch(
             results,
             expected_generation=self.policy_generation,
@@ -795,11 +919,36 @@ class CentralUpdateCoordinator:
             expected_reward_scope=self.reward_scope,
             expected_team_reward_schema=self.team_reward_schema,
             expected_joint_step_schema=self.joint_step_schema,
+            expected_periods=period_values,
+            policy_spec=self.policy_spec,
+            expected_environment_contract=self.environment_contract,
         )
+
+        candidate_contract = None
+        candidate_metadata: dict[str, dict[str, Any]] = {}
+        period_counts: dict[str, int] | None = None
+        if period_values is not None:
+            assert self.policy_spec is not None
+            (
+                candidate_contract,
+                candidate_metadata,
+                period_counts,
+            ) = _validate_worker_environment_batch(
+                workers,
+                expected_periods=period_values,
+                policy_spec=self.policy_spec,
+                expected_environment_contract=self.environment_contract,
+            )
+
         batch = self._batch_builder(workers)
-        diagnostics = dict(self.trainer.update(batch))
+        diagnostics: dict[str, object] = dict(self.trainer.update(batch))
         new_digest = str(self._digest_provider())
         self.policy_generation += 1
         self.policy_digest = new_digest
+        if candidate_contract is not None:
+            self.environment_contract = candidate_contract
+            self.metadata_by_period.update(deepcopy(candidate_metadata))
         diagnostics["policy_generation"] = self.policy_generation
+        if period_counts is not None:
+            diagnostics["period_counts"] = period_counts
         return diagnostics

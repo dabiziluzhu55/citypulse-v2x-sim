@@ -86,7 +86,7 @@ python3 -m pip install -r algorithms/sotl/requirements.txt
 fixed 由 SUMO 直接执行，不加载算法模块：
 
 ```bash
-python3 -m simulation.sumo.run \
+python3 -m simulation.sumo.engine.run \
   --mode fixed \
   --intersection demo_1 demo_2 demo_3 demo_4 \
   --period off_peak \
@@ -97,7 +97,7 @@ python3 -m simulation.sumo.run \
 ### 4.2 SOTL 本地模式
 
 ```bash
-python3 -m simulation.sumo.run \
+python3 -m simulation.sumo.engine.run \
   --mode algorithm \
   --algorithm-transport local \
   --algorithm-module algorithms.sotl \
@@ -122,7 +122,7 @@ PYTHONPATH=algorithms python3 -m uvicorn sotl.server:app \
 再启动仿真：
 
 ```bash
-python3 -m simulation.sumo.run \
+python3 -m simulation.sumo.engine.run \
   --mode algorithm \
   --algorithm-transport http \
   --algorithm-endpoint http://127.0.0.1:8002 \
@@ -147,7 +147,7 @@ algorithms/ippo/models/ippo_v8_20tls_ep160.pt
 ```bash
 IPPO_MODE=model \
 IPPO_MODEL_PATH=algorithms/ippo/models/ippo_v8_20tls_ep160.pt \
-python3 -m simulation.sumo.run \
+python3 -m simulation.sumo.engine.run \
   --mode algorithm \
   --algorithm-transport local \
   --algorithm-module algorithms.ippo \
@@ -172,7 +172,7 @@ python3 -m simulation.sumo.run \
 ### 4.5 CoSLight-P0 本地模式
 
 ```bash
-python3 -m simulation.sumo.run \
+python3 -m simulation.sumo.engine.run \
   --mode algorithm \
   --algorithm-transport local \
   --algorithm-module algorithms.coslight \
@@ -199,7 +199,7 @@ def finish(payload: dict) -> object: ...
 然后运行：
 
 ```bash
-python3 -m simulation.sumo.run \
+python3 -m simulation.sumo.engine.run \
   --mode algorithm \
   --algorithm-transport local \
   --algorithm-module algorithms.your_algorithm \
@@ -236,7 +236,7 @@ def finish(summary: dict) -> None: ...
 示例：
 
 ```bash
-python3 -m simulation.sumo.run \
+python3 -m simulation.sumo.engine.run \
   --mode fixed \
   --ai-observer-module algorithms.ai_observer_example \
   --ai-frame-interval 1.0 \

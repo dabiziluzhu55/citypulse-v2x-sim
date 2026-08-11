@@ -3,6 +3,7 @@ from algorithms.v2x.protocol import (
     build_bsm_draft, build_intent_draft, build_spat_draft,
     build_rsi_draft, build_signal_control_draft,
 )
+from algorithms.v2x.messages import validate_draft
 
 VEHICLE = {
     "type_id": "official_passenger",
@@ -64,3 +65,22 @@ def test_signal_control_draft():
     assert d.payload["changed"] is True
     assert d.payload["previous_action"] == 1
     assert d.payload["requested_effective_time"] == 60.0
+
+
+def test_build_spat_draft_accepts_vrc_extension():
+    draft = build_spat_draft(
+        "i1", INTERSECTION, PHASES_META, sim_time=5.0,
+        vrc_local_features=[0.0] * 8,
+        vrc_derived_features=[0.0] * 6,
+        vrc_valid=True)
+    assert draft.payload["vrc_local_features"] == [0.0] * 8
+    assert draft.payload["vrc_derived_features"] == [0.0] * 6
+    assert draft.payload["vrc_valid"] is True
+    # 必填字段仍然齐全 → validate_draft 通过
+    validate_draft(draft)
+
+
+def test_build_spat_draft_without_extension_keeps_legacy_payload():
+    draft = build_spat_draft("i1", INTERSECTION, PHASES_META, sim_time=5.0)
+    assert "vrc_local_features" not in draft.payload
+

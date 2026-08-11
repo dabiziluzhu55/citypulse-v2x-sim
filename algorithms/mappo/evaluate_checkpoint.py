@@ -40,9 +40,13 @@ from algorithms.ippo.evaluate_paired import (  # noqa: E402
     _parse_tripinfo,
     _snapshot_metrics,
 )
+from algorithms.evaluation.tripinfo_diagnostics import (  # noqa: E402
+    residual_mismatch,
+)
 from algorithms.mappo.checkpoint import (  # noqa: E402
     CheckpointMetadata,
     load_checkpoint,
+    read_checkpoint_environment_contract,
     read_checkpoint_metadata,
 )
 from algorithms.mappo.config import (  # noqa: E402
@@ -57,9 +61,10 @@ from algorithms.mappo.features import (  # noqa: E402
 )
 from algorithms.mappo.models import MAPPOPolicy  # noqa: E402
 from algorithms.mappo.train import REWARD_DEFINITION  # noqa: E402
+from traffic_control.common.environment_contract import JOINT_PERIODS  # noqa: E402
 from traffic_control.ippo.identity import IDENTITY_SLOT_IDS  # noqa: E402
 from algorithms.mappo.trainer import MAPPOTrainer  # noqa: E402
-from simulation.sumo.session import (  # noqa: E402
+from simulation.sumo import (  # noqa: E402
     SimulationConfig,
     SimulationManager,
 )
@@ -79,6 +84,7 @@ class EvaluationCheckpoint:
     config: MAPPOConfig
     metadata: CheckpointMetadata
     policy_state: Mapping[str, torch.Tensor]
+    environment_contract: Mapping[str, object] | None
 
 
 def _config_from_metadata(
@@ -143,6 +149,9 @@ def load_evaluation_checkpoint(
 
     checkpoint_path = Path(path).expanduser().resolve()
     metadata = read_checkpoint_metadata(checkpoint_path)
+    environment_contract = read_checkpoint_environment_contract(
+        checkpoint_path
+    )
     config = _config_from_metadata(metadata, intersection_ids=intersection_ids)
     policy = MAPPOPolicy(
         obs_dim=config.obs_dim,
@@ -164,6 +173,7 @@ def load_evaluation_checkpoint(
         expected_config=config,
         expected_local_observation_schema=IPPO_V8_LOCAL_OBSERVATION_SCHEMA,
         expected_reward_definition=REWARD_DEFINITION,
+        expected_environment_contract=environment_contract,
         restore_rng=False,
     )
     if loaded_metadata != metadata:
@@ -176,6 +186,7 @@ def load_evaluation_checkpoint(
             name: value.detach().cpu().clone()
             for name, value in policy.state_dict().items()
         },
+        environment_contract=environment_contract,
     )
 
 
@@ -191,6 +202,31 @@ def validate_evaluation_seeds(
         range(metadata.training_seed_start, metadata.training_seed_end + 1),
         normalized,
     )
+
+
+def _gate_metrics_from_tripinfo(
+    snapshot_metrics: Mapping[str, object],
+    tripinfo_metrics: Mapping[str, object],
+) -> dict[str, object]:
+    """Use TripInfo totals for gate fields and retain snapshot diagnostics."""
+    result = dict(snapshot_metrics)
+    result.update(tripinfo_metrics)
+    result["snapshot_departed"] = int(snapshot_metrics["departed"])
+    result["snapshot_arrived"] = int(snapshot_metrics["arrived"])
+    result["snapshot_remaining"] = int(snapshot_metrics["remaining"])
+    result["residual_mismatch"] = residual_mismatch(
+        int(tripinfo_metrics["unfinished_trips"]),
+        result["snapshot_remaining"],
+    )
+    result["departed"] = int(tripinfo_metrics["trip_records"])
+    result["arrived"] = int(tripinfo_metrics["completed_trips"])
+    result["all_waiting_total_s"] = float(
+        tripinfo_metrics["all_waiting_total_s"]
+    )
+    result["all_time_loss_total_s"] = float(
+        tripinfo_metrics["all_time_loss_total_s"]
+    )
+    return result
 
 
 def _run_evaluation(request: Mapping[str, object]) -> dict[str, object]:
@@ -222,6 +258,7 @@ def _run_evaluation(request: Mapping[str, object]) -> dict[str, object]:
         expected_duration_s=float(request["duration"]),
         mode="model",
         record_evaluation=True,
+        environment_contract=request.get("environment_contract"),
     )
     manager = SimulationManager()
     session_id: str | None = None
@@ -274,10 +311,13 @@ def _run_evaluation(request: Mapping[str, object]) -> dict[str, object]:
         return {
             "status": "complete",
             "seed": seed,
+            "period": str(request["period"]),
             "session_id": session_id,
             "elapsed_s": time.monotonic() - started_at,
-            **_snapshot_metrics(snapshot),
-            **_parse_tripinfo(tripinfo_path),
+            **_gate_metrics_from_tripinfo(
+                _snapshot_metrics(snapshot),
+                _parse_tripinfo(tripinfo_path),
+            ),
             "official_metrics": official_metrics,
             "missing_official_metrics": missing_official,
             "action_diagnostics": action_diagnostics,
@@ -296,6 +336,7 @@ def _run_evaluation(request: Mapping[str, object]) -> dict[str, object]:
             "status": "failed",
             "seed": seed,
             "session_id": session_id,
+            "period": str(request["period"]),
             "elapsed_s": time.monotonic() - started_at,
             "error": f"{type(exc).__name__}: {exc}",
         }
@@ -384,7 +425,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--step-length", type=float, default=0.1, help="SUMO simulation step (s)"
     )
-    parser.add_argument("--period", default="off_peak")
+    parser.add_argument("--period", choices=JOINT_PERIODS, default="off_peak")
     parser.add_argument("--label")
     parser.add_argument("--output", type=Path, required=True)
     scope = parser.add_mutually_exclusive_group()
@@ -445,6 +486,7 @@ def main(argv: list[str] | None = None) -> int:
             "mappo_config": checkpoint.config,
             "checkpoint_metadata": checkpoint.metadata,
             "policy_state": checkpoint.policy_state,
+            "environment_contract": checkpoint.environment_contract,
         }
         for seed in seeds
     ]
@@ -475,6 +517,7 @@ def main(argv: list[str] | None = None) -> int:
                 row = {
                     "status": "failed",
                     "seed": job["seed"],
+                    "period": job["period"],
                     "error": "worker process "
                     f"{type(exc).__name__}: {exc}",
                 }

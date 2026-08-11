@@ -1,6 +1,9 @@
+import pytest
+
 from algorithms.ippo.evaluate_ckpt import (
     OFFICIAL_METRIC_NAMES,
     _missing_official_metrics,
+    evaluate,
 )
 
 
@@ -22,3 +25,8 @@ def test_missing_core_metric_still_invalidates_run() -> None:
 
     assert required_missing == ["fuel_intensity_L_per_100km"]
     assert optional_missing == []
+
+
+def test_evaluation_rejects_unknown_period_before_loading_checkpoint() -> None:
+    with pytest.raises(ValueError, match="unsupported evaluation period"):
+        evaluate("missing.pt", period="weekend")

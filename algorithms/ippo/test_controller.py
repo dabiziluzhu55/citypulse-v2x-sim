@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import math
 import os
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -931,6 +932,89 @@ def test_parallel_resume_rejects_previous_model_version_before_workers(
     assert error.value.code == 2
 
 
+def test_joint_resume_rejects_v2_checkpoint_with_attached_v3_contract(
+    monkeypatch,
+    tmp_path,
+):
+    from algorithms.ippo import parallel_train
+    from traffic_control.common.environment_contract import (
+        JOINT_PERIODS,
+        build_environment_contract,
+    )
+    from traffic_control.ippo.contract import build_ippo_policy_spec
+
+    policy_spec = build_ippo_policy_spec(
+        obs_dim=132,
+        act_dim=4,
+        action_interval=15.0,
+        max_green_factor=2.0,
+        phase_feature_schema=parallel_train.PHASE_FEATURE_SCHEMA,
+        effective_demand_enabled=True,
+        model_version=parallel_train.MODEL_VERSION,
+    )
+    environment_contract = build_environment_contract(
+        {
+            period: _joint_metadata(period)
+            for period in JOINT_PERIODS
+        },
+        policy_spec=policy_spec,
+    )
+    checkpoint = {
+        "model_state_dict": {},
+        "model_version": parallel_train.MODEL_VERSION,
+        "phase_feature_schema": parallel_train.PHASE_FEATURE_SCHEMA,
+        "intersection_ids": ["demo_1"],
+        "obs_dim": 132,
+        "act_dim": 4,
+        "action_interval": 15.0,
+        "max_green_factor": 2.0,
+        "training_periods": list(JOINT_PERIODS),
+        "training_seed_range": {"start": 101, "end": 103},
+        "effective_demand_enabled": True,
+        "checkpoint_contract_version": 2,
+        "environment_contract": environment_contract,
+    }
+    checkpoint_path = tmp_path / "v2-with-v3-envelope.pt"
+    checkpoint_path.touch()
+    monkeypatch.setattr(
+        parallel_train,
+        "load_checkpoint_metadata",
+        lambda _path: checkpoint,
+    )
+    worker_calls = []
+
+    def should_not_start_workers(**_kwargs):
+        worker_calls.append(True)
+        raise RuntimeError("worker batch must not start")
+
+    monkeypatch.setattr(
+        parallel_train,
+        "_run_policy_batch",
+        should_not_start_workers,
+    )
+
+    with pytest.raises(SystemExit) as error:
+        parallel_train.main(
+            [
+                "--episodes",
+                "6",
+                "--workers",
+                "6",
+                "--intersection-ids",
+                "demo_1",
+                "--duration",
+                "1",
+                "--periods",
+                *JOINT_PERIODS,
+                "--resume",
+                str(checkpoint_path),
+            ]
+        )
+
+    assert error.value.code == 2
+    assert worker_calls == []
+
+
 def test_failed_evaluation_is_not_aggregated_as_zero(monkeypatch, tmp_path):
     from algorithms.ippo import evaluate_ckpt
 
@@ -1069,7 +1153,7 @@ def test_collector_exports_raw_rollout_without_local_update(controller, monkeypa
     assert transition["raw_reward_parts"] == pytest.approx([transition["raw_reward"]])
     assert transition["reward"] == pytest.approx(transition["raw_reward"])
     assert set(transition["reward_components"]) == {
-        "D", "L", "S", "Qmax", "F_safe", "B", "H"
+        "B", "D", "F_safe", "H", "L", "MP_alpha", "MP_regret", "Qmax", "S"
     }
     assert collected["sample_count"] == 1
     assert collected["metadata"]["intersections"]["demo_1"]["phase_order"] == [0, 1]
@@ -1371,6 +1455,7 @@ def test_four_tls_checkpoint_uses_its_own_intersection_set(monkeypatch, tmp_path
                 metrics=SimpleNamespace(
                     departed_vehicles=100,
                     arrived_vehicles=20,
+                    remaining_vehicles=0,
                     total_waiting_time=123.0,
                 ),
             )
@@ -1392,11 +1477,285 @@ def test_four_tls_checkpoint_uses_its_own_intersection_set(monkeypatch, tmp_path
         ),
     )
     summary = evaluate_ckpt.evaluate(
-        str(tmp_path / "four.pt"), seeds=[1042], duration=60
+        str(tmp_path / "four.pt"),
+        seeds=[1042],
+        duration=60,
+        period="evening_peak",
     )
 
     assert summary["status"] == "complete"
+    assert summary["period"] == "evening_peak"
+    assert summary["details"][0]["period"] == "evening_peak"
     assert summary["details"][0]["missing_official_metrics"] == [
         "emergency_braking_exposure_per_1000",
     ]
     assert tuple(seen_configs[0].intersection_ids) == intersection_ids
+    assert seen_configs[0].period == "evening_peak"
+    assert summary["details"][0]["all_waiting_total_s"] == pytest.approx(40.0)
+    assert summary["details"][0]["all_time_loss_total_s"] == pytest.approx(0.0)
+    assert summary["details"][0]["departed"] == 20
+    assert summary["details"][0]["trip_records"] == 20
+    assert summary["details"][0]["completed_trips"] == 20
+    assert summary["details"][0]["unfinished_trips"] == 0
+    assert summary["details"][0]["snapshot_remaining"] == 0
+    assert summary["details"][0]["residual_mismatch"] == 0
+
+def _joint_metadata(period: str) -> dict:
+    phase_count = 1 if period == "off_peak" else 2
+    metadata = _metadata(("demo_1",), (phase_count,))
+    metadata.update(
+        {
+            "protocol_version": "2.0",
+            "period": period,
+            "episode_id": f"episode-{period}",
+            "seed": 100,
+        }
+    )
+    intersection = metadata["intersections"]["demo_1"]
+    intersection["intersection_id"] = "demo_1"
+    intersection["direct_neighbors"] = []
+    for phase_id, phase in intersection["phases"].items():
+        phase.update(
+            {
+                "phase_id": phase_id,
+                "name": f"{period}-{phase_id}",
+                "movement": "through" if phase_id == 0 else "left",
+                "approaches": ["west"],
+                "yellow_seconds": 3.0,
+                "clearance_seconds": 2.0,
+            }
+        )
+    return metadata
+
+
+def _joint_rollout(controller, metadata: dict, reward: float = -0.1) -> dict:
+    phase_count = len(
+        metadata["intersections"]["demo_1"]["phase_order"]
+    )
+    action_mask = np.zeros(controller._act_dim, dtype=np.bool_)
+    action_mask[:phase_count] = True
+    return {
+        "metadata": metadata,
+        "sample_count": 1,
+        "trajectories": {
+            "demo_1": [
+                {
+                    "obs": np.zeros(controller._obs_dim, dtype=np.float32),
+                    "phase_features": np.zeros(
+                        (controller._act_dim, controller.PHASE_FEATURES),
+                        dtype=np.float32,
+                    ),
+                    "action_mask": action_mask,
+                    "action": 0,
+                    "reward": 0.0,
+                    "raw_reward": reward,
+                    "raw_reward_parts": [reward],
+                    "log_prob": 0.0,
+                    "value": 0.0,
+                    "next_value": 0.0,
+                    "done": True,
+                    "valid_action_count": phase_count,
+                }
+            ]
+        },
+    }
+
+
+def test_joint_batch_validation_happens_before_learner_mutation(
+    controller,
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "IPPO_TRAIN_PERIODS",
+        "morning_peak,off_peak,evening_peak",
+    )
+    controller.initialize(_joint_metadata("morning_peak"))
+    updates = []
+    monkeypatch.setattr(
+        controller,
+        "_ppo_update",
+        lambda episode_count=None: updates.append(episode_count),
+    )
+    rollouts = [
+        _joint_rollout(controller, _joint_metadata("morning_peak"))
+        for _ in range(3)
+    ]
+
+    with pytest.raises(ValueError, match="balanced"):
+        controller.ingest_parallel_rollouts(rollouts, update=True)
+
+    assert controller._episode == 0
+    assert controller._buffer_episodes == []
+    assert updates == []
+
+
+def test_balanced_joint_batch_saves_complete_v3_contract(
+    controller,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setenv(
+        "IPPO_TRAIN_PERIODS",
+        "morning_peak,off_peak,evening_peak",
+    )
+    monkeypatch.setenv("IPPO_EPISODE_DURATION_S", "3600")
+    controller.initialize(_joint_metadata("morning_peak"))
+    assert controller._act_dim == 4
+    monkeypatch.setattr(controller, "_ppo_update", lambda episode_count=None: None)
+    rollouts = [
+        _joint_rollout(controller, _joint_metadata(period))
+        for period in ("morning_peak", "off_peak", "evening_peak")
+    ]
+
+    assert controller.ingest_parallel_rollouts(rollouts, update=True) == {
+        "episodes": 3,
+        "samples": 3,
+        "period_counts": {
+            "morning_peak": 1,
+            "off_peak": 1,
+            "evening_peak": 1,
+        },
+    }
+    assert set(controller._collector_metadata_by_period) == {
+        "morning_peak",
+        "off_peak",
+        "evening_peak",
+    }
+
+    path = controller.save_checkpoint(tmp_path / "joint.pt")
+    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+
+    assert checkpoint["checkpoint_contract_version"] == 3
+    assert checkpoint["episode_duration_s"] == 3600.0
+    assert checkpoint["training_periods"] == [
+        "morning_peak",
+        "off_peak",
+        "evening_peak",
+    ]
+    assert checkpoint["environment_contract"]["supported_periods"] == [
+        "morning_peak",
+        "off_peak",
+        "evening_peak",
+    ]
+
+
+def test_joint_resume_rejects_noninitial_period_program_drift_before_update(
+    controller,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setenv(
+        "IPPO_TRAIN_PERIODS",
+        "morning_peak,off_peak,evening_peak",
+    )
+    controller.initialize(_joint_metadata("morning_peak"))
+    monkeypatch.setattr(controller, "_ppo_update", lambda episode_count=None: None)
+    controller.ingest_parallel_rollouts(
+        [
+            _joint_rollout(controller, _joint_metadata(period))
+            for period in ("morning_peak", "off_peak", "evening_peak")
+        ],
+        update=True,
+    )
+    checkpoint = controller.save_checkpoint(tmp_path / "joint-resume.pt")
+
+    controller = importlib.reload(controller)
+    monkeypatch.setenv("IPPO_MODE", "train")
+    monkeypatch.setenv("IPPO_MODEL_PATH", str(checkpoint))
+    controller.initialize(_joint_metadata("morning_peak"))
+    updates = []
+    monkeypatch.setattr(
+        controller,
+        "_ppo_update",
+        lambda episode_count=None: updates.append(episode_count),
+    )
+    saved_episode = controller._episode
+    saved_contract = deepcopy(controller._joint_environment_contract)
+    drifted_off_peak = _joint_metadata("off_peak")
+    drifted_off_peak["intersections"]["demo_1"]["phases"][0][
+        "green_seconds"
+    ] += 1.0
+
+    with pytest.raises(ValueError, match="program mismatch for off_peak"):
+        controller.ingest_parallel_rollouts(
+            [
+                _joint_rollout(controller, _joint_metadata("morning_peak")),
+                _joint_rollout(controller, drifted_off_peak),
+                _joint_rollout(controller, _joint_metadata("evening_peak")),
+            ],
+            update=True,
+        )
+
+    assert controller._episode == saved_episode
+    assert controller._buffer_episodes == []
+    assert controller._joint_environment_contract == saved_contract
+    assert updates == []
+
+
+def test_joint_collector_pads_off_peak_to_global_action_dim(
+    controller,
+    monkeypatch,
+):
+    monkeypatch.setenv("IPPO_MODE", "collect")
+    controller.prepare_collector(
+        policy_state=None,
+        policy_seed=7,
+        rollout_seed=8,
+        action_dim=4,
+    )
+
+    controller.initialize(_joint_metadata("off_peak"))
+
+    assert controller._state_builder.max_phases == 1
+    assert controller._act_dim == 4
+    assert controller._model.act_dim == 4
+
+
+def test_joint_collector_rejects_saved_program_drift_before_model_creation(
+    controller,
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "IPPO_TRAIN_PERIODS",
+        "morning_peak,off_peak,evening_peak",
+    )
+    controller.initialize(_joint_metadata("morning_peak"))
+    monkeypatch.setattr(controller, "_ppo_update", lambda episode_count=None: None)
+    controller.ingest_parallel_rollouts(
+        [
+            _joint_rollout(controller, _joint_metadata(period))
+            for period in ("morning_peak", "off_peak", "evening_peak")
+        ],
+        update=True,
+    )
+    environment_contract = deepcopy(controller._joint_environment_contract)
+
+    controller = importlib.reload(controller)
+    monkeypatch.setenv("IPPO_MODE", "collect")
+    controller.prepare_collector(
+        policy_state=None,
+        policy_seed=7,
+        rollout_seed=8,
+        action_dim=4,
+        environment_contract=environment_contract,
+    )
+    drifted = _joint_metadata("off_peak")
+    drifted["intersections"]["demo_1"]["phases"][0][
+        "green_seconds"
+    ] += 1.0
+
+    with pytest.raises(
+        ValueError,
+        match="program mismatch for off_peak",
+    ):
+        controller.initialize(drifted)
+
+    assert controller._model is None
+
+def test_import_pressure_shaping_available() -> None:
+    """PressureShaper and density_gate are importable in IPPO context."""
+    from algorithms.common.pressure_shaping import (
+        PressureShaper, density_gate, PressureRegretResult,
+    )
+    assert PressureShaper is not None
+    assert density_gate is not None

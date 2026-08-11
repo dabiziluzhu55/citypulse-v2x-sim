@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_VERSION = "mappo_v1"
 DEFAULT_ACTION_INTERVAL = 15.0
-DEFAULT_MODEL_FILENAME = "mappo_cooperative_20tls_ep160.pt"
+DEFAULT_MODEL_FILENAME = "mappo_cooperative_20tls_ep360.pt"
 DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "models" / DEFAULT_MODEL_FILENAME
 
 MAX_WAITING = 200.0
@@ -269,6 +269,7 @@ def initialize(payload: dict) -> dict:
             action_interval=_action_interval,
             max_green_factor=_max_green_factor,
             effective_demand_enabled=_effective_demand_enabled,
+            live_metadata=payload,
         )
         _act_dim = int(metadata.get("max_action_dim", _act_dim))
         if _act_dim > MAX_PHASES:

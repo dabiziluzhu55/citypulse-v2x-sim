@@ -1,0 +1,215 @@
+{
+  "config": {
+    "methods": [
+      "fixed"
+    ],
+    "seeds": [
+      1042
+    ],
+    "duration_s": 120,
+    "intersections": [
+      "demo_1",
+      "demo_2",
+      "demo_3",
+      "demo_4",
+      "demo_5",
+      "demo_6",
+      "demo_7",
+      "demo_8",
+      "demo_9",
+      "demo_10",
+      "demo_11",
+      "demo_12",
+      "demo_13",
+      "demo_14",
+      "demo_15",
+      "demo_16",
+      "demo_17",
+      "demo_18",
+      "demo_19",
+      "demo_20"
+    ],
+    "period": "off_peak",
+    "action_interval": 15.0,
+    "checkpoint": null
+  },
+  "summary": {
+    "fixed": {
+      "episodes": 1,
+      "departed": {
+        "mean": 291.0,
+        "std": 0.0,
+        "median": 291.0,
+        "min": 291.0,
+        "max": 291.0
+      },
+      "arrived": {
+        "mean": 7.0,
+        "std": 0.0,
+        "median": 7.0,
+        "min": 7.0,
+        "max": 7.0
+      },
+      "remaining": {
+        "mean": 284.0,
+        "std": 0.0,
+        "median": 284.0,
+        "min": 284.0,
+        "max": 284.0
+      },
+      "waiting": {
+        "mean": 1018.75,
+        "std": 0.0,
+        "median": 1018.75,
+        "min": 1018.75,
+        "max": 1018.75
+      },
+      "halting": {
+        "mean": 39.0,
+        "std": 0.0,
+        "median": 39.0,
+        "min": 39.0,
+        "max": 39.0
+      },
+      "mean_speed": {
+        "mean": 9.63394348435975,
+        "std": 0.0,
+        "median": 9.63394348435975,
+        "min": 9.63394348435975,
+        "max": 9.63394348435975
+      },
+      "hard_braking": {
+        "mean": 1508.0,
+        "std": 0.0,
+        "median": 1508.0,
+        "min": 1508.0,
+        "max": 1508.0
+      },
+      "fuel_mg": {
+        "mean": 26953.668982816165,
+        "std": 0.0,
+        "median": 26953.668982816165,
+        "min": 26953.668982816165,
+        "max": 26953.668982816165
+      },
+      "completed_trips": {
+        "mean": 7.0,
+        "std": 0.0,
+        "median": 7.0,
+        "min": 7.0,
+        "max": 7.0
+      },
+      "unfinished_trips": {
+        "mean": 284.0,
+        "std": 0.0,
+        "median": 284.0,
+        "min": 284.0,
+        "max": 284.0
+      },
+      "completion_rate": {
+        "mean": 0.024054982817869417,
+        "std": 0.0,
+        "median": 0.024054982817869417,
+        "min": 0.024054982817869417,
+        "max": 0.024054982817869417
+      },
+      "residual_mismatch": {
+        "mean": 0.0,
+        "std": 0.0,
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "completed_duration_mean_s": {
+        "mean": 30.05,
+        "std": 0.0,
+        "median": 30.05,
+        "min": 30.05,
+        "max": 30.05
+      },
+      "completed_waiting_mean_s": {
+        "mean": 5.392857142857143,
+        "std": 0.0,
+        "median": 5.392857142857143,
+        "min": 5.392857142857143,
+        "max": 5.392857142857143
+      },
+      "completed_time_loss_mean_s": {
+        "mean": 11.878571428571428,
+        "std": 0.0,
+        "median": 11.878571428571428,
+        "min": 11.878571428571428,
+        "max": 11.878571428571428
+      },
+      "unfinished_waiting_total_s": {
+        "mean": 3000.3499999999985,
+        "std": 0.0,
+        "median": 3000.3499999999985,
+        "min": 3000.3499999999985,
+        "max": 3000.3499999999985
+      },
+      "all_waiting_total_s": {
+        "mean": 3038.0999999999985,
+        "std": 0.0,
+        "median": 3038.0999999999985,
+        "min": 3038.0999999999985,
+        "max": 3038.0999999999985
+      },
+      "end_waiting_total_s": {
+        "mean": 3038.0999999999985,
+        "std": 0.0,
+        "median": 3038.0999999999985,
+        "min": 3038.0999999999985,
+        "max": 3038.0999999999985
+      },
+      "end_waiting_mean_s": {
+        "mean": 10.440206185567005,
+        "std": 0.0,
+        "median": 10.440206185567005,
+        "min": 10.440206185567005,
+        "max": 10.440206185567005
+      },
+      "all_time_loss_total_s": {
+        "mean": 4483.5800000000045,
+        "std": 0.0,
+        "median": 4483.5800000000045,
+        "min": 4483.5800000000045,
+        "max": 4483.5800000000045
+      }
+    }
+  },
+  "runs": [
+    {
+      "status": "complete",
+      "method": "fixed",
+      "seed": 1042,
+      "session_id": "b2410b6d-b523-4e7d-861a-d1726cafd475",
+      "elapsed_s": 65.69223113199405,
+      "active": 284,
+      "departed": 291,
+      "arrived": 7,
+      "remaining": 284,
+      "halting": 39,
+      "waiting": 1018.75,
+      "mean_speed": 9.63394348435975,
+      "fuel_mg": 26953.668982816165,
+      "hard_braking": 1508,
+      "trip_records": 291,
+      "completed_trips": 7,
+      "unfinished_trips": 284,
+      "completion_rate": 0.024054982817869417,
+      "completed_duration_mean_s": 30.05,
+      "completed_duration_median_s": 24.65,
+      "completed_duration_p95_s": 48.30499999999999,
+      "completed_waiting_mean_s": 5.392857142857143,
+      "completed_time_loss_mean_s": 11.878571428571428,
+      "unfinished_waiting_total_s": 3000.3499999999985,
+      "unfinished_time_loss_total_s": 4400.430000000005,
+      "all_waiting_total_s": 3038.0999999999985,
+      "end_waiting_total_s": 3038.0999999999985,
+      "end_waiting_mean_s": 10.440206185567005,
+      "all_time_loss_total_s": 4483.5800000000045,
+      "residual_mismatch": 0
+    }
+  ]
+}

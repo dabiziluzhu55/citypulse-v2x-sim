@@ -33,7 +33,7 @@ from algorithms.maxpressure_benchmark import (  # noqa: E402
     DEFAULT_SENIOR_REF,
     SENIOR_SOURCE_PATH,
 )
-from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
+from simulation.sumo.engine.session import SimulationConfig, SimulationManager  # noqa: E402
 
 
 logging.basicConfig(
@@ -136,6 +136,11 @@ def _run_evaluation(request: Mapping[str, object]) -> dict:
             **shared._parse_tripinfo(tripinfo_path),
             "official_metrics": official_metrics,
             "missing_official_metrics": optional_missing,
+            **(
+                {"fuel_audit": official.fuel_audit}
+                if bool(request.get("fuel_audit")) and official is not None
+                else {}
+            ),
         }
     except BaseException as exc:
         if session_id is not None:
@@ -190,6 +195,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--methods", nargs="+", choices=METHODS, default=METHODS)
     parser.add_argument("--seeds", type=int, nargs="+", default=[62001, 62002, 62003, 62004])
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument(
+        "--fuel-audit", action="store_true",
+        help="capture per-vehicle fuel records for the M0 four-check audit",
+    )
     parser.add_argument("--duration", type=int, default=300)
     parser.add_argument("--intersections", type=int, default=20)
     parser.add_argument("--period", default="off_peak")
@@ -220,6 +229,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "duration": args.duration,
             "senior_ref": source_metadata["senior"]["git_commit"],
             "step_length": args.step_length,
+            "fuel_audit": bool(args.fuel_audit),
         }
         for method in methods
         for seed in seeds

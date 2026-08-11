@@ -1,0 +1,370 @@
+{
+  "config": {
+    "methods": [
+      "fixed"
+    ],
+    "seeds": [
+      1042
+    ],
+    "duration_s": 120,
+    "intersections": [
+      "demo_1",
+      "demo_2",
+      "demo_3",
+      "demo_4",
+      "demo_5",
+      "demo_6",
+      "demo_7",
+      "demo_8",
+      "demo_9",
+      "demo_10",
+      "demo_11",
+      "demo_12",
+      "demo_13",
+      "demo_14",
+      "demo_15",
+      "demo_16",
+      "demo_17",
+      "demo_18",
+      "demo_19",
+      "demo_20"
+    ],
+    "period": "off_peak",
+    "action_interval": 15.0,
+    "checkpoint": null
+  },
+  "summary": {
+    "fixed": {
+      "episodes": 1,
+      "departed": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 291.0,
+        "std": 0.0,
+        "median": 291.0,
+        "min": 291.0,
+        "max": 291.0
+      },
+      "arrived": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 7.0,
+        "std": 0.0,
+        "median": 7.0,
+        "min": 7.0,
+        "max": 7.0
+      },
+      "remaining": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 284.0,
+        "std": 0.0,
+        "median": 284.0,
+        "min": 284.0,
+        "max": 284.0
+      },
+      "waiting": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 1018.7499999999999,
+        "std": 0.0,
+        "median": 1018.7499999999999,
+        "min": 1018.7499999999999,
+        "max": 1018.7499999999999
+      },
+      "halting": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 39.0,
+        "std": 0.0,
+        "median": 39.0,
+        "min": 39.0,
+        "max": 39.0
+      },
+      "mean_speed": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 9.63394348435975,
+        "std": 0.0,
+        "median": 9.63394348435975,
+        "min": 9.63394348435975,
+        "max": 9.63394348435975
+      },
+      "hard_braking": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 1508.0,
+        "std": 0.0,
+        "median": 1508.0,
+        "min": 1508.0,
+        "max": 1508.0
+      },
+      "fuel_mg": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 26953.668982816165,
+        "std": 0.0,
+        "median": 26953.668982816165,
+        "min": 26953.668982816165,
+        "max": 26953.668982816165
+      },
+      "completed_trips": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 7.0,
+        "std": 0.0,
+        "median": 7.0,
+        "min": 7.0,
+        "max": 7.0
+      },
+      "unfinished_trips": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 284.0,
+        "std": 0.0,
+        "median": 284.0,
+        "min": 284.0,
+        "max": 284.0
+      },
+      "completion_rate": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 0.024054982817869417,
+        "std": 0.0,
+        "median": 0.024054982817869417,
+        "min": 0.024054982817869417,
+        "max": 0.024054982817869417
+      },
+      "residual_mismatch": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 0.0,
+        "std": 0.0,
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "completed_duration_mean_s": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 30.05,
+        "std": 0.0,
+        "median": 30.05,
+        "min": 30.05,
+        "max": 30.05
+      },
+      "completed_waiting_mean_s": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 5.392857142857143,
+        "std": 0.0,
+        "median": 5.392857142857143,
+        "min": 5.392857142857143,
+        "max": 5.392857142857143
+      },
+      "completed_time_loss_mean_s": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 11.878571428571428,
+        "std": 0.0,
+        "median": 11.878571428571428,
+        "min": 11.878571428571428,
+        "max": 11.878571428571428
+      },
+      "unfinished_waiting_total_s": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 3000.3499999999985,
+        "std": 0.0,
+        "median": 3000.3499999999985,
+        "min": 3000.3499999999985,
+        "max": 3000.3499999999985
+      },
+      "all_waiting_total_s": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 3038.0999999999985,
+        "std": 0.0,
+        "median": 3038.0999999999985,
+        "min": 3038.0999999999985,
+        "max": 3038.0999999999985
+      },
+      "end_waiting_total_s": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 3038.0999999999985,
+        "std": 0.0,
+        "median": 3038.0999999999985,
+        "min": 3038.0999999999985,
+        "max": 3038.0999999999985
+      },
+      "end_waiting_mean_s": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 10.440206185567005,
+        "std": 0.0,
+        "median": 10.440206185567005,
+        "min": 10.440206185567005,
+        "max": 10.440206185567005
+      },
+      "all_time_loss_total_s": {
+        "available_runs": 1,
+        "missing_runs": 0,
+        "mean": 4483.5800000000045,
+        "std": 0.0,
+        "median": 4483.5800000000045,
+        "min": 4483.5800000000045,
+        "max": 4483.5800000000045
+      },
+      "official_metrics": {
+        "avg_travel_time_s": {
+          "available_runs": 1,
+          "missing_runs": 0,
+          "mean": 30.05,
+          "std": 0.0,
+          "median": 30.05,
+          "min": 30.05,
+          "max": 30.05
+        },
+        "avg_waiting_time_s": {
+          "available_runs": 1,
+          "missing_runs": 0,
+          "mean": 5.39,
+          "std": 0.0,
+          "median": 5.39,
+          "min": 5.39,
+          "max": 5.39
+        },
+        "avg_queue_length_veh": {
+          "available_runs": 1,
+          "missing_runs": 0,
+          "mean": 0.1,
+          "std": 0.0,
+          "median": 0.1,
+          "min": 0.1,
+          "max": 0.1
+        },
+        "throughput_veh_per_h": {
+          "available_runs": 1,
+          "missing_runs": 0,
+          "mean": 210.0,
+          "std": 0.0,
+          "median": 210.0,
+          "min": 210.0,
+          "max": 210.0
+        },
+        "avg_decision_latency_ms": {
+          "available_runs": 0,
+          "missing_runs": 1,
+          "mean": null,
+          "std": null,
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "fuel_intensity_L_per_100km": {
+          "available_runs": 1,
+          "missing_runs": 0,
+          "mean": 15.5,
+          "std": 0.0,
+          "median": 15.5,
+          "min": 15.5,
+          "max": 15.5
+        },
+        "severe_conflict_exposure_per_10000": {
+          "available_runs": 1,
+          "missing_runs": 0,
+          "mean": 2681.56,
+          "std": 0.0,
+          "median": 2681.56,
+          "min": 2681.56,
+          "max": 2681.56
+        },
+        "emergency_braking_exposure_per_1000": {
+          "available_runs": 1,
+          "missing_runs": 0,
+          "mean": 5089.39,
+          "std": 0.0,
+          "median": 5089.39,
+          "min": 5089.39,
+          "max": 5089.39
+        }
+      }
+    }
+  },
+  "runs": [
+    {
+      "status": "complete",
+      "method": "fixed",
+      "seed": 1042,
+      "session_id": "a7ff44d0-7594-4534-9dd8-472a6756982f",
+      "elapsed_s": 136.30094960000133,
+      "active": 284,
+      "departed": 291,
+      "arrived": 7,
+      "remaining": 284,
+      "halting": 39,
+      "waiting": 1018.7499999999999,
+      "mean_speed": 9.63394348435975,
+      "fuel_mg": 26953.668982816165,
+      "hard_braking": 1508,
+      "trip_records": 291,
+      "completed_trips": 7,
+      "unfinished_trips": 284,
+      "completion_rate": 0.024054982817869417,
+      "completed_duration_mean_s": 30.05,
+      "completed_duration_median_s": 24.65,
+      "completed_duration_p95_s": 48.30499999999999,
+      "completed_waiting_mean_s": 5.392857142857143,
+      "completed_time_loss_mean_s": 11.878571428571428,
+      "unfinished_waiting_total_s": 3000.3499999999985,
+      "unfinished_time_loss_total_s": 4400.430000000005,
+      "all_waiting_total_s": 3038.0999999999985,
+      "end_waiting_total_s": 3038.0999999999985,
+      "end_waiting_mean_s": 10.440206185567005,
+      "all_time_loss_total_s": 4483.5800000000045,
+      "official_metrics": {
+        "avg_travel_time_s": 30.05,
+        "avg_waiting_time_s": 5.39,
+        "avg_queue_length_veh": 0.1,
+        "throughput_veh_per_h": 210.0,
+        "avg_decision_latency_ms": null,
+        "fuel_intensity_L_per_100km": 15.5,
+        "severe_conflict_exposure_per_10000": 2681.56,
+        "emergency_braking_exposure_per_1000": 5089.39,
+        "controlled_intersection_passages": 179,
+        "severe_conflict_events": 48,
+        "emergency_braking_events": 911,
+        "controlled_avg_waiting_time_s": 6.57,
+        "controlled_waiting_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "severe_conflict_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "emergency_braking_availability": {
+          "status": "available",
+          "reason": null
+        },
+        "departed": 291,
+        "arrived": 7,
+        "metric_sources": {
+          "avg_queue_length_veh": "incoming_lane_halting_count",
+          "throughput_veh_per_h": "finish_totals",
+          "fuel_intensity_L_per_100km": "fuel_powertrain_vehicle_totals_legacy_ml",
+          "severe_conflict_exposure_per_10000": "protocol_ttc_drac_per_controlled_intersection_passage",
+          "emergency_braking_exposure_per_1000": "protocol_hard_braking_per_controlled_intersection_passage",
+          "avg_travel_time_s": "tripinfo_completed",
+          "avg_waiting_time_s": "tripinfo_completed"
+        },
+        "warnings": [
+          "检测到 SUMO 1.12：按 1.14 以前的 mL/s 单位修正燃油遥测。"
+        ]
+      },
+      "missing_official_metrics": [],
+      "residual_mismatch": 0
+    }
+  ]
+}

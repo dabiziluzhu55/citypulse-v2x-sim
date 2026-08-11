@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 from typing import Mapping, Optional
 
@@ -101,3 +102,31 @@ class V2XConfig:
 class RSUCoverageConfig:
     positions: Mapping[str, tuple[float, float]] = field(default_factory=dict)
     extra_covered_lane_ids: Mapping[str, frozenset] = field(default_factory=dict)
+
+
+def v2x_config_from_env(prefix: str = "COSLIGHT_V2X_") -> V2XConfig:
+    """Build a V2XConfig from COSLIGHT_V2X_* environment variables."""
+    env = os.environ
+
+    def _env_value(name: str, default):
+        raw = env.get(prefix + name)
+        if raw is None or raw == "" or raw == "None":
+            return default
+        if default is None:
+            return float(raw)
+        return type(default)(raw)
+
+    return V2XConfig(
+        penetration_rate=_env_value("PENETRATION", 1.0),
+        capability_seed=_env_value("CAPABILITY_SEED", 0),
+        network_seed=_env_value("NETWORK_SEED", 0),
+        default_latency_ms=_env_value("DEFAULT_LATENCY_MS", 20.0),
+        uplink_latency_ms=_env_value("UPLINK_LATENCY_MS", None),
+        downlink_latency_ms=_env_value("DOWNLINK_LATENCY_MS", None),
+        latency_jitter_ms=_env_value("LATENCY_JITTER_MS", 0.0),
+        drop_rate=_env_value("DROP_RATE", 0.0),
+        bsm_interval_s=_env_value("BSM_INTERVAL_S", 5.0),
+        intent_interval_s=_env_value("INTENT_INTERVAL_S", 5.0),
+        spat_interval_s=_env_value("SPAT_INTERVAL_S", 5.0),
+        rsm_interval_s=_env_value("RSM_INTERVAL_S", 5.0),
+    )
