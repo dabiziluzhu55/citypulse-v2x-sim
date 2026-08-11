@@ -94,6 +94,30 @@ export function validateIntersectionManifest(manifest) {
     if (!Array.isArray(manifest.origin?.bd09) || !Array.isArray(manifest.origin?.webMercator)) {
       errors.push('v3 assets require BD-09 and WebMercator origins')
     }
+    const transform = manifest.sumoHeadingTransform
+    const xAxis = transform?.xAxis
+    const yAxis = transform?.yAxis
+    const determinant = Array.isArray(xAxis) && Array.isArray(yAxis)
+      ? xAxis[0] * yAxis[1] - xAxis[1] * yAxis[0]
+      : Number.NaN
+    const xLength = Array.isArray(xAxis) ? Math.hypot(...xAxis) : 0
+    const yLength = Array.isArray(yAxis) ? Math.hypot(...yAxis) : 0
+    const axisSine = determinant / Math.max(1e-9, xLength * yLength)
+    if (
+      !Array.isArray(xAxis)
+      || xAxis.length !== 2
+      || !xAxis.every(Number.isFinite)
+      || !Array.isArray(yAxis)
+      || yAxis.length !== 2
+      || !yAxis.every(Number.isFinite)
+      || !Number.isFinite(transform?.determinant)
+      || Math.abs(transform.determinant - determinant) > 1e-6
+      || determinant <= 0
+      || axisSine < 0.5
+      || !/^[a-f0-9]{64}$/.test(transform?.sourceSha256 ?? '')
+    ) {
+      errors.push('v3 assets require a valid SUMO heading transform')
+    }
   }
   if (!Array.isArray(manifest.junctionShape) || manifest.junctionShape.length < 3) {
     errors.push('junctionShape must be a renderable polygon')
@@ -136,6 +160,14 @@ export function validateIntersectionManifest(manifest) {
       const polygon = joint.polygons?.[layer]
       if (!Array.isArray(polygon) || polygon.length < 3) {
         errors.push(`road joint ${joint.jointId} has an invalid ${layer} polygon`)
+      }
+      const parts = joint.surfaceParts?.[layer]
+      if (parts && (!Array.isArray(parts) || parts.length === 0 || parts.some((part) => (
+        !Array.isArray(part.outer)
+        || part.outer.length < 3
+        || (part.holes ?? []).some((hole) => !Array.isArray(hole) || hole.length < 3)
+      )))) {
+        errors.push(`road joint ${joint.jointId} has invalid ${layer} surface parts`)
       }
     }
   }

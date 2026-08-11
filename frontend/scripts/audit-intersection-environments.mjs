@@ -1,11 +1,13 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { auditRoadBuildingCollisions } from './audit-road-building-collisions.mjs'
 
 const frontendDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const publicDirectory = path.join(frontendDirectory, 'public')
 const INTERSECTION_COUNT = 20
 const ROAD_TRANSITION_OVERLAP_METERS = 22
+const FAR_FIELD_ROAD_AUDIT_TARGETS = ['demo_5', 'demo_6', 'demo_9']
 
 async function readJson(file) {
   return JSON.parse(await readFile(file, 'utf8'))
@@ -40,12 +42,13 @@ async function missingFiles(paths) {
 }
 
 export async function auditIntersectionEnvironments() {
-  const globalBuildingManifest = await readJson(path.join(
-    publicDirectory,
-    '3dtiles',
-    'xiongan-webmercator',
-    'manifest.json',
-  ))
+  const [globalBuildingManifest, roadBuildingAudit] = await Promise.all([
+    readJson(path.join(publicDirectory, '3dtiles', 'xiongan-webmercator', 'manifest.json')),
+    auditRoadBuildingCollisions({ targets: FAR_FIELD_ROAD_AUDIT_TARGETS }),
+  ])
+  const roadBuildingByIntersection = new Map(roadBuildingAudit.intersections.map((item) => (
+    [item.intersectionId, item]
+  )))
   const rows = []
   for (let index = 1; index <= INTERSECTION_COUNT; index += 1) {
     const intersectionId = `demo_${index}`
@@ -62,6 +65,7 @@ export async function auditIntersectionEnvironments() {
     ])
     const errors = []
     const warnings = []
+    const roadBuilding = roadBuildingByIntersection.get(intersectionId)
     const children = tileset.root?.children ?? []
     const tileFiles = children
       .map((child) => child.content?.uri)
@@ -103,6 +107,29 @@ export async function auditIntersectionEnvironments() {
     if (coverage === 'sparse-source') warnings.push('local building source is sparse; Baidu building fallback stays disabled')
     if (green.features.length === 0) warnings.push('no local OSM green polygon; use Baidu green base layer')
     if (water.features.length === 0) warnings.push('no local OSM water polygon; use Baidu water base layer')
+    const expectedExclusions = new Map((roadBuilding?.exclusionEdges ?? []).map((edge) => (
+      [edge.edgeId, edge.surfaceExclusions]
+    )))
+    const actualExclusions = new Map(scene.edges
+      .filter((edge) => edge.surfaceExclusions?.length)
+      .map((edge) => [edge.id, edge.surfaceExclusions]))
+    const auditedExclusions = new Map(scene.edges
+      .map((edge) => [
+        edge.id,
+        (edge.surfaceExclusions ?? []).filter((range) => (
+          range.source === 'building_triangle_audit'
+        )),
+      ])
+      .filter(([, ranges]) => ranges.length > 0))
+    if (
+      roadBuilding
+      && JSON.stringify([...auditedExclusions]) !== JSON.stringify([...expectedExclusions])
+    ) {
+      errors.push('road surface exclusions do not match the deterministic building-triangle audit')
+    }
+    if (roadBuilding?.centerlineConflicts.length) {
+      warnings.push(`${roadBuilding.centerlineConflicts.length} building triangles reach protected lane centerlines`)
+    }
     rows.push({
       intersectionId,
       status: errors.length ? 'error' : warnings.length ? 'warning' : 'ready',
@@ -128,6 +155,11 @@ export async function auditIntersectionEnvironments() {
         continuityClassification: minimumBoundaryOverlap >= 15
           ? 'local-overlap'
           : 'baidu-base-dependent',
+        buildingSurfaceExclusionEdges: actualExclusions.size,
+        buildingSurfaceExclusionRanges: [...actualExclusions.values()].reduce((sum, ranges) => (
+          sum + ranges.length
+        ), 0),
+        protectedCenterlineConflicts: roadBuilding?.centerlineConflicts.length ?? 0,
       },
       errors,
       warnings,
@@ -140,7 +172,7 @@ export async function auditIntersectionEnvironments() {
     policy: {
       buildings: 'one global local 3D Tiles source; Baidu native buildings disabled; sparse source areas are never fabricated',
       landcover: 'local OSM polygons over the global Baidu green/water base',
-      roads: `all local patches stay visible; Baidu continuous road base bridges patches; ${ROAD_TRANSITION_OVERLAP_METERS}m generation target and 15m visual warning threshold`,
+      roads: `local patches bridge through the Baidu road base; widened surfaces may be removed only after projected GLB triangle checks; ${ROAD_TRANSITION_OVERLAP_METERS}m generation target and 15m visual warning threshold`,
     },
     globalBuildingSource: {
       url: '/3dtiles/xiongan-webmercator/tileset.json',
@@ -159,6 +191,10 @@ export async function auditIntersectionEnvironments() {
         .map((row) => row.intersectionId),
       baiduRoadDependent: rows.filter((row) => row.roads.continuityClassification === 'baidu-base-dependent')
         .map((row) => row.intersectionId),
+      intersectionsWithRoadSurfaceExclusions: roadBuildingAudit.summary.intersectionsWithExclusions,
+      roadSurfaceExclusionEdges: roadBuildingAudit.summary.exclusionEdges,
+      roadSurfaceExclusionRanges: roadBuildingAudit.summary.exclusionRanges,
+      protectedCenterlineConflicts: roadBuildingAudit.summary.centerlineConflicts,
     },
   }
 }

@@ -34,6 +34,7 @@ import {
   shortestAngleDelta,
   type VehicleHeadingState,
 } from '../../mapv/vehicleOrientation'
+import { SumoHeadingField } from '../../mapv/sumoHeadingTransform'
 import DetectedEventOverlay from './DetectedEventOverlay.vue'
 import type { CongestionLevel } from '../../types/intelligence'
 import {
@@ -46,6 +47,12 @@ import {
 } from '../../utils/edgeTopologySegments'
 import { expandDirectedTopologyRoutes } from '../../mapv/directedTopologyRoutes'
 import { activeDetectedEventCards } from '../../utils/detectedEventDisplay'
+import { loadFullRoadNetwork, releaseFullRoadNetwork } from '../../mapv/fullRoadNetwork'
+import {
+  disturbanceRuntimeStateLabel,
+  disturbanceRuntimeTypeLabel,
+  type DisturbanceRuntimeView,
+} from '../../utils/runtimeDisturbances'
 
 const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 
@@ -53,7 +60,13 @@ const mapEl = ref<HTMLElement | null>(null)
 const mapView = useAppMapView()
 const { activeIntersectionId } = useActiveIntersectionScene()
 const { geojson, error: networkError } = useSimulationMap(activeIntersectionId)
-const { trafficView, snapshot, renderSessionRevision } = useSimulationStore()
+const {
+  trafficView,
+  snapshot,
+  renderSessionRevision,
+  runtimeDisturbances,
+  unmappedRuntimeEvents,
+} = useSimulationStore()
 const { disturbanceEvents, simulationStartTime } = useScenarioDraftStore()
 
 const warningPopupRef = ref<HTMLElement | null>(null)
@@ -68,6 +81,11 @@ let warningOverlay: Overlay | null = null
 let topologyNodes: IntersectionTopologyNode[] = []
 let edgeCongestionLevels: Record<string, CongestionLevel> = {}
 let routeCongestionLevels: Record<string, CongestionLevel> = {}
+const vehicleHeadingField = new SumoHeadingField((coordinate) => [
+  coordinate[0],
+  coordinate[1],
+  coordinate[2],
+])
 
 function projectDetectedEventToOverlay(longitude: number, latitude: number): { x: number; y: number } | null {
   if (!map) return null
@@ -104,6 +122,9 @@ let lastVehicleSnapshotSequence = -1
 let lastVehicleSnapshotArrivalMs: number | null = null
 let vehicleSnapshotIntervalsMs: number[] = []
 let snapVehiclePositions = false
+let userViewportRevision = 0
+let selectionUserViewportRevision = 0
+let focusedIntersectionId: string | null = null
 const MIN_VEHICLE_INTERPOLATION_MS = 500
 const MAX_VEHICLE_INTERPOLATION_MS = 3_500
 const VEHICLE_VIEWPORT_HYSTERESIS_METERS = 120
@@ -115,11 +136,20 @@ function percentile(values: number[], ratio: number): number {
 }
 
 const networkSource = new VectorSource()
+const fullRoadNetworkSource = new VectorSource()
 const topologyFlowSource = new VectorSource()
 const vehicleSource = new VectorSource()
 const disturbanceSource = new VectorSource()
 const geoJsonFormat = new GeoJSON()
 const modelRegistry = new TrafficModelRegistry()
+
+const fullRoadNetworkLayer = new VectorLayer({
+  source: fullRoadNetworkSource,
+  style: () => new Style({
+    stroke: new Stroke({ color: 'rgba(41, 142, 255, 0.52)', width: 1.35 }),
+  }),
+  zIndex: 2,
+})
 
 const topologyBaseLayer = new VectorLayer({
   source: topologyFlowSource,
@@ -215,14 +245,19 @@ const disturbanceLayer = new VectorLayer({
   style: (feature) => {
     const status = String(feature.get('status') ?? 'configured')
     const count = Number(feature.get('count') ?? 1)
-    const opacity = status === 'completed' ? 0.42 : 1
-    const fill = status === 'active' ? '#ff243f' : '#d9152f'
+    const opacity = status === 'completed' || status === 'cancelled' ? 0.42 : 1
+    const fill = String(feature.get('color') ?? (
+      status === 'completed' || status === 'cancelled' ? '#77858d' : '#d9152f'
+    ))
     const triangle = new RegularShape({
       points: 3,
       radius: status === 'active' ? 18 : 16,
       angle: 0,
-      fill: new Fill({ color: fill }),
-      stroke: new Stroke({ color: `rgba(255, 255, 255, ${opacity})`, width: 2 }),
+      fill: new Fill({ color: status === 'scheduled' ? 'rgba(4, 18, 31, 0.86)' : fill }),
+      stroke: new Stroke({
+        color: status === 'scheduled' ? '#ffbd59' : `rgba(255, 255, 255, ${opacity})`,
+        width: 2,
+      }),
     })
     triangle.setOpacity(opacity)
     const styles = [
@@ -259,7 +294,47 @@ const disturbanceLayer = new VectorLayer({
 
 function renderDisturbanceWarnings(): void {
   disturbanceSource.clear()
-  if (topologyNodes.length === 0 || disturbanceEvents.value.length === 0) return
+  if (topologyNodes.length === 0) return
+  if (snapshot.value?.session_id) {
+    if (runtimeDisturbances.value.length === 0) return
+    const byIntersection = new globalThis.Map<string, DisturbanceRuntimeView[]>()
+    for (const event of runtimeDisturbances.value) {
+      byIntersection.set(event.intersectionId, [
+        ...(byIntersection.get(event.intersectionId) ?? []),
+        event,
+      ])
+    }
+    for (const node of topologyNodes) {
+      const events = byIntersection.get(node.intersectionId)
+      if (!events?.length) continue
+      const states = events.map((event) => event.state)
+      const status = states.includes('FAILED')
+        ? 'failed'
+        : states.includes('ACTIVE')
+          ? 'active'
+          : states.every((state) => state === 'COMPLETED')
+            ? 'completed'
+            : states.every((state) => state === 'CANCELLED')
+              ? 'cancelled'
+              : 'scheduled'
+      const feature = new Feature({
+        geometry: new Point(fromLonLat([node.longitude, node.latitude])),
+      })
+      feature.setProperties({
+        intersectionId: node.intersectionId,
+        events,
+        count: events.length,
+        status,
+        color: events.some((event) => event.state === 'ACTIVE' && event.eventType === 'speed_limit')
+          ? '#ff9f1a'
+          : status === 'failed' ? '#ff243f' : undefined,
+        runtime: true,
+      })
+      disturbanceSource.addFeature(feature)
+    }
+    return
+  }
+  if (disturbanceEvents.value.length === 0) return
   const warnings = buildDisturbanceWarningAggregates(
     topologyNodes,
     disturbanceEvents.value,
@@ -317,6 +392,7 @@ async function loadTopologyOverview(): Promise<void> {
     }),
   ])
   topologyNodes = nodes
+  vehicleHeadingField.setAnchors(nodes)
   topologyFlowSource.clear()
   for (const route of expandDirectedTopologyRoutes(routeManifest.routes)) {
     const feature = new Feature({
@@ -332,6 +408,17 @@ async function loadTopologyOverview(): Promise<void> {
   syncDetectedEventCards()
 }
 
+async function loadFullNetworkOverview(): Promise<void> {
+  const collection = await loadFullRoadNetwork()
+  const features = geoJsonFormat.readFeatures(collection, {
+    dataProjection: 'EPSG:4326',
+    featureProjection: 'EPSG:3857',
+  })
+  fullRoadNetworkSource.clear()
+  releaseFullRoadNetwork()
+  fullRoadNetworkSource.addFeatures(features)
+}
+
 function handleMapClick(event: MapBrowserEvent): void {
   if (!map) return
   if (!warningOverlay) return
@@ -343,14 +430,22 @@ function handleMapClick(event: MapBrowserEvent): void {
     return
   }
   const intersectionId = String(feature.get('intersectionId') ?? '')
-  const events = feature.get('events') as ScenarioDraftDisturbanceEvent[]
+  const runtime = feature.get('runtime') === true
+  const events = feature.get('events') as Array<ScenarioDraftDisturbanceEvent | DisturbanceRuntimeView>
   warningPopupTitle.value = formatIntersectionLabel(intersectionId)
-  warningPopupEvents.value = events.map((item) => ({
-    id: item.event_id,
-    label: DISTURBANCE_EVENT_OPTIONS.find((option) => option.value === item.preset_id)?.label
-      ?? item.event_type,
-    time: `${item.start_time}-${item.end_time}`,
-  }))
+  warningPopupEvents.value = events.map((item) => runtime
+    ? {
+        id: (item as DisturbanceRuntimeView).eventId,
+        label: `${disturbanceRuntimeTypeLabel((item as DisturbanceRuntimeView).eventType)} · ${disturbanceRuntimeStateLabel((item as DisturbanceRuntimeView).state)}`,
+        time: (item as DisturbanceRuntimeView).error
+          ?? `${(item as DisturbanceRuntimeView).startSeconds}s-${(item as DisturbanceRuntimeView).endSeconds}s`,
+      }
+    : {
+        id: (item as ScenarioDraftDisturbanceEvent).event_id,
+        label: DISTURBANCE_EVENT_OPTIONS.find((option) => option.value === (item as ScenarioDraftDisturbanceEvent).preset_id)?.label
+          ?? (item as ScenarioDraftDisturbanceEvent).event_type,
+        time: `${(item as ScenarioDraftDisturbanceEvent).start_time}-${(item as ScenarioDraftDisturbanceEvent).end_time}`,
+      })
   warningOverlay.setPosition((feature.getGeometry() as Point).getCoordinates())
 }
 
@@ -366,8 +461,14 @@ function renderNetwork() {
   })
   networkSource.addFeatures(features)
 
+  if (
+    response.intersection_id !== activeIntersectionId.value
+    || focusedIntersectionId === response.intersection_id
+    || userViewportRevision !== selectionUserViewportRevision
+  ) return
   const { west, south, east, north } = response.bounds
   mapView.fitBounds([west, south, east, north], `map:${response.intersection_id}`)
+  focusedIntersectionId = response.intersection_id
 }
 
 function scheduleVehicleAnimation(): void {
@@ -429,12 +530,18 @@ function renderVehicles() {
     const target = fromLonLat([vehicle.longitude, vehicle.latitude]) as [number, number]
     if (visibleExtent && !containsCoordinate(visibleExtent, target)) continue
     const definition = modelRegistry.resolve(vehicle.vehicle_id, vehicle.lane_id)
+    const previousHeading = vehicleHeadingHistory.get(vehicle.vehicle_id) ?? null
+    const headingResolution = vehicleHeadingField.resolve(
+      vehicle.angle,
+      [vehicle.longitude, vehicle.latitude],
+    )
+    if (!headingResolution && !previousHeading) continue
     const resolvedHeading = resolveStableVehicleHeading({
-      sumoAngleDegrees: vehicle.angle,
+      sourceMapHeading: headingResolution?.heading,
       speedMetersPerSecond: vehicle.speed,
       current: { longitude: vehicle.longitude, latitude: vehicle.latitude },
       timeSeconds: trafficView.value?.elapsed_seconds ?? 0,
-    }, vehicleHeadingHistory.get(vehicle.vehicle_id) ?? null)
+    }, previousHeading)
     vehicleHeadingHistory.set(vehicle.vehicle_id, resolvedHeading.state)
     activeIds.add(vehicle.vehicle_id)
     vehicleMissingFrames.delete(vehicle.vehicle_id)
@@ -490,7 +597,25 @@ function renderVehicles() {
   scheduleVehicleAnimation()
 }
 
-function focusActiveIntersection(): void {
+function markUserViewportInteraction(): void {
+  userViewportRevision += 1
+}
+
+function syncMapViewportDiagnostics(): void {
+  const center = map?.getView().getCenter()
+  if (!mapEl.value || !center) return
+  mapEl.value.dataset.mapCenter = center.map((value) => value.toFixed(3)).join(',')
+  mapEl.value.dataset.mapZoom = String(map?.getView().getZoom() ?? '')
+}
+
+function handleMapMoveEnd(): void {
+  syncMapViewportDiagnostics()
+  bumpOverlayViewToken()
+  renderVehicles()
+}
+
+function focusActiveIntersection(expectedUserRevision?: number): void {
+  if (expectedUserRevision !== undefined && userViewportRevision !== expectedUserRevision) return
   const node = topologyNodes.find((item) => item.intersectionId === activeIntersectionId.value)
   if (!node) return
   mapView.focusIntersection(
@@ -498,6 +623,7 @@ function focusActiveIntersection(): void {
     node.intersectionId,
     { force: true, duration: 700 },
   )
+  focusedIntersectionId = node.intersectionId
 }
 
 onMounted(() => {
@@ -509,6 +635,7 @@ onMounted(() => {
     target: mapEl.value,
     layers: [
       createBasemapLayer(DEFAULT_APP_BASEMAP),
+      fullRoadNetworkLayer,
       topologyBaseLayer,
       topologyFlowLayer,
       networkLayer,
@@ -542,19 +669,22 @@ onMounted(() => {
     map.addOverlay(warningOverlay)
   }
   map.on('singleclick', handleMapClick)
-  map.on('moveend', () => {
-    bumpOverlayViewToken()
-    renderVehicles()
-  })
+  map.on('pointerdrag', markUserViewportInteraction)
+  map.getViewport().addEventListener('wheel', markUserViewportInteraction, { passive: true })
+  map.on('moveend', handleMapMoveEnd)
   map.getView().on('change:center', bumpOverlayViewToken)
   map.getView().on('change:resolution', bumpOverlayViewToken)
   bumpOverlayViewToken()
+  syncMapViewportDiagnostics()
   renderNetwork()
   renderVehicles()
   refreshIntelligenceLayers()
+  const topologyLoadUserRevision = userViewportRevision
   void loadTopologyOverview()
-    .then(() => focusActiveIntersection())
+    .then(() => focusActiveIntersection(topologyLoadUserRevision))
     .catch((cause: unknown) => console.warn('[detected-event] 2d topology unavailable', cause))
+  void loadFullNetworkOverview()
+    .catch((cause: unknown) => console.warn('[full-road-network] 2d map unavailable', cause))
 
   resizeObserver = new ResizeObserver(() => {
     map?.updateSize()
@@ -577,8 +707,12 @@ watch(() => props.active, (active) => {
     vehicleAnimationFrame = null
   }
 })
-watch(activeIntersectionId, focusActiveIntersection)
-watch([disturbanceEvents, snapshot, simulationStartTime], renderDisturbanceWarnings, { deep: true })
+watch(activeIntersectionId, () => {
+  selectionUserViewportRevision = userViewportRevision
+  focusedIntersectionId = null
+  focusActiveIntersection()
+})
+watch([disturbanceEvents, runtimeDisturbances, snapshot, simulationStartTime], renderDisturbanceWarnings, { deep: true })
 watch(snapshot, refreshIntelligenceLayers)
 
 
@@ -586,11 +720,14 @@ onUnmounted(() => {
   resizeObserver?.disconnect()
   resizeObserver = null
   map?.un('singleclick', handleMapClick)
-  map?.un('moveend', renderVehicles)
+  map?.un('pointerdrag', markUserViewportInteraction)
+  map?.un('moveend', handleMapMoveEnd)
+  map?.getViewport().removeEventListener('wheel', markUserViewportInteraction)
   warningOverlay?.setPosition(undefined)
   warningOverlay = null
   topologyNodes = []
   topologyFlowSource.clear()
+  fullRoadNetworkSource.clear()
   routeCongestionLevels = {}
   clearVehiclePresentation()
   map?.setTarget(undefined)
@@ -600,7 +737,7 @@ onUnmounted(() => {
 
 <template>
   <div class="app-background-map">
-    <div ref="mapEl" class="app-background-map__canvas" />
+    <div ref="mapEl" class="app-background-map__canvas" role="application" aria-label="二维交通路网地图" />
     <DetectedEventOverlay
       :cards="detectedEventCards"
       :snapshot="snapshot"
@@ -610,6 +747,9 @@ onUnmounted(() => {
     />
     <div v-if="networkError" class="app-background-map__network-status">
       当前路口路网加载失败，已保留深色底图定位
+    </div>
+    <div v-if="props.active && unmappedRuntimeEvents.length" class="app-background-map__runtime-warning">
+      {{ unmappedRuntimeEvents.length }} 个扰动事件的位置无法从旧会话恢复
     </div>
     <div ref="warningPopupRef" class="disturbance-warning-popup">
       <strong>{{ warningPopupTitle }}</strong>
@@ -647,6 +787,21 @@ onUnmounted(() => {
   font-size: 11px;
   pointer-events: none;
   transform: translateX(-50%);
+}
+
+.app-background-map__runtime-warning {
+  position: absolute;
+  right: 24px;
+  bottom: 62px;
+  z-index: 10;
+  max-width: 320px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 183, 77, 0.55);
+  border-radius: 6px;
+  background: rgba(4, 20, 29, 0.9);
+  color: #ffd28c;
+  font-size: 12px;
+  pointer-events: none;
 }
 
 .app-background-map__canvas :deep(.ol-attribution) {

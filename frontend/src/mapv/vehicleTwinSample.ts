@@ -1,7 +1,34 @@
 import type { TrafficVehicleView } from '../types/traffic'
 import { VEHICLE_MODEL_BASE_Z } from './sceneElevation.ts'
 import type { VehicleModelProfile } from './vehicleModelProfiles.ts'
-import { moveFromFrontBumperToModelCenter } from './vehicleOrientation.ts'
+import { moveFromFrontBumperToModelCenter, unwrapHeading } from './vehicleOrientation.ts'
+import type { LanePoseTransitionKind } from './realistic/intersectionLaneHeading.ts'
+
+export type VehiclePoseSource = 'topology' | 'lane_change' | 'raw' | 'held'
+export type VehicleMotionSampleQuality = 'authoritative' | 'predicted' | 'held' | 'missing'
+export type RoadTransitionKind =
+  | 'same_path'
+  | 'topology_successor'
+  | 'lane_change'
+  | 'raw_continuous'
+  | 'incompatible'
+
+export interface VehicleTwinMotionMetadata {
+  motionPathKey?: string
+  segmentKey?: string
+  occupancyKey?: string
+  arcDistanceMeters?: number
+  pathArcDistanceMeters?: number
+  sourceSpeedMetersPerSecond?: number
+  transitionKind?: LanePoseTransitionKind | 'raw_fallback'
+  roadTransitionKind?: RoadTransitionKind
+  poseSource?: VehiclePoseSource
+  sampleQuality?: VehicleMotionSampleQuality
+  predictionBlocked?: boolean
+  stopReason?: string
+  vehicleLengthMeters?: number
+  predictionMaximumPathArcDistanceMeters?: number
+}
 
 export interface VehicleTwinSample {
   [key: string]: unknown
@@ -14,6 +41,25 @@ export interface VehicleTwinSample {
   color: string
   vehicleHeading: number
   modelForwardAxisAngle: number
+  sceneGeneration?: number
+  motionEpoch?: number
+  motionPathKey?: string
+  segmentKey?: string
+  occupancyKey?: string
+  arcDistanceMeters?: number
+  pathArcDistanceMeters?: number
+  sourceSpeedMetersPerSecond?: number
+  unwrappedModelDirection?: number
+  transitionKind?: LanePoseTransitionKind | 'raw_fallback'
+  roadTransitionKind?: RoadTransitionKind
+  poseSource?: VehiclePoseSource
+  sampleQuality?: VehicleMotionSampleQuality
+  predictionBlocked?: boolean
+  stopReason?: string
+  predictionElapsedSeconds?: number
+  reconciling?: boolean
+  vehicleLengthMeters?: number
+  predictionMaximumPathArcDistanceMeters?: number
 }
 
 const VEHICLE_COLORS = [
@@ -23,6 +69,14 @@ const VEHICLE_COLORS = [
   '#f2b84b',
   '#4b5663',
 ] as const
+
+export function unwrapVehicleModelDirection(
+  previousModelDirection: number | null,
+  vehicleHeading: number,
+  modelForwardAxisAngle: number,
+): number {
+  return unwrapHeading(previousModelDirection, vehicleHeading - modelForwardAxisAngle)
+}
 
 function hashVehicleId(vehicleId: string): number {
   return [...vehicleId].reduce(
@@ -39,6 +93,7 @@ export function createVehicleTwinSample(
   profile: VehicleModelProfile,
   vehicleHeading: number,
   positionIsModelCenter = false,
+  motion: VehicleTwinMotionMetadata = {},
 ): VehicleTwinSample {
   const color = VEHICLE_COLORS[hashVehicleId(vehicle.vehicle_id) % VEHICLE_COLORS.length]
   const center = positionIsModelCenter
@@ -58,5 +113,9 @@ export function createVehicleTwinSample(
     color,
     vehicleHeading,
     modelForwardAxisAngle: profile.modelForwardAxisAngle,
+    vehicleLengthMeters: profile.targetLengthMeters,
+    sourceSpeedMetersPerSecond: Math.max(0, Number(vehicle.speed) || 0),
+    sampleQuality: motion.poseSource === 'held' ? 'held' : 'authoritative',
+    ...motion,
   }
 }

@@ -23,6 +23,8 @@ import type { StartSimulationRequest } from '../types/simulation'
 import type { TrafficFlowMode } from '../types/scenario'
 import { buildStartSimulationRequest } from '../utils/scenarioPayload'
 import { scenarioPresetIntersectionIds } from '../utils/scenarioPresetRules'
+import { assertUniqueDisturbanceIntersections } from '../utils/disturbanceIntersectionUniqueness.ts'
+import { assertSafeLaneClosureEvents } from '../utils/safeLaneClosures.ts'
 import {
   SCENARIO_CONFIG_EXPORT_VERSION,
   DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
@@ -98,6 +100,11 @@ export function buildSimulationPayload(
   _supportedIntersectionIds: string[] = [],
   controlModes: string[] = [...SUPPORTED_BACKEND_CONTROL_MODES],
 ): StartSimulationRequest {
+  assertUniqueDisturbanceIntersections(config.disturbance_events, (event) => (
+    DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === event.preset_id)?.label
+      ?? event.event_type
+  ))
+  assertSafeLaneClosureEvents(config.disturbance_events)
   const time = simulationTimeWindow(
     config.flow_mode,
     config.simulation_start_time,
@@ -351,7 +358,7 @@ export function useCompactScenarioConfig(
       }]
     }
 
-    return {
+    const parsedConfig: CompactScenarioConfig = {
       scenario_preset_id: scenarioPresetId,
       flow_mode: mode,
       disturbance_events: disturbanceEvents,
@@ -364,6 +371,12 @@ export function useCompactScenarioConfig(
         ? controlMode
         : supportedControlModes.includes('fixed') ? 'fixed' : supportedControlModes[0],
     }
+    assertUniqueDisturbanceIntersections(parsedConfig.disturbance_events, (event) => (
+      DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === event.preset_id)?.label
+        ?? event.event_type
+    ))
+    assertSafeLaneClosureEvents(parsedConfig.disturbance_events)
+    return parsedConfig
   }
 
   function applyImportedConfig(input: unknown): void {

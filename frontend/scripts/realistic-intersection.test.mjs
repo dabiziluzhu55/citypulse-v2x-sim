@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { projectBd09ToWebMercator, wgs84ToBd09 } from '../src/mapv/sceneCoordinates.ts'
@@ -17,6 +18,7 @@ import {
 } from '../src/mapv/realistic/intersectionApproachGeometry.ts'
 import { visualLanePoints } from '../src/mapv/realistic/intersectionRoadGeometry.ts'
 import { parseIntersectionEnvironmentManifest } from '../src/mapv/realistic/intersectionEnvironmentManifest.ts'
+import { sumoHeadingTransformIsValid } from '../src/mapv/sumoHeadingTransform.ts'
 
 function pointToSegmentDistance(point, start, end) {
   const dx = end[0] - start[0]
@@ -34,11 +36,14 @@ test('clips a lane shape at the exact preview radius', () => {
 })
 
 test('catalog contains 20 projection-correct realistic intersections', async () => {
-  const catalog = JSON.parse(await readFile(
-    new URL('../public/intersections/v3/catalog.json', import.meta.url),
-    'utf8',
-  ))
+  const [catalogSource, sumoSource] = await Promise.all([
+    readFile(new URL('../public/intersections/v3/catalog.json', import.meta.url), 'utf8'),
+    readFile(new URL('../../data/maps/sumo/generated/network/TotalMap_20.signals.net.xml', import.meta.url)),
+  ])
+  const catalog = JSON.parse(catalogSource)
+  const sourceSha256 = createHash('sha256').update(sumoSource).digest('hex')
   assert.equal(catalog.schemaVersion, 3)
+  assert.equal(catalog.sourceSha256, sourceSha256)
   assert.equal(catalog.intersections.length, 20)
   assert.deepEqual(
     catalog.intersections.map((item) => item.intersectionId),
@@ -50,6 +55,9 @@ test('catalog contains 20 projection-correct realistic intersections', async () 
       'utf8',
     ))
     assert.deepEqual(validateIntersectionManifest(manifest), [], entry.intersectionId)
+    assert.equal(sumoHeadingTransformIsValid(entry.sumoHeadingTransform), true)
+    assert.deepEqual(manifest.sumoHeadingTransform, entry.sumoHeadingTransform)
+    assert.equal(manifest.sumoHeadingTransform.sourceSha256, sourceSha256)
     assert.equal(manifest.intersectionId, entry.intersectionId)
     assert.ok(manifest.horizontalScale > 1.28 && manifest.horizontalScale < 1.30)
     assert.ok(manifest.connections.length > 0)
@@ -63,6 +71,34 @@ test('catalog contains 20 projection-correct realistic intersections', async () 
     assert.ok(maximumRoadRadius >= 130, `${entry.intersectionId} road coverage is too short`)
     assert.ok(manifest.edges.some((edge) => edge.incoming))
     assert.ok(manifest.edges.some((edge) => !edge.incoming))
+  }
+})
+
+test('targeted rebuilt intersections match the current SUMO source and repair authoritative demo_4 gaps', async () => {
+  const [source, ...manifestSources] = await Promise.all([
+    readFile(new URL('../../data/maps/sumo/generated/network/TotalMap_20.signals.net.xml', import.meta.url)),
+    ...[4, 5, 6, 8, 9].map((index) => readFile(
+      new URL(`../public/intersections/v3/demo_${index}/manifest.json`, import.meta.url),
+      'utf8',
+    )),
+  ])
+  const sourceSha256 = createHash('sha256').update(source).digest('hex')
+  const manifests = manifestSources.map(JSON.parse)
+  const [demo4] = manifests
+  manifests.forEach((manifest) => assert.equal(manifest.sourceSha256, sourceSha256))
+
+  const repairedPairs = [
+    ['4463', '-56733', '-56735'],
+    ['4463', '-56735', '-57184'],
+    ['4484', '-57185', '-57232'],
+    ['4484', '-57230', '-57232'],
+  ]
+  for (const [junctionId, ...edgeIds] of repairedPairs) {
+    assert.ok(demo4.roadJoints.some((joint) => (
+      joint.junctionId === junctionId
+      && joint.source === 'sumo_junction_shape'
+      && edgeIds.every((edgeId) => joint.connectedEdgeIds.includes(edgeId))
+    )), `${junctionId} ${edgeIds.join('/')} must have an authoritative joint`)
   }
 })
 
@@ -267,16 +303,16 @@ test('crosswalk orientation follows the rebuilt road centerline instead of one s
 })
 
 test('demo_2 lanes align with the authoritative WGS84 road export', async () => {
-  const [manifestSource, roadsSource, mappingSource] = await Promise.all([
+  const [manifestSource, roadsSource, catalogSource] = await Promise.all([
     readFile(new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url), 'utf8'),
     readFile(new URL('../public/showcase-data/demo_2.roads.wgs84.geojson', import.meta.url), 'utf8'),
-    readFile(new URL('../../data/maps/sumo/TotalMap_20.intersections.json', import.meta.url), 'utf8'),
+    readFile(new URL('../public/intersections/v3/catalog.json', import.meta.url), 'utf8'),
   ])
   const manifest = JSON.parse(manifestSource)
   const roads = JSON.parse(roadsSource)
-  const mapping = JSON.parse(mappingSource)
-  assert.ok(Math.abs(manifest.origin.longitude - mapping.demo_2.junction_lon) < 1e-10)
-  assert.ok(Math.abs(manifest.origin.latitude - mapping.demo_2.junction_lat) < 1e-10)
+  const catalogEntry = JSON.parse(catalogSource).intersections.find((item) => item.intersectionId === 'demo_2')
+  assert.ok(Math.abs(manifest.origin.longitude - catalogEntry.longitude) < 1e-10)
+  assert.ok(Math.abs(manifest.origin.latitude - catalogEntry.latitude) < 1e-10)
 
   const origin = manifest.origin.webMercator
   let maximumDistance = 0

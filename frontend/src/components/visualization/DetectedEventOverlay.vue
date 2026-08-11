@@ -28,6 +28,7 @@ const props = defineProps<{
   snapshot: SimulationSnapshot | null
   project: (longitude: number, latitude: number) => ScreenPoint | null
   active?: boolean
+  continuous?: boolean
   /** 视角/缩放指纹，变化时才重算错位 */
   viewToken?: string | number
 }>()
@@ -111,23 +112,37 @@ function refreshMarkers(): void {
 }
 
 function loop(): void {
+  frameId = null
   refreshMarkers()
-  frameId = window.requestAnimationFrame(loop)
+  syncLoop()
+}
+
+function syncLoop(): void {
+  const shouldRun = props.active && props.continuous && activeCards.value.length > 0
+  if (!shouldRun && frameId != null) {
+    window.cancelAnimationFrame(frameId)
+    frameId = null
+  }
+  if (shouldRun && frameId == null) frameId = window.requestAnimationFrame(loop)
 }
 
 watch(
-  () => [props.cards, props.snapshot?.sequence, props.active, props.viewToken] as const,
-  () => refreshMarkers(),
+  () => [props.cards, props.snapshot?.sequence, props.active, props.continuous, props.viewToken] as const,
+  () => {
+    refreshMarkers()
+    syncLoop()
+  },
   { deep: true },
 )
 
 onMounted(() => {
   refreshMarkers()
-  frameId = window.requestAnimationFrame(loop)
+  syncLoop()
 })
 
 onUnmounted(() => {
   if (frameId != null) window.cancelAnimationFrame(frameId)
+  frameId = null
 })
 </script>
 

@@ -13,6 +13,16 @@ export interface Map3dFailure {
   detail: string
 }
 
+export const WEBGL_AUTO_RECOVERY_WINDOW_MS = 60_000
+
+export function shouldAutomaticallyRecoverWebgl(
+  lastRecoveryAt: number | null,
+  now: number,
+  windowMs = WEBGL_AUTO_RECOVERY_WINDOW_MS,
+): boolean {
+  return lastRecoveryAt == null || now - lastRecoveryAt > windowMs
+}
+
 function errorDetail(cause: unknown): string {
   if (cause instanceof Error) return cause.message
   if (typeof cause === 'string') return cause

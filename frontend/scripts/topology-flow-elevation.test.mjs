@@ -44,6 +44,7 @@ test('keeps depth occlusion while drawing the two light layers after road markin
   assert.match(source, /owner\.material\.depthTest = true/)
   assert.match(source, /owner\.material\.depthWrite = false/)
   assert.match(source, /this\.baseLine\.renderOrder = 34/)
-  assert.match(source, /this\.flowLine\.renderOrder = 35/)
+  assert.match(source, /this\.flowLines = Object\.fromEntries\(FLOW_LEVELS\.map/)
+  assert.match(source, /line\.renderOrder = 35 \+ index/)
   assert.doesNotMatch(source, /projector\(\[longitude, latitude, 0\.32\]\)/)
 })

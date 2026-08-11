@@ -28,6 +28,18 @@
   },
   "horizontalScale": 1.2876677310575344,
   "sumoUnitScale": 0.9235357002613169,
+  "sumoHeadingTransform": {
+    "xAxis": [
+      -0.561470588669,
+      -0.731319016777
+    ],
+    "yAxis": [
+      0.731592964381,
+      -0.566153762862
+    ],
+    "determinant": 0.852906533903,
+    "sourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36"
+  },
   "radiusMeters": 520,
   "radiusSceneUnits": 669.5872201499179,
   "junctionShape": [
@@ -6751,7 +6763,15 @@
           -60.129
         ]
       ],
-      "roadWidth": 7.919
+      "roadWidth": 7.919,
+      "surfaceExclusions": [
+        {
+          "startOffsetMeters": 28.762,
+          "endOffsetMeters": 84.72,
+          "reason": "building_overlap",
+          "source": "building_triangle_audit"
+        }
+      ]
     },
     {
       "id": "-46784",
@@ -7041,7 +7061,15 @@
           -55.227
         ]
       ],
-      "roadWidth": 7.919
+      "roadWidth": 7.919,
+      "surfaceExclusions": [
+        {
+          "startOffsetMeters": 107.516,
+          "endOffsetMeters": 126.09,
+          "reason": "building_overlap",
+          "source": "building_triangle_audit"
+        }
+      ]
     },
     {
       "id": "-46785",
@@ -11455,7 +11483,15 @@
           -141.692
         ]
       ],
-      "roadWidth": 4.314
+      "roadWidth": 4.314,
+      "surfaceExclusions": [
+        {
+          "startOffsetMeters": 21.127,
+          "endOffsetMeters": 39.211,
+          "reason": "building_overlap",
+          "source": "building_triangle_audit"
+        }
+      ]
     },
     {
       "id": "-49927",
@@ -15065,7 +15101,15 @@
           182.503
         ]
       ],
-      "roadWidth": 7.919
+      "roadWidth": 7.919,
+      "surfaceExclusions": [
+        {
+          "startOffsetMeters": 26.118,
+          "endOffsetMeters": 42.925,
+          "reason": "building_overlap",
+          "source": "building_triangle_audit"
+        }
+      ]
     },
     {
       "id": "-52202",
@@ -48159,7 +48203,15 @@
           208.495
         ]
       ],
-      "roadWidth": 7.919
+      "roadWidth": 7.919,
+      "surfaceExclusions": [
+        {
+          "startOffsetMeters": 61.978,
+          "endOffsetMeters": 96.717,
+          "reason": "building_overlap",
+          "source": "building_triangle_audit"
+        }
+      ]
     },
     {
       "id": "-56442",

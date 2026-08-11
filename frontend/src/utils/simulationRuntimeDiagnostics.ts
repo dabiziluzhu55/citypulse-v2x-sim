@@ -17,6 +17,22 @@ export interface VehicleRuntimeDiagnosticUpdate {
   retainedMissingCount: number
   confirmedRemovedCount: number
   twinResetCount: number
+  twinSafetyMarginMs: number
+  maximumTwinOutputGapMs: number
+  emptyBufferInterceptCount: number
+  terminalFreezeActive: boolean
+  incompatiblePathInterpolationCount: number
+  poseViolationCount: number
+  targetBufferSeconds: number
+  expectedPlaybackRate: number
+  predictedVehicleCount: number
+  maximumPredictionSeconds: number
+  reconcilingVehicleCount: number
+  maximumReconciliationSpeedMetersPerSecond: number
+  maximumReconciliationAccelerationMetersPerSecondSquared: number
+  movingFreezeFrameCount: number
+  batchArrivalCount: number
+  twinGapFillFrameCount: number
 }
 
 interface RuntimeDiagnosticState {
@@ -46,6 +62,22 @@ interface RuntimeDiagnosticState {
   motionBufferUnderruns: number
   motionBufferUnderrunActive: boolean
   twinResetCount: number
+  twinSafetyMarginMs: number
+  maximumTwinOutputGapMs: number
+  emptyBufferInterceptCount: number
+  terminalFreezeActive: boolean
+  incompatiblePathInterpolations: number
+  poseViolations: number
+  targetMotionBufferSeconds: number
+  expectedVehiclePlaybackRate: number
+  predictedVehicles: number
+  maximumVehiclePredictionSeconds: number
+  reconcilingVehicles: number
+  maximumReconciliationSpeedMetersPerSecond: number
+  maximumReconciliationAccelerationMetersPerSecondSquared: number
+  movingFreezeFrames: number
+  batchSnapshotArrivals: number
+  twinGapFillFrames: number
   capturedAt: string
 }
 
@@ -76,6 +108,22 @@ const state: RuntimeDiagnosticState = {
   motionBufferUnderruns: 0,
   motionBufferUnderrunActive: false,
   twinResetCount: 0,
+  twinSafetyMarginMs: 0,
+  maximumTwinOutputGapMs: 0,
+  emptyBufferInterceptCount: 0,
+  terminalFreezeActive: false,
+  incompatiblePathInterpolations: 0,
+  poseViolations: 0,
+  targetMotionBufferSeconds: 1.5,
+  expectedVehiclePlaybackRate: 1,
+  predictedVehicles: 0,
+  maximumVehiclePredictionSeconds: 0,
+  reconcilingVehicles: 0,
+  maximumReconciliationSpeedMetersPerSecond: 0,
+  maximumReconciliationAccelerationMetersPerSecondSquared: 0,
+  movingFreezeFrames: 0,
+  batchSnapshotArrivals: 0,
+  twinGapFillFrames: 0,
   capturedAt: '',
 }
 
@@ -123,6 +171,22 @@ export function resetSimulationRuntimeDiagnostics(sessionId = ''): void {
   state.motionBufferUnderruns = 0
   state.motionBufferUnderrunActive = false
   state.twinResetCount = 0
+  state.twinSafetyMarginMs = 0
+  state.maximumTwinOutputGapMs = 0
+  state.emptyBufferInterceptCount = 0
+  state.terminalFreezeActive = false
+  state.incompatiblePathInterpolations = 0
+  state.poseViolations = 0
+  state.targetMotionBufferSeconds = 1.5
+  state.expectedVehiclePlaybackRate = 1
+  state.predictedVehicles = 0
+  state.maximumVehiclePredictionSeconds = 0
+  state.reconcilingVehicles = 0
+  state.maximumReconciliationSpeedMetersPerSecond = 0
+  state.maximumReconciliationAccelerationMetersPerSecondSquared = 0
+  state.movingFreezeFrames = 0
+  state.batchSnapshotArrivals = 0
+  state.twinGapFillFrames = 0
   snapshotIntervalsMs = []
   lastSnapshotArrivalMs = null
   publish()
@@ -186,6 +250,24 @@ export function recordVehicleRuntimeDiagnostics(update: VehicleRuntimeDiagnostic
   state.motionBufferUnderruns = update.underrunCount
   state.motionBufferUnderrunActive = update.underrunActive
   state.twinResetCount = update.twinResetCount
+  state.twinSafetyMarginMs = update.twinSafetyMarginMs
+  state.maximumTwinOutputGapMs = update.maximumTwinOutputGapMs
+  state.emptyBufferInterceptCount = update.emptyBufferInterceptCount
+  state.terminalFreezeActive = update.terminalFreezeActive
+  state.incompatiblePathInterpolations = update.incompatiblePathInterpolationCount
+  state.poseViolations = update.poseViolationCount
+  state.targetMotionBufferSeconds = update.targetBufferSeconds
+  state.expectedVehiclePlaybackRate = update.expectedPlaybackRate
+  state.predictedVehicles = update.predictedVehicleCount
+  state.maximumVehiclePredictionSeconds = update.maximumPredictionSeconds
+  state.reconcilingVehicles = update.reconcilingVehicleCount
+  state.maximumReconciliationSpeedMetersPerSecond =
+    update.maximumReconciliationSpeedMetersPerSecond
+  state.maximumReconciliationAccelerationMetersPerSecondSquared =
+    update.maximumReconciliationAccelerationMetersPerSecondSquared
+  state.movingFreezeFrames = update.movingFreezeFrameCount
+  state.batchSnapshotArrivals = update.batchArrivalCount
+  state.twinGapFillFrames = update.twinGapFillFrameCount
   publish()
 }
 

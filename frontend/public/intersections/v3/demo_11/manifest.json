@@ -28,6 +28,18 @@
   },
   "horizontalScale": 1.288027296409214,
   "sumoUnitScale": 0.9232952274240487,
+  "sumoHeadingTransform": {
+    "xAxis": [
+      -0.559831184335,
+      -0.72450850904
+    ],
+    "yAxis": [
+      0.732245871797,
+      -0.574947170448
+    ],
+    "determinant": 0.852391720188,
+    "sourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36"
+  },
   "radiusMeters": 520,
   "radiusSceneUnits": 669.7741941327913,
   "junctionShape": [

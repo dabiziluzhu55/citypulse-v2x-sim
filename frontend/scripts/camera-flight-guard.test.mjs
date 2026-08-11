@@ -62,18 +62,26 @@ test('initial presentation waits for facilities while optional environment layer
     new URL('../src/components/visualization/BaiduThreeMap.vue', import.meta.url),
     'utf8',
   )
-  const activateAt = source.indexOf('realisticIntersectionLayer.activate(intersectionId)')
-  const environmentAwaitAt = source.indexOf(
-    'await switchIntersectionEnvironment(intersectionId, revision)',
+  const environmentPrepareAt = source.indexOf(
+    'prepareIntersectionEnvironment(intersectionId, signal)',
+  )
+  const activateAt = source.indexOf(
+    'realisticIntersectionLayer.activate(intersectionId)',
+    environmentPrepareAt,
+  )
+  const environmentCommitAt = source.indexOf(
+    'commitIntersectionEnvironment(intersectionId, preparedEnvironment, revision)',
     activateAt,
   )
-  const environmentReadyAt = source.indexOf('initialEnvironmentReady = true', environmentAwaitAt)
-  const optionalLandcoverCatchAt = source.indexOf(
-    'ensureIntersectionLandcover(intersectionId, environment).catch',
+  const environmentReadyAt = source.indexOf('initialEnvironmentReady = true', environmentCommitAt)
+  const landcoverPrepareAt = source.indexOf(
+    'ensureIntersectionLandcover(intersectionId, environment, signal)',
   )
+  const optionalLandcoverCatchAt = source.indexOf('.catch((cause: unknown)', landcoverPrepareAt)
 
-  assert.ok(activateAt >= 0)
-  assert.ok(environmentAwaitAt > activateAt)
-  assert.ok(environmentReadyAt > environmentAwaitAt)
-  assert.ok(optionalLandcoverCatchAt > environmentAwaitAt)
+  assert.ok(environmentPrepareAt >= 0)
+  assert.ok(activateAt > environmentPrepareAt)
+  assert.ok(environmentCommitAt > activateAt)
+  assert.ok(environmentReadyAt > environmentCommitAt)
+  assert.ok(optionalLandcoverCatchAt > landcoverPrepareAt)
 })

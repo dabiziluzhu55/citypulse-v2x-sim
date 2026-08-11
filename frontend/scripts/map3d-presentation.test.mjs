@@ -329,7 +329,7 @@ test('keeps one module timeout, delegates scene readiness, and tears down retrie
   assert.match(appSource, /map-dimension-toggle \*/)
 })
 
-test('mounts 3D lazily and preserves the engine across 2D/3D view switches', () => {
+test('mounts 3D lazily, preserves its engine, and releases the hidden 2D map', () => {
   assert.match(appSource, /const threeMapMounted = ref\(false\)/)
   assert.match(
     appSource,
@@ -337,7 +337,7 @@ test('mounts 3D lazily and preserves the engine across 2D/3D view switches', () 
   )
   assert.match(
     appSource,
-    /<AppBackgroundMap :active="map2dActive"/,
+    /<AppBackgroundMap v-if="map2dMounted" :active="map2dActive"/,
   )
   assert.match(
     appSource,
@@ -348,7 +348,20 @@ test('mounts 3D lazily and preserves the engine across 2D/3D view switches', () 
   assert.match(baiduThreeMapSource, /vehicleRenderer\?\.setActive\(active\)/)
   assert.match(baiduThreeMapSource, /props\.active && documentVisible/)
   assert.match(backgroundMapSource, /const vehicleFeatures = new globalThis\.Map/)
+  assert.match(appSource, /threeMapState\.value === 'ready'[\s\S]*map2dMounted\.value = false/)
+  assert.match(backgroundMapSource, /releaseFullRoadNetwork\(\)/)
   assert.doesNotMatch(backgroundMapSource, /function renderVehicles\(\) \{\s*vehicleSource\.clear\(\)/)
+})
+
+test('resizes the on-demand 3D renderer without restoring a permanent frame loop', () => {
+  assert.match(baiduThreeMapSource, /new ResizeObserver\(scheduleEngineResize\)/)
+  assert.match(
+    baiduThreeMapSource,
+    /rendering\.resolution = new Vector2\(width, height\)[\s\S]*activeEngine\.requestRender\(\)/,
+  )
+  assert.match(baiduThreeMapSource, /overlayViewToken\.value \+= 1/)
+  assert.match(baiduThreeMapSource, /stopEngineResizeObserver\(\)/)
+  assert.doesNotMatch(baiduThreeMapSource, /engineResizeObserver[\s\S]*enableAnimationLoop = true/)
 })
 
 test('clears 2D and 3D vehicle state exactly when a new backend session is accepted', () => {
@@ -374,8 +387,13 @@ test('provides a black pre-mount crash shell and clears it only after Vue mounts
   assert.match(mainSource, /window\.__CITYPULSE_STARTUP__\?\.mounted\(\)/)
 })
 
-test('re-enters the black gate for WebGL loss and fails if recovery never arrives', () => {
-  assert.match(baiduThreeMapSource, /emit\('loading', '三维图形上下文已丢失，正在恢复'\)/)
-  assert.match(baiduThreeMapSource, /三维图形上下文在 10 秒内未能恢复/)
-  assert.match(baiduThreeMapSource, /if \(webglRecoveryTimer\) clearTimeout\(webglRecoveryTimer\)/)
+test('rebuilds once after WebGL loss and uses a reduced recovery budget', () => {
+  assert.match(baiduThreeMapSource, /failure\.name = 'WebGLContextLostError'/)
+  assert.match(baiduThreeMapSource, /sceneSwitchCoordinator\.cancel\(\)/)
+  assert.match(baiduThreeMapSource, /vehicleRenderer\?\.setActive\(false\)/)
+  assert.match(appThreeMapLoaderSource, /shouldAutomaticallyRecoverWebgl/)
+  assert.match(appThreeMapLoaderSource, /void remountThreeMap\(true\)/)
+  assert.match(appThreeMapLoaderSource, /if \(fatalFailureLatched\) return/)
+  assert.match(appThreeMapLoaderSource, /fatalFailureLatched = true[\s\S]*reportFailure\(cause\)/)
+  assert.match(appThreeMapLoaderSource, /:recovery-mode="recoveryMode"/)
 })

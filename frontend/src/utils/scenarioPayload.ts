@@ -2,6 +2,11 @@ import type { DisturbanceTargetPayload, StartSimulationRequest } from '../types/
 import type { BackendControlMode } from '../constants/simulationOptions'
 import type { DisturbanceType } from '../types/scenario'
 import { resolveMajorEventVehicleCount } from './scenarioConfigMigration.ts'
+import { assertUniqueDisturbanceIntersections } from './disturbanceIntersectionUniqueness.ts'
+import {
+  assertSafeLaneClosureEvents,
+  safeLaneClosureLaneIds,
+} from './safeLaneClosures.ts'
 
 export interface ScenarioPayloadInput {
   scenarioPresetId: string
@@ -40,6 +45,12 @@ export function buildDisturbanceTargets(input: ScenarioPayloadInput): Disturbanc
             : input.intersectionId ? [input.intersectionId] : [],
         }]
   )
+  assertUniqueDisturbanceIntersections(events.map((event, index) => ({
+    event_id: event.eventId ?? `event_${index + 1}`,
+    intersection_ids: event.intersectionIds,
+    label: event.eventType,
+  })), (event) => event.label)
+  assertSafeLaneClosureEvents(events)
   return events.flatMap((event, eventIndex) => {
     const intersectionIds = [...new Set(event.intersectionIds)]
     if (intersectionIds.length === 0) {
@@ -68,7 +79,13 @@ export function buildDisturbanceTargets(input: ScenarioPayloadInput): Disturbanc
         start_seconds: start,
         end_seconds: end,
       }
-      if (event.eventType === 'lane_closure') return { event_type: 'lane_closure' as const, ...base }
+      if (event.eventType === 'lane_closure') {
+        return {
+          event_type: 'lane_closure' as const,
+          ...base,
+          lane_ids: safeLaneClosureLaneIds(intersectionId),
+        }
+      }
       if (event.eventType === 'speed_limit') return { event_type: 'speed_limit' as const, ...base, max_speed: 5 }
       if (event.eventType === 'accident') return { event_type: 'accident' as const, ...base, position_ratio: 0.5 }
       const vehicleCount = resolveMajorEventVehicleCount(event.vehicleCount)

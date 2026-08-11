@@ -16,11 +16,16 @@ import { distanceMeters as geographicDistanceMeters } from './vehicleVisibility'
 import { topologyFlowHeight } from './topologyFlowElevation'
 import { REALISTIC_INTERSECTION_SURFACE_Z } from './sceneElevation'
 import {
+  ACTIVE_INTERSECTION_MARKER_EFFECT_OPTIONS,
+  ACTIVE_INTERSECTION_MARKER_RENDER_ORDER,
+  ACTIVE_INTERSECTION_MARKER_WAVE_OPTIONS,
+  ACTIVE_INTERSECTION_MARKER_WAVE_RENDER_ORDER,
   INTERSECTION_MARKER_LABEL_HEIGHT_METERS,
   INTERSECTION_MARKER_EFFECT_OPTIONS,
   INTERSECTION_MARKER_MODEL_URL,
   INTERSECTION_MARKER_SURFACE_OFFSET_METERS,
-  INTERSECTION_MARKER_WAVE_OPTIONS,
+  anchorIntersectionMarkerModel,
+  configureSelectedIntersectionMarkerModel,
   createFallbackIntersectionMarkerModel,
   partitionIntersectionMarkerFeatures,
   shouldShowIntersectionMarkerLabel,
@@ -72,11 +77,13 @@ function cloneMarkerModel(source: THREE.Object3D, active: boolean): THREE.Object
       if (styled.emissiveIntensity != null) styled.emissiveIntensity = active ? 2.8 : 1.55
       if (styled.metalness != null) styled.metalness = Math.min(styled.metalness, 0.3)
       if (styled.roughness != null) styled.roughness = Math.min(styled.roughness, 0.42)
+      if (active) styled.depthWrite = false
       return material
     })
     child.material = Array.isArray(child.material) ? materials : materials[0]
   })
-  return clone
+  const anchored = anchorIntersectionMarkerModel(clone)
+  return active ? configureSelectedIntersectionMarkerModel(anchored) : anchored
 }
 
 function disposeMarkerModels(models: THREE.Object3D[]): void {
@@ -111,6 +118,16 @@ function configureOverlayMaterial(layer: unknown, opacity: number): void {
   owner.material.polygonOffset = true
   owner.material.polygonOffsetFactor = -6
   owner.material.polygonOffsetUnits = -6
+}
+
+function configureForegroundLayer(layer: unknown, renderOrder: number): void {
+  const owner = layer as RenderMaterialOwner
+  owner.renderOrder = renderOrder
+  if (!owner.material) return
+  owner.material.transparent = true
+  owner.material.depthTest = false
+  owner.material.depthWrite = false
+  owner.material.needsUpdate = true
 }
 
 export class IntersectionTopologyLayer {
@@ -178,12 +195,14 @@ export class IntersectionTopologyLayer {
     this.markers.model = this.markerModel
     this.markers.position.z = 0
 
-    this.activeMarker = engine.add(new mapvthree.EffectModelPoint(INTERSECTION_MARKER_EFFECT_OPTIONS))
+    this.activeMarker = engine.add(new mapvthree.EffectModelPoint(ACTIVE_INTERSECTION_MARKER_EFFECT_OPTIONS))
     this.activeMarker.model = this.activeMarkerModel
     this.activeMarker.position.z = 0
+    configureForegroundLayer(this.activeMarker, ACTIVE_INTERSECTION_MARKER_RENDER_ORDER)
 
-    this.waves = engine.add(new mapvthree.EffectPoint(INTERSECTION_MARKER_WAVE_OPTIONS))
-    this.waves.position.z = 0.02
+    this.waves = engine.add(new mapvthree.EffectPoint(ACTIVE_INTERSECTION_MARKER_WAVE_OPTIONS))
+    this.waves.position.z = 0
+    configureForegroundLayer(this.waves, ACTIVE_INTERSECTION_MARKER_WAVE_RENDER_ORDER)
 
     this.labels = engine.add(new mapvthree.Text({
       fillStyle: '#bff5ff',
