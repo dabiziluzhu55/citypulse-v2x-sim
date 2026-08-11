@@ -9,7 +9,7 @@ import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .dataset import LaneSeries, load_lane_series
+from ...dataset import LaneSeries, load_lane_series
 
 
 @dataclass(frozen=True)

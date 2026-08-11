@@ -9,3 +9,5 @@ shapely>=2.1.0,<3.0
 eclipse-sumo>=1.27.1
 matplotlib>=3.8.0
 numpy>=1.26.0
+# NarrowNet-TDP在线推理用CPU版torch；镜像可改为对应CPU wheel索引
+torch>=2.2.0

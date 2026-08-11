@@ -32,7 +32,7 @@
 - 评估脚本在`traffic_eval/`（Backend封装；算法可直接import，无需启动后端）
 - `traffic_eval`：**Backend 容器封装**；sumo容器也需封装以便本地命令工具复用同一包，但Worker的仿真进程不负责指标计算
 
-- IPPO等含torch的推理只在SUMO Worker进程内运行，Backend启动不导入torch
+- IPPO等含torch的管控推理只在SUMO Worker进程内运行；Backend可带CPU torch用于NarrowNet-TDP短时交通预测
 
 ### 管控模式
 
@@ -144,7 +144,7 @@ Worker使用prefork，一子进程同时只跑一个SUMO会话;与后端Backend�
 | 容器 | 内容 |
 |------|------|
 | frontend | 静态资源/Nginx |
-| backend | FastAPI，无SUMO/无torch |
+| backend | FastAPI+CPU torch（NarrowNet-TDP预测），无SUMO |
 | sumo-worker | `simulation`+`traffic_control`+SUMO(+torch) |
 | redis | 队列与会话状态 |
 

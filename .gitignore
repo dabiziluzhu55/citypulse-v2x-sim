@@ -76,3 +76,6 @@ algorithms/mappo/runs/
 # CARLA Maps
 data/maps/carla/*
 data/maps/xodr/*
+
+# prediction
+official20_lane206_prediction_backend_bundle_20260810/

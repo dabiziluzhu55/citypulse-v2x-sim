@@ -250,7 +250,8 @@ class _SessionIntelligence:
         self._states: list[IntersectionState] = []
         self._last_bucket: int | None = None
         self._count_history: deque[dict[str, float]] = deque(maxlen=history_frames)
-        self._feature_history: deque[dict[str, dict[str, float]]] = deque(
+        # NarrowNet-TDP按206车道采样；路口级仅用于moving_average降级与卡片展示
+        self._lane_feature_history: deque[dict[str, dict[str, float]]] = deque(
             maxlen=max(history_frames, 12)
         )
         self._edge_levels: dict[str, _EdgeLevelState] = {}
@@ -279,8 +280,8 @@ class _SessionIntelligence:
             raw_cards = build_event_cards(detections)
             cards = self._stabilize_cards(raw_cards, elapsed)
 
+            self._lane_feature_history.append(self._collect_lane_features(snapshot))
             feature_frame = self._aggregate_node_features(snapshot)
-            self._feature_history.append(feature_frame)
             node_counts = {
                 node: float(feature_frame.get(node, {}).get("vehicle_count", 0.0))
                 for node in self.nodes
@@ -404,6 +405,19 @@ class _SessionIntelligence:
             )
         return stabilized
 
+    def _collect_lane_features(self, snapshot: Any) -> dict[str, dict[str, float]]:
+        # occupancy保持TraCI原始口径与NarrowNet-TDP训练归一化一致
+        features: dict[str, dict[str, float]] = {}
+        for intersection in snapshot.intersections.values():
+            for lane_id, lane in intersection.lanes.items():
+                features[str(lane_id)] = {
+                    "vehicle_count": float(lane.vehicle_count),
+                    "halting_count": float(lane.halting_count),
+                    "mean_speed": float(lane.mean_speed),
+                    "occupancy": float(getattr(lane, "occupancy", 0.0)),
+                }
+        return features
+
     def _aggregate_node_features(
         self, snapshot: Any
     ) -> dict[str, dict[str, float]]:
@@ -445,19 +459,31 @@ class _SessionIntelligence:
             }
         return features
 
+    def _aggregate_lane_predictions(
+        self, lane_values: dict[str, float]
+    ) -> dict[str, float]:
+        predicted_by_node = {node: 0.0 for node in self.nodes}
+        for lane_id, value in lane_values.items():
+            node = self.lane_to_node.get(str(lane_id))
+            if node is None or node not in predicted_by_node:
+                continue
+            predicted_by_node[node] += float(value)
+        return predicted_by_node
+
     def _build_prediction(
         self,
         elapsed: float,
         current_counts: dict[str, float],
     ) -> dict[str, Any]:
-        stgcn_values, stgcn_meta = self.prediction_runtime.predict_vehicle_counts(
-            list(self._feature_history)
+        lane_values, pred_meta = self.prediction_runtime.predict_vehicle_counts(
+            list(self._lane_feature_history)
         )
-        if stgcn_values is not None and not stgcn_meta.get("fallback"):
+        if lane_values is not None and not pred_meta.get("fallback"):
+            node_preds = self._aggregate_lane_predictions(lane_values)
             intersections: dict[str, Any] = {}
             for node in self.nodes:
                 current = float(current_counts.get(node, 0.0))
-                predicted = float(stgcn_values.get(node, current))
+                predicted = float(node_preds.get(node, current))
                 delta = predicted - current
                 ratio = None if abs(current) < 1e-6 else delta / current
                 intersections[node] = {
@@ -469,13 +495,13 @@ class _SessionIntelligence:
             return {
                 "horizon_seconds": self.horizon_seconds,
                 "as_of_seconds": elapsed,
-                "model": stgcn_meta.get("model") or self.prediction_runtime.status.model,
-                "model_version": stgcn_meta.get("model_version")
+                "model": pred_meta.get("model") or self.prediction_runtime.status.model,
+                "model_version": pred_meta.get("model_version")
                 or self.prediction_runtime.status.model_version,
                 "ready": True,
                 "fallback": False,
                 "fallback_reason": "",
-                "inference_latency_ms": stgcn_meta.get("inference_latency_ms"),
+                "inference_latency_ms": pred_meta.get("inference_latency_ms"),
                 "intersections": intersections,
             }
 
@@ -493,7 +519,7 @@ class _SessionIntelligence:
                 "delta": round(delta, 3),
                 "delta_ratio": None if ratio is None else round(ratio, 4),
             }
-        reason = str(stgcn_meta.get("fallback_reason") or "stgcn_unavailable")
+        reason = str(pred_meta.get("fallback_reason") or "narrow_net_tdp_unavailable")
         return {
             "horizon_seconds": self.horizon_seconds,
             "as_of_seconds": elapsed,
@@ -502,7 +528,7 @@ class _SessionIntelligence:
             "ready": ready,
             "fallback": True,
             "fallback_reason": reason,
-            "inference_latency_ms": stgcn_meta.get("inference_latency_ms"),
+            "inference_latency_ms": pred_meta.get("inference_latency_ms"),
             "intersections": intersections,
         }
 
@@ -630,8 +656,16 @@ class IntelligenceHub:
             lambda _intersection_id: (None, None)
         )
         self.nodes, self.lane_to_node = _load_lane_to_node(tls_manifest_path)
+        resolved_dir = prediction_model_dir
+        if isinstance(resolved_dir, str) and resolved_dir.strip():
+            candidate = Path(resolved_dir).expanduser()
+            if not candidate.is_absolute():
+                from backend.app.core.config import resolve_project_root
+
+                candidate = resolve_project_root() / candidate
+            resolved_dir = candidate
         self.prediction_runtime = prediction_runtime or PredictionRuntime.from_settings(
-            model_dir=prediction_model_dir,
+            model_dir=resolved_dir,
             stgcn_root=stgcn_root,
         )
         # 在线快照：红灯会打断连帧；占有率统一为百分数口径

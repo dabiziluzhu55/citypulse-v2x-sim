@@ -76,7 +76,9 @@ def _evaluate_model(model, dataset_dir: Path, horizon_step: int) -> dict[str, ob
     }
     for split in ("validation", "test_in_distribution", "test_extrapolation"):
         data = np.load(dataset_dir / f"{split}.npz")
-        actual = data["y"][:, horizon_step - 1, :] * std + mean
+        # Restore integer SUMO counts before MAPE/sMAPE.  Without rounding,
+        # a true zero can become a tiny de-normalization residue.
+        actual = np.rint(data["y"][:, horizon_step - 1, :] * std + mean)
         prediction = _predict(model, data["x"]) * std + mean
         result[split] = _metrics(prediction, actual)
     return result

@@ -1,0 +1,35 @@
+{
+  "node_count": 206,
+  "node_definition": "official20 incoming lanes",
+  "nodes_sha256": "82d0a54f3fc8b9a82ede04d08bdd4b175027f11ea9dfb91c78419fb940e83fb4",
+  "candidate_graph_sha256": "64c0d08e2edac4ed3dff4e77330cafbd8ee4751be51742ad6a13a61d08d46252",
+  "directed_relation_bits": {
+    "2": "direct_transition",
+    "4": "next_target"
+  },
+  "downstream_edge_count": 238,
+  "upstream_edge_count": 238,
+  "downstream_receiver_count": 74,
+  "upstream_receiver_count": 96,
+  "selected_candidate_rows": 238,
+  "bidirectional_candidate_rows": 34,
+  "relation_branch_counts": {
+    "direct_transition": 17,
+    "next_target": 238
+  },
+  "selected_relation_rows": {
+    "direct_transition": 17,
+    "next_target": 238
+  },
+  "hop_decay": 0.75,
+  "topology_csv_sha256": "035eb3ff19af2ed7888a0d50339817f4b6b6527f1a0472b8a8213b6afb102a35",
+  "missing_next_target_hop_rows": 0,
+  "next_target_hop_range": [
+    1,
+    4
+  ],
+  "artifacts": {
+    "graph": "/root/autodl-tmp/citypulse-lane206/project/d2_input/directional_lane_graph_hop075.npz",
+    "report": "/root/autodl-tmp/citypulse-lane206/project/d2_input/directional_lane_graph_hop075.json"
+  }
+}

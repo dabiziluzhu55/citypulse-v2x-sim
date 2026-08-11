@@ -100,7 +100,7 @@ class SimulationService:
             horizon_seconds=settings.prediction_horizon_seconds,
             lane_lonlat=getattr(converter, "lane_center_lonlat", None),
             intersection_lonlat=getattr(converter, "intersection_lonlat", None),
-            prediction_model_dir=settings.prediction_model_dir or None,
+            prediction_model_dir=settings.prediction_model_path,
             stgcn_root=settings.stgcn_root or None,
         )
 

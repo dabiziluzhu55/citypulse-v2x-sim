@@ -1,6 +1,6 @@
 import csv
 
-from algorithms.prediction.filter_active_lanes import build_active_lane_dataset
+from algorithms.prediction.archive.legacy.filter_active_lanes import build_active_lane_dataset
 
 
 def _write_rows(path, rows):

@@ -72,9 +72,9 @@ def write_results(rows: list[dict[str, object]], *, csv_path: Path, markdown_pat
         writer.writerows(rows)
 
     lines = [
-        "# Official-20 intersection prediction: comparable 60-second results",
+        "# Official-20 prediction: comparable 60-second results",
         "",
-        "All methods predict `vehicle_count` 60 seconds ahead on the same 20 intersections and episode splits.",
+        "All methods predict `vehicle_count` 60 seconds ahead on the same official-20 task nodes and episode splits.",
         "",
     ]
     for split in SPLITS:
