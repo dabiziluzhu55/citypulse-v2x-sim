@@ -28,6 +28,12 @@ export interface VehicleTwinMotionMetadata {
   stopReason?: string
   vehicleLengthMeters?: number
   predictionMaximumPathArcDistanceMeters?: number
+  sourceArcDistanceMeters?: number
+  sourceLateralOffsetMeters?: number
+  authoritativeArcDistanceMeters?: number
+  authoritativePathArcDistanceMeters?: number
+  authoritativeLeaderId?: string
+  authoritativeLeaderGapMeters?: number
 }
 
 export interface VehicleTwinSample {
@@ -60,6 +66,12 @@ export interface VehicleTwinSample {
   reconciling?: boolean
   vehicleLengthMeters?: number
   predictionMaximumPathArcDistanceMeters?: number
+  sourceArcDistanceMeters?: number
+  sourceLateralOffsetMeters?: number
+  authoritativeArcDistanceMeters?: number
+  authoritativePathArcDistanceMeters?: number
+  authoritativeLeaderId?: string
+  authoritativeLeaderGapMeters?: number
 }
 
 const VEHICLE_COLORS = [

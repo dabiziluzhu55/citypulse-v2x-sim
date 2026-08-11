@@ -201,6 +201,12 @@ const vehicleStats = ref<VehicleRenderStats>({
   twinPlaybackBacklogMs: 0,
   vehicleScaleViolationCount: 0,
   normalTransitionEpochViolationCount: 0,
+  offRoadVehicleCount: 0,
+  stuckLaneChangeCount: 0,
+  authoritativePositionOverrideCount: 0,
+  backwardArcMovementCount: 0,
+  predictionForwardClampCount: 0,
+  maximumRoadMappingErrorMeters: 0,
   vehiclePoseDiagnostics: [],
 })
 const vehicleBufferBusy = computed(() => {

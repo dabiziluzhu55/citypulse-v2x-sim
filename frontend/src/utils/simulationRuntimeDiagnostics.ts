@@ -33,6 +33,12 @@ export interface VehicleRuntimeDiagnosticUpdate {
   movingFreezeFrameCount: number
   batchArrivalCount: number
   twinGapFillFrameCount: number
+  offRoadVehicleCount: number
+  stuckLaneChangeCount: number
+  authoritativePositionOverrideCount: number
+  backwardArcMovementCount: number
+  predictionForwardClampCount: number
+  maximumRoadMappingErrorMeters: number
 }
 
 interface RuntimeDiagnosticState {
@@ -78,6 +84,12 @@ interface RuntimeDiagnosticState {
   movingFreezeFrames: number
   batchSnapshotArrivals: number
   twinGapFillFrames: number
+  offRoadVehicles: number
+  stuckLaneChanges: number
+  authoritativePositionOverrides: number
+  backwardArcMovements: number
+  predictionForwardClamps: number
+  maximumRoadMappingErrorMeters: number
   capturedAt: string
 }
 
@@ -124,6 +136,12 @@ const state: RuntimeDiagnosticState = {
   movingFreezeFrames: 0,
   batchSnapshotArrivals: 0,
   twinGapFillFrames: 0,
+  offRoadVehicles: 0,
+  stuckLaneChanges: 0,
+  authoritativePositionOverrides: 0,
+  backwardArcMovements: 0,
+  predictionForwardClamps: 0,
+  maximumRoadMappingErrorMeters: 0,
   capturedAt: '',
 }
 
@@ -187,6 +205,12 @@ export function resetSimulationRuntimeDiagnostics(sessionId = ''): void {
   state.movingFreezeFrames = 0
   state.batchSnapshotArrivals = 0
   state.twinGapFillFrames = 0
+  state.offRoadVehicles = 0
+  state.stuckLaneChanges = 0
+  state.authoritativePositionOverrides = 0
+  state.backwardArcMovements = 0
+  state.predictionForwardClamps = 0
+  state.maximumRoadMappingErrorMeters = 0
   snapshotIntervalsMs = []
   lastSnapshotArrivalMs = null
   publish()
@@ -268,6 +292,12 @@ export function recordVehicleRuntimeDiagnostics(update: VehicleRuntimeDiagnostic
   state.movingFreezeFrames = update.movingFreezeFrameCount
   state.batchSnapshotArrivals = update.batchArrivalCount
   state.twinGapFillFrames = update.twinGapFillFrameCount
+  state.offRoadVehicles = update.offRoadVehicleCount
+  state.stuckLaneChanges = update.stuckLaneChangeCount
+  state.authoritativePositionOverrides = update.authoritativePositionOverrideCount
+  state.backwardArcMovements = update.backwardArcMovementCount
+  state.predictionForwardClamps = update.predictionForwardClampCount
+  state.maximumRoadMappingErrorMeters = update.maximumRoadMappingErrorMeters
   publish()
 }
 

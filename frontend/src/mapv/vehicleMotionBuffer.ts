@@ -52,6 +52,9 @@ export interface VehicleMotionBufferStats {
   batchArrivalCount: number
   vehicleScaleViolationCount: number
   normalTransitionEpochViolationCount: number
+  authoritativePositionOverrideCount: number
+  backwardArcMovementCount: number
+  predictionForwardClampCount: number
 }
 
 interface TimedVehicleSample {
@@ -180,6 +183,21 @@ function hermiteGeographicPoint(
   ]
 }
 
+function applyLateralOffset(
+  point: readonly [number, number, number],
+  heading: number,
+  lateralOffsetMeters: number,
+): [number, number, number] {
+  if (Math.abs(lateralOffsetMeters) <= 1e-9) return [...point]
+  const latitudeRadians = point[1] * Math.PI / 180
+  return [
+    point[0] - Math.sin(heading) * lateralOffsetMeters
+      / Math.max(1, Math.cos(latitudeRadians) * 110_900),
+    point[1] + Math.cos(heading) * lateralOffsetMeters / 110_900,
+    point[2],
+  ]
+}
+
 export interface MonotonePathDistanceSample {
   distanceMeters: number
   speedMetersPerSecond: number
@@ -267,12 +285,20 @@ export function interpolateVehicleTwinSample(
   const rightAxis = Number.isFinite(right.modelForwardAxisAngle) ? right.modelForwardAxisAngle : 0
   const leftHeading = Number.isFinite(left.vehicleHeading) ? left.vehicleHeading : left.dir + leftAxis
   const rightHeading = Number.isFinite(right.vehicleHeading) ? right.vehicleHeading : right.dir + rightAxis
+  const geographicTransition = right.transitionKind === 'lane_change'
+    || right.roadTransitionKind === 'lane_change'
+    || right.roadTransitionKind === 'raw_continuous'
   let pathKey: string | null = null
   let startPathDistance = Number(left.pathArcDistanceMeters)
   let endPathDistance = Number(right.pathArcDistanceMeters)
-  if (left.motionPathKey && left.motionPathKey === right.motionPathKey) {
+  if (!geographicTransition && left.motionPathKey && left.motionPathKey === right.motionPathKey) {
     pathKey = left.motionPathKey
-  } else if (right.motionPathKey && right.transitionKind === 'topological' && motionPathSampler) {
+  } else if (
+    !geographicTransition
+    && right.motionPathKey
+    && right.transitionKind === 'topological'
+    && motionPathSampler
+  ) {
     const startProjection = motionPathSampler.project(right.motionPathKey, [left.point[0], left.point[1]])
     const endProjection = motionPathSampler.project(right.motionPathKey, [right.point[0], right.point[1]])
     if (
@@ -303,15 +329,20 @@ export function interpolateVehicleTwinSample(
   const pathSample = pathKey && pathDistance
     ? motionPathSampler?.sample(pathKey, pathDistance.distanceMeters) ?? null
     : null
+  const lateralOffsetMeters = Number.isFinite(left.sourceLateralOffsetMeters)
+    && Number.isFinite(right.sourceLateralOffsetMeters)
+    ? Number(left.sourceLateralOffsetMeters)
+      + (Number(right.sourceLateralOffsetMeters) - Number(left.sourceLateralOffsetMeters)) * amount
+    : Number.isFinite(right.sourceLateralOffsetMeters)
+      ? Number(right.sourceLateralOffsetMeters)
+      : Number(left.sourceLateralOffsetMeters) || 0
   const point: [number, number, number] = pathSample
-    ? [
-        pathSample.longitude,
-        pathSample.latitude,
-        left.point[2] + (right.point[2] - left.point[2]) * amount,
-      ]
-    : right.transitionKind === 'lane_change'
-      || right.roadTransitionKind === 'lane_change'
-      || right.roadTransitionKind === 'raw_continuous'
+    ? applyLateralOffset([
+      pathSample.longitude,
+      pathSample.latitude,
+      left.point[2] + (right.point[2] - left.point[2]) * amount,
+    ], pathSample.heading, lateralOffsetMeters)
+    : geographicTransition
       ? hermiteGeographicPoint(left, right, amount, leftHeading, rightHeading)
       : [
           left.point[0] + (right.point[0] - left.point[0]) * amount,
@@ -348,6 +379,7 @@ export function interpolateVehicleTwinSample(
       ?? (Number(left.sourceSpeedMetersPerSecond) || 0)
         + ((Number(right.sourceSpeedMetersPerSecond) || 0)
           - (Number(left.sourceSpeedMetersPerSecond) || 0)) * amount,
+    sourceLateralOffsetMeters: lateralOffsetMeters,
     time: 0,
   }
 }
@@ -375,6 +407,9 @@ export class VehicleMotionBuffer {
   private batchArrivalCount = 0
   private vehicleScaleViolationCount = 0
   private normalTransitionEpochViolationCount = 0
+  private authoritativePositionOverrideCount = 0
+  private backwardArcMovementCount = 0
+  private predictionForwardClampCount = 0
   private sceneGeneration: number | null = null
   private motionPathSampler: MotionPathSampler | null = null
   private presentedVehicles = new Map<string, PresentedVehicleState>()
@@ -402,12 +437,12 @@ export class VehicleMotionBuffer {
     ).values()]
     const normalizedFrame = {
       ...frame,
-      samples: deduplicatedSamples.map((sample) => ({
+      samples: this.annotateAuthoritativeHeadways(deduplicatedSamples.map((sample) => ({
         ...sample,
         point: [sample.point[0], sample.point[1], sample.point[2]] as [number, number, number],
         sampleQuality: sample.sampleQuality
           ?? (sample.poseSource === 'held' ? 'held' : 'authoritative'),
-      })),
+      }))),
     }
     const existingIndex = this.frames.findIndex((entry) => entry.sequence === frame.sequence)
     if (existingIndex >= 0) {
@@ -467,7 +502,7 @@ export class VehicleMotionBuffer {
       this.underrunActive = nextUnderrunActive
     }
 
-    const desired = this.enforcePredictionQueueConstraints(
+    const desired = this.applyPredictionForwardCaps(
       this.interpolateAt(this.renderElapsedSeconds),
     )
     const result = this.stabilizePresentation(desired, this.renderElapsedSeconds)
@@ -502,6 +537,9 @@ export class VehicleMotionBuffer {
     this.batchArrivalCount = 0
     this.vehicleScaleViolationCount = 0
     this.normalTransitionEpochViolationCount = 0
+    this.authoritativePositionOverrideCount = 0
+    this.backwardArcMovementCount = 0
+    this.predictionForwardClampCount = 0
     this.presentedVehicles.clear()
     this.sceneGeneration = null
   }
@@ -529,7 +567,48 @@ export class VehicleMotionBuffer {
       batchArrivalCount: this.batchArrivalCount,
       vehicleScaleViolationCount: this.vehicleScaleViolationCount,
       normalTransitionEpochViolationCount: this.normalTransitionEpochViolationCount,
+      authoritativePositionOverrideCount: this.authoritativePositionOverrideCount,
+      backwardArcMovementCount: this.backwardArcMovementCount,
+      predictionForwardClampCount: this.predictionForwardClampCount,
     }
+  }
+
+  private annotateAuthoritativeHeadways(samples: VehicleTwinSample[]): VehicleTwinSample[] {
+    const result = samples.map((sample) => ({
+      ...sample,
+      authoritativeArcDistanceMeters: sample.sampleQuality === 'authoritative'
+        && Number.isFinite(sample.arcDistanceMeters)
+        ? Number(sample.arcDistanceMeters)
+        : sample.authoritativeArcDistanceMeters,
+      authoritativePathArcDistanceMeters: sample.sampleQuality === 'authoritative'
+        && Number.isFinite(sample.pathArcDistanceMeters)
+        ? Number(sample.pathArcDistanceMeters)
+        : sample.authoritativePathArcDistanceMeters,
+    }))
+    const groups = new Map<string, VehicleTwinSample[]>()
+    for (const sample of result) {
+      if (
+        sample.sampleQuality !== 'authoritative'
+        || !sample.occupancyKey
+        || !Number.isFinite(sample.arcDistanceMeters)
+      ) continue
+      const group = groups.get(sample.occupancyKey) ?? []
+      group.push(sample)
+      groups.set(sample.occupancyKey, group)
+    }
+    for (const group of groups.values()) {
+      group.sort((left, right) => Number(right.arcDistanceMeters) - Number(left.arcDistanceMeters))
+      for (let index = 1; index < group.length; index += 1) {
+        const leader = group[index - 1]
+        const follower = group[index]
+        follower.authoritativeLeaderId = leader.id
+        follower.authoritativeLeaderGapMeters = Math.max(
+          0,
+          Number(leader.arcDistanceMeters) - Number(follower.arcDistanceMeters),
+        )
+      }
+    }
+    return result
   }
 
   private updateTiming(
@@ -673,7 +752,8 @@ export class VehicleMotionBuffer {
       && source.motionPathKey
       && Number.isFinite(source.pathArcDistanceMeters)
       && source.transitionKind !== 'raw_fallback'
-      && source.poseSource !== 'raw',
+      && source.poseSource !== 'raw'
+      && source.poseSource !== 'lane_change'
     )
     const predictionWindow = lifecycle?.sample.predictionBlocked
       ? 0
@@ -720,12 +800,25 @@ export class VehicleMotionBuffer {
       const pathSample = this.motionPathSampler.sample(source.motionPathKey, requestedArc)
       if (pathSample) {
         const modelForwardAxisAngle = Number(source.modelForwardAxisAngle) || 0
+        const lateralOffsetMeters = Number(source.sourceLateralOffsetMeters) || 0
+        const point = applyLateralOffset(
+          [pathSample.longitude, pathSample.latitude, source.point[2]],
+          pathSample.heading,
+          lateralOffsetMeters,
+        )
+        const predictedAdvanceMeters = Math.max(
+          0,
+          pathSample.pathArcDistanceMeters - Number(source.pathArcDistanceMeters),
+        )
         predicted = {
           ...predicted,
-          point: [pathSample.longitude, pathSample.latitude, source.point[2]],
+          point,
           vehicleHeading: pathSample.heading,
           dir: pathSample.heading - modelForwardAxisAngle,
           pathArcDistanceMeters: pathSample.pathArcDistanceMeters,
+          arcDistanceMeters: Number.isFinite(source.arcDistanceMeters)
+            ? Number(source.arcDistanceMeters) + predictedAdvanceMeters
+            : source.arcDistanceMeters,
           sourceSpeedMetersPerSecond: pathSample.pathArcDistanceMeters + 1e-6 < requestedArc
             || requestedArc + 1e-6 < unrestrictedArc
             ? 0
@@ -743,6 +836,12 @@ export class VehicleMotionBuffer {
         source.point[1] + Math.sin(heading) * distanceMeters / 110_900,
         source.point[2],
       ]
+      predicted.arcDistanceMeters = Number.isFinite(source.arcDistanceMeters)
+        ? Number(source.arcDistanceMeters) + distanceMeters
+        : source.arcDistanceMeters
+      predicted.pathArcDistanceMeters = Number.isFinite(source.pathArcDistanceMeters)
+        ? Number(source.pathArcDistanceMeters) + distanceMeters
+        : source.pathArcDistanceMeters
       predicted.sourceSpeedMetersPerSecond = predictedSpeed
     }
     predicted.predictionElapsedSeconds = predictionElapsedSeconds
@@ -848,69 +947,88 @@ export class VehicleMotionBuffer {
     return output
   }
 
-  private enforcePredictionQueueConstraints(
+  private applyPredictionForwardCaps(
     samples: VehicleTwinSample[],
   ): VehicleTwinSample[] {
     const result = samples.map((sample) => ({
       ...sample,
       point: [...sample.point] as [number, number, number],
     }))
-    const groups = new Map<string, VehicleTwinSample[]>()
-    for (const sample of result) {
-      if (!sample.occupancyKey || !Number.isFinite(sample.arcDistanceMeters)) continue
-      const group = groups.get(sample.occupancyKey) ?? []
-      group.push(sample)
-      groups.set(sample.occupancyKey, group)
-    }
-    for (const group of groups.values()) {
-      group.sort((left, right) => Number(right.arcDistanceMeters) - Number(left.arcDistanceMeters))
-      for (let index = 1; index < group.length; index += 1) {
-        const leader = group[index - 1]
-        const follower = group[index]
-        if (follower.sampleQuality !== 'predicted') continue
-        const minimumCenterGap = (
-          (Number(leader.vehicleLengthMeters) || 4.5)
-          + (Number(follower.vehicleLengthMeters) || 4.5)
-        ) / 2 + 1
-        const maximumArc = Number(leader.arcDistanceMeters) - minimumCenterGap
-        const followerArc = Number(follower.arcDistanceMeters)
-        if (followerArc <= maximumArc + 1e-6) continue
-        const correctionMeters = followerArc - maximumArc
-        follower.arcDistanceMeters = maximumArc
-        follower.sourceSpeedMetersPerSecond = Math.min(
-          Number(follower.sourceSpeedMetersPerSecond) || 0,
-          Number(leader.sourceSpeedMetersPerSecond) || 0,
+    const byId = new Map(result.map((sample) => [sample.id, sample] as const))
+    for (const follower of result) {
+      if (
+        follower.sampleQuality !== 'predicted'
+        || !follower.authoritativeLeaderId
+        || !Number.isFinite(follower.authoritativeLeaderGapMeters)
+        || !Number.isFinite(follower.authoritativeArcDistanceMeters)
+        || !Number.isFinite(follower.arcDistanceMeters)
+      ) continue
+      const leader = byId.get(follower.authoritativeLeaderId)
+      if (
+        !leader
+        || leader.occupancyKey !== follower.occupancyKey
+        || !Number.isFinite(leader.arcDistanceMeters)
+      ) continue
+      const authoritativeArc = Number(follower.authoritativeArcDistanceMeters)
+      const maximumArc = Math.max(
+        authoritativeArc,
+        Number(leader.arcDistanceMeters) - Number(follower.authoritativeLeaderGapMeters),
+      )
+      const followerArc = Number(follower.arcDistanceMeters)
+      if (followerArc <= maximumArc + 1e-6) continue
+      const correctionMeters = followerArc - maximumArc
+      follower.arcDistanceMeters = maximumArc
+      follower.sourceSpeedMetersPerSecond = Math.min(
+        Number(follower.sourceSpeedMetersPerSecond) || 0,
+        Number(leader.sourceSpeedMetersPerSecond) || 0,
+      )
+      follower.predictionBlocked = true
+      follower.stopReason = 'authoritative_headway_cap'
+      this.predictionForwardClampCount += 1
+      if (
+        this.motionPathSampler
+        && follower.motionPathKey
+        && Number.isFinite(follower.pathArcDistanceMeters)
+      ) {
+        const minimumPathArc = Number.isFinite(follower.authoritativePathArcDistanceMeters)
+          ? Number(follower.authoritativePathArcDistanceMeters)
+          : Number.NEGATIVE_INFINITY
+        const requestedPathArc = Math.max(
+          minimumPathArc,
+          Number(follower.pathArcDistanceMeters) - correctionMeters,
         )
-        follower.predictionBlocked = true
-        follower.stopReason = 'predicted_queue_spacing'
-        if (
-          this.motionPathSampler
-          && follower.motionPathKey
-          && Number.isFinite(follower.pathArcDistanceMeters)
-        ) {
-          const pathSample = this.motionPathSampler.sample(
-            follower.motionPathKey,
-            Number(follower.pathArcDistanceMeters) - correctionMeters,
+        const pathSample = this.motionPathSampler.sample(follower.motionPathKey, requestedPathArc)
+        if (pathSample) {
+          const axis = Number(follower.modelForwardAxisAngle) || 0
+          follower.point = applyLateralOffset(
+            [pathSample.longitude, pathSample.latitude, follower.point[2]],
+            pathSample.heading,
+            Number(follower.sourceLateralOffsetMeters) || 0,
           )
-          if (pathSample) {
-            const axis = Number(follower.modelForwardAxisAngle) || 0
-            follower.point = [pathSample.longitude, pathSample.latitude, follower.point[2]]
-            follower.pathArcDistanceMeters = pathSample.pathArcDistanceMeters
-            follower.vehicleHeading = pathSample.heading
-            follower.dir = pathSample.heading - axis
-            continue
-          }
+          follower.pathArcDistanceMeters = pathSample.pathArcDistanceMeters
+          follower.vehicleHeading = pathSample.heading
+          follower.dir = pathSample.heading - axis
+          continue
         }
-        const heading = Number.isFinite(follower.vehicleHeading)
-          ? follower.vehicleHeading
-          : follower.dir + (Number(follower.modelForwardAxisAngle) || 0)
-        const latitudeRadians = follower.point[1] * Math.PI / 180
-        follower.point = [
-          follower.point[0] - Math.cos(heading) * correctionMeters
-            / Math.max(1, Math.cos(latitudeRadians) * 110_900),
-          follower.point[1] - Math.sin(heading) * correctionMeters / 110_900,
-          follower.point[2],
-        ]
+      }
+      const heading = Number.isFinite(follower.vehicleHeading)
+        ? follower.vehicleHeading
+        : follower.dir + (Number(follower.modelForwardAxisAngle) || 0)
+      const latitudeRadians = follower.point[1] * Math.PI / 180
+      follower.point = [
+        follower.point[0] - Math.cos(heading) * correctionMeters
+          / Math.max(1, Math.cos(latitudeRadians) * 110_900),
+        follower.point[1] - Math.sin(heading) * correctionMeters / 110_900,
+        follower.point[2],
+      ]
+      if (
+        Number.isFinite(follower.authoritativePathArcDistanceMeters)
+        && Number.isFinite(follower.pathArcDistanceMeters)
+      ) {
+        follower.pathArcDistanceMeters = Math.max(
+          Number(follower.authoritativePathArcDistanceMeters),
+          Number(follower.pathArcDistanceMeters) - correctionMeters,
+        )
       }
     }
     return result
@@ -987,12 +1105,21 @@ export class VehicleMotionBuffer {
       const pathSample = this.motionPathSampler.sample(desired.motionPathKey, requestedArc)
       if (pathSample) {
         const axis = Number(desired.modelForwardAxisAngle) || 0
+        const point = applyLateralOffset(
+          [pathSample.longitude, pathSample.latitude, desired.point[2]],
+          pathSample.heading,
+          Number(desired.sourceLateralOffsetMeters) || 0,
+        )
+        const pathCorrectionMeters = pathSample.pathArcDistanceMeters - desiredArc
         return {
           ...desired,
-          point: [pathSample.longitude, pathSample.latitude, desired.point[2]],
+          point,
           vehicleHeading: pathSample.heading,
           dir: pathSample.heading - axis,
           pathArcDistanceMeters: pathSample.pathArcDistanceMeters,
+          arcDistanceMeters: Number.isFinite(desired.arcDistanceMeters)
+            ? Number(desired.arcDistanceMeters) + pathCorrectionMeters
+            : desired.arcDistanceMeters,
           reconciling: progress < 1,
         }
       }

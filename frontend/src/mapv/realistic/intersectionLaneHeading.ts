@@ -1,5 +1,4 @@
 import type { RealisticIntersectionManifest, RealisticLane } from './intersectionManifest.ts'
-import type { SimulationLaneRuntime } from '../../types/simulation.ts'
 import type { RoadCoordinateProjector } from '../roadGeometry.ts'
 import { shortestAngleDelta } from '../vehicleOrientation.ts'
 import {
@@ -38,17 +37,21 @@ export interface ResolvedLanePose {
   naturalFrontDistanceMeters: number
   stopFrontLimitDistanceMeters?: number
   stopClamped: boolean
+  sourceArcDistanceMeters: number
+  sourceLateralOffsetMeters: number
+  sourceDistanceToLaneCenterMeters: number
+  mappedArcDistanceMeters: number
+  roadMappingErrorMeters: number
+  laneWidthMeters: number
+  mappingMode: 'centerline' | 'source_lateral'
 }
 export interface LanePoseRuntimeOptions {
   speedMetersPerSecond?: number
   expectedHeading?: number | null
-  laneRuntime?: SimulationLaneRuntime | null
   previousTrackProgress?: number
-  allowStopClamp?: boolean
-  minimumModelCenterDistanceMeters?: number
-  maximumModelCenterDistanceMeters?: number
   maximumSnapDistanceMeters?: number
   relaxedTrackContinuity?: boolean
+  preserveSourceLateralOffset?: boolean
 }
 export interface MotionPathProjection {
   pathArcDistanceMeters: number
@@ -80,6 +83,8 @@ export interface LanePoseResolver {
     options?: LanePoseRuntimeOptions,
   ): ResolvedLanePose | null
   motionPathSampler: MotionPathSampler
+  hasLane(laneId: string): boolean
+  covers(laneId: string, coordinate: readonly [number, number]): boolean
 }
 
 export const VISUAL_STOP_BOUNDARY_CLEARANCE_METERS = 0.25
@@ -111,6 +116,9 @@ interface LaneTrack {
   routeLaneIds: string[]
   routeSegmentIndex?: number
   stopBoundaryDistance?: number
+  widthMeters: number
+  sourceRenderStartDistanceSceneUnits: number
+  sourceRenderEndDistanceSceneUnits: number
 }
 
 interface MotionPathGeometry {
@@ -278,11 +286,32 @@ export function createIntersectionLanePoseResolver(
     tracks.set(track.laneId, candidates)
     tracksByKey.set(track.key, track)
   }
+  const createTrack = (
+    track: Omit<LaneTrack, 'sourceRenderStartDistanceSceneUnits' | 'sourceRenderEndDistanceSceneUnits'>,
+  ): LaneTrack => {
+    const sourceLength = polylineLength(track.sourcePoints)
+    if (track.laneId.startsWith(':')) {
+      return {
+        ...track,
+        sourceRenderStartDistanceSceneUnits: 0,
+        sourceRenderEndDistanceSceneUnits: sourceLength,
+      }
+    }
+    const startProjection = nearestPolylineProgress(track.renderPoints[0], track.sourcePoints)
+    const endProjection = nearestPolylineProgress(track.renderPoints.at(-1)!, track.sourcePoints)
+    const startDistance = (startProjection?.progress ?? 0) * sourceLength
+    const endDistance = (endProjection?.progress ?? 1) * sourceLength
+    return {
+      ...track,
+      sourceRenderStartDistanceSceneUnits: Math.min(startDistance, endDistance),
+      sourceRenderEndDistanceSceneUnits: Math.max(startDistance, endDistance),
+    }
+  }
   for (const edge of manifest.edges) {
     for (const lane of edge.lanes) {
       laneMetadata.set(lane.id, { edgeId: edge.id, laneIndex: lane.index })
       if (!lane.renderPoints?.length) continue
-      addTrack({
+      addTrack(createTrack({
         key: `lane:${lane.id}`,
         motionPathKey: `lane:${lane.id}`,
         segmentKey: `lane:${lane.id}`,
@@ -294,7 +323,8 @@ export function createIntersectionLanePoseResolver(
         renderPoints: lane.renderPoints,
         routeLaneIds: [lane.id],
         stopBoundaryDistance: edge.incoming ? stopBoundaries.get(lane.id) : undefined,
-      })
+        widthMeters: lane.widthMeters ?? lane.width / horizontalScale,
+      }))
       motionPaths.set(`lane:${lane.id}`, {
         points: lane.renderPoints,
         lengthSceneUnits: polylineLength(lane.renderPoints),
@@ -338,7 +368,7 @@ export function createIntersectionLanePoseResolver(
         edgeId: connection.fromEdge,
         laneIndex: connection.fromLane,
       })
-      addTrack({
+      addTrack(createTrack({
         key: `${routeKey}:${segment.laneId}`,
         motionPathKey,
         segmentKey: `route:${routeKey}:${segment.laneId}`,
@@ -352,13 +382,14 @@ export function createIntersectionLanePoseResolver(
         routeKey,
         routeLaneIds,
         routeSegmentIndex: segmentIndex + 1,
-      })
+        widthMeters: fromLane.widthMeters ?? fromLane.width / horizontalScale,
+      }))
       beforeRenderPoints = joinPolylines(beforeRenderPoints, segment.renderPoints)
     }
     if (segments.length === 0) {
       beforeRenderPoints = joinPolylines(beforeRenderPoints, directConnector)
     }
-    addTrack({
+    addTrack(createTrack({
       key: `${routeKey}:${toLane.id}`,
       motionPathKey,
       segmentKey: `route:${routeKey}:${toLane.id}`,
@@ -372,7 +403,8 @@ export function createIntersectionLanePoseResolver(
       routeKey,
       routeLaneIds,
       routeSegmentIndex: routeLaneIds.length - 1,
-    })
+      widthMeters: toLane.widthMeters ?? toLane.width / horizontalScale,
+    }))
   }
   const projectedOrigin = projector([
     manifest.origin.longitude,
@@ -519,56 +551,40 @@ export function createIntersectionLanePoseResolver(
     const nearest = resolved.nearest!
     const sourceLength = polylineLength(track.sourcePoints)
     const renderLength = polylineLength(track.renderPoints)
+    const sourcePoint = samplePolyline(track.sourcePoints, nearest.progress)
+    const sourceHeading = tangentAtProgress(track.sourcePoints, nearest.progress)
+    if (sourceHeading == null) return null
+    const sourceNormal: [number, number] = [-Math.sin(sourceHeading), Math.cos(sourceHeading)]
+    const sourceLateralOffsetScene = (
+      (local[0] - sourcePoint[0]) * sourceNormal[0]
+      + (local[1] - sourcePoint[1]) * sourceNormal[1]
+    )
+    const appliedLateralOffsetScene = options?.preserveSourceLateralOffset === true
+      ? sourceLateralOffsetScene
+      : 0
     const backtrackSceneUnits = Math.max(0, modelCenterOffsetMeters) * horizontalScale
+    const sourceFrontDistance = nearest.progress * sourceLength
+    const sourceRenderSpan = Math.max(
+      1e-6,
+      track.sourceRenderEndDistanceSceneUnits - track.sourceRenderStartDistanceSceneUnits,
+    )
+    if (
+      sourceFrontDistance < track.sourceRenderStartDistanceSceneUnits - maximumSnapDistance
+      || sourceFrontDistance > track.sourceRenderEndDistanceSceneUnits + maximumSnapDistance
+    ) return null
+    const sourceRenderProgress = Math.max(0, Math.min(
+      1,
+      (sourceFrontDistance - track.sourceRenderStartDistanceSceneUnits) / sourceRenderSpan,
+    ))
     const mappedFrontDistance = mapSourceProgressToRenderDistance(
-      nearest.progress,
-      sourceLength,
+      sourceRenderProgress,
+      sourceRenderSpan,
       renderLength,
     )
-    let targetDistance = mappedFrontDistance - backtrackSceneUnits
-    let stopClamped = false
+    const targetDistance = mappedFrontDistance - backtrackSceneUnits
     const stopFrontLimitDistance = track.stopBoundaryDistance == null
       ? undefined
       : visualStopFrontLimitDistance(track.stopBoundaryDistance, horizontalScale)
-    if (
-      track.stopBoundaryDistance != null
-      && options?.allowStopClamp !== false
-      && (options?.speedMetersPerSecond ?? Number.POSITIVE_INFINITY) <= 0.35
-      && options?.laneRuntime?.role !== 'outgoing'
-      && options?.laneRuntime?.role !== 'internal'
-    ) {
-      const runtime = options?.laneRuntime
-      const signalState = runtime?.signal_state?.toLowerCase() ?? ''
-      const explicitStop = runtime?.lane_has_green === false
-        || (runtime?.lane_has_green !== true && /^[ry]+$/.test(signalState))
-      const lacksSignalDetail = !runtime
-        || (runtime.lane_has_green == null && !signalState)
-      const maximumFrontDistance = stopFrontLimitDistance!
-      const overrunMeters = (mappedFrontDistance - maximumFrontDistance) / horizontalScale
-      const conservativeFallback = lacksSignalDetail
-        && (options?.speedMetersPerSecond ?? Number.POSITIVE_INFINITY) <= 0.05
-        && overrunMeters > 0
-        && overrunMeters <= 1.5
-      if (mappedFrontDistance > maximumFrontDistance && (explicitStop || conservativeFallback)) {
-        targetDistance = maximumFrontDistance - backtrackSceneUnits
-        stopClamped = true
-      }
-    }
-    if (
-      previousTrackKey === track.key
-      && Number.isFinite(options?.minimumModelCenterDistanceMeters)
-    ) {
-      targetDistance = Math.max(
-        targetDistance,
-        Number(options?.minimumModelCenterDistanceMeters) * horizontalScale,
-      )
-    }
-    if (Number.isFinite(options?.maximumModelCenterDistanceMeters)) {
-      targetDistance = Math.min(
-        targetDistance,
-        Number(options?.maximumModelCenterDistanceMeters) * horizontalScale,
-      )
-    }
     let activePoints = track.renderPoints
     let renderProgress = renderLength > 1e-6 ? Math.max(0, targetDistance / renderLength) : nearest.progress
     if (targetDistance < 0 && track.beforeRenderPoints?.length) {
@@ -596,12 +612,27 @@ export function createIntersectionLanePoseResolver(
       && renderedHeadingDelta > maximumHeadingDelta
     ) return null
     const heading = pathHeading
-    const [longitude, latitude] = pathSample
-      ? [pathSample.longitude, pathSample.latitude]
-      : unprojectWebMercatorToBd09([
-          originPlane[0] + renderPoint[0],
-          originPlane[1] + renderPoint[1],
-        ])
+    const pathPoint = pathSample
+      ? projectBd09ToWebMercator([pathSample.longitude, pathSample.latitude])
+      : [originPlane[0] + renderPoint[0], originPlane[1] + renderPoint[1]]
+    const renderNormal: [number, number] = [-Math.sin(pathHeading), Math.cos(pathHeading)]
+    const [longitude, latitude] = unprojectWebMercatorToBd09([
+      pathPoint[0] + renderNormal[0] * appliedLateralOffsetScene,
+      pathPoint[1] + renderNormal[1] * appliedLateralOffsetScene,
+    ])
+    const mappedFrontProgress = renderLength > 1e-6
+      ? Math.max(0, Math.min(1, mappedFrontDistance / renderLength))
+      : nearest.progress
+    const mappedFrontPoint = samplePolyline(track.renderPoints, mappedFrontProgress)
+    const mappedFrontHeading = tangentAtProgress(track.renderPoints, mappedFrontProgress) ?? pathHeading
+    const mappedFrontNormal: [number, number] = [
+      -Math.sin(mappedFrontHeading),
+      Math.cos(mappedFrontHeading),
+    ]
+    const mappedFrontWithOffset: [number, number] = [
+      mappedFrontPoint[0] + mappedFrontNormal[0] * appliedLateralOffsetScene,
+      mappedFrontPoint[1] + mappedFrontNormal[1] * appliedLateralOffsetScene,
+    ]
     const pathMinimumArcDistanceMeters = track.beforeRenderPoints?.length
       ? -polylineLength(track.beforeRenderPoints) / horizontalScale
       : 0
@@ -634,10 +665,38 @@ export function createIntersectionLanePoseResolver(
       stopFrontLimitDistanceMeters: stopFrontLimitDistance == null
         ? undefined
         : stopFrontLimitDistance / horizontalScale,
-      stopClamped,
+      stopClamped: false,
+      sourceArcDistanceMeters: sourceFrontDistance / horizontalScale
+        - Math.max(0, modelCenterOffsetMeters),
+      sourceLateralOffsetMeters: sourceLateralOffsetScene / horizontalScale,
+      sourceDistanceToLaneCenterMeters: Math.abs(sourceLateralOffsetScene) / horizontalScale,
+      mappedArcDistanceMeters: targetDistance / horizontalScale,
+      roadMappingErrorMeters: Math.hypot(
+        local[0] - mappedFrontWithOffset[0],
+        local[1] - mappedFrontWithOffset[1],
+      ) / horizontalScale,
+      laneWidthMeters: track.widthMeters,
+      mappingMode: options?.preserveSourceLateralOffset === true
+        ? 'source_lateral'
+        : 'centerline',
     }
   }) as LanePoseResolver
   resolver.motionPathSampler = motionPathSampler
+  resolver.hasLane = (laneId: string) => tracks.has(laneId)
+  resolver.covers = (laneId, coordinate) => {
+    const projected = projectBd09ToWebMercator(coordinate)
+    const local: [number, number] = [
+      projected[0] - originPlane[0],
+      projected[1] - originPlane[1],
+    ]
+    return (tracks.get(laneId) ?? []).some((track) => {
+      const nearest = nearestPolylineProgress(local, track.sourcePoints)
+      if (!nearest || nearest.distance > 4 * horizontalScale) return false
+      const sourceDistance = nearest.progress * polylineLength(track.sourcePoints)
+      return sourceDistance >= track.sourceRenderStartDistanceSceneUnits - 4 * horizontalScale
+        && sourceDistance <= track.sourceRenderEndDistanceSceneUnits + 4 * horizontalScale
+    })
+  }
   return resolver
 }
 

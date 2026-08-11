@@ -47,6 +47,7 @@ import {
   VISUAL_STOP_BOUNDARY_CLEARANCE_METERS,
 } from '../src/mapv/realistic/intersectionLaneHeading.ts'
 import {
+  nearestPolylineProgress,
   samplePolyline,
   tangentAtProgress,
 } from '../src/mapv/realistic/intersectionRoadGeometry.ts'
@@ -63,12 +64,8 @@ import {
   resolveVehicleModelProfile,
 } from '../src/mapv/vehicleModelProfiles.ts'
 import {
-  MAX_VISUAL_BACKTRACK_METERS,
   classifyRoadTransition,
-  minimumForwardTrackDistance,
   resolveCrossedStopLine,
-  resolveVisualQueueConstraints,
-  shouldAllowStopClamp,
   maximumStableVehicleDisplacementMeters,
   vehiclePoseDisplacementIsStable,
   reliableVehicleLanePosition,
@@ -572,6 +569,74 @@ test('predicts through jitter and reconciles restored topology data without a fo
   assert.ok(maximumStep <= 0.56, `unexpected catch-up step: ${maximumStep.toFixed(3)}m`)
 })
 
+test('preserves the last authoritative center gap while prediction only moves forward', () => {
+  const metersPerLongitude = Math.cos(39 * Math.PI / 180) * 110_900
+  const sample = (id, arcDistanceMeters, speedMetersPerSecond) => ({
+    ...motionSample(id, 116 + arcDistanceMeters / metersPerLongitude, 0),
+    point: [116 + arcDistanceMeters / metersPerLongitude, 39, 1.1],
+    vehicleHeading: 0,
+    modelForwardAxisAngle: 0,
+    motionPathKey: 'shared-lane',
+    segmentKey: 'shared-lane',
+    occupancyKey: 'lane:shared-lane',
+    arcDistanceMeters,
+    pathArcDistanceMeters: arcDistanceMeters,
+    sourceSpeedMetersPerSecond: speedMetersPerSecond,
+    transitionKind: 'same_lane',
+    poseSource: 'topology',
+    sampleQuality: 'authoritative',
+    sceneGeneration: 0,
+    motionEpoch: 0,
+  })
+  const buffer = new VehicleMotionBuffer()
+  buffer.setMotionPathSampler({
+    project(_key, coordinate) {
+      return {
+        pathArcDistanceMeters: (coordinate[0] - 116) * metersPerLongitude,
+        distanceMeters: 0,
+      }
+    },
+    sample(_key, distanceMeters) {
+      return {
+        longitude: 116 + distanceMeters / metersPerLongitude,
+        latitude: 39,
+        heading: 0,
+        pathArcDistanceMeters: distanceMeters,
+      }
+    },
+  })
+  for (let index = 0; index <= 3; index += 1) {
+    const elapsedSeconds = index * 0.5
+    buffer.push({
+      sceneGeneration: 0,
+      sequence: index,
+      elapsedSeconds,
+      arrivalTimeMs: elapsedSeconds * 1_000,
+      samples: [
+        sample('leader', 30 + elapsedSeconds * 2, 2),
+        sample('follower', 20 + elapsedSeconds * 6, 6),
+      ],
+    })
+  }
+  let previousFollowerArc = Number.NEGATIVE_INFINITY
+  let latest = null
+  for (let wallTimeMs = 1_500; wallTimeMs <= 4_500; wallTimeMs += 50) {
+    const samples = buffer.sample(wallTimeMs)
+    if (!samples?.length) continue
+    latest = new Map(samples.map((item) => [item.id, item]))
+    const followerArc = Number(latest.get('follower').arcDistanceMeters)
+    assert.ok(followerArc + 1e-6 >= previousFollowerArc)
+    previousFollowerArc = followerArc
+  }
+  assert.ok(latest)
+  const latestGap = Number(latest.get('leader').arcDistanceMeters)
+    - Number(latest.get('follower').arcDistanceMeters)
+  assert.ok(latestGap >= 4 - 1e-6, `authoritative 4m center gap shrank to ${latestGap}m`)
+  assert.equal(buffer.stats().backwardArcMovementCount, 0)
+  assert.equal(buffer.stats().authoritativePositionOverrideCount, 0)
+  assert.ok(buffer.stats().predictionForwardClampCount > 0)
+})
+
 test('does not interpolate between unrelated motion paths in the same epoch', () => {
   const buffer = new VehicleMotionBuffer()
   for (let index = 0; index < 4; index += 1) {
@@ -768,26 +833,11 @@ test('preserves complete optional vehicle telemetry through the traffic view', (
   assert.deepEqual(view.vehicles[0], source)
 })
 
-test('prevents visual regression while backend route distance advances', () => {
-  const previous = {
-    telemetryReliable: true, backendDistance: 100, routeId: 'route-a', routeIndex: 2, laneId: 'lane-1',
-    trackKey: 'track-1', trackDistanceMeters: 40, crossedStopLine: false,
-    laneResolutionFailures: 0, longitude: 116, latitude: 39, heading: 0,
-    elapsedSeconds: 1, motionEpoch: 0, lastSeenSequence: 1,
-  }
-  const next = { ...vehicle('car', 116, 39), distance: 101, route_id: 'route-a', route_index: 2 }
-  assert.equal(minimumForwardTrackDistance(previous, next), 40 - MAX_VISUAL_BACKTRACK_METERS)
-  assert.equal(minimumForwardTrackDistance(previous, { ...next, route_index: 3 }), undefined)
-})
-
-test('keeps mixed vehicle queues one metre apart and hides an impossible tail', () => {
-  const constraints = resolveVisualQueueConstraints([
-    { id: 'car', occupancyKey: 'lane', lanePosition: 50, naturalCenterDistanceMeters: 50, lengthMeters: 5 },
-    { id: 'bus', occupancyKey: 'lane', lanePosition: 48, naturalCenterDistanceMeters: 48, lengthMeters: 10 },
-    { id: 'tail', occupancyKey: 'lane', lanePosition: 35, naturalCenterDistanceMeters: 35, lengthMeters: 9, previousCenterDistanceMeters: 35 },
-  ])
-  assert.equal(constraints.get('bus').maximumCenterDistanceMeters, 41.5)
-  assert.equal(constraints.get('tail').hidden, true)
+test('does not override authoritative SUMO positions with visual queue rules', () => {
+  assert.doesNotMatch(vehicleRendererSource, /resolveVisualQueueConstraints/)
+  assert.doesNotMatch(vehicleRendererSource, /minimumModelCenterDistanceMeters/)
+  assert.doesNotMatch(vehicleRendererSource, /maximumModelCenterDistanceMeters/)
+  assert.doesNotMatch(vehicleRendererSource, /MAX_VISUAL_BACKTRACK_METERS/)
 })
 
 test('ignores the combined backend placeholder telemetry without rejecting real zero positions', () => {
@@ -804,12 +854,14 @@ test('ignores the combined backend placeholder telemetry without rejecting real 
   assert.equal(reliableVehicleLanePosition({ ...placeholder, route_id: 'route-a' }), 0)
 })
 
-test('groups different route tracks by their shared physical outgoing lane', () => {
-  const constraints = resolveVisualQueueConstraints([
-    { id: 'left-turn', occupancyKey: 'lane:out_0', lanePosition: 22, naturalCenterDistanceMeters: 22, lengthMeters: 5 },
-    { id: 'straight', occupancyKey: 'lane:out_0', lanePosition: 20, naturalCenterDistanceMeters: 20, lengthMeters: 5 },
-  ])
-  assert.equal(constraints.get('straight').maximumCenterDistanceMeters, 16)
+test('removes the prediction queue controller that could pull vehicles backward', async () => {
+  const motionBufferSource = await readFile(
+    new URL('../src/mapv/vehicleMotionBuffer.ts', import.meta.url),
+    'utf8',
+  )
+  assert.doesNotMatch(motionBufferSource, /enforcePredictionQueueConstraints/)
+  assert.doesNotMatch(motionBufferSource, /predicted_queue_spacing/)
+  assert.match(motionBufferSource, /authoritative_headway_cap/)
 })
 
 test('uses a speed-aware outlier gate for same-lane positions', () => {
@@ -830,7 +882,7 @@ test('uses a speed-aware outlier gate for same-lane positions', () => {
   ), false)
 })
 
-test('never pulls a vehicle back after it has crossed the stop boundary', () => {
+test('keeps stop-boundary state diagnostic-only after a vehicle crosses it', () => {
   const first = { ...vehicle('car', 116, 39), speed: 0, distance: 10, route_id: 'route-a', route_index: 0 }
   assert.equal(resolveCrossedStopLine(null, first, 12, 10, false), true)
   const crossed = {
@@ -839,7 +891,7 @@ test('never pulls a vehicle back after it has crossed the stop boundary', () => 
     laneResolutionFailures: 0, longitude: 116, latitude: 39, heading: 0,
     elapsedSeconds: 1, motionEpoch: 0, lastSeenSequence: 1,
   }
-  assert.equal(shouldAllowStopClamp(crossed, first), false)
+  assert.equal(resolveCrossedStopLine(crossed, first, 9, 10, true), true)
 })
 
 test('uses exit-radius hysteresis to absorb camera-boundary jitter', () => {
@@ -1139,6 +1191,102 @@ test('snaps a SUMO vehicle position onto the rebuilt visual lane', async () => {
     projected[1] - manifest.origin.webMercator[1],
   ]
   assert.ok(Math.hypot(local[0] - expected[0], local[1] - expected[1]) < 0.2)
+})
+
+test('maps demo_1 SUMO lateral offsets onto rebuilt visual lanes continuously', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/intersections/v3/demo_1/manifest.json', import.meta.url),
+    'utf8',
+  ))
+  const resolver = createIntersectionLanePoseResolver(manifest, projectSimulationCoordinateToBaiduMap)
+  for (const laneId of ['-56915_0', '-52436_0', '-46724_0', '-47022.97_0']) {
+    const lane = manifest.edges.flatMap((edge) => edge.lanes).find((item) => item.id === laneId)
+    assert.ok(lane, `${laneId} is missing from demo_1`)
+    const progress = 0.55
+    const sourcePoint = samplePolyline(lane.points, progress)
+    const sourceHeading = tangentAtProgress(lane.points, progress)
+    const sourceLength = lane.points.slice(1).reduce((total, point, index) => (
+      total + Math.hypot(point[0] - lane.points[index][0], point[1] - lane.points[index][1])
+    ), 0)
+    const renderLength = lane.renderPoints.slice(1).reduce((total, point, index) => (
+      total + Math.hypot(point[0] - lane.renderPoints[index][0], point[1] - lane.renderPoints[index][1])
+    ), 0)
+    const renderStartProjection = nearestPolylineProgress(lane.renderPoints[0], lane.points)
+    const renderEndProjection = nearestPolylineProgress(lane.renderPoints.at(-1), lane.points)
+    assert.ok(renderStartProjection)
+    assert.ok(renderEndProjection)
+    const sourceRenderStart = Math.min(
+      renderStartProjection.progress * sourceLength,
+      renderEndProjection.progress * sourceLength,
+    )
+    const sourceRenderEnd = Math.max(
+      renderStartProjection.progress * sourceLength,
+      renderEndProjection.progress * sourceLength,
+    )
+    const sourceRenderSpan = sourceRenderEnd - sourceRenderStart
+    const sourceDistance = progress * sourceLength
+    const renderProgress = mapSourceProgressToRenderDistance(
+      (sourceDistance - sourceRenderStart) / sourceRenderSpan,
+      sourceRenderSpan,
+      renderLength,
+    ) / renderLength
+    const renderPoint = samplePolyline(lane.renderPoints, renderProgress)
+    const renderHeading = tangentAtProgress(lane.renderPoints, renderProgress)
+    assert.notEqual(sourceHeading, null)
+    assert.notEqual(renderHeading, null)
+    const lateralOffsetMeters = 0.8
+    const lateralOffsetScene = lateralOffsetMeters * manifest.horizontalScale
+    const sourceWithOffset = [
+      sourcePoint[0] - Math.sin(sourceHeading) * lateralOffsetScene,
+      sourcePoint[1] + Math.cos(sourceHeading) * lateralOffsetScene,
+    ]
+    const coordinate = unprojectWebMercatorToBd09([
+      manifest.origin.webMercator[0] + sourceWithOffset[0],
+      manifest.origin.webMercator[1] + sourceWithOffset[1],
+    ])
+    const pose = resolver(laneId, coordinate, 0, undefined, undefined, {
+      speedMetersPerSecond: 5,
+      expectedHeading: sourceHeading,
+      preserveSourceLateralOffset: true,
+    })
+    assert.ok(pose, `${laneId} did not map`)
+    const mapped = projectBd09ToWebMercator([pose.longitude, pose.latitude])
+    const expected = [
+      manifest.origin.webMercator[0] + renderPoint[0] - Math.sin(renderHeading) * lateralOffsetScene,
+      manifest.origin.webMercator[1] + renderPoint[1] + Math.cos(renderHeading) * lateralOffsetScene,
+    ]
+    const mappingErrorMeters = Math.hypot(mapped[0] - expected[0], mapped[1] - expected[1])
+      / manifest.horizontalScale
+    assert.ok(mappingErrorMeters < 0.15, `${laneId} mapping error ${mappingErrorMeters}m`)
+    assert.ok(Math.abs(pose.sourceLateralOffsetMeters - lateralOffsetMeters) < 0.02)
+    assert.equal(pose.mappingMode, 'source_lateral')
+    const nextProgress = progress + 5 * manifest.horizontalScale / sourceLength
+    const nextSourcePoint = samplePolyline(lane.points, nextProgress)
+    const nextSourceHeading = tangentAtProgress(lane.points, nextProgress)
+    assert.notEqual(nextSourceHeading, null)
+    const nextCoordinate = unprojectWebMercatorToBd09([
+      manifest.origin.webMercator[0] + nextSourcePoint[0]
+        - Math.sin(nextSourceHeading) * lateralOffsetScene,
+      manifest.origin.webMercator[1] + nextSourcePoint[1]
+        + Math.cos(nextSourceHeading) * lateralOffsetScene,
+    ])
+    const nextPose = resolver(laneId, nextCoordinate, 0, undefined, undefined, {
+      speedMetersPerSecond: 5,
+      expectedHeading: nextSourceHeading,
+      preserveSourceLateralOffset: true,
+    })
+    assert.ok(nextPose, `${laneId} next authoritative pose did not map`)
+    const nextMapped = projectBd09ToWebMercator([nextPose.longitude, nextPose.latitude])
+    const mappedGapMeters = Math.hypot(
+      nextMapped[0] - mapped[0],
+      nextMapped[1] - mapped[1],
+    ) / manifest.horizontalScale
+    assert.ok(
+      Math.abs(mappedGapMeters - 5) <= 0.15,
+      `${laneId} changed an authoritative 5m gap to ${mappedGapMeters}m`,
+    )
+  }
+  assert.match(vehicleRendererSource, /sourceDistanceToLaneCenterMeters <= 0\.35/)
 })
 
 test('keeps an internal SUMO turn lane on its visual connection curve', async () => {
@@ -1505,7 +1653,7 @@ test('uses the simulation vehicle type instead of lane hashing', () => {
   assert.notEqual(ELECTRIC_BICYCLE_MODEL_PROFILE.modelType, CAR_MODEL_PROFILE.modelType)
 })
 
-test('keeps a stationary red-light vehicle behind the visual stop line', async () => {
+test('exposes the stop boundary without changing an authoritative SUMO pose', async () => {
   const manifest = JSON.parse(await readFile(
     new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
     'utf8',
@@ -1520,25 +1668,22 @@ test('keeps a stationary red-light vehicle behind the visual stop line', async (
     manifest.origin.webMercator[1] + sourcePoint[1],
   ])
   const resolver = createIntersectionLanePoseResolver(manifest, projectSimulationCoordinateToBaiduMap)
-  const redPose = resolver(lane.id, coordinate, CAR_MODEL_PROFILE.targetLengthMeters / 2, undefined, undefined, {
-    speedMetersPerSecond: 0,
-    laneRuntime: { vehicle_count: 1, halting_count: 1, mean_speed: 0, waiting_time: 5, occupancy: 0.1, role: 'incoming', lane_has_green: false, signal_state: 'r' },
-  })
-  const greenPose = resolver(lane.id, coordinate, CAR_MODEL_PROFILE.targetLengthMeters / 2, undefined, undefined, {
-    speedMetersPerSecond: 0,
-    laneRuntime: { vehicle_count: 1, halting_count: 1, mean_speed: 0, waiting_time: 5, occupancy: 0.1, role: 'incoming', lane_has_green: true, signal_state: 'G' },
-  })
-  const movingPose = resolver(lane.id, coordinate, CAR_MODEL_PROFILE.targetLengthMeters / 2, undefined, undefined, {
-    speedMetersPerSecond: 1,
-    laneRuntime: { vehicle_count: 1, halting_count: 0, mean_speed: 1, waiting_time: 0, occupancy: 0.1, role: 'incoming', lane_has_green: false, signal_state: 'r' },
-  })
-  assert.ok(redPose?.stopClamped)
-  assert.equal(greenPose?.stopClamped, false)
-  assert.equal(movingPose?.stopClamped, false)
+  const pose = resolver(
+    lane.id,
+    coordinate,
+    CAR_MODEL_PROFILE.targetLengthMeters / 2,
+    undefined,
+    undefined,
+    { speedMetersPerSecond: 0 },
+  )
+  assert.ok(pose)
+  assert.equal(pose.stopClamped, false)
+  assert.ok(Number.isFinite(pose.stopFrontLimitDistanceMeters))
+  assert.ok(pose.naturalFrontDistanceMeters > pose.stopFrontLimitDistanceMeters)
   assert.equal(visualStopFrontLimitDistance(10, 1), 10 - 0.21 - VISUAL_STOP_BOUNDARY_CLEARANCE_METERS)
 })
 
-test('clamps stationary red-light entry lanes across all 20 intersections', async () => {
+test('never rewrites authoritative entry-lane positions across all 20 intersections', async () => {
   for (let index = 1; index <= 20; index += 1) {
     const manifest = JSON.parse(await readFile(
       new URL(`../public/intersections/v3/demo_${index}/manifest.json`, import.meta.url),
@@ -1556,11 +1701,16 @@ test('clamps stationary red-light entry lanes across all 20 intersections', asyn
         manifest.origin.webMercator[0] + sourcePoint[0],
         manifest.origin.webMercator[1] + sourcePoint[1],
       ])
-      const pose = resolver(lane.id, coordinate, CAR_MODEL_PROFILE.targetLengthMeters / 2, undefined, undefined, {
-        speedMetersPerSecond: 0,
-        laneRuntime: { vehicle_count: 1, halting_count: 1, mean_speed: 0, waiting_time: 2, occupancy: 0.1, role: 'incoming', lane_has_green: false, signal_state: 'r' },
-      })
-      assert.ok(pose?.stopClamped, `demo_${index}:${lane.id} was not kept behind its stop line`)
+      const pose = resolver(
+        lane.id,
+        coordinate,
+        CAR_MODEL_PROFILE.targetLengthMeters / 2,
+        undefined,
+        undefined,
+        { speedMetersPerSecond: 0 },
+      )
+      assert.ok(pose, `demo_${index}:${lane.id} did not resolve`)
+      assert.equal(pose.stopClamped, false, `demo_${index}:${lane.id} was moved by the frontend`)
     }
   }
 })
