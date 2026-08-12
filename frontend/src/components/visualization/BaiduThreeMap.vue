@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as mapvthree from '@baidumap/mapv-three'
-import { Color, Vector3 } from 'three'
+import { Color, Vector2, Vector3 } from 'three'
 import DetectedEventOverlay from './DetectedEventOverlay.vue'
+import RuntimeDisturbanceOverlay from './RuntimeDisturbanceOverlay.vue'
 import { REALISTIC_INTERSECTION_SURFACE_Z } from '../../mapv/sceneElevation'
 import { activeDetectedEventCards } from '../../utils/detectedEventDisplay'
 import {
@@ -24,7 +25,15 @@ import { ShowcaseGeoJsonLayers } from '../../mapv/showcaseLayers/ShowcaseGeoJson
 import { ShowcaseModelLayers } from '../../mapv/showcaseLayers/ShowcaseModelLayers'
 import { RoadsideFacilityRenderer } from '../../mapv/showcaseLayers/RoadsideFacilityRenderer'
 import { VegetationRenderer } from '../../mapv/showcaseLayers/VegetationRenderer'
-import { MapvRealisticIntersectionLayer } from '../../mapv/realistic/MapvRealisticIntersectionLayer'
+import {
+  MapvRealisticIntersectionLayer,
+  type RealisticRuntimeDisturbance,
+} from '../../mapv/realistic/MapvRealisticIntersectionLayer'
+import type { RealisticIntersectionManifest } from '../../mapv/realistic/intersectionManifest'
+import {
+  fullyExcludedSurfaceEdgeIds,
+  surfaceVisibilityIntervals,
+} from '../../mapv/realistic/roadSurfaceExclusions'
 import { IntersectionTopologyLayer } from '../../mapv/IntersectionTopologyLayer'
 import {
   intersectionTopologyMaxRange,
@@ -53,6 +62,7 @@ import {
   DEMO_2_SOURCE_CENTER_BD09,
   placeBaiduCameraTarget,
   resolveSimulationCoordinateProjector,
+  unprojectWebMercatorToBd09,
   XIONGAN_SCENE_ANCHOR_BD09,
 } from '../../mapv/sceneCoordinates'
 import {
@@ -61,7 +71,18 @@ import {
   type StaticRoadTilesetManifest,
 } from '../../mapv/staticRoadTileset'
 import type { MapGeoJsonResponse } from '../../types/map'
-import { recordVehicleRuntimeDiagnostics } from '../../utils/simulationRuntimeDiagnostics'
+import {
+  recordSimulationLongTasks,
+  recordVehicleRuntimeDiagnostics,
+} from '../../utils/simulationRuntimeDiagnostics'
+import {
+  MAP3D_NORMAL_FRAME_RATE,
+  MAP3D_STABLE_FRAME_RATE,
+  Map3dPerformanceGovernor,
+} from '../../mapv/map3dPerformanceGovernor'
+import { runtimeDisturbanceLaneIds } from '../../utils/runtimeDisturbances'
+import { SceneSwitchCoordinator } from '../../utils/sceneSwitchCoordinator'
+import { SignalDisplayTimeline } from '../../mapv/signalDisplayTimeline'
 import { detectMap3dCapability } from '../../mapv/map3dCapabilities'
 import {
   cameraFlightWatchdogDelay,
@@ -92,7 +113,13 @@ const emit = defineEmits<{
   loading: [message: string]
   ready: []
 }>()
-const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
+const props = withDefaults(defineProps<{
+  active?: boolean
+  recoveryMode?: boolean
+}>(), {
+  active: true,
+  recoveryMode: false,
+})
 
 const ROAD_RENDER_RADIUS_METERS = 900
 const containerRef = ref<HTMLElement | null>(null)
@@ -108,7 +135,20 @@ const {
 } = useActiveIntersectionScene()
 const { isIntersectionSupported } = useCatalog(activeIntersectionId)
 const { geojson } = useSimulationMap(activeIntersectionId, ROAD_RENDER_RADIUS_METERS, isIntersectionSupported)
-const { snapshot, trafficView, renderSessionRevision } = useSimulationStore()
+const {
+  snapshot,
+  trafficView,
+  renderSessionRevision,
+  runtimeDisturbances,
+  unmappedRuntimeEvents,
+  activeSimulationPeriod,
+} = useSimulationStore()
+const topologyNodes = ref<IntersectionTopologyNode[]>([])
+const runtimeDisturbanceMarkers = computed(() => runtimeDisturbances.value.flatMap((event) => {
+  const node = topologyNodes.value.find((candidate) => candidate.intersectionId === event.intersectionId)
+  return node ? [{ ...event, longitude: node.longitude, latitude: node.latitude }] : []
+}))
+const overlayViewToken = ref(0)
 
 const detectedEventCards = computed(() => (
   activeDetectedEventCards(snapshot.value?.event_detection?.cards)
@@ -130,7 +170,7 @@ const vehicleStats = ref<VehicleRenderStats>({
   vehicleLimit: 450,
   quality: 'full',
   fps: null,
-  bufferSeconds: 0.5,
+  bufferSeconds: 2,
   sourceRate: 1,
   sourceGapP95Ms: 0,
   sourceGapP99Ms: 0,
@@ -141,6 +181,38 @@ const vehicleStats = ref<VehicleRenderStats>({
   retainedMissingCount: 0,
   confirmedRemovedCount: 0,
   twinResetCount: 0,
+  twinSafetyMarginMs: 250,
+  maximumTwinOutputGapMs: 0,
+  emptyBufferInterceptCount: 0,
+  terminalFreezeActive: false,
+  laneRecoveryVehicleIds: [],
+  temporarilyHiddenVehicleIds: [],
+  duplicateVehicleIds: [],
+  incompatiblePathInterpolationCount: 0,
+  incompatiblePathInterpolationBlockedCount: 0,
+  poseViolationCount: 0,
+  targetBufferSeconds: 2,
+  expectedPlaybackRate: 1,
+  globalBufferDepthSeconds: 0,
+  globalPlaybackRate: 1,
+  globalUnderrunPauseSeconds: 0,
+  authoritativeInterpolationCount: 0,
+  visibleTeleportCount: 0,
+  pathResetCount: 0,
+  movingFreezeFrameCount: 0,
+  batchArrivalCount: 0,
+  twinGapFillFrameCount: 0,
+  twinPlaybackBacklogMs: 0,
+  vehicleScaleViolationCount: 0,
+  normalTransitionEpochViolationCount: 0,
+  offRoadVehicleCount: 0,
+  stuckLaneChangeCount: 0,
+  maximumRoadMappingErrorMeters: 0,
+  routeHintHitCount: 0,
+  routeHintMismatchCount: 0,
+  ambiguousRouteCandidateRejectionCount: 0,
+  vehiclePoseDiagnostics: [],
+  displayElapsedSeconds: null,
 })
 const vehicleBufferBusy = computed(() => {
   const current = snapshot.value
@@ -151,6 +223,8 @@ const vehicleBufferBusy = computed(() => {
     || vehicleStats.value.sourceRate < targetRate * 0.75
 })
 const showRenderDiagnostics = import.meta.env.DEV
+const stableRenderMode = ref(props.recoveryMode)
+const performanceGovernor = new Map3dPerformanceGovernor(props.recoveryMode)
 
 let engine: mapvthree.Engine | null = null
 let baiduProvider: mapvthree.BaiduVectorTileProvider | null = null
@@ -167,7 +241,11 @@ let presentationStartedAt = 0
 let roadRenderer: BaiduRoadNetworkRenderer | BaiduDetailedRoadRenderer | null = null
 let vehicleRenderer: BaiduVehicleRenderer | null = null
 const showcaseGeoJsonLayers = new Map<string, ShowcaseGeoJsonLayers>()
-const showcaseGeoJsonLoading = new Map<string, Promise<void>>()
+const showcaseGeoJsonLoading = new Map<string, {
+  promise: Promise<void>
+  signal?: AbortSignal
+}>()
+const showcaseGeoJsonUsedAt = new Map<string, number>()
 let showcaseModelLayers: ShowcaseModelLayers | null = null
 let roadsideFacilityRenderer: RoadsideFacilityRenderer | null = null
 let vegetationRenderer: VegetationRenderer | null = null
@@ -176,7 +254,10 @@ let intersectionTopologyLayer: IntersectionTopologyLayer | null = null
 let realisticDetailReady = false
 let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
-let webglRecoveryTimer: number | null = null
+let roadLodIdleHandle: number | null = null
+let roadLodIdleUsesTimeout = false
+let engineResizeObserver: ResizeObserver | null = null
+let engineResizeFrameId: number | null = null
 let cameraFlightRevision = 0
 let cameraFlightActive = false
 let cameraFlightGuard: CameraFlightGuard | null = null
@@ -184,6 +265,12 @@ let lastRoadLodRefreshAt = 0
 let lastEmptyVehicleWarningSequence = -25
 let lastVehicleUnderrunCount = 0
 let sceneSwitchRevision = 0
+const sceneSwitchCoordinator = new SceneSwitchCoordinator()
+let lifecycleController = new AbortController()
+let componentDestroyed = false
+let performanceFrameId: number | null = null
+let longTaskObserver: PerformanceObserver | null = null
+const asyncWatchStops: Array<() => void> = []
 let documentVisible = typeof document === 'undefined' || !document.hidden
 let presentationReady = false
 let overviewReady = false
@@ -216,12 +303,124 @@ const enableIntersectionTopology = import.meta.env.VITE_ENABLE_INTERSECTION_TOPO
 
 const BUILDING_IDLE_ERROR_TARGET = 8
 const BUILDING_MOVING_ERROR_TARGET = 24
-const BUILDING_CACHE_BYTES = 384 * 1024 * 1024
+const BUILDING_CACHE_BYTES = 128 * 1024 * 1024
+const RECOVERY_BUILDING_CACHE_BYTES = 64 * 1024 * 1024
+const LANDCOVER_CACHE_LIMIT = 4
 const buildingZOffsetMeters = Number(import.meta.env.VITE_XIONGAN_BUILDING_Z_OFFSET_METERS ?? 0)
-const enableBuildingContactShadows = import.meta.env.VITE_XIONGAN_BUILDING_CONTACT_SHADOWS !== 'false'
-const ACTIVE_FRAME_TIME_MS = 1000 / 60
-const SIMULATION_FRAME_TIME_MS = 1000 / 30
+const enableBuildingContactShadows = import.meta.env.VITE_XIONGAN_BUILDING_CONTACT_SHADOWS === 'true'
+const ACTIVE_FRAME_TIME_MS = 1_000 / MAP3D_NORMAL_FRAME_RATE
+const STABLE_FRAME_TIME_MS = 1_000 / MAP3D_STABLE_FRAME_RATE
 const projectScratch = new Vector3()
+let activeDebugManifest: RealisticIntersectionManifest | null = null
+const signalDisplayTimeline = new SignalDisplayTimeline()
+
+function displaySignalsAt(elapsedSeconds: number): void {
+  const current = snapshot.value
+  const intersections = signalDisplayTimeline.sample(current?.session_id ?? '', elapsedSeconds)
+  if (!intersections) return
+  roadsideFacilityRenderer?.updateSignals(intersections)
+  realisticIntersectionLayer?.updateSignals(intersections)
+}
+
+function installSceneDebugApi(): void {
+  if (!import.meta.env.DEV) return
+  const debugWindow = window as Window & {
+    __CITYPULSE_SCENE_DEBUG__?: {
+      focusActive: (range?: number, heading?: number, pitch?: number) => boolean
+      focusLocal: (x: number, y: number, range?: number, heading?: number, pitch?: number) => boolean
+      edgeSamples: (spacingMeters?: number) => Array<{
+        edgeId: string
+        offsetMeters: number
+        x: number
+        y: number
+        visible: boolean
+      }>
+    }
+  }
+  debugWindow.__CITYPULSE_SCENE_DEBUG__ = {
+    focusActive: (range = 620, heading = 40, pitch = 68) => {
+      if (!engine || !activeDebugManifest) return false
+      const target = coordinateProjector([
+        activeDebugManifest.origin.longitude,
+        activeDebugManifest.origin.latitude,
+        0,
+      ])
+      engine.map.flyTo(target, {
+        range,
+        heading,
+        pitch,
+        duration: 0,
+        complete: () => undefined,
+      })
+      engine.requestRender()
+      return true
+    },
+    focusLocal: (x, y, range = 620, heading = 40, pitch = 68) => {
+      if (!engine || !activeDebugManifest?.origin.webMercator) return false
+      const target = unprojectWebMercatorToBd09([
+        activeDebugManifest.origin.webMercator[0] + x,
+        activeDebugManifest.origin.webMercator[1] + y,
+      ])
+      engine.map.flyTo([target[0], target[1], 0], {
+        range,
+        heading,
+        pitch,
+        duration: 0,
+        complete: () => undefined,
+      })
+      engine.requestRender()
+      return true
+    },
+    edgeSamples: (spacingMeters = 10) => {
+      if (!engine || !containerRef.value || !activeDebugManifest) return []
+      const camera = (engine as unknown as { camera?: import('three').Camera }).camera
+      if (!camera) return []
+      const origin = coordinateProjector([
+        activeDebugManifest.origin.longitude,
+        activeDebugManifest.origin.latitude,
+        0,
+      ])
+      const originScene = engine.map.projectArrayCoordinate([
+        origin[0],
+        origin[1],
+        origin[2] ?? 0,
+      ])
+      const scale = activeDebugManifest.horizontalScale ?? 1
+      const width = containerRef.value.clientWidth
+      const height = containerRef.value.clientHeight
+      return activeDebugManifest.edges.flatMap((edge) => {
+        const points = edge.centerline ?? edge.lanes[0]?.renderPoints ?? edge.lanes[0]?.points ?? []
+        const result: Array<{ edgeId: string; offsetMeters: number; x: number; y: number; visible: boolean }> = []
+        let traversed = 0
+        for (let index = 1; index < points.length; index += 1) {
+          const start = points[index - 1]
+          const end = points[index]
+          const segmentLength = Math.hypot(end[0] - start[0], end[1] - start[1])
+          const steps = Math.max(1, Math.ceil(segmentLength / Math.max(1, spacingMeters * scale)))
+          for (let step = 0; step < steps; step += 1) {
+            const ratio = step / steps
+            const localX = start[0] + (end[0] - start[0]) * ratio
+            const localY = start[1] + (end[1] - start[1]) * ratio
+            projectScratch.set(
+              originScene[0] + localX,
+              originScene[1] + localY,
+              (originScene[2] ?? 0) + REALISTIC_INTERSECTION_SURFACE_Z + 0.2,
+            ).project(camera)
+            result.push({
+              edgeId: edge.id,
+              offsetMeters: (traversed + segmentLength * ratio) / scale,
+              x: (projectScratch.x * 0.5 + 0.5) * width,
+              y: (-projectScratch.y * 0.5 + 0.5) * height,
+              visible: projectScratch.z >= -1 && projectScratch.z <= 1,
+            })
+          }
+          traversed += segmentLength
+        }
+        return result
+      })
+    },
+  }
+}
 
 function projectDetectedEventToOverlay(
   longitude: number,
@@ -300,27 +499,75 @@ function refreshIntersectionRoadLod(force = false): void {
   syncAnimationLoop()
 }
 
+function syncRuntimeDisturbanceRoads(): void {
+  const events: RealisticRuntimeDisturbance[] = runtimeDisturbances.value.map((event) => ({
+    eventId: event.eventId,
+    intersectionId: event.intersectionId,
+    eventType: event.eventType,
+    state: event.state,
+    laneIds: runtimeDisturbanceLaneIds(event),
+    positionRatio: Number.isFinite(Number(event.details.position_ratio))
+      ? Number(event.details.position_ratio)
+      : undefined,
+  }))
+  realisticIntersectionLayer?.updateRuntimeDisturbances(events)
+}
+
+function cancelScheduledRoadLodRefresh(): void {
+  if (roadLodIdleHandle == null) return
+  const idleWindow = window as Window & {
+    cancelIdleCallback?: (handle: number) => void
+  }
+  if (roadLodIdleUsesTimeout) window.clearTimeout(roadLodIdleHandle)
+  else idleWindow.cancelIdleCallback?.(roadLodIdleHandle)
+  roadLodIdleHandle = null
+  roadLodIdleUsesTimeout = false
+}
+
+function scheduleRoadLodRefresh(): void {
+  cancelScheduledRoadLodRefresh()
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+  }
+  const refresh = () => {
+    roadLodIdleHandle = null
+    roadLodIdleUsesTimeout = false
+    if (componentDestroyed || interacting.value || !props.active) return
+    refreshIntersectionRoadLod(true)
+  }
+  if (idleWindow.requestIdleCallback) {
+    roadLodIdleHandle = idleWindow.requestIdleCallback(refresh, { timeout: 600 })
+  } else {
+    roadLodIdleUsesTimeout = true
+    roadLodIdleHandle = window.setTimeout(refresh, 32)
+  }
+}
+
 function markInteracting(): void {
   if (cameraFlightActive) return
   if (!interacting.value) {
+    cancelScheduledRoadLodRefresh()
     beginBuildingCameraRevision()
-    buildingTileset && (buildingTileset.errorTarget = BUILDING_MOVING_ERROR_TARGET)
+    buildingTileset && (buildingTileset.errorTarget = buildingMovingErrorTarget())
+    realisticIntersectionLayer?.setInteractionActive(true)
     vegetationRenderer?.setInteractionActive(true)
     roadsideFacilityRenderer?.refreshViewport()
   }
   interacting.value = true
   enableCameraInteraction()
-  refreshIntersectionRoadLod()
+  syncPerformanceSampling()
   if (interactionEndTimer) clearTimeout(interactionEndTimer)
   interactionEndTimer = setTimeout(() => {
     interacting.value = false
-    if (buildingTileset) buildingTileset.errorTarget = BUILDING_IDLE_ERROR_TARGET
+    realisticIntersectionLayer?.setInteractionActive(false)
+    if (buildingTileset) buildingTileset.errorTarget = buildingIdleErrorTarget()
     vegetationRenderer?.setInteractionActive(false)
     roadsideFacilityRenderer?.refreshViewport()
     refreshIntersectionRoadLod(true)
     const stats = vehicleRenderer?.refreshViewport()
     if (stats) updateVehicleRenderStats(stats)
     engine?.requestRender()
+    syncPerformanceSampling()
     interactionEndTimer = null
   }, 300)
 }
@@ -332,6 +579,7 @@ function updateVehicleRenderStats(stats: VehicleRenderStats): void {
   if (showRenderDiagnostics) {
     const diagnosticsWindow = window as Window & {
       __CITYPULSE_VEHICLE_DIAGNOSTICS__?: Record<string, unknown>
+      __CITYPULSE_VEHICLE_POSE_DIAGNOSTICS__?: Record<string, unknown>
     }
     diagnosticsWindow.__CITYPULSE_VEHICLE_DIAGNOSTICS__ = {
       ...stats,
@@ -339,6 +587,14 @@ function updateVehicleRenderStats(stats: VehicleRenderStats): void {
       requestedPlaybackSpeed: current?.playback_speed ?? 1,
       simulationProgressRate: stats.sourceRate,
       snapshotSequence: current?.sequence ?? -1,
+      capturedAt: new Date().toISOString(),
+    }
+    diagnosticsWindow.__CITYPULSE_VEHICLE_POSE_DIAGNOSTICS__ = {
+      sessionId: current?.session_id ?? '',
+      intersectionId: activeIntersectionId.value,
+      snapshotSequence: current?.sequence ?? -1,
+      poseViolationCount: stats.poseViolationCount,
+      vehicles: stats.vehiclePoseDiagnostics,
       capturedAt: new Date().toISOString(),
     }
   }
@@ -372,13 +628,93 @@ function updateVehicleRenderStats(stats: VehicleRenderStats): void {
   }
 }
 
+function buildingIdleErrorTarget(): number {
+  return stableRenderMode.value ? 16 : BUILDING_IDLE_ERROR_TARGET
+}
+
+function buildingMovingErrorTarget(): number {
+  return stableRenderMode.value ? 36 : BUILDING_MOVING_ERROR_TARGET
+}
+
+function applyStableRenderingBudget(reason: string): void {
+  performanceGovernor.forceStableMode()
+  if (!stableRenderMode.value) stableRenderMode.value = true
+  vehicleRenderer?.setStableMode(true)
+  renderQuality = 'reduced'
+  if (engine) {
+    const pixelRatioRendering = engine.rendering as typeof engine.rendering & { pixelRatio: number }
+    pixelRatioRendering.pixelRatio = 1
+    engine.requestRender()
+    syncAnimationLoop()
+  }
+  if (buildingTileset) {
+    buildingTileset.errorTarget = interacting.value
+      ? buildingMovingErrorTarget()
+      : buildingIdleErrorTarget()
+    const cacheControlled = buildingTileset as mapvthree.Default3DTiles & { cacheBytes?: number }
+    cacheControlled.cacheBytes = RECOVERY_BUILDING_CACHE_BYTES
+  }
+  if (showRenderDiagnostics) {
+    const diagnosticsWindow = window as Window & {
+      __CITYPULSE_MAP3D_PERFORMANCE__?: Record<string, unknown>
+    }
+    diagnosticsWindow.__CITYPULSE_MAP3D_PERFORMANCE__ = {
+      ...performanceGovernor.stats(),
+      reason,
+      capturedAt: new Date().toISOString(),
+    }
+  }
+}
+
+function performanceSamplingActive(): boolean {
+  const state = snapshot.value?.state
+  const simulationActive = state === 'STARTING' || state === 'RUNNING' || state === 'STOPPING'
+  return props.active && documentVisible && (interacting.value || simulationActive)
+}
+
+function syncPerformanceSampling(): void {
+  if (!performanceSamplingActive()) {
+    if (performanceFrameId != null) cancelAnimationFrame(performanceFrameId)
+    performanceFrameId = null
+    return
+  }
+  if (performanceFrameId != null) return
+  const sample = (nowMs: number) => {
+    performanceFrameId = null
+    if (performanceGovernor.recordFrame(nowMs)) applyStableRenderingBudget('sustained_low_fps')
+    if (performanceSamplingActive()) performanceFrameId = requestAnimationFrame(sample)
+  }
+  performanceFrameId = requestAnimationFrame(sample)
+}
+
+function startLongTaskMonitoring(): void {
+  if (longTaskObserver || typeof PerformanceObserver === 'undefined') return
+  try {
+    longTaskObserver = new PerformanceObserver((list) => {
+      if (!props.active) return
+      for (const entry of list.getEntries()) {
+        if (entry.duration <= 100) continue
+        recordSimulationLongTasks(1)
+        if (performanceGovernor.recordLongTask(entry.duration, performance.now())) {
+          applyStableRenderingBudget('repeated_long_tasks')
+        }
+      }
+    })
+    longTaskObserver.observe({ entryTypes: ['longtask'] })
+  } catch {
+    longTaskObserver = null
+  }
+}
+
 function syncAnimationLoop(): void {
   if (!engine) return
   const state = snapshot.value?.state
   const simulationActive = state === 'STARTING' || state === 'RUNNING' || state === 'STOPPING'
-  const topologyActive = Boolean(intersectionTopologyLayer?.animationActive)
+  const topologyActive = simulationActive && Boolean(intersectionTopologyLayer?.animationActive)
   const active = props.active && documentVisible && (simulationActive || topologyActive)
-  engine.rendering.animationLoopFrameTime = simulationActive ? SIMULATION_FRAME_TIME_MS : 1000 / 30
+  engine.rendering.animationLoopFrameTime = stableRenderMode.value
+    ? STABLE_FRAME_TIME_MS
+    : ACTIVE_FRAME_TIME_MS
   if (engine.rendering.enableAnimationLoop !== active) {
     engine.rendering.enableAnimationLoop = active
     engine.requestRender()
@@ -503,88 +839,119 @@ function syncRoadRendering(response: MapGeoJsonResponse | null): void {
   roadRenderer?.render(response)
 }
 
+interface PreparedIntersectionEnvironment {
+  environment: IntersectionEnvironmentManifest
+  facilities: ReturnType<typeof parseSceneFacilityManifest> | null
+}
+
 async function switchRealisticIntersection(
   intersectionId: string,
   trackInitialPresentation = false,
   focusCamera = true,
 ): Promise<boolean> {
   if (!realisticIntersectionLayer || !intersectionId) return false
+  const transaction = sceneSwitchCoordinator.begin(intersectionId)
+  const signal = transaction.signal
   const revision = ++sceneSwitchRevision
+  let prepared = false
+  let committed = false
   setSceneLoading()
-  if (trackInitialPresentation) emit('loading', '正在加载当前高精度路口')
+  if (trackInitialPresentation) emit('loading', '正在准备当前高精度路口')
   try {
-    const manifest = await realisticIntersectionLayer.prepare(intersectionId)
-    if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return false
-    let cameraReady = !focusCamera
-    let resourcesReady = false
-    const completeSwitch = () => {
-      if (!cameraReady || !resourcesReady) return
-      if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return
-      setSceneReady(intersectionId)
-      const stats = vehicleRenderer?.refreshViewport()
-      if (stats) updateVehicleRenderStats(stats)
+    const manifest = await realisticIntersectionLayer.prepare(intersectionId, signal)
+    prepared = true
+    if (!sceneSwitchCoordinator.isCurrent(transaction) || revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) {
+      realisticIntersectionLayer.discard(intersectionId)
+      return false
     }
-    if (focusCamera) {
-      vehicleRenderer?.beginViewportTransition()
+    vehicleRenderer?.beginViewportTransition()
+    const cameraPromise = new Promise<boolean>((resolve) => {
+      if (!focusCamera) {
+        resolve(true)
+        return
+      }
+      let settled = false
+      const finish = (ready: boolean) => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener('abort', onAbort)
+        resolve(ready)
+      }
+      const onAbort = () => finish(false)
+      signal.addEventListener('abort', onAbort, { once: true })
       mapView.focusIntersection(
         [manifest.origin.longitude, manifest.origin.latitude],
         manifest.intersectionId,
         {
           force: true,
           duration: 900,
-          complete: () => {
-            cameraReady = true
-            if (trackInitialPresentation) initialCameraReady = true
-            completeSwitch()
-          },
+          complete: () => finish(true),
         },
       )
+    })
+    const [cameraReady, preparedEnvironment] = await Promise.all([
+      cameraPromise,
+      prepareIntersectionEnvironment(intersectionId, signal),
+    ])
+    if (
+      !cameraReady
+      || !sceneSwitchCoordinator.isCurrent(transaction)
+      || revision !== sceneSwitchRevision
+      || activeIntersectionId.value !== intersectionId
+    ) {
+      realisticIntersectionLayer.discard(intersectionId)
+      return false
     }
+
     realisticIntersectionLayer.activate(intersectionId)
-    refreshIntersectionRoadLod(true)
+    activeDebugManifest = manifest
+    installSceneDebugApi()
+    syncRuntimeDisturbanceRoads()
+    scheduleRoadLodRefresh()
     realisticDetailReady = true
-    vehicleRenderer?.setLaneHeadingResolver(createIntersectionLaneHeadingResolver(manifest))
-    vehicleRenderer?.setLanePoseResolver(createIntersectionLanePoseResolver(manifest, coordinateProjector))
+    vehicleRenderer?.commitViewportTransition(
+      manifest.intersectionId,
+      createIntersectionLaneHeadingResolver(manifest),
+      createIntersectionLanePoseResolver(manifest, coordinateProjector),
+      fullyExcludedSurfaceEdgeIds(manifest),
+      surfaceVisibilityIntervals(manifest),
+    )
     syncRoadRendering(geojson.value)
     roadsideFacilityRenderer?.setRealisticDetailActive(true)
-    realisticIntersectionLayer.updateSignals(trafficView.value?.intersections ?? null)
+    displaySignalsAt(vehicleStats.value.displayElapsedSeconds ?? snapshot.value?.elapsed_seconds ?? 0)
+    commitIntersectionEnvironment(intersectionId, preparedEnvironment, revision)
+    committed = true
+
+    const current = snapshot.value
+    const stats = vehicleRenderer?.update(trafficView.value?.vehicles ?? [], {
+      sessionId: current?.session_id ?? '',
+      state: current?.state ?? null,
+      sequence: current?.sequence ?? -1,
+      elapsedSeconds: current?.elapsed_seconds ?? 0,
+      laneRuntimeById: current?.intersections?.[intersectionId]?.lanes ?? {},
+      trafficPeriod: activeSimulationPeriod.value,
+      intersectionId,
+    }, true)
+    if (stats) updateVehicleRenderStats(stats)
     if (trackInitialPresentation) {
+      initialCameraReady = true
       initialIntersectionReady = true
-      emit('loading', '正在加载路灯与路口设施')
+      initialEnvironmentReady = true
     }
-    await switchIntersectionEnvironment(intersectionId, revision)
-    if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return false
-    resourcesReady = true
-    if (trackInitialPresentation) initialEnvironmentReady = true
-    completeSwitch()
-    if (!cameraReady) {
-      await new Promise<void>((resolve) => {
-        const poll = () => {
-          if (
-            cameraReady
-            || revision !== sceneSwitchRevision
-            || activeIntersectionId.value !== intersectionId
-          ) {
-            resolve()
-            return
-          }
-          window.setTimeout(poll, 25)
-        }
-        poll()
-      })
-    }
-    completeSwitch()
-    return cameraReady
-      && resourcesReady
-      && revision === sceneSwitchRevision
-      && activeIntersectionId.value === intersectionId
+    setSceneReady(intersectionId)
+    return true
   } catch (cause) {
+    if (prepared && !committed) realisticIntersectionLayer.discard(intersectionId)
     if (cause instanceof DOMException && cause.name === 'AbortError') return false
     realisticDetailReady = realisticIntersectionLayer.activeIntersectionId !== null
     syncRoadRendering(geojson.value)
     roadsideFacilityRenderer?.setRealisticDetailActive(realisticDetailReady)
     setSceneError(cause instanceof Error ? cause.message : '高精度路口加载失败')
     return false
+  } finally {
+    const current = sceneSwitchCoordinator.complete(transaction)
+    if (current && !committed) vehicleRenderer?.cancelViewportTransition()
+    syncPerformanceSampling()
   }
 }
 
@@ -618,93 +985,117 @@ function handleDocumentVisibility(): void {
 async function ensureIntersectionLandcover(
   intersectionId: string,
   environment?: IntersectionEnvironmentManifest,
+  signal?: AbortSignal,
 ): Promise<void> {
-  if (!engine || !enableShowcaseLayers || showcaseGeoJsonLayers.has(intersectionId)) return
+  if (!engine || !enableShowcaseLayers) return
+  if (showcaseGeoJsonLayers.has(intersectionId)) {
+    showcaseGeoJsonUsedAt.set(intersectionId, performance.now())
+    return
+  }
   const existing = showcaseGeoJsonLoading.get(intersectionId)
-  if (existing) return existing
+  if (existing && !existing.signal?.aborted) return existing.promise
+  if (existing) showcaseGeoJsonLoading.delete(intersectionId)
   const loadingPromise = (async () => {
     const manifest = environment ?? await loadIntersectionEnvironmentManifest(intersectionId)
     if (!manifest.geojson || !engine || showcaseGeoJsonLayers.has(intersectionId)) return
     const layers = new ShowcaseGeoJsonLayers(engine, coordinateProjector)
     try {
-      await layers.load(manifest.geojson)
-      if (!engine) {
+      await layers.load(manifest.geojson, signal)
+      if (!engine || signal?.aborted) {
         layers.destroy()
+        if (signal?.aborted) throw new DOMException('Landcover loading aborted', 'AbortError')
         return
       }
+      layers.setVisible(false)
       showcaseGeoJsonLayers.set(intersectionId, layers)
+      showcaseGeoJsonUsedAt.set(intersectionId, performance.now())
     } catch (cause) {
       layers.destroy()
       throw cause
     }
-  })().finally(() => showcaseGeoJsonLoading.delete(intersectionId))
-  showcaseGeoJsonLoading.set(intersectionId, loadingPromise)
+  })().finally(() => {
+    if (showcaseGeoJsonLoading.get(intersectionId)?.promise === loadingPromise) {
+      showcaseGeoJsonLoading.delete(intersectionId)
+    }
+  })
+  showcaseGeoJsonLoading.set(intersectionId, { promise: loadingPromise, signal })
   return loadingPromise
 }
 
-async function prepareAllIntersectionLandcover(intersectionIds: string[]): Promise<void> {
-  const queue = [...new Set(intersectionIds)]
-  const worker = async () => {
-    while (queue.length > 0) {
-      const intersectionId = queue.shift()
-      if (!intersectionId) return
-      await ensureIntersectionLandcover(intersectionId).catch((cause: unknown) => {
-        console.warn(`[landcover] ${intersectionId} failed to load`, cause)
-      })
-    }
+function trimLandcoverCache(protectedIds: Set<string> = new Set()): void {
+  const candidates = [...showcaseGeoJsonLayers.keys()]
+    .filter((id) => id !== realisticIntersectionLayer?.activeIntersectionId && !protectedIds.has(id))
+    .sort((left, right) => (
+      (showcaseGeoJsonUsedAt.get(left) ?? 0) - (showcaseGeoJsonUsedAt.get(right) ?? 0)
+    ))
+  while (showcaseGeoJsonLayers.size > LANDCOVER_CACHE_LIMIT && candidates.length > 0) {
+    const id = candidates.shift()!
+    showcaseGeoJsonLayers.get(id)?.destroy()
+    showcaseGeoJsonLayers.delete(id)
+    showcaseGeoJsonUsedAt.delete(id)
   }
-  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker))
-  engine?.requestRender()
 }
 
-async function switchIntersectionEnvironment(intersectionId: string, revision: number): Promise<void> {
+async function prepareIntersectionEnvironment(
+  intersectionId: string,
+  signal: AbortSignal,
+): Promise<PreparedIntersectionEnvironment> {
   const environment = await loadIntersectionEnvironmentManifest(intersectionId)
+  if (signal.aborted) throw new DOMException('Environment loading aborted', 'AbortError')
   const facilitiesPromise = environment.facilitiesUrl && enableRoadsideFacilities
-    ? fetch(environment.facilitiesUrl).then(async (response) => {
-      if (!response.ok) throw new Error(`Roadside facilities returned HTTP ${response.status}`)
-      return parseSceneFacilityManifest(await response.json())
-    })
+    ? fetch(environment.facilitiesUrl, { signal }).then(async (response) => {
+        if (!response.ok) throw new Error(`Roadside facilities returned HTTP ${response.status}`)
+        return parseSceneFacilityManifest(await response.json())
+      })
     : Promise.resolve(null)
-  const geoJsonPromise = ensureIntersectionLandcover(intersectionId, environment).catch((cause: unknown) => {
-    console.warn(`[landcover] ${intersectionId} optional resources failed`, cause)
-  })
-  const vegetationPromise = enableVegetation && vegetationRenderer && environment.vegetation
-    ? vegetationRenderer.load(
-      environment.vegetation.manifestUrl,
-      environment.vegetation.modelUrl,
-    ).catch((cause: unknown) => {
-      console.warn(`[vegetation] ${intersectionId} optional resources failed`, cause)
+  const landcoverPromise = ensureIntersectionLandcover(intersectionId, environment, signal)
+    .catch((cause: unknown) => {
+      if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
+      console.warn(`[landcover] ${intersectionId} optional resources failed`, cause)
     })
-    : Promise.resolve()
   const streetlightPromise = environment.streetlight && roadsideFacilityRenderer
     ? roadsideFacilityRenderer.prepareStreetlight(
-      environment.streetlight.modelUrl,
-      environment.streetlight.heightMeters,
-      environment.streetlight.modelYawDegrees ?? 0,
-    )
-    : Promise.resolve()
-  const detailModelPromise = showcaseModelLayers
-    ? showcaseModelLayers.loadLandmark(environment.detailModel ?? null).catch((cause: unknown) => {
-      console.warn(`[detail-model] ${intersectionId} optional resource failed`, cause)
-    })
+        environment.streetlight.modelUrl,
+        environment.streetlight.heightMeters,
+        environment.streetlight.modelYawDegrees ?? 0,
+      )
     : Promise.resolve()
   const [facilities] = await Promise.all([
     facilitiesPromise,
-    geoJsonPromise,
-    vegetationPromise,
+    landcoverPromise,
     streetlightPromise,
-    detailModelPromise,
   ])
-  if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) {
-    return
-  }
-  if (facilities && roadsideFacilityRenderer) {
-    roadsideFacilityRenderer.render(facilities)
-    roadsideFacilityRenderer.updateSignals(trafficView.value?.intersections ?? null)
+  if (signal.aborted) throw new DOMException('Environment loading aborted', 'AbortError')
+  return { environment, facilities }
+}
+
+function commitIntersectionEnvironment(
+  intersectionId: string,
+  prepared: PreparedIntersectionEnvironment,
+  revision: number,
+): void {
+  if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return
+  for (const [id, layers] of showcaseGeoJsonLayers) layers.setVisible(id === intersectionId)
+  showcaseGeoJsonUsedAt.set(intersectionId, performance.now())
+  trimLandcoverCache(new Set([intersectionId]))
+  if (prepared.facilities && roadsideFacilityRenderer) {
+    roadsideFacilityRenderer.render(prepared.facilities)
+    displaySignalsAt(vehicleStats.value.displayElapsedSeconds ?? snapshot.value?.elapsed_seconds ?? 0)
   } else {
     roadsideFacilityRenderer?.clearScene()
   }
-  if (!environment.vegetation) vegetationRenderer?.clearScene()
+  if (prepared.environment.vegetation && enableVegetation && vegetationRenderer) {
+    void vegetationRenderer.load(
+      prepared.environment.vegetation.manifestUrl,
+      prepared.environment.vegetation.modelUrl,
+    ).catch((cause: unknown) => console.warn(`[vegetation] ${intersectionId} optional resources failed`, cause))
+  } else {
+    vegetationRenderer?.clearScene()
+  }
+  if (showcaseModelLayers) {
+    void showcaseModelLayers.loadLandmark(prepared.environment.detailModel ?? null)
+      .catch((cause: unknown) => console.warn(`[detail-model] ${intersectionId} optional resource failed`, cause))
+  }
 }
 
 function createBuildingTileset(url: string): mapvthree.Default3DTiles {
@@ -712,8 +1103,8 @@ function createBuildingTileset(url: string): mapvthree.Default3DTiles {
   const tileset = engine.add(new mapvthree.Default3DTiles({
     url,
     errorTarget: interacting.value
-      ? BUILDING_MOVING_ERROR_TARGET
-      : BUILDING_IDLE_ERROR_TARGET,
+      ? buildingMovingErrorTarget()
+      : buildingIdleErrorTarget(),
     forceUnlit: false,
     dynamicScreenSpaceError: false,
     foveatedScreenSpaceError: false,
@@ -722,7 +1113,7 @@ function createBuildingTileset(url: string): mapvthree.Default3DTiles {
       // Request culling is restored as soon as the black presentation gate opens.
       cullRequestsWhileMoving: false,
     cullRequestsWhileMovingMultiplier: 60,
-    cacheBytes: BUILDING_CACHE_BYTES,
+    cacheBytes: stableRenderMode.value ? RECOVERY_BUILDING_CACHE_BYTES : BUILDING_CACHE_BYTES,
   })) as mapvthree.Default3DTiles
   if (Number.isFinite(buildingZOffsetMeters)) tileset.position.z = buildingZOffsetMeters
   tileset.releaseCameraViewport()
@@ -779,8 +1170,29 @@ function presentationSignals(): Map3dPresentationSignals {
   }
 }
 
-async function waitForPresentationGate(): Promise<boolean> {
-  while (engine) {
+function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Operation aborted', 'AbortError'))
+      return
+    }
+    const timer = window.setTimeout(finish, milliseconds)
+    function finish() {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }
+    function abort() {
+      window.clearTimeout(timer)
+      reject(new DOMException('Operation aborted', 'AbortError'))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+async function waitForPresentationGate(
+  signal: AbortSignal = lifecycleController.signal,
+): Promise<boolean> {
+  while (engine && !signal.aborted) {
     updateTilesStatus()
     const nowMs = performance.now()
     const elapsedMs = nowMs - presentationStartedAt
@@ -815,12 +1227,16 @@ async function waitForPresentationGate(): Promise<boolean> {
       )
     }
     engine.requestRender()
-    await new Promise((resolve) => window.setTimeout(resolve, BUILDING_STABLE_SAMPLE_INTERVAL_MS))
+    await abortableDelay(BUILDING_STABLE_SAMPLE_INTERVAL_MS, signal)
   }
   return false
 }
 
-async function waitForFinalRenderFrames(frameCount = FINAL_RENDER_FRAME_COUNT): Promise<boolean> {
+async function waitForFinalRenderFrames(
+  frameCount = FINAL_RENDER_FRAME_COUNT,
+  signal: AbortSignal = lifecycleController.signal,
+  timeoutMs = 5_000,
+): Promise<boolean> {
   const activeEngine = engine
   if (!activeEngine) return false
   const renderLifecycle = activeEngine as unknown as {
@@ -834,9 +1250,12 @@ async function waitForFinalRenderFrames(frameCount = FINAL_RENDER_FRAME_COUNT): 
       if (settled) return
       settled = true
       window.clearInterval(requestTimer)
+      window.clearTimeout(timeoutTimer)
+      signal.removeEventListener('abort', onAbort)
       renderLifecycle.removeBeforeRenderListener(onBeforeRender)
       resolve(ready)
     }
+    const onAbort = () => finish(false)
     const onBeforeRender = () => {
       if (engine !== activeEngine) {
         finish(false)
@@ -852,6 +1271,8 @@ async function waitForFinalRenderFrames(frameCount = FINAL_RENDER_FRAME_COUNT): 
       }
       activeEngine.requestRender()
     }, 16)
+    const timeoutTimer = window.setTimeout(() => finish(false), timeoutMs)
+    signal.addEventListener('abort', onAbort, { once: true })
     renderLifecycle.addBeforeRenderListener(onBeforeRender)
     activeEngine.requestRender()
   })
@@ -890,6 +1311,41 @@ function unbindContainerInteraction(container: HTMLElement | null): void {
   container.removeEventListener('pointerdown', markInteracting)
   container.removeEventListener('pointermove', markInteracting)
   container.removeEventListener('wheel', markInteracting)
+}
+
+function syncEngineResolution(): void {
+  engineResizeFrameId = null
+  const activeEngine = engine
+  const container = containerRef.value
+  if (!activeEngine || !container || componentDestroyed) return
+  const width = Math.max(1, Math.floor(container.clientWidth))
+  const height = Math.max(1, Math.floor(container.clientHeight))
+  const rendering = activeEngine.rendering as unknown as { resolution: Vector2 }
+  const resolution = rendering.resolution
+  if (resolution.x === width && resolution.y === height) return
+  rendering.resolution = new Vector2(width, height)
+  if (topologyNodes.value.length > 0) applyGlobalNavigationBounds(topologyNodes.value)
+  overlayViewToken.value += 1
+  activeEngine.requestRender()
+}
+
+function scheduleEngineResize(): void {
+  if (engineResizeFrameId != null || componentDestroyed) return
+  engineResizeFrameId = requestAnimationFrame(syncEngineResolution)
+}
+
+function observeEngineResize(container: HTMLElement): void {
+  engineResizeObserver?.disconnect()
+  engineResizeObserver = new ResizeObserver(scheduleEngineResize)
+  engineResizeObserver.observe(container)
+  scheduleEngineResize()
+}
+
+function stopEngineResizeObserver(): void {
+  engineResizeObserver?.disconnect()
+  engineResizeObserver = null
+  if (engineResizeFrameId != null) cancelAnimationFrame(engineResizeFrameId)
+  engineResizeFrameId = null
 }
 
 function registerThreeMapController(): void {
@@ -947,56 +1403,25 @@ function registerThreeMapController(): void {
 
 function handleWebglContextLost(event: Event): void {
   event.preventDefault()
-  error.value = '三维图形上下文暂时不可用，正在恢复'
+  if (componentDestroyed) return
+  error.value = '三维图形上下文已丢失，正在重建场景'
   loading.value = true
   presentationReady = false
-  enableCameraInteraction()
-  emit('loading', '三维图形上下文已丢失，正在恢复')
-  if (webglRecoveryTimer) clearTimeout(webglRecoveryTimer)
-  webglRecoveryTimer = window.setTimeout(() => {
-    webglRecoveryTimer = null
-    emit('fatal', new Error('三维图形上下文在 10 秒内未能恢复'))
-  }, 10_000)
-}
-
-function handleWebglContextRestored(): void {
-  if (webglRecoveryTimer) clearTimeout(webglRecoveryTimer)
-  webglRecoveryTimer = null
-  error.value = null
-  presentationStartedAt = performance.now()
-  presentationReady = false
-  initialCameraReady = false
-  initialIntersectionReady = false
-  initialEnvironmentReady = false
-  buildingCameraRevision += 1
-  buildingLoadTracker = createBuildingLoadTracker(
-    presentationStartedAt,
-    buildingCameraRevision,
-  )
-  buildingTilesReady = false
-  enableCameraInteraction()
-  engine?.requestRender()
-  void waitForFinalRenderFrames().then(async (cameraReady) => {
-    if (!cameraReady) return false
-    initialCameraReady = true
-    return switchRealisticIntersection(activeIntersectionId.value, true, false)
-  }).then(async (sceneReady) => {
-    if (!sceneReady || !await waitForPresentationGate()) {
-      throw new Error('三维场景恢复后未能重新稳定')
-    }
-    emit('loading', '正在完成三维场景渲染')
-    if (!await waitForFinalRenderFrames()) return
-    presentationReady = true
-    loading.value = false
-    enableCameraInteraction()
-    updateTilesStatus()
-    emit('ready')
-  }).catch((cause: unknown) => emit('fatal', cause))
+  sceneSwitchCoordinator.cancel()
+  sceneSwitchRevision += 1
+  lifecycleController.abort()
+  vehicleRenderer?.setActive(false)
+  if (engine) engine.rendering.enableAnimationLoop = false
+  const failure = new Error('WebGL 上下文丢失，需要重建三维场景')
+  failure.name = 'WebGLContextLostError'
+  window.setTimeout(() => {
+    if (!componentDestroyed) emit('fatal', failure)
+  }, 0)
 }
 
 async function initMap(): Promise<void> {
   const container = containerRef.value
-  if (!container) return
+  if (!container || componentDestroyed) return
   presentationStartedAt = performance.now()
   const capability = detectMap3dCapability()
   if (!capability.supported) {
@@ -1006,6 +1431,10 @@ async function initMap(): Promise<void> {
     throw new Error('未配置 VITE_BAIDU_MAP_AK，请先填写百度地图浏览器端 AK')
   }
   renderQuality = capability.quality === 'reduced' ? 'reduced' : 'full'
+  if (renderQuality === 'reduced') {
+    stableRenderMode.value = true
+    performanceGovernor.forceStableMode()
+  }
 
   mapvthree.BaiduMapConfig.ak = baiduAk
   engine = new mapvthree.Engine(container, {
@@ -1022,10 +1451,12 @@ async function initMap(): Promise<void> {
       sky: null,
       enableAnimationLoop: false,
       animationLoopFrameTime: ACTIVE_FRAME_TIME_MS,
+      pixelRatio: Math.min(window.devicePixelRatio, stableRenderMode.value ? 1 : 1.25),
     },
   })
   engine.map.setMinRange(BAIDU_3D_MIN_RANGE)
   engine.map.setMaxRange(BAIDU_3D_MAX_RANGE)
+  observeEngineResize(container)
   const qualityEngine = engine as unknown as {
     rendering: { features?: { bloom?: { enabled: boolean } } }
     clock?: { _setTimeLegacy?: (seconds: number) => void }
@@ -1033,6 +1464,10 @@ async function initMap(): Promise<void> {
   if (qualityEngine.rendering.features?.bloom) {
     qualityEngine.rendering.features.bloom.enabled = false
   }
+  startLongTaskMonitoring()
+  if (stableRenderMode.value) applyStableRenderingBudget(
+    props.recoveryMode ? 'webgl_recovery' : 'reduced_device_capability',
+  )
   qualityEngine.clock?._setTimeLegacy?.(14.5 * 3600)
   sky = engine.add(new mapvthree.DefaultSky())
   sky.color = new Color('#152535')
@@ -1049,7 +1484,6 @@ async function initMap(): Promise<void> {
   enableCameraInteraction()
   bindContainerInteraction(container)
   container.addEventListener('webglcontextlost', handleWebglContextLost, true)
-  container.addEventListener('webglcontextrestored', handleWebglContextRestored, true)
 
   emit('loading', '正在定位20路口总览视角')
   mapView.setCameraPreset('overview')
@@ -1074,10 +1508,12 @@ async function initMap(): Promise<void> {
     roadTileset = null
     console.warn(cause instanceof Error ? cause.message : cause)
   })
+  if (componentDestroyed || lifecycleController.signal.aborted || !engine) return
   roadRenderer = roadRendererMode === 'basic'
     ? new BaiduRoadNetworkRenderer(engine, coordinateProjector)
     : new BaiduDetailedRoadRenderer(engine, coordinateProjector)
-  vehicleRenderer = new BaiduVehicleRenderer(engine, coordinateProjector)
+  vehicleRenderer = new BaiduVehicleRenderer(engine, coordinateProjector, displaySignalsAt)
+  vehicleRenderer.setStableMode(stableRenderMode.value)
   realisticIntersectionLayer = new MapvRealisticIntersectionLayer(engine, coordinateProjector)
   if (enableIntersectionTopology) {
     intersectionTopologyLayer = new IntersectionTopologyLayer(engine, coordinateProjector)
@@ -1095,40 +1531,51 @@ async function initMap(): Promise<void> {
     vegetationRenderer = new VegetationRenderer(engine, coordinateProjector)
     vegetationRenderer.setInteractionActive(interacting.value)
   }
-  watch(
+  asyncWatchStops.push(watch(
     trafficView,
     (value) => {
       const current = snapshot.value
+      signalDisplayTimeline.push(
+        current?.session_id ?? '',
+        current?.elapsed_seconds ?? 0,
+        value?.intersections,
+      )
       const stats = vehicleRenderer?.update(value?.vehicles ?? [], {
         sessionId: current?.session_id ?? '',
         state: current?.state ?? null,
         sequence: current?.sequence ?? -1,
         elapsedSeconds: current?.elapsed_seconds ?? 0,
         laneRuntimeById: current?.intersections?.[activeIntersectionId.value]?.lanes ?? {},
+        trafficPeriod: activeSimulationPeriod.value,
+        intersectionId: activeIntersectionId.value,
       })
       if (stats) updateVehicleRenderStats(stats)
-      roadsideFacilityRenderer?.updateSignals(value?.intersections ?? null)
-      realisticIntersectionLayer?.updateSignals(value?.intersections ?? null)
+      displaySignalsAt(stats?.displayElapsedSeconds ?? current?.elapsed_seconds ?? 0)
     },
     { immediate: true },
-  )
-  watch(
+  ))
+  asyncWatchStops.push(watch(
     renderSessionRevision,
     () => {
       vehicleRenderer?.clear()
+      signalDisplayTimeline.clear()
       engine?.requestRender()
     },
     { flush: 'sync' },
-  )
-  watch(snapshot, syncAnimationLoop, { immediate: true })
-  watch(
+  ))
+  asyncWatchStops.push(watch(snapshot, syncAnimationLoop, { immediate: true }))
+  asyncWatchStops.push(watch(runtimeDisturbances, syncRuntimeDisturbanceRoads, {
+    deep: true,
+    immediate: true,
+  }))
+  asyncWatchStops.push(watch(
     snapshot,
     () => {
       syncTopologyCongestion()
     },
     { immediate: true },
-  )
-  watch(
+  ))
+  asyncWatchStops.push(watch(
     () => props.active,
     (active) => {
       vehicleRenderer?.setActive(active)
@@ -1143,12 +1590,12 @@ async function initMap(): Promise<void> {
       syncAnimationLoop()
     },
     { immediate: true },
-  )
-  watch(
+  ))
+  asyncWatchStops.push(watch(
     geojson,
     syncMapRendering,
     { immediate: true },
-  )
+  ))
 
   if (enableIntersectionTopology && intersectionTopologyLayer) {
     emit('loading', '正在加载 20 路口道路总览')
@@ -1156,13 +1603,13 @@ async function initMap(): Promise<void> {
       console.warn('[edge-topology] map unavailable', cause)
     })
     const nodes = await intersectionTopologyLayer.load()
+    vehicleRenderer?.setHeadingAnchors(nodes)
+    topologyNodes.value = nodes
     applyGlobalNavigationBounds(nodes)
     syncTopologyCongestion()
     const intersectionIds = nodes.map((node) => node.intersectionId)
-    await Promise.all([
-      prepareAllIntersectionLandcover(intersectionIds),
-      realisticIntersectionLayer.prepareOverview(intersectionIds),
-    ])
+    await realisticIntersectionLayer.prepareOverview(intersectionIds)
+    if (componentDestroyed || lifecycleController.signal.aborted) return
     refreshIntersectionRoadLod(true)
     intersectionTopologyLayer.setActiveIntersection(activeIntersectionId.value)
     syncAnimationLoop()
@@ -1178,13 +1625,13 @@ async function initMap(): Promise<void> {
 
   addGlobalBuildingTileset()
 
-  watch(
+  asyncWatchStops.push(watch(
     [activeIntersectionId, selectionRevision],
     ([intersectionId]) => {
       intersectionTopologyLayer?.setActiveIntersection(intersectionId)
       void switchRealisticIntersection(intersectionId)
     },
-  )
+  ))
 
   if (!await waitForPresentationGate()) return
   emit('loading', '正在完成三维场景渲染')
@@ -1214,6 +1661,18 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  componentDestroyed = true
+  activeDebugManifest = null
+  if (import.meta.env.DEV) {
+    delete (window as Window & { __CITYPULSE_SCENE_DEBUG__?: unknown }).__CITYPULSE_SCENE_DEBUG__
+    delete (window as Window & {
+      __CITYPULSE_VEHICLE_POSE_DIAGNOSTICS__?: unknown
+    }).__CITYPULSE_VEHICLE_POSE_DIAGNOSTICS__
+  }
+  lifecycleController.abort()
+  sceneSwitchCoordinator.cancel()
+  sceneSwitchRevision += 1
+  while (asyncWatchStops.length > 0) asyncWatchStops.pop()?.()
   document.removeEventListener('visibilitychange', handleDocumentVisibility)
   cameraFlightGuard?.cancel()
   cameraFlightGuard = null
@@ -1222,12 +1681,15 @@ onUnmounted(() => {
   mapView.unregisterThreeMap()
   unbindContainerInteraction(containerRef.value)
   containerRef.value?.removeEventListener('webglcontextlost', handleWebglContextLost, true)
-  containerRef.value?.removeEventListener('webglcontextrestored', handleWebglContextRestored, true)
+  stopEngineResizeObserver()
   stopTilesStatusTimer()
   if (interactionEndTimer) clearTimeout(interactionEndTimer)
-  if (webglRecoveryTimer) clearTimeout(webglRecoveryTimer)
   interactionEndTimer = null
-  webglRecoveryTimer = null
+  cancelScheduledRoadLodRefresh()
+  if (performanceFrameId != null) cancelAnimationFrame(performanceFrameId)
+  performanceFrameId = null
+  longTaskObserver?.disconnect()
+  longTaskObserver = null
   roadRenderer?.destroy()
   roadRenderer = null
   vehicleRenderer?.destroy()
@@ -1235,6 +1697,7 @@ onUnmounted(() => {
   showcaseGeoJsonLayers.forEach((layers) => layers.destroy())
   showcaseGeoJsonLayers.clear()
   showcaseGeoJsonLoading.clear()
+  showcaseGeoJsonUsedAt.clear()
   showcaseModelLayers?.destroy()
   showcaseModelLayers = null
   roadsideFacilityRenderer?.destroy()
@@ -1245,6 +1708,7 @@ onUnmounted(() => {
   realisticIntersectionLayer = null
   intersectionTopologyLayer?.destroy()
   intersectionTopologyLayer = null
+  topologyNodes.value = []
   realisticDetailReady = false
   if (sky && engine) engine.remove(sky)
   sky = null
@@ -1269,6 +1733,16 @@ onUnmounted(() => {
       :snapshot="snapshot"
       :project="projectDetectedEventToOverlay"
       :active="detectedOverlayActive && !loading && !error"
+      :continuous="interacting"
+      :view-token="overlayViewToken"
+    />
+    <RuntimeDisturbanceOverlay
+      :events="runtimeDisturbanceMarkers"
+      :unmapped-events="unmappedRuntimeEvents"
+      :project="projectDetectedEventToOverlay"
+      :active="props.active && !loading && !error"
+      :continuous="interacting"
+      :view-token="overlayViewToken"
     />
     <div v-if="loading" class="app-baidu-three-map__overlay">正在加载百度底图与本地 3D 建筑…</div>
     <div

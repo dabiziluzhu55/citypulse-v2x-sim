@@ -17,6 +17,30 @@ export interface VehicleRuntimeDiagnosticUpdate {
   retainedMissingCount: number
   confirmedRemovedCount: number
   twinResetCount: number
+  twinSafetyMarginMs: number
+  maximumTwinOutputGapMs: number
+  emptyBufferInterceptCount: number
+  terminalFreezeActive: boolean
+  incompatiblePathInterpolationCount: number
+  incompatiblePathInterpolationBlockedCount: number
+  poseViolationCount: number
+  targetBufferSeconds: number
+  expectedPlaybackRate: number
+  globalBufferDepthSeconds: number
+  globalPlaybackRate: number
+  globalUnderrunPauseSeconds: number
+  authoritativeInterpolationCount: number
+  visibleTeleportCount: number
+  pathResetCount: number
+  movingFreezeFrameCount: number
+  batchArrivalCount: number
+  twinGapFillFrameCount: number
+  offRoadVehicleCount: number
+  stuckLaneChangeCount: number
+  maximumRoadMappingErrorMeters: number
+  routeHintHitCount: number
+  routeHintMismatchCount: number
+  ambiguousRouteCandidateRejectionCount: number
 }
 
 interface RuntimeDiagnosticState {
@@ -46,6 +70,30 @@ interface RuntimeDiagnosticState {
   motionBufferUnderruns: number
   motionBufferUnderrunActive: boolean
   twinResetCount: number
+  twinSafetyMarginMs: number
+  maximumTwinOutputGapMs: number
+  emptyBufferInterceptCount: number
+  terminalFreezeActive: boolean
+  incompatiblePathInterpolations: number
+  incompatiblePathInterpolationBlocks: number
+  poseViolations: number
+  targetMotionBufferSeconds: number
+  expectedVehiclePlaybackRate: number
+  globalBufferDepthSeconds: number
+  globalVehiclePlaybackRate: number
+  globalUnderrunPauseSeconds: number
+  authoritativeInterpolations: number
+  visibleTeleports: number
+  pathResets: number
+  movingFreezeFrames: number
+  batchSnapshotArrivals: number
+  twinGapFillFrames: number
+  offRoadVehicles: number
+  stuckLaneChanges: number
+  maximumRoadMappingErrorMeters: number
+  routeHintHits: number
+  routeHintMismatches: number
+  ambiguousRouteCandidateRejections: number
   capturedAt: string
 }
 
@@ -76,6 +124,30 @@ const state: RuntimeDiagnosticState = {
   motionBufferUnderruns: 0,
   motionBufferUnderrunActive: false,
   twinResetCount: 0,
+  twinSafetyMarginMs: 0,
+  maximumTwinOutputGapMs: 0,
+  emptyBufferInterceptCount: 0,
+  terminalFreezeActive: false,
+  incompatiblePathInterpolations: 0,
+  incompatiblePathInterpolationBlocks: 0,
+  poseViolations: 0,
+  targetMotionBufferSeconds: 2,
+  expectedVehiclePlaybackRate: 1,
+  globalBufferDepthSeconds: 0,
+  globalVehiclePlaybackRate: 1,
+  globalUnderrunPauseSeconds: 0,
+  authoritativeInterpolations: 0,
+  visibleTeleports: 0,
+  pathResets: 0,
+  movingFreezeFrames: 0,
+  batchSnapshotArrivals: 0,
+  twinGapFillFrames: 0,
+  offRoadVehicles: 0,
+  stuckLaneChanges: 0,
+  maximumRoadMappingErrorMeters: 0,
+  routeHintHits: 0,
+  routeHintMismatches: 0,
+  ambiguousRouteCandidateRejections: 0,
   capturedAt: '',
 }
 
@@ -123,6 +195,30 @@ export function resetSimulationRuntimeDiagnostics(sessionId = ''): void {
   state.motionBufferUnderruns = 0
   state.motionBufferUnderrunActive = false
   state.twinResetCount = 0
+  state.twinSafetyMarginMs = 0
+  state.maximumTwinOutputGapMs = 0
+  state.emptyBufferInterceptCount = 0
+  state.terminalFreezeActive = false
+  state.incompatiblePathInterpolations = 0
+  state.incompatiblePathInterpolationBlocks = 0
+  state.poseViolations = 0
+  state.targetMotionBufferSeconds = 2
+  state.expectedVehiclePlaybackRate = 1
+  state.globalBufferDepthSeconds = 0
+  state.globalVehiclePlaybackRate = 1
+  state.globalUnderrunPauseSeconds = 0
+  state.authoritativeInterpolations = 0
+  state.visibleTeleports = 0
+  state.pathResets = 0
+  state.movingFreezeFrames = 0
+  state.batchSnapshotArrivals = 0
+  state.twinGapFillFrames = 0
+  state.offRoadVehicles = 0
+  state.stuckLaneChanges = 0
+  state.maximumRoadMappingErrorMeters = 0
+  state.routeHintHits = 0
+  state.routeHintMismatches = 0
+  state.ambiguousRouteCandidateRejections = 0
   snapshotIntervalsMs = []
   lastSnapshotArrivalMs = null
   publish()
@@ -186,6 +282,30 @@ export function recordVehicleRuntimeDiagnostics(update: VehicleRuntimeDiagnostic
   state.motionBufferUnderruns = update.underrunCount
   state.motionBufferUnderrunActive = update.underrunActive
   state.twinResetCount = update.twinResetCount
+  state.twinSafetyMarginMs = update.twinSafetyMarginMs
+  state.maximumTwinOutputGapMs = update.maximumTwinOutputGapMs
+  state.emptyBufferInterceptCount = update.emptyBufferInterceptCount
+  state.terminalFreezeActive = update.terminalFreezeActive
+  state.incompatiblePathInterpolations = update.incompatiblePathInterpolationCount
+  state.incompatiblePathInterpolationBlocks = update.incompatiblePathInterpolationBlockedCount
+  state.poseViolations = update.poseViolationCount
+  state.targetMotionBufferSeconds = update.targetBufferSeconds
+  state.expectedVehiclePlaybackRate = update.expectedPlaybackRate
+  state.globalBufferDepthSeconds = update.globalBufferDepthSeconds
+  state.globalVehiclePlaybackRate = update.globalPlaybackRate
+  state.globalUnderrunPauseSeconds = update.globalUnderrunPauseSeconds
+  state.authoritativeInterpolations = update.authoritativeInterpolationCount
+  state.visibleTeleports = update.visibleTeleportCount
+  state.pathResets = update.pathResetCount
+  state.movingFreezeFrames = update.movingFreezeFrameCount
+  state.batchSnapshotArrivals = update.batchArrivalCount
+  state.twinGapFillFrames = update.twinGapFillFrameCount
+  state.offRoadVehicles = update.offRoadVehicleCount
+  state.stuckLaneChanges = update.stuckLaneChangeCount
+  state.maximumRoadMappingErrorMeters = update.maximumRoadMappingErrorMeters
+  state.routeHintHits = update.routeHintHitCount
+  state.routeHintMismatches = update.routeHintMismatchCount
+  state.ambiguousRouteCandidateRejections = update.ambiguousRouteCandidateRejectionCount
   publish()
 }
 

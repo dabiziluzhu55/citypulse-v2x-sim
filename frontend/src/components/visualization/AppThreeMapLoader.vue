@@ -17,6 +17,7 @@ import {
 } from 'vue'
 import {
   classifyMap3dFailure,
+  shouldAutomaticallyRecoverWebgl,
   type Map3dFailure,
 } from '../../mapv/map3dLoadRecovery'
 import { MAP3D_MODULE_LOAD_TIMEOUT_MS } from '../../mapv/map3dPresentationReadiness'
@@ -36,6 +37,9 @@ const loadingMessage = ref('正在加载三维场景')
 const failure = ref<Map3dFailure | null>(null)
 const componentKey = ref(0)
 const componentVisible = ref(true)
+const recoveryMode = ref(false)
+let lastAutomaticRecoveryAt: number | null = null
+let fatalFailureLatched = false
 
 const EmptyFailurePlaceholder = defineComponent({
   name: 'Map3dFailurePlaceholder',
@@ -69,6 +73,7 @@ function createAsyncBaiduThreeMap() {
 const asyncBaiduThreeMap = shallowRef(createAsyncBaiduThreeMap())
 
 function handleLoading(message: string): void {
+  if (fatalFailureLatched) return
   // A timed-out dynamic import can still finish and mount successfully. Its
   // first loading event is authoritative and must clear the stale timeout UI.
   failure.value = null
@@ -77,19 +82,40 @@ function handleLoading(message: string): void {
 }
 
 function handleReady(): void {
+  if (fatalFailureLatched) return
   failure.value = null
   state.value = 'ready'
 }
 
-async function retryThreeMap(): Promise<void> {
+async function remountThreeMap(useRecoveryBudget: boolean): Promise<void> {
+  fatalFailureLatched = false
   failure.value = null
-  loadingMessage.value = '正在重新加载三维场景'
+  loadingMessage.value = useRecoveryBudget
+    ? '正在使用低资源模式重建三维场景'
+    : '正在重新加载三维场景'
   state.value = 'loading'
   componentVisible.value = false
   await nextTick()
   componentKey.value += 1
+  recoveryMode.value = useRecoveryBudget
   asyncBaiduThreeMap.value = createAsyncBaiduThreeMap()
   componentVisible.value = true
+}
+
+async function retryThreeMap(): Promise<void> {
+  await remountThreeMap(false)
+}
+
+function handleFatal(cause: unknown): void {
+  const isWebglLoss = cause instanceof Error && cause.name === 'WebGLContextLostError'
+  const now = Date.now()
+  if (isWebglLoss && shouldAutomaticallyRecoverWebgl(lastAutomaticRecoveryAt, now)) {
+    lastAutomaticRecoveryAt = now
+    void remountThreeMap(true)
+    return
+  }
+  fatalFailureLatched = true
+  reportFailure(cause)
 }
 
 function returnTo2d(): void {
@@ -110,7 +136,8 @@ watch(state, (nextState) => emit('stateChange', nextState), { immediate: true })
     :is="asyncBaiduThreeMap"
     :key="componentKey"
     :active="props.active"
-    @fatal="reportFailure"
+    :recovery-mode="recoveryMode"
+    @fatal="handleFatal"
     @loading="handleLoading"
     @ready="handleReady"
   />

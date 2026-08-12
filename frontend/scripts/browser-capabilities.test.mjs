@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { resolveMap3dCapability } from '../src/mapv/map3dCapabilities.ts'
-import { classifyMap3dFailure } from '../src/mapv/map3dLoadRecovery.ts'
+import {
+  classifyMap3dFailure,
+  shouldAutomaticallyRecoverWebgl,
+} from '../src/mapv/map3dLoadRecovery.ts'
 
 test('falls back when WebGL is unavailable', () => {
   const capability = resolveMap3dCapability({ webgl: false, webgl2: false, hardwareConcurrency: 8 })
@@ -50,4 +53,10 @@ test('identifies a failed dynamic module import', () => {
 test('keeps WebGL and scene asset failures distinguishable', () => {
   assert.equal(classifyMap3dFailure(new Error('WebGL context lost')).code, 'webgl')
   assert.equal(classifyMap3dFailure(new Error('3D Tiles manifest 加载失败')).code, 'scene-assets')
+})
+
+test('automatically rebuilds WebGL once per 60 second recovery window', () => {
+  assert.equal(shouldAutomaticallyRecoverWebgl(null, 1_000), true)
+  assert.equal(shouldAutomaticallyRecoverWebgl(1_000, 60_999), false)
+  assert.equal(shouldAutomaticallyRecoverWebgl(1_000, 61_001), true)
 })

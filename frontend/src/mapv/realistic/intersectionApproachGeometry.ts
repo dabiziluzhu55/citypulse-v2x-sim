@@ -13,7 +13,9 @@ import {
   visualLanePoints,
 } from './intersectionRoadGeometry.ts'
 
-export const STOP_LINE_CENTER_OFFSET_METERS = 0.8
+export const STOP_LINE_WIDTH_METERS = 0.42
+// The downstream edge of the painted line is the SUMO lane end.
+export const STOP_LINE_CENTER_OFFSET_METERS = STOP_LINE_WIDTH_METERS / 2
 export {
   CROSSWALK_DEPTH_METERS,
   CROSSWALK_EDGE_INSET_METERS,
@@ -126,6 +128,17 @@ export function pointAndTangent(lane: RealisticLane, distance: number, incoming:
   return pointAndTangentOnPolyline(visualLanePoints(lane), distance, incoming)
 }
 
+function controlBoundaryPointAndTangent(
+  lane: RealisticLane,
+  distance: number,
+  incoming: boolean,
+) {
+  const points = lane.vehicleGuidePoints?.length
+    ? lane.vehicleGuidePoints
+    : visualLanePoints(lane)
+  return pointAndTangentOnPolyline(points, distance, incoming)
+}
+
 function referenceTangent(
   edge: RealisticRoadEdge | null,
   sampled: Array<{ tangent: Point2 }>,
@@ -176,8 +189,11 @@ export function buildIntersectionApproachGeometry(
   const lanes = (Array.isArray(lanesOrEdge) ? lanesOrEdge : lanesOrEdge.lanes)
     .filter((lane) => lane.kind !== 'pedestrian' && lane.kind !== 'bicycle')
   if (lanes.length === 0) return null
-  const stopOffset = (STOP_LINE_CENTER_OFFSET_METERS + setbackMeters) * horizontalScale
-  const sampled = lanes.map((lane) => ({ lane, ...pointAndTangent(lane, stopOffset, true) }))
+  const stopOffset = STOP_LINE_CENTER_OFFSET_METERS * horizontalScale
+  const sampled = lanes.map((lane) => ({
+    lane,
+    ...controlBoundaryPointAndTangent(lane, stopOffset, true),
+  }))
   const tangent = referenceTangent(edge, sampled, stopOffset, true)
   const normal: Point2 = [-tangent[1], tangent[0]]
   const projected = sampled.map(({ point }) => point[0] * normal[0] + point[1] * normal[1])
@@ -194,7 +210,7 @@ export function buildIntersectionApproachGeometry(
   let crossingMax = max
   if (edge) {
     for (const lane of edge.lanes.filter((value) => value.kind !== 'pedestrian' && !lanes.includes(value))) {
-      const sample = pointAndTangent(lane, stopOffset, true)
+      const sample = controlBoundaryPointAndTangent(lane, stopOffset, true)
       const projection = sample.point[0] * normal[0] + sample.point[1] * normal[1]
       crossingMin = Math.min(crossingMin, projection - lane.width / 2)
       crossingMax = Math.max(crossingMax, projection + lane.width / 2)
@@ -222,8 +238,10 @@ export function buildIntersectionApproachGeometry(
     stopLineCenter[1] + normal[1] * (crossingCenterAlong - centerAlong),
   ]
   const crossingCenter: Point2 = [
-    crosswalkBase[0] + tangent[0] * CROSSWALK_FIRST_CENTER_METERS * horizontalScale,
-    crosswalkBase[1] + tangent[1] * CROSSWALK_FIRST_CENTER_METERS * horizontalScale,
+    crosswalkBase[0]
+      + tangent[0] * (CROSSWALK_FIRST_CENTER_METERS - setbackMeters) * horizontalScale,
+    crosswalkBase[1]
+      + tangent[1] * (CROSSWALK_FIRST_CENTER_METERS - setbackMeters) * horizontalScale,
   ]
   const barWidth = CROSSWALK_STRIPE_WIDTH_METERS * horizontalScale
   const projections = buildCrosswalkBarProjections(crossingMin, crossingMax, horizontalScale)

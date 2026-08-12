@@ -45,6 +45,13 @@ import {
   recordSimulationDiagnosticConnection,
   resetSimulationRuntimeDiagnostics,
 } from '../utils/simulationRuntimeDiagnostics'
+import {
+  DISTURBANCE_RUNTIME_STORAGE_KEY,
+  freezeDisturbanceRuntimeTargets,
+  parseStoredDisturbanceRuntimeTargets,
+  runtimeDisturbanceViews,
+  type DisturbanceRuntimeTarget,
+} from '../utils/runtimeDisturbances'
 
 function isTerminal(state: SimulationState | null | undefined): boolean {
   return !!state && TERMINAL_SIMULATION_STATES.includes(state)
@@ -57,6 +64,7 @@ interface StoredSimulationContext {
   controlMode: string
   playbackSpeed: number
   websocketUrl: string
+  period: string
 }
 
 function readStoredSimulationContext(): StoredSimulationContext | null {
@@ -78,6 +86,7 @@ function readStoredSimulationContext(): StoredSimulationContext | null {
         controlMode: parsed.controlMode,
         playbackSpeed: typeof parsed.playbackSpeed === 'number' ? parsed.playbackSpeed : 1,
         websocketUrl: typeof parsed.websocketUrl === 'string' ? parsed.websocketUrl : '',
+        period: typeof parsed.period === 'string' ? parsed.period : '',
       }
     }
   } catch {
@@ -93,6 +102,12 @@ function isMissingSessionError(message: string): boolean {
 const sessionId = ref(localStorage.getItem(ACTIVE_SESSION_ID_KEY) ?? '')
 const storedContext = readStoredSimulationContext()
 const snapshot = ref<SimulationSnapshot | null>(null)
+const storedRuntimeTargets = parseStoredDisturbanceRuntimeTargets(
+  localStorage.getItem(DISTURBANCE_RUNTIME_STORAGE_KEY),
+)
+const runtimeDisturbanceTargets = ref<DisturbanceRuntimeTarget[]>(
+  storedRuntimeTargets?.sessionId === sessionId.value ? storedRuntimeTargets.targets : [],
+)
 const starting = ref(false)
 const controlling = ref(false)
 const startError = ref<string | null>(null)
@@ -116,6 +131,9 @@ const activePlaybackSpeed = ref(
 const activeWebsocketUrl = ref(
   storedContext?.sessionId === sessionId.value ? storedContext.websocketUrl : '',
 )
+const activeSimulationPeriod = ref(
+  storedContext?.sessionId === sessionId.value ? storedContext.period : '',
+)
 const achievedPlaybackSpeed = ref<number | null>(null)
 const acceptedState = ref<SimulationState | null>(null)
 const displayedOfficialTime = ref('')
@@ -134,6 +152,33 @@ const confirmedClock = new ConfirmedSimulationClock()
 const trafficView = computed(() =>
   snapshot.value ? snapshotToTrafficView(snapshot.value) : null,
 )
+const runtimeDisturbances = computed(() => (
+  runtimeDisturbanceViews(runtimeDisturbanceTargets.value, snapshot.value)
+))
+const unmappedRuntimeEvents = computed(() => {
+  const mapped = new Set(runtimeDisturbanceTargets.value.map((target) => target.eventId))
+  return (snapshot.value?.events ?? []).filter((event) => !mapped.has(event.event_id))
+})
+
+function setRuntimeDisturbanceTargets(
+  nextSessionId: string,
+  payload: StartSimulationRequest,
+): void {
+  runtimeDisturbanceTargets.value = freezeDisturbanceRuntimeTargets(
+    nextSessionId,
+    payload.disturbance_targets,
+  )
+  localStorage.setItem(DISTURBANCE_RUNTIME_STORAGE_KEY, JSON.stringify({
+    version: 1,
+    sessionId: nextSessionId,
+    targets: runtimeDisturbanceTargets.value,
+  }))
+}
+
+function clearPersistedRuntimeDisturbances(clearMemory = true): void {
+  localStorage.removeItem(DISTURBANCE_RUNTIME_STORAGE_KEY)
+  if (clearMemory) runtimeDisturbanceTargets.value = []
+}
 
 const summary = computed<TrafficSummary>(() => {
   const metrics = snapshot.value?.metrics
@@ -205,10 +250,12 @@ function applySnapshot(next: SimulationSnapshot) {
     stopPolling()
     localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
     localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+    clearPersistedRuntimeDisturbances(false)
     connectSimulationStream('')
     activeScenarioPresetId.value = ''
     activePlaybackSpeed.value = 1
     activeWebsocketUrl.value = ''
+    activeSimulationPeriod.value = ''
     restoredSession.value = false
   } else if (previousState === 'QUEUED' && next.state !== 'QUEUED') {
     lastMessage.value = '已获得仿真资源，正在启动仿真'
@@ -252,6 +299,7 @@ async function pollOnce() {
       stopPolling()
       localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
       localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+      clearPersistedRuntimeDisturbances()
       connectSimulationStream('')
       sessionId.value = ''
       snapshot.value = null
@@ -262,6 +310,7 @@ async function pollOnce() {
       activeControlMode.value = ''
       activePlaybackSpeed.value = 1
       activeWebsocketUrl.value = ''
+      activeSimulationPeriod.value = ''
       restoredSession.value = false
       statusError.value = '仿真会话已失效，请重新启动仿真'
       return
@@ -295,9 +344,14 @@ function bindSession(
     controlMode: string
     playbackSpeed: number
     websocketUrl: string
+    period: string
     initialState?: SimulationState
   },
 ) {
+  const runtimeSessionId = runtimeDisturbanceTargets.value[0]?.sessionId ?? ''
+  if (nextSessionId && runtimeSessionId && runtimeSessionId !== nextSessionId) {
+    clearPersistedRuntimeDisturbances()
+  }
   if (nextSessionId && nextSessionId !== sessionId.value) {
     renderSessionRevision.value += 1
   }
@@ -312,6 +366,7 @@ function bindSession(
       activeControlMode.value = context.controlMode
       activePlaybackSpeed.value = context.playbackSpeed
       activeWebsocketUrl.value = context.websocketUrl
+      activeSimulationPeriod.value = context.period
       localStorage.setItem(ACTIVE_SIMULATION_CONTEXT_KEY, JSON.stringify({
         sessionId: nextSessionId,
         focusIntersectionId: context.focusIntersectionId,
@@ -319,16 +374,19 @@ function bindSession(
         controlMode: context.controlMode,
         playbackSpeed: context.playbackSpeed,
         websocketUrl: context.websocketUrl,
+        period: context.period,
       }))
     }
   } else {
     localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
     localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+    clearPersistedRuntimeDisturbances()
     sessionIntersectionId.value = ''
     activeScenarioPresetId.value = ''
     activeControlMode.value = ''
     activePlaybackSpeed.value = 1
     activeWebsocketUrl.value = ''
+    activeSimulationPeriod.value = ''
     acceptedState.value = null
   }
   snapshot.value = null
@@ -377,6 +435,7 @@ async function launchRun(
   startError.value = null
   try {
     const result = await startSimulation(payload)
+    setRuntimeDisturbanceTargets(result.session_id, payload)
     onSessionAccepted?.(result)
     bindSession(result.session_id, {
       focusIntersectionId,
@@ -384,6 +443,7 @@ async function launchRun(
       controlMode: payload.control_mode,
       playbackSpeed: payload.playback_speed ?? 1,
       websocketUrl: result.websocket_url,
+      period: payload.period,
       initialState: result.state,
     })
     lastMessage.value = result.state === 'QUEUED'
@@ -495,9 +555,13 @@ export function useSimulationStore() {
     activeScenarioPresetId,
     activeControlMode,
     activePlaybackSpeed,
+    activeSimulationPeriod,
     achievedPlaybackSpeed,
     displayedOfficialTime,
     renderSessionRevision,
+    runtimeDisturbanceTargets,
+    runtimeDisturbances,
+    unmappedRuntimeEvents,
     launchRun,
     pauseRun,
     resumeRun,

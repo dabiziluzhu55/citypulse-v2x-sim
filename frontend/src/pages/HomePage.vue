@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CenterCommunicationPanel from '../components/dashboard/CenterCommunicationPanel.vue'
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
@@ -100,6 +100,7 @@ interface ConfigurationChangeRequest {
   apply: () => void
 }
 const pendingConfigChange = ref<ConfigurationChangeRequest | null>(null)
+const configChangeDialogRef = ref<HTMLElement | null>(null)
 
 const autoPresentedSessionId = ref('')
 
@@ -124,17 +125,28 @@ watch([sessionId, state], ([nextSessionId, nextState]) => {
 function handleOverlayKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
   if (pendingConfigChange.value) {
-    pendingConfigChange.value = null
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    cancelConfigChange()
   } else if (communicationPanelOpen.value) {
     closeCommunicationPanel()
   }
 }
 
+function guardConfigChangeEscape(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !pendingConfigChange.value) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  cancelConfigChange()
+}
+
 onMounted(() => {
+  window.addEventListener('keydown', guardConfigChangeEscape, true)
   window.addEventListener('keydown', handleOverlayKeydown)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', guardConfigChangeEscape, true)
   window.removeEventListener('keydown', handleOverlayKeydown)
   closeCommunicationPanel()
 })
@@ -152,6 +164,7 @@ async function handleStart(payload: StartSimulationRequest) {
 
 function handleConfigChangeRequested(request: ConfigurationChangeRequest) {
   pendingConfigChange.value = request
+  void nextTick(() => configChangeDialogRef.value?.focus())
 }
 
 function cancelConfigChange() {
@@ -269,15 +282,23 @@ async function handleStop() {
 
     <div class="dashboard-column center" />
 
-    <Transition name="config-notice">
-      <div v-if="pendingConfigChange" class="config-change-dialog">
+    <Teleport to="body">
+      <Transition name="config-notice">
+        <div v-if="pendingConfigChange" class="config-change-dialog">
         <button
           type="button"
           class="config-change-dialog__backdrop"
           aria-label="取消参数变更"
           @click="cancelConfigChange"
         />
-        <div class="config-change-notice" role="dialog" aria-modal="true" aria-labelledby="config-change-title">
+        <div
+          ref="configChangeDialogRef"
+          class="config-change-notice"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="config-change-title"
+          tabindex="-1"
+        >
           <div id="config-change-title" class="config-change-notice__title"><i aria-hidden="true" />参数变更确认</div>
           <p>以下仿真参数会改变评估基准。确认后切换到对应实验组，原有算法曲线仍会保留。</p>
           <ul>
@@ -290,8 +311,9 @@ async function handleStop() {
             <button type="button" class="is-primary" @click="confirmConfigChange">确认切换</button>
           </div>
         </div>
-      </div>
-    </Transition>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Transition name="communication-overlay">
       <div
@@ -340,7 +362,7 @@ async function handleStop() {
 .config-change-dialog {
   position: fixed;
   inset: 0;
-  z-index: 11;
+  z-index: 3100;
   display: grid;
   place-items: center;
   padding: 24px;

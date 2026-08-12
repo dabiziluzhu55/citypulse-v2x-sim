@@ -36,6 +36,29 @@ function accessorView(json, binary, index, components) {
   }
 }
 
+export function extractGlbTriangles(input) {
+  const { json, binary } = parseGlb(input)
+  const triangles = []
+  for (const mesh of json.meshes ?? []) {
+    for (const primitive of mesh.primitives ?? []) {
+      if ((primitive.mode ?? 4) !== 4 || primitive.attributes?.POSITION === undefined) continue
+      const position = accessorView(json, binary, primitive.attributes.POSITION, 3)
+      const indices = primitive.indices === undefined
+        ? null
+        : accessorView(json, binary, primitive.indices, 1)
+      const count = indices?.accessor.count ?? position.accessor.count
+      const vertexAt = (index) => {
+        const vertex = indices ? indices.get(index) : index
+        return [position.get(vertex, 0), position.get(vertex, 1), position.get(vertex, 2)]
+      }
+      for (let index = 0; index + 2 < count; index += 3) {
+        triangles.push([vertexAt(index), vertexAt(index + 1), vertexAt(index + 2)])
+      }
+    }
+  }
+  return triangles
+}
+
 function include(bounds, x, y, z) {
   bounds.min[0] = Math.min(bounds.min[0], x)
   bounds.min[1] = Math.min(bounds.min[1], y)

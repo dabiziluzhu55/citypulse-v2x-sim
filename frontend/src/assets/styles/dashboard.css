@@ -191,7 +191,7 @@
   .dashboard-page {
     grid-template-columns: 1fr;
     overflow-y: auto;
-    pointer-events: auto;
+    pointer-events: none;
   }
 
   .dashboard-column.left,

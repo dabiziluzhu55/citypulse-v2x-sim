@@ -4,6 +4,9 @@ const TRAJECTORY_MIN_SPEED_MPS = 0.8
 const TRAJECTORY_MIN_DISTANCE_METERS = 0.25
 const STOP_SPEED_MPS = 0.35
 const START_SPEED_MPS = 0.8
+export const MAX_LANE_MOVEMENT_HEADING_DELTA = Math.PI / 4
+export const MAX_VEHICLE_HEADING_RATE = 120 * Math.PI / 180
+export const MAX_UNSUPPORTED_RAW_HEADING_JUMP = Math.PI / 2
 
 export interface GeographicPoint {
   longitude: number
@@ -19,11 +22,12 @@ export interface VehicleHeadingState {
 }
 
 export interface StableVehicleHeadingInput {
-  sumoAngleDegrees: number
+  sourceMapHeading?: number | null
   speedMetersPerSecond: number
   current: GeographicPoint
   timeSeconds: number
   laneHeading?: number | null
+  topologyConfirmed?: boolean
 }
 
 export interface StableVehicleHeadingResult {
@@ -34,10 +38,6 @@ export interface StableVehicleHeadingResult {
 export function normalizeRadians(angle: number): number {
   const normalized = angle % TWO_PI
   return normalized < 0 ? normalized + TWO_PI : normalized
-}
-
-export function sumoAngleToMapHeading(angleDegrees: number): number {
-  return normalizeRadians((90 - angleDegrees) * Math.PI / 180)
 }
 
 export function shortestAngleDelta(from: number, to: number): number {
@@ -65,14 +65,13 @@ export function trajectoryHeading(a: GeographicPoint, b: GeographicPoint): numbe
 }
 
 export function resolveContinuousVehicleHeading(
-  sumoAngleDegrees: number,
+  sourceMapHeading: number,
   speedMetersPerSecond: number,
   current: GeographicPoint,
   previousPoint: GeographicPoint | null,
   previousHeading: number | null,
 ): number {
-  const sumoHeading = sumoAngleToMapHeading(sumoAngleDegrees)
-  let target = sumoHeading
+  let target = sourceMapHeading
   if (previousPoint && speedMetersPerSecond >= TRAJECTORY_MIN_SPEED_MPS) {
     const movementHeading = trajectoryHeading(previousPoint, current)
     if (movementHeading != null) target = movementHeading
@@ -84,8 +83,16 @@ export function resolveStableVehicleHeading(
   input: StableVehicleHeadingInput,
   previous: VehicleHeadingState | null,
 ): StableVehicleHeadingResult {
+  const sourceHeading = input.sourceMapHeading != null
+    && Number.isFinite(input.sourceMapHeading)
+    ? normalizeRadians(input.sourceMapHeading)
+    : null
   if (!previous) {
-    const initial = input.laneHeading ?? sumoAngleToMapHeading(input.sumoAngleDegrees)
+    const initial = input.speedMetersPerSecond > STOP_SPEED_MPS
+      && input.topologyConfirmed
+      && input.laneHeading != null
+      ? input.laneHeading
+      : sourceHeading ?? input.laneHeading ?? 0
     const heading = normalizeRadians(initial)
     return {
       heading,
@@ -104,11 +111,33 @@ export function resolveStableVehicleHeading(
     ? input.speedMetersPerSecond > STOP_SPEED_MPS && movementHeading != null
     : input.speedMetersPerSecond >= START_SPEED_MPS && movementHeading != null
   let target = previous.reliableHeading
-  if (moving && movementHeading != null) target = movementHeading
-  const heading = moving
-    ? unwrapHeading(previous.heading, target)
+  let topologyHeading = false
+  if (
+    moving
+    && input.topologyConfirmed
+    && input.laneHeading != null
+    && Number.isFinite(input.laneHeading)
+  ) {
+    target = input.laneHeading
+    topologyHeading = true
+  } else if (moving && sourceHeading != null) {
+    const unsupportedJump = Math.abs(shortestAngleDelta(previous.reliableHeading, sourceHeading))
+      > MAX_UNSUPPORTED_RAW_HEADING_JUMP
+      && movementHeading != null
+      && Math.abs(shortestAngleDelta(sourceHeading, movementHeading)) > MAX_LANE_MOVEMENT_HEADING_DELTA
+    target = unsupportedJump ? previous.reliableHeading : sourceHeading
+  } else if (!moving) {
+    target = previous.reliableHeading
+  }
+  const elapsedSeconds = Math.max(0, input.timeSeconds - previous.timeSeconds)
+  const targetDelta = shortestAngleDelta(previous.heading, target)
+  const maximumTurn = MAX_VEHICLE_HEADING_RATE * elapsedSeconds
+  const heading = previous.heading + (topologyHeading
+    ? targetDelta
+    : Math.max(-maximumTurn, Math.min(maximumTurn, targetDelta)))
+  const reliableHeading = topologyHeading || moving
+    ? heading
     : previous.reliableHeading
-  const reliableHeading = moving ? heading : previous.reliableHeading
   return {
     heading,
     state: {

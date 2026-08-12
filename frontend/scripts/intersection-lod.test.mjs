@@ -69,3 +69,17 @@ test('protects a road detail object until its intersection activation finishes',
   assert.match(source, /!this\.pendingActivations\.has\(id\)/)
   assert.match(source, /!this\.detailRequests\.has\(id\)/)
 })
+
+test('keeps only four lazy medium scenes and two full-detail scenes', async () => {
+  const source = await readFile(
+    new URL('../src/mapv/realistic/MapvRealisticIntersectionLayer.ts', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /private readonly cacheLimit = 2/)
+  assert.match(source, /private readonly mediumCacheLimit = 4/)
+  const overviewPreparation = source.slice(
+    source.indexOf('async prepareOverview'),
+    source.indexOf('async prepare('),
+  )
+  assert.doesNotMatch(overviewPreparation, /new RealisticIntersectionObject/)
+})

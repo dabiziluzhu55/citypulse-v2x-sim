@@ -9,7 +9,7 @@ const helperPath = path.resolve(scriptsDirectory, 'generate-topology-routes.py')
 const argumentsForHelper = [
   helperPath,
   path.resolve(projectDirectory, 'data/maps/sumo/generated/network/TotalMap_20.signals.net.xml'),
-  path.resolve(projectDirectory, 'data/maps/sumo/TotalMap_20.intersections.json'),
+  path.resolve(projectDirectory, 'data/maps/sumo/official/map/TotalMap_20.intersections.json'),
   path.resolve(frontendDirectory, 'public/intersections/v3/catalog.json'),
   path.resolve(frontendDirectory, 'public/intersections/v3/topology-routes.json'),
 ]

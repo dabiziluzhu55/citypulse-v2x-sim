@@ -1,8 +1,14 @@
+import {
+  sumoHeadingTransformIsValid,
+  type SumoHeadingTransform,
+} from './sumoHeadingTransform.ts'
+
 export interface IntersectionTopologyNode {
   intersectionId: string
   longitude: number
   latitude: number
   radiusMeters: number
+  sumoHeadingTransform: SumoHeadingTransform
 }
 
 export interface IntersectionTopologyLink {
@@ -14,11 +20,13 @@ export interface IntersectionTopologyLink {
 
 interface IntersectionCatalogPayload {
   schemaVersion: number
+  sourceSha256: string
   intersections: Array<{
     intersectionId: string
     longitude: number
     latitude: number
     radiusMeters?: number
+    sumoHeadingTransform?: SumoHeadingTransform
   }>
 }
 
@@ -44,6 +52,8 @@ export function parseIntersectionTopologyCatalog(value: unknown): IntersectionTo
       || !/^demo_(?:[1-9]|1\d|20)$/.test(entry.intersectionId)
       || !isFiniteCoordinate(entry.longitude)
       || !isFiniteCoordinate(entry.latitude)
+      || !sumoHeadingTransformIsValid(entry.sumoHeadingTransform)
+      || entry.sumoHeadingTransform.sourceSha256 !== source.sourceSha256
     ) {
       throw new Error('Intersection topology catalog contains an invalid node')
     }
@@ -54,6 +64,7 @@ export function parseIntersectionTopologyCatalog(value: unknown): IntersectionTo
       radiusMeters: isFiniteCoordinate(entry.radiusMeters) && entry.radiusMeters > 0
         ? entry.radiusMeters
         : 520,
+      sumoHeadingTransform: entry.sumoHeadingTransform,
     }
   })
   if (new Set(nodes.map((node) => node.intersectionId)).size !== nodes.length) {

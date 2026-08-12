@@ -13,6 +13,7 @@ const mapDimension = computed(() => mapView.dimension.value)
 const isStandaloneRoute = computed(() => route.meta.standalone === true)
 const threeMapState = ref<'loading' | 'ready' | 'error'>('loading')
 const threeMapMounted = ref(false)
+const map2dMounted = ref(true)
 const displayedMapDimension = ref<'2d' | '3d'>(mapDimension.value)
 const map2dActive = ref(mapDimension.value === '2d')
 const map3dActive = ref(mapDimension.value === '3d')
@@ -31,6 +32,7 @@ watch(mapDimension, async (dimension) => {
     threeMapMounted.value = true
     map3dActive.value = true
   } else {
+    map2dMounted.value = true
     map2dActive.value = true
   }
   await nextTick()
@@ -47,6 +49,16 @@ watch(mapDimension, async (dimension) => {
 
 function handleThreeMapState(nextState: 'loading' | 'ready' | 'error'): void {
   threeMapState.value = nextState
+  if (nextState === 'ready' && mapDimension.value === '3d') {
+    const revision = mapTransitionRevision
+    window.setTimeout(() => {
+      if (
+        revision === mapTransitionRevision
+        && mapDimension.value === '3d'
+        && threeMapState.value === 'ready'
+      ) map2dMounted.value = false
+    }, 140)
+  }
 }
 
 function returnTo2d(): void {
@@ -62,7 +74,7 @@ function returnTo2d(): void {
       class="app-map-layer"
       :class="{ 'is-visible': displayedMapDimension === '2d' }"
     >
-      <AppBackgroundMap :active="map2dActive" />
+      <AppBackgroundMap v-if="map2dMounted" :active="map2dActive" />
     </div>
     <div
       v-if="threeMapMounted"
@@ -116,12 +128,14 @@ function returnTo2d(): void {
   position: absolute;
   inset: 0;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
   transition: opacity 120ms linear;
 }
 
 .app-map-layer.is-visible {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
@@ -163,8 +177,6 @@ function returnTo2d(): void {
 .app-content :deep(.result-panel),
 .app-content :deep(.preview-panel),
 .app-content :deep(.dashboard-panel),
-.app-content :deep(.left-sidebar),
-.app-content :deep(.right-sidebar),
 .app-content :deep(.map-overlay),
 .app-content :deep(.map-legend),
 .app-content :deep(.timeline),

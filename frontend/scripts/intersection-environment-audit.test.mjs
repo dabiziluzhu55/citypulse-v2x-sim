@@ -14,4 +14,8 @@ test('audits all intersection assets and preserves road transition overlap', asy
     ['local-overlap', 'baidu-base-dependent'].includes(row.roads.continuityClassification)
   )))
   assert.ok(report.intersections.every((row) => row.facilities.lamps > 0))
+  assert.ok(report.summary.intersectionsWithRoadSurfaceExclusions.includes('demo_6'))
+  assert.ok(!report.summary.intersectionsWithRoadSurfaceExclusions.includes('demo_4'))
+  assert.ok(report.summary.roadSurfaceExclusionRanges > 0)
+  assert.ok(report.intersections.every((row) => row.roads.buildingSurfaceExclusionRanges >= 0))
 })
