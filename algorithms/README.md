@@ -10,4 +10,4 @@
 
 只消费状态、不返回控制动作的 AI 训练入口见
 [`ai_observer_example.py`](ai_observer_example.py) 和
-[`docs/local_transport_ai_observer.md`](../docs/local_transport_ai_observer.md)。
+[`docs/sumo.md`](../docs/sumo.md) 的算法交互部分。
