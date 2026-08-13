@@ -39,6 +39,9 @@
     "test:simulation-contract": "node --test scripts/simulation-contract.test.mjs",
     "test:backend-alignment": "node --test scripts/backend-alignment.test.mjs scripts/websocket-url.test.mjs",
     "test:snapshot-ordering": "node --test scripts/snapshot-ordering.test.mjs",
+    "test:topology-congestion": "node --test scripts/topology-congestion.test.mjs",
+    "test:detected-events": "node --test scripts/detected-event-display.test.mjs scripts/detected-event-icon-layout.test.mjs",
+    "test:edge-topology": "node --test scripts/edge-topology-segments.test.mjs",
     "test:browser-capabilities": "node --test scripts/browser-capabilities.test.mjs",
     "test:buildings": "node --test scripts/building-tileset.test.mjs"
   },

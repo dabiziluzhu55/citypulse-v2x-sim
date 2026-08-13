@@ -30,7 +30,7 @@ from backend.app.services.simulation_service import SimulationService
 from backend.app.controllers.runtime import AlgorithmRuntimeStore
 from backend.app.services.snapshot_serializer import SnapshotSerializer
 from simulation.sumo import MajorEventClosingEvent, MajorEventOpeningEvent
-from simulation.sumo.session import (
+from simulation.sumo.engine.session import (
     IntersectionCapability,
     LaneCapability,
     OriginCapability,

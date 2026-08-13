@@ -4,8 +4,11 @@ import * as mapvthree from '@baidumap/mapv-three'
 import { Color, Vector3 } from 'three'
 import DetectedEventOverlay from './DetectedEventOverlay.vue'
 import { REALISTIC_INTERSECTION_SURFACE_Z } from '../../mapv/sceneElevation'
-import { buildIntersectionCongestionLevels } from '../../utils/topologyCongestion'
 import { activeDetectedEventCards } from '../../utils/detectedEventDisplay'
+import {
+  buildDirectedRouteCongestionLevels,
+  loadEdgeTopologySegmentMap,
+} from '../../utils/edgeTopologySegments'
 import { useAppMapView } from '../../composables/useAppMapView'
 import { useSimulationMap } from '../../composables/useSimulationMap'
 import { useSimulationStore } from '../../composables/useSimulationStore'
@@ -246,12 +249,13 @@ function projectDetectedEventToOverlay(
 function syncTopologyCongestion(): void {
   if (!intersectionTopologyLayer) return
   const current = snapshot.value
+  const routeIds = intersectionTopologyLayer.getRouteIds()
   if (!current || !detectedOverlayActive.value) {
-    intersectionTopologyLayer.setIntersectionCongestion({})
+    intersectionTopologyLayer.setRouteCongestion({})
     return
   }
-  intersectionTopologyLayer.setIntersectionCongestion(
-    buildIntersectionCongestionLevels(current, current.traffic_style),
+  intersectionTopologyLayer.setRouteCongestion(
+    buildDirectedRouteCongestionLevels(current.traffic_style, routeIds),
   )
 }
 
@@ -1148,8 +1152,12 @@ async function initMap(): Promise<void> {
 
   if (enableIntersectionTopology && intersectionTopologyLayer) {
     emit('loading', '正在加载 20 路口道路总览')
+    await loadEdgeTopologySegmentMap().catch((cause: unknown) => {
+      console.warn('[edge-topology] map unavailable', cause)
+    })
     const nodes = await intersectionTopologyLayer.load()
     applyGlobalNavigationBounds(nodes)
+    syncTopologyCongestion()
     const intersectionIds = nodes.map((node) => node.intersectionId)
     await Promise.all([
       prepareAllIntersectionLandcover(intersectionIds),

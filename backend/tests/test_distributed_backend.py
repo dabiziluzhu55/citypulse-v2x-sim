@@ -24,8 +24,8 @@ from backend.app.services.session_metadata import (
 )
 from backend.app.services.simulation_service import SimulationService
 from backend.app.services.snapshot_serializer import SnapshotSerializer
-from simulation.sumo.distributed import RedisUnavailableError
-from simulation.sumo.session import (
+from simulation.sumo.engine.distributed import RedisUnavailableError
+from simulation.sumo.engine.session import (
     SessionMetrics,
     SimulationConfig,
     SimulationSnapshot,

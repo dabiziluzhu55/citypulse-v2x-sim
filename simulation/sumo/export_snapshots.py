@@ -7,7 +7,7 @@ import csv
 from pathlib import Path
 
 from .run import _load_events
-from .session import SimulationConfig, SimulationManager
+from .engine.session import SimulationConfig, SimulationManager
 
 
 LANE_FIELDS = [

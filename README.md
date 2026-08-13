@@ -32,7 +32,7 @@
 - 评估脚本在`traffic_eval/`（Backend封装；算法可直接import，无需启动后端）
 - `traffic_eval`：**Backend 容器封装**；sumo容器也需封装以便本地命令工具复用同一包，但Worker的仿真进程不负责指标计算
 
-- IPPO等含torch的推理只在SUMO Worker进程内运行，Backend启动不导入torch
+- IPPO等含torch的管控推理只在SUMO Worker进程内运行；Backend可带CPU torch用于NarrowNet-TDP短时交通预测
 
 ### 管控模式
 
@@ -50,13 +50,35 @@
 
 ## 快速开始
 
+克隆后请先拉取 Git LFS 大文件（官方路网 `TotalMap_20.net.xml`）：
+
+```bash
+git lfs install
+git lfs pull
+```
+
+仿真启动依赖官方源数据目录（已入库，勿再忽略）：
+
+```text
+data/maps/sumo/official/
+├── map/TotalMap_20.intersections.json
+├── map/TotalMap_20.net.xml
+├── tls/official_tls_plans.json
+├── tls/official_tls_topology.json
+└── traffic/...
+```
+
+若缺少上述文件，前端会在「算法初始化」阶段失败并报 `Configuration file not found`。
+
 ### 1. 构建路网与车流
+
+仓库已包含可用的 `data/maps/sumo/generated/` 时，本地联调可跳过本步。需要重建时：
 
 ```bash
 export SUMO_HOME=/usr/share/sumo
 cd /path/to/citypulse-v2x-sim
-python -m simulation.sumo.build_tls
-python -m simulation.sumo.build_traffic
+python -m simulation.sumo.building.build_tls
+python -m simulation.sumo.building.build_traffic
 ```
 
 ### 2. 安装依赖
@@ -92,17 +114,17 @@ PYTHONPATH=. python -m traffic_eval \
 ### 4. 仅CLI跑SUMO
 
 ```bash
-python -m simulation.sumo.run --mode fixed --intersection demo_2 --period morning_peak
-python -m simulation.sumo.run --mode algorithm \
+python -m simulation.sumo.engine.run --mode fixed --intersection demo_2 --period morning_peak
+python -m simulation.sumo.engine.run --mode algorithm \
   --algorithm-transport local \
   --algorithm-module traffic_control.sotl \
   --intersection demo_2 --period morning_peak
 
-python -m simulation.sumo.run --mode fixed \
+python -m simulation.sumo.engine.run --mode fixed \
   --intersection demo_2 --period morning_peak
 
 # 需要观察 SUMO 原生窗口时使用本地 GUI 调试旁路
-python -m simulation.sumo.run --gui --realtime --mode fixed \
+python -m simulation.sumo.engine.run --gui --realtime --mode fixed \
   --intersection demo_2 --period morning_peak
 ```
 
@@ -111,7 +133,7 @@ python -m simulation.sumo.run --gui --realtime --mode fixed \
 ```bash
 docker compose -f compose.redis.yml up -d
 # Backend设 SIMULATION_MANAGER_MODE=redis
-celery -A simulation.sumo.distributed.celery_app:app worker \
+celery -A simulation.sumo.engine.distributed.celery_app:app worker \
   --queues citypulse-sumo --pool prefork --concurrency 4
 ```
 
@@ -122,7 +144,7 @@ Worker使用prefork，一子进程同时只跑一个SUMO会话;与后端Backend�
 | 容器 | 内容 |
 |------|------|
 | frontend | 静态资源/Nginx |
-| backend | FastAPI，无SUMO/无torch |
+| backend | FastAPI+CPU torch（NarrowNet-TDP预测），无SUMO |
 | sumo-worker | `simulation`+`traffic_control`+SUMO(+torch) |
 | redis | 队列与会话状态 |
 

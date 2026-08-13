@@ -48,7 +48,11 @@ class PredictionPayload(BaseModel):
     horizon_seconds: float
     as_of_seconds: float
     model: str
+    model_version: str = ""
     ready: bool = False
+    fallback: bool = False
+    fallback_reason: str = ""
+    inference_latency_ms: float | None = None
     intersections: dict[str, IntersectionPrediction] = Field(default_factory=dict)
 
 
@@ -56,7 +60,11 @@ class EdgeTrafficStyle(BaseModel):
     level: str
     score: float
     mean_speed: float
-    occupancy: float
+    occupancy_pct: float = Field(description="路段占有率百分数，口径0～100")
+    occupancy: float | None = Field(
+        default=None,
+        description="兼容字段，数值与occupancy_pct相同",
+    )
     vehicle_count: int
     halting_count: int
 

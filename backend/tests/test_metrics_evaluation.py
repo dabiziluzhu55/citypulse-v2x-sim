@@ -828,7 +828,7 @@ def test_serialize_terminal_snapshot_waits_for_delayed_tripinfo(
     from backend.app.services.session_metadata import InMemorySessionMetadataStore
     from backend.app.services.simulation_service import SimulationService
     from backend.app.services.snapshot_serializer import SnapshotSerializer
-    from simulation.sumo.session import SessionMetrics, SimulationSnapshot
+    from simulation.sumo.engine.session import SessionMetrics, SimulationSnapshot
 
     session_root = tmp_path / "sessions"
     session_root.mkdir()

@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "description": "路口代号与 TotalMap.net.xml 中 junction ID 的映射。junction_id 为 null 表示尚未确认对应关系。scenes 为 RoadRunner 场景到 CARLA 地图的映射（可选）。",
+  "source_net": "../../data/maps/sumo/generated/network/TotalMap_20.signals.net.xml",
+  "default_distance_m": 200,
+  "intersections": [
+    {"name": "demo_1",  "junction_id": "4427", "note": "已确认"},
+    {"name": "demo_2",  "junction_id": "317", "note": "已确认"},
+    {"name": "demo_3",  "junction_id": "citypulse_demo_3", "note": "已确认"},
+    {"name": "demo_4",  "junction_id": "3935", "note": "已确认"},
+    {"name": "demo_5",  "junction_id": "3807", "note": "已确认"},
+    {"name": "demo_6",  "junction_id": "3936", "note": "已确认"},
+    {"name": "demo_7",  "junction_id": "610", "note": "已确认"},
+    {"name": "demo_8",  "junction_id": "4393", "note": "已确认"},
+    {"name": "demo_9",  "junction_id": "3864", "note": "已确认"},
+    {"name": "demo_10", "junction_id": "4162", "note": "已确认"},
+    {"name": "demo_11", "junction_id": "4306", "note": "已确认"},
+    {"name": "demo_12", "junction_id": "182", "note": "已确认"},
+    {"name": "demo_13", "junction_id": "1204", "note": "已确认"},
+    {"name": "demo_14", "junction_id": "892", "note": "已确认"},
+    {"name": "demo_15", "junction_id": "1117", "note": "已确认"},
+    {"name": "demo_16", "junction_id": "3279", "note": "已确认"},
+    {"name": "demo_17", "junction_id": "3702", "note": "已确认"},
+    {"name": "demo_18", "junction_id": "4409", "note": "已确认"},
+    {"name": "demo_19", "junction_id": "891", "note": "已确认"},
+    {"name": "demo_20", "junction_id": "3637", "note": "已确认"}
+  ],
+  "scenes": [
+  ]
+}

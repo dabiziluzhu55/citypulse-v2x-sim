@@ -10,10 +10,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from simulation.sumo.distributed import RedisUnavailableError
-from simulation.sumo.events import EventValidationError
-from simulation.sumo.scenario import ScenarioCompilationError
-from simulation.sumo.session import SessionBusyError, SessionError, UnknownSessionError
+from simulation.sumo.engine.distributed import RedisUnavailableError
+from simulation.sumo.engine.events import EventValidationError
+from simulation.sumo.engine.scenario import ScenarioCompilationError
+from simulation.sumo.engine.session import SessionBusyError, SessionError, UnknownSessionError
 
 logger = logging.getLogger(__name__)
 

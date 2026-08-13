@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     intelligence_sample_seconds: float = 5.0
     intelligence_history_frames: int = 12
     prediction_horizon_seconds: float = 60.0
+    # NarrowNet-TDP运行时包；相对路径相对仓库根；空字符串关闭模型仅moving_average
+    prediction_model_dir: str = "backend/models/prediction/narrow_net_tdp"
+    # 已废弃保留兼容旧环境变量NarrowNet推理不再依赖外部STGCN仓库
+    stgcn_root: str = ""
 
     cesium_ion_token: str | None = None
     tianditu_token: str | None = None
@@ -85,6 +89,16 @@ class Settings(BaseSettings):
     @property
     def scenario_export_root(self) -> Path:
         return self.project_root / self.sumo_scenario_export_dir
+
+    @property
+    def prediction_model_path(self) -> Path | None:
+        raw = self.prediction_model_dir.strip()
+        if not raw:
+            return None
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            path = self.project_root / path
+        return path
 
     @property
     def signals_net_path(self) -> Path:

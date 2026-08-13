@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from simulation.sumo import RedisSimulationManager, SimulationManager
-from simulation.sumo.distributed import RedisUnavailableError
+from simulation.sumo.engine.distributed import RedisUnavailableError
 
 from ..core.config import Settings
 
@@ -55,7 +55,7 @@ def probe_redis_manager(settings: Settings) -> tuple[bool, str | None]:
     """探测Redis会话存储是否可用；不创建Celery任务"""
 
     try:
-        from simulation.sumo.distributed.store import RedisSessionStore
+        from simulation.sumo.engine.distributed.store import RedisSessionStore
 
         store = RedisSessionStore(
             settings.citypulse_redis_state_url,

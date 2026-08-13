@@ -35,12 +35,10 @@ Thumbs.db
 *.log
 outputs/
 
-# Rebuildable SUMO artifacts
-data/maps/sumo/generated/manifests/
-data/maps/sumo/generated/network/
-data/maps/sumo/generated/reports/
-data/maps/sumo/generated/signals/
-data/maps/sumo/generated/traffic/
+# Keep official SUMO sources tracked (required at runtime after refactor).
+# Ignore only local scratch under official/, not the committed map/tls/traffic trees.
+data/maps/sumo/official/**/*.bak
+data/maps/sumo/official/**/*.tmp
 *.bak
 
 # Local run artifacts & backups (kept on disk, not committed)
@@ -74,5 +72,10 @@ algorithms/mappo/runs/
 *.orig
 /runs/
 
-# backend ignore
-backend/tests/
+
+# CARLA Maps
+data/maps/carla/*
+data/maps/xodr/*
+
+# prediction
+official20_lane206_prediction_backend_bundle_20260810/

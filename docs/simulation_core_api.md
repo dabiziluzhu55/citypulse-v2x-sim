@@ -24,7 +24,7 @@ lane。前端应从 catalog 生成选项，不要硬编码 `demo_2`、`west` 或
 运行前必须先执行：
 
 ```bash
-python -m simulation.sumo.build_tls
+python -m simulation.sumo.building.build_tls
 ```
 
 该命令在 `generated/manifests/` 下生成 schema v2 的信号 manifest 和 schema v3 的
@@ -62,12 +62,11 @@ session_id = manager.start(
 | `duration_seconds` | 大于 0 且不能超过该高峰剩余时间；`None` 表示运行到时段末尾 |
 | `flow_multiplier` | 启动前固定的全局倍率，范围 `0.1-5.0` |
 | `control_mode` | `fixed` 或 `algorithm` |
-| `algorithm_transport` | `http`（默认）或 `local`；仅 algorithm 模式使用 |
-| `algorithm_endpoint` | HTTP algorithm 模式必填，协议见 `algorithm_interface.md` |
-| `algorithm_module` | local algorithm 模式必填，例如 `algorithms.local_policy_example` |
+| `algorithm_transport` | 仅支持 `local`；只在 `algorithm` 模式使用 |
+| `algorithm_module` | 本地 algorithm 模式必填，例如 `algorithms.local_policy_example` |
 | `decision_interval` | 算法决策周期，默认 5 秒；完整单车观测仅在决策或 AI 帧前刷新 |
 | `step_length` | SUMO 物理仿真步长，默认 0.1 秒 |
-| `ai_observer_module` | 可选的本地 AI 观察模块；可与 fixed、HTTP 或 local 控制并用 |
+| `ai_observer_module` | 可选的本地 AI 观察模块；可与 fixed 或 local algorithm 控制并用 |
 | `ai_frame_interval_seconds` | AI 帧仿真时间间隔，默认 0.5 秒且不得小于 `step_length` |
 | `ai_observer_shutdown_timeout` | 结束时排空 AI 帧并调用 finish 的超时，默认 5 秒 |
 | `start_paused` | `True` 时 SUMO 加载完成后停在 `elapsed=0`，等待 `resume()` |
@@ -94,8 +93,7 @@ manager.set_playback_speed(session_id, 2.0)  # 运行中或暂停时均可变速
 `pause()` 和 `resume()` 都是幂等的，重复点击不会报错。暂停期间车辆、红绿灯、事件时间、
 算法决策周期和官方时钟全部冻结，但仍可变速、添加/取消事件、恢复或停止。倍速只改变
 仿真相对于真实墙钟的播放速度，不改变车辆的物理速度、交通需求或算法参数。控制命令
-在下一个仿真步边界生效；如果当时正在等待算法 HTTP 响应，最多会额外等待该请求的超时
-时间。
+在下一个仿真步边界生效；如果当时正在执行本地算法 `step`，会在该次调用返回后继续处理。
 
 允许倍速由 `catalog.playback_speeds` 返回，目前为：
 
@@ -242,7 +240,7 @@ final_snapshot = manager.wait(session_id, timeout=30)
 TraCI/sumo-gui，仅用于有图形桌面的本地调试：
 
 ```bash
-python -m simulation.sumo.run --mode fixed --gui \
+python -m simulation.sumo.engine.run --mode fixed --gui \
   --intersection demo_2 \
   --period morning_peak \
   --window-start 1800 \

@@ -7,9 +7,16 @@ import {
   DETECTED_EVENT_ICON_URL,
   activeDetectedEventCards,
   detectedEventClockTime,
+  detectedEventDurationSeconds,
   detectedEventFlowSummary,
   detectedEventTypeLabel,
+  formatDetectedEventDuration,
 } from '../../utils/detectedEventDisplay'
+import {
+  detectedEventLayoutKey,
+  layoutDetectedEventIcons,
+  type ScreenMarkerInput,
+} from '../../utils/detectedEventIconLayout'
 
 export interface ScreenPoint {
   x: number
@@ -21,6 +28,8 @@ const props = defineProps<{
   snapshot: SimulationSnapshot | null
   project: (longitude: number, latitude: number) => ScreenPoint | null
   active?: boolean
+  /** 视角/缩放指纹，变化时才重算错位 */
+  viewToken?: string | number
 }>()
 
 interface MarkerView {
@@ -28,6 +37,7 @@ interface MarkerView {
   x: number
   y: number
   clock: string
+  durationLabel: string
   typeLabel: string
   flowSummary: string
 }
@@ -35,6 +45,8 @@ interface MarkerView {
 const markers = ref<MarkerView[]>([])
 const hoveredId = ref<string | null>(null)
 let frameId: number | null = null
+let cachedLayoutKey = ''
+let cachedOffsets = new Map<string, { offsetX: number; offsetY: number }>()
 
 const activeCards = computed(() => activeDetectedEventCards(props.cards))
 
@@ -42,27 +54,58 @@ const hoveredMarker = computed(() => (
   markers.value.find((item) => item.card.event_id === hoveredId.value) ?? null
 ))
 
-function refreshMarkers(): void {
-  if (!props.active) {
-    markers.value = []
-    hoveredId.value = null
-    return
-  }
-  const next: MarkerView[] = []
+function projectRawMarkers(): Array<ScreenMarkerInput & { card: DetectedEventCard }> {
+  const next: Array<ScreenMarkerInput & { card: DetectedEventCard }> = []
   for (const card of activeCards.value) {
     const point = props.project(Number(card.longitude), Number(card.latitude))
     if (!point) continue
     next.push({
-      card,
+      eventId: card.event_id,
       x: point.x,
       y: point.y,
-      clock: detectedEventClockTime(props.snapshot, card.start_seconds),
-      typeLabel: detectedEventTypeLabel(card),
-      flowSummary: detectedEventFlowSummary(card),
+      card,
     })
   }
-  markers.value = next
-  if (hoveredId.value && !next.some((item) => item.card.event_id === hoveredId.value)) {
+  return next
+}
+
+function refreshMarkers(): void {
+  if (!props.active) {
+    markers.value = []
+    hoveredId.value = null
+    cachedLayoutKey = ''
+    cachedOffsets.clear()
+    return
+  }
+  const projected = projectRawMarkers()
+  const layoutKey = detectedEventLayoutKey(
+    projected,
+    props.viewToken ?? '',
+  )
+  if (layoutKey !== cachedLayoutKey) {
+    cachedOffsets = new Map(
+      layoutDetectedEventIcons(projected).map((item) => [
+        item.eventId,
+        { offsetX: item.offsetX, offsetY: item.offsetY },
+      ]),
+    )
+    cachedLayoutKey = layoutKey
+  }
+  markers.value = projected.map((item) => {
+    const offset = cachedOffsets.get(item.eventId) ?? { offsetX: 0, offsetY: 0 }
+    return {
+      card: item.card,
+      x: item.x + offset.offsetX,
+      y: item.y + offset.offsetY,
+      clock: detectedEventClockTime(props.snapshot, item.card.start_seconds),
+      durationLabel: formatDetectedEventDuration(
+        detectedEventDurationSeconds(props.snapshot, item.card),
+      ),
+      typeLabel: detectedEventTypeLabel(item.card),
+      flowSummary: detectedEventFlowSummary(item.card),
+    }
+  })
+  if (hoveredId.value && !markers.value.some((item) => item.card.event_id === hoveredId.value)) {
     hoveredId.value = null
   }
 }
@@ -73,7 +116,7 @@ function loop(): void {
 }
 
 watch(
-  () => [props.cards, props.snapshot?.sequence, props.active] as const,
+  () => [props.cards, props.snapshot?.sequence, props.active, props.viewToken] as const,
   () => refreshMarkers(),
   { deep: true },
 )
@@ -120,6 +163,10 @@ onUnmounted(() => {
       <div class="detected-event-overlay__row">
         <span>事件检测时间</span>
         <strong>{{ hoveredMarker.clock }}</strong>
+      </div>
+      <div class="detected-event-overlay__row">
+        <span>持续时间</span>
+        <strong>{{ hoveredMarker.durationLabel }}</strong>
       </div>
       <div class="detected-event-overlay__row">
         <span>事件类型</span>

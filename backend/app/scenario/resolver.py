@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import uuid4
 
-from simulation.sumo.session import SimulationCatalog
+from simulation.sumo.engine.session import SimulationCatalog
 
 from ..core.exceptions import AppError
 from ..schemas.disturbance_targets import (

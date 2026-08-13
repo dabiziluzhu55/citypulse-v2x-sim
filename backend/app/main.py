@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from simulation.sumo.distributed import RedisUnavailableError
+from simulation.sumo.engine.distributed import RedisUnavailableError
 
 from .api.router import api_router
 from .controllers.runtime import AlgorithmRuntimeStore

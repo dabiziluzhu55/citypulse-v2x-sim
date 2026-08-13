@@ -8,7 +8,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional
 
-from simulation.sumo.session import SimulationSnapshot
+from simulation.sumo.engine.session import SimulationSnapshot
 
 from .collector import TrafficMetricsCollector
 from .models import EvalResult

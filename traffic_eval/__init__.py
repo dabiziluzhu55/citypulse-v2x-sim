@@ -1,12 +1,11 @@
-"""部署侧公共交通评估口径（单一事实源）。
+"""部署侧公共交通评估
 
-Backend API 与无后端命令行评估共用本包，保证指标公式一致。
+Backend API与无后端命令行评估共用本包，保证指标公式一致
 
 依赖：
-- simulation.sumo.session.SimulationSnapshot（采集输入）
+- simulation.sumo.engine.session.SimulationSnapshot（采集输入）
 - session / traffic manifest（燃油元数据）
 
-不依赖 FastAPI；不依赖 algorithms/。
 """
 
 from .collector import MetricsCollector, TrafficMetricsCollector

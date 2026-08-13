@@ -25,7 +25,7 @@ python -m unittest discover -s tests -p 'test_*.py'
 脚本或 shell 显式注入。启动四进程 worker：
 
 ```bash
-celery -A simulation.sumo.distributed.celery_app:app worker \
+celery -A simulation.sumo.engine.distributed.celery_app:app worker \
   --queues citypulse-sumo \
   --pool prefork \
   --concurrency "${CITYPULSE_SUMO_WORKER_CONCURRENCY:-4}" \
@@ -75,8 +75,8 @@ worker 的 `CITYPULSE_REDIS_STATE_URL`、`CITYPULSE_SUMO_GENERATED_DIR` 和
 查看队列和活动任务：
 
 ```bash
-celery -A simulation.sumo.distributed.celery_app:app inspect active
-celery -A simulation.sumo.distributed.celery_app:app inspect reserved
+celery -A simulation.sumo.engine.distributed.celery_app:app inspect active
+celery -A simulation.sumo.engine.distributed.celery_app:app inspect reserved
 docker compose -f compose.redis.yml exec redis redis-cli INFO persistence
 ```
 

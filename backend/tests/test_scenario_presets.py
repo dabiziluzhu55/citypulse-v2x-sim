@@ -7,7 +7,7 @@ from backend.app.scenario.presets import SCENARIO_PRESET_REGISTRY, list_scenario
 from backend.app.scenario.resolver import resolve_disturbance_targets, resolve_start_simulation
 from backend.app.schemas.disturbance_targets import DisturbanceTargetSpeedLimit
 from backend.app.schemas.simulations import StartSimulationRequest
-from simulation.sumo.session import (
+from simulation.sumo.engine.session import (
     IntersectionCapability,
     LaneCapability,
     OriginCapability,

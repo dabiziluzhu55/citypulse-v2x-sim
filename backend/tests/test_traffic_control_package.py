@@ -19,8 +19,8 @@ from backend.app.controllers.registry import (
 from backend.app.core.exceptions import AppError
 from backend.app.scenario.resolver import ResolvedStartSimulation
 from backend.app.services.simulation_service import SimulationService
-from simulation.sumo.distributed.codec import dumps_config, loads_config
-from simulation.sumo.session import SimulationConfig
+from simulation.sumo.engine.distributed.codec import dumps_config, loads_config
+from simulation.sumo.engine.session import SimulationConfig
 from traffic_control import max_pressure as tc_max_pressure
 from traffic_control import sotl as tc_sotl
 from traffic_control.registry import CONTROL_MODE_REGISTRY as TC_REGISTRY

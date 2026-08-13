@@ -141,14 +141,14 @@ junction `4393`，在所有相位使用让行绿。
 生成任何文件：
 
 ```bash
-python -m simulation.sumo.build_tls --validate-only \
+python -m simulation.sumo.building.build_tls --validate-only \
   --intersections demo_1 demo_2 demo_3 demo_4 demo_5 demo_6 demo_7 demo_8 demo_9 demo_10 demo_11 demo_12 demo_13 demo_14 demo_15 demo_16 demo_17 demo_18 demo_19 demo_20
 ```
 
 在已安装 SUMO 的服务器执行正式全量构建：
 
 ```bash
-python -m simulation.sumo.build_tls
+python -m simulation.sumo.building.build_tls
 ```
 
 `data/maps/sumo/generated/` 整体由 Git 忽略，是可删除、可重建且不提交的目录，不要手工修改。
@@ -202,15 +202,16 @@ schema v3 且只包含 3 个 `global_PERIOD` 场景；manifest 的 `source_net_s
 固定配时不调用任何算法服务：
 
 ```bash
-python -m simulation.sumo.run --mode fixed --gui \
+python -m simulation.sumo.engine.run --mode fixed --gui \
   --intersection demo_2 --period morning_peak
 ```
 
-外部算法模式：
+本地算法模式：
 
 ```bash
-python -m simulation.sumo.run --mode algorithm --gui \
-  --algorithm-endpoint http://127.0.0.1:8001 \
+python -m simulation.sumo.engine.run --mode algorithm --gui \
+  --algorithm-transport local \
+  --algorithm-module algorithms.local_policy_example \
   --intersection demo_2 --period morning_peak
 ```
 

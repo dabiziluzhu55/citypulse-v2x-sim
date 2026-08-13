@@ -8,7 +8,7 @@
 ## 架构边界
 
 - FastAPI **不直接** import 或调用 `traci`
-- FastAPI **不通过 subprocess** 启动 `python -m simulation.sumo.run`
+- FastAPI **不通过 subprocess** 启动 `python -m simulation.sumo.engine.run`
 - FastAPI **不自行**启动 `sumo` / `sumo-gui`
 - TraCI 由 `simulation` 层的仿真管理器持有：
   - `local` 模式：`SimulationManager`（本机进程内）
@@ -86,8 +86,8 @@ cp backend/.env.example backend/.env
 在仓库根目录执行（20 路口示例）：
 
 ```bash
-python -m simulation.sumo.build_tls
-python -m simulation.sumo.build_traffic
+python -m simulation.sumo.building.build_tls
+python -m simulation.sumo.building.build_traffic
 ```
 
 生成目录：
@@ -510,10 +510,10 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 状态与 WebSocket 快照额外包含（与扰动 `events` 分离）：
 
 - `event_detection`：算法识别事件卡片（含经纬度、`display_label`、`prediction_summary`）
-- `prediction`：官方路口未来约 60 秒 `vehicle_count`（当前为 `moving_average`）
-- `traffic_style.edges`：按 `edge_id` 的拥堵等级，供蓝线着色，独立于事件图标
+- `prediction`：官方路口未来约 60 秒 `vehicle_count`；`PREDICTION_MODEL_DIR` 指向NarrowNet-TDP交付包时为模型推理（206车道聚合到路口），否则 `moving_average` 降级（含 `fallback`/`fallback_reason`）
+- `traffic_style.edges`：后端唯一计算的拥堵等级（`occupancy_pct` 为 0～100），供蓝线着色，独立于事件图标
 
-`traffic_state` 展示约定：`localized_blockage`=局部占道，`spillback`=排队溢出，`unknown_abnormal`=交通异常
+`traffic_state` 展示约定：`localized_blockage`=疑似局部阻塞，`spillback`=排队溢出，`unknown_abnormal`=交通异常
 
 ### 6.2.1 查询事件识别与短时预测
 
