@@ -98,8 +98,8 @@ manifest、连接核对报告，以及早高峰、平峰、晚高峰三套全局
 | `data/maps/sumo/generated/reports/traffic_od_PERIOD.json/csv` | 九区域 OD PCU 矩阵 |
 
 `PERIOD` 取值为 `morning_peak`、`off_peak`、`evening_peak`。全量构建完成后，
-`tls_manifest.json` 应包含 20 个路口；`traffic_manifest.json` 应为 schema v3，且只包含
-3 个 `global_PERIOD` 场景。真实车流的数据口径、PCU 和路线质量说明继续见
+`tls_manifest.json` 应包含 20 个路口；`traffic_manifest.json` 应为 schema v3，且包含
+`global`、`east_dense` 和 `west_dense` 三类场景的各时段 `SCOPE_PERIOD` 场景。真实车流的数据口径、PCU 和路线质量说明继续见
 `docs/traffic_demand.md`。
 
 ## 二、模拟：仿真内核与后端接入

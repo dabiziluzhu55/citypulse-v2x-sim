@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from ..building.artifacts import DEFAULT_GENERATED_DIR, GeneratedArtifactLayout
+from ..building.build_traffic import (
+    DEFAULT_TRAFFIC_SCOPE_ID,
+    SUPPORTED_TRAFFIC_SCOPE_IDS,
+)
 from .events import DEFAULT_ACTIVITY_VEHICLE_TYPE_ID
 from ..building.vehicle_profiles import VehicleProfile, VehicleProfileError, parse_vehicle_profiles
 
@@ -30,6 +34,7 @@ class CompiledScenario:
     route_file: Path
     additional_file: Path
     tripinfo_file: Path
+    scenario_scope: str
     period: str
     official_start_seconds: int
     window_start_seconds: float
@@ -87,6 +92,7 @@ def _allocate_counts(candidates: list[_CandidateFlow]) -> None:
 def _validate_request(
     intersection_ids: Sequence[str],
     period: str,
+    scenario_scope: str,
     origins: Mapping[str, Sequence[str]],
     window_start_seconds: float,
     duration_seconds: float | None,
@@ -96,6 +102,8 @@ def _validate_request(
         raise ScenarioCompilationError("intersection_ids must be non-empty and unique.")
     if period not in {"morning_peak", "off_peak", "evening_peak"}:
         raise ScenarioCompilationError(f"Unsupported period: {period!r}.")
+    if scenario_scope not in SUPPORTED_TRAFFIC_SCOPE_IDS:
+        raise ScenarioCompilationError(f"Unsupported scenario_scope: {scenario_scope!r}.")
     if window_start_seconds < 0:
         raise ScenarioCompilationError("window_start_seconds cannot be negative.")
     if duration_seconds is not None and duration_seconds <= 0:
@@ -123,6 +131,7 @@ def compile_session_scenario(
     window_start_seconds: float = 0.0,
     duration_seconds: float | None = None,
     flow_multiplier: float = 1.0,
+    scenario_scope: str = DEFAULT_TRAFFIC_SCOPE_ID,
     step_length: float = 0.1,
     generated_dir: Path = DEFAULT_GENERATED_DIR,
     session_root: Path = DEFAULT_SESSION_ROOT,
@@ -131,6 +140,7 @@ def compile_session_scenario(
     _validate_request(
         intersection_ids,
         period,
+        scenario_scope,
         requested_origins,
         window_start_seconds,
         duration_seconds,
@@ -165,14 +175,15 @@ def compile_session_scenario(
             "Traffic manifest has invalid vehicle profiles; rebuild official TLS and "
             f"traffic artifacts: {exc}"
         ) from exc
-    scenario_id = f"global_{period}"
+    scenario_id = f"{scenario_scope}_{period}"
     if scenario_id not in scenarios:
         raise ScenarioCompilationError(f"Traffic scenario {scenario_id!r} is unavailable.")
     scenario = scenarios[scenario_id]
     unavailable = set(intersection_ids) - set(scenario.get("intersection_ids", ()))
     if unavailable:
         raise ScenarioCompilationError(
-            f"Global traffic scenario does not include intersections: {sorted(unavailable)}"
+            f"Traffic scenario {scenario_id!r} does not include intersections: "
+            f"{sorted(unavailable)}"
         )
     maximum_duration = float(scenario["demand_duration"]) - window_start_seconds
     if maximum_duration <= 0:
@@ -189,7 +200,7 @@ def compile_session_scenario(
     }
     if not vehicle_type_profiles:
         raise ScenarioCompilationError(
-            "Global traffic manifest has no vehicle type/profile mapping."
+            "Traffic manifest has no vehicle type/profile mapping."
         )
 
     actual_duration = maximum_duration if duration_seconds is None else duration_seconds
@@ -222,7 +233,7 @@ def compile_session_scenario(
         end = float(element.get("end", "0"))
         if end <= begin:
             raise ScenarioCompilationError(
-                f"Global flow {element.get('id')!r} has an invalid time range."
+                f"Scenario flow {element.get('id')!r} has an invalid time range."
             )
         overlap_begin = max(begin, window_start_seconds)
         overlap_end = min(end, window_end)
@@ -257,7 +268,7 @@ def compile_session_scenario(
             seen_logics.add(key)
 
     if not candidates:
-        raise ScenarioCompilationError("The selected time window contains no global traffic.")
+        raise ScenarioCompilationError("The selected time window contains no traffic.")
     if not seen_logics:
         raise ScenarioCompilationError("Selected scenarios contain no signal programs.")
     _allocate_counts(candidates)
@@ -332,6 +343,7 @@ def compile_session_scenario(
         "schema_version": 1,
         "session_id": session_id,
         "intersection_ids": list(intersection_ids),
+        "scenario_scope": scenario_scope,
         "period": period,
         "official_start_seconds": official_start,
         "window_start_seconds": window_start_seconds,
@@ -352,6 +364,7 @@ def compile_session_scenario(
         route_file=route_file,
         additional_file=additional_file,
         tripinfo_file=tripinfo_file,
+        scenario_scope=scenario_scope,
         period=period,
         official_start_seconds=int(official_start),
         window_start_seconds=float(window_start_seconds),
@@ -429,6 +442,7 @@ def load_compiled_scenario(
         route_file=route_file,
         additional_file=additional_file,
         tripinfo_file=tripinfo_file,
+        scenario_scope=str(manifest.get("scenario_scope", DEFAULT_TRAFFIC_SCOPE_ID)),
         period=str(manifest["period"]),
         official_start_seconds=int(manifest["official_start_seconds"]),
         window_start_seconds=float(manifest["window_start_seconds"]),

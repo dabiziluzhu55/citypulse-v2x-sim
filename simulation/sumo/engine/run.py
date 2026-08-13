@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Dict, Sequence
 
 from ..building.tls import SignalConfigurationError, SignalProgram
+from ..building.build_traffic import (
+    DEFAULT_TRAFFIC_SCOPE_ID,
+    SUPPORTED_TRAFFIC_SCOPE_IDS,
+)
 from .signal import SafePhaseController, SignalStage, TransitionTiming
 from ..algorithm.policy import (
     AIFrameObservation,
@@ -786,6 +790,7 @@ def run(args: argparse.Namespace) -> None:
     config = SimulationConfig(
         intersection_ids=tuple(args.intersection),
         period=args.period,
+        scenario_scope=args.scenario_scope,
         origins=_parse_origins(args.origin),
         window_start_seconds=args.window_start,
         duration_seconds=duration,
@@ -837,6 +842,11 @@ def parse_args() -> argparse.Namespace:
         "--period",
         choices=("morning_peak", "off_peak", "evening_peak"),
         default="morning_peak",
+    )
+    parser.add_argument(
+        "--scenario-scope",
+        choices=SUPPORTED_TRAFFIC_SCOPE_IDS,
+        default=DEFAULT_TRAFFIC_SCOPE_ID,
     )
     parser.add_argument(
         "--origin",

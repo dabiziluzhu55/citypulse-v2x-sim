@@ -453,7 +453,17 @@ generated/
   reports/traffic_od_morning_peak.json
   reports/traffic_od_morning_peak.csv
   reports/traffic_morning_peak_passenger_mismatch.xml
+  reports/traffic_quality_east_dense_morning_peak.json
+  reports/traffic_quality_west_dense_morning_peak.json
   traffic/global/morning_peak/
+    routes.rou.xml
+    signals.add.xml
+    simulation.sumocfg
+  traffic/east_dense/morning_peak/
+    routes.rou.xml
+    signals.add.xml
+    simulation.sumocfg
+  traffic/west_dense/morning_peak/
     routes.rou.xml
     signals.add.xml
     simulation.sumocfg
@@ -575,9 +585,11 @@ OD 统计直接基于最终选中的 routeSampler flow。构建器沿完整 edge
 
 ```bash
 sumo-gui -c data/maps/sumo/generated/traffic/global/morning_peak/simulation.sumocfg
+sumo-gui -c data/maps/sumo/generated/traffic/east_dense/morning_peak/simulation.sumocfg
+sumo-gui -c data/maps/sumo/generated/traffic/west_dense/morning_peak/simulation.sumocfg
 ```
 
-构建器会无界面完整运行 3 个 `simulation.sumocfg`。质量门槛为：非零单元格误差不超过
+构建器会无界面完整运行 `global`、`east_dense` 和 `west_dense` 三类场景的 9 个 `simulation.sumocfg`。质量门槛为：非零单元格误差不超过
 `max(3 PCU, 5%)`、零值不溢出、每路口每 15 分钟总量误差不超过 3%，且至少 90%
 的非零计数点 `GEH < 5`。详细结果及 routeSampler 原始 mismatch 位于 `reports/`。
 

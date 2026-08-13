@@ -58,6 +58,20 @@ ROUTE_SAMPLER_REQUIRED_OPTIONS = (
     "--seed",
     "--attributes",
 )
+DEFAULT_TRAFFIC_SCOPE_ID = "global"
+DENSE_TRAFFIC_SCOPES = {
+    "east_dense": ("demo_3", "demo_5", "demo_6", "demo_9"),
+    "west_dense": ("demo_14", "demo_15", "demo_19"),
+}
+TRAFFIC_SCOPE_LABELS = {
+    "global": "Global official demand",
+    "east_dense": "East dense area",
+    "west_dense": "West dense area",
+}
+SUPPORTED_TRAFFIC_SCOPE_IDS = (
+    DEFAULT_TRAFFIC_SCOPE_ID,
+    *DENSE_TRAFFIC_SCOPES,
+)
 
 
 @dataclass(frozen=True)
@@ -2222,6 +2236,31 @@ def _origin_metadata(intersection_manifest, demand) -> Mapping[str, object]:
     }
 
 
+def _traffic_report_path(
+    layout: GeneratedArtifactLayout,
+    scope_id: str,
+    stem: str,
+    period_id: str,
+    suffix: str,
+) -> Path:
+    if scope_id == DEFAULT_TRAFFIC_SCOPE_ID:
+        return layout.reports_dir / f"{stem}_{period_id}.{suffix}"
+    return layout.reports_dir / f"{stem}_{scope_id}_{period_id}.{suffix}"
+
+
+def _traffic_mismatch_path(
+    layout: GeneratedArtifactLayout,
+    scope_id: str,
+    period_id: str,
+    profile_id: str,
+) -> Path:
+    if scope_id == DEFAULT_TRAFFIC_SCOPE_ID:
+        return layout.reports_dir / f"traffic_{period_id}_{profile_id}_mismatch.xml"
+    return layout.reports_dir / (
+        f"traffic_{scope_id}_{period_id}_{profile_id}_mismatch.xml"
+    )
+
+
 def build_traffic_scenarios(
     tls_manifest: Mapping[str, object],
     demand_path: Path = DEFAULT_DEMANDS,
@@ -2233,7 +2272,13 @@ def build_traffic_scenarios(
     command_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     tool_paths: Mapping[str, str] | None = None,
     validate_sumo: bool = True,
+    scope_id: str = DEFAULT_TRAFFIC_SCOPE_ID,
+    reset_output: bool = True,
+    include_dense_scopes: bool = True,
+    write_manifest: bool = True,
 ) -> Mapping[str, object]:
+    if scope_id not in SUPPORTED_TRAFFIC_SCOPE_IDS:
+        raise TrafficDemandError(f"Unsupported traffic scope: {scope_id!r}.")
     configuration = load_traffic_demands(demand_path)
     all_profiles = load_vehicle_profiles(vehicle_profile_path)
     policy = load_traffic_generation_policy(traffic_policy_path)
@@ -2314,15 +2359,18 @@ def build_traffic_scenarios(
     tools = _toolchain(tool_paths)
     layout.create_base_directories()
     traffic_root = output_dir / "traffic"
-    if traffic_root.exists():
+    if reset_output and traffic_root.exists():
         shutil.rmtree(traffic_root)
-    traffic_root.mkdir(parents=True)
-    for stale in layout.reports_dir.glob("traffic_*"):
-        if stale.is_file():
-            stale.unlink()
-        elif stale.is_dir():
-            shutil.rmtree(stale)
-    work_dir = traffic_root / ".work"
+    traffic_root.mkdir(parents=True, exist_ok=True)
+    if reset_output:
+        for stale in layout.reports_dir.glob("traffic_*"):
+            if stale.is_file():
+                stale.unlink()
+            elif stale.is_dir():
+                shutil.rmtree(stale)
+    work_dir = traffic_root / f".work_{scope_id}"
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
     work_dir.mkdir()
 
     candidate_pools = _build_candidates(
@@ -2338,11 +2386,20 @@ def build_traffic_scenarios(
 
     result = {
         "schema_version": 3,
-        "scope": "global",
+        "scope": DEFAULT_TRAFFIC_SCOPE_ID,
         "source": str(demand_path.resolve()),
         "unit": configuration.unit,
         "interval_seconds": configuration.interval_seconds,
         "intersection_ids": list(requested),
+        "available_scopes": {
+            scope_id: {
+                "scope_id": scope_id,
+                "label": TRAFFIC_SCOPE_LABELS.get(scope_id, scope_id),
+                "intersection_ids": list(requested),
+                "periods": list(compiled.periods),
+            }
+        },
+        "skipped_scopes": {},
         "vehicle_mix": {
             "basis": configuration.vehicle_mix.basis,
             "shares": dict(configuration.vehicle_mix.shares),
@@ -2409,7 +2466,7 @@ def build_traffic_scenarios(
             counts_paths = {}
             for profile_id in profiles:
                 counts_path = work_dir / (
-                    f"counts_{period_id}_round{allocation_round}_{profile_id}.xml"
+                    f"counts_{scope_id}_{period_id}_round{allocation_round}_{profile_id}.xml"
                 )
                 _write_turn_counts(
                     counts_path,
@@ -2425,11 +2482,11 @@ def build_traffic_scenarios(
                 mismatch_paths = {}
                 for profile_id in profiles:
                     sample_path = work_dir / (
-                        f"sample_{period_id}_round{allocation_round}_"
+                        f"sample_{scope_id}_{period_id}_round{allocation_round}_"
                         f"{profile_id}_{seed}.rou.xml"
                     )
                     mismatch_path = work_dir / (
-                        f"mismatch_{period_id}_round{allocation_round}_"
+                        f"mismatch_{scope_id}_{period_id}_round{allocation_round}_"
                         f"{profile_id}_{seed}.xml"
                     )
                     sampled_flows.extend(
@@ -2524,6 +2581,10 @@ def build_traffic_scenarios(
 
         if not passing_attempts:
             failure_path = layout.reports_dir / f"traffic_quality_{period_id}_failed.json"
+            if scope_id != DEFAULT_TRAFFIC_SCOPE_ID:
+                failure_path = layout.reports_dir / (
+                    f"traffic_quality_{scope_id}_{period_id}_failed.json"
+                )
             failure_path.write_text(
                 json.dumps(
                     {
@@ -2537,7 +2598,7 @@ def build_traffic_scenarios(
                 encoding="utf-8",
             )
             raise TrafficDemandError(
-                f"Global traffic quality thresholds failed for {period_id}; "
+                f"{scope_id} traffic quality thresholds failed for {period_id}; "
                 f"see {failure_path}."
             )
         selected = min(passing_attempts, key=_attempt_policy_score)
@@ -2556,7 +2617,7 @@ def build_traffic_scenarios(
                 f"attempt. Violations: {violation_codes}."
             )
 
-        scenario_dir = layout.global_traffic_scenario_dir(period_id)
+        scenario_dir = layout.traffic_scenario_scope_dir(scope_id, period_id)
         scenario_dir.mkdir(parents=True, exist_ok=True)
         route_path = scenario_dir / "routes.rou.xml"
         additional_path = scenario_dir / "signals.add.xml"
@@ -2576,13 +2637,17 @@ def build_traffic_scenarios(
         )
         mismatch_files = {}
         for profile_id, source in selected["mismatch_paths"].items():
-            target = layout.reports_dir / f"traffic_{period_id}_{profile_id}_mismatch.xml"
+            target = _traffic_mismatch_path(layout, scope_id, period_id, profile_id)
             shutil.copy2(source, target)
             mismatch_files[profile_id] = layout.relative(target)
         selected_report = dict(selected["report"])
         selected_report["route_sampler_mismatch_files"] = mismatch_files
-        report_json = layout.reports_dir / f"traffic_quality_{period_id}.json"
-        report_csv = layout.reports_dir / f"traffic_quality_{period_id}.csv"
+        report_json = _traffic_report_path(
+            layout, scope_id, "traffic_quality", period_id, "json"
+        )
+        report_csv = _traffic_report_path(
+            layout, scope_id, "traffic_quality", period_id, "csv"
+        )
         _write_quality_report(report_json, report_csv, selected_report)
         od_report = _od_report(
             period_id,
@@ -2591,13 +2656,18 @@ def build_traffic_scenarios(
             compiled.locations,
             configuration.od_zones,
         )
-        od_report_json = layout.reports_dir / f"traffic_od_{period_id}.json"
-        od_matrix_csv = layout.reports_dir / f"traffic_od_{period_id}.csv"
+        od_report_json = _traffic_report_path(
+            layout, scope_id, "traffic_od", period_id, "json"
+        )
+        od_matrix_csv = _traffic_report_path(
+            layout, scope_id, "traffic_od", period_id, "csv"
+        )
         _write_od_report(od_report_json, od_matrix_csv, od_report)
 
-        scenario_id = f"global_{period_id}"
+        scenario_id = f"{scope_id}_{period_id}"
         result["scenarios"][scenario_id] = {
             "scenario_id": scenario_id,
+            "scope_id": scope_id,
             "period_id": period_id,
             "label": period.label,
             "intersection_ids": list(requested),
@@ -2671,9 +2741,51 @@ def build_traffic_scenarios(
             )
 
     shutil.rmtree(work_dir)
-    layout.traffic_manifest.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    if include_dense_scopes and scope_id == DEFAULT_TRAFFIC_SCOPE_ID:
+        requested_set = set(requested)
+        for dense_scope_id, dense_intersections in DENSE_TRAFFIC_SCOPES.items():
+            missing_scope_intersections = set(dense_intersections) - requested_set
+            if missing_scope_intersections:
+                result["skipped_scopes"][dense_scope_id] = {
+                    "scope_id": dense_scope_id,
+                    "label": TRAFFIC_SCOPE_LABELS.get(
+                        dense_scope_id, dense_scope_id
+                    ),
+                    "intersection_ids": list(dense_intersections),
+                    "reason": "missing_intersections",
+                    "missing_intersection_ids": sorted(
+                        missing_scope_intersections
+                    ),
+                }
+                print(
+                    f"Skipping traffic scope {dense_scope_id}: selected TLS "
+                    "intersections do not include "
+                    f"{sorted(missing_scope_intersections)}."
+                )
+                continue
+            dense_result = build_traffic_scenarios(
+                tls_manifest,
+                demand_path=demand_path,
+                vehicle_profile_path=vehicle_profile_path,
+                output_dir=output_dir,
+                intersection_ids=dense_intersections,
+                traffic_policy_path=traffic_policy_path,
+                command_runner=command_runner,
+                tool_paths=tool_paths,
+                validate_sumo=validate_sumo,
+                scope_id=dense_scope_id,
+                reset_output=False,
+                include_dense_scopes=False,
+                write_manifest=False,
+            )
+            result["available_scopes"][dense_scope_id] = dense_result[
+                "available_scopes"
+            ][dense_scope_id]
+            result["scenarios"].update(dense_result["scenarios"])
+    if write_manifest:
+        layout.traffic_manifest.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
     return result
 
 
