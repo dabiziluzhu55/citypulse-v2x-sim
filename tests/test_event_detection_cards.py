@@ -83,6 +83,21 @@ class EventDetectionCardTests(unittest.TestCase):
         self.assertEqual(cards[0].edge_id, "edge_up")
         self.assertEqual(cards[0].lane_ids, ("lane_0", "lane_1"))
 
+    def test_localized_blockage_rows_on_same_edge_are_merged(self):
+        rows = [
+            self.row(10, "lane_blocked", lane_id="lane_0", edge_id="edge_up"),
+            self.row(10, "lane_blocked", lane_id="lane_1", edge_id="edge_up"),
+            self.row(15, "lane_blocked", lane_id="lane_0", edge_id="edge_up"),
+            self.row(15, "lane_blocked", lane_id="lane_1", edge_id="edge_up"),
+        ]
+
+        cards = build_event_cards(rows)
+
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].traffic_state, "localized_blockage")
+        self.assertEqual(cards[0].edge_id, "edge_up")
+        self.assertEqual(cards[0].lane_ids, ("lane_0", "lane_1"))
+
     def test_visual_evidence_updates_card_cause(self):
         rows = [
             self.row(10, "lane_blocked", confidence="0.8", reason="closure_cusum_threshold"),
