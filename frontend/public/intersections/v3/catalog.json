@@ -483,5 +483,11 @@
       "radiusMeters": 520,
       "assetUrl": "/intersections/v3/demo_20/manifest.json"
     }
-  ]
+  ],
+  "vehicleGeometryGeneration": {
+    "schemaVersion": 1,
+    "networkSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
+    "intersectionCount": 20,
+    "connectionCount": 421
+  }
 }

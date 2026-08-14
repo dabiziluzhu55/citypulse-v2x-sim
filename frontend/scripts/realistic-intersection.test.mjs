@@ -17,7 +17,9 @@ import {
   STOP_LINE_CENTER_OFFSET_METERS,
 } from '../src/mapv/realistic/intersectionApproachGeometry.ts'
 import { parseIntersectionEnvironmentManifest } from '../src/mapv/realistic/intersectionEnvironmentManifest.ts'
+import { vehicleGeometryGenerationIsValid } from '../src/mapv/realistic/intersectionManifest.ts'
 import { sumoHeadingTransformIsValid } from '../src/mapv/sumoHeadingTransform.ts'
+import { vehicleRouteTurnIndexNetworkSha256 } from '../src/mapv/vehicleRouteTurnIndex.ts'
 
 function pointToSegmentDistance(point, start, end) {
   const dx = end[0] - start[0]
@@ -43,6 +45,12 @@ test('catalog contains 20 projection-correct realistic intersections', async () 
   const sourceSha256 = createHash('sha256').update(sumoSource).digest('hex')
   assert.equal(catalog.schemaVersion, 3)
   assert.equal(catalog.sourceSha256, sourceSha256)
+  assert.deepEqual(catalog.vehicleGeometryGeneration, {
+    schemaVersion: 1,
+    networkSourceSha256: sourceSha256,
+    intersectionCount: 20,
+    connectionCount: 421,
+  })
   assert.equal(catalog.intersections.length, 20)
   assert.deepEqual(
     catalog.intersections.map((item) => item.intersectionId),
@@ -57,6 +65,25 @@ test('catalog contains 20 projection-correct realistic intersections', async () 
     assert.equal(sumoHeadingTransformIsValid(entry.sumoHeadingTransform), true)
     assert.deepEqual(manifest.sumoHeadingTransform, entry.sumoHeadingTransform)
     assert.equal(manifest.sumoHeadingTransform.sourceSha256, sourceSha256)
+    assert.equal(manifest.visualRoadSourceSha256, manifest.sourceSha256)
+    assert.equal(manifest.vehicleConnectionSourceSha256, sourceSha256)
+    assert.deepEqual(manifest.vehicleGeometryGeneration, {
+      schemaVersion: 1,
+      networkSourceSha256: sourceSha256,
+      headingSourceSha256: sourceSha256,
+      connectionSourceSha256: sourceSha256,
+      connectionCount: manifest.vehicleConnections.length,
+    })
+    assert.equal(
+      vehicleGeometryGenerationIsValid(manifest, vehicleRouteTurnIndexNetworkSha256()),
+      true,
+      `${entry.intersectionId} vehicle geometry generation must match the route index`,
+    )
+    assert.equal(
+      vehicleGeometryGenerationIsValid(manifest, '0'.repeat(64)),
+      false,
+      `${entry.intersectionId} must reject a stale route index generation`,
+    )
     assert.equal(manifest.intersectionId, entry.intersectionId)
     assert.ok(manifest.horizontalScale > 1.28 && manifest.horizontalScale < 1.30)
     assert.ok(manifest.connections.length > 0)

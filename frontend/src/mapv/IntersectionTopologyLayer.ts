@@ -36,6 +36,7 @@ import {
   CONGESTION_FLOW_COLORS,
   normalizeCongestionLevel,
 } from '../utils/topologyCongestion'
+import { CONGESTION_FLOW_VISUALS } from './realistic/laneCongestionFlow'
 import { topologyDistanceMeters } from './intersectionTopology'
 
 const FLOW_LEVELS: CongestionLevel[] = ['free', 'slow', 'congested', 'severe']
@@ -49,6 +50,8 @@ interface TopologyRouteEntry {
   id: string
   baseFeature: Record<string, unknown>
   flowFeature: Record<string, unknown>
+  rawCoordinates: Array<[number, number]>
+  flowCoordinates: number[][]
   samples: Array<[number, number]>
 }
 
@@ -151,6 +154,8 @@ export class IntersectionTopologyLayer {
   private activeLabelKey = ''
   private destroyed = false
   private visibleRouteIds: string[] = []
+  private localFlowIntersectionIds = new Set<string>()
+  private flowAnimationPaused = false
 
   constructor(
     private readonly engine: mapvthree.Engine,
@@ -169,14 +174,15 @@ export class IntersectionTopologyLayer {
     configureOverlayMaterial(this.baseLine, 0.24)
     this.baseLine.renderOrder = 34
     this.flowLines = Object.fromEntries(FLOW_LEVELS.map((level, index) => {
+      const visual = CONGESTION_FLOW_VISUALS[level]
       const line = engine.add(new mapvthree.Polyline({
         flat: true,
         isCurve: false,
         color: new THREE.Color(CONGESTION_FLOW_COLORS[level]),
-        lineWidth: 2,
+        lineWidth: visual.lineWidth,
         keepSize: true,
         transparent: true,
-        opacity: 0.9,
+        opacity: visual.opacity,
         enableAnimation: true,
         enableAnimationChaos: false,
         animationInterval: 2,
@@ -186,7 +192,7 @@ export class IntersectionTopologyLayer {
         animationIdle: 1_600,
         height: 0,
       }))
-      configureOverlayMaterial(line, 0.9)
+      configureOverlayMaterial(line, visual.opacity)
       line.renderOrder = 35 + index
       return [level, line]
     })) as Record<CongestionLevel, mapvthree.Polyline>
@@ -290,6 +296,23 @@ export class IntersectionTopologyLayer {
     this.engine.requestRender()
   }
 
+  setLocalFlowIntersections(intersectionIds: readonly string[]): void {
+    const next = new Set(intersectionIds)
+    const key = [...next].sort().join('|')
+    const currentKey = [...this.localFlowIntersectionIds].sort().join('|')
+    if (key === currentKey) return
+    this.localFlowIntersectionIds = next
+    const visible = this.routeEntries.filter((entry) => this.visibleRouteIds.includes(entry.id))
+    this.applyFlowLineData(visible.length ? visible : this.routeEntries)
+    this.engine.requestRender()
+  }
+
+  setAnimationPaused(paused: boolean): void {
+    if (paused === this.flowAnimationPaused) return
+    this.flowAnimationPaused = paused
+    for (const line of Object.values(this.flowLines)) line.enableAnimation = !paused
+  }
+
   refreshViewport(
     center: readonly number[] = this.engine.map.getCenter(),
     rangeMeters = this.engine.map.getRange(),
@@ -357,6 +380,8 @@ export class IntersectionTopologyLayer {
     this.visibleRouteCount = 0
     this.activeIntersectionId = null
     this.activeLabelKey = ''
+    this.localFlowIntersectionIds.clear()
+    this.flowAnimationPaused = false
   }
 
   private applyFlowLineData(entries: TopologyRouteEntry[]): void {
@@ -368,7 +393,8 @@ export class IntersectionTopologyLayer {
     }
     for (const entry of entries) {
       const level = normalizeCongestionLevel(this.routeCongestion[entry.id] ?? 'free')
-      buckets[level].push(entry.flowFeature)
+      if (level === 'free') continue
+      buckets[level].push(...this.clippedFlowFeatures(entry))
     }
     for (const level of FLOW_LEVELS) {
       const features = buckets[level]
@@ -376,6 +402,34 @@ export class IntersectionTopologyLayer {
         ? mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features })
         : null
     }
+  }
+
+  private clippedFlowFeatures(entry: TopologyRouteEntry): Record<string, unknown>[] {
+    const clippingNodes = this.nodes.filter((node) => this.localFlowIntersectionIds.has(node.intersectionId))
+    if (!clippingNodes.length) return [entry.flowFeature]
+    const segments: number[][][] = []
+    let current: number[][] = []
+    entry.rawCoordinates.forEach((coordinate, index) => {
+      const clipped = clippingNodes.some((node) => topologyDistanceMeters(
+        { longitude: coordinate[0], latitude: coordinate[1] },
+        node,
+      ) <= node.radiusMeters * 1.05)
+      if (clipped) {
+        if (current.length >= 2) segments.push(current)
+        current = []
+        return
+      }
+      current.push(entry.flowCoordinates[index])
+    })
+    if (current.length >= 2) segments.push(current)
+    return segments.map((coordinates, index) => ({
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates },
+      properties: {
+        ...entry.flowFeature.properties as Record<string, unknown>,
+        clipped_segment: index,
+      },
+    }))
   }
 
   private async loadMarkerModels(): Promise<void> {
@@ -466,11 +520,14 @@ export class IntersectionTopologyLayer {
       latitude,
       topologyFlowHeight([longitude, latitude], this.nodes, 'base'),
     ]))
-    const flowProjected = route.coordinates.map(([longitude, latitude]) => this.projector([
-      longitude,
-      latitude,
-      topologyFlowHeight([longitude, latitude], this.nodes, 'flow'),
-    ]))
+    const flowProjected = route.coordinates.map(([longitude, latitude]) => {
+      const projected = this.projector([
+        longitude,
+        latitude,
+        topologyFlowHeight([longitude, latitude], this.nodes, 'flow'),
+      ])
+      return [projected[0], projected[1], projected[2] ?? 0]
+    })
     const properties = {
       topology_id: route.routeId,
       distance_m: Math.round(directDistanceMeters),
@@ -494,6 +551,8 @@ export class IntersectionTopologyLayer {
         },
         properties,
       },
+      rawCoordinates: route.coordinates.map((coordinate) => [...coordinate]),
+      flowCoordinates: flowProjected,
       samples: baseProjected
         .filter((_, index) => index % 8 === 0 || index === baseProjected.length - 1)
         .map((coordinate) => [coordinate[0], coordinate[1]]),

@@ -41,6 +41,12 @@ export interface VehicleRuntimeDiagnosticUpdate {
   routeHintHitCount: number
   routeHintMismatchCount: number
   ambiguousRouteCandidateRejectionCount: number
+  ambiguousIncomingPendingCount: number
+  staleConnectionReleaseCount: number
+  connectionMismatchCount: number
+  laneChangeCorridorViolationCount: number
+  intermediateOffRoadFrameCount: number
+  detailedAreaRawFallbackCount: number
 }
 
 interface RuntimeDiagnosticState {
@@ -94,6 +100,12 @@ interface RuntimeDiagnosticState {
   routeHintHits: number
   routeHintMismatches: number
   ambiguousRouteCandidateRejections: number
+  ambiguousIncomingPending: number
+  staleConnectionReleases: number
+  connectionMismatches: number
+  laneChangeCorridorViolations: number
+  intermediateOffRoadFrames: number
+  detailedAreaRawFallbacks: number
   capturedAt: string
 }
 
@@ -148,6 +160,12 @@ const state: RuntimeDiagnosticState = {
   routeHintHits: 0,
   routeHintMismatches: 0,
   ambiguousRouteCandidateRejections: 0,
+  ambiguousIncomingPending: 0,
+  staleConnectionReleases: 0,
+  connectionMismatches: 0,
+  laneChangeCorridorViolations: 0,
+  intermediateOffRoadFrames: 0,
+  detailedAreaRawFallbacks: 0,
   capturedAt: '',
 }
 
@@ -219,6 +237,12 @@ export function resetSimulationRuntimeDiagnostics(sessionId = ''): void {
   state.routeHintHits = 0
   state.routeHintMismatches = 0
   state.ambiguousRouteCandidateRejections = 0
+  state.ambiguousIncomingPending = 0
+  state.staleConnectionReleases = 0
+  state.connectionMismatches = 0
+  state.laneChangeCorridorViolations = 0
+  state.intermediateOffRoadFrames = 0
+  state.detailedAreaRawFallbacks = 0
   snapshotIntervalsMs = []
   lastSnapshotArrivalMs = null
   publish()
@@ -306,6 +330,12 @@ export function recordVehicleRuntimeDiagnostics(update: VehicleRuntimeDiagnostic
   state.routeHintHits = update.routeHintHitCount
   state.routeHintMismatches = update.routeHintMismatchCount
   state.ambiguousRouteCandidateRejections = update.ambiguousRouteCandidateRejectionCount
+  state.ambiguousIncomingPending = update.ambiguousIncomingPendingCount
+  state.staleConnectionReleases = update.staleConnectionReleaseCount
+  state.connectionMismatches = update.connectionMismatchCount
+  state.laneChangeCorridorViolations = update.laneChangeCorridorViolationCount
+  state.intermediateOffRoadFrames = update.intermediateOffRoadFrameCount
+  state.detailedAreaRawFallbacks = update.detailedAreaRawFallbackCount
   publish()
 }
 

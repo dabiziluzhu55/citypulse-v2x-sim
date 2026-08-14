@@ -15,7 +15,7 @@ export interface VehiclePoseState {
   trackKey?: string
   motionPathKey?: string
   connectionKey?: string
-  routeHintSource?: 'fixed_route_index'
+  routeHintSource?: 'fixed_route_index' | 'live_topology'
   segmentKey?: string
   occupancyKey?: string
   trackProgress?: number

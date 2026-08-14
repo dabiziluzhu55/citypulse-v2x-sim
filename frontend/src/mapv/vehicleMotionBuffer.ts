@@ -1,4 +1,4 @@
-import type { VehicleTwinSample } from './vehicleTwinSample'
+import type { DynamicVehicleRouteSource, VehicleTwinSample } from './vehicleTwinSample'
 import {
   MAX_MOTION_PATH_HEADING_DELTA,
   type MotionPathSampler,
@@ -17,12 +17,27 @@ const MAX_PLAYBACK_RATE_RATIO = 1.05
 const UNDERRUN_SLOWDOWN_WINDOW_SECONDS = 0.75
 const MAX_INTERPOLATED_SPEED_RATIO = 1.05
 const MAX_SYNTHETIC_ACCELERATION_MPS2 = 3
-export interface VehicleMotionSourceFrame {
+const COMPILED_SEGMENT_VALIDATION_FPS = 45
+
+export interface AuthoritativeVehicleFrame {
   sceneGeneration: number
   sequence: number
   elapsedSeconds: number
   arrivalTimeMs: number
   samples: VehicleTwinSample[]
+}
+
+export type VehicleMotionSourceFrame = AuthoritativeVehicleFrame
+
+export interface CompiledMotionSegment {
+  key: string
+  vehicleId: string
+  startElapsedSeconds: number
+  endElapsedSeconds: number
+  valid: boolean
+  validationSampleCount: number
+  routeSource: DynamicVehicleRouteSource
+  rejectionReason?: string
 }
 
 export interface VehicleMotionBufferStats {
@@ -48,9 +63,16 @@ export interface VehicleMotionBufferStats {
   batchArrivalCount: number
   vehicleScaleViolationCount: number
   normalTransitionEpochViolationCount: number
+  laneChangeCorridorViolationCount: number
+  intermediateOffRoadFrameCount: number
+  compiledSegmentCount: number
+  rejectedCompiledSegmentCount: number
+  endpointValidationFailureCount: number
+  compiledReadyElapsedSeconds: number | null
+  bufferedLookaheadSegmentCount: number
 }
 
-interface TimedVehicleSample {
+export interface TimedVehicleSample {
   frame: VehicleMotionSourceFrame
   sample: VehicleTwinSample
 }
@@ -73,6 +95,24 @@ function shortestAngleDelta(from: number, to: number): number {
 function samplesCanShareMotionCurve(left: VehicleTwinSample, right: VehicleTwinSample): boolean {
   if (!left.motionPathKey || !right.motionPathKey) return true
   if (left.motionPathKey === right.motionPathKey) return true
+  const corridorKeys = right.corridorMotionPathKeys ?? []
+  if (
+    right.roadTransitionKind === 'lane_change'
+    && right.laneChangeCorridorKey
+    && corridorKeys.includes(left.motionPathKey)
+    && corridorKeys.includes(right.motionPathKey)
+  ) return true
+  if (
+    right.motionPathBridgeKey
+    && corridorKeys.includes(left.motionPathKey)
+    && corridorKeys.includes(right.motionPathKey)
+  ) return true
+  if (
+    right.roadTransitionKind === 'raw_continuous'
+    && right.rawTransitionValidated === true
+    && left.detailedCorridorValidation !== true
+    && right.detailedCorridorValidation !== true
+  ) return true
   // A label alone is not proof that two paths share physical geometry. The
   // locked SUMO connection is the explicit bridge across lane/path keys.
   return Boolean(
@@ -81,85 +121,6 @@ function samplesCanShareMotionCurve(left: VehicleTwinSample, right: VehicleTwinS
     && left.connectionKey === right.connectionKey
     && right.roadTransitionKind === 'topology_successor',
   )
-}
-
-interface HermitePlanarPoint {
-  x: number
-  y: number
-}
-
-function hermitePlanarPoint(
-  east: number,
-  north: number,
-  parameter: number,
-  leftHeading: number,
-  rightHeading: number,
-): HermitePlanarPoint {
-  const chord = Math.hypot(east, north)
-  if (chord < 0.05) return { x: east * parameter, y: north * parameter }
-  const t = parameter
-  const t2 = t * t
-  const t3 = t2 * t
-  const h10 = t3 - 2 * t2 + t
-  const h01 = -2 * t3 + 3 * t2
-  const h11 = t3 - t2
-  const tangentScale = Math.min(chord * 1.15, chord + 3)
-  return {
-    x: h10 * Math.cos(leftHeading) * tangentScale
-      + h01 * east
-      + h11 * Math.cos(rightHeading) * tangentScale,
-    y: h10 * Math.sin(leftHeading) * tangentScale
-      + h01 * north
-      + h11 * Math.sin(rightHeading) * tangentScale,
-  }
-}
-
-function arcLengthParameter(
-  east: number,
-  north: number,
-  amount: number,
-  leftHeading: number,
-  rightHeading: number,
-): number {
-  const steps = 16
-  const cumulative = [0]
-  let previous = hermitePlanarPoint(east, north, 0, leftHeading, rightHeading)
-  for (let index = 1; index <= steps; index += 1) {
-    const point = hermitePlanarPoint(east, north, index / steps, leftHeading, rightHeading)
-    cumulative.push(cumulative.at(-1)! + Math.hypot(point.x - previous.x, point.y - previous.y))
-    previous = point
-  }
-  const total = cumulative.at(-1) ?? 0
-  if (total <= 1e-6) return amount
-  const target = clamp(amount, 0, 1) * total
-  const foundIndex = cumulative.findIndex((distance) => distance >= target)
-  const rightIndex = foundIndex < 1 ? 1 : foundIndex
-  const leftDistance = cumulative[rightIndex - 1]
-  const rightDistance = cumulative[rightIndex]
-  const segmentRatio = rightDistance > leftDistance
-    ? (target - leftDistance) / (rightDistance - leftDistance)
-    : 0
-  return ((rightIndex - 1) + segmentRatio) / steps
-}
-
-function hermiteGeographicPoint(
-  left: VehicleTwinSample,
-  right: VehicleTwinSample,
-  amount: number,
-  leftHeading: number,
-  rightHeading: number,
-): [number, number, number] {
-  const latitude = (left.point[1] + right.point[1]) / 2 * Math.PI / 180
-  const metersPerLongitude = Math.max(1, Math.cos(latitude) * 110_900)
-  const east = (right.point[0] - left.point[0]) * metersPerLongitude
-  const north = (right.point[1] - left.point[1]) * 110_900
-  const parameter = arcLengthParameter(east, north, amount, leftHeading, rightHeading)
-  const planar = hermitePlanarPoint(east, north, parameter, leftHeading, rightHeading)
-  return [
-    left.point[0] + planar.x / metersPerLongitude,
-    left.point[1] + planar.y / 110_900,
-    left.point[2] + (right.point[2] - left.point[2]) * amount,
-  ]
 }
 
 function applyLateralOffset(
@@ -175,6 +136,100 @@ function applyLateralOffset(
     point[1] + Math.cos(heading) * lateralOffsetMeters / 110_900,
     point[2],
   ]
+}
+
+function smoothLaneChangeProgress(amount: number): number {
+  const value = clamp(amount, 0, 1)
+  return value * value * (3 - 2 * value)
+}
+
+function signedLateralOffsetMeters(
+  origin: readonly [number, number],
+  point: readonly [number, number],
+  heading: number,
+): number {
+  const latitudeRadians = origin[1] * Math.PI / 180
+  const eastMeters = (point[0] - origin[0]) * Math.max(1, Math.cos(latitudeRadians) * 110_900)
+  const northMeters = (point[1] - origin[1]) * 110_900
+  return eastMeters * -Math.sin(heading) + northMeters * Math.cos(heading)
+}
+
+interface LaneChangeGuideSample {
+  point: [number, number, number]
+  heading: number
+  pathArcDistanceMeters: number
+  lateralOffsetMeters: number
+}
+
+function laneChangeGuidePoint(
+  left: VehicleTwinSample,
+  right: VehicleTwinSample,
+  amount: number,
+  sampler: MotionPathSampler | null,
+): LaneChangeGuideSample | null {
+  if (!sampler || !left.motionPathKey || !right.motionPathKey) return null
+  const targetStart = sampler.project(
+    right.motionPathKey,
+    [left.point[0], left.point[1]],
+  )?.pathArcDistanceMeters
+  const targetEnd = Number.isFinite(right.pathArcDistanceMeters)
+    ? Number(right.pathArcDistanceMeters)
+    : sampler.project(right.motionPathKey, [right.point[0], right.point[1]])?.pathArcDistanceMeters
+  if (
+    targetStart == null || targetEnd == null || targetEnd + 0.05 < targetStart
+  ) return null
+  const sourceProgress = clamp(amount, 0, 1)
+  const distance = interpolateMonotonePathDistance(
+    targetStart,
+    Math.max(targetStart, targetEnd),
+    Number(left.sourceSpeedMetersPerSecond) || 0,
+    Number(right.sourceSpeedMetersPerSecond) || 0,
+    Math.max(0.001, (right.time - left.time) / 1_000),
+    sourceProgress,
+    Math.max(
+      Number(left.sourceAllowedSpeedMetersPerSecond) || 0,
+      Number(right.sourceAllowedSpeedMetersPerSecond) || 0,
+    ),
+    Math.max(
+      Number(left.maximumAccelerationMetersPerSecondSquared) || 0,
+      Number(right.maximumAccelerationMetersPerSecondSquared) || 0,
+    ),
+  )
+  const targetSample = sampler.sample(
+    right.motionPathKey,
+    distance.distanceMeters,
+  )
+  const startSample = sampler.sample(right.motionPathKey, targetStart)
+  const endSample = sampler.sample(right.motionPathKey, targetEnd)
+  if (!targetSample || !startSample || !endSample) return null
+  const lateralProgress = smoothLaneChangeProgress(sourceProgress)
+  const startLateralOffset = signedLateralOffsetMeters(
+    [startSample.longitude, startSample.latitude],
+    [left.point[0], left.point[1]],
+    startSample.heading,
+  )
+  const endLateralOffset = signedLateralOffsetMeters(
+    [endSample.longitude, endSample.latitude],
+    [right.point[0], right.point[1]],
+    endSample.heading,
+  )
+  const lateralOffsetMeters = startLateralOffset
+    + (endLateralOffset - startLateralOffset) * lateralProgress
+  const point = applyLateralOffset(
+    [
+      targetSample.longitude,
+      targetSample.latitude,
+      left.point[2] + (right.point[2] - left.point[2]) * sourceProgress,
+    ],
+    targetSample.heading,
+    lateralOffsetMeters,
+  )
+  return {
+    point,
+    heading: targetSample.heading,
+    pathArcDistanceMeters: distance.distanceMeters,
+    lateralOffsetMeters,
+  }
 }
 
 export interface MonotonePathDistanceSample {
@@ -275,18 +330,17 @@ export function interpolateVehicleTwinSample(
   const rightAxis = Number.isFinite(right.modelForwardAxisAngle) ? right.modelForwardAxisAngle : 0
   const leftHeading = Number.isFinite(left.vehicleHeading) ? left.vehicleHeading : left.dir + leftAxis
   const rightHeading = Number.isFinite(right.vehicleHeading) ? right.vehicleHeading : right.dir + rightAxis
-  const geographicTransition = right.transitionKind === 'lane_change'
+  const laneChangeTransition = right.transitionKind === 'lane_change'
     || right.roadTransitionKind === 'lane_change'
-    || right.roadTransitionKind === 'raw_continuous'
   let pathKey: string | null = null
   let startPathDistance = Number(left.pathArcDistanceMeters)
   let endPathDistance = Number(right.pathArcDistanceMeters)
-  if (!geographicTransition && left.motionPathKey && left.motionPathKey === right.motionPathKey) {
+  if (!laneChangeTransition && left.motionPathKey && left.motionPathKey === right.motionPathKey) {
     pathKey = left.motionPathKey
   } else if (
-    !geographicTransition
+    !laneChangeTransition
     && right.motionPathKey
-    && right.transitionKind === 'topological'
+    && (right.transitionKind === 'topological' || Boolean(right.motionPathBridgeKey))
     && motionPathSampler
   ) {
     const startProjection = motionPathSampler.project(right.motionPathKey, [left.point[0], left.point[1]])
@@ -334,29 +388,53 @@ export function interpolateVehicleTwinSample(
     : Number.isFinite(right.sourceLateralOffsetMeters)
       ? Number(right.sourceLateralOffsetMeters)
       : Number(left.sourceLateralOffsetMeters) || 0
+  const constrainedLaneChangePoint = laneChangeTransition
+    ? laneChangeGuidePoint(left, right, amount, motionPathSampler)
+    : null
   const point: [number, number, number] = pathSample
     ? applyLateralOffset([
       pathSample.longitude,
       pathSample.latitude,
       left.point[2] + (right.point[2] - left.point[2]) * amount,
     ], pathSample.heading, lateralOffsetMeters)
-    : geographicTransition
-      ? hermiteGeographicPoint(left, right, amount, leftHeading, rightHeading)
-      : [
-          left.point[0] + (right.point[0] - left.point[0]) * amount,
-          left.point[1] + (right.point[1] - left.point[1]) * amount,
-          left.point[2] + (right.point[2] - left.point[2]) * amount,
-        ]
+    : constrainedLaneChangePoint?.point ?? [
+        left.point[0] + (right.point[0] - left.point[0]) * amount,
+        left.point[1] + (right.point[1] - left.point[1]) * amount,
+        left.point[2] + (right.point[2] - left.point[2]) * amount,
+      ]
   const interpolatedSourceHeading = leftHeading
     + shortestAngleDelta(leftHeading, rightHeading) * amount
-  const vehicleHeading = pathSample
-    && Math.abs(shortestAngleDelta(interpolatedSourceHeading, pathSample.heading))
+  const trajectoryHeading = pathSample?.heading ?? constrainedLaneChangePoint?.heading
+  const vehicleHeading = trajectoryHeading != null
+    && Math.abs(shortestAngleDelta(interpolatedSourceHeading, trajectoryHeading))
       <= MAX_MOTION_PATH_HEADING_DELTA
-    ? pathSample.heading
+    ? trajectoryHeading
     : interpolatedSourceHeading
   const modelForwardAxisAngle = amount < 0.5
     ? leftAxis
     : rightAxis
+  const corridorMotionPathKeys = [...new Set([
+    ...(left.corridorMotionPathKeys ?? []),
+    ...(right.corridorMotionPathKeys ?? []),
+    ...(laneChangeTransition ? [left.motionPathKey, right.motionPathKey] : [pathKey]),
+  ].filter((key): key is string => Boolean(key)))]
+  const requiresCorridorValidation = Boolean(
+    left.detailedCorridorValidation || right.detailedCorridorValidation
+  )
+  const trajectoryResolved = Boolean(pathSample || constrainedLaneChangePoint)
+    || !requiresCorridorValidation
+  const intermediatePoseValid = trajectoryResolved && (
+    !requiresCorridorValidation
+    || Boolean(
+      motionPathSampler?.containsVehicle?.(
+        corridorMotionPathKeys,
+        [point[0], point[1]],
+        trajectoryHeading ?? interpolatedSourceHeading,
+        Math.max(0, Number(right.vehicleLengthMeters ?? left.vehicleLengthMeters) || 0) / 2,
+        Math.max(0, Number(right.vehicleWidthMeters ?? left.vehicleWidthMeters) || 0) / 2,
+        right.connectionLockStage === 'internal' || right.connectionLockStage === 'exiting',
+      ),
+    ))
   return {
     ...(amount < 0.5 ? left : right),
     id: left.id,
@@ -369,6 +447,7 @@ export function interpolateVehicleTwinSample(
       ? Number(left.arcDistanceMeters) + (Number(right.arcDistanceMeters) - Number(left.arcDistanceMeters)) * amount
       : amount < 0.5 ? left.arcDistanceMeters : right.arcDistanceMeters,
     pathArcDistanceMeters: pathDistance?.distanceMeters
+      ?? constrainedLaneChangePoint?.pathArcDistanceMeters
       ?? (Number.isFinite(left.pathArcDistanceMeters) && Number.isFinite(right.pathArcDistanceMeters)
         ? Number(left.pathArcDistanceMeters)
           + (Number(right.pathArcDistanceMeters) - Number(left.pathArcDistanceMeters)) * amount
@@ -377,7 +456,15 @@ export function interpolateVehicleTwinSample(
       ?? (Number(left.sourceSpeedMetersPerSecond) || 0)
         + ((Number(right.sourceSpeedMetersPerSecond) || 0)
           - (Number(left.sourceSpeedMetersPerSecond) || 0)) * amount,
-    sourceLateralOffsetMeters: lateralOffsetMeters,
+    sourceLateralOffsetMeters: constrainedLaneChangePoint?.lateralOffsetMeters
+      ?? lateralOffsetMeters,
+    corridorMotionPathKeys,
+    intermediatePoseValid,
+    intermediateValidationReason: intermediatePoseValid
+      ? undefined
+      : laneChangeTransition && !constrainedLaneChangePoint
+        ? 'lane_change_path_unresolved'
+        : laneChangeTransition ? 'lane_change_corridor_violation' : 'intermediate_off_road',
     authoritativeSourceTimeSeconds:
       (Number(left.authoritativeSourceTimeSeconds) || left.time / 1_000)
       + (
@@ -385,6 +472,80 @@ export function interpolateVehicleTwinSample(
         - (Number(left.authoritativeSourceTimeSeconds) || left.time / 1_000)
       ) * amount,
     time: 0,
+  }
+}
+
+function compiledMotionSegmentKey(
+  left: TimedVehicleSample,
+  right: TimedVehicleSample,
+): string {
+  return [
+    left.sample.id,
+    left.frame.sceneGeneration,
+    left.frame.sequence,
+    right.frame.sequence,
+    left.sample.motionPathKey ?? '',
+    right.sample.motionPathKey ?? '',
+    right.sample.motionPathBridgeKey ?? '',
+    right.sample.laneChangeCorridorKey ?? '',
+  ].join('|')
+}
+
+export function compileMotionSegment(
+  left: TimedVehicleSample,
+  right: TimedVehicleSample,
+  motionPathSampler: MotionPathSampler | null,
+): CompiledMotionSegment {
+  const key = compiledMotionSegmentKey(left, right)
+  const durationSeconds = right.frame.elapsedSeconds - left.frame.elapsedSeconds
+  const reject = (rejectionReason: string, validationSampleCount = 0): CompiledMotionSegment => ({
+    key,
+    vehicleId: left.sample.id,
+    startElapsedSeconds: left.frame.elapsedSeconds,
+    endElapsedSeconds: right.frame.elapsedSeconds,
+    valid: false,
+    validationSampleCount,
+    routeSource: right.sample.dynamicConnectionEvidence?.source ?? 'unresolved',
+    rejectionReason,
+  })
+  if (durationSeconds <= 1e-9) return reject('non_positive_authoritative_interval')
+  if (
+    left.sample.sceneGeneration !== right.sample.sceneGeneration
+    || left.sample.motionEpoch !== right.sample.motionEpoch
+  ) return reject('incompatible_motion_generation')
+  if (!samplesCanShareMotionCurve(left.sample, right.sample)) {
+    return reject('incompatible_motion_path')
+  }
+  const steps = Math.max(1, Math.ceil(durationSeconds * COMPILED_SEGMENT_VALIDATION_FPS))
+  for (let index = 0; index <= steps; index += 1) {
+    const sample = interpolateVehicleTwinSample(
+      { ...left.sample, time: left.frame.elapsedSeconds * 1_000 },
+      { ...right.sample, time: right.frame.elapsedSeconds * 1_000 },
+      index / steps,
+      motionPathSampler,
+    )
+    if (sample.intermediatePoseValid === false) {
+      const location = index === 0 || index === steps ? 'endpoint' : 'intermediate'
+      return reject(
+        `${location}:${sample.intermediateValidationReason ?? 'off_road'}`,
+        index + 1,
+      )
+    }
+    if (sample.scale.some((value, axis) => Math.abs(value - left.sample.scale[axis]) > 1e-9)) {
+      return reject('vehicle_scale_changed', index + 1)
+    }
+  }
+  return {
+    key,
+    vehicleId: left.sample.id,
+    startElapsedSeconds: left.frame.elapsedSeconds,
+    endElapsedSeconds: right.frame.elapsedSeconds,
+    valid: true,
+    validationSampleCount: steps + 1,
+    routeSource: right.sample.dynamicConnectionEvidence?.source === 'live_via'
+      && (left.sample.dynamicConnectionEvidence?.source ?? 'unresolved') === 'unresolved'
+      ? 'buffered_lookahead'
+      : right.sample.dynamicConnectionEvidence?.source ?? 'unresolved',
   }
 }
 
@@ -410,8 +571,18 @@ export class VehicleMotionBuffer {
   private batchArrivalCount = 0
   private vehicleScaleViolationCount = 0
   private normalTransitionEpochViolationCount = 0
+  private laneChangeCorridorViolationCount = 0
+  private intermediateOffRoadFrameCount = 0
+  private compiledSegmentCount = 0
+  private rejectedCompiledSegmentCount = 0
+  private endpointValidationFailureCount = 0
+  private compiledReadyElapsedSeconds: number | null = null
+  private bufferedLookaheadSegmentCount = 0
+  private readonly compiledSegments = new Map<string, CompiledMotionSegment>()
+  private readonly compiledAuthorityByVehicleId = new Map<string, TimedVehicleSample>()
   private sceneGeneration: number | null = null
   private motionPathSampler: MotionPathSampler | null = null
+  private lastLegalOutputByVehicleId = new Map<string, VehicleTwinSample>()
 
   setMotionPathSampler(value: MotionPathSampler | null): void {
     this.motionPathSampler = value
@@ -466,6 +637,7 @@ export class VehicleMotionBuffer {
 
     if (previous) this.updateTiming(previous, normalizedFrame)
     this.frames.push(normalizedFrame)
+    this.updateCompiledReadiness(normalizedFrame)
     if (this.frames.length > MAX_SOURCE_FRAMES) {
       this.frames.splice(0, this.frames.length - MAX_SOURCE_FRAMES)
     }
@@ -476,16 +648,23 @@ export class VehicleMotionBuffer {
     if (this.frames.length < 2 || !Number.isFinite(wallTimeMs)) return null
     const first = this.frames[0]
     const latest = this.frames.at(-1)!
+    const readyElapsedSeconds = Math.min(
+      latest.elapsedSeconds,
+      this.compiledReadyElapsedSeconds ?? this.frames[0].elapsedSeconds,
+    )
     const startupBufferSeconds = this.bufferSeconds
     if (
       this.renderElapsedSeconds == null
-      && latest.elapsedSeconds - first.elapsedSeconds + 1e-9 < startupBufferSeconds
+      && (
+        latest.elapsedSeconds - first.elapsedSeconds + 1e-9 < startupBufferSeconds
+        || readyElapsedSeconds <= first.elapsedSeconds + 1e-9
+      )
     ) return null
 
     if (this.renderElapsedSeconds == null) {
       this.renderElapsedSeconds = Math.max(
         first.elapsedSeconds,
-        latest.elapsedSeconds - this.bufferSeconds,
+        Math.min(latest.elapsedSeconds - this.bufferSeconds, readyElapsedSeconds),
       )
       this.lastOutputWallTimeMs = wallTimeMs
     } else {
@@ -493,7 +672,10 @@ export class VehicleMotionBuffer {
         ? 0
         : clamp((wallTimeMs - this.lastOutputWallTimeMs) / 1_000, 0, MAX_OUTPUT_STEP_SECONDS)
       this.lastOutputWallTimeMs = wallTimeMs
-      const targetElapsedSeconds = latest.elapsedSeconds - this.bufferSeconds
+      const targetElapsedSeconds = Math.min(
+        latest.elapsedSeconds - this.bufferSeconds,
+        readyElapsedSeconds,
+      )
       const bufferDepthSeconds = latest.elapsedSeconds - this.renderElapsedSeconds
       this.globalBufferDepthSeconds = Math.max(0, bufferDepthSeconds)
       const recoveryRatio = targetElapsedSeconds > this.renderElapsedSeconds
@@ -506,7 +688,7 @@ export class VehicleMotionBuffer {
         : clamp(bufferDepthSeconds / UNDERRUN_SLOWDOWN_WINDOW_SECONDS, 0, 1)
       this.expectedPlaybackRate = this.sourceRate * recoveryRatio * underrunRatio
       this.renderElapsedSeconds += wallDeltaSeconds * this.expectedPlaybackRate
-      this.renderElapsedSeconds = Math.min(this.renderElapsedSeconds, latest.elapsedSeconds)
+      this.renderElapsedSeconds = Math.min(this.renderElapsedSeconds, readyElapsedSeconds)
       if (this.expectedPlaybackRate <= 1e-6) this.globalUnderrunPauseSeconds += wallDeltaSeconds
       const nextUnderrunActive = bufferDepthSeconds < this.bufferSeconds - 1e-6
       if (nextUnderrunActive && !this.underrunActive) this.underrunCount += 1
@@ -544,7 +726,17 @@ export class VehicleMotionBuffer {
     this.batchArrivalCount = 0
     this.vehicleScaleViolationCount = 0
     this.normalTransitionEpochViolationCount = 0
+    this.laneChangeCorridorViolationCount = 0
+    this.intermediateOffRoadFrameCount = 0
+    this.compiledSegmentCount = 0
+    this.rejectedCompiledSegmentCount = 0
+    this.endpointValidationFailureCount = 0
+    this.compiledReadyElapsedSeconds = null
+    this.bufferedLookaheadSegmentCount = 0
+    this.compiledSegments.clear()
+    this.compiledAuthorityByVehicleId.clear()
     this.sceneGeneration = null
+    this.lastLegalOutputByVehicleId.clear()
   }
 
   stats(): VehicleMotionBufferStats {
@@ -571,6 +763,70 @@ export class VehicleMotionBuffer {
       batchArrivalCount: this.batchArrivalCount,
       vehicleScaleViolationCount: this.vehicleScaleViolationCount,
       normalTransitionEpochViolationCount: this.normalTransitionEpochViolationCount,
+      laneChangeCorridorViolationCount: this.laneChangeCorridorViolationCount,
+      intermediateOffRoadFrameCount: this.intermediateOffRoadFrameCount,
+      compiledSegmentCount: this.compiledSegmentCount,
+      rejectedCompiledSegmentCount: this.rejectedCompiledSegmentCount,
+      endpointValidationFailureCount: this.endpointValidationFailureCount,
+      compiledReadyElapsedSeconds: this.compiledReadyElapsedSeconds,
+      bufferedLookaheadSegmentCount: this.bufferedLookaheadSegmentCount,
+    }
+  }
+
+  private updateCompiledReadiness(current: VehicleMotionSourceFrame): void {
+    if (this.frames.length === 1) {
+      this.compiledReadyElapsedSeconds = current.elapsedSeconds
+      for (const sample of current.samples) {
+        if ((sample.sampleQuality ?? 'authoritative') === 'authoritative') {
+          this.compiledAuthorityByVehicleId.set(sample.id, { frame: current, sample })
+        }
+      }
+      return
+    }
+    let frameReady = true
+    for (const sample of current.samples) {
+      const quality = sample.sampleQuality ?? 'authoritative'
+      const previous = this.compiledAuthorityByVehicleId.get(sample.id) ?? null
+      if (quality !== 'authoritative') {
+        if (previous) frameReady = false
+        continue
+      }
+      const right = { frame: current, sample }
+      if (!previous) {
+        this.compiledAuthorityByVehicleId.set(sample.id, right)
+        continue
+      }
+      const key = compiledMotionSegmentKey(previous, right)
+      let segment = this.compiledSegments.get(key)
+      if (!segment) {
+        segment = compileMotionSegment(previous, right, this.motionPathSampler)
+        this.compiledSegments.set(key, segment)
+        this.compiledSegmentCount += 1
+        if (!segment.valid) {
+          this.rejectedCompiledSegmentCount += 1
+          if (segment.rejectionReason === 'incompatible_motion_path') {
+            this.incompatiblePathInterpolationBlockedCount += 1
+          }
+          if (segment.rejectionReason?.includes('lane_change')) {
+            this.laneChangeCorridorViolationCount += 1
+          }
+          if (
+            segment.rejectionReason?.includes('off_road')
+            || segment.rejectionReason?.includes('corridor_violation')
+          ) this.intermediateOffRoadFrameCount += 1
+          if (segment.rejectionReason?.startsWith('endpoint:')) {
+            this.endpointValidationFailureCount += 1
+          }
+        }
+        if (segment.valid && segment.routeSource === 'buffered_lookahead') {
+          this.bufferedLookaheadSegmentCount += 1
+        }
+      }
+      if (!segment.valid) frameReady = false
+      else this.compiledAuthorityByVehicleId.set(sample.id, right)
+    }
+    if (frameReady && this.compiledReadyElapsedSeconds != null) {
+      this.compiledReadyElapsedSeconds = current.elapsedSeconds
     }
   }
 
@@ -625,9 +881,18 @@ export class VehicleMotionBuffer {
       }
     }
     const samples: VehicleTwinSample[] = []
-    for (const occurrences of occurrencesById.values()) {
+    for (const [vehicleId, occurrences] of occurrencesById) {
       const resolved = this.resolveVehicleAt(occurrences, elapsedSeconds)
-      if (resolved) samples.push(resolved)
+      if (resolved) {
+        samples.push(resolved)
+        this.lastLegalOutputByVehicleId.set(vehicleId, this.cloneSample(
+          resolved,
+          resolved.sampleQuality,
+          resolved.displayElapsedSeconds,
+        ))
+      } else {
+        this.lastLegalOutputByVehicleId.delete(vehicleId)
+      }
     }
     return samples
   }
@@ -661,14 +926,12 @@ export class VehicleMotionBuffer {
         if (right.sample.roadTransitionKind !== 'incompatible') {
           this.normalTransitionEpochViolationCount += 1
         }
-        return this.cloneSample(
-          ratio >= 1 - 1e-9 ? right.sample : left.sample,
-          ratio >= 1 - 1e-9 ? 'authoritative' : 'held',
-        )
+        return this.cloneSample(left.sample, 'held', elapsedSeconds)
       }
-      if (!samplesCanShareMotionCurve(left.sample, right.sample)) {
+      const compiled = compileMotionSegment(left, right, this.motionPathSampler)
+      if (!compiled.valid) {
         this.incompatiblePathInterpolationBlockedCount += 1
-        return this.cloneSample(ratio >= 1 - 1e-9 ? right.sample : left.sample, 'held')
+        return this.cloneSample(left.sample, 'held', elapsedSeconds)
       }
       const interpolated = interpolateVehicleTwinSample(
         { ...left.sample, time: left.frame.elapsedSeconds * 1_000 },
@@ -676,6 +939,13 @@ export class VehicleMotionBuffer {
         ratio,
         this.motionPathSampler,
       )
+      if (interpolated.intermediatePoseValid === false) {
+        this.intermediateOffRoadFrameCount += 1
+        if (interpolated.intermediateValidationReason === 'lane_change_corridor_violation') {
+          this.laneChangeCorridorViolationCount += 1
+        }
+        return this.cloneSample(left.sample, 'held', elapsedSeconds)
+      }
       this.authoritativeInterpolationCount += 1
       return {
         ...interpolated,

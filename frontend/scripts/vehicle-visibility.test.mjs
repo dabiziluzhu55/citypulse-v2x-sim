@@ -22,6 +22,7 @@ import {
   VehiclePresentationClock,
 } from '../src/mapv/vehiclePresentationClock.ts'
 import {
+  compileMotionSegment,
   interpolateMonotonePathDistance,
   interpolateVehicleTwinSample,
   VehicleMotionBuffer,
@@ -505,6 +506,28 @@ test('does not turn held recovery poses into authoritative motion keyframes', ()
   assert.ok(samples[0].point[0] > 4.9, 'held pose incorrectly flattened the source curve')
 })
 
+test('does not advance compiled readiness through held identity frames', () => {
+  const buffer = new VehicleMotionBuffer()
+  for (let index = 0; index <= 4; index += 1) {
+    buffer.push({
+      sceneGeneration: 0, sequence: index, elapsedSeconds: index * 0.5,
+      arrivalTimeMs: index * 500,
+      samples: [{ ...motionSample('held-ready-boundary', index * 5), sampleQuality: 'authoritative' }],
+    })
+  }
+  assert.equal(buffer.stats().compiledReadyElapsedSeconds, 2)
+  buffer.push({
+    sceneGeneration: 0, sequence: 5, elapsedSeconds: 2.5, arrivalTimeMs: 2_500,
+    samples: [{ ...motionSample('held-ready-boundary', 20), sampleQuality: 'held' }],
+  })
+  assert.equal(buffer.stats().compiledReadyElapsedSeconds, 2)
+  buffer.push({
+    sceneGeneration: 0, sequence: 6, elapsedSeconds: 3, arrivalTimeMs: 3_000,
+    samples: [{ ...motionSample('held-ready-boundary', 30), sampleQuality: 'authoritative' }],
+  })
+  assert.equal(buffer.stats().compiledReadyElapsedSeconds, 3)
+})
+
 test('globally slows and pauses on underrun instead of predicting individual vehicles', () => {
   const buffer = new VehicleMotionBuffer()
   for (let index = 0; index <= 8; index += 1) {
@@ -961,6 +984,87 @@ test('does not interpolate between unrelated motion paths in the same epoch', ()
   for (let wallTime = 3_000; wallTime <= 5_000; wallTime += 50) buffer.sample(wallTime)
   assert.equal(buffer.stats().incompatiblePathInterpolationCount, 0)
   assert.ok(buffer.stats().incompatiblePathInterpolationBlockedCount > 0)
+  assert.ok(buffer.stats().rejectedCompiledSegmentCount > 0)
+})
+
+test('rejects a detailed lane change when target-lane Frenet projection is unavailable', () => {
+  const left = {
+    ...motionSample('lane-change-no-projection', 116, 0),
+    point: [116, 39, 1.1], motionPathKey: 'lane:left', pathArcDistanceMeters: 2,
+    detailedCorridorValidation: true, vehicleLengthMeters: 5, vehicleWidthMeters: 1.8,
+    time: 0,
+  }
+  const right = {
+    ...left,
+    point: [116.00005, 39.00003, 1.1], motionPathKey: 'lane:right', pathArcDistanceMeters: 7,
+    transitionKind: 'lane_change', roadTransitionKind: 'lane_change',
+    laneChangeCorridorKey: 'lane:left->lane:right',
+    corridorMotionPathKeys: ['lane:left', 'lane:right'], time: 500,
+  }
+  const unresolved = interpolateVehicleTwinSample(left, right, 0.5, {
+    project: () => null,
+    sample: () => null,
+    containsVehicle: () => true,
+  })
+  assert.equal(unresolved.intermediatePoseValid, false)
+  assert.equal(unresolved.intermediateValidationReason, 'lane_change_path_unresolved')
+})
+
+test('validates compiled segment endpoints with the same road-corridor rule', () => {
+  const leftSample = {
+    ...motionSample('endpoint-validation', 116, 0),
+    point: [116, 39, 1.1], motionPathKey: 'lane:only', pathArcDistanceMeters: 0,
+    detailedCorridorValidation: true, vehicleLengthMeters: 5, vehicleWidthMeters: 1.8,
+    time: 0, sceneGeneration: 0, motionEpoch: 0,
+  }
+  const rightSample = {
+    ...leftSample,
+    point: [116.00005, 39, 1.1], pathArcDistanceMeters: 5, time: 500,
+  }
+  const segment = compileMotionSegment(
+    { frame: { sceneGeneration: 0, sequence: 0, elapsedSeconds: 0, arrivalTimeMs: 0, samples: [leftSample] }, sample: leftSample },
+    { frame: { sceneGeneration: 0, sequence: 1, elapsedSeconds: 0.5, arrivalTimeMs: 500, samples: [rightSample] }, sample: rightSample },
+    {
+      project: (_key, coordinate) => ({ pathArcDistanceMeters: (coordinate[0] - 116) * 100_000, distanceMeters: 0 }),
+      sample: (_key, distance) => ({ longitude: 116 + distance / 100_000, latitude: 39, heading: 0, pathArcDistanceMeters: distance }),
+      containsVehicle: (_keys, coordinate) => coordinate[0] < 116.00005 - 1e-9,
+    },
+  )
+  assert.equal(segment.valid, false)
+  assert.match(segment.rejectionReason, /^endpoint:/)
+})
+
+test('uses buffered live-via evidence to compile a dynamic event vehicle turn', () => {
+  const leftSample = {
+    ...motionSample('event_vehicle_opening_000001', 116, 0),
+    point: [116, 39, 1.1], motionPathKey: 'lane:incoming', pathArcDistanceMeters: 0,
+    detailedCorridorValidation: true, vehicleLengthMeters: 5, vehicleWidthMeters: 1.8,
+    time: 0, sceneGeneration: 0, motionEpoch: 0,
+  }
+  const rightSample = {
+    ...leftSample,
+    point: [116.00005, 39, 1.1], motionPathKey: 'route:tls:7', pathArcDistanceMeters: 5,
+    transitionKind: 'topological', roadTransitionKind: 'topology_successor',
+    motionPathBridgeKey: 'lane:incoming->route:tls:7',
+    corridorMotionPathKeys: ['lane:incoming', 'route:tls:7'],
+    dynamicConnectionEvidence: {
+      source: 'live_via', connectionKey: 'tls:7', observedLaneId: ':via_0',
+      fromLaneId: 'incoming_0', toLaneId: 'outgoing_0', viaLaneIds: [':via_0'],
+    },
+    time: 500,
+  }
+  const sampler = {
+    project: (_key, coordinate) => ({ pathArcDistanceMeters: (coordinate[0] - 116) * 100_000, distanceMeters: 0 }),
+    sample: (_key, distance) => ({ longitude: 116 + distance / 100_000, latitude: 39, heading: 0, pathArcDistanceMeters: distance }),
+    containsVehicle: () => true,
+  }
+  const segment = compileMotionSegment(
+    { frame: { sceneGeneration: 0, sequence: 0, elapsedSeconds: 0, arrivalTimeMs: 0, samples: [leftSample] }, sample: leftSample },
+    { frame: { sceneGeneration: 0, sequence: 1, elapsedSeconds: 0.5, arrivalTimeMs: 500, samples: [rightSample] }, sample: rightSample },
+    sampler,
+  )
+  assert.equal(segment.valid, true)
+  assert.equal(segment.routeSource, 'buffered_lookahead')
 })
 
 test('confirms recovery with an exact motion path and segment instead of a shared occupancy lane', () => {
@@ -1842,6 +1946,168 @@ test('classifies only adjacent lanes on the same road as a lane change', () => {
   assert.ok(changed)
   assert.equal(changed.transitionKind, 'lane_change')
   assert.notEqual(changed.motionPathKey, first.motionPathKey)
+})
+
+test('keeps every 24, 30, and 45 fps lane-change frame inside the adjacent-lane corridor', () => {
+  const origin = { longitude: 116, latitude: 39 }
+  const originPlane = projectBd09ToWebMercator([origin.longitude, origin.latitude])
+  const manifest = {
+    origin: { ...origin, webMercator: originPlane },
+    horizontalScale: 1,
+    radiusMeters: 100,
+    junctionShape: [[-5, -5], [25, -5], [25, 9], [-5, 9]],
+    edges: [{
+      id: 'edge',
+      incoming: false,
+      lanes: [
+        { id: 'edge_0', index: 0, width: 3.5, widthMeters: 3.5, speed: 12, points: [[0, 0], [20, 0]], renderPoints: [[0, 0], [20, 0]] },
+        { id: 'edge_1', index: 1, width: 3.5, widthMeters: 3.5, speed: 12, points: [[0, 3.5], [20, 3.5]], renderPoints: [[0, 3.5], [20, 3.5]] },
+      ],
+    }],
+    connections: [],
+  }
+  const resolver = createIntersectionLanePoseResolver(manifest, (coordinate) => coordinate)
+  const coordinate = (point) => unprojectWebMercatorToBd09([
+    originPlane[0] + point[0],
+    originPlane[1] + point[1],
+  ])
+  const leftPose = resolver('edge_0', coordinate([5, 0]), 2.5, undefined, undefined, {
+    speedMetersPerSecond: 10,
+    expectedHeading: 0,
+    preserveSourceLateralOffset: true,
+    vehicleHalfLengthMeters: 2.5,
+    vehicleHalfWidthMeters: 0.9,
+  })
+  assert.ok(leftPose)
+  const rightPose = resolver('edge_1', coordinate([10, 3.5]), 2.5, 'edge_0', leftPose.trackKey, {
+    speedMetersPerSecond: 10,
+    expectedHeading: 0,
+    preserveSourceLateralOffset: true,
+    vehicleHalfLengthMeters: 2.5,
+    vehicleHalfWidthMeters: 0.9,
+  })
+  assert.ok(rightPose)
+  assert.equal(rightPose.transitionKind, 'lane_change')
+  const left = {
+    ...motionSample('disturbance-lane-change', leftPose.longitude, 0),
+    point: [leftPose.longitude, leftPose.latitude, 1.1],
+    vehicleHeading: 0,
+    modelForwardAxisAngle: 0,
+    motionPathKey: leftPose.motionPathKey,
+    pathArcDistanceMeters: leftPose.pathArcDistanceMeters,
+    sourceLateralOffsetMeters: leftPose.sourceLateralOffsetMeters,
+    sourceSpeedMetersPerSecond: 10,
+    vehicleLengthMeters: 5,
+    vehicleWidthMeters: 1.8,
+    detailedCorridorValidation: true,
+    time: 0,
+  }
+  const right = {
+    ...left,
+    point: [rightPose.longitude, rightPose.latitude, 1.1],
+    motionPathKey: rightPose.motionPathKey,
+    pathArcDistanceMeters: rightPose.pathArcDistanceMeters,
+    sourceLateralOffsetMeters: rightPose.sourceLateralOffsetMeters,
+    transitionKind: 'lane_change',
+    roadTransitionKind: 'lane_change',
+    laneChangeCorridorKey: `${leftPose.motionPathKey}->${rightPose.motionPathKey}`,
+    corridorMotionPathKeys: [leftPose.motionPathKey, rightPose.motionPathKey],
+    time: 500,
+  }
+  for (const fps of [24, 30, 45]) {
+    for (let frame = 0; frame <= Math.ceil(fps * 0.5); frame += 1) {
+      const ratio = Math.min(1, frame / (fps * 0.5))
+      const sample = interpolateVehicleTwinSample(
+        left,
+        right,
+        ratio,
+        resolver.motionPathSampler,
+      )
+      assert.notEqual(sample.intermediatePoseValid, false, `${fps} fps frame ${frame}`)
+      assert.equal(resolver.motionPathSampler.containsVehicle(
+        [leftPose.motionPathKey, rightPose.motionPathKey],
+        [sample.point[0], sample.point[1]],
+        sample.vehicleHeading,
+        2.5,
+        0.9,
+      ), true, `${fps} fps OBB frame ${frame}`)
+    }
+  }
+})
+
+test('rejects an invalid lane-change segment before playback instead of holding then jumping', () => {
+  const buffer = new VehicleMotionBuffer()
+  const sampler = {
+    project: (key, coordinate) => ({
+      pathArcDistanceMeters: (coordinate[0] - 116) * 100_000,
+      distanceMeters: 0,
+    }),
+    sample: (key, distanceMeters) => ({
+      longitude: 116 + distanceMeters / 100_000,
+      latitude: key === 'lane:right' ? 39.00003 : 39,
+      heading: 0,
+      pathArcDistanceMeters: distanceMeters,
+    }),
+    containsVehicle: (_keys, coordinate) => coordinate[0] <= 116.000222,
+  }
+  buffer.setMotionPathSampler(sampler)
+  for (let index = 0; index <= 4; index += 1) {
+    buffer.push({
+      sceneGeneration: 0,
+      sequence: index,
+      elapsedSeconds: index * 0.5,
+      arrivalTimeMs: index * 500,
+      samples: [{
+        ...motionSample('corridor-hold', 116 + index * 0.00005, 0),
+        point: [116 + index * 0.00005, 39, 1.1],
+        motionPathKey: 'lane:left',
+        pathArcDistanceMeters: index * 5,
+        vehicleHeading: 0,
+        modelForwardAxisAngle: 0,
+        sourceSpeedMetersPerSecond: 10,
+        vehicleLengthMeters: 5,
+        vehicleWidthMeters: 1.8,
+        detailedCorridorValidation: true,
+        sampleQuality: 'authoritative',
+        motionEpoch: 0,
+      }],
+    })
+  }
+  buffer.push({
+    sceneGeneration: 0,
+    sequence: 5,
+    elapsedSeconds: 2.5,
+    arrivalTimeMs: 2_500,
+    samples: [{
+      ...motionSample('corridor-hold', 116.00025, 0),
+      point: [116.00025, 39.00003, 1.1],
+      motionPathKey: 'lane:right',
+      pathArcDistanceMeters: 25,
+      vehicleHeading: 0,
+      modelForwardAxisAngle: 0,
+      sourceSpeedMetersPerSecond: 10,
+      vehicleLengthMeters: 5,
+      vehicleWidthMeters: 1.8,
+      detailedCorridorValidation: true,
+      transitionKind: 'lane_change',
+      roadTransitionKind: 'lane_change',
+      laneChangeCorridorKey: 'lane:left->lane:right',
+      corridorMotionPathKeys: ['lane:left', 'lane:right'],
+      sampleQuality: 'authoritative',
+      motionEpoch: 0,
+    }],
+  })
+  const positions = []
+  for (let wallTime = 2_500; wallTime <= 4_500; wallTime += 50) {
+    const sample = buffer.sample(wallTime)?.find((item) => item.id === 'corridor-hold')
+    if (sample) positions.push(sample.point[0])
+  }
+  assert.ok(positions.length > 20)
+  assert.ok(positions.every((position, index) => (
+    index === 0 || position + 1e-12 >= positions[index - 1]
+  )))
+  assert.ok(buffer.stats().laneChangeCorridorViolationCount > 0)
+  assert.ok(buffer.stats().rejectedCompiledSegmentCount > 0)
 })
 
 test('rejects a nearby lane whose tangent conflicts with the current SUMO heading', () => {

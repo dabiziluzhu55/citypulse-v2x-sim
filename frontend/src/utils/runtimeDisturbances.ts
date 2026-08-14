@@ -19,6 +19,7 @@ export interface DisturbanceRuntimeTarget {
   startSeconds: number
   endSeconds: number
   parameters: Record<string, unknown>
+  source?: 'configured' | 'snapshot'
 }
 
 export interface DisturbanceRuntimeView extends DisturbanceRuntimeTarget {
@@ -26,6 +27,14 @@ export interface DisturbanceRuntimeView extends DisturbanceRuntimeTarget {
   error: string | null
   details: Record<string, unknown>
 }
+
+const DISTURBANCE_EVENT_TYPES = new Set<DisturbanceRuntimeTarget['eventType']>([
+  'lane_closure',
+  'speed_limit',
+  'accident',
+  'major_event_opening',
+  'major_event_closing',
+])
 
 export interface StoredDisturbanceRuntimeTargets {
   version: 1
@@ -64,6 +73,7 @@ export function freezeDisturbanceRuntimeTargets(
       startSeconds,
       endSeconds,
       parameters: structuredClone(parameters),
+      source: 'configured',
     }
   })
 }
@@ -73,7 +83,8 @@ export function runtimeDisturbanceViews(
   snapshot: SimulationSnapshot | null,
 ): DisturbanceRuntimeView[] {
   const events = new Map((snapshot?.events ?? []).map((event) => [event.event_id, event] as const))
-  return targets.map((target) => {
+  const configuredTargets = [...new Map(targets.map((target) => [target.eventId, target] as const)).values()]
+  const configured = configuredTargets.map((target) => {
     const event = events.get(target.eventId)
     const rawState = event?.state
     const state: DisturbanceRuntimeState = rawState && RUNTIME_STATES.has(rawState)
@@ -86,6 +97,36 @@ export function runtimeDisturbanceViews(
       details: runtimeEventDetails(event, target.parameters),
     }
   })
+  const configuredIds = new Set(configured.map((event) => event.eventId))
+  const recovered = (snapshot?.events ?? []).flatMap((event): DisturbanceRuntimeView[] => {
+    if (configuredIds.has(event.event_id) || !DISTURBANCE_EVENT_TYPES.has(
+      event.event_type as DisturbanceRuntimeTarget['eventType'],
+    )) return []
+    const details = runtimeEventDetails(event, {})
+    const intersectionValue = event.intersection_id ?? details.intersection_id
+    const state = event.state && RUNTIME_STATES.has(event.state) ? event.state : 'SCHEDULED'
+    return [{
+      sessionId: snapshot?.session_id ?? '',
+      eventId: event.event_id,
+      intersectionId: typeof intersectionValue === 'string' ? intersectionValue : '',
+      eventType: event.event_type as DisturbanceRuntimeTarget['eventType'],
+      startSeconds: Number.isFinite(event.start_seconds) ? Number(event.start_seconds) : 0,
+      endSeconds: Number.isFinite(event.end_seconds)
+        ? Number(event.end_seconds)
+        : Number(snapshot?.duration_seconds) || 0,
+      parameters: {},
+      source: 'snapshot',
+      state,
+      error: typeof event.error === 'string' && event.error.trim() ? event.error : null,
+      details,
+    }]
+  })
+  return [...configured, ...recovered]
+}
+
+export function runtimeDisturbanceHasSceneMarker(view: DisturbanceRuntimeView): boolean {
+  return view.state !== 'CANCELLED'
+    && (view.eventType === 'accident' || view.eventType.startsWith('major_event_'))
 }
 
 function runtimeEventDetails(

@@ -104,6 +104,13 @@ export interface RealisticRuntimeDisturbance {
   positionRatio?: number
 }
 
+export interface RealisticLaneScenePosition {
+  scene: [number, number, number]
+  mapCoordinate: [number, number, number]
+  laneId: string
+  positionRatio: number
+}
+
 const COLORS = {
   asphalt: ROAD_ASPHALT_COLOR,
   junction: ROAD_JUNCTION_COLOR,
@@ -820,6 +827,51 @@ export class MapvRealisticIntersectionLayer {
     return this.activeId
   }
 
+  resolveLaneScenePosition(
+    intersectionId: string,
+    laneId: string,
+    positionRatio = 0.5,
+  ): RealisticLaneScenePosition | null {
+    const manifest = this.manifests.get(intersectionId)
+    if (!manifest) return null
+    const lane = manifest.edges.flatMap((edge) => edge.lanes).find((candidate) => candidate.id === laneId)
+    if (!lane) return null
+    const ratio = Number.isFinite(positionRatio) ? Math.max(0, Math.min(1, positionRatio)) : 0.5
+    const point = samplePolyline(visualLanePoints(lane), ratio)
+    const origin = this.projector([manifest.origin.longitude, manifest.origin.latitude, 0])
+    const originCoordinate: [number, number, number] = [origin[0], origin[1], origin[2] ?? 0]
+    const originScene = this.engine.map.projectArrayCoordinate(originCoordinate)
+    const scene: [number, number, number] = [
+      originScene[0] + point[0],
+      originScene[1] + point[1],
+      (originScene[2] ?? 0) + REALISTIC_INTERSECTION_SURFACE_Z + 0.18,
+    ]
+    const mapPosition = this.engine.map.unprojectArrayCoordinate(scene)
+    return {
+      scene,
+      mapCoordinate: [mapPosition[0], mapPosition[1], mapPosition[2] ?? scene[2]],
+      laneId,
+      positionRatio: ratio,
+    }
+  }
+
+  resolveLaneScenePositionAny(
+    laneId: string,
+    positionRatio = 0.5,
+    preferredIntersectionId = '',
+  ): (RealisticLaneScenePosition & { intersectionId: string }) | null {
+    const intersectionIds = preferredIntersectionId
+      ? [preferredIntersectionId, ...this.manifests.keys()].filter(
+          (value, index, values) => values.indexOf(value) === index,
+        )
+      : [...this.manifests.keys()]
+    for (const intersectionId of intersectionIds) {
+      const position = this.resolveLaneScenePosition(intersectionId, laneId, positionRatio)
+      if (position) return { ...position, intersectionId }
+    }
+    return null
+  }
+
   setInteractionActive(active: boolean): void {
     this.interactionActive = active
   }
@@ -911,6 +963,17 @@ export class MapvRealisticIntersectionLayer {
       medium: this.mediumCache.size,
       full: this.cache.size,
     }
+  }
+
+  visibleCongestionManifests(): RealisticIntersectionManifest[] {
+    const visible = new Map<string, RealisticIntersectionManifest>()
+    for (const [intersectionId, cached] of this.mediumCache) {
+      if (cached.object.group.visible) visible.set(intersectionId, cached.manifest)
+    }
+    for (const [intersectionId, cached] of this.cache) {
+      if (cached.object.group.visible) visible.set(intersectionId, cached.manifest)
+    }
+    return [...visible.values()]
   }
 
   activate(intersectionId: string): RealisticIntersectionManifest {

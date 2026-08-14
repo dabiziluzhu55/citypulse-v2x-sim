@@ -8,6 +8,7 @@ import { XMLParser } from 'fast-xml-parser'
 import {
   normalizeRuntimeVehicleFlowId,
   resolveVehicleRouteTurnHint,
+  resolveVehicleRouteTurnResolution,
 } from '../src/mapv/vehicleRouteTurnIndex.ts'
 import {
   BUS_MODEL_PROFILE,
@@ -97,6 +98,118 @@ test('normalizes runtime ids and resolves every indexed lane/target-lane turn un
     }
   }
   assert.ok(verified > 200_000)
+})
+
+test('keeps target-less incoming traffic unlocked until the route or internal lane is unique', () => {
+  let pending = 0
+  let unique = 0
+  for (const period of periods) {
+    const periodIndex = routeIndex.periods[period]
+    for (const [flowId, compactRouteIndex] of Object.entries(periodIndex.flows)) {
+      for (const [routePosition, fromEdge, _toEdge, keys] of periodIndex.routes[compactRouteIndex]) {
+        const keysByLane = Map.groupBy(keys, (key) => routeIndex.connections[key].fromLaneId)
+        for (const [fromLaneId, laneKeys] of keysByLane) {
+          const connection = routeIndex.connections[laneKeys[0]]
+          const resolution = resolveVehicleRouteTurnResolution({
+            vehicle_id: `${flowId}.0`,
+            longitude: null,
+            latitude: null,
+            x: 0,
+            y: 0,
+            speed: 1,
+            angle: 0,
+            road_id: fromEdge,
+            lane_id: fromLaneId,
+            route_index: routePosition,
+          }, period, connection.intersectionId)
+          if (laneKeys.length === 1) {
+            assert.equal(resolution.status, 'hit')
+            assert.equal(resolution.hint?.connectionKey, laneKeys[0])
+            assert.equal(resolution.connectionLock.stage, 'internal')
+            unique += 1
+          } else {
+            assert.equal(resolution.status, 'pending')
+            assert.equal(resolution.reason, 'awaiting_unique_internal_lane')
+            assert.equal(resolution.connectionLock.stage, 'unlocked')
+            assert.equal(resolution.connectionLock.connectionKey, undefined)
+            pending += 1
+          }
+        }
+      }
+    }
+  }
+  assert.ok(unique > 100_000)
+  assert.ok(pending > 50_000)
+})
+
+test('releases every stale approach lock after a disturbance forces an adjacent-lane change', () => {
+  const candidates = Object.values(routeIndex.connections)
+  let verified = 0
+  for (const stale of candidates) {
+    const replacements = candidates.filter((candidate) => (
+      stale.intersectionId === candidate.intersectionId
+      && stale.fromEdge === candidate.fromEdge
+      && stale.fromLaneId !== candidate.fromLaneId
+      && Math.abs(stale.fromLaneIndex - candidate.fromLaneIndex) === 1
+    ))
+    for (const replacement of replacements) {
+      const resolution = resolveVehicleRouteTurnResolution({
+        vehicle_id: `disturbance_unknown_${verified}.0`,
+        longitude: null,
+        latitude: null,
+        x: 0,
+        y: 0,
+        speed: 5,
+        angle: 0,
+        road_id: replacement.fromEdge,
+        lane_id: replacement.fromLaneId,
+        route_index: -1,
+      }, 'off_peak', replacement.intersectionId, {
+        stage: 'internal',
+        connectionKey: stale.connectionKey,
+        motionPathKey: stale.motionPathKey,
+        fromLaneId: stale.fromLaneId,
+        toLaneId: stale.toLaneId,
+        viaLaneIds: stale.viaLaneIds,
+        source: 'live_topology',
+      })
+      assert.equal(resolution.releasedStaleLock, true)
+      assert.notEqual(resolution.connectionLock.connectionKey, stale.connectionKey)
+      if (resolution.status === 'pending') {
+        assert.equal(resolution.connectionLock.stage, 'unlocked')
+      } else {
+        assert.equal(resolution.status, 'hit')
+        assert.equal(resolution.connectionLock.fromLaneId, replacement.fromLaneId)
+      }
+      verified += 1
+    }
+  }
+  assert.equal(verified, 904)
+})
+
+test('locks every unique internal via lane without target-lane telemetry', () => {
+  let verified = 0
+  for (const connection of Object.values(routeIndex.connections)) {
+    for (const viaLaneId of new Set(connection.viaLaneIds)) {
+      const resolution = resolveVehicleRouteTurnResolution({
+        vehicle_id: `disturbance_internal_${verified}.0`,
+        longitude: null,
+        latitude: null,
+        x: 0,
+        y: 0,
+        speed: 5,
+        angle: 0,
+        road_id: viaLaneId.split('_')[0],
+        lane_id: viaLaneId,
+        route_index: -1,
+      }, 'off_peak', connection.intersectionId)
+      assert.equal(resolution.status, 'hit')
+      assert.equal(resolution.connectionLock.connectionKey, connection.connectionKey)
+      assert.equal(resolution.connectionLock.stage, 'internal')
+      verified += 1
+    }
+  }
+  assert.equal(verified, 542)
 })
 
 test('keeps the locked connection unique through internal and shared outgoing lanes', () => {

@@ -156,7 +156,7 @@ const runtimeDisturbances = computed(() => (
   runtimeDisturbanceViews(runtimeDisturbanceTargets.value, snapshot.value)
 ))
 const unmappedRuntimeEvents = computed(() => {
-  const mapped = new Set(runtimeDisturbanceTargets.value.map((target) => target.eventId))
+  const mapped = new Set(runtimeDisturbances.value.map((target) => target.eventId))
   return (snapshot.value?.events ?? []).filter((event) => !mapped.has(event.event_id))
 })
 

@@ -3,10 +3,25 @@ import { VEHICLE_MODEL_BASE_Z } from './sceneElevation.ts'
 import type { VehicleModelProfile } from './vehicleModelProfiles.ts'
 import { moveFromFrontBumperToModelCenter, unwrapHeading } from './vehicleOrientation.ts'
 import type { LanePoseTransitionKind } from './realistic/intersectionLaneHeading.ts'
+import type { VehicleConnectionLockStage } from './vehicleRouteTurnIndex.ts'
 
 export type VehiclePoseSource = 'topology' | 'lane_change' | 'raw' | 'held'
 export type VehicleMotionSampleQuality = 'authoritative' | 'held' | 'missing'
 export type VehiclePresentationState = 'normal' | 'globalHeld'
+export type DynamicVehicleRouteSource =
+  | 'fixed_route'
+  | 'live_via'
+  | 'buffered_lookahead'
+  | 'unresolved'
+
+export interface DynamicConnectionEvidence {
+  source: DynamicVehicleRouteSource
+  connectionKey?: string
+  observedLaneId: string
+  fromLaneId?: string
+  toLaneId?: string
+  viaLaneIds?: string[]
+}
 export type RoadTransitionKind =
   | 'same_path'
   | 'topology_successor'
@@ -16,7 +31,16 @@ export type RoadTransitionKind =
 
 export interface VehicleTwinMotionMetadata {
   connectionKey?: string
-  routeHintSource?: 'fixed_route_index'
+  routeHintSource?: 'fixed_route_index' | 'live_topology'
+  connectionLockStage?: VehicleConnectionLockStage
+  dynamicConnectionEvidence?: DynamicConnectionEvidence
+  laneChangeCorridorKey?: string
+  motionPathBridgeKey?: string
+  corridorMotionPathKeys?: string[]
+  detailedCorridorValidation?: boolean
+  rawTransitionValidated?: boolean
+  intermediatePoseValid?: boolean
+  intermediateValidationReason?: string
   authoritativeSourceTimeSeconds?: number
   displayElapsedSeconds?: number
   motionPathKey?: string
@@ -32,6 +56,7 @@ export interface VehicleTwinMotionMetadata {
   predictionBlocked?: boolean
   stopReason?: string
   vehicleLengthMeters?: number
+  vehicleWidthMeters?: number
   sourceAllowedSpeedMetersPerSecond?: number
   maximumAccelerationMetersPerSecondSquared?: number
   predictionMaximumPathArcDistanceMeters?: number
@@ -56,7 +81,16 @@ export interface VehicleTwinSample {
   sceneGeneration?: number
   motionEpoch?: number
   connectionKey?: string
-  routeHintSource?: 'fixed_route_index'
+  routeHintSource?: 'fixed_route_index' | 'live_topology'
+  connectionLockStage?: VehicleConnectionLockStage
+  dynamicConnectionEvidence?: DynamicConnectionEvidence
+  laneChangeCorridorKey?: string
+  motionPathBridgeKey?: string
+  corridorMotionPathKeys?: string[]
+  detailedCorridorValidation?: boolean
+  rawTransitionValidated?: boolean
+  intermediatePoseValid?: boolean
+  intermediateValidationReason?: string
   authoritativeSourceTimeSeconds?: number
   displayElapsedSeconds?: number
   motionPathKey?: string
@@ -75,6 +109,7 @@ export interface VehicleTwinSample {
   predictionElapsedSeconds?: number
   reconciling?: boolean
   vehicleLengthMeters?: number
+  vehicleWidthMeters?: number
   sourceAllowedSpeedMetersPerSecond?: number
   maximumAccelerationMetersPerSecondSquared?: number
   predictionMaximumPathArcDistanceMeters?: number
@@ -137,6 +172,7 @@ export function createVehicleTwinSample(
     vehicleHeading,
     modelForwardAxisAngle: profile.modelForwardAxisAngle,
     vehicleLengthMeters: profile.targetLengthMeters,
+    vehicleWidthMeters: profile.targetWidthMeters,
     sourceAllowedSpeedMetersPerSecond: Math.max(
       0,
       Number(vehicle.allowed_speed) || Number(vehicle.speed) || 0,

@@ -12,6 +12,7 @@ import {
 import {
   createVehicleTwinSample,
   unwrapVehicleModelDirection,
+  type DynamicConnectionEvidence,
   type VehicleTwinSample,
 } from './vehicleTwinSample'
 import {
@@ -52,6 +53,7 @@ import type { RoadSurfaceVisibilityInterval } from './realistic/roadSurfaceExclu
 import { VehicleOutputPacer } from './vehicleOutputPacing.ts'
 import {
   resolveVehicleRouteTurnResolution,
+  type VehicleConnectionLock,
   type VehicleRouteTurnResolutionStatus,
 } from './vehicleRouteTurnIndex.ts'
 
@@ -130,6 +132,18 @@ export interface VehicleRenderStats {
   routeHintHitCount: number
   routeHintMismatchCount: number
   ambiguousRouteCandidateRejectionCount: number
+  ambiguousIncomingPendingCount: number
+  staleConnectionReleaseCount: number
+  connectionMismatchCount: number
+  laneChangeCorridorViolationCount: number
+  intermediateOffRoadFrameCount: number
+  detailedAreaRawFallbackCount: number
+  compiledSegmentCount: number
+  rejectedCompiledSegmentCount: number
+  endpointValidationFailureCount: number
+  compiledReadyElapsedSeconds: number | null
+  dynamicRuntimeVehicleCount: number
+  bufferedLookaheadConnectionCount: number
   vehiclePoseDiagnostics: VehiclePoseDiagnostic[]
   displayElapsedSeconds: number | null
 }
@@ -149,7 +163,8 @@ export interface VehiclePoseDiagnostic {
   motionPathKey?: string
   connectionKey?: string
   routeHintStatus: VehicleRouteTurnResolutionStatus
-  routeHintSource?: 'fixed_route_index'
+  routeHintSource?: 'fixed_route_index' | 'live_topology'
+  connectionLockStage?: VehicleConnectionLock['stage']
   segmentKey?: string
   lifecycle: VehiclePoseState['lifecycle']
   transitionKind?: VehiclePoseState['transitionKind']
@@ -194,6 +209,7 @@ export class BaiduVehicleRenderer {
   }>()
   private readonly sourceMissingSnapshots = new Map<string, { count: number; sequence: number }>()
   private readonly routeCursorByVehicleId = new Map<string, number>()
+  private readonly connectionLocksByVehicleId = new Map<string, VehicleConnectionLock>()
   private readonly surfaceSuppressedVehicles = new Set<string>()
   private readonly surfaceReentrySnapshots = new Map<string, { count: number; sequence: number }>()
   private readonly invalidPoseSuppressedVehicles = new Set<string>()
@@ -244,6 +260,12 @@ export class BaiduVehicleRenderer {
   private routeHintHitCount = 0
   private routeHintMismatchCount = 0
   private ambiguousRouteCandidateRejectionCount = 0
+  private ambiguousIncomingPendingCount = 0
+  private staleConnectionReleaseCount = 0
+  private connectionMismatchCount = 0
+  private detailedAreaRawFallbackCount = 0
+  private dynamicRuntimeVehicleCount = 0
+  private bufferedLookaheadConnectionCount = 0
   private sceneGeneration = 0
   private viewportTransitionActive = false
   private hiddenRoadIds = new Set<string>()
@@ -292,6 +314,7 @@ export class BaiduVehicleRenderer {
     this.twinDirectionByVehicleId.clear()
     this.historyLastSeenSequence.clear()
     this.pendingLaneChanges.clear()
+    this.connectionLocksByVehicleId.clear()
   }
 
   commitViewportTransition(
@@ -323,6 +346,8 @@ export class BaiduVehicleRenderer {
       this.surfaceExclusionsByRoadId.set(interval.edgeId, ranges)
     }
     this.sourceMissingSnapshots.clear()
+    this.routeCursorByVehicleId.clear()
+    this.connectionLocksByVehicleId.clear()
     this.surfaceSuppressedVehicles.clear()
     this.surfaceReentrySnapshots.clear()
     this.invalidPoseSuppressedVehicles.clear()
@@ -361,6 +386,12 @@ export class BaiduVehicleRenderer {
     this.routeHintHitCount = 0
     this.routeHintMismatchCount = 0
     this.ambiguousRouteCandidateRejectionCount = 0
+    this.ambiguousIncomingPendingCount = 0
+    this.staleConnectionReleaseCount = 0
+    this.connectionMismatchCount = 0
+    this.detailedAreaRawFallbackCount = 0
+    this.dynamicRuntimeVehicleCount = 0
+    this.bufferedLookaheadConnectionCount = 0
     const previousSnapshotKey = `${this.lastContext.sessionId}:${this.lastContext.sequence}`
     const previousState = this.lastContext.state
     if (this.sessionId && context.sessionId && this.sessionId !== context.sessionId) {
@@ -439,9 +470,18 @@ export class BaiduVehicleRenderer {
         vehicle,
         context.trafficPeriod,
         context.intersectionId,
-        previousPose?.connectionKey,
+        this.connectionLocksByVehicleId.get(vehicle.vehicle_id),
         this.routeCursorByVehicleId.get(vehicle.vehicle_id),
       )
+      if (routeTurnResolution.connectionLock.connectionKey) {
+        this.connectionLocksByVehicleId.set(
+          vehicle.vehicle_id,
+          routeTurnResolution.connectionLock,
+        )
+      } else {
+        this.connectionLocksByVehicleId.delete(vehicle.vehicle_id)
+      }
+      if (routeTurnResolution.releasedStaleLock) this.staleConnectionReleaseCount += 1
       if (routeTurnResolution.routeCursor != null) {
         const previousCursor = this.routeCursorByVehicleId.get(vehicle.vehicle_id) ?? -1
         this.routeCursorByVehicleId.set(
@@ -453,7 +493,10 @@ export class BaiduVehicleRenderer {
       else if (routeTurnResolution.status === 'mismatch') this.routeHintMismatchCount += 1
       else if (routeTurnResolution.status === 'ambiguous') {
         this.ambiguousRouteCandidateRejectionCount += 1
+      } else if (routeTurnResolution.status === 'pending') {
+        this.ambiguousIncomingPendingCount += 1
       }
+      if (routeTurnResolution.status === 'mismatch') this.connectionMismatchCount += 1
       const resolverOptions = {
         speedMetersPerSecond: vehicle.speed,
         expectedHeading: sourceMapHeading,
@@ -462,7 +505,8 @@ export class BaiduVehicleRenderer {
         preferredMotionPathKey: routeTurnResolution.hint?.motionPathKey,
         requirePreferredMotionPath: routeTurnResolution.status === 'hit',
         routeHintRejected: routeTurnResolution.status === 'mismatch'
-          || routeTurnResolution.status === 'ambiguous',
+          || routeTurnResolution.status === 'ambiguous'
+          || routeTurnResolution.reason === 'outgoing_lane_requires_confirmed_connection_lock',
         vehicleHalfWidthMeters: profile.targetWidthMeters / 2,
         vehicleHalfLengthMeters: profile.targetLengthMeters / 2,
       }
@@ -582,8 +626,7 @@ export class BaiduVehicleRenderer {
       const rawFallback = lanePose === null && !laneChanging
       const rejectedInsideDetailedLane = Boolean(
         !lanePose
-        && this.lanePoseResolver?.hasLane(vehicle.lane_id)
-        && this.lanePoseResolver.coversDetailedArea([longitude, latitude]),
+        && this.lanePoseResolver?.coversDetailedArea([longitude, latitude]),
       )
       if (lanePose) {
         this.maximumRoadMappingErrorMeters = Math.max(
@@ -592,6 +635,9 @@ export class BaiduVehicleRenderer {
         )
       } else if (rejectedInsideDetailedLane) {
         this.offRoadVehicleCount += 1
+      }
+      if (rawFallback && this.lanePoseResolver?.coversDetailedArea([longitude, latitude])) {
+        this.detailedAreaRawFallbackCount += 1
       }
       if (rejectedInsideDetailedLane) {
         this.invalidPoseSuppressedVehicles.add(vehicle.vehicle_id)
@@ -677,6 +723,50 @@ export class BaiduVehicleRenderer {
       const pathCenterArcDistanceMeters = lanePose
         ? lanePose.pathArcDistanceMeters - frontToCenterOffsetMeters
         : undefined
+      let activeConnectionLock = this.connectionLocksByVehicleId.get(vehicle.vehicle_id)
+      const dynamicConnectionEvidence: DynamicConnectionEvidence = activeConnectionLock?.connectionKey
+        ? {
+            source: activeConnectionLock.source === 'fixed_route_index'
+              ? 'fixed_route'
+              : vehicle.lane_id.startsWith(':') ? 'live_via' : 'buffered_lookahead',
+            connectionKey: activeConnectionLock.connectionKey,
+            observedLaneId: vehicle.lane_id,
+            fromLaneId: activeConnectionLock.fromLaneId,
+            toLaneId: activeConnectionLock.toLaneId,
+            viaLaneIds: activeConnectionLock.viaLaneIds,
+          }
+        : {
+            source: 'unresolved',
+            observedLaneId: vehicle.lane_id,
+          }
+      if (vehicle.vehicle_id.startsWith('event_vehicle_')) this.dynamicRuntimeVehicleCount += 1
+      if (dynamicConnectionEvidence.source === 'buffered_lookahead') {
+        this.bufferedLookaheadConnectionCount += 1
+      }
+      const topologyMotionBridge = Boolean(
+        previousPose?.motionPathKey
+        && lanePose?.motionPathKey
+        && previousPose.motionPathKey !== lanePose.motionPathKey
+        && activeConnectionLock?.connectionKey
+        && (
+          previousPose.connectionKey === activeConnectionLock.connectionKey
+          || (
+            previousPose.laneId === activeConnectionLock.fromLaneId
+            && (
+              activeConnectionLock.viaLaneIds?.includes(vehicle.lane_id)
+              || vehicle.lane_id === activeConnectionLock.toLaneId
+            )
+          )
+        ),
+      )
+      if (
+        activeConnectionLock?.stage === 'exiting'
+        && lanePose
+        && lanePose.naturalFrontDistanceMeters >= profile.targetLengthMeters - 0.05
+      ) {
+        this.connectionLocksByVehicleId.delete(vehicle.vehicle_id)
+        activeConnectionLock = undefined
+      }
       const motionEpoch = previousPose?.motionEpoch ?? 0
       const candidateMotionPathKey = lanePose?.motionPathKey
         ?? (draft.rawFallback || draft.laneChanging
@@ -804,10 +894,8 @@ export class BaiduVehicleRenderer {
         motionPathKey: lanePose?.motionPathKey ?? (draft.rawFallback || draft.laneChanging
           ? `raw:${vehicle.road_id}:${vehicle.lane_id}`
           : previousPose?.motionPathKey),
-        connectionKey: draft.routeTurnResolution.hint?.connectionKey
-          ?? previousPose?.connectionKey,
-        routeHintSource: draft.routeTurnResolution.hint?.source
-          ?? previousPose?.routeHintSource,
+        connectionKey: activeConnectionLock?.connectionKey,
+        routeHintSource: activeConnectionLock?.source,
         segmentKey: lanePose?.segmentKey ?? (draft.rawFallback || draft.laneChanging
           ? `raw:${vehicle.lane_id}`
           : previousPose?.segmentKey),
@@ -880,9 +968,10 @@ export class BaiduVehicleRenderer {
         headingErrorDegrees,
         sumoLaneDeltaDegrees,
         motionPathKey: lanePose?.motionPathKey,
-        connectionKey: draft.routeTurnResolution.hint?.connectionKey,
+        connectionKey: activeConnectionLock?.connectionKey,
         routeHintStatus: draft.routeTurnResolution.status,
-        routeHintSource: draft.routeTurnResolution.hint?.source,
+        routeHintSource: activeConnectionLock?.source,
+        connectionLockStage: activeConnectionLock?.stage,
         segmentKey: lanePose?.segmentKey,
         lifecycle: draft.laneChanging
           ? 'laneChanging'
@@ -911,8 +1000,38 @@ export class BaiduVehicleRenderer {
           true,
           {
             motionPathKey: lanePose?.motionPathKey ?? `raw:${vehicle.road_id}:${vehicle.lane_id}`,
-            connectionKey: draft.routeTurnResolution.hint?.connectionKey,
-            routeHintSource: draft.routeTurnResolution.hint?.source,
+            connectionKey: activeConnectionLock?.connectionKey,
+            routeHintSource: activeConnectionLock?.source,
+            connectionLockStage: activeConnectionLock?.stage,
+            dynamicConnectionEvidence,
+            laneChangeCorridorKey: draft.laneChanging && previousPose?.motionPathKey
+              ? `${previousPose.motionPathKey}->${lanePose?.motionPathKey ?? candidateMotionPathKey}`
+              : undefined,
+            motionPathBridgeKey: !draft.laneChanging
+              && (previousPose?.laneId === vehicle.lane_id || topologyMotionBridge)
+              && previousPose?.motionPathKey
+              && lanePose?.motionPathKey
+              && previousPose.motionPathKey !== lanePose.motionPathKey
+              ? `${previousPose.motionPathKey}->${lanePose.motionPathKey}`
+              : undefined,
+            corridorMotionPathKeys: draft.laneChanging
+              ? [...new Set([
+                  previousPose?.motionPathKey,
+                  lanePose?.motionPathKey,
+                ].filter((key): key is string => Boolean(key)))]
+              : [...new Set([
+                  previousPose?.laneId === vehicle.lane_id || topologyMotionBridge
+                    ? previousPose?.motionPathKey
+                    : undefined,
+                  lanePose?.motionPathKey,
+                ].filter((key): key is string => Boolean(key)))],
+            detailedCorridorValidation: Boolean(
+              lanePose
+              && this.lanePoseResolver?.coversDetailedArea([point.longitude, point.latitude])
+            ),
+            rawTransitionValidated: roadTransitionKind === 'raw_continuous'
+              && displacementStable
+              && !this.lanePoseResolver?.coversDetailedArea([point.longitude, point.latitude]),
             segmentKey: lanePose?.segmentKey ?? `raw:${vehicle.lane_id}`,
             occupancyKey: lanePose?.occupancyKey ?? previousPose?.occupancyKey,
             arcDistanceMeters: laneCenterArcDistanceMeters,
@@ -1057,6 +1176,7 @@ export class BaiduVehicleRenderer {
     this.pendingLaneChanges.clear()
     this.sourceMissingSnapshots.clear()
     this.routeCursorByVehicleId.clear()
+    this.connectionLocksByVehicleId.clear()
     this.surfaceSuppressedVehicles.clear()
     this.surfaceReentrySnapshots.clear()
     this.invalidPoseSuppressedVehicles.clear()
@@ -1347,6 +1467,19 @@ export class BaiduVehicleRenderer {
       routeHintHitCount: this.routeHintHitCount,
       routeHintMismatchCount: this.routeHintMismatchCount,
       ambiguousRouteCandidateRejectionCount: this.ambiguousRouteCandidateRejectionCount,
+      ambiguousIncomingPendingCount: this.ambiguousIncomingPendingCount,
+      staleConnectionReleaseCount: this.staleConnectionReleaseCount,
+      connectionMismatchCount: this.connectionMismatchCount,
+      laneChangeCorridorViolationCount: motion.laneChangeCorridorViolationCount,
+      intermediateOffRoadFrameCount: motion.intermediateOffRoadFrameCount,
+      detailedAreaRawFallbackCount: this.detailedAreaRawFallbackCount,
+      compiledSegmentCount: motion.compiledSegmentCount,
+      rejectedCompiledSegmentCount: motion.rejectedCompiledSegmentCount,
+      endpointValidationFailureCount: motion.endpointValidationFailureCount,
+      compiledReadyElapsedSeconds: motion.compiledReadyElapsedSeconds,
+      dynamicRuntimeVehicleCount: this.dynamicRuntimeVehicleCount,
+      bufferedLookaheadConnectionCount:
+        this.bufferedLookaheadConnectionCount + motion.bufferedLookaheadSegmentCount,
       vehiclePoseDiagnostics: this.vehiclePoseDiagnostics.slice(0, 100),
       displayElapsedSeconds: motion.renderElapsedSeconds,
     }
@@ -1363,6 +1496,7 @@ export class BaiduVehicleRenderer {
       this.pendingLaneChanges.delete(id)
       this.twinDirectionByVehicleId.delete(id)
       this.routeCursorByVehicleId.delete(id)
+      this.connectionLocksByVehicleId.delete(id)
       this.invalidPoseSuppressedVehicles.delete(id)
       this.invalidPoseReentrySnapshots.delete(id)
     }

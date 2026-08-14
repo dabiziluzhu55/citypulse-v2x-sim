@@ -2,10 +2,16 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as mapvthree from '@baidumap/mapv-three'
 import { Color, Vector2, Vector3 } from 'three'
-import DetectedEventOverlay from './DetectedEventOverlay.vue'
 import RuntimeDisturbanceOverlay from './RuntimeDisturbanceOverlay.vue'
+import SceneEventMarkerOverlay from './SceneEventMarkerOverlay.vue'
 import { REALISTIC_INTERSECTION_SURFACE_Z } from '../../mapv/sceneElevation'
-import { activeDetectedEventCards } from '../../utils/detectedEventDisplay'
+import {
+  SceneEventMarkerLayer,
+  detectedMarkerColor,
+  mergeSceneEventMarkers,
+  type EventMarkerPosition,
+  type SceneEventMarker,
+} from '../../mapv/sceneEventMarkers'
 import {
   buildDirectedRouteCongestionLevels,
   loadEdgeTopologySegmentMap,
@@ -29,7 +35,10 @@ import {
   MapvRealisticIntersectionLayer,
   type RealisticRuntimeDisturbance,
 } from '../../mapv/realistic/MapvRealisticIntersectionLayer'
+import { LaneCongestionFlowLayer } from '../../mapv/realistic/LaneCongestionFlowLayer'
 import type { RealisticIntersectionManifest } from '../../mapv/realistic/intersectionManifest'
+import { vehicleGeometryGenerationIsValid } from '../../mapv/realistic/intersectionManifest'
+import { vehicleRouteTurnIndexNetworkSha256 } from '../../mapv/vehicleRouteTurnIndex'
 import {
   fullyExcludedSurfaceEdgeIds,
   surfaceVisibilityIntervals,
@@ -71,6 +80,7 @@ import {
   type StaticRoadTilesetManifest,
 } from '../../mapv/staticRoadTileset'
 import type { MapGeoJsonResponse } from '../../types/map'
+import type { TrafficStylePayload } from '../../types/intelligence'
 import {
   recordSimulationLongTasks,
   recordVehicleRuntimeDiagnostics,
@@ -80,7 +90,10 @@ import {
   MAP3D_STABLE_FRAME_RATE,
   Map3dPerformanceGovernor,
 } from '../../mapv/map3dPerformanceGovernor'
-import { runtimeDisturbanceLaneIds } from '../../utils/runtimeDisturbances'
+import {
+  runtimeDisturbanceHasSceneMarker,
+  runtimeDisturbanceLaneIds,
+} from '../../utils/runtimeDisturbances'
 import { SceneSwitchCoordinator } from '../../utils/sceneSwitchCoordinator'
 import { SignalDisplayTimeline } from '../../mapv/signalDisplayTimeline'
 import { detectMap3dCapability } from '../../mapv/map3dCapabilities'
@@ -145,14 +158,22 @@ const {
 } = useSimulationStore()
 const topologyNodes = ref<IntersectionTopologyNode[]>([])
 const runtimeDisturbanceMarkers = computed(() => runtimeDisturbances.value.flatMap((event) => {
+  if (event.state === 'CANCELLED') return []
+  if (event.eventType === 'accident' || event.eventType.startsWith('major_event_')) return []
   const node = topologyNodes.value.find((candidate) => candidate.intersectionId === event.intersectionId)
   return node ? [{ ...event, longitude: node.longitude, latitude: node.latitude }] : []
 }))
+const unmappedLegacyRuntimeEvents = computed(() => unmappedRuntimeEvents.value.filter((event) => (
+  String(event.event_type) !== 'accident' && !String(event.event_type).startsWith('major_event_')
+)))
 const overlayViewToken = ref(0)
 
 const detectedEventCards = computed(() => (
-  activeDetectedEventCards(snapshot.value?.event_detection?.cards)
+  snapshot.value?.event_detection?.cards?.filter((card) => card.status === 'active') ?? []
 ))
+const sceneEventMarkers = ref<SceneEventMarker[]>([])
+const debugSceneEventMarkers = ref<SceneEventMarker[]>([])
+const debugTrafficStyle = ref<TrafficStylePayload | null>(null)
 const detectedOverlayActive = computed(() => {
   const state = snapshot.value?.state
   return state === 'RUNNING' || state === 'PAUSED' || state === 'STARTING' || state === 'STOPPING'
@@ -211,6 +232,18 @@ const vehicleStats = ref<VehicleRenderStats>({
   routeHintHitCount: 0,
   routeHintMismatchCount: 0,
   ambiguousRouteCandidateRejectionCount: 0,
+  ambiguousIncomingPendingCount: 0,
+  staleConnectionReleaseCount: 0,
+  connectionMismatchCount: 0,
+  laneChangeCorridorViolationCount: 0,
+  intermediateOffRoadFrameCount: 0,
+  detailedAreaRawFallbackCount: 0,
+  compiledSegmentCount: 0,
+  rejectedCompiledSegmentCount: 0,
+  endpointValidationFailureCount: 0,
+  compiledReadyElapsedSeconds: null,
+  dynamicRuntimeVehicleCount: 0,
+  bufferedLookaheadConnectionCount: 0,
   vehiclePoseDiagnostics: [],
   displayElapsedSeconds: null,
 })
@@ -251,6 +284,8 @@ let roadsideFacilityRenderer: RoadsideFacilityRenderer | null = null
 let vegetationRenderer: VegetationRenderer | null = null
 let realisticIntersectionLayer: MapvRealisticIntersectionLayer | null = null
 let intersectionTopologyLayer: IntersectionTopologyLayer | null = null
+let sceneEventMarkerLayer: SceneEventMarkerLayer | null = null
+let laneCongestionFlowLayer: LaneCongestionFlowLayer | null = null
 let realisticDetailReady = false
 let tilesStatusTimer: ReturnType<typeof setInterval> | null = null
 let interactionEndTimer: ReturnType<typeof setTimeout> | null = null
@@ -316,6 +351,9 @@ const signalDisplayTimeline = new SignalDisplayTimeline()
 
 function displaySignalsAt(elapsedSeconds: number): void {
   const current = snapshot.value
+  const flowPaused = current?.state !== 'RUNNING'
+  intersectionTopologyLayer?.setAnimationPaused(flowPaused)
+  laneCongestionFlowLayer?.setAnimationPaused(flowPaused)
   const intersections = signalDisplayTimeline.sample(current?.session_id ?? '', elapsedSeconds)
   if (!intersections) return
   roadsideFacilityRenderer?.updateSignals(intersections)
@@ -335,9 +373,123 @@ function installSceneDebugApi(): void {
         y: number
         visible: boolean
       }>
+      sceneEffects: () => {
+        eventMarkers: ReturnType<SceneEventMarkerLayer['stats']> | null
+        laneCongestion: ReturnType<LaneCongestionFlowLayer['stats']> | null
+      }
+      setEventFixtures: (enabled: boolean) => boolean
     }
   }
   debugWindow.__CITYPULSE_SCENE_DEBUG__ = {
+    sceneEffects: () => ({
+      eventMarkers: sceneEventMarkerLayer?.stats() ?? null,
+      laneCongestion: laneCongestionFlowLayer?.stats() ?? null,
+    }),
+    setEventFixtures: (enabled) => {
+      if (!enabled) {
+        debugSceneEventMarkers.value = []
+        debugTrafficStyle.value = null
+        syncSceneEventMarkers()
+        syncTopologyCongestion()
+        return true
+      }
+      const manifest = activeDebugManifest
+      if (!manifest) return false
+      const drivingLanes = manifest.edges.flatMap((edge) => edge.lanes)
+        .filter((lane) => (lane.kind ?? 'driving') === 'driving')
+      const yellowPosition = drivingLanes[0]
+        ? realisticIntersectionLayer?.resolveLaneScenePosition(
+          manifest.intersectionId,
+          drivingLanes[0].id,
+          0.38,
+        )
+        : null
+      const redLane = drivingLanes[Math.min(1, drivingLanes.length - 1)]
+      const redPosition = redLane
+        ? realisticIntersectionLayer?.resolveLaneScenePosition(
+          manifest.intersectionId,
+          redLane.id,
+          0.62,
+        )
+        : null
+      if (!yellowPosition || !redPosition || !redLane) return false
+      const elapsedSeconds = snapshot.value?.elapsed_seconds ?? 120
+      debugSceneEventMarkers.value = [{
+        id: 'debug:detected-congestion',
+        color: 'yellow',
+        intersectionId: manifest.intersectionId,
+        position: {
+          ...yellowPosition,
+          source: 'detected_coordinates',
+          longitude: manifest.origin.longitude,
+          latitude: manifest.origin.latitude,
+        },
+        details: [{
+          kind: 'detected',
+          id: 'debug:detected-congestion',
+          card: {
+            event_id: 'debug-detected-congestion',
+            status: 'active',
+            traffic_state: 'spillback',
+            display_type: 'spillback',
+            display_label: '排队溢出',
+            severity: 'medium',
+            confidence: 0.93,
+            intersection_id: manifest.intersectionId,
+            lane_ids: [drivingLanes[0].id],
+            longitude: manifest.origin.longitude,
+            latitude: manifest.origin.latitude,
+            start_seconds: Math.max(0, elapsedSeconds - 45),
+            end_seconds: null,
+            duration_seconds: 45,
+            evidence: ['车道均速持续下降', '排队长度连续增长'],
+            suggestion: '建议提前疏导上游车流',
+            cause: '短时流量集中',
+            prediction_summary: '预计短时拥堵仍将持续',
+            event_type: 'traffic_anomaly',
+          },
+        }],
+      }, {
+        id: 'debug:runtime-accident',
+        color: 'red',
+        intersectionId: manifest.intersectionId,
+        position: { ...redPosition, source: 'accident_lane' },
+        details: [{
+          kind: 'runtime',
+          id: 'debug:runtime-accident',
+          event: {
+            sessionId: snapshot.value?.session_id ?? 'debug-session',
+            eventId: 'debug-runtime-accident',
+            intersectionId: manifest.intersectionId,
+            eventType: 'accident',
+            startSeconds: Math.max(0, elapsedSeconds - 30),
+            endSeconds: elapsedSeconds + 300,
+            parameters: {},
+            state: 'ACTIVE',
+            error: null,
+            details: { lane_id: redLane.id, position_ratio: 0.62 },
+          },
+        }],
+      }]
+      const styledEdges = manifest.edges
+        .filter((edge) => edge.lanes.some((lane) => (lane.kind ?? 'driving') === 'driving'))
+        .slice(0, 2)
+      debugTrafficStyle.value = {
+        as_of_seconds: elapsedSeconds,
+        edges: Object.fromEntries(styledEdges.map((edge, index) => [edge.id, {
+          level: index === 0 ? 'congested' : 'severe',
+          score: index === 0 ? 0.7 : 0.95,
+          mean_speed: index === 0 ? 5 : 1.8,
+          occupancy_pct: index === 0 ? 68 : 91,
+          occupancy: index === 0 ? 68 : 91,
+          vehicle_count: index === 0 ? 14 : 22,
+          halting_count: index === 0 ? 5 : 17,
+        }])),
+      }
+      syncSceneEventMarkers()
+      syncTopologyCongestion()
+      return true
+    },
     focusActive: (range = 620, heading = 40, pitch = 68) => {
       if (!engine || !activeDebugManifest) return false
       const target = coordinateProjector([
@@ -422,16 +574,10 @@ function installSceneDebugApi(): void {
   }
 }
 
-function projectDetectedEventToOverlay(
-  longitude: number,
-  latitude: number,
+function projectScenePointToOverlay(
+  scene: readonly [number, number, number],
 ): { x: number; y: number } | null {
   if (!engine || !containerRef.value) return null
-  const scene = coordinateProjector([
-    longitude,
-    latitude,
-    REALISTIC_INTERSECTION_SURFACE_Z + 18,
-  ])
   const camera = (engine as unknown as { camera?: import('three').Camera }).camera
   if (!camera) return null
   projectScratch.set(scene[0], scene[1], scene[2] ?? 0).project(camera)
@@ -445,16 +591,155 @@ function projectDetectedEventToOverlay(
   }
 }
 
+function projectSceneEventToOverlay(
+  marker: SceneEventMarker,
+): { x: number; y: number } | null {
+  if (!containerRef.value) return null
+  return sceneEventMarkerLayer?.projectMarkerToContainer(marker.id, containerRef.value) ?? null
+}
+
+function projectDetectedEventToOverlay(
+  longitude: number,
+  latitude: number,
+): { x: number; y: number } | null {
+  if (!engine) return null
+  const geographic = coordinateProjector([
+    longitude,
+    latitude,
+    REALISTIC_INTERSECTION_SURFACE_Z + 18,
+  ])
+  const mapCoordinate: [number, number, number] = [geographic[0], geographic[1], geographic[2] ?? 0]
+  const scene = engine.map.projectArrayCoordinate(mapCoordinate)
+  return projectScenePointToOverlay([scene[0], scene[1], scene[2] ?? 0])
+}
+
+function intersectionFallbackPosition(
+  intersectionId: string,
+  reason: string,
+): EventMarkerPosition | null {
+  if (!engine) return null
+  const node = topologyNodes.value.find((candidate) => candidate.intersectionId === intersectionId)
+  if (!node) return null
+  const geographic = coordinateProjector([
+    node.longitude,
+    node.latitude,
+    REALISTIC_INTERSECTION_SURFACE_Z + 0.18,
+  ])
+  const mapCoordinate: [number, number, number] = [geographic[0], geographic[1], geographic[2] ?? 0]
+  const scene = engine.map.projectArrayCoordinate(mapCoordinate)
+  return {
+    scene: [scene[0], scene[1], scene[2] ?? 0],
+    mapCoordinate,
+    longitude: node.longitude,
+    latitude: node.latitude,
+    intersectionId,
+    source: 'intersection_fallback',
+    fallbackReason: reason,
+  }
+}
+
+function detectedEventPosition(card: typeof detectedEventCards.value[number]): EventMarkerPosition | null {
+  if (!engine) return null
+  if (Number.isFinite(card.longitude) && Number.isFinite(card.latitude)) {
+    const geographic = coordinateProjector([
+      Number(card.longitude),
+      Number(card.latitude),
+      REALISTIC_INTERSECTION_SURFACE_Z + 0.18,
+    ])
+    const mapCoordinate: [number, number, number] = [geographic[0], geographic[1], geographic[2] ?? 0]
+    const scene = engine.map.projectArrayCoordinate(mapCoordinate)
+    return {
+      scene: [scene[0], scene[1], scene[2] ?? 0],
+      mapCoordinate,
+      longitude: Number(card.longitude),
+      latitude: Number(card.latitude),
+      laneId: card.lane_ids[0],
+      source: 'detected_coordinates',
+    }
+  }
+  return intersectionFallbackPosition(card.intersection_id, 'detected_coordinates_missing')
+}
+
+function runtimeEventPosition(
+  event: typeof runtimeDisturbances.value[number],
+): EventMarkerPosition | null {
+  const isAccident = event.eventType === 'accident'
+  const laneIdValue = isAccident ? event.details.lane_id : event.details.venue_lane_id
+  const laneId = typeof laneIdValue === 'string' ? laneIdValue : ''
+  const rawRatio = isAccident ? Number(event.details.position_ratio) : 0.5
+  const ratio = Number.isFinite(rawRatio) ? Math.max(0, Math.min(1, rawRatio)) : 0.5
+  if (laneId) {
+    const lanePosition = realisticIntersectionLayer?.resolveLaneScenePositionAny(
+      laneId,
+      ratio,
+      event.intersectionId,
+    )
+    if (lanePosition) {
+      return {
+        scene: lanePosition.scene,
+        mapCoordinate: lanePosition.mapCoordinate,
+        laneId,
+        positionRatio: ratio,
+        intersectionId: lanePosition.intersectionId,
+        source: isAccident ? 'accident_lane' : 'venue_lane',
+      }
+    }
+  }
+  const reason = laneId ? 'lane_not_mapped' : 'lane_id_missing'
+  return event.intersectionId
+    ? intersectionFallbackPosition(event.intersectionId, reason)
+    : null
+}
+
+function syncSceneEventMarkers(): void {
+  const detectedMarkers = detectedEventCards.value.flatMap((card): SceneEventMarker[] => {
+    const position = detectedEventPosition(card)
+    return position ? [{
+      id: `detected:${card.event_id}`,
+      color: detectedMarkerColor(card),
+      intersectionId: card.intersection_id,
+      position,
+      details: [{ kind: 'detected', id: `detected:${card.event_id}`, card }],
+    }] : []
+  })
+  const runtimeMarkers = runtimeDisturbances.value.flatMap((event): SceneEventMarker[] => {
+    if (!runtimeDisturbanceHasSceneMarker(event)) return []
+    const position = runtimeEventPosition(event)
+    return position ? [{
+      id: `runtime:${event.eventId}`,
+      color: 'red',
+      intersectionId: position.intersectionId ?? (event.intersectionId || 'lane-resolved'),
+      position,
+      details: [{ kind: 'runtime', id: `runtime:${event.eventId}`, event }],
+    }] : []
+  })
+  sceneEventMarkers.value = mergeSceneEventMarkers([
+    ...detectedMarkers,
+    ...runtimeMarkers,
+    ...debugSceneEventMarkers.value,
+  ])
+  sceneEventMarkerLayer?.setMarkers(sceneEventMarkers.value)
+}
+
 function syncTopologyCongestion(): void {
-  if (!intersectionTopologyLayer) return
   const current = snapshot.value
-  const routeIds = intersectionTopologyLayer.getRouteIds()
-  if (!current || !detectedOverlayActive.value) {
-    intersectionTopologyLayer.setRouteCongestion({})
+  const trafficStyle = debugTrafficStyle.value ?? current?.traffic_style
+  const routeIds = intersectionTopologyLayer?.getRouteIds() ?? []
+  const visibleManifests = realisticIntersectionLayer?.visibleCongestionManifests() ?? []
+  intersectionTopologyLayer?.setLocalFlowIntersections(
+    visibleManifests.map((manifest) => manifest.intersectionId),
+  )
+  if (!trafficStyle || (!detectedOverlayActive.value && !debugTrafficStyle.value)) {
+    intersectionTopologyLayer?.setRouteCongestion({})
+    laneCongestionFlowLayer?.setTrafficStyle([], null)
     return
   }
-  intersectionTopologyLayer.setRouteCongestion(
-    buildDirectedRouteCongestionLevels(current.traffic_style, routeIds),
+  intersectionTopologyLayer?.setRouteCongestion(
+    buildDirectedRouteCongestionLevels(trafficStyle, routeIds),
+  )
+  laneCongestionFlowLayer?.setTrafficStyle(
+    visibleManifests,
+    trafficStyle,
   )
 }
 
@@ -496,6 +781,7 @@ function refreshIntersectionRoadLod(force = false): void {
   lastRoadLodRefreshAt = now
   realisticIntersectionLayer.refreshViewport()
   intersectionTopologyLayer?.refreshViewport()
+  syncTopologyCongestion()
   syncAnimationLoop()
 }
 
@@ -711,7 +997,8 @@ function syncAnimationLoop(): void {
   const state = snapshot.value?.state
   const simulationActive = state === 'STARTING' || state === 'RUNNING' || state === 'STOPPING'
   const topologyActive = simulationActive && Boolean(intersectionTopologyLayer?.animationActive)
-  const active = props.active && documentVisible && (simulationActive || topologyActive)
+  const laneFlowActive = simulationActive && Boolean(laneCongestionFlowLayer?.animationActive)
+  const active = props.active && documentVisible && (simulationActive || topologyActive || laneFlowActive)
   engine.rendering.animationLoopFrameTime = stableRenderMode.value
     ? STABLE_FRAME_TIME_MS
     : ACTIVE_FRAME_TIME_MS
@@ -859,6 +1146,9 @@ async function switchRealisticIntersection(
   if (trackInitialPresentation) emit('loading', '正在准备当前高精度路口')
   try {
     const manifest = await realisticIntersectionLayer.prepare(intersectionId, signal)
+    if (!vehicleGeometryGenerationIsValid(manifest, vehicleRouteTurnIndexNetworkSha256())) {
+      throw new Error(`Vehicle geometry generation mismatch for ${intersectionId}`)
+    }
     prepared = true
     if (!sceneSwitchCoordinator.isCurrent(transaction) || revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) {
       realisticIntersectionLayer.discard(intersectionId)
@@ -907,6 +1197,7 @@ async function switchRealisticIntersection(
     activeDebugManifest = manifest
     installSceneDebugApi()
     syncRuntimeDisturbanceRoads()
+    syncSceneEventMarkers()
     scheduleRoadLodRefresh()
     realisticDetailReady = true
     vehicleRenderer?.commitViewportTransition(
@@ -1515,6 +1806,8 @@ async function initMap(): Promise<void> {
   vehicleRenderer = new BaiduVehicleRenderer(engine, coordinateProjector, displaySignalsAt)
   vehicleRenderer.setStableMode(stableRenderMode.value)
   realisticIntersectionLayer = new MapvRealisticIntersectionLayer(engine, coordinateProjector)
+  sceneEventMarkerLayer = new SceneEventMarkerLayer(engine)
+  laneCongestionFlowLayer = new LaneCongestionFlowLayer(engine, coordinateProjector)
   if (enableIntersectionTopology) {
     intersectionTopologyLayer = new IntersectionTopologyLayer(engine, coordinateProjector)
   }
@@ -1569,6 +1862,11 @@ async function initMap(): Promise<void> {
     immediate: true,
   }))
   asyncWatchStops.push(watch(
+    [detectedEventCards, runtimeDisturbances, topologyNodes],
+    syncSceneEventMarkers,
+    { deep: true, immediate: true },
+  ))
+  asyncWatchStops.push(watch(
     snapshot,
     () => {
       syncTopologyCongestion()
@@ -1605,6 +1903,7 @@ async function initMap(): Promise<void> {
     const nodes = await intersectionTopologyLayer.load()
     vehicleRenderer?.setHeadingAnchors(nodes)
     topologyNodes.value = nodes
+    syncSceneEventMarkers()
     applyGlobalNavigationBounds(nodes)
     syncTopologyCongestion()
     const intersectionIds = nodes.map((node) => node.intersectionId)
@@ -1706,6 +2005,13 @@ onUnmounted(() => {
   vegetationRenderer = null
   realisticIntersectionLayer?.destroy()
   realisticIntersectionLayer = null
+  sceneEventMarkerLayer?.destroy()
+  sceneEventMarkerLayer = null
+  sceneEventMarkers.value = []
+  debugSceneEventMarkers.value = []
+  debugTrafficStyle.value = null
+  laneCongestionFlowLayer?.destroy()
+  laneCongestionFlowLayer = null
   intersectionTopologyLayer?.destroy()
   intersectionTopologyLayer = null
   topologyNodes.value = []
@@ -1728,17 +2034,17 @@ onUnmounted(() => {
 <template>
   <div class="app-baidu-three-map">
     <div ref="containerRef" class="app-baidu-three-map__canvas" />
-    <DetectedEventOverlay
-      :cards="detectedEventCards"
+    <SceneEventMarkerOverlay
+      :markers="sceneEventMarkers"
       :snapshot="snapshot"
-      :project="projectDetectedEventToOverlay"
-      :active="detectedOverlayActive && !loading && !error"
-      :continuous="interacting"
+      :project="projectSceneEventToOverlay"
+      :active="(detectedOverlayActive || debugSceneEventMarkers.length > 0) && !loading && !error"
+      :continuous="true"
       :view-token="overlayViewToken"
     />
     <RuntimeDisturbanceOverlay
       :events="runtimeDisturbanceMarkers"
-      :unmapped-events="unmappedRuntimeEvents"
+      :unmapped-events="unmappedLegacyRuntimeEvents"
       :project="projectDetectedEventToOverlay"
       :active="props.active && !loading && !error"
       :continuous="interacting"

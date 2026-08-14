@@ -6,6 +6,7 @@ import {
   freezeDisturbanceRuntimeTargets,
   parseStoredDisturbanceRuntimeTargets,
   runtimeDisturbanceLaneIds,
+  runtimeDisturbanceHasSceneMarker,
   runtimeDisturbanceViews,
 } from '../src/utils/runtimeDisturbances.ts'
 
@@ -79,6 +80,45 @@ test('round-trips a session-scoped runtime mapping and rejects malformed storage
   })
   assert.equal(parseStoredDisturbanceRuntimeTargets('{broken'), null)
   assert.equal(parseStoredDisturbanceRuntimeTargets(JSON.stringify({ version: 1, sessionId: 'x', targets })), null)
+})
+
+test('recovers snapshot-only events and keeps all non-cancelled scene marker states', () => {
+  const snapshot = {
+    session_id: 'restored-session', state: 'RUNNING', sequence: 1,
+    elapsed_seconds: 30, duration_seconds: 300, progress: 0.1,
+    official_time: '07:00:30', playback_speed: 1, intersections: {}, vehicles: [],
+    events: ['SCHEDULED', 'ACTIVE', 'COMPLETED', 'FAILED', 'CANCELLED'].map((state, index) => ({
+      event_id: `restored-${index}`,
+      event_type: index % 2 === 0 ? 'accident' : 'major_event_opening',
+      state,
+      start_seconds: 10,
+      end_seconds: 100,
+      details: { lane_id: `edge_${index}`, intersection_id: 'demo_3' },
+      error: state === 'FAILED' ? 'invalid departLane' : null,
+    })),
+    metrics: { active_vehicles: 0, departed_vehicles: 0, arrived_vehicles: 0, remaining_vehicles: 0, halting_vehicles: 0, total_waiting_time: 0, mean_speed: 0 },
+    error: null,
+  }
+  const views = runtimeDisturbanceViews([], snapshot)
+  assert.equal(views.length, 5)
+  assert.ok(views.every((event) => event.source === 'snapshot'))
+  assert.equal(views[3].error, 'invalid departLane')
+  assert.deepEqual(views.map(runtimeDisturbanceHasSceneMarker), [true, true, true, true, false])
+})
+
+test('deduplicates configured and snapshot events by backend event id', () => {
+  const configured = freezeDisturbanceRuntimeTargets('session', [target('accident', 0)])
+  const duplicateTargets = [configured[0], { ...configured[0] }]
+  const views = runtimeDisturbanceViews(duplicateTargets, {
+    session_id: 'session', state: 'RUNNING', sequence: 1, elapsed_seconds: 1,
+    duration_seconds: 60, progress: 0, official_time: '07:00:01', playback_speed: 1,
+    intersections: {}, vehicles: [],
+    events: [{ event_id: configured[0].eventId, event_type: 'accident', state: 'FAILED', error: 'failed' }],
+    metrics: { active_vehicles: 0, departed_vehicles: 0, arrived_vehicles: 0, remaining_vehicles: 0, halting_vehicles: 0, total_waiting_time: 0, mean_speed: 0 },
+    error: null,
+  })
+  assert.equal(views.length, 1)
+  assert.equal(views[0].state, 'FAILED')
 })
 
 test('updates disturbance visuals without rebuilding the vehicle pose resolver', async () => {

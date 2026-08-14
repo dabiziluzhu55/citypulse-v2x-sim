@@ -124,6 +124,15 @@ export interface RealisticIntersectionManifest {
   radiusSceneUnits?: number
   horizontalScale?: number
   sumoUnitScale?: number
+  sourceSha256?: string
+  visualRoadSourceSha256?: string
+  vehicleGeometryGeneration?: {
+    schemaVersion: 1
+    networkSourceSha256: string
+    headingSourceSha256: string
+    connectionSourceSha256: string
+    connectionCount: number
+  }
   sumoHeadingTransform?: SumoHeadingTransform
   renderCoordinateSystem?: string
   origin: {
@@ -147,6 +156,25 @@ export interface RealisticIntersectionManifest {
 
 export type SignalColor = 'red' | 'amber' | 'green'
 
+export function vehicleGeometryGenerationIsValid(
+  value: Pick<
+    RealisticIntersectionManifest,
+    'vehicleGeometryGeneration' | 'vehicleConnectionSourceSha256' | 'sumoHeadingTransform'
+      | 'vehicleConnections' | 'connections'
+  >,
+  routeIndexSourceSha256?: string,
+): boolean {
+  const generation = value.vehicleGeometryGeneration
+  return generation?.schemaVersion === 1
+    && /^[a-f0-9]{64}$/.test(generation.networkSourceSha256)
+    && generation.headingSourceSha256 === generation.networkSourceSha256
+    && generation.connectionSourceSha256 === generation.networkSourceSha256
+    && value.sumoHeadingTransform?.sourceSha256 === generation.networkSourceSha256
+    && value.vehicleConnectionSourceSha256 === generation.networkSourceSha256
+    && generation.connectionCount === (value.vehicleConnections ?? value.connections).length
+    && (!routeIndexSourceSha256 || routeIndexSourceSha256 === generation.networkSourceSha256)
+}
+
 export function signalColorForState(state: string, linkIndex: number): SignalColor {
   const value = state[linkIndex]?.toLowerCase()
   if (value === 'g') return 'green'
@@ -169,6 +197,11 @@ export async function loadIntersectionManifest(
     || !sumoHeadingTransformIsValid(value.sumoHeadingTransform)
   )) {
     throw new Error('Intersection asset coordinate contract is incompatible')
+  }
+  if (url.includes('/intersections/v3/')) {
+    if (!vehicleGeometryGenerationIsValid(value)) {
+      throw new Error('Intersection vehicle geometry generations are incompatible')
+    }
   }
   for (const joint of value.roadJoints ?? []) {
     if (

@@ -74,6 +74,14 @@ export interface MotionPathSampler {
     coordinate: readonly [number, number],
   ): MotionPathProjection | null
   sample(motionPathKey: string, pathArcDistanceMeters: number): MotionPathSample | null
+  containsVehicle?(
+    motionPathKeys: readonly string[],
+    coordinate: readonly [number, number],
+    heading: number,
+    vehicleHalfLengthMeters: number,
+    vehicleHalfWidthMeters: number,
+    allowJunction?: boolean,
+  ): boolean
 }
 
 export interface LanePoseResolver {
@@ -292,6 +300,7 @@ export function createIntersectionLanePoseResolver(
   }
   const tracks = new Map<string, LaneTrack[]>()
   const tracksByKey = new Map<string, LaneTrack>()
+  const tracksByMotionPathKey = new Map<string, LaneTrack[]>()
   const motionPaths = new Map<string, MotionPathGeometry>()
   const laneMetadata = new Map<string, { edgeId: string; laneIndex: number }>()
   const addTrack = (track: LaneTrack) => {
@@ -299,6 +308,9 @@ export function createIntersectionLanePoseResolver(
     candidates.push(track)
     tracks.set(track.laneId, candidates)
     tracksByKey.set(track.key, track)
+    const motionPathTracks = tracksByMotionPathKey.get(track.motionPathKey) ?? []
+    motionPathTracks.push(track)
+    tracksByMotionPathKey.set(track.motionPathKey, motionPathTracks)
   }
   const createTrack = (
     track: Omit<
@@ -568,6 +580,67 @@ export function createIntersectionLanePoseResolver(
         heading,
         pathArcDistanceMeters: distanceMeters,
       }
+    },
+    containsVehicle(
+      motionPathKeys,
+      coordinate,
+      heading,
+      vehicleHalfLengthMeters,
+      vehicleHalfWidthMeters,
+      allowJunction = false,
+    ) {
+      const projected = projectBd09ToWebMercator(coordinate)
+      const center: [number, number] = [
+        projected[0] - originPlane[0],
+        projected[1] - originPlane[1],
+      ]
+      const pathTracks = motionPathKeys.flatMap((key) => tracksByMotionPathKey.get(key) ?? [])
+      if (pathTracks.length === 0) return false
+      const normal: [number, number] = [-Math.sin(heading), Math.cos(heading)]
+      const corners: [number, number][] = [-1, 1].flatMap((longitudinal) => (
+        [-1, 1].map((lateral) => ([
+          center[0]
+            + Math.cos(heading) * longitudinal * vehicleHalfLengthMeters * horizontalScale
+            + normal[0] * lateral * vehicleHalfWidthMeters * horizontalScale,
+          center[1]
+            + Math.sin(heading) * longitudinal * vehicleHalfLengthMeters * horizontalScale
+            + normal[1] * lateral * vehicleHalfWidthMeters * horizontalScale,
+        ] as [number, number]))
+      ))
+      const pointInPolygon = (point: [number, number], polygon: [number, number][]) => {
+        let inside = false
+        for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+          const left = polygon[index]
+          const right = polygon[previous]
+          if (
+            (left[1] > point[1]) !== (right[1] > point[1])
+            && point[0] < (right[0] - left[0]) * (point[1] - left[1])
+              / ((right[1] - left[1]) || 1e-12) + left[0]
+          ) inside = !inside
+        }
+        return inside
+      }
+      const cornerWithinTrack = (corner: [number, number], track: LaneTrack) => (
+        track.renderPoints.slice(1).some((end, index) => {
+          const start = track.renderPoints[index]
+          const dx = end[0] - start[0]
+          const dy = end[1] - start[1]
+          const length = Math.hypot(dx, dy)
+          if (length <= 1e-6) return false
+          const along = ((corner[0] - start[0]) * dx + (corner[1] - start[1]) * dy) / length
+          const lateral = Math.abs(
+            (corner[0] - start[0]) * -dy + (corner[1] - start[1]) * dx
+          ) / length
+          const endTolerance = vehicleHalfLengthMeters * horizontalScale + 0.15 * horizontalScale
+          return along >= (index === 0 ? -endTolerance : 0)
+            && along <= (index === track.renderPoints.length - 2 ? length + endTolerance : length)
+            && lateral / horizontalScale <= track.widthMeters / 2 + 0.15
+        })
+      )
+      return corners.every((corner) => (
+        (allowJunction && pointInPolygon(corner, manifest.junctionShape))
+        || pathTracks.some((track) => cornerWithinTrack(corner, track))
+      ))
     },
   }
   const resolver = ((

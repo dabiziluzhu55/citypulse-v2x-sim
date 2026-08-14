@@ -15,6 +15,7 @@ const networkPath = path.join(
 )
 const converterPath = path.join(frontendDirectory, 'scripts/convert-sumo-coordinates.py')
 const manifestDirectory = path.join(frontendDirectory, 'public/intersections/v3')
+const catalogPath = path.join(manifestDirectory, 'catalog.json')
 
 function asArray(value) {
   if (value == null) return []
@@ -210,8 +211,28 @@ for (const { manifestPath, manifest, vehicleConnections } of manifests) {
     }]
   }).sort((left, right) => left.tlsId.localeCompare(right.tlsId) || left.linkIndex - right.linkIndex)
   manifest.vehicleConnectionSourceSha256 = networkSha256
+  manifest.visualRoadSourceSha256 ??= manifest.sourceSha256
+  manifest.vehicleGeometryGeneration = {
+    schemaVersion: 1,
+    networkSourceSha256: networkSha256,
+    headingSourceSha256: manifest.sumoHeadingTransform?.sourceSha256 ?? '',
+    connectionSourceSha256: networkSha256,
+    connectionCount: manifest.vehicleConnections.length,
+  }
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 }
+
+const catalog = JSON.parse(await readFile(catalogPath, 'utf8'))
+catalog.vehicleGeometryGeneration = {
+  schemaVersion: 1,
+  networkSourceSha256: networkSha256,
+  intersectionCount: manifests.length,
+  connectionCount: manifests.reduce(
+    (total, item) => total + item.manifest.vehicleConnections.length,
+    0,
+  ),
+}
+await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`, 'utf8')
 
 console.log(`Wrote ${manifests.length} manifests with ${manifests.reduce(
   (total, item) => total + item.manifest.vehicleConnections.length,
