@@ -158,6 +158,7 @@ export class StableVehicleSelector {
     cameraRange: number,
     snapshotKey: string,
     limit = MAX_VISIBLE_VEHICLES,
+    priority?: (item: VisibleVehicle) => boolean,
   ): VisibleVehicle[] {
     if (cameraCenter.length < 2 || limit <= 0) {
       this.reset()
@@ -178,9 +179,10 @@ export class StableVehicleSelector {
       })
     }
 
+    const isPriority = priority ?? (() => false)
     const candidates = [...current.values()]
       .filter((item) => item.distanceMeters <= entryRadius)
-      .sort((a, b) => a.distanceMeters - b.distanceMeters)
+      .sort((a, b) => Number(isPriority(b)) - Number(isPriority(a)) || a.distanceMeters - b.distanceMeters)
     if (this.lastLimit == null || !snapshotKey) {
       const desired = candidates.slice(0, limit)
       this.retained = new Map(desired.map((item) => [item.vehicle.vehicle_id, item]))
@@ -190,7 +192,6 @@ export class StableVehicleSelector {
     const selected = [...this.retained.keys()]
       .map((id) => current.get(id))
       .filter((item): item is VisibleVehicle => Boolean(item && item.distanceMeters <= exitRadius))
-    const selectedIds = new Set(selected.map((item) => item.vehicle.vehicle_id))
     const maximumRemovals = this.lastLimit !== limit
       ? MAX_ROSTER_CHANGES_PER_SNAPSHOT
       : Number.POSITIVE_INFINITY
@@ -199,10 +200,27 @@ export class StableVehicleSelector {
       .sort((left, right) => right.distanceMeters - left.distanceMeters)
       .slice(0, Math.min(excess, maximumRemovals))
       .map((item) => item.vehicle.vehicle_id))
-    const kept = selected.filter((item) => !removableIds.has(item.vehicle.vehicle_id))
+    let kept = selected.filter((item) => !removableIds.has(item.vehicle.vehicle_id))
+    const selectedIdsAfterRemoval = new Set(kept.map((item) => item.vehicle.vehicle_id))
+    const missingPriority = candidates.filter((item) => (
+      isPriority(item) && !selectedIdsAfterRemoval.has(item.vehicle.vehicle_id)
+    ))
+    if (missingPriority.length > 0) {
+      const requiredSlots = Math.max(0, kept.length + missingPriority.length - limit)
+      if (requiredSlots > 0) {
+        const evicted = new Set(kept
+          .filter((item) => !isPriority(item))
+          .sort((left, right) => right.distanceMeters - left.distanceMeters)
+          .slice(0, requiredSlots)
+          .map((item) => item.vehicle.vehicle_id))
+        kept = kept.filter((item) => !evicted.has(item.vehicle.vehicle_id))
+      }
+      kept.push(...missingPriority.slice(0, Math.max(0, limit - kept.length)))
+    }
+    const keptIds = new Set(kept.map((item) => item.vehicle.vehicle_id))
     const maximumAdditions = MAX_ROSTER_CHANGES_PER_SNAPSHOT
     const additions = candidates
-      .filter((item) => !selectedIds.has(item.vehicle.vehicle_id))
+      .filter((item) => !keptIds.has(item.vehicle.vehicle_id))
       .slice(0, Math.min(Math.max(0, limit - kept.length), maximumAdditions))
     const next = [...kept, ...additions].sort((a, b) => a.distanceMeters - b.distanceMeters)
     this.retained = new Map(next.map((item) => [item.vehicle.vehicle_id, item]))

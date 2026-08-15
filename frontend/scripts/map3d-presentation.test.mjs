@@ -371,10 +371,33 @@ test('clears 2D and 3D vehicle state exactly when a new backend session is accep
   )
   assert.match(bindSessionBlock, /nextSessionId && nextSessionId !== sessionId\.value/)
   assert.match(bindSessionBlock, /renderSessionRevision\.value \+= 1/)
-  assert.match(backgroundMapSource, /watch\(renderSessionRevision, clearVehiclePresentation, \{ flush: 'sync' \}\)/)
+  assert.match(backgroundMapSource, /watch\(renderSessionRevision, clearSessionPresentation, \{ flush: 'sync' \}\)/)
   assert.match(baiduThreeMapSource, /watch\([\s\S]*renderSessionRevision[\s\S]*vehicleRenderer\?\.clear\(\)/)
+  assert.match(baiduThreeMapSource, /sceneEventMarkerLayer\?\.setMarkers\(\[\]\)/)
+  assert.match(baiduThreeMapSource, /realisticIntersectionLayer\?\.updateRuntimeDisturbances\(\[\]\)/)
   assert.match(cesiumMapSource, /renderSessionRevision[\s\S]*vehicleRenderer\?\.clear\(\)/)
   assert.doesNotMatch(bindSessionBlock, /TERMINAL_SIMULATION_STATES/)
+})
+
+test('installs accepted-session targets only after the old session render boundary is cleared', () => {
+  const launchBlock = simulationStoreSource.slice(
+    simulationStoreSource.indexOf('async function launchRun'),
+    simulationStoreSource.indexOf('function clearStatusError'),
+  )
+  const bindSessionBlock = simulationStoreSource.slice(
+    simulationStoreSource.indexOf('function bindSession'),
+    simulationStoreSource.indexOf('function ensureInitialized'),
+  )
+  assert.doesNotMatch(launchBlock, /setRuntimeDisturbanceTargets\(result\.session_id/)
+  assert.match(launchBlock, /bindSession\([\s\S]*\}, payload\)/)
+  assert.ok(
+    bindSessionBlock.indexOf('renderSessionRevision.value += 1')
+      < bindSessionBlock.indexOf('setRuntimeDisturbanceTargets(nextSessionId, runtimePayload)'),
+  )
+  assert.ok(
+    bindSessionBlock.indexOf('snapshot.value = null')
+      < bindSessionBlock.indexOf('setRuntimeDisturbanceTargets(nextSessionId, runtimePayload)'),
+  )
 })
 
 test('provides a black pre-mount crash shell and clears it only after Vue mounts', () => {

@@ -25,6 +25,7 @@ export interface AuthoritativeVehicleFrame {
   elapsedSeconds: number
   arrivalTimeMs: number
   samples: VehicleTwinSample[]
+  presentVehicleIds?: readonly string[]
 }
 
 export type VehicleMotionSourceFrame = AuthoritativeVehicleFrame
@@ -38,6 +39,33 @@ export interface CompiledMotionSegment {
   validationSampleCount: number
   routeSource: DynamicVehicleRouteSource
   rejectionReason?: string
+  recoveryRequired?: boolean
+  playable?: boolean
+  consecutiveValidCount?: number
+}
+export type CompiledVehicleSegment = CompiledMotionSegment
+
+export type VehicleSegmentState = 'ready' | 'isolated' | 'recovering'
+
+export interface VehiclePresenceInterval {
+  vehicleId: string
+  enteredElapsedSeconds: number
+  exitedElapsedSeconds: number | null
+}
+
+export interface CompiledVehicleTimeline {
+  vehicleId: string
+  authoritativeSamples: TimedVehicleSample[]
+  occurrences: TimedVehicleSample[]
+  state: VehicleSegmentState
+  playbackElapsedSeconds: number | null
+  lastDisplayElapsedSeconds: number | null
+  isolatedSinceElapsedSeconds: number | null
+  isolationAnchor: VehicleTwinSample | null
+  lastRecoveryReason?: string
+  recoveryPending: boolean
+  consecutiveValidSegmentCount: number
+  lastMappedSequence: number | null
 }
 
 export interface VehicleMotionBufferStats {
@@ -70,6 +98,13 @@ export interface VehicleMotionBufferStats {
   endpointValidationFailureCount: number
   compiledReadyElapsedSeconds: number | null
   bufferedLookaheadSegmentCount: number
+  compiledSegmentCacheHitCount: number
+  compiledSegmentCacheHitRate: number
+  isolatedVehicleCount: number
+  maximumIsolationSeconds: number
+  recoveredVehicleCount: number
+  ghostVehicleIds: string[]
+  hiddenUnresolvedVehicleIds: string[]
 }
 
 export interface TimedVehicleSample {
@@ -168,66 +203,75 @@ function laneChangeGuidePoint(
   sampler: MotionPathSampler | null,
 ): LaneChangeGuideSample | null {
   if (!sampler || !left.motionPathKey || !right.motionPathKey) return null
-  const targetStart = sampler.project(
-    right.motionPathKey,
-    [left.point[0], left.point[1]],
-  )?.pathArcDistanceMeters
+  const sourceStart = Number.isFinite(left.pathArcDistanceMeters)
+    ? Number(left.pathArcDistanceMeters)
+    : sampler.project(left.motionPathKey, [left.point[0], left.point[1]])?.pathArcDistanceMeters
   const targetEnd = Number.isFinite(right.pathArcDistanceMeters)
     ? Number(right.pathArcDistanceMeters)
     : sampler.project(right.motionPathKey, [right.point[0], right.point[1]])?.pathArcDistanceMeters
-  if (
-    targetStart == null || targetEnd == null || targetEnd + 0.05 < targetStart
-  ) return null
+  if (sourceStart == null || targetEnd == null) return null
   const sourceProgress = clamp(amount, 0, 1)
-  const distance = interpolateMonotonePathDistance(
-    targetStart,
-    Math.max(targetStart, targetEnd),
-    Number(left.sourceSpeedMetersPerSecond) || 0,
-    Number(right.sourceSpeedMetersPerSecond) || 0,
-    Math.max(0.001, (right.time - left.time) / 1_000),
-    sourceProgress,
-    Math.max(
-      Number(left.sourceAllowedSpeedMetersPerSecond) || 0,
-      Number(right.sourceAllowedSpeedMetersPerSecond) || 0,
-    ),
-    Math.max(
-      Number(left.maximumAccelerationMetersPerSecondSquared) || 0,
-      Number(right.maximumAccelerationMetersPerSecondSquared) || 0,
-    ),
-  )
-  const targetSample = sampler.sample(
-    right.motionPathKey,
-    distance.distanceMeters,
-  )
-  const startSample = sampler.sample(right.motionPathKey, targetStart)
-  const endSample = sampler.sample(right.motionPathKey, targetEnd)
-  if (!targetSample || !startSample || !endSample) return null
+  const durationSeconds = Math.max(0.001, (right.time - left.time) / 1_000)
+  const sourceArcStart = Number(left.sourceArcDistanceMeters)
+  const sourceArcEnd = Number(right.sourceArcDistanceMeters)
+  const measuredAdvance = Number.isFinite(sourceArcStart)
+    && Number.isFinite(sourceArcEnd)
+    && sourceArcEnd >= sourceArcStart
+    ? sourceArcEnd - sourceArcStart
+    : Number.NaN
+  const longitudinalAdvance = Number.isFinite(measuredAdvance)
+    ? measuredAdvance
+    : Math.max(
+        0,
+        (Math.max(0, Number(left.sourceSpeedMetersPerSecond) || 0)
+          + Math.max(0, Number(right.sourceSpeedMetersPerSecond) || 0))
+          * 0.5 * durationSeconds,
+      )
+  const sourceDistance = sourceStart + longitudinalAdvance * sourceProgress
+  const targetStart = Math.max(0, targetEnd - longitudinalAdvance)
+  const targetDistance = targetStart + (targetEnd - targetStart) * sourceProgress
+  const sourceSample = sampler.sample(left.motionPathKey, sourceDistance)
+  const targetSample = sampler.sample(right.motionPathKey, targetDistance)
+  const sourceAnchor = sampler.sample(left.motionPathKey, sourceStart)
+  const targetAnchor = sampler.sample(right.motionPathKey, targetEnd)
+  if (!sourceSample || !targetSample || !sourceAnchor || !targetAnchor) return null
   const lateralProgress = smoothLaneChangeProgress(sourceProgress)
   const startLateralOffset = signedLateralOffsetMeters(
-    [startSample.longitude, startSample.latitude],
+    [sourceAnchor.longitude, sourceAnchor.latitude],
     [left.point[0], left.point[1]],
-    startSample.heading,
+    sourceAnchor.heading,
   )
   const endLateralOffset = signedLateralOffsetMeters(
-    [endSample.longitude, endSample.latitude],
+    [targetAnchor.longitude, targetAnchor.latitude],
     [right.point[0], right.point[1]],
-    endSample.heading,
+    targetAnchor.heading,
   )
   const lateralOffsetMeters = startLateralOffset
     + (endLateralOffset - startLateralOffset) * lateralProgress
-  const point = applyLateralOffset(
+  const sourcePoint = applyLateralOffset(
     [
-      targetSample.longitude,
-      targetSample.latitude,
+      sourceSample.longitude,
+      sourceSample.latitude,
       left.point[2] + (right.point[2] - left.point[2]) * sourceProgress,
     ],
-    targetSample.heading,
-    lateralOffsetMeters,
+    sourceSample.heading,
+    startLateralOffset + (endLateralOffset - startLateralOffset) * sourceProgress,
   )
+  const targetPoint = applyLateralOffset(
+    [targetSample.longitude, targetSample.latitude, sourcePoint[2]],
+    targetSample.heading,
+    startLateralOffset + (endLateralOffset - startLateralOffset) * sourceProgress,
+  )
+  const point: [number, number, number] = [
+    sourcePoint[0] + (targetPoint[0] - sourcePoint[0]) * lateralProgress,
+    sourcePoint[1] + (targetPoint[1] - sourcePoint[1]) * lateralProgress,
+    sourcePoint[2],
+  ]
   return {
     point,
-    heading: targetSample.heading,
-    pathArcDistanceMeters: distance.distanceMeters,
+    heading: sourceSample.heading
+      + shortestAngleDelta(sourceSample.heading, targetSample.heading) * lateralProgress,
+    pathArcDistanceMeters: sourceDistance,
     lateralOffsetMeters,
   }
 }
@@ -578,8 +622,14 @@ export class VehicleMotionBuffer {
   private endpointValidationFailureCount = 0
   private compiledReadyElapsedSeconds: number | null = null
   private bufferedLookaheadSegmentCount = 0
+  private compiledSegmentCacheHitCount = 0
+  private isolatedVehicleCount = 0
+  private maximumIsolationSeconds = 0
+  private recoveredVehicleCount = 0
+  private ghostVehicleIds: string[] = []
+  private hiddenUnresolvedVehicleIds: string[] = []
   private readonly compiledSegments = new Map<string, CompiledMotionSegment>()
-  private readonly compiledAuthorityByVehicleId = new Map<string, TimedVehicleSample>()
+  private readonly timelines = new Map<string, CompiledVehicleTimeline>()
   private sceneGeneration: number | null = null
   private motionPathSampler: MotionPathSampler | null = null
   private lastLegalOutputByVehicleId = new Map<string, VehicleTwinSample>()
@@ -607,6 +657,9 @@ export class VehicleMotionBuffer {
     ).values()]
     const normalizedFrame = {
       ...frame,
+      presentVehicleIds: [...new Set(
+        frame.presentVehicleIds ?? deduplicatedSamples.map((sample) => sample.id),
+      )],
       samples: deduplicatedSamples.map((sample) => ({
         ...sample,
         point: [sample.point[0], sample.point[1], sample.point[2]] as [number, number, number],
@@ -637,14 +690,17 @@ export class VehicleMotionBuffer {
 
     if (previous) this.updateTiming(previous, normalizedFrame)
     this.frames.push(normalizedFrame)
-    this.updateCompiledReadiness(normalizedFrame)
+    this.updateCompiledTimelines(normalizedFrame)
     if (this.frames.length > MAX_SOURCE_FRAMES) {
       this.frames.splice(0, this.frames.length - MAX_SOURCE_FRAMES)
     }
     return true
   }
 
-  sample(wallTimeMs: number): VehicleTwinSample[] | null {
+  sample(
+    wallTimeMs: number,
+    requestedDisplayElapsedSeconds: number | null = null,
+  ): VehicleTwinSample[] | null {
     if (this.frames.length < 2 || !Number.isFinite(wallTimeMs)) return null
     const first = this.frames[0]
     const latest = this.frames.at(-1)!
@@ -652,6 +708,23 @@ export class VehicleMotionBuffer {
       latest.elapsedSeconds,
       this.compiledReadyElapsedSeconds ?? this.frames[0].elapsedSeconds,
     )
+    if (requestedDisplayElapsedSeconds != null) {
+      if (
+        !Number.isFinite(requestedDisplayElapsedSeconds)
+        || requestedDisplayElapsedSeconds < first.elapsedSeconds - 1e-6
+        || requestedDisplayElapsedSeconds > latest.elapsedSeconds + 1e-6
+      ) return null
+      this.renderElapsedSeconds = Math.max(
+        this.renderElapsedSeconds ?? requestedDisplayElapsedSeconds,
+        requestedDisplayElapsedSeconds,
+      )
+      this.lastOutputWallTimeMs = wallTimeMs
+      this.globalBufferDepthSeconds = Math.max(0, latest.elapsedSeconds - this.renderElapsedSeconds)
+      this.expectedPlaybackRate = 1
+      const result = this.interpolateAt(this.renderElapsedSeconds)
+      this.pruneConsumedFrames()
+      return result
+    }
     const startupBufferSeconds = this.bufferSeconds
     if (
       this.renderElapsedSeconds == null
@@ -733,8 +806,14 @@ export class VehicleMotionBuffer {
     this.endpointValidationFailureCount = 0
     this.compiledReadyElapsedSeconds = null
     this.bufferedLookaheadSegmentCount = 0
+    this.compiledSegmentCacheHitCount = 0
+    this.isolatedVehicleCount = 0
+    this.maximumIsolationSeconds = 0
+    this.recoveredVehicleCount = 0
+    this.ghostVehicleIds = []
+    this.hiddenUnresolvedVehicleIds = []
     this.compiledSegments.clear()
-    this.compiledAuthorityByVehicleId.clear()
+    this.timelines.clear()
     this.sceneGeneration = null
     this.lastLegalOutputByVehicleId.clear()
   }
@@ -770,30 +849,41 @@ export class VehicleMotionBuffer {
       endpointValidationFailureCount: this.endpointValidationFailureCount,
       compiledReadyElapsedSeconds: this.compiledReadyElapsedSeconds,
       bufferedLookaheadSegmentCount: this.bufferedLookaheadSegmentCount,
+      compiledSegmentCacheHitCount: this.compiledSegmentCacheHitCount,
+      compiledSegmentCacheHitRate: this.compiledSegmentCount + this.compiledSegmentCacheHitCount > 0
+        ? this.compiledSegmentCacheHitCount
+          / (this.compiledSegmentCount + this.compiledSegmentCacheHitCount)
+        : 0,
+      isolatedVehicleCount: this.isolatedVehicleCount,
+      maximumIsolationSeconds: this.maximumIsolationSeconds,
+      recoveredVehicleCount: this.recoveredVehicleCount,
+      ghostVehicleIds: [...this.ghostVehicleIds],
+      hiddenUnresolvedVehicleIds: [...this.hiddenUnresolvedVehicleIds],
     }
   }
 
-  private updateCompiledReadiness(current: VehicleMotionSourceFrame): void {
-    if (this.frames.length === 1) {
-      this.compiledReadyElapsedSeconds = current.elapsedSeconds
-      for (const sample of current.samples) {
-        if ((sample.sampleQuality ?? 'authoritative') === 'authoritative') {
-          this.compiledAuthorityByVehicleId.set(sample.id, { frame: current, sample })
-        }
-      }
-      return
+  private updateCompiledTimelines(current: VehicleMotionSourceFrame): void {
+    const samplesById = new Map(current.samples.map((sample) => [sample.id, sample] as const))
+    const presentVehicleIds = current.presentVehicleIds
+      ?? current.samples.map((sample) => sample.id)
+    for (const vehicleId of presentVehicleIds) {
+      if (samplesById.has(vehicleId)) continue
+      const timeline = this.timelines.get(vehicleId) ?? this.createTimeline(vehicleId)
+      timeline.recoveryPending = true
+      timeline.consecutiveValidSegmentCount = 0
+      this.timelines.set(vehicleId, timeline)
     }
-    let frameReady = true
     for (const sample of current.samples) {
-      const quality = sample.sampleQuality ?? 'authoritative'
-      const previous = this.compiledAuthorityByVehicleId.get(sample.id) ?? null
-      if (quality !== 'authoritative') {
-        if (previous) frameReady = false
-        continue
-      }
+      const timeline = this.timelines.get(sample.id) ?? this.createTimeline(sample.id)
       const right = { frame: current, sample }
+      timeline.occurrences.push(right)
+      this.timelines.set(sample.id, timeline)
+      const quality = sample.sampleQuality ?? 'authoritative'
+      if (quality !== 'authoritative') continue
+      const previous = timeline.authoritativeSamples.at(-1) ?? null
       if (!previous) {
-        this.compiledAuthorityByVehicleId.set(sample.id, right)
+        timeline.authoritativeSamples.push(right)
+        timeline.lastMappedSequence = current.sequence
         continue
       }
       const key = compiledMotionSegmentKey(previous, right)
@@ -822,11 +912,41 @@ export class VehicleMotionBuffer {
           this.bufferedLookaheadSegmentCount += 1
         }
       }
-      if (!segment.valid) frameReady = false
-      else this.compiledAuthorityByVehicleId.set(sample.id, right)
+      if (segment.valid) {
+        timeline.consecutiveValidSegmentCount += 1
+        const recoveryRequired = timeline.recoveryPending
+        const playable = !recoveryRequired || timeline.consecutiveValidSegmentCount >= 2
+        segment.recoveryRequired = recoveryRequired
+        segment.playable = playable
+        segment.consecutiveValidCount = timeline.consecutiveValidSegmentCount
+        if (playable) timeline.recoveryPending = false
+      } else {
+        timeline.recoveryPending = true
+        timeline.consecutiveValidSegmentCount = 0
+      }
+      // Every authoritative endpoint is retained. Segment validity controls
+      // playback, never whether the next interval can be compiled.
+      timeline.authoritativeSamples.push(right)
+      timeline.lastMappedSequence = current.sequence
     }
-    if (frameReady && this.compiledReadyElapsedSeconds != null) {
-      this.compiledReadyElapsedSeconds = current.elapsedSeconds
+    // Global playback readiness follows source depth only. An invalid vehicle
+    // segment is isolated on its own timeline and must not pause the scene.
+    this.compiledReadyElapsedSeconds = current.elapsedSeconds
+  }
+
+  private createTimeline(vehicleId: string): CompiledVehicleTimeline {
+    return {
+      vehicleId,
+      authoritativeSamples: [],
+      occurrences: [],
+      state: 'ready',
+      playbackElapsedSeconds: null,
+      lastDisplayElapsedSeconds: null,
+      isolatedSinceElapsedSeconds: null,
+      isolationAnchor: null,
+      recoveryPending: false,
+      consecutiveValidSegmentCount: 0,
+      lastMappedSequence: null,
     }
   }
 
@@ -862,27 +982,11 @@ export class VehicleMotionBuffer {
     }
   }
 
-  private resolveSourceStepSeconds(): number {
-    if (this.frames.length < 2) return MIN_VEHICLE_BUFFER_SECONDS / 2
-    const intervals: number[] = []
-    for (let index = 1; index < this.frames.length; index += 1) {
-      intervals.push(this.frames[index].elapsedSeconds - this.frames[index - 1].elapsedSeconds)
-    }
-    return Math.max(0.01, percentile(intervals, 0.5))
-  }
-
   private interpolateAt(elapsedSeconds: number): VehicleTwinSample[] {
-    const occurrencesById = new Map<string, TimedVehicleSample[]>()
-    for (const frame of this.frames) {
-      for (const sample of frame.samples) {
-        const occurrences = occurrencesById.get(sample.id) ?? []
-        occurrences.push({ frame, sample })
-        occurrencesById.set(sample.id, occurrences)
-      }
-    }
     const samples: VehicleTwinSample[] = []
-    for (const [vehicleId, occurrences] of occurrencesById) {
-      const resolved = this.resolveVehicleAt(occurrences, elapsedSeconds)
+    let isolatedVehicleCount = 0
+    for (const [vehicleId, timeline] of this.timelines) {
+      const resolved = this.resolveVehicleAt(timeline, elapsedSeconds)
       if (resolved) {
         samples.push(resolved)
         this.lastLegalOutputByVehicleId.set(vehicleId, this.cloneSample(
@@ -893,27 +997,87 @@ export class VehicleMotionBuffer {
       } else {
         this.lastLegalOutputByVehicleId.delete(vehicleId)
       }
+      if (timeline.state !== 'ready') isolatedVehicleCount += 1
     }
+    this.isolatedVehicleCount = isolatedVehicleCount
+    const authoritativeIds = this.vehicleRosterAt(elapsedSeconds)
+    const outputIds = new Set(samples.map((sample) => sample.id))
+    this.ghostVehicleIds = [...outputIds].filter((id) => !authoritativeIds.has(id))
+    this.hiddenUnresolvedVehicleIds = [...authoritativeIds].filter((id) => !outputIds.has(id))
     return samples
   }
 
   private resolveVehicleAt(
-    occurrences: TimedVehicleSample[],
+    timeline: CompiledVehicleTimeline,
     elapsedSeconds: number,
   ): VehicleTwinSample | null {
-    if (occurrences.length === 0) return null
-    const lastOccurrence = occurrences.at(-1)!
-    const latestFrame = this.frames.at(-1)!
-    const sourceRemovalGraceSeconds = this.resolveSourceStepSeconds() * 3 + 1e-6
-    if (
-      latestFrame.elapsedSeconds - lastOccurrence.frame.elapsedSeconds > sourceRemovalGraceSeconds
-      && elapsedSeconds - lastOccurrence.frame.elapsedSeconds > sourceRemovalGraceSeconds
-    ) return null
-    const authoritative = occurrences.filter(({ sample }) => (
-      (sample.sampleQuality ?? 'authoritative') === 'authoritative'
-    ))
-    const left = authoritative.filter(({ frame }) => frame.elapsedSeconds <= elapsedSeconds).at(-1)
-    const right = authoritative.find(({ frame }) => frame.elapsedSeconds >= elapsedSeconds)
+    if (timeline.occurrences.length === 0 || !this.vehicleIsPresentAt(timeline.vehicleId, elapsedSeconds)) {
+      return null
+    }
+    const previousDisplayElapsedSeconds = timeline.lastDisplayElapsedSeconds
+    const displayDeltaSeconds = previousDisplayElapsedSeconds == null
+      ? 0
+      : Math.max(0, elapsedSeconds - previousDisplayElapsedSeconds)
+    timeline.lastDisplayElapsedSeconds = elapsedSeconds
+    if (timeline.playbackElapsedSeconds == null) timeline.playbackElapsedSeconds = elapsedSeconds
+
+    const regular = this.resolveAuthoritativeTimelineAt(timeline, elapsedSeconds)
+    if (regular) {
+      if (timeline.state !== 'ready') this.recoveredVehicleCount += 1
+      timeline.state = 'ready'
+      timeline.isolatedSinceElapsedSeconds = null
+      timeline.isolationAnchor = null
+      timeline.lastRecoveryReason = undefined
+      timeline.playbackElapsedSeconds = elapsedSeconds
+      return this.stabilizeResolvedSample(timeline, regular, elapsedSeconds, displayDeltaSeconds)
+    }
+
+    if (timeline.state !== 'isolated') {
+      timeline.state = 'isolated'
+      timeline.isolatedSinceElapsedSeconds = elapsedSeconds
+      timeline.isolationAnchor = null
+      timeline.lastRecoveryReason = 'compiled_segment_unavailable'
+    }
+    const isolatedSince = timeline.isolatedSinceElapsedSeconds ?? elapsedSeconds
+    this.maximumIsolationSeconds = Math.max(
+      this.maximumIsolationSeconds,
+      elapsedSeconds - isolatedSince,
+    )
+    return null
+  }
+
+  private vehicleIsPresentAt(vehicleId: string, elapsedSeconds: number): boolean {
+    return this.vehicleRosterAt(elapsedSeconds).has(vehicleId)
+  }
+
+  private vehicleRosterAt(elapsedSeconds: number): Set<string> {
+    let low = 0
+    let high = this.frames.length
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (this.frames[middle].elapsedSeconds <= elapsedSeconds) low = middle + 1
+      else high = middle
+    }
+    const frame = low > 0 ? this.frames[low - 1] : null
+    if (!frame) return new Set()
+    return new Set(frame.presentVehicleIds ?? frame.samples.map((sample) => sample.id))
+  }
+
+  private resolveAuthoritativeTimelineAt(
+    timeline: CompiledVehicleTimeline,
+    elapsedSeconds: number,
+  ): VehicleTwinSample | null {
+    const authoritative = timeline.authoritativeSamples
+    if (authoritative.length === 0) return null
+    let low = 0
+    let high = authoritative.length
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (authoritative[middle].frame.elapsedSeconds <= elapsedSeconds) low = middle + 1
+      else high = middle
+    }
+    const left = low > 0 ? authoritative[low - 1] : null
+    const right = low < authoritative.length ? authoritative[low] : null
     if (left && right && left !== right) {
       const duration = right.frame.elapsedSeconds - left.frame.elapsedSeconds
       const ratio = duration > 1e-9
@@ -926,13 +1090,13 @@ export class VehicleMotionBuffer {
         if (right.sample.roadTransitionKind !== 'incompatible') {
           this.normalTransitionEpochViolationCount += 1
         }
-        return this.cloneSample(left.sample, 'held', elapsedSeconds)
+        return null
       }
-      const compiled = compileMotionSegment(left, right, this.motionPathSampler)
-      if (!compiled.valid) {
-        this.incompatiblePathInterpolationBlockedCount += 1
-        return this.cloneSample(left.sample, 'held', elapsedSeconds)
+      const compiled = this.compiledSegments.get(compiledMotionSegmentKey(left, right))
+      if (!compiled?.valid || compiled.playable === false) {
+        return null
       }
+      this.compiledSegmentCacheHitCount += 1
       const interpolated = interpolateVehicleTwinSample(
         { ...left.sample, time: left.frame.elapsedSeconds * 1_000 },
         { ...right.sample, time: right.frame.elapsedSeconds * 1_000 },
@@ -944,7 +1108,7 @@ export class VehicleMotionBuffer {
         if (interpolated.intermediateValidationReason === 'lane_change_corridor_violation') {
           this.laneChangeCorridorViolationCount += 1
         }
-        return this.cloneSample(left.sample, 'held', elapsedSeconds)
+        return null
       }
       this.authoritativeInterpolationCount += 1
       return {
@@ -954,14 +1118,61 @@ export class VehicleMotionBuffer {
         displayElapsedSeconds: elapsedSeconds,
       }
     }
-    if (left) return this.cloneSample(left.sample, 'authoritative', elapsedSeconds)
-    if (right) return this.cloneSample(right.sample, 'held', elapsedSeconds)
-    const retained = occurrences.at(-1)!
-    return this.cloneSample(
-      retained.sample,
-      retained.sample.sampleQuality === 'missing' ? 'missing' : 'held',
-      elapsedSeconds,
-    )
+    if (left && Math.abs(left.frame.elapsedSeconds - elapsedSeconds) <= 1e-6) {
+      return this.cloneSample(left.sample, 'authoritative', elapsedSeconds)
+    }
+    return null
+  }
+
+  private stabilizeResolvedSample(
+    timeline: CompiledVehicleTimeline,
+    candidate: VehicleTwinSample,
+    elapsedSeconds: number,
+    displayDeltaSeconds: number,
+  ): VehicleTwinSample {
+    const previous = this.lastLegalOutputByVehicleId.get(timeline.vehicleId)
+    if (!previous || displayDeltaSeconds <= 1e-9) return candidate
+    const previousArc = Number(previous.pathArcDistanceMeters)
+    const candidateArc = Number(candidate.pathArcDistanceMeters)
+    if (
+      previous.motionPathKey
+      && previous.motionPathKey === candidate.motionPathKey
+      && Number.isFinite(previousArc)
+      && Number.isFinite(candidateArc)
+    ) {
+      if (candidateArc + 0.02 < previousArc) {
+        timeline.state = 'recovering'
+        return this.cloneSample(previous, 'held', elapsedSeconds)
+      }
+      const speedLimit = Math.max(
+        Number(previous.sourceSpeedMetersPerSecond) || 0,
+        Number(candidate.sourceSpeedMetersPerSecond) || 0,
+        Number(previous.sourceAllowedSpeedMetersPerSecond) || 0,
+        Number(candidate.sourceAllowedSpeedMetersPerSecond) || 0,
+      ) * MAX_INTERPOLATED_SPEED_RATIO
+      const maximumStep = Math.max(
+        0.02,
+        speedLimit * displayDeltaSeconds
+          + 0.5 * MAX_SYNTHETIC_ACCELERATION_MPS2 * displayDeltaSeconds * displayDeltaSeconds,
+      )
+      if (candidateArc - previousArc > maximumStep && this.motionPathSampler) {
+        const limitedArc = previousArc + maximumStep
+        const pathSample = this.motionPathSampler.sample(candidate.motionPathKey, limitedArc)
+        if (pathSample) {
+          timeline.state = 'recovering'
+          return {
+            ...candidate,
+            point: [pathSample.longitude, pathSample.latitude, candidate.point[2]],
+            dir: pathSample.heading - (Number(candidate.modelForwardAxisAngle) || 0),
+            vehicleHeading: pathSample.heading,
+            pathArcDistanceMeters: limitedArc,
+            sampleQuality: 'held',
+            displayElapsedSeconds: elapsedSeconds,
+          }
+        }
+      }
+    }
+    return candidate
   }
 
   private cloneSample(
@@ -981,9 +1192,32 @@ export class VehicleMotionBuffer {
   private pruneConsumedFrames(): void {
     if (this.renderElapsedSeconds == null) return
     const cutoff = this.renderElapsedSeconds - MAX_VEHICLE_BUFFER_SECONDS - 3
+    let pruned = false
     while (
       this.frames.length > 2
       && this.frames[1].elapsedSeconds <= cutoff
-    ) this.frames.shift()
+    ) {
+      this.frames.shift()
+      pruned = true
+    }
+    if (!pruned) return
+    for (const [vehicleId, timeline] of this.timelines) {
+      while (
+        timeline.occurrences.length > 1
+        && timeline.occurrences[1].frame.elapsedSeconds <= cutoff
+      ) timeline.occurrences.shift()
+      while (
+        timeline.authoritativeSamples.length > 1
+        && timeline.authoritativeSamples[1].frame.elapsedSeconds <= cutoff
+      ) timeline.authoritativeSamples.shift()
+      if (
+        (timeline.occurrences.length === 0
+          || timeline.occurrences.at(-1)!.frame.elapsedSeconds <= cutoff)
+        && !this.lastLegalOutputByVehicleId.has(vehicleId)
+      ) this.timelines.delete(vehicleId)
+    }
+    for (const [key, segment] of this.compiledSegments) {
+      if (segment.endElapsedSeconds <= cutoff) this.compiledSegments.delete(key)
+    }
   }
 }

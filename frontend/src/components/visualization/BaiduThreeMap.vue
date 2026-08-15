@@ -26,6 +26,7 @@ import { BaiduRoadNetworkRenderer } from '../../mapv/BaiduRoadNetworkRenderer'
 import {
   BaiduVehicleRenderer,
   type VehicleRenderStats,
+  type ViewportVehicleStagingBuffer,
 } from '../../mapv/BaiduVehicleRenderer'
 import { ShowcaseGeoJsonLayers } from '../../mapv/showcaseLayers/ShowcaseGeoJsonLayers'
 import { ShowcaseModelLayers } from '../../mapv/showcaseLayers/ShowcaseModelLayers'
@@ -151,6 +152,7 @@ const { geojson } = useSimulationMap(activeIntersectionId, ROAD_RENDER_RADIUS_ME
 const {
   snapshot,
   trafficView,
+  vehicleDisplayElapsedSeconds,
   renderSessionRevision,
   runtimeDisturbances,
   unmappedRuntimeEvents,
@@ -244,6 +246,17 @@ const vehicleStats = ref<VehicleRenderStats>({
   compiledReadyElapsedSeconds: null,
   dynamicRuntimeVehicleCount: 0,
   bufferedLookaheadConnectionCount: 0,
+  compiledSegmentCacheHitCount: 0,
+  compiledSegmentCacheHitRate: 0,
+  isolatedVehicleCount: 0,
+  maximumIsolationSeconds: 0,
+  recoveredVehicleCount: 0,
+  ghostVehicleIds: [],
+  hiddenUnresolvedVehicleIds: [],
+  viewportPrecompileMilliseconds: 0,
+  viewportTwinBlankFrameCount: 0,
+  viewportFirstFrameVehicleCount: 0,
+  surfaceExclusionVehicleFilterCount: 0,
   vehiclePoseDiagnostics: [],
   displayElapsedSeconds: null,
 })
@@ -377,6 +390,7 @@ function installSceneDebugApi(): void {
         eventMarkers: ReturnType<SceneEventMarkerLayer['stats']> | null
         laneCongestion: ReturnType<LaneCongestionFlowLayer['stats']> | null
       }
+      vehicleStats: () => VehicleRenderStats | null
       setEventFixtures: (enabled: boolean) => boolean
     }
   }
@@ -385,6 +399,7 @@ function installSceneDebugApi(): void {
       eventMarkers: sceneEventMarkerLayer?.stats() ?? null,
       laneCongestion: laneCongestionFlowLayer?.stats() ?? null,
     }),
+    vehicleStats: () => vehicleRenderer?.debugStats() ?? null,
     setEventFixtures: (enabled) => {
       if (!enabled) {
         debugSceneEventMarkers.value = []
@@ -1131,6 +1146,28 @@ interface PreparedIntersectionEnvironment {
   facilities: ReturnType<typeof parseSceneFacilityManifest> | null
 }
 
+async function waitForViewportVehicleStage(
+  intersectionId: string,
+  headingResolver: ReturnType<typeof createIntersectionLaneHeadingResolver>,
+  poseResolver: ReturnType<typeof createIntersectionLanePoseResolver>,
+  signal: AbortSignal,
+): Promise<ViewportVehicleStagingBuffer | null> {
+  // A restored backend can advance slower than wall time while SUMO is busy.
+  // Wait for the required two-second simulation window, not just three wall seconds.
+  const deadline = performance.now() + 20_000
+  while (!signal.aborted) {
+    const stage = vehicleRenderer?.prepareViewportTransition(
+      intersectionId,
+      headingResolver,
+      poseResolver,
+    ) ?? null
+    if (stage) return stage
+    if (performance.now() >= deadline) return null
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  }
+  return null
+}
+
 async function switchRealisticIntersection(
   intersectionId: string,
   trackInitialPresentation = false,
@@ -1153,6 +1190,18 @@ async function switchRealisticIntersection(
     if (!sceneSwitchCoordinator.isCurrent(transaction) || revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) {
       realisticIntersectionLayer.discard(intersectionId)
       return false
+    }
+    const headingResolver = createIntersectionLaneHeadingResolver(manifest)
+    const poseResolver = createIntersectionLanePoseResolver(manifest, coordinateProjector)
+    const vehicleStage = await waitForViewportVehicleStage(
+      intersectionId,
+      headingResolver,
+      poseResolver,
+      signal,
+    )
+    if (!vehicleStage) {
+      console.warn('[vehicle-stage] preparation timed out', vehicleRenderer?.viewportStageDiagnostic())
+      throw new Error(`Vehicle stage was not ready for ${intersectionId}`)
     }
     vehicleRenderer?.beginViewportTransition()
     const cameraPromise = new Promise<boolean>((resolve) => {
@@ -1193,6 +1242,14 @@ async function switchRealisticIntersection(
       return false
     }
 
+    const vehicleCommitted = vehicleRenderer?.commitViewportTransition(
+      vehicleStage,
+      fullyExcludedSurfaceEdgeIds(manifest),
+      surfaceVisibilityIntervals(manifest),
+    ) ?? true
+    if (!vehicleCommitted) {
+      throw new Error(`Vehicle stage contained no valid first frame for ${intersectionId}`)
+    }
     realisticIntersectionLayer.activate(intersectionId)
     activeDebugManifest = manifest
     installSceneDebugApi()
@@ -1200,13 +1257,6 @@ async function switchRealisticIntersection(
     syncSceneEventMarkers()
     scheduleRoadLodRefresh()
     realisticDetailReady = true
-    vehicleRenderer?.commitViewportTransition(
-      manifest.intersectionId,
-      createIntersectionLaneHeadingResolver(manifest),
-      createIntersectionLanePoseResolver(manifest, coordinateProjector),
-      fullyExcludedSurfaceEdgeIds(manifest),
-      surfaceVisibilityIntervals(manifest),
-    )
     syncRoadRendering(geojson.value)
     roadsideFacilityRenderer?.setRealisticDetailActive(true)
     displaySignalsAt(vehicleStats.value.displayElapsedSeconds ?? snapshot.value?.elapsed_seconds ?? 0)
@@ -1804,6 +1854,7 @@ async function initMap(): Promise<void> {
     ? new BaiduRoadNetworkRenderer(engine, coordinateProjector)
     : new BaiduDetailedRoadRenderer(engine, coordinateProjector)
   vehicleRenderer = new BaiduVehicleRenderer(engine, coordinateProjector, displaySignalsAt)
+  vehicleRenderer.setPresentationElapsedSeconds(vehicleDisplayElapsedSeconds.value)
   vehicleRenderer.setStableMode(stableRenderMode.value)
   realisticIntersectionLayer = new MapvRealisticIntersectionLayer(engine, coordinateProjector)
   sceneEventMarkerLayer = new SceneEventMarkerLayer(engine)
@@ -1824,6 +1875,14 @@ async function initMap(): Promise<void> {
     vegetationRenderer = new VegetationRenderer(engine, coordinateProjector)
     vegetationRenderer.setInteractionActive(interacting.value)
   }
+  asyncWatchStops.push(watch(
+    vehicleDisplayElapsedSeconds,
+    (elapsedSeconds) => {
+      vehicleRenderer?.setPresentationElapsedSeconds(elapsedSeconds)
+      if (elapsedSeconds != null) displaySignalsAt(elapsedSeconds)
+    },
+    { immediate: true },
+  ))
   asyncWatchStops.push(watch(
     trafficView,
     (value) => {
@@ -1852,6 +1911,12 @@ async function initMap(): Promise<void> {
     () => {
       vehicleRenderer?.clear()
       signalDisplayTimeline.clear()
+      sceneEventMarkers.value = []
+      sceneEventMarkerLayer?.setMarkers([])
+      realisticIntersectionLayer?.updateRuntimeDisturbances([])
+      intersectionTopologyLayer?.setRouteCongestion({})
+      laneCongestionFlowLayer?.setTrafficStyle([], null)
+      debugTrafficStyle.value = null
       engine?.requestRender()
     },
     { flush: 'sync' },
@@ -2041,6 +2106,7 @@ onUnmounted(() => {
       :active="(detectedOverlayActive || debugSceneEventMarkers.length > 0) && !loading && !error"
       :continuous="true"
       :view-token="overlayViewToken"
+      :session-revision="renderSessionRevision"
     />
     <RuntimeDisturbanceOverlay
       :events="runtimeDisturbanceMarkers"

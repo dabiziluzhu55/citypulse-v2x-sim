@@ -47,6 +47,16 @@ export interface VehicleRuntimeDiagnosticUpdate {
   laneChangeCorridorViolationCount: number
   intermediateOffRoadFrameCount: number
   detailedAreaRawFallbackCount: number
+  compiledSegmentCount: number
+  compiledSegmentCacheHitCount: number
+  compiledSegmentCacheHitRate: number
+  isolatedVehicleCount: number
+  maximumIsolationSeconds: number
+  recoveredVehicleCount: number
+  viewportPrecompileMilliseconds: number
+  viewportTwinBlankFrameCount: number
+  viewportFirstFrameVehicleCount: number
+  surfaceExclusionVehicleFilterCount: number
 }
 
 interface RuntimeDiagnosticState {
@@ -106,6 +116,16 @@ interface RuntimeDiagnosticState {
   laneChangeCorridorViolations: number
   intermediateOffRoadFrames: number
   detailedAreaRawFallbacks: number
+  compiledVehicleSegments: number
+  compiledSegmentCacheHits: number
+  compiledSegmentCacheHitRate: number
+  isolatedVehicles: number
+  maximumVehicleIsolationSeconds: number
+  recoveredVehicleTimelines: number
+  viewportPrecompileMilliseconds: number
+  viewportTwinBlankFrames: number
+  viewportFirstFrameVehicles: number
+  surfaceExclusionVehicleFilters: number
   capturedAt: string
 }
 
@@ -166,6 +186,16 @@ const state: RuntimeDiagnosticState = {
   laneChangeCorridorViolations: 0,
   intermediateOffRoadFrames: 0,
   detailedAreaRawFallbacks: 0,
+  compiledVehicleSegments: 0,
+  compiledSegmentCacheHits: 0,
+  compiledSegmentCacheHitRate: 0,
+  isolatedVehicles: 0,
+  maximumVehicleIsolationSeconds: 0,
+  recoveredVehicleTimelines: 0,
+  viewportPrecompileMilliseconds: 0,
+  viewportTwinBlankFrames: 0,
+  viewportFirstFrameVehicles: 0,
+  surfaceExclusionVehicleFilters: 0,
   capturedAt: '',
 }
 
@@ -243,6 +273,16 @@ export function resetSimulationRuntimeDiagnostics(sessionId = ''): void {
   state.laneChangeCorridorViolations = 0
   state.intermediateOffRoadFrames = 0
   state.detailedAreaRawFallbacks = 0
+  state.compiledVehicleSegments = 0
+  state.compiledSegmentCacheHits = 0
+  state.compiledSegmentCacheHitRate = 0
+  state.isolatedVehicles = 0
+  state.maximumVehicleIsolationSeconds = 0
+  state.recoveredVehicleTimelines = 0
+  state.viewportPrecompileMilliseconds = 0
+  state.viewportTwinBlankFrames = 0
+  state.viewportFirstFrameVehicles = 0
+  state.surfaceExclusionVehicleFilters = 0
   snapshotIntervalsMs = []
   lastSnapshotArrivalMs = null
   publish()
@@ -336,6 +376,16 @@ export function recordVehicleRuntimeDiagnostics(update: VehicleRuntimeDiagnostic
   state.laneChangeCorridorViolations = update.laneChangeCorridorViolationCount
   state.intermediateOffRoadFrames = update.intermediateOffRoadFrameCount
   state.detailedAreaRawFallbacks = update.detailedAreaRawFallbackCount
+  state.compiledVehicleSegments = update.compiledSegmentCount
+  state.compiledSegmentCacheHits = update.compiledSegmentCacheHitCount
+  state.compiledSegmentCacheHitRate = update.compiledSegmentCacheHitRate
+  state.isolatedVehicles = update.isolatedVehicleCount
+  state.maximumVehicleIsolationSeconds = update.maximumIsolationSeconds
+  state.recoveredVehicleTimelines = update.recoveredVehicleCount
+  state.viewportPrecompileMilliseconds = update.viewportPrecompileMilliseconds
+  state.viewportTwinBlankFrames = update.viewportTwinBlankFrameCount
+  state.viewportFirstFrameVehicles = update.viewportFirstFrameVehicleCount
+  state.surfaceExclusionVehicleFilters = update.surfaceExclusionVehicleFilterCount
   publish()
 }
 

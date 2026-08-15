@@ -22,6 +22,7 @@ export interface DynamicConnectionEvidence {
   toLaneId?: string
   viaLaneIds?: string[]
 }
+export type DynamicRouteEvidence = DynamicConnectionEvidence
 export type RoadTransitionKind =
   | 'same_path'
   | 'topology_successor'

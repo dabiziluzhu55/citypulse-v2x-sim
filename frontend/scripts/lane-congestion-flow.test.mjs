@@ -6,7 +6,17 @@ import {
   buildLaneCongestionFlows,
   CONGESTION_FLOW_VISUALS,
   congestionAnimationSpeed,
+  LaneFlowSpeedBucketStabilizer,
 } from '../src/mapv/realistic/laneCongestionFlow.ts'
+
+const laneLayerSource = await readFile(
+  new URL('../src/mapv/realistic/LaneCongestionFlowLayer.ts', import.meta.url),
+  'utf8',
+)
+const topologyLayerSource = await readFile(
+  new URL('../src/mapv/IntersectionTopologyLayer.ts', import.meta.url),
+  'utf8',
+)
 
 test('backend congestion levels map to the required 3D flow palette', () => {
   assert.equal(CONGESTION_FLOW_VISUALS.free.visible, false)
@@ -61,4 +71,23 @@ test('global 3D flow omits free routes and clips around local LOD intersections'
   assert.match(source, /if \(level === 'free'\) continue/)
   assert.match(source, /setLocalFlowIntersections/)
   assert.match(source, /clippedFlowFeatures/)
+})
+
+test('confirms a lane speed bucket for three snapshots before rebuilding its source', () => {
+  const stabilizer = new LaneFlowSpeedBucketStabilizer()
+  assert.deepEqual(stabilizer.resolve('edge:lane', 'low'), { bucket: 'low', suppressed: false })
+  assert.deepEqual(stabilizer.resolve('edge:lane', 'high'), { bucket: 'low', suppressed: true })
+  assert.deepEqual(stabilizer.resolve('edge:lane', 'high'), { bucket: 'low', suppressed: true })
+  assert.deepEqual(stabilizer.resolve('edge:lane', 'high'), { bucket: 'high', suppressed: false })
+})
+
+test('uses the reduced-frequency local and global flow animation contract', () => {
+  assert.match(laneLayerSource, /bucket === 'low' \? 0\.18 : bucket === 'medium' \? 0\.30 : 0\.44/)
+  assert.match(laneLayerSource, /animationInterval: 4/)
+  assert.match(laneLayerSource, /animationTailRatio: 0\.28/)
+  assert.match(laneLayerSource, /animationIdle: 1_500/)
+  assert.match(topologyLayerSource, /animationInterval: 4/)
+  assert.match(topologyLayerSource, /animationTailRatio: 0\.24/)
+  assert.match(topologyLayerSource, /animationSpeed: 0\.50/)
+  assert.match(topologyLayerSource, /animationIdle: 2_400/)
 })

@@ -155,6 +155,27 @@ test('resamples genuine source frames into continuous moving output', () => {
   assert.ok(Math.abs(firstStep - secondStep) < 0.1)
 })
 
+test('compiles adjacent received snapshots even when backend sequence numbers skip', () => {
+  const buffer = new VehicleMotionBuffer()
+  ;[
+    { sequence: 10, elapsedSeconds: 0, x: 0 },
+    { sequence: 12, elapsedSeconds: 0.5, x: 5 },
+    { sequence: 15, elapsedSeconds: 1, x: 10 },
+  ].forEach((frame, index) => buffer.push({
+    sceneGeneration: 0,
+    sequence: frame.sequence,
+    elapsedSeconds: frame.elapsedSeconds,
+    arrivalTimeMs: index * 500,
+    presentVehicleIds: ['sequence-gap'],
+    samples: [motionSample('sequence-gap', frame.x)],
+  }))
+
+  const sample = buffer.sample(1_000, 0.25)?.find((item) => item.id === 'sequence-gap')
+  assert.ok(sample)
+  assert.ok(sample.point[0] > 0 && sample.point[0] < 5)
+  assert.equal(buffer.stats().compiledSegmentCount, 2)
+})
+
 test('continues output after consumed source frames are pruned', () => {
   const buffer = new VehicleMotionBuffer()
   for (let index = 0; index <= 12; index += 1) {
@@ -208,9 +229,10 @@ test('retains vehicle samples through short empty source gaps', () => {
   assert.ok(expired && !expired.some((sample) => sample.id === 'held'))
 })
 
-test('keeps a continuously present roster visible across 1000 jittered source frames', () => {
+test('hides an unresolved present vehicle instead of emitting a stale ghost pose', () => {
   const buffer = new VehicleMotionBuffer()
   let renderedFrames = 0
+  let hiddenFrames = 0
   let arrivalTimeMs = 0
   for (let index = 0; index < 1_000; index += 1) {
     arrivalTimeMs += 42 + (index * 37) % 179
@@ -221,14 +243,19 @@ test('keeps a continuously present roster visible across 1000 jittered source fr
       elapsedSeconds: index * 0.2,
       arrivalTimeMs,
       samples: isolatedPoseFailure ? [] : [motionSample('stable-car', index * 0.1)],
+      presentVehicleIds: ['stable-car'],
     })
     if (index < 5) continue
     const samples = buffer.sample(arrivalTimeMs + 24)
     if (!samples) continue
     renderedFrames += 1
-    assert.ok(samples.some((sample) => sample.id === 'stable-car'), `vehicle flashed at frame ${index}`)
+    const vehicleSample = samples.find((sample) => sample.id === 'stable-car')
+    if (!vehicleSample) hiddenFrames += 1
+    else assert.notEqual(vehicleSample.sampleQuality, 'held')
   }
   assert.ok(renderedFrames > 900)
+  assert.ok(hiddenFrames > 0)
+  assert.deepEqual(buffer.stats().ghostVehicleIds, [])
 })
 
 test('deduplicates a vehicle id before buffering a source frame', () => {
@@ -501,12 +528,12 @@ test('does not turn held recovery poses into authoritative motion keyframes', ()
     arrivalTimeMs: frame.elapsedSeconds * 1_000,
     samples: [{ ...motionSample('recovering', frame.x), sampleQuality: frame.sampleQuality }],
   }))
-  const samples = buffer.sample(3_000)
+  const samples = buffer.sample(3_000, 1.75)
   assert.ok(samples)
   assert.ok(samples[0].point[0] > 4.9, 'held pose incorrectly flattened the source curve')
 })
 
-test('does not advance compiled readiness through held identity frames', () => {
+test('isolates held identity frames without blocking the shared source horizon', () => {
   const buffer = new VehicleMotionBuffer()
   for (let index = 0; index <= 4; index += 1) {
     buffer.push({
@@ -520,12 +547,98 @@ test('does not advance compiled readiness through held identity frames', () => {
     sceneGeneration: 0, sequence: 5, elapsedSeconds: 2.5, arrivalTimeMs: 2_500,
     samples: [{ ...motionSample('held-ready-boundary', 20), sampleQuality: 'held' }],
   })
-  assert.equal(buffer.stats().compiledReadyElapsedSeconds, 2)
+  assert.equal(buffer.stats().compiledReadyElapsedSeconds, 2.5)
   buffer.push({
     sceneGeneration: 0, sequence: 6, elapsedSeconds: 3, arrivalTimeMs: 3_000,
     samples: [{ ...motionSample('held-ready-boundary', 30), sampleQuality: 'authoritative' }],
   })
   assert.equal(buffer.stats().compiledReadyElapsedSeconds, 3)
+})
+
+test('compiles every authoritative interval once and reuses it for 1000 output queries', () => {
+  const buffer = new VehicleMotionBuffer()
+  const vehicleCount = 450
+  for (let sequence = 0; sequence < 40; sequence += 1) {
+    buffer.push({
+      sceneGeneration: 0,
+      sequence,
+      elapsedSeconds: sequence * 0.1,
+      arrivalTimeMs: sequence * 100,
+      samples: Array.from({ length: vehicleCount }, (_, index) => (
+        motionSample(`cache-${index}`, index * 0.001 + sequence * 0.000001)
+      )),
+    })
+  }
+  const compiled = buffer.stats().compiledSegmentCount
+  assert.equal(compiled, (40 - 1) * vehicleCount)
+  for (let output = 0; output < 1_000; output += 1) {
+    assert.ok(buffer.sample(4_000 + output * (1_000 / 45)))
+  }
+  const stats = buffer.stats()
+  assert.equal(stats.compiledSegmentCount, compiled)
+  assert.ok(stats.compiledSegmentCacheHitCount >= 1_000 * vehicleCount)
+  assert.ok(stats.compiledSegmentCacheHitRate > 0.95)
+})
+
+test('keeps valid vehicles moving when one vehicle timeline is incompatible', () => {
+  const buffer = new VehicleMotionBuffer()
+  for (let sequence = 0; sequence <= 8; sequence += 1) {
+    buffer.push({
+      sceneGeneration: 0,
+      sequence,
+      elapsedSeconds: sequence * 0.5,
+      arrivalTimeMs: sequence * 500,
+      samples: [
+        motionSample('valid-timeline', sequence * 2),
+        {
+          ...motionSample('isolated-timeline', sequence * 2),
+          sceneGeneration: 0,
+          motionEpoch: sequence < 2 ? 0 : 1,
+          sourceSpeedMetersPerSecond: 4,
+        },
+      ],
+    })
+  }
+  const first = buffer.sample(4_000)
+  const second = buffer.sample(4_100)
+  assert.ok(first?.length && second?.length)
+  const firstValid = first.find((sample) => sample.id === 'valid-timeline')
+  const secondValid = second.find((sample) => sample.id === 'valid-timeline')
+  const isolated = second.find((sample) => sample.id === 'isolated-timeline')
+  assert.ok(firstValid && secondValid)
+  assert.ok(secondValid.point[0] > firstValid.point[0])
+  if (isolated) assert.notEqual(isolated.sampleQuality, 'held')
+  assert.equal(buffer.stats().compiledReadyElapsedSeconds, 4)
+  assert.deepEqual(buffer.stats().ghostVehicleIds, [])
+})
+
+test('retains B after an invalid A to B interval and independently recovers on later intervals', () => {
+  const buffer = new VehicleMotionBuffer()
+  const frames = [
+    { elapsedSeconds: 0, x: 0, motionEpoch: 0 },
+    { elapsedSeconds: 0.5, x: 5, motionEpoch: 1 },
+    { elapsedSeconds: 1, x: 10, motionEpoch: 1 },
+    { elapsedSeconds: 1.5, x: 15, motionEpoch: 1 },
+    { elapsedSeconds: 2, x: 20, motionEpoch: 1 },
+  ]
+  frames.forEach((frame, sequence) => buffer.push({
+    sceneGeneration: 0,
+    sequence,
+    elapsedSeconds: frame.elapsedSeconds,
+    arrivalTimeMs: frame.elapsedSeconds * 1_000,
+    presentVehicleIds: ['recover-after-invalid'],
+    samples: [{
+      ...motionSample('recover-after-invalid', frame.x),
+      motionEpoch: frame.motionEpoch,
+    }],
+  }))
+  assert.equal(buffer.sample(2_000, 0.25)?.find((sample) => sample.id === 'recover-after-invalid'), undefined)
+  assert.equal(buffer.sample(2_050, 0.75)?.find((sample) => sample.id === 'recover-after-invalid'), undefined)
+  const recovered = buffer.sample(2_100, 1.25)?.find((sample) => sample.id === 'recover-after-invalid')
+  assert.ok(recovered)
+  assert.ok(recovered.point[0] > 10 && recovered.point[0] < 15)
+  assert.notEqual(recovered.sampleQuality, 'held')
+  assert.deepEqual(buffer.stats().ghostVehicleIds, [])
 })
 
 test('globally slows and pauses on underrun instead of predicting individual vehicles', () => {
@@ -1155,6 +1268,24 @@ test('retains selected vehicle ids across distance-order jitter', () => {
   )
 })
 
+test('reserves the visibility budget for vehicles in the active detailed intersection', () => {
+  const selector = new StableVehicleSelector()
+  const center = [116, 39]
+  const outer = [
+    vehicle('outer-a', 116.0001, 39),
+    vehicle('outer-b', 116.0002, 39),
+  ]
+  selector.select(outer, (coordinate) => [...coordinate], center, 500, 's:1', 2)
+  const selected = selector.select([
+    ...outer,
+    vehicle('local', 116.0003, 39),
+  ], (coordinate) => [...coordinate], center, 500, 's:2', 2, (item) => (
+    item.vehicle.vehicle_id === 'local'
+  ))
+  assert.equal(selected.length, 2)
+  assert.ok(selected.some((item) => item.vehicle.vehicle_id === 'local'))
+})
+
 test('removes missing vehicles from the selector without a second retention lifecycle', () => {
   const selector = new StableVehicleSelector()
   const center = [116, 39]
@@ -1186,20 +1317,27 @@ test('limits roster churn to 32 vehicles when the performance tier changes', () 
   assert.equal(full.length - constrained.length, MAX_ROSTER_CHANGES_PER_SNAPSHOT)
 })
 
-test('paces Twin output and counts empty grace by source snapshots', () => {
+test('paces Twin output and uses the authoritative display roster', () => {
   assert.match(vehicleRendererSource, /TWIN_INTERPOLATION_DELAY_MS = 250/)
   assert.match(vehicleRendererSource, /TWIN_INITIAL_SAMPLE_SPACING_MS = 50/)
-  assert.match(vehicleRendererSource, /SOURCE_MISSING_GRACE_SNAPSHOTS = 3/)
+  assert.doesNotMatch(vehicleRendererSource, /SOURCE_MISSING_GRACE_SNAPSHOTS/)
   assert.match(vehicleRendererSource, /NORMAL_OUTPUT_FRAME_MS = 1_000 \/ NORMAL_TWIN_OUTPUT_FPS/)
+  assert.doesNotMatch(vehicleRendererSource, /filterSurfaceRenderableVehicles/)
+  assert.match(vehicleRendererSource, /VIEWPORT_SNAPSHOT_HISTORY_SECONDS = 9/)
+  assert.match(vehicleRendererSource, /this\.replayingViewportSnapshots = true/)
   assert.match(vehicleRendererSource, /CONSTRAINED_OUTPUT_FRAME_MS = 1_000 \/ STABLE_TWIN_OUTPUT_FPS/)
   assert.match(vehicleRendererSource, /this\.twinPlaybackBacklogMs = pacing\.backlogMs/)
   assert.match(vehicleRendererSource, /this\.pushMotionFrameAt\(pacing\.sampleWallTimeMs, wallTimeMs\)/)
   assert.match(vehicleRendererSource, /recordSourceRoster\(context\.sequence/)
+  assert.match(vehicleRendererSource, /!lanePose\s*&& this\.lanePoseResolver\?\.hasLane\(vehicle\.lane_id\)/)
+  assert.doesNotMatch(vehicleRendererSource, /rejectedInsideDetailedLane[\s\S]{0,160}coversDetailedArea/)
+  assert.match(vehicleRendererSource, /presentVehicleIds: renderableVehicles\.map/)
+  assert.doesNotMatch(vehicleRendererSource, /retainMissingSourceSamples/)
   assert.doesNotMatch(vehicleRendererSource, /emptyRenderStreak \+= 1/)
   assert.match(vehicleRendererSource, /!isVehicleAnimationActive\(this\.lastContext\.state\)/)
 })
 
-test('freezes the final stable Twin roster for every terminal simulation state', () => {
+test('removes terminal vehicles instead of freezing a stale Twin roster', () => {
   assert.match(vehicleRendererSource, /context\.state === 'STOPPED'/)
   assert.match(vehicleRendererSource, /context\.state === 'COMPLETED'/)
   assert.match(vehicleRendererSource, /context\.state === 'FAILED'/)
@@ -1207,15 +1345,8 @@ test('freezes the final stable Twin roster for every terminal simulation state',
     vehicleRendererSource.indexOf('vehicles.length === 0'),
     vehicleRendererSource.indexOf('const renderableVehicles'),
   )
-  assert.match(terminalEmptyBlock, /freezeTerminalPose\(\)/)
-  assert.doesNotMatch(terminalEmptyBlock, /resetRuntime\(|twin\.reset\(/)
-  const freezeBlock = vehicleRendererSource.slice(
-    vehicleRendererSource.indexOf('private freezeTerminalPose'),
-    vehicleRendererSource.indexOf('private recordTwinPushGap'),
-  )
-  assert.match(freezeBlock, /!this\.terminalFreezeActive/)
-  assert.match(freezeBlock, /this\.lastSourceSamples/)
-  assert.match(freezeBlock, /pausableTwin\.pause/)
+  assert.match(terminalEmptyBlock, /this\.twin\.reset\(\)/)
+  assert.doesNotMatch(vehicleRendererSource, /private freezeTerminalPose/)
 })
 
 test('preserves complete optional vehicle telemetry through the traffic view', () => {

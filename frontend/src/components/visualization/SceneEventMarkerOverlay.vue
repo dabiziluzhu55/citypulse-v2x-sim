@@ -26,6 +26,7 @@ const props = defineProps<{
   active?: boolean
   continuous?: boolean
   viewToken?: string | number
+  sessionRevision?: number
 }>()
 
 const projected = ref<ProjectedMarker[]>([])
@@ -155,6 +156,16 @@ watch(
   () => [props.markers, props.snapshot?.sequence, props.active, props.continuous, props.viewToken] as const,
   () => { refresh(); syncLoop() },
   { deep: true },
+)
+
+watch(
+  () => props.sessionRevision,
+  () => {
+    selectedId.value = null
+    selectedDetailIndex.value = 0
+    projected.value = []
+  },
+  { flush: 'sync' },
 )
 
 onMounted(() => {

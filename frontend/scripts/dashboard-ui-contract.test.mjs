@@ -121,3 +121,10 @@ test('keeps lane-closure disabled labels compact and confirmation above the edit
   assert.match(sidebarSource, /z-index: 3200/)
   assert.match(homeSource, /configChangeDialogRef\.value\?\.focus\(\)/)
 })
+
+test('keeps one full-width current-simulation export action', () => {
+  assert.doesNotMatch(sidebarSource, /保存仿真场景|saveConfig\s*\(/)
+  assert.equal(sidebarSource.match(/导出当前仿真场景/g)?.length, 1)
+  assert.match(sidebarSource, /gridTemplateColumns: 'minmax\(0, 1fr\)'/)
+  assert.doesNotMatch(sidebarSource, /fileActions\.buttonWidth/)
+})

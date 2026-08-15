@@ -7,6 +7,7 @@ import { XMLParser } from 'fast-xml-parser'
 
 import {
   normalizeRuntimeVehicleFlowId,
+  resolveBufferedLaneTransitionConnection,
   resolveVehicleRouteTurnHint,
   resolveVehicleRouteTurnResolution,
 } from '../src/mapv/vehicleRouteTurnIndex.ts'
@@ -67,6 +68,33 @@ test('route turn index matches the current network and all three fixed route fil
     assert.equal(routeIndex.routeSources[period].sha256, sha256(content))
     assert.ok(Object.keys(routeIndex.periods[period].flows).length > 10_000)
   }
+})
+
+test('resolves a skipped internal lane only from an exact incoming and outgoing lane pair', () => {
+  let uniquePairs = 0
+  for (const connection of Object.values(routeIndex.connections)) {
+    const matches = Object.values(routeIndex.connections).filter((candidate) => (
+      candidate.intersectionId === connection.intersectionId
+      && candidate.fromEdge === connection.fromEdge
+      && candidate.fromLaneId === connection.fromLaneId
+      && candidate.toEdge === connection.toEdge
+      && candidate.toLaneId === connection.toLaneId
+    ))
+    const resolved = resolveBufferedLaneTransitionConnection(
+      connection.intersectionId,
+      connection.fromEdge,
+      connection.fromLaneId,
+      connection.toEdge,
+      connection.toLaneId,
+    )
+    if (matches.length === 1) {
+      uniquePairs += 1
+      assert.equal(resolved?.connectionKey, connection.connectionKey)
+    } else {
+      assert.equal(resolved, null)
+    }
+  }
+  assert.ok(uniquePairs > 300)
 })
 
 test('normalizes runtime ids and resolves every indexed lane/target-lane turn uniquely', () => {

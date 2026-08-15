@@ -129,7 +129,6 @@ const {
   configNote,
   buildPayload,
   buildPayloadFor,
-  buildExport,
 } = useCompactScenarioConfig(
   intersection,
   periods,
@@ -681,21 +680,6 @@ function requestControlModeChange(value: string): void {
   requestConfiguration({ ...config.value, control_mode: value })
 }
 
-function saveConfig() {
-  try {
-    const blob = new Blob([JSON.stringify(buildExport(), null, 2)], { type: 'application/json;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${config.value.scenario_preset_id}-scene-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
-    document.body.append(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 0)
-    feedback.value = '仿真场景配置已保存'
-  }
-  catch (error) { feedback.value = error instanceof Error ? error.message : '场景保存失败' }
-}
 async function exportConfig() {
   if (presetUnavailableMessage.value) {
     feedback.value = presetUnavailableMessage.value
@@ -909,11 +893,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
           top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.top}px`,
           width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.width}px`,
           height: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.height}px`,
-          gap: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.gap}px`,
-          gridTemplateColumns: `repeat(2, ${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.buttonWidth}px)`,
+          gridTemplateColumns: 'minmax(0, 1fr)',
         }"
       >
-        <button type="button" @click="saveConfig">保存仿真场景</button>
         <button type="button" :disabled="exporting" @click="exportConfig">{{ exporting ? '导出中…' : '导出当前仿真场景' }}</button>
       </div>
 

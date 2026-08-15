@@ -7,6 +7,7 @@ import {
   AdaptiveVehicleRenderBudget,
   resolveVehicleRenderRadius,
   StableVehicleSelector,
+  type VisibleVehicle,
   type VehicleRenderQuality,
 } from './vehicleVisibility'
 import {
@@ -52,6 +53,7 @@ import type { ResolvedLanePose } from './realistic/intersectionLaneHeading.ts'
 import type { RoadSurfaceVisibilityInterval } from './realistic/roadSurfaceExclusions.ts'
 import { VehicleOutputPacer } from './vehicleOutputPacing.ts'
 import {
+  resolveBufferedLaneTransitionConnection,
   resolveVehicleRouteTurnResolution,
   type VehicleConnectionLock,
   type VehicleRouteTurnResolutionStatus,
@@ -60,9 +62,9 @@ import {
 const TWIN_INTERPOLATION_DELAY_MS = 250
 const TWIN_INITIAL_SAMPLE_SPACING_MS = 50
 const VEHICLE_HISTORY_TTL_SNAPSHOTS = 30
-const EMPTY_RENDER_GRACE_SNAPSHOTS = 4
-const SOURCE_MISSING_GRACE_SNAPSHOTS = 3
 const LANE_RECOVERY_HOLD_SECONDS = 1.5
+const VIEWPORT_SNAPSHOT_HISTORY_SECONDS = 9
+const MAX_VIEWPORT_STAGING_SNAPSHOTS = 32
 export const NORMAL_TWIN_OUTPUT_FPS = 30
 export const STABLE_TWIN_OUTPUT_FPS = 24
 const NORMAL_OUTPUT_FRAME_MS = 1_000 / NORMAL_TWIN_OUTPUT_FPS
@@ -144,9 +146,51 @@ export interface VehicleRenderStats {
   compiledReadyElapsedSeconds: number | null
   dynamicRuntimeVehicleCount: number
   bufferedLookaheadConnectionCount: number
+  compiledSegmentCacheHitCount: number
+  compiledSegmentCacheHitRate: number
+  isolatedVehicleCount: number
+  maximumIsolationSeconds: number
+  recoveredVehicleCount: number
+  ghostVehicleIds: string[]
+  hiddenUnresolvedVehicleIds: string[]
+  viewportPrecompileMilliseconds: number
+  viewportTwinBlankFrameCount: number
+  viewportFirstFrameVehicleCount: number
+  surfaceExclusionVehicleFilterCount: number
   vehiclePoseDiagnostics: VehiclePoseDiagnostic[]
   displayElapsedSeconds: number | null
 }
+
+interface BufferedViewportVehicleSnapshot {
+  vehicles: TrafficVehicleView[]
+  context: VehicleRenderContext
+}
+
+export interface ViewportVehicleStagingBuffer {
+  intersectionId: string
+  snapshots: BufferedViewportVehicleSnapshot[]
+  headingResolver: LaneHeadingResolver | null
+  poseResolver: LanePoseResolver | null
+  displayElapsedSeconds: number
+  authoritativeLocalVehicleCount: number
+  precompileMilliseconds: number
+  firstFrameVehicleCount: number
+  priorityVehicleIds: string[]
+}
+export type ViewportVehicleStage = ViewportVehicleStagingBuffer
+
+export interface ViewportStagePreparationDiagnostic {
+  reason: 'ready' | 'display_time_unavailable' | 'display_time_unbracketed' | 'local_poses_unresolved'
+  intersectionId: string
+  displayElapsedSeconds: number | null
+  firstSnapshotElapsedSeconds: number | null
+  latestSnapshotElapsedSeconds: number | null
+  snapshotCount: number
+  authoritativeLocalVehicleCount: number
+  validLocalVehicleCount: number
+}
+
+export type VehicleCoverageKind = 'local_manifest' | 'supplemental_network' | 'outside'
 
 export interface VehiclePoseDiagnostic {
   vehicleId: string
@@ -178,6 +222,7 @@ export interface VehiclePoseDiagnostic {
   sourceLateralOffsetMeters?: number
   roadMappingErrorMeters?: number
   mappingMode?: ResolvedLanePose['mappingMode']
+  coverageKind: VehicleCoverageKind
 }
 
 export class BaiduVehicleRenderer {
@@ -207,11 +252,8 @@ export class BaiduVehicleRenderer {
     sequence: number
     startedSequence: number
   }>()
-  private readonly sourceMissingSnapshots = new Map<string, { count: number; sequence: number }>()
   private readonly routeCursorByVehicleId = new Map<string, number>()
   private readonly connectionLocksByVehicleId = new Map<string, VehicleConnectionLock>()
-  private readonly surfaceSuppressedVehicles = new Set<string>()
-  private readonly surfaceReentrySnapshots = new Map<string, { count: number; sequence: number }>()
   private readonly invalidPoseSuppressedVehicles = new Set<string>()
   private readonly invalidPoseReentrySnapshots = new Map<string, { count: number; sequence: number }>()
   private readonly presentationClock = new VehiclePresentationClock()
@@ -222,7 +264,6 @@ export class BaiduVehicleRenderer {
   private laneHeadingResolver: LaneHeadingResolver | null = null
   private lanePoseResolver: LanePoseResolver | null = null
   private lastVehicles: TrafficVehicleView[] = []
-  private lastSourceSamples: VehicleTwinSample[] = []
   private lastContext: VehicleRenderContext = {
     sessionId: '',
     state: null,
@@ -266,10 +307,17 @@ export class BaiduVehicleRenderer {
   private detailedAreaRawFallbackCount = 0
   private dynamicRuntimeVehicleCount = 0
   private bufferedLookaheadConnectionCount = 0
+  private readonly viewportSnapshots: BufferedViewportVehicleSnapshot[] = []
+  private replayingViewportSnapshots = false
+  private viewportPrecompileMilliseconds = 0
+  private viewportTwinBlankFrameCount = 0
+  private viewportFirstFrameVehicleCount = 0
+  private surfaceExclusionVehicleFilterCount = 0
   private sceneGeneration = 0
   private viewportTransitionActive = false
-  private hiddenRoadIds = new Set<string>()
-  private surfaceExclusionsByRoadId = new Map<string, Array<[number, number]>>()
+  private sharedDisplayElapsedSeconds: number | null = null
+  private viewportStagePreparationDiagnostic: ViewportStagePreparationDiagnostic | null = null
+  private viewportReplayPriorityVehicleIds: ReadonlySet<string> | null = null
 
   constructor(
     engine: mapvthree.Engine,
@@ -302,6 +350,23 @@ export class BaiduVehicleRenderer {
     this.stableOutputMode = stable
   }
 
+  setPresentationElapsedSeconds(elapsedSeconds: number | null): void {
+    this.sharedDisplayElapsedSeconds = Number.isFinite(elapsedSeconds)
+      ? Number(elapsedSeconds)
+      : null
+  }
+
+  debugStats(): VehicleRenderStats {
+    const radiusMeters = resolveVehicleRenderRadius(this.engine.map.getRange())
+    return this.stats(this.lastVehicles.length, radiusMeters)
+  }
+
+  viewportStageDiagnostic(): ViewportStagePreparationDiagnostic | null {
+    return this.viewportStagePreparationDiagnostic
+      ? { ...this.viewportStagePreparationDiagnostic }
+      : null
+  }
+
   setHeadingAnchors(anchors: readonly SumoHeadingAnchor[]): void {
     this.headingField.setAnchors(anchors)
   }
@@ -317,19 +382,137 @@ export class BaiduVehicleRenderer {
     this.connectionLocksByVehicleId.clear()
   }
 
-  commitViewportTransition(
+  prepareViewportTransition(
     intersectionId: string,
     headingResolver: LaneHeadingResolver | null,
     poseResolver: LanePoseResolver | null,
+  ): ViewportVehicleStagingBuffer | null {
+    const startedAt = performance.now()
+    const displayElapsedSeconds = this.sharedDisplayElapsedSeconds
+    if (displayElapsedSeconds == null || this.viewportSnapshots.length < 2) {
+      if (this.lastContext.sessionId && isVehicleAnimationActive(this.lastContext.state)) {
+        this.viewportStagePreparationDiagnostic = {
+          reason: 'display_time_unavailable',
+          intersectionId,
+          displayElapsedSeconds,
+          firstSnapshotElapsedSeconds: this.viewportSnapshots[0]?.context.elapsedSeconds ?? null,
+          latestSnapshotElapsedSeconds: this.viewportSnapshots.at(-1)?.context.elapsedSeconds ?? null,
+          snapshotCount: this.viewportSnapshots.length,
+          authoritativeLocalVehicleCount: 0,
+          validLocalVehicleCount: 0,
+        }
+        return null
+      }
+      return {
+        intersectionId,
+        snapshots: [...this.viewportSnapshots],
+        headingResolver,
+        poseResolver,
+        displayElapsedSeconds: displayElapsedSeconds ?? this.lastContext.elapsedSeconds,
+        authoritativeLocalVehicleCount: 0,
+        precompileMilliseconds: performance.now() - startedAt,
+        firstFrameVehicleCount: 0,
+        priorityVehicleIds: [],
+      }
+    }
+    const snapshots = [...this.viewportSnapshots]
+    const rightIndex = snapshots.findIndex((entry) => (
+      entry.context.elapsedSeconds > displayElapsedSeconds
+    ))
+    if (rightIndex <= 0) {
+      this.viewportStagePreparationDiagnostic = {
+        reason: 'display_time_unbracketed',
+        intersectionId,
+        displayElapsedSeconds,
+        firstSnapshotElapsedSeconds: snapshots[0]?.context.elapsedSeconds ?? null,
+        latestSnapshotElapsedSeconds: snapshots.at(-1)?.context.elapsedSeconds ?? null,
+        snapshotCount: snapshots.length,
+        authoritativeLocalVehicleCount: 0,
+        validLocalVehicleCount: 0,
+      }
+      return null
+    }
+    const left = snapshots[rightIndex - 1]
+    const right = snapshots[rightIndex]
+    if (!left || !right) return null
+    const authoritativeLocalVehicles = left.vehicles.filter((vehicle) => {
+      if (vehicle.longitude == null || vehicle.latitude == null || !poseResolver) return false
+      const coordinate = this.projector([vehicle.longitude, vehicle.latitude, 0])
+      return poseResolver.hasLane(vehicle.lane_id)
+        || poseResolver.coversDetailedArea([coordinate[0], coordinate[1]])
+    })
+    const validLocalVehicles = authoritativeLocalVehicles.filter((vehicle) => {
+      if (vehicle.longitude == null || vehicle.latitude == null || !poseResolver) return false
+      const coordinate = this.projector([vehicle.longitude, vehicle.latitude, 0])
+      const profile = resolveVehicleModelProfile(vehicle.type_id)
+      if (!poseResolver.hasLane(vehicle.lane_id)) return true
+      return Boolean(poseResolver(
+          vehicle.lane_id,
+          [coordinate[0], coordinate[1]],
+          profile.targetLengthMeters / 2,
+        ))
+    })
+    const rightVehiclesById = new Map(right.vehicles.map((vehicle) => [vehicle.vehicle_id, vehicle] as const))
+    const priorityVehicleIds = validLocalVehicles.flatMap((vehicle) => {
+      const rightVehicle = rightVehiclesById.get(vehicle.vehicle_id)
+      if (!rightVehicle || rightVehicle.longitude == null || rightVehicle.latitude == null || !poseResolver) return []
+      const rightCoordinate = this.projector([rightVehicle.longitude, rightVehicle.latitude, 0])
+      if (!poseResolver.hasLane(rightVehicle.lane_id)) return [vehicle.vehicle_id]
+      const profile = resolveVehicleModelProfile(rightVehicle.type_id)
+      return poseResolver(
+        rightVehicle.lane_id,
+        [rightCoordinate[0], rightCoordinate[1]],
+        profile.targetLengthMeters / 2,
+      ) ? [vehicle.vehicle_id] : []
+    })
+    if (authoritativeLocalVehicles.length > 0 && validLocalVehicles.length === 0) {
+      this.viewportStagePreparationDiagnostic = {
+        reason: 'local_poses_unresolved',
+        intersectionId,
+        displayElapsedSeconds,
+        firstSnapshotElapsedSeconds: snapshots[0]?.context.elapsedSeconds ?? null,
+        latestSnapshotElapsedSeconds: snapshots.at(-1)?.context.elapsedSeconds ?? null,
+        snapshotCount: snapshots.length,
+        authoritativeLocalVehicleCount: authoritativeLocalVehicles.length,
+        validLocalVehicleCount: 0,
+      }
+      return null
+    }
+    this.viewportStagePreparationDiagnostic = {
+      reason: 'ready',
+      intersectionId,
+      displayElapsedSeconds,
+      firstSnapshotElapsedSeconds: snapshots[0]?.context.elapsedSeconds ?? null,
+      latestSnapshotElapsedSeconds: snapshots.at(-1)?.context.elapsedSeconds ?? null,
+      snapshotCount: snapshots.length,
+      authoritativeLocalVehicleCount: authoritativeLocalVehicles.length,
+      validLocalVehicleCount: validLocalVehicles.length,
+    }
+    return {
+      intersectionId,
+      snapshots,
+      headingResolver,
+      poseResolver,
+      displayElapsedSeconds,
+      authoritativeLocalVehicleCount: authoritativeLocalVehicles.length,
+      precompileMilliseconds: performance.now() - startedAt,
+      firstFrameVehicleCount: validLocalVehicles.length,
+      priorityVehicleIds,
+    }
+  }
+
+  commitViewportTransition(
+    stage: ViewportVehicleStagingBuffer,
     hiddenRoadIds: Iterable<string> = [],
     surfaceVisibility: Iterable<RoadSurfaceVisibilityInterval> = [],
-  ): void {
-    this.headingField.setPreferredIntersection(intersectionId)
-    this.laneHeadingResolver = headingResolver
-    this.lanePoseResolver = poseResolver
-    this.motionBuffer.setMotionPathSampler(poseResolver?.motionPathSampler ?? null)
+  ): boolean {
+    const startedAt = performance.now()
+    this.headingField.setPreferredIntersection(stage.intersectionId)
+    this.laneHeadingResolver = stage.headingResolver
+    this.lanePoseResolver = stage.poseResolver
+    this.motionBuffer.setMotionPathSampler(stage.poseResolver?.motionPathSampler ?? null)
     this.motionBuffer.reset()
-    this.presentationClock.reset()
+    this.selector.reset()
     this.outputPacer.reset()
     this.twinPlaybackBacklogMs = 0
     this.poseHistory.clear()
@@ -338,34 +521,70 @@ export class BaiduVehicleRenderer {
     this.pendingPoseCandidates.clear()
     this.pendingLaneChanges.clear()
     this.historyLastSeenSequence.clear()
-    this.hiddenRoadIds = new Set(hiddenRoadIds)
-    this.surfaceExclusionsByRoadId.clear()
-    for (const interval of surfaceVisibility) {
-      const ranges = this.surfaceExclusionsByRoadId.get(interval.edgeId) ?? []
-      ranges.push([interval.startOffsetMeters, interval.endOffsetMeters])
-      this.surfaceExclusionsByRoadId.set(interval.edgeId, ranges)
-    }
-    this.sourceMissingSnapshots.clear()
+    // Road mesh exclusions are visual-only. They must never suppress SUMO
+    // vehicles or participate in the vehicle staging budget.
+    void hiddenRoadIds
+    void surfaceVisibility
     this.routeCursorByVehicleId.clear()
     this.connectionLocksByVehicleId.clear()
-    this.surfaceSuppressedVehicles.clear()
-    this.surfaceReentrySnapshots.clear()
     this.invalidPoseSuppressedVehicles.clear()
     this.invalidPoseReentrySnapshots.clear()
-    this.twin.reset()
-    this.twinResetCount += 1
-    this.primed = false
     this.terminalFreezeActive = false
     this.viewportTransitionActive = false
+    this.replayingViewportSnapshots = true
+    this.viewportReplayPriorityVehicleIds = new Set(stage.priorityVehicleIds)
+    const snapshots = stage.snapshots
+    try {
+      for (const snapshot of snapshots) {
+        this.update(snapshot.vehicles, {
+          ...snapshot.context,
+          intersectionId: stage.intersectionId,
+          laneRuntimeById: {},
+        }, true)
+      }
+    } finally {
+      this.replayingViewportSnapshots = false
+      this.viewportReplayPriorityVehicleIds = null
+    }
+    const primingSamples = this.motionBuffer.sample(
+      performance.now(),
+      stage.displayElapsedSeconds,
+    )
+    if (stage.authoritativeLocalVehicleCount > 0 && !primingSamples?.length) {
+      const motion = this.motionBuffer.stats()
+      console.warn('[vehicle-stage] no validated first frame', JSON.stringify({
+        intersectionId: stage.intersectionId,
+        displayElapsedSeconds: stage.displayElapsedSeconds,
+        authoritativeLocalVehicleCount: stage.authoritativeLocalVehicleCount,
+        latestMappedSourceCount: this.visibleCount,
+        compiledSegmentCount: motion.compiledSegmentCount,
+        rejectedCompiledSegmentCount: motion.rejectedCompiledSegmentCount,
+        endpointValidationFailureCount: motion.endpointValidationFailureCount,
+        hiddenUnresolvedVehicleCount: motion.hiddenUnresolvedVehicleIds.length,
+        ghostVehicleCount: motion.ghostVehicleIds.length,
+      }))
+      this.viewportTransitionActive = false
+      this.viewportTwinBlankFrameCount += 1
+      return false
+    }
+    this.twin.reset()
+    this.twinResetCount += 1
+    this.primed = true
+    if (primingSamples?.length) this.presentImmediate(primingSamples)
+    else this.primed = false
+    this.viewportPrecompileMilliseconds = stage.precompileMilliseconds
+      + performance.now() - startedAt
+    this.viewportFirstFrameVehicleCount = primingSamples?.length ?? 0
+    this.syncMotionFrameScheduling()
+    return true
   }
 
   cancelViewportTransition(): void {
     if (!this.viewportTransitionActive) return
     this.viewportTransitionActive = false
-    this.motionBuffer.reset()
     this.outputPacer.reset()
     this.twinPlaybackBacklogMs = 0
-    this.update(this.lastVehicles, this.lastContext, true)
+    this.syncMotionFrameScheduling()
   }
 
   update(
@@ -398,8 +617,12 @@ export class BaiduVehicleRenderer {
       this.resetRuntime()
     }
     this.sessionId = context.sessionId
+    if (!this.replayingViewportSnapshots) this.recordViewportSnapshot(vehicles, context)
     const cameraRange = this.engine.map.getRange()
     const radiusMeters = resolveVehicleRenderRadius(cameraRange)
+    if (this.viewportTransitionActive && !this.replayingViewportSnapshots) {
+      return this.stats(vehicles.length, radiusMeters)
+    }
     const snapshotKey = `${context.sessionId}:${context.sequence}`
     const sameSession = context.sessionId === this.lastContext.sessionId
     const stateChanged = context.state !== this.lastContext.state
@@ -427,22 +650,30 @@ export class BaiduVehicleRenderer {
       const startableTwin = this.twin as mapvthree.Twin & { start?: () => void }
       startableTwin.start?.()
     }
-    if (
-      vehicles.length === 0
-      && terminalState
-    ) {
-      this.freezeTerminalPose()
+    if (vehicles.length === 0 && terminalState) {
+      this.twin.reset()
+      this.twinResetCount += 1
+      this.primed = false
+      this.visibleCount = 0
       return this.stats(0, radiusMeters)
     }
-    const renderableVehicles = this.filterSurfaceRenderableVehicles(vehicles, context.sequence)
-    const visible = this.selector.select(
-      renderableVehicles,
-      this.projector,
-      this.engine.map.getCenter(),
-      cameraRange,
-      snapshotKey,
-      this.renderBudget.state().limit,
-    )
+    const renderableVehicles = vehicles
+    const visible = this.replayingViewportSnapshots
+      ? this.selectViewportReplayVehicles(renderableVehicles, this.renderBudget.state().limit)
+      : this.selector.select(
+          renderableVehicles,
+          this.projector,
+          this.engine.map.getCenter(),
+          cameraRange,
+          snapshotKey,
+          this.renderBudget.state().limit,
+          this.lanePoseResolver
+            ? (item) => Boolean(this.lanePoseResolver?.coversDetailedArea([
+                item.longitude,
+                item.latitude,
+              ]))
+            : undefined,
+        )
     const sourceTime = context.elapsedSeconds * 1_000
     const activeIds = new Set<string>()
     const drafts = visible.map(({ vehicle, longitude, latitude }) => {
@@ -466,13 +697,59 @@ export class BaiduVehicleRenderer {
       const pendingLaneChange = this.pendingLaneChanges.get(vehicle.vehicle_id)
       let laneChanging = laneChangeStarted
         || Boolean(pendingLaneChange && pendingLaneChange.laneId === vehicle.lane_id)
-      const routeTurnResolution = resolveVehicleRouteTurnResolution(
+      let routeTurnResolution = resolveVehicleRouteTurnResolution(
         vehicle,
         context.trafficPeriod,
         context.intersectionId,
         this.connectionLocksByVehicleId.get(vehicle.vehicle_id),
         this.routeCursorByVehicleId.get(vehicle.vehicle_id),
       )
+      if (
+        routeTurnResolution.status !== 'hit'
+        && previousPose
+        && previousPose.laneId !== vehicle.lane_id
+        && context.intersectionId
+      ) {
+        const bufferedConnection = resolveBufferedLaneTransitionConnection(
+          context.intersectionId,
+          previousPose.roadId,
+          previousPose.laneId,
+          vehicle.road_id,
+          vehicle.lane_id,
+        )
+        if (bufferedConnection) {
+          routeTurnResolution = {
+            status: 'hit',
+            candidateCount: 1,
+            routeCursor: this.routeCursorByVehicleId.get(vehicle.vehicle_id),
+            releasedStaleLock: Boolean(
+              this.connectionLocksByVehicleId.get(vehicle.vehicle_id)?.connectionKey
+              && this.connectionLocksByVehicleId.get(vehicle.vehicle_id)?.connectionKey
+                !== bufferedConnection.connectionKey,
+            ),
+            connectionLock: {
+              stage: 'exiting',
+              connectionKey: bufferedConnection.connectionKey,
+              motionPathKey: bufferedConnection.motionPathKey,
+              fromLaneId: bufferedConnection.fromLaneId,
+              toLaneId: bufferedConnection.toLaneId,
+              viaLaneIds: [...bufferedConnection.viaLaneIds],
+              source: 'live_topology',
+            },
+            hint: {
+              period: null,
+              flowId: vehicle.vehicle_id,
+              routeIndex: -1,
+              fromEdge: bufferedConnection.fromEdge,
+              toEdge: bufferedConnection.toEdge,
+              intersectionId: bufferedConnection.intersectionId,
+              connectionKey: bufferedConnection.connectionKey,
+              motionPathKey: bufferedConnection.motionPathKey,
+              source: 'live_topology',
+            },
+          }
+        }
+      }
       if (routeTurnResolution.connectionLock.connectionKey) {
         this.connectionLocksByVehicleId.set(
           vehicle.vehicle_id,
@@ -626,7 +903,7 @@ export class BaiduVehicleRenderer {
       const rawFallback = lanePose === null && !laneChanging
       const rejectedInsideDetailedLane = Boolean(
         !lanePose
-        && this.lanePoseResolver?.coversDetailedArea([longitude, latitude]),
+        && this.lanePoseResolver?.hasLane(vehicle.lane_id),
       )
       if (lanePose) {
         this.maximumRoadMappingErrorMeters = Math.max(
@@ -636,7 +913,7 @@ export class BaiduVehicleRenderer {
       } else if (rejectedInsideDetailedLane) {
         this.offRoadVehicleCount += 1
       }
-      if (rawFallback && this.lanePoseResolver?.coversDetailedArea([longitude, latitude])) {
+      if (rawFallback && this.lanePoseResolver?.hasLane(vehicle.lane_id)) {
         this.detailedAreaRawFallbackCount += 1
       }
       if (rejectedInsideDetailedLane) {
@@ -987,6 +1264,11 @@ export class BaiduVehicleRenderer {
         sourceLateralOffsetMeters: lanePose?.sourceLateralOffsetMeters,
         roadMappingErrorMeters: lanePose?.roadMappingErrorMeters,
         mappingMode: lanePose?.mappingMode,
+        coverageKind: this.lanePoseResolver?.hasLane(vehicle.lane_id)
+          ? 'local_manifest'
+          : this.lanePoseResolver?.coversDetailedArea([point.longitude, point.latitude])
+            ? 'supplemental_network'
+            : 'outside',
       })
       activeIds.add(vehicle.vehicle_id)
       return [{
@@ -1031,7 +1313,7 @@ export class BaiduVehicleRenderer {
             ),
             rawTransitionValidated: roadTransitionKind === 'raw_continuous'
               && displacementStable
-              && !this.lanePoseResolver?.coversDetailedArea([point.longitude, point.latitude]),
+              && !this.lanePoseResolver?.hasLane(vehicle.lane_id),
             segmentKey: lanePose?.segmentKey ?? `raw:${vehicle.lane_id}`,
             occupancyKey: lanePose?.occupancyKey ?? previousPose?.occupancyKey,
             arcDistanceMeters: laneCenterArcDistanceMeters,
@@ -1069,16 +1351,8 @@ export class BaiduVehicleRenderer {
       if (uniqueSamples.has(sample.id)) this.duplicateVehicleIds.add(sample.id)
       uniqueSamples.set(sample.id, sample)
     }
-    const samples = this.retainMissingSourceSamples(
-      [...uniqueSamples.values()],
-      renderableVehicles,
-      visible.map((item) => item.vehicle),
-      sourceTime,
-      context,
-      activeIds,
-    )
+    const samples = [...uniqueSamples.values()]
     this.visibleCount = samples.length
-    this.lastSourceSamples = samples
     this.pruneHistory(context.sequence, activeIds)
     this.motionBuffer.push({
       sceneGeneration: this.sceneGeneration,
@@ -1086,12 +1360,12 @@ export class BaiduVehicleRenderer {
       elapsedSeconds: context.elapsedSeconds,
       arrivalTimeMs: performance.now(),
       samples,
+      presentVehicleIds: renderableVehicles.map((vehicle) => vehicle.vehicle_id),
     })
     this.recordSourceRoster(context.sequence, samples.length)
     if (!terminalState && !isVehicleAnimationActive(context.state) && samples.length > 0) {
       this.presentImmediate(samples)
     }
-    if (terminalState) this.freezeTerminalPose()
     return this.stats(vehicles.length, radiusMeters)
   }
 
@@ -1100,20 +1374,10 @@ export class BaiduVehicleRenderer {
   }
 
   beginViewportTransition(): void {
-    // Preserve models during a camera/resolver transaction to avoid a full-scene flash.
-    this.selector.reset()
+    // Keep the active Twin and compiled samples alive while the new resolver is
+    // prepared. Incoming authoritative snapshots are staged in the ring buffer.
     this.sceneGeneration += 1
-    this.motionBuffer.pause()
-    this.outputPacer.reset()
-    this.twinPlaybackBacklogMs = 0
-    this.pendingPoseCandidates.clear()
-    this.pendingLaneChanges.clear()
-    this.poseHistory.clear()
-    this.poseStates.clear()
-    this.twinDirectionByVehicleId.clear()
-    this.historyLastSeenSequence.clear()
     this.viewportTransitionActive = true
-    this.syncMotionFrameScheduling()
   }
 
   setActive(active: boolean): void {
@@ -1122,11 +1386,14 @@ export class BaiduVehicleRenderer {
     if (active) {
       const startableTwin = this.twin as mapvthree.Twin & { start?: () => void }
       startableTwin.start?.()
-      this.motionBuffer.reset()
       this.outputPacer.reset()
       this.twinPlaybackBacklogMs = 0
       this.update(this.lastVehicles, this.lastContext, true)
-      if (this.lastSourceSamples.length > 0) this.presentImmediate(this.lastSourceSamples)
+      const samples = this.motionBuffer.sample(
+        performance.now(),
+        this.sharedDisplayElapsedSeconds,
+      )
+      if (samples?.length) this.presentImmediate(samples)
     } else {
       if (this.outputFrameId !== null) cancelAnimationFrame(this.outputFrameId)
       this.outputFrameId = null
@@ -1155,7 +1422,6 @@ export class BaiduVehicleRenderer {
   private resetRuntime(): void {
     this.visibleCount = 0
     this.primed = false
-    this.lastSourceSamples = []
     this.emptySourceSnapshotStreak = 0
     this.lastRosterSequence = -1
     this.outputPacer.reset()
@@ -1174,13 +1440,16 @@ export class BaiduVehicleRenderer {
     this.historyLastSeenSequence.clear()
     this.pendingPoseCandidates.clear()
     this.pendingLaneChanges.clear()
-    this.sourceMissingSnapshots.clear()
     this.routeCursorByVehicleId.clear()
     this.connectionLocksByVehicleId.clear()
-    this.surfaceSuppressedVehicles.clear()
-    this.surfaceReentrySnapshots.clear()
     this.invalidPoseSuppressedVehicles.clear()
     this.invalidPoseReentrySnapshots.clear()
+    this.viewportSnapshots.splice(0)
+    this.replayingViewportSnapshots = false
+    this.viewportPrecompileMilliseconds = 0
+    this.viewportTwinBlankFrameCount = 0
+    this.viewportFirstFrameVehicleCount = 0
+    this.surfaceExclusionVehicleFilterCount = 0
     this.viewportTransitionActive = false
     this.terminalFreezeActive = false
     this.twin.reset()
@@ -1195,7 +1464,6 @@ export class BaiduVehicleRenderer {
   private scheduleMotionFrame(): void {
     if (
       !this.active
-      || this.viewportTransitionActive
       || !isVehicleAnimationActive(this.lastContext.state)
       || this.outputFrameId !== null
     ) return
@@ -1208,7 +1476,6 @@ export class BaiduVehicleRenderer {
 
   private syncMotionFrameScheduling(): void {
     const shouldRun = this.active
-      && !this.viewportTransitionActive
       && isVehicleAnimationActive(this.lastContext.state)
     if (!shouldRun && this.outputFrameId !== null) {
       cancelAnimationFrame(this.outputFrameId)
@@ -1218,7 +1485,7 @@ export class BaiduVehicleRenderer {
   }
 
   private flushMotionFrame(wallTimeMs: number): void {
-    if (this.viewportTransitionActive || !isVehicleAnimationActive(this.lastContext.state)) return
+    if (!isVehicleAnimationActive(this.lastContext.state)) return
     const budget = this.renderBudget.recordFrame(wallTimeMs)
     const frameInterval = this.stableOutputMode || budget.quality === 'constrained'
       ? CONSTRAINED_OUTPUT_FRAME_MS
@@ -1232,14 +1499,18 @@ export class BaiduVehicleRenderer {
   }
 
   private pushMotionFrameAt(sampleWallTimeMs: number, currentWallTimeMs: number): boolean {
-    const samples = this.motionBuffer.sample(sampleWallTimeMs)
+    const samples = this.motionBuffer.sample(
+      sampleWallTimeMs,
+      this.sharedDisplayElapsedSeconds,
+    )
     if (samples === null) {
       this.emptyBufferInterceptCount += 1
+      if (this.viewportTransitionActive) this.viewportTwinBlankFrameCount += 1
       return false
     }
     if (samples.length === 0) {
       this.emptyBufferInterceptCount += 1
-      if (this.primed && this.emptySourceSnapshotStreak > EMPTY_RENDER_GRACE_SNAPSHOTS) {
+      if (this.primed) {
         this.twin.reset()
         this.twinResetCount += 1
         this.primed = false
@@ -1284,7 +1555,8 @@ export class BaiduVehicleRenderer {
     predictionBlocked = false,
     stopReason?: string,
   ): VehicleTwinSample[] {
-    this.retainedMissingCount += 1
+    this.temporarilyHiddenCount += 1
+    this.temporarilyHiddenVehicleIds.add(vehicle.vehicle_id)
     activeIds.add(vehicle.vehicle_id)
     this.historyLastSeenSequence.set(vehicle.vehicle_id, context.sequence)
     this.poseStates.set(vehicle.vehicle_id, {
@@ -1296,105 +1568,11 @@ export class BaiduVehicleRenderer {
       elapsedSeconds: context.elapsedSeconds,
       lastSeenSequence: context.sequence,
     })
-    return [{
-      ...createVehicleTwinSample(
-        vehicle,
-        previousPose.longitude,
-        previousPose.latitude,
-        sourceTime,
-        profile,
-        previousPose.heading,
-        true,
-        {
-          motionPathKey: previousPose.motionPathKey,
-          connectionKey: previousPose.connectionKey,
-          routeHintSource: previousPose.routeHintSource,
-          segmentKey: previousPose.segmentKey,
-          occupancyKey: previousPose.occupancyKey,
-          arcDistanceMeters: previousPose.arcDistanceMeters,
-          pathArcDistanceMeters: previousPose.pathArcDistanceMeters,
-          transitionKind: previousPose.transitionKind,
-          roadTransitionKind: previousPose.roadTransitionKind,
-          poseSource: 'held',
-          sampleQuality: 'held',
-          predictionBlocked,
-          stopReason,
-        },
-      ),
-      sceneGeneration: this.sceneGeneration,
-      motionEpoch: previousPose.motionEpoch,
-    }]
-  }
-
-  private retainMissingSourceSamples(
-    currentSamples: VehicleTwinSample[],
-    sourceVehicles: TrafficVehicleView[],
-    selectedVehicles: TrafficVehicleView[],
-    sourceTime: number,
-    context: VehicleRenderContext,
-    activeIds: Set<string>,
-  ): VehicleTwinSample[] {
-    const samplesById = new Map(currentSamples.map((sample) => [sample.id, sample] as const))
-    const sourceIds = new Set(sourceVehicles.map((vehicle) => vehicle.vehicle_id))
-    const selectedIds = new Set(selectedVehicles.map((vehicle) => vehicle.vehicle_id))
-    for (const id of sourceIds) this.sourceMissingSnapshots.delete(id)
-    for (const previousSample of this.lastSourceSamples) {
-      if (
-        samplesById.has(previousSample.id)
-        || this.surfaceSuppressedVehicles.has(previousSample.id)
-        || this.invalidPoseSuppressedVehicles.has(previousSample.id)
-      ) continue
-      if (sourceIds.has(previousSample.id)) {
-        if (!selectedIds.has(previousSample.id)) continue
-        const pose = this.poseStates.get(previousSample.id)
-        if (pose) {
-          this.poseStates.set(previousSample.id, {
-            ...pose,
-            lifecycle: 'recovering',
-            elapsedSeconds: context.elapsedSeconds,
-            lastSeenSequence: context.sequence,
-          })
-          activeIds.add(previousSample.id)
-          this.historyLastSeenSequence.set(previousSample.id, context.sequence)
-        }
-        this.retainedMissingCount += 1
-        samplesById.set(previousSample.id, {
-          ...previousSample,
-          point: [...previousSample.point] as [number, number, number],
-          time: sourceTime,
-          sampleQuality: 'held',
-        })
-        continue
-      }
-      const previous = this.sourceMissingSnapshots.get(previousSample.id)
-      const count = previous?.sequence === context.sequence
-        ? previous.count
-        : (previous?.count ?? 0) + 1
-      this.sourceMissingSnapshots.set(previousSample.id, { count, sequence: context.sequence })
-      if (count >= SOURCE_MISSING_GRACE_SNAPSHOTS) {
-        this.confirmedRemovedCount += 1
-        continue
-      }
-      const pose = this.poseStates.get(previousSample.id)
-      if (pose) {
-        this.poseStates.set(previousSample.id, {
-          ...pose,
-          lifecycle: 'missing',
-          elapsedSeconds: context.elapsedSeconds,
-          lastSeenSequence: context.sequence,
-        })
-        activeIds.add(previousSample.id)
-        this.historyLastSeenSequence.set(previousSample.id, context.sequence)
-      }
-      this.retainedMissingCount += 1
-      samplesById.set(previousSample.id, {
-        ...previousSample,
-        point: [...previousSample.point] as [number, number, number],
-        time: sourceTime,
-        sampleQuality: 'missing',
-      })
-    }
-    return [...samplesById.values()]
+    void profile
+    void sourceTime
+    void predictionBlocked
+    void stopReason
+    return []
   }
 
   private presentImmediate(samples: VehicleTwinSample[]): void {
@@ -1480,6 +1658,17 @@ export class BaiduVehicleRenderer {
       dynamicRuntimeVehicleCount: this.dynamicRuntimeVehicleCount,
       bufferedLookaheadConnectionCount:
         this.bufferedLookaheadConnectionCount + motion.bufferedLookaheadSegmentCount,
+      compiledSegmentCacheHitCount: motion.compiledSegmentCacheHitCount,
+      compiledSegmentCacheHitRate: motion.compiledSegmentCacheHitRate,
+      isolatedVehicleCount: motion.isolatedVehicleCount,
+      maximumIsolationSeconds: motion.maximumIsolationSeconds,
+      recoveredVehicleCount: motion.recoveredVehicleCount,
+      ghostVehicleIds: motion.ghostVehicleIds,
+      hiddenUnresolvedVehicleIds: motion.hiddenUnresolvedVehicleIds,
+      viewportPrecompileMilliseconds: this.viewportPrecompileMilliseconds,
+      viewportTwinBlankFrameCount: this.viewportTwinBlankFrameCount,
+      viewportFirstFrameVehicleCount: this.viewportFirstFrameVehicleCount,
+      surfaceExclusionVehicleFilterCount: this.surfaceExclusionVehicleFilterCount,
       vehiclePoseDiagnostics: this.vehiclePoseDiagnostics.slice(0, 100),
       displayElapsedSeconds: motion.renderElapsedSeconds,
     }
@@ -1523,44 +1712,69 @@ export class BaiduVehicleRenderer {
     })
   }
 
-  private filterSurfaceRenderableVehicles(
+  private recordViewportSnapshot(
     vehicles: TrafficVehicleView[],
-    sequence: number,
-  ): TrafficVehicleView[] {
-    if (this.hiddenRoadIds.size === 0 && this.surfaceExclusionsByRoadId.size === 0) return vehicles
-    return vehicles.filter((vehicle) => {
-      const roadId = vehicle.road_id || vehicle.lane_id.replace(/_\d+$/, '')
-      const lanePosition = reliableVehicleLanePosition(vehicle)
-      const partiallyHidden = lanePosition != null
-        && (this.surfaceExclusionsByRoadId.get(roadId) ?? []).some(
-          ([start, end]) => lanePosition >= start && lanePosition <= end,
-        )
-      const hidden = this.hiddenRoadIds.has(roadId) || partiallyHidden
-      if (hidden) {
-        this.surfaceSuppressedVehicles.add(vehicle.vehicle_id)
-        this.surfaceReentrySnapshots.delete(vehicle.vehicle_id)
-        return false
-      }
-      if (!this.surfaceSuppressedVehicles.has(vehicle.vehicle_id)) return true
-      const previous = this.surfaceReentrySnapshots.get(vehicle.vehicle_id)
-      const count = previous?.sequence === sequence ? previous.count : (previous?.count ?? 0) + 1
-      this.surfaceReentrySnapshots.set(vehicle.vehicle_id, { count, sequence })
-      if (count < 2) return false
-      this.surfaceSuppressedVehicles.delete(vehicle.vehicle_id)
-      this.surfaceReentrySnapshots.delete(vehicle.vehicle_id)
-      return true
-    })
+    context: VehicleRenderContext,
+  ): void {
+    if (!Number.isFinite(context.sequence) || !Number.isFinite(context.elapsedSeconds)) return
+    const snapshot = {
+      vehicles: [...vehicles],
+      context: {
+        ...context,
+        laneRuntimeById: { ...(context.laneRuntimeById ?? {}) },
+      },
+    }
+    const existingIndex = this.viewportSnapshots.findIndex((entry) => (
+      entry.context.sessionId === context.sessionId
+      && entry.context.sequence === context.sequence
+    ))
+    if (existingIndex >= 0) this.viewportSnapshots[existingIndex] = snapshot
+    else this.viewportSnapshots.push(snapshot)
+    this.viewportSnapshots.sort((left, right) => (
+      left.context.elapsedSeconds - right.context.elapsedSeconds
+      || left.context.sequence - right.context.sequence
+    ))
+    const latestElapsedSeconds = this.viewportSnapshots.at(-1)?.context.elapsedSeconds
+      ?? context.elapsedSeconds
+    while (
+      this.viewportSnapshots.length > 1
+      && (
+        this.viewportSnapshots.length > MAX_VIEWPORT_STAGING_SNAPSHOTS
+        || latestElapsedSeconds - this.viewportSnapshots[0].context.elapsedSeconds
+          > VIEWPORT_SNAPSHOT_HISTORY_SECONDS
+      )
+    ) this.viewportSnapshots.shift()
   }
 
-  private freezeTerminalPose(): void {
-    this.motionBuffer.pause()
-    if (!this.terminalFreezeActive && this.lastSourceSamples.length > 0) {
-      this.presentImmediate(this.lastSourceSamples)
+  private selectViewportReplayVehicles(
+    vehicles: TrafficVehicleView[],
+    limit: number,
+  ): VisibleVehicle[] {
+    const resolver = this.lanePoseResolver
+    if (!resolver || limit <= 0) return []
+    const priorityIds = this.viewportReplayPriorityVehicleIds
+    const local: VisibleVehicle[] = []
+    for (const vehicle of vehicles) {
+      if (vehicle.longitude == null || vehicle.latitude == null) continue
+      const [longitude, latitude] = this.projector([vehicle.longitude, vehicle.latitude, 0])
+      if (
+        !priorityIds?.has(vehicle.vehicle_id)
+        && !resolver.hasLane(vehicle.lane_id)
+        && !resolver.coversDetailedArea([longitude, latitude])
+      ) continue
+      local.push({
+        vehicle,
+        longitude,
+        latitude,
+        distanceMeters: 0,
+      })
     }
-    const pausableTwin = this.twin as mapvthree.Twin & { pause?: () => void }
-    pausableTwin.pause?.()
-    this.terminalFreezeActive = true
-    this.syncMotionFrameScheduling()
+    local.sort((left, right) => (
+      Number(priorityIds?.has(right.vehicle.vehicle_id))
+      - Number(priorityIds?.has(left.vehicle.vehicle_id))
+      || left.vehicle.vehicle_id.localeCompare(right.vehicle.vehicle_id)
+    ))
+    return local.slice(0, limit)
   }
 
   private recordTwinPushGap(wallTimeMs: number): void {

@@ -25,6 +25,58 @@ export interface LaneCongestionFlowDiagnostics {
   laneCount: number
   unmappedEdgeCount: number
   reverseFlowCount: number
+  dataSourceRebuildCount: number
+  speedBucketStabilizationCount: number
+}
+
+export type LaneFlowSpeedBucket = 'low' | 'medium' | 'high'
+
+interface StableLaneFlowSpeedBucketState {
+  current: LaneFlowSpeedBucket
+  pending: LaneFlowSpeedBucket | null
+  pendingCount: number
+}
+
+export class LaneFlowSpeedBucketStabilizer {
+  private readonly states = new Map<string, StableLaneFlowSpeedBucketState>()
+
+  resolve(
+    key: string,
+    proposed: LaneFlowSpeedBucket,
+  ): { bucket: LaneFlowSpeedBucket; suppressed: boolean } {
+    const state = this.states.get(key)
+    if (!state) {
+      this.states.set(key, { current: proposed, pending: null, pendingCount: 0 })
+      return { bucket: proposed, suppressed: false }
+    }
+    if (state.current === proposed) {
+      state.pending = null
+      state.pendingCount = 0
+      return { bucket: state.current, suppressed: false }
+    }
+    if (state.pending === proposed) state.pendingCount += 1
+    else {
+      state.pending = proposed
+      state.pendingCount = 1
+    }
+    if (state.pendingCount >= 3) {
+      state.current = proposed
+      state.pending = null
+      state.pendingCount = 0
+      return { bucket: state.current, suppressed: false }
+    }
+    return { bucket: state.current, suppressed: true }
+  }
+
+  retain(keys: ReadonlySet<string>): void {
+    for (const key of this.states.keys()) {
+      if (!keys.has(key)) this.states.delete(key)
+    }
+  }
+
+  clear(): void {
+    this.states.clear()
+  }
 }
 
 export const CONGESTION_FLOW_VISUALS: Record<CongestionLevel, {
@@ -67,6 +119,8 @@ export function buildLaneCongestionFlows(
         laneCount: 0,
         unmappedEdgeCount: 0,
         reverseFlowCount: 0,
+        dataSourceRebuildCount: 0,
+        speedBucketStabilizationCount: 0,
       },
     }
   }
@@ -103,6 +157,8 @@ export function buildLaneCongestionFlows(
       laneCount: flows.length,
       unmappedEdgeCount: 0,
       reverseFlowCount: 0,
+      dataSourceRebuildCount: 0,
+      speedBucketStabilizationCount: 0,
     },
   }
 }

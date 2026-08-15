@@ -7,16 +7,17 @@ import type { RoadCoordinateProjector } from '../roadGeometry'
 import {
   buildLaneCongestionFlows,
   CONGESTION_FLOW_VISUALS,
+  LaneFlowSpeedBucketStabilizer,
   type LaneCongestionFlow,
   type LaneCongestionFlowDiagnostics,
+  type LaneFlowSpeedBucket,
 } from './laneCongestionFlow'
 
 type VisibleCongestionLevel = Exclude<CongestionLevel, 'free'>
-type SpeedBucket = 'low' | 'medium' | 'high'
+type SpeedBucket = LaneFlowSpeedBucket
 
 const LEVELS: VisibleCongestionLevel[] = ['slow', 'congested', 'severe']
 const SPEED_BUCKETS: SpeedBucket[] = ['low', 'medium', 'high']
-
 function speedBucket(flow: LaneCongestionFlow): SpeedBucket {
   if (flow.animationSpeed < 0.42) return 'low'
   if (flow.animationSpeed < 0.64) return 'medium'
@@ -24,7 +25,7 @@ function speedBucket(flow: LaneCongestionFlow): SpeedBucket {
 }
 
 function bucketSpeed(bucket: SpeedBucket): number {
-  return bucket === 'low' ? 0.3 : bucket === 'medium' ? 0.52 : 0.76
+  return bucket === 'low' ? 0.18 : bucket === 'medium' ? 0.30 : 0.44
 }
 
 function feature(flow: LaneCongestionFlow): Record<string, unknown> {
@@ -46,9 +47,14 @@ export class LaneCongestionFlowLayer {
     laneCount: 0,
     unmappedEdgeCount: 0,
     reverseFlowCount: 0,
+    dataSourceRebuildCount: 0,
+    speedBucketStabilizationCount: 0,
   }
   private animationPaused = false
   private dataKey = ''
+  private readonly speedBuckets = new LaneFlowSpeedBucketStabilizer()
+  private dataSourceRebuildCount = 0
+  private speedBucketStabilizationCount = 0
 
   constructor(
     private readonly engine: mapvthree.Engine,
@@ -67,11 +73,11 @@ export class LaneCongestionFlowLayer {
           opacity: visual.opacity,
           enableAnimation: true,
           enableAnimationChaos: false,
-          animationInterval: 2,
+          animationInterval: 4,
           animationTailType: 1,
-          animationTailRatio: 0.2,
+          animationTailRatio: 0.28,
           animationSpeed: bucketSpeed(bucket),
-          animationIdle: 900,
+          animationIdle: 1_500,
           height: 0,
         }))
         line.position.z = 0
@@ -97,6 +103,7 @@ export class LaneCongestionFlowLayer {
     let unmappedEdgeCount = 0
     let reverseFlowCount = 0
     let laneCount = 0
+    const activeLaneKeys = new Set<string>()
     for (const manifest of manifests) {
       const projectedOrigin = this.projector([
         manifest.origin.longitude,
@@ -112,10 +119,15 @@ export class LaneCongestionFlowLayer {
       reverseFlowCount += result.diagnostics.reverseFlowCount
       laneCount += result.diagnostics.laneCount
       for (const flow of result.flows) {
-        const key = `${flow.level}:${speedBucket(flow)}`
+        const laneKey = `${flow.edgeId}:${flow.laneId}`
+        activeLaneKeys.add(laneKey)
+        const stabilized = this.speedBuckets.resolve(laneKey, speedBucket(flow))
+        if (stabilized.suppressed) this.speedBucketStabilizationCount += 1
+        const key = `${flow.level}:${stabilized.bucket}`
         buckets.set(key, [...(buckets.get(key) ?? []), feature(flow)])
       }
     }
+    this.speedBuckets.retain(activeLaneKeys)
     const dataKey = [...buckets.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, features]) => `${key}:${features.map((item) => {
@@ -123,9 +135,17 @@ export class LaneCongestionFlowLayer {
         return `${properties.edge_id}/${properties.lane_id}`
       }).sort().join(',')}`)
       .join('|')
-    this.diagnostics = { laneCount, unmappedEdgeCount, reverseFlowCount }
+    this.diagnostics = {
+      laneCount,
+      unmappedEdgeCount,
+      reverseFlowCount,
+      dataSourceRebuildCount: this.dataSourceRebuildCount,
+      speedBucketStabilizationCount: this.speedBucketStabilizationCount,
+    }
     if (dataKey === this.dataKey) return
     this.dataKey = dataKey
+    this.dataSourceRebuildCount += 1
+    this.diagnostics.dataSourceRebuildCount = this.dataSourceRebuildCount
     for (const [key, line] of this.lines) {
       const features = buckets.get(key) ?? []
       line.dataSource?.clear()
@@ -152,8 +172,17 @@ export class LaneCongestionFlowLayer {
       this.engine.remove(line)
     }
     this.lines.clear()
+    this.speedBuckets.clear()
     this.animationPaused = false
     this.dataKey = ''
-    this.diagnostics = { laneCount: 0, unmappedEdgeCount: 0, reverseFlowCount: 0 }
+    this.dataSourceRebuildCount = 0
+    this.speedBucketStabilizationCount = 0
+    this.diagnostics = {
+      laneCount: 0,
+      unmappedEdgeCount: 0,
+      reverseFlowCount: 0,
+      dataSourceRebuildCount: 0,
+      speedBucketStabilizationCount: 0,
+    }
   }
 }

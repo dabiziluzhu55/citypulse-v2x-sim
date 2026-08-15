@@ -61,7 +61,7 @@ const mapView = useAppMapView()
 const { activeIntersectionId } = useActiveIntersectionScene()
 const { geojson, error: networkError } = useSimulationMap(activeIntersectionId)
 const {
-  trafficView,
+  presentationTrafficView,
   snapshot,
   renderSessionRevision,
   runtimeDisturbances,
@@ -186,6 +186,19 @@ function clearVehiclePresentation(): void {
   lastVehicleSnapshotArrivalMs = null
   vehicleSnapshotIntervalsMs = []
   snapVehiclePositions = false
+}
+
+function clearSessionPresentation(): void {
+  clearVehiclePresentation()
+  detectedEventCards.value = []
+  disturbanceSource.clear()
+  warningOverlay?.setPosition(undefined)
+  warningPopupTitle.value = ''
+  warningPopupEvents.value = []
+  edgeCongestionLevels = {}
+  routeCongestionLevels = {}
+  networkLayer.changed()
+  topologyFlowLayer.changed()
 }
 
 const VEHICLE_RADIUS: Record<string, number> = {
@@ -499,7 +512,7 @@ function animateVehicles(now: number): void {
 
 function renderVehicles() {
   if (!props.active) return
-  const vehicles = trafficView.value?.vehicles ?? []
+  const vehicles = presentationTrafficView.value?.vehicles ?? []
   const activeIds = new Set<string>()
   const now = performance.now()
   const sequence = snapshot.value?.sequence ?? -1
@@ -540,7 +553,7 @@ function renderVehicles() {
       sourceMapHeading: headingResolution?.heading,
       speedMetersPerSecond: vehicle.speed,
       current: { longitude: vehicle.longitude, latitude: vehicle.latitude },
-      timeSeconds: trafficView.value?.elapsed_seconds ?? 0,
+      timeSeconds: presentationTrafficView.value?.elapsed_seconds ?? 0,
     }, previousHeading)
     vehicleHeadingHistory.set(vehicle.vehicle_id, resolvedHeading.state)
     activeIds.add(vehicle.vehicle_id)
@@ -551,7 +564,7 @@ function renderVehicles() {
     feature.set('vtype', definition.type)
     const targetRotation = Math.PI / 2 - resolvedHeading.heading
     if (existing) {
-      if (snapVehiclePositions) {
+      if (snapVehiclePositions || presentationTrafficView.value != null) {
         existing.from = target
         existing.to = target
         existing.fromRotation = targetRotation
@@ -583,10 +596,6 @@ function renderVehicles() {
   }
   for (const id of vehicleHeadingHistory.keys()) {
     if (activeIds.has(id)) continue
-    if (!isNewSourceSnapshot && !snapVehiclePositions) continue
-    const missingFrames = (vehicleMissingFrames.get(id) ?? 0) + 1
-    vehicleMissingFrames.set(id, missingFrames)
-    if (!snapVehiclePositions && missingFrames <= 4) continue
     vehicleMissingFrames.delete(id)
     vehicleHeadingHistory.delete(id)
     const state = vehicleFeatures.get(id)
@@ -693,8 +702,8 @@ onMounted(() => {
 })
 
 watch(geojson, renderNetwork)
-watch(trafficView, renderVehicles)
-watch(renderSessionRevision, clearVehiclePresentation, { flush: 'sync' })
+watch(presentationTrafficView, renderVehicles)
+watch(renderSessionRevision, clearSessionPresentation, { flush: 'sync' })
 watch(() => props.active, (active) => {
   if (active) {
     map?.updateSize()

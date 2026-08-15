@@ -26,7 +26,6 @@ import { scenarioPresetIntersectionIds } from '../utils/scenarioPresetRules'
 import { assertUniqueDisturbanceIntersections } from '../utils/disturbanceIntersectionUniqueness.ts'
 import { assertSafeLaneClosureEvents } from '../utils/safeLaneClosures.ts'
 import {
-  SCENARIO_CONFIG_EXPORT_VERSION,
   DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
   resolveMajorEventVehicleCount,
   resolveImportedDisturbanceTimes,
@@ -47,26 +46,6 @@ export interface CompactScenarioConfig {
 }
 
 export type CompactDisturbanceEvent = ScenarioDraftDisturbanceEvent
-
-export interface ScenarioConfigExport {
-  version: typeof SCENARIO_CONFIG_EXPORT_VERSION
-  exported_at: string
-  ui_config: CompactScenarioConfig
-  display: {
-    scenario: string
-    disturbance: string
-    flow_mode: string
-    simulation_time: string
-    algorithm: string
-  }
-  backend_request: StartSimulationRequest
-  data_sources: {
-    scenario: 'catalog' | 'compatibility_preset'
-    disturbance: 'catalog'
-    time: 'local_range'
-    algorithm: 'backend'
-  }
-}
 
 const FLOW_MODE_TO_PERIOD: Record<TrafficFlowMode, string> = {
   flat: 'off_peak',
@@ -383,38 +362,6 @@ export function useCompactScenarioConfig(
     config.value = parseImportedConfig(input)
   }
 
-  function buildExport(): ScenarioConfigExport {
-    const backendRequest = buildSimulationPayload(
-      config.value,
-      null,
-      periods.value,
-      [],
-      [],
-      [...SUPPORTED_BACKEND_CONTROL_MODES],
-    )
-    return {
-      version: SCENARIO_CONFIG_EXPORT_VERSION,
-      exported_at: new Date().toISOString(),
-      ui_config: { ...config.value },
-      display: {
-        scenario: labels.value.scenario,
-        disturbance: labels.value.disturbance,
-        flow_mode: labels.value.flow,
-        simulation_time: labels.value.time,
-        algorithm: config.value.control_mode,
-      },
-      backend_request: backendRequest,
-      data_sources: {
-        scenario: scenarioPresets.value.some((item) => item.preset_id === config.value.scenario_preset_id)
-          ? 'catalog'
-          : 'compatibility_preset',
-        disturbance: 'catalog',
-        time: 'local_range',
-        algorithm: 'backend',
-      },
-    }
-  }
-
   return {
     config,
     labels,
@@ -425,6 +372,5 @@ export function useCompactScenarioConfig(
     buildPayloadFor,
     parseImportedConfig,
     applyImportedConfig,
-    buildExport,
   }
 }

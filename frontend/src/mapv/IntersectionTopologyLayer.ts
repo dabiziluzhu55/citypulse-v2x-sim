@@ -185,11 +185,11 @@ export class IntersectionTopologyLayer {
         opacity: visual.opacity,
         enableAnimation: true,
         enableAnimationChaos: false,
-        animationInterval: 2,
+        animationInterval: 4,
         animationTailType: 1,
-        animationTailRatio: 0.16,
-        animationSpeed: 0.85,
-        animationIdle: 1_600,
+        animationTailRatio: 0.24,
+        animationSpeed: 0.50,
+        animationIdle: 2_400,
         height: 0,
       }))
       configureOverlayMaterial(line, visual.opacity)

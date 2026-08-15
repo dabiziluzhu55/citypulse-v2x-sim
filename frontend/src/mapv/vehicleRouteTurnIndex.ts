@@ -162,6 +162,23 @@ export function vehicleRouteConnection(connectionKey: string): RouteTurnCandidat
   return routeTurnIndex.connections[connectionKey] ?? null
 }
 
+export function resolveBufferedLaneTransitionConnection(
+  intersectionId: string,
+  fromRoadId: string,
+  fromLaneId: string,
+  toRoadId: string,
+  toLaneId: string,
+): RouteTurnCandidate | null {
+  const candidates = Object.values(routeTurnIndex.connections).filter((candidate) => (
+    candidate.intersectionId === intersectionId
+    && candidate.fromEdge === fromRoadId
+    && candidate.fromLaneId === fromLaneId
+    && candidate.toEdge === toRoadId
+    && candidate.toLaneId === toLaneId
+  ))
+  return candidates.length === 1 ? candidates[0] : null
+}
+
 export function normalizeRuntimeVehicleFlowId(vehicleId: string): string {
   return vehicleId.replace(/\.\d+$/, '')
 }
