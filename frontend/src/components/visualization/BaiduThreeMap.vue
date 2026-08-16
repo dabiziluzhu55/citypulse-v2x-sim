@@ -95,6 +95,11 @@ import {
   runtimeDisturbanceHasSceneMarker,
   runtimeDisturbanceLaneIds,
 } from '../../utils/runtimeDisturbances'
+import {
+  loadEventLanePositionIndex,
+  resolveSessionEventMarkers,
+  type EventLanePositionIndex,
+} from '../../utils/eventLanePositionIndex'
 import { SceneSwitchCoordinator } from '../../utils/sceneSwitchCoordinator'
 import { SignalDisplayTimeline } from '../../mapv/signalDisplayTimeline'
 import { detectMap3dCapability } from '../../mapv/map3dCapabilities'
@@ -159,16 +164,29 @@ const {
   activeSimulationPeriod,
 } = useSimulationStore()
 const topologyNodes = ref<IntersectionTopologyNode[]>([])
-const runtimeDisturbanceMarkers = computed(() => runtimeDisturbances.value.flatMap((event) => {
-  if (event.state === 'CANCELLED') return []
-  if (event.eventType === 'accident' || event.eventType.startsWith('major_event_')) return []
-  const node = topologyNodes.value.find((candidate) => candidate.intersectionId === event.intersectionId)
-  return node ? [{ ...event, longitude: node.longitude, latitude: node.latitude }] : []
-}))
+const eventLanePositionIndex = ref<EventLanePositionIndex | null>(null)
+const runtimeDisturbanceMarkers = computed(() => {
+  const dedicatedEvents = runtimeDisturbances.value.filter((event) => (
+    event.state !== 'CANCELLED'
+    && event.eventType !== 'accident'
+    && !event.eventType.startsWith('major_event_')
+  ))
+  return resolveSessionEventMarkers(
+    dedicatedEvents,
+    eventLanePositionIndex.value,
+    topologyNodes.value,
+    activeIntersectionId.value,
+  ).flatMap((marker) => marker.events.map((event) => ({
+    ...event,
+    longitude: marker.position.longitude,
+    latitude: marker.position.latitude,
+  })))
+})
 const unmappedLegacyRuntimeEvents = computed(() => unmappedRuntimeEvents.value.filter((event) => (
   String(event.event_type) !== 'accident' && !String(event.event_type).startsWith('major_event_')
 )))
 const overlayViewToken = ref(0)
+let eventProjectionCameraVersion = 0
 
 const detectedEventCards = computed(() => (
   snapshot.value?.event_detection?.cards?.filter((card) => card.status === 'active') ?? []
@@ -610,7 +628,11 @@ function projectSceneEventToOverlay(
   marker: SceneEventMarker,
 ): { x: number; y: number } | null {
   if (!containerRef.value) return null
-  return sceneEventMarkerLayer?.projectMarkerToContainer(marker.id, containerRef.value) ?? null
+  return sceneEventMarkerLayer?.projectMarkerToContainer(
+    marker.id,
+    containerRef.value,
+    eventProjectionCameraVersion,
+  ) ?? null
 }
 
 function projectDetectedEventToOverlay(
@@ -679,15 +701,20 @@ function runtimeEventPosition(
   event: typeof runtimeDisturbances.value[number],
 ): EventMarkerPosition | null {
   const isAccident = event.eventType === 'accident'
-  const laneIdValue = isAccident ? event.details.lane_id : event.details.venue_lane_id
-  const laneId = typeof laneIdValue === 'string' ? laneIdValue : ''
-  const rawRatio = isAccident ? Number(event.details.position_ratio) : 0.5
-  const ratio = Number.isFinite(rawRatio) ? Math.max(0, Math.min(1, rawRatio)) : 0.5
+  const registryMarker = resolveSessionEventMarkers(
+    [event],
+    eventLanePositionIndex.value,
+    topologyNodes.value,
+    activeIntersectionId.value,
+  )[0]
+  if (!registryMarker) return null
+  const laneId = registryMarker.position.laneId ?? ''
+  const ratio = registryMarker.position.positionRatio ?? 0.5
   if (laneId) {
     const lanePosition = realisticIntersectionLayer?.resolveLaneScenePositionAny(
       laneId,
       ratio,
-      event.intersectionId,
+      registryMarker.position.intersectionId,
     )
     if (lanePosition) {
       return {
@@ -700,10 +727,27 @@ function runtimeEventPosition(
       }
     }
   }
-  const reason = laneId ? 'lane_not_mapped' : 'lane_id_missing'
-  return event.intersectionId
-    ? intersectionFallbackPosition(event.intersectionId, reason)
-    : null
+  if (!engine) return null
+  const geographic = coordinateProjector([
+    registryMarker.position.longitude,
+    registryMarker.position.latitude,
+    REALISTIC_INTERSECTION_SURFACE_Z + 0.18,
+  ])
+  const mapCoordinate: [number, number, number] = [geographic[0], geographic[1], geographic[2] ?? 0]
+  const scene = engine.map.projectArrayCoordinate(mapCoordinate)
+  return {
+    scene: [scene[0], scene[1], scene[2] ?? 0],
+    mapCoordinate,
+    longitude: registryMarker.position.longitude,
+    latitude: registryMarker.position.latitude,
+    laneId: laneId || undefined,
+    positionRatio: ratio,
+    intersectionId: registryMarker.position.intersectionId,
+    source: registryMarker.position.source === 'intersection_fallback'
+      ? 'intersection_fallback'
+      : isAccident ? 'accident_lane' : 'venue_lane',
+    fallbackReason: registryMarker.position.fallbackReason,
+  }
 }
 
 function syncSceneEventMarkers(): void {
@@ -734,6 +778,18 @@ function syncSceneEventMarkers(): void {
     ...debugSceneEventMarkers.value,
   ])
   sceneEventMarkerLayer?.setMarkers(sceneEventMarkers.value)
+  if (import.meta.env.DEV) {
+    const diagnosticsWindow = window as Window & {
+      __CITYPULSE_EVENT_MARKER_DIAGNOSTICS__?: Record<string, unknown>
+    }
+    diagnosticsWindow.__CITYPULSE_EVENT_MARKER_DIAGNOSTICS__ = {
+      ...diagnosticsWindow.__CITYPULSE_EVENT_MARKER_DIAGNOSTICS__,
+      threeDimensionalMarkerCount: sceneEventMarkers.value.length,
+      markerLayer: sceneEventMarkerLayer?.stats() ?? null,
+      roadsideFacilities: roadsideFacilityRenderer?.stats() ?? null,
+      capturedAt: new Date().toISOString(),
+    }
+  }
 }
 
 function syncTopologyCongestion(): void {
@@ -846,13 +902,13 @@ function scheduleRoadLodRefresh(): void {
 
 function markInteracting(): void {
   if (cameraFlightActive) return
+  eventProjectionCameraVersion += 1
   if (!interacting.value) {
     cancelScheduledRoadLodRefresh()
     beginBuildingCameraRevision()
     buildingTileset && (buildingTileset.errorTarget = buildingMovingErrorTarget())
     realisticIntersectionLayer?.setInteractionActive(true)
     vegetationRenderer?.setInteractionActive(true)
-    roadsideFacilityRenderer?.refreshViewport()
   }
   interacting.value = true
   enableCameraInteraction()
@@ -863,7 +919,7 @@ function markInteracting(): void {
     realisticIntersectionLayer?.setInteractionActive(false)
     if (buildingTileset) buildingTileset.errorTarget = buildingIdleErrorTarget()
     vegetationRenderer?.setInteractionActive(false)
-    roadsideFacilityRenderer?.refreshViewport()
+    roadsideFacilityRenderer?.refreshViewport(true)
     refreshIntersectionRoadLod(true)
     const stats = vehicleRenderer?.refreshViewport()
     if (stats) updateVehicleRenderStats(stats)
@@ -1250,6 +1306,7 @@ async function switchRealisticIntersection(
     if (!vehicleCommitted) {
       throw new Error(`Vehicle stage contained no valid first frame for ${intersectionId}`)
     }
+    roadsideFacilityRenderer?.setRealisticDetailActive(true)
     realisticIntersectionLayer.activate(intersectionId)
     activeDebugManifest = manifest
     installSceneDebugApi()
@@ -1258,7 +1315,6 @@ async function switchRealisticIntersection(
     scheduleRoadLodRefresh()
     realisticDetailReady = true
     syncRoadRendering(geojson.value)
-    roadsideFacilityRenderer?.setRealisticDetailActive(true)
     displaySignalsAt(vehicleStats.value.displayElapsedSeconds ?? snapshot.value?.elapsed_seconds ?? 0)
     commitIntersectionEnvironment(intersectionId, preparedEnvironment, revision)
     committed = true
@@ -1407,6 +1463,7 @@ async function prepareIntersectionEnvironment(
     streetlightPromise,
   ])
   if (signal.aborted) throw new DOMException('Environment loading aborted', 'AbortError')
+  if (facilities && roadsideFacilityRenderer) roadsideFacilityRenderer.prepareScene(facilities)
   return { environment, facilities }
 }
 
@@ -1667,6 +1724,7 @@ function syncEngineResolution(): void {
   rendering.resolution = new Vector2(width, height)
   if (topologyNodes.value.length > 0) applyGlobalNavigationBounds(topologyNodes.value)
   overlayViewToken.value += 1
+  eventProjectionCameraVersion += 1
   activeEngine.requestRender()
 }
 
@@ -1695,6 +1753,7 @@ function registerThreeMapController(): void {
       if (options.force || !interacting.value) {
         beginBuildingCameraRevision()
         const revision = ++cameraFlightRevision
+        eventProjectionCameraVersion += 1
         cameraFlightGuard?.cancel()
         cameraFlightActive = options.duration > 0
         if (cameraFlightActive && engine) engine.controller.enabled = false
@@ -1703,8 +1762,10 @@ function registerThreeMapController(): void {
           if (revision !== cameraFlightRevision) return
           cameraFlightGuard = null
           cameraFlightActive = false
+          eventProjectionCameraVersion += 1
           enableCameraInteraction()
           refreshIntersectionRoadLod(true)
+          roadsideFacilityRenderer?.refreshViewport(true)
           options.complete()
         }
         cameraFlightGuard = createCameraFlightGuard({
@@ -1728,6 +1789,7 @@ function registerThreeMapController(): void {
     setViewport: (points, options) => {
       if (options.force || !interacting.value) {
         beginBuildingCameraRevision()
+        eventProjectionCameraVersion += 1
         engine?.map.setViewport(
           points.map((point) => placeBaiduCameraTarget(point, scenePlacement)),
           options,
@@ -1927,7 +1989,7 @@ async function initMap(): Promise<void> {
     immediate: true,
   }))
   asyncWatchStops.push(watch(
-    [detectedEventCards, runtimeDisturbances, topologyNodes],
+    [detectedEventCards, runtimeDisturbances, topologyNodes, eventLanePositionIndex],
     syncSceneEventMarkers,
     { deep: true, immediate: true },
   ))
@@ -1962,9 +2024,16 @@ async function initMap(): Promise<void> {
 
   if (enableIntersectionTopology && intersectionTopologyLayer) {
     emit('loading', '正在加载 20 路口道路总览')
-    await loadEdgeTopologySegmentMap().catch((cause: unknown) => {
-      console.warn('[edge-topology] map unavailable', cause)
-    })
+    const [, laneIndex] = await Promise.all([
+      loadEdgeTopologySegmentMap().catch((cause: unknown) => {
+        console.warn('[edge-topology] map unavailable', cause)
+      }),
+      loadEventLanePositionIndex().catch((cause: unknown) => {
+        console.warn('[event-marker] lane position index unavailable', cause)
+        return null
+      }),
+    ])
+    eventLanePositionIndex.value = laneIndex
     const nodes = await intersectionTopologyLayer.load()
     vehicleRenderer?.setHeadingAnchors(nodes)
     topologyNodes.value = nodes
@@ -2080,6 +2149,7 @@ onUnmounted(() => {
   intersectionTopologyLayer?.destroy()
   intersectionTopologyLayer = null
   topologyNodes.value = []
+  eventLanePositionIndex.value = null
   realisticDetailReady = false
   if (sky && engine) engine.remove(sky)
   sky = null

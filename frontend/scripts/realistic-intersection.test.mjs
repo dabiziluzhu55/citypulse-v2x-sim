@@ -17,7 +17,10 @@ import {
   STOP_LINE_CENTER_OFFSET_METERS,
 } from '../src/mapv/realistic/intersectionApproachGeometry.ts'
 import { parseIntersectionEnvironmentManifest } from '../src/mapv/realistic/intersectionEnvironmentManifest.ts'
-import { vehicleGeometryGenerationIsValid } from '../src/mapv/realistic/intersectionManifest.ts'
+import {
+  controlledLaneSignalForState,
+  vehicleGeometryGenerationIsValid,
+} from '../src/mapv/realistic/intersectionManifest.ts'
 import { sumoHeadingTransformIsValid } from '../src/mapv/sumoHeadingTransform.ts'
 import { vehicleRouteTurnIndexNetworkSha256 } from '../src/mapv/vehicleRouteTurnIndex.ts'
 
@@ -34,6 +37,12 @@ function pointToSegmentDistance(point, start, end) {
 test('clips a lane shape at the exact preview radius', () => {
   const clipped = cropPolylineToRadius([[-200, 0], [-80, 0], [0, 0]], 140)
   assert.deepEqual(clipped, [[-140, 0], [-80, 0], [0, 0]])
+})
+
+test('aggregates multiple SUMO links into one controlled-lane signal color', () => {
+  assert.equal(controlledLaneSignalForState('rrGry', [0, 2, 4]), 'g')
+  assert.equal(controlledLaneSignalForState('rryry', [0, 2, 4]), 'y')
+  assert.equal(controlledLaneSignalForState('rrrrr', [0, 2, 4]), 'r')
 })
 
 test('catalog contains 20 projection-correct realistic intersections', async () => {
@@ -288,7 +297,10 @@ test('crosswalk bars span paired carriageways continuously without median gaps',
   }
 })
 
-test('all compact intersections move crosswalks outward until their footprints no longer overlap', async () => {
+test('all crosswalks stay 1.2 metres downstream of stop lines and only trim conflicting bars', async () => {
+  let approachCount = 0
+  let connectionCount = 0
+  let controlledLaneCount = 0
   for (let index = 1; index <= 20; index += 1) {
     const id = `demo_${index}`
     const manifest = JSON.parse(await readFile(
@@ -296,6 +308,23 @@ test('all compact intersections move crosswalks outward until their footprints n
       'utf8',
     ))
     const approaches = buildCollisionFreeIntersectionApproaches(manifest.edges, manifest.horizontalScale)
+    approachCount += approaches.length
+    connectionCount += manifest.connections.length
+    controlledLaneCount += manifest.signalGroups.length
+    assert.ok(approaches.every(({ geometry }) => geometry.setbackMeters === 0))
+    for (const { geometry } of approaches) {
+      for (const bar of geometry.crosswalkBars) {
+        const nearEdge = [
+          bar.center[0] - geometry.tangent[0] * bar.length / 2,
+          bar.center[1] - geometry.tangent[1] * bar.length / 2,
+        ]
+        const gap = (
+          (nearEdge[0] - geometry.stopLineCenter[0]) * geometry.tangent[0]
+          + (nearEdge[1] - geometry.stopLineCenter[1]) * geometry.tangent[1]
+        ) / manifest.horizontalScale
+        assert.ok(Math.abs(gap - 1.2) <= 0.05, `${id} crosswalk gap ${gap}`)
+      }
+    }
     for (let left = 0; left < approaches.length; left += 1) {
       for (let right = left + 1; right < approaches.length; right += 1) {
         assert.equal(
@@ -310,6 +339,9 @@ test('all compact intersections move crosswalks outward until their footprints n
       }
     }
   }
+  assert.equal(approachCount, 73)
+  assert.equal(connectionCount, 315)
+  assert.equal(controlledLaneCount, 156)
 })
 
 test('crosswalk orientation follows the rebuilt road centerline instead of one skewed lane', () => {

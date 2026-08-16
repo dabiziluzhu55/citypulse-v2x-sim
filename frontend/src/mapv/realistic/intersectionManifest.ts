@@ -114,6 +114,12 @@ export interface RealisticSignalStageTemplate {
 
 export type RealisticPhaseTemplates = Record<string, Record<string, RealisticSignalStageTemplate>>
 
+export interface ControlledLaneSignalGroup {
+  tlsId?: string
+  laneId: string
+  linkIndexes: number[]
+}
+
 export interface RealisticIntersectionManifest {
   schemaVersion: 1 | 2 | 3
   intersectionId: string
@@ -151,7 +157,7 @@ export interface RealisticIntersectionManifest {
   vehicleConnectionSourceSha256?: string
   phases: RealisticPhase[]
   phaseTemplates?: RealisticPhaseTemplates
-  signalGroups: Array<{ tlsId?: string; laneId: string; linkIndexes: number[] }>
+  signalGroups: ControlledLaneSignalGroup[]
 }
 
 export type SignalColor = 'red' | 'amber' | 'green'
@@ -180,6 +186,16 @@ export function signalColorForState(state: string, linkIndex: number): SignalCol
   if (value === 'g') return 'green'
   if (value === 'y') return 'amber'
   return 'red'
+}
+
+export function controlledLaneSignalForState(
+  state: string,
+  linkIndexes: readonly number[],
+): 'r' | 'y' | 'g' {
+  const values = linkIndexes.map((index) => state[index]?.toLowerCase() ?? 'r')
+  if (values.some((value) => value === 'g')) return 'g'
+  if (values.some((value) => value === 'y')) return 'y'
+  return 'r'
 }
 
 export async function loadIntersectionManifest(

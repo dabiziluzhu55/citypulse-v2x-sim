@@ -15,7 +15,7 @@ import {
   disturbanceRuntimeTypeLabel,
 } from '../../utils/runtimeDisturbances'
 
-interface ScreenPoint { x: number; y: number }
+interface ScreenPoint { x: number; y: number; cameraVersion?: number }
 interface ProjectedMarker extends SceneEventMarker, ScreenPoint {}
 interface CardPosition { left: number; top: number; placement: 'above' | 'below' }
 
@@ -61,10 +61,14 @@ function refresh(): void {
     selectedId.value = null
     return
   }
-  projected.value = props.markers.flatMap((marker) => {
+  const next = props.markers.flatMap((marker) => {
     const point = props.project(marker)
     return point ? [{ ...marker, ...point }] : []
   })
+  const cameraVersion = next.reduce((latest, marker) => (
+    Math.max(latest, marker.cameraVersion ?? 0)
+  ), 0)
+  projected.value = next.filter((marker) => (marker.cameraVersion ?? cameraVersion) >= cameraVersion)
   if (selectedId.value && !projected.value.some((marker) => marker.id === selectedId.value)) {
     selectedId.value = null
   }

@@ -9,6 +9,10 @@ import {
   runtimeDisturbanceHasSceneMarker,
   runtimeDisturbanceViews,
 } from '../src/utils/runtimeDisturbances.ts'
+import {
+  parseEventLanePositionIndex,
+  resolveSessionEventMarkers,
+} from '../src/utils/eventLanePositionIndex.ts'
 
 const eventTypes = [
   'lane_closure',
@@ -131,4 +135,61 @@ test('updates disturbance visuals without rebuilding the vehicle pose resolver',
   const watcher = source.slice(watchStart, watchStart + 220)
   assert.match(watcher, /syncRuntimeDisturbanceRoads/)
   assert.doesNotMatch(watcher, /commitViewportTransition|setLanePoseResolver|createIntersectionLanePoseResolver/)
+})
+
+test('the SUMO-derived event lane index resolves all non-cancelled states and infers missing intersections', async () => {
+  const raw = JSON.parse(await readFile(
+    new URL('../public/intersections/v3/event-lane-position-index.json', import.meta.url),
+    'utf8',
+  ))
+  const index = parseEventLanePositionIndex(raw)
+  assert.equal(index.networkSource.sha256, '1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36')
+  assert.equal(index.entries.length, index.laneCount)
+  assert.ok(index.entries.length > 6_000)
+  assert.equal(new Set(index.entries.map((entry) => entry.intersectionId)).size, 20)
+
+  const lanes = index.entries.filter((entry) => entry.kind === 'driving').slice(0, 5)
+  const states = ['SCHEDULED', 'ACTIVE', 'COMPLETED', 'FAILED', 'CANCELLED']
+  const views = states.map((state, position) => ({
+    sessionId: 'session-index',
+    eventId: `indexed-${position}`,
+    intersectionId: '',
+    eventType: eventTypes[position],
+    startSeconds: 0,
+    endSeconds: 60,
+    parameters: {},
+    state,
+    error: state === 'FAILED' ? 'failed event remains inspectable' : null,
+    details: eventTypes[position].startsWith('major_event_')
+      ? { venue_lane_id: lanes[position].laneId }
+      : eventTypes[position] === 'accident'
+        ? { lane_id: lanes[position].laneId, position_ratio: 0.25 }
+        : { lane_ids: [lanes[position].laneId] },
+  }))
+  const intersections = [...new Map(index.entries.map((entry) => [entry.intersectionId, {
+    intersectionId: entry.intersectionId,
+    longitude: entry.coordinates[0][0],
+    latitude: entry.coordinates[0][1],
+    radiusMeters: 520,
+    sumoHeadingTransform: {
+      xAxis: [1, 0], yAxis: [0, 1], determinant: 1,
+      sourceSha256: index.networkSource.sha256,
+    },
+  }])).values()]
+  const markers = resolveSessionEventMarkers(views, index, intersections)
+  assert.equal(markers.reduce((sum, marker) => sum + marker.events.length, 0), 4)
+  assert.ok(markers.every((marker) => marker.position.laneId))
+  assert.ok(markers.every((marker) => marker.position.intersectionId))
+  assert.equal(markers.find((marker) => marker.events[0].eventType === 'accident').position.positionRatio, 0.25)
+})
+
+test('2D disturbance rendering uses per-event lane positions instead of intersection aggregation', async () => {
+  const source = await readFile(
+    new URL('../src/components/visualization/AppBackgroundMap.vue', import.meta.url),
+    'utf8',
+  )
+  assert.match(source, /resolveSessionEventMarkers/)
+  assert.match(source, /marker\.position\.longitude/)
+  assert.doesNotMatch(source, /const byIntersection = new globalThis\.Map/)
+  assert.match(source, /位置为回退值/)
 })

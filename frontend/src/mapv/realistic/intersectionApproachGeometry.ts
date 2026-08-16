@@ -36,6 +36,12 @@ export interface CrosswalkBar {
   center: Point2
   length: number
   width: number
+  footprint: CrosswalkFootprint
+}
+
+export interface CrosswalkFootprint {
+  polygon: [Point2, Point2, Point2, Point2]
+  clipped: boolean
 }
 
 export interface IntersectionApproachGeometry {
@@ -55,6 +61,161 @@ export interface IntersectionApproachGeometry {
 export interface PositionedIntersectionApproach {
   edge: RealisticRoadEdge
   geometry: IntersectionApproachGeometry
+}
+
+const CROSSWALK_CONFLICT_CLEARANCE_METERS = 0.25
+const CROSSWALK_MIN_FRAGMENT_METERS = 0.65
+
+function cross(left: Point2, right: Point2): number {
+  return left[0] * right[1] - left[1] * right[0]
+}
+
+function closestSegmentParameters(
+  leftStart: Point2,
+  leftTangent: Point2,
+  leftLength: number,
+  rightStart: Point2,
+  rightTangent: Point2,
+  rightLength: number,
+): { leftDistance: number; rightDistance: number; separation: number } {
+  let best = { leftDistance: 0, rightDistance: 0, separation: Infinity }
+  const candidates: Array<[number, number]> = []
+  const directionCross = cross(leftTangent, rightTangent)
+  if (Math.abs(directionCross) > 1e-9) {
+    const delta: Point2 = [rightStart[0] - leftStart[0], rightStart[1] - leftStart[1]]
+    candidates.push([
+      cross(delta, rightTangent) / directionCross,
+      cross(delta, leftTangent) / directionCross,
+    ])
+  }
+  for (const leftDistance of [0, leftLength]) {
+    const point: Point2 = [
+      leftStart[0] + leftTangent[0] * leftDistance,
+      leftStart[1] + leftTangent[1] * leftDistance,
+    ]
+    candidates.push([leftDistance, Math.max(0, Math.min(rightLength,
+      (point[0] - rightStart[0]) * rightTangent[0]
+      + (point[1] - rightStart[1]) * rightTangent[1],
+    ))])
+  }
+  for (const rightDistance of [0, rightLength]) {
+    const point: Point2 = [
+      rightStart[0] + rightTangent[0] * rightDistance,
+      rightStart[1] + rightTangent[1] * rightDistance,
+    ]
+    candidates.push([Math.max(0, Math.min(leftLength,
+      (point[0] - leftStart[0]) * leftTangent[0]
+      + (point[1] - leftStart[1]) * leftTangent[1],
+    )), rightDistance])
+  }
+  for (const [rawLeftDistance, rawRightDistance] of candidates) {
+    const leftDistance = Math.max(0, Math.min(leftLength, rawLeftDistance))
+    const rightDistance = Math.max(0, Math.min(rightLength, rawRightDistance))
+    const dx = leftStart[0] + leftTangent[0] * leftDistance
+      - rightStart[0] - rightTangent[0] * rightDistance
+    const dy = leftStart[1] + leftTangent[1] * leftDistance
+      - rightStart[1] - rightTangent[1] * rightDistance
+    const separation = Math.hypot(dx, dy)
+    if (separation < best.separation) best = { leftDistance, rightDistance, separation }
+  }
+  return best
+}
+
+function barFootprint(
+  bar: Pick<CrosswalkBar, 'center' | 'length' | 'width'>,
+  tangent: Point2,
+  normal: Point2,
+  clipped = false,
+): CrosswalkFootprint {
+  const halfLength = bar.length / 2
+  const halfWidth = bar.width / 2
+  return {
+    polygon: [
+      [bar.center[0] - tangent[0] * halfLength - normal[0] * halfWidth, bar.center[1] - tangent[1] * halfLength - normal[1] * halfWidth],
+      [bar.center[0] + tangent[0] * halfLength - normal[0] * halfWidth, bar.center[1] + tangent[1] * halfLength - normal[1] * halfWidth],
+      [bar.center[0] + tangent[0] * halfLength + normal[0] * halfWidth, bar.center[1] + tangent[1] * halfLength + normal[1] * halfWidth],
+      [bar.center[0] - tangent[0] * halfLength + normal[0] * halfWidth, bar.center[1] - tangent[1] * halfLength + normal[1] * halfWidth],
+    ],
+    clipped,
+  }
+}
+
+function barStart(bar: CrosswalkBar, tangent: Point2): Point2 {
+  return [
+    bar.center[0] - tangent[0] * bar.length / 2,
+    bar.center[1] - tangent[1] * bar.length / 2,
+  ]
+}
+
+function trimBarAtDistance(
+  bar: CrosswalkBar,
+  tangent: Point2,
+  normal: Point2,
+  distance: number,
+  minimumLength: number,
+): void {
+  const start = barStart(bar, tangent)
+  const nextLength = Math.max(0, Math.min(bar.length, distance))
+  bar.length = nextLength >= minimumLength ? nextLength : 0
+  bar.center = [
+    start[0] + tangent[0] * bar.length / 2,
+    start[1] + tangent[1] * bar.length / 2,
+  ]
+  bar.footprint = barFootprint(bar, tangent, normal, true)
+}
+
+function trimCrosswalkConflicts(
+  approaches: IntersectionApproachGeometry[],
+  horizontalScale: number,
+): void {
+  const clearance = CROSSWALK_CONFLICT_CLEARANCE_METERS * horizontalScale
+  const minimumLength = CROSSWALK_MIN_FRAGMENT_METERS * horizontalScale
+  for (let leftIndex = 0; leftIndex < approaches.length; leftIndex += 1) {
+    const left = approaches[leftIndex]
+    for (let rightIndex = leftIndex + 1; rightIndex < approaches.length; rightIndex += 1) {
+      const right = approaches[rightIndex]
+      const directionCross = cross(left.tangent, right.tangent)
+      const angleSine = Math.abs(directionCross)
+      if (angleSine < 0.18) continue
+      for (const leftBar of left.crosswalkBars) {
+        if (leftBar.length <= 0) continue
+        for (const rightBar of right.crosswalkBars) {
+          if (rightBar.length <= 0) continue
+          const leftStart = barStart(leftBar, left.tangent)
+          const rightStart = barStart(rightBar, right.tangent)
+          const closest = closestSegmentParameters(
+            leftStart,
+            left.tangent,
+            leftBar.length,
+            rightStart,
+            right.tangent,
+            rightBar.length,
+          )
+          if (closest.separation >= (leftBar.width + rightBar.width) / 2 + clearance) continue
+          const leftAllowance = (rightBar.width / 2 + clearance / 2) / angleSine
+          const rightAllowance = (leftBar.width / 2 + clearance / 2) / angleSine
+          trimBarAtDistance(
+            leftBar,
+            left.tangent,
+            left.normal,
+            closest.leftDistance - leftAllowance,
+            minimumLength,
+          )
+          trimBarAtDistance(
+            rightBar,
+            right.tangent,
+            right.normal,
+            closest.rightDistance - rightAllowance,
+            minimumLength,
+          )
+        }
+      }
+    }
+  }
+  for (const approach of approaches) {
+    approach.crosswalkBars = approach.crosswalkBars.filter((bar) => bar.length >= minimumLength)
+    approach.crosswalkCenters = approach.crosswalkBars.map((bar) => bar.center)
+  }
 }
 
 export function signalPoleBase(
@@ -183,7 +344,7 @@ export function buildIntersectionApproachGeometry(
   lanesOrEdge: RealisticLane[] | RealisticRoadEdge,
   horizontalScale: number,
   allEdges: RealisticRoadEdge[] = [],
-  setbackMeters = 0,
+  _setbackMeters = 0,
 ): IntersectionApproachGeometry | null {
   const edge = Array.isArray(lanesOrEdge) ? null : lanesOrEdge
   const lanes = (Array.isArray(lanesOrEdge) ? lanesOrEdge : lanesOrEdge.lanes)
@@ -239,22 +400,23 @@ export function buildIntersectionApproachGeometry(
   ]
   const crossingCenter: Point2 = [
     crosswalkBase[0]
-      + tangent[0] * (CROSSWALK_FIRST_CENTER_METERS - setbackMeters) * horizontalScale,
+      + tangent[0] * CROSSWALK_FIRST_CENTER_METERS * horizontalScale,
     crosswalkBase[1]
-      + tangent[1] * (CROSSWALK_FIRST_CENTER_METERS - setbackMeters) * horizontalScale,
+      + tangent[1] * CROSSWALK_FIRST_CENTER_METERS * horizontalScale,
   ]
   const barWidth = CROSSWALK_STRIPE_WIDTH_METERS * horizontalScale
   const projections = buildCrosswalkBarProjections(crossingMin, crossingMax, horizontalScale)
   const crosswalkBars = projections.map((projection): CrosswalkBar => {
     const lateralOffset = projection - crossingCenterAlong
-    return {
+    const bar = {
       center: [
         crossingCenter[0] + normal[0] * lateralOffset,
         crossingCenter[1] + normal[1] * lateralOffset,
-      ],
+      ] as Point2,
       length: CROSSWALK_DEPTH_METERS * horizontalScale,
       width: barWidth,
     }
+    return { ...bar, footprint: barFootprint(bar, tangent, normal) }
   })
   const crosswalkCenters = crosswalkBars.map((bar) => bar.center)
   const incomingCenter = centerAlong
@@ -271,42 +433,29 @@ export function buildIntersectionApproachGeometry(
     outerBoundaryProjection: outerSide > 0 ? crossingMax : crossingMin,
     crosswalkCenters,
     crosswalkBars,
-    setbackMeters,
+    setbackMeters: 0,
   }
-}
-
-function crosswalkCenter(approach: IntersectionApproachGeometry): Point2 {
-  const centers = approach.crosswalkCenters
-  return centers[Math.floor(centers.length / 2)] ?? approach.stopLineCenter
-}
-
-function projectionRadius(
-  approach: IntersectionApproachGeometry,
-  axis: Point2,
-  horizontalScale: number,
-): number {
-  const tangentProjection = Math.abs(approach.tangent[0] * axis[0] + approach.tangent[1] * axis[1])
-  const normalProjection = Math.abs(approach.normal[0] * axis[0] + approach.normal[1] * axis[1])
-  return tangentProjection * CROSSWALK_DEPTH_METERS * horizontalScale / 2
-    + normalProjection * approach.crosswalkHalfWidth
 }
 
 export function crosswalksOverlap(
   left: IntersectionApproachGeometry,
   right: IntersectionApproachGeometry,
-  horizontalScale: number,
+  _horizontalScale: number,
 ): boolean {
-  const leftCenter = crosswalkCenter(left)
-  const rightCenter = crosswalkCenter(right)
-  const delta: Point2 = [rightCenter[0] - leftCenter[0], rightCenter[1] - leftCenter[1]]
-  const axes = [left.tangent, left.normal, right.tangent, right.normal]
-  const clearance = 0.65 * horizontalScale
-  return axes.every((axis) => {
-    const separation = Math.abs(delta[0] * axis[0] + delta[1] * axis[1])
-    return separation <= projectionRadius(left, axis, horizontalScale)
-      + projectionRadius(right, axis, horizontalScale)
-      + clearance
-  })
+  return left.crosswalkBars.some((leftBar) => right.crosswalkBars.some((rightBar) => {
+    const delta: Point2 = [
+      rightBar.center[0] - leftBar.center[0],
+      rightBar.center[1] - leftBar.center[1],
+    ]
+    return [left.tangent, left.normal, right.tangent, right.normal].every((axis) => {
+      const separation = Math.abs(delta[0] * axis[0] + delta[1] * axis[1])
+      const leftRadius = Math.abs(left.tangent[0] * axis[0] + left.tangent[1] * axis[1]) * leftBar.length / 2
+        + Math.abs(left.normal[0] * axis[0] + left.normal[1] * axis[1]) * leftBar.width / 2
+      const rightRadius = Math.abs(right.tangent[0] * axis[0] + right.tangent[1] * axis[1]) * rightBar.length / 2
+        + Math.abs(right.normal[0] * axis[0] + right.normal[1] * axis[1]) * rightBar.width / 2
+      return separation < leftRadius + rightRadius - 1e-6
+    })
+  }))
 }
 
 export function buildCollisionFreeIntersectionApproaches(
@@ -338,33 +487,10 @@ export function buildCollisionFreeIntersectionApproaches(
       initialGeometry[duplicateIndex] = geometry
     }
   }
-  const setbacks = incoming.map(() => 0)
-  let approaches: Array<IntersectionApproachGeometry | null> = initialGeometry
-
-  for (let iteration = 0; iteration < 24; iteration += 1) {
-    const colliding = new Set<number>()
-    for (let left = 0; left < approaches.length; left += 1) {
-      if (!approaches[left]) continue
-      for (let right = left + 1; right < approaches.length; right += 1) {
-        if (!approaches[right]) continue
-        if (crosswalksOverlap(approaches[left]!, approaches[right]!, horizontalScale)) {
-          colliding.add(left)
-          colliding.add(right)
-        }
-      }
-    }
-    if (colliding.size === 0) break
-    for (const index of colliding) setbacks[index] += 1.5
-    approaches = incoming.map((edge, index) => buildIntersectionApproachGeometry(
-      edge,
-      horizontalScale,
-      edges,
-      setbacks[index],
-    ))
-  }
+  trimCrosswalkConflicts(initialGeometry, horizontalScale)
 
   return incoming.flatMap((edge, index) => {
-    const geometry = approaches[index]
+    const geometry = initialGeometry[index]
     return geometry ? [{ edge, geometry }] : []
   })
 }

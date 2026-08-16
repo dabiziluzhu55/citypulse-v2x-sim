@@ -4,6 +4,8 @@ import test from 'node:test'
 import { Color } from 'three'
 
 import {
+  ROADSIDE_FACILITY_HIDE_RANGE_METERS,
+  ROADSIDE_FACILITY_SHOW_RANGE_METERS,
   RoadsideFacilityRenderer,
   resolveStreetlightHeading,
 } from '../src/mapv/showcaseLayers/RoadsideFacilityRenderer.ts'
@@ -207,4 +209,58 @@ test('preserves the backend signal stage for traffic-light rendering', () => {
   })
 
   assert.equal(view.intersections[0].stage, 'YELLOW')
+})
+
+test('keeps all 5725 generated lamp placements stable across the 20 intersections', async () => {
+  const manifests = await Promise.all(Array.from({ length: 20 }, (_, index) => readFile(
+    new URL(`../public/intersections/v3/demo_${index + 1}/facilities.json`, import.meta.url),
+    'utf8',
+  ).then(JSON.parse)))
+  assert.equal(manifests.reduce((sum, manifest) => sum + manifest.lamps.length, 0), 5_725)
+  const identities = manifests.flatMap((manifest) => manifest.lamps.map((lamp) => [
+    manifest.intersectionId,
+    lamp.id,
+    ...lamp.position,
+    lamp.heading,
+  ].join(':')))
+  assert.equal(new Set(identities).size, identities.length)
+})
+
+test('prepares three facility scenes, applies stable-camera hysteresis, and never rebuilds while moving', () => {
+  const base = buildSceneFacilityManifest(roads, tls, 'demo_2')
+  let range = 5_500
+  const added = []
+  const removed = []
+  const engine = {
+    map: {
+      projectArrayCoordinate: (coordinate) => coordinate,
+      getRange: () => range,
+    },
+    add: (object) => { added.push(object); return object },
+    remove: (object) => removed.push(object),
+    requestRender: () => {},
+  }
+  const renderer = new RoadsideFacilityRenderer(engine, (coordinate) => [...coordinate])
+  renderer.render(base)
+  renderer.prepareScene({ ...base, intersectionId: 'demo_3' })
+  renderer.prepareScene({ ...base, intersectionId: 'demo_4' })
+  const beforeMotion = renderer.stats()
+  for (let frame = 0; frame < 120; frame += 1) renderer.refreshViewport(false)
+  assert.equal(renderer.stats().sceneBuildCount, beforeMotion.sceneBuildCount)
+
+  range = ROADSIDE_FACILITY_HIDE_RANGE_METERS + 1
+  renderer.refreshViewport(true)
+  assert.equal(added[0].visible, false)
+  range = (ROADSIDE_FACILITY_SHOW_RANGE_METERS + ROADSIDE_FACILITY_HIDE_RANGE_METERS) / 2
+  renderer.refreshViewport(true)
+  assert.equal(added[0].visible, false)
+  range = ROADSIDE_FACILITY_SHOW_RANGE_METERS - 1
+  renderer.refreshViewport(true)
+  assert.equal(added[0].visible, true)
+
+  renderer.prepareScene({ ...base, intersectionId: 'demo_5' })
+  assert.equal(renderer.stats().preparedSceneCount, 3)
+  assert.equal(renderer.stats().sceneBuildCount, 4)
+  assert.equal(removed.length, 1)
+  renderer.destroy()
 })

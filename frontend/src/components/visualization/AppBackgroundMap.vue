@@ -53,6 +53,11 @@ import {
   disturbanceRuntimeTypeLabel,
   type DisturbanceRuntimeView,
 } from '../../utils/runtimeDisturbances'
+import {
+  loadEventLanePositionIndex,
+  resolveSessionEventMarkers,
+  type EventLanePositionIndex,
+} from '../../utils/eventLanePositionIndex'
 
 const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 
@@ -79,6 +84,7 @@ let map: Map | null = null
 let resizeObserver: ResizeObserver | null = null
 let warningOverlay: Overlay | null = null
 let topologyNodes: IntersectionTopologyNode[] = []
+let eventLanePositionIndex: EventLanePositionIndex | null = null
 let edgeCongestionLevels: Record<string, CongestionLevel> = {}
 let routeCongestionLevels: Record<string, CongestionLevel> = {}
 const vehicleHeadingField = new SumoHeadingField((coordinate) => [
@@ -310,16 +316,14 @@ function renderDisturbanceWarnings(): void {
   if (topologyNodes.length === 0) return
   if (snapshot.value?.session_id) {
     if (runtimeDisturbances.value.length === 0) return
-    const byIntersection = new globalThis.Map<string, DisturbanceRuntimeView[]>()
-    for (const event of runtimeDisturbances.value) {
-      byIntersection.set(event.intersectionId, [
-        ...(byIntersection.get(event.intersectionId) ?? []),
-        event,
-      ])
-    }
-    for (const node of topologyNodes) {
-      const events = byIntersection.get(node.intersectionId)
-      if (!events?.length) continue
+    const markers = resolveSessionEventMarkers(
+      runtimeDisturbances.value,
+      eventLanePositionIndex,
+      topologyNodes,
+      activeIntersectionId.value,
+    )
+    for (const marker of markers) {
+      const events = marker.events
       const states = events.map((event) => event.state)
       const status = states.includes('FAILED')
         ? 'failed'
@@ -331,19 +335,39 @@ function renderDisturbanceWarnings(): void {
               ? 'cancelled'
               : 'scheduled'
       const feature = new Feature({
-        geometry: new Point(fromLonLat([node.longitude, node.latitude])),
+        geometry: new Point(fromLonLat([
+          marker.position.longitude,
+          marker.position.latitude,
+        ])),
       })
       feature.setProperties({
-        intersectionId: node.intersectionId,
+        intersectionId: marker.position.intersectionId,
         events,
         count: events.length,
         status,
-        color: events.some((event) => event.state === 'ACTIVE' && event.eventType === 'speed_limit')
-          ? '#ff9f1a'
-          : status === 'failed' ? '#ff243f' : undefined,
+        color: status === 'failed'
+          ? '#ff243f'
+          : marker.color === 'orange' ? '#ff9f1a'
+            : marker.color === 'blue' ? '#27b8ff' : '#d9152f',
+        laneId: marker.position.laneId ?? '',
+        positionSource: marker.position.source,
+        fallbackReason: marker.position.fallbackReason ?? '',
         runtime: true,
       })
       disturbanceSource.addFeature(feature)
+    }
+    if (import.meta.env.DEV) {
+      const diagnosticsWindow = window as Window & {
+        __CITYPULSE_EVENT_MARKER_DIAGNOSTICS__?: Record<string, unknown>
+      }
+      diagnosticsWindow.__CITYPULSE_EVENT_MARKER_DIAGNOSTICS__ = {
+        ...diagnosticsWindow.__CITYPULSE_EVENT_MARKER_DIAGNOSTICS__,
+        sessionId: snapshot.value.session_id,
+        twoDimensionalMarkerCount: markers.length,
+        twoDimensionalEventCount: markers.reduce((sum, marker) => sum + marker.events.length, 0),
+        positionFallbackCount: markers.filter((marker) => Boolean(marker.position.fallbackReason)).length,
+        unmappedEventCount: unmappedRuntimeEvents.value.length,
+      }
     }
     return
   }
@@ -396,15 +420,20 @@ function refreshIntelligenceLayers(): void {
 }
 
 async function loadTopologyOverview(): Promise<void> {
-  const [nodes, routeManifest] = await Promise.all([
+  const [nodes, routeManifest, , laneIndex] = await Promise.all([
     loadIntersectionTopologyCatalog(),
     loadIntersectionTopologyRoutes(),
     loadEdgeTopologySegmentMap().catch((cause: unknown) => {
       console.warn('[edge-topology] 2d map unavailable', cause)
       return {}
     }),
+    loadEventLanePositionIndex().catch((cause: unknown) => {
+      console.warn('[event-marker] lane position index unavailable', cause)
+      return null
+    }),
   ])
   topologyNodes = nodes
+  eventLanePositionIndex = laneIndex
   vehicleHeadingField.setAnchors(nodes)
   topologyFlowSource.clear()
   for (const route of expandDirectedTopologyRoutes(routeManifest.routes)) {
@@ -445,7 +474,13 @@ function handleMapClick(event: MapBrowserEvent): void {
   const intersectionId = String(feature.get('intersectionId') ?? '')
   const runtime = feature.get('runtime') === true
   const events = feature.get('events') as Array<ScenarioDraftDisturbanceEvent | DisturbanceRuntimeView>
-  warningPopupTitle.value = formatIntersectionLabel(intersectionId)
+  const laneId = String(feature.get('laneId') ?? '')
+  const fallbackReason = String(feature.get('fallbackReason') ?? '')
+  warningPopupTitle.value = [
+    formatIntersectionLabel(intersectionId),
+    laneId ? `车道 ${laneId}` : '',
+    fallbackReason ? '位置为回退值' : '',
+  ].filter(Boolean).join(' · ')
   warningPopupEvents.value = events.map((item) => runtime
     ? {
         id: (item as DisturbanceRuntimeView).eventId,
@@ -735,6 +770,7 @@ onUnmounted(() => {
   warningOverlay?.setPosition(undefined)
   warningOverlay = null
   topologyNodes = []
+  eventLanePositionIndex = null
   topologyFlowSource.clear()
   fullRoadNetworkSource.clear()
   routeCongestionLevels = {}

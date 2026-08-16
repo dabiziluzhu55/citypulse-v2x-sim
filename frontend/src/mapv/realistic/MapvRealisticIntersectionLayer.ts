@@ -13,14 +13,18 @@ import { REALISTIC_INTERSECTION_SURFACE_Z } from '../sceneElevation'
 import {
   loadIntersectionManifest,
   realisticIntersectionAssetUrl,
+  controlledLaneSignalForState,
+  type ControlledLaneSignalGroup,
   type Point2,
-  type RealisticConnection,
   type RealisticIntersectionManifest,
   type RoadSurfacePolygon,
 } from './intersectionManifest'
 import {
   buildCollisionFreeIntersectionApproaches,
+  buildIntersectionApproachGeometry,
+  pointAndTangent,
   SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS,
+  STOP_LINE_CENTER_OFFSET_METERS,
   signalPoleBase,
   type PositionedIntersectionApproach,
 } from './intersectionApproachGeometry'
@@ -58,7 +62,8 @@ import {
 
 interface SignalHeadMaterials {
   tlsId: string
-  linkIndex: number
+  laneId: string
+  linkIndexes: number[]
   red: THREE.MeshStandardMaterial
   yellow: THREE.MeshStandardMaterial
   green: THREE.MeshStandardMaterial
@@ -378,7 +383,7 @@ class RealisticIntersectionObject {
         ? undefined
         : templates[String(phase)] ?? templates[String(phase + 1)]
       const state = stage ? phaseTemplates?.[head.tlsId]?.[stage] : undefined
-      const signal = state?.[head.linkIndex]?.toLowerCase() ?? 'r'
+      const signal = controlledLaneSignalForState(state ?? '', head.linkIndexes)
       setLens(head.red, head.redGlow, signal !== 'g' && signal !== 'y', 0xff3028)
       setLens(head.yellow, head.yellowGlow, signal === 'y', 0xffb51c)
       setLens(head.green, head.greenGlow, signal === 'g', 0x32ff78)
@@ -664,10 +669,13 @@ class RealisticIntersectionObject {
     const poleMaterial = new THREE.MeshStandardMaterial({ color: COLORS.pole, roughness: 0.34, metalness: 0.72 })
     const housingMaterial = new THREE.MeshStandardMaterial({ color: 0x101416, roughness: 0.42, metalness: 0.24 })
     const visorMaterial = new THREE.MeshStandardMaterial({ color: 0x07090a, roughness: 0.5 })
-    for (const { edge, geometry: approach } of this.approaches) {
-      const controlled = this.manifest.connections.filter((item) => item.fromEdge === edge.id)
+    for (const edge of this.manifest.edges.filter((candidate) => candidate.incoming)) {
+      const approach = buildIntersectionApproachGeometry(edge, scale, this.manifest.edges)
+      if (!approach) continue
+      const laneIds = new Set(edge.lanes.map((lane) => lane.id))
+      const controlled = this.manifest.signalGroups.filter((item) => laneIds.has(item.laneId))
       if (controlled.length === 0) continue
-      const { tangent, normal, stopLineCenter: center, laneSamples: samples, outerSide: side } = approach
+      const { tangent, normal, stopLineCenter: center, outerSide: side } = approach
       const poleBase = signalPoleBase(approach, scale)
       const pole = verticalCylinder(0.17 * scale, 6.2, poleMaterial)
       pole.position.set(poleBase[0], poleBase[1], 3.1)
@@ -677,26 +685,20 @@ class RealisticIntersectionObject {
         center[1] - normal[1] * 2.5 * scale * side - tangent[1] * SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS * scale,
       ]
       this.group.add(boxBetween(poleBase, armEnd, 5.9, 0.2 * scale, poleMaterial, 0.2))
-      for (let laneIndex = 0; laneIndex < samples.length; laneIndex += 1) {
-        const lane = samples[laneIndex].lane
-        const connections = controlled.filter((item) => item.fromLane === lane.index)
-        connections.forEach((connection, connectionIndex) => {
-          const shift = (connectionIndex - (connections.length - 1) / 2) * 0.58 * scale
-          const head = this.createSignalHead(connection, housingMaterial, visorMaterial)
-          head.position.set(
-            samples[laneIndex].point[0] + normal[0] * shift,
-            samples[laneIndex].point[1] + normal[1] * shift,
-            5.56,
-          )
-          head.rotation.z = Math.atan2(-tangent[0], tangent[1])
-          this.group.add(head)
-        })
+      for (const signalGroup of controlled) {
+        const lane = edge.lanes.find((candidate) => candidate.id === signalGroup.laneId)
+        if (!lane) continue
+        const sample = pointAndTangent(lane, STOP_LINE_CENTER_OFFSET_METERS * scale, true)
+        const head = this.createSignalHead(signalGroup, housingMaterial, visorMaterial)
+        head.position.set(sample.point[0], sample.point[1], 5.56)
+        head.rotation.z = Math.atan2(-tangent[0], tangent[1])
+        this.group.add(head)
       }
     }
   }
 
   private createSignalHead(
-    connection: RealisticConnection,
+    signalGroup: ControlledLaneSignalGroup,
     housingMaterial: THREE.Material,
     visorMaterial: THREE.Material,
   ): THREE.Group {
@@ -735,8 +737,9 @@ class RealisticIntersectionObject {
       group.add(glow)
     })
     this.signalHeads.push({
-      tlsId: connection.tlsId,
-      linkIndex: connection.linkIndex,
+      tlsId: signalGroup.tlsId ?? this.manifest.tlsId ?? '',
+      laneId: signalGroup.laneId,
+      linkIndexes: [...signalGroup.linkIndexes],
       red: materials[0],
       yellow: materials[1],
       green: materials[2],

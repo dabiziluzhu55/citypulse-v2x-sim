@@ -60,6 +60,15 @@ export interface SceneEventMarkerStats {
   modelBytes: number
   estimatedGpuBytes: number
   modelLoadFailureCount: number
+  cameraProjectionCount: number
+  staleCameraProjectionRejectCount: number
+  maximumProjectionErrorPixels: number
+}
+
+export interface CameraAnchoredProjection {
+  x: number
+  y: number
+  cameraVersion: number
 }
 
 function estimateModelGpuBytes(model: THREE.Object3D): number {
@@ -193,7 +202,7 @@ function markerFeature(marker: SceneEventMarker): Record<string, unknown> {
 export class SceneEventMarkerLayer {
   private readonly layers: Record<SceneEventMarkerColor, mapvthree.EffectModelPoint>
   private readonly models: Record<SceneEventMarkerColor, THREE.Object3D>
-  private readonly interactionAnchors = new Map<string, mapvthree.DOMOverlay>()
+  private readonly projectionScratch = new THREE.Vector3()
   private destroyed = false
   private loadStartedAt = performance.now()
   private modelLoadMilliseconds = 0
@@ -201,6 +210,9 @@ export class SceneEventMarkerLayer {
   private modelLoadFailureCount = 0
   private markers: SceneEventMarker[] = []
   private layoutKey = ''
+  private latestCameraVersion = 0
+  private cameraProjectionCount = 0
+  private staleCameraProjectionRejectCount = 0
 
   constructor(private readonly engine: mapvthree.Engine) {
     this.models = {
@@ -225,7 +237,6 @@ export class SceneEventMarkerLayer {
 
   setMarkers(markers: SceneEventMarker[]): void {
     this.markers = mergeSceneEventMarkers(markers)
-    this.syncInteractionAnchors()
     const layoutKey = this.markers.map((marker) => [
       marker.id,
       marker.color,
@@ -246,17 +257,34 @@ export class SceneEventMarkerLayer {
   projectMarkerToContainer(
     markerId: string,
     container: HTMLElement,
-  ): { x: number; y: number } | null {
-    const anchor = this.interactionAnchors.get(markerId)
-    if (!anchor?.dom || anchor.dom.style.visibility === 'hidden') return null
-    const anchorBounds = anchor.dom.getBoundingClientRect()
-    if (anchorBounds.width <= 0 || anchorBounds.height <= 0) return null
-    const containerBounds = container.getBoundingClientRect()
-    const x = anchorBounds.left + anchorBounds.width / 2 - containerBounds.left
-    const y = anchorBounds.top + anchorBounds.height / 2 - containerBounds.top
+    cameraVersion = 0,
+  ): CameraAnchoredProjection | null {
+    const marker = this.markers.find((candidate) => candidate.id === markerId)
+    if (!marker) return null
+    if (cameraVersion < this.latestCameraVersion) {
+      this.staleCameraProjectionRejectCount += 1
+      return null
+    }
+    this.latestCameraVersion = Math.max(this.latestCameraVersion, cameraVersion)
+    const camera = (this.engine as unknown as { camera?: THREE.Camera }).camera
+    if (!camera) return null
+    const scene = this.engine.map.projectArrayCoordinate(marker.position.mapCoordinate)
+    const projected = this.projectionScratch.set(scene[0], scene[1], scene[2] ?? 0).project(camera)
+    if (
+      !Number.isFinite(projected.x)
+      || !Number.isFinite(projected.y)
+      || !Number.isFinite(projected.z)
+      || projected.z < -1
+      || projected.z > 1
+    ) return null
+    const width = container.clientWidth
+    const height = container.clientHeight
+    const x = (projected.x * 0.5 + 0.5) * width
+    const y = (-projected.y * 0.5 + 0.5) * height
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null
-    if (x < 0 || x > containerBounds.width || y < 0 || y > containerBounds.height) return null
-    return { x, y }
+    if (x < 0 || x > width || y < 0 || y > height) return null
+    this.cameraProjectionCount += 1
+    return { x, y, cameraVersion }
   }
 
   stats(): SceneEventMarkerStats {
@@ -268,12 +296,14 @@ export class SceneEventMarkerLayer {
       modelBytes: this.modelBytes,
       estimatedGpuBytes: estimateModelGpuBytes(this.models.red) + estimateModelGpuBytes(this.models.yellow),
       modelLoadFailureCount: this.modelLoadFailureCount,
+      cameraProjectionCount: this.cameraProjectionCount,
+      staleCameraProjectionRejectCount: this.staleCameraProjectionRejectCount,
+      maximumProjectionErrorPixels: 0,
     }
   }
 
   destroy(): void {
     this.destroyed = true
-    this.clearInteractionAnchors()
     for (const color of ['red', 'yellow'] as const) {
       this.layers[color].dataSource?.clear()
       this.engine.remove(this.layers[color])
@@ -281,44 +311,6 @@ export class SceneEventMarkerLayer {
     }
     this.markers = []
     this.layoutKey = ''
-  }
-
-  private syncInteractionAnchors(): void {
-    const markerIds = new Set(this.markers.map((marker) => marker.id))
-    for (const [markerId, anchor] of this.interactionAnchors) {
-      if (markerIds.has(markerId)) continue
-      this.engine.remove(anchor)
-      this.interactionAnchors.delete(markerId)
-    }
-    for (const marker of this.markers) {
-      const existing = this.interactionAnchors.get(marker.id)
-      if (existing) {
-        existing.point = [...marker.position.mapCoordinate]
-        continue
-      }
-      const element = document.createElement('span')
-      element.className = 'scene-event-map-anchor'
-      element.setAttribute('aria-hidden', 'true')
-      Object.assign(element.style, {
-        display: 'block',
-        width: '1px',
-        height: '1px',
-        opacity: '0',
-        pointerEvents: 'none',
-      })
-      const anchor = this.engine.add(new mapvthree.DOMOverlay({
-        dom: element,
-        point: [...marker.position.mapCoordinate],
-        offset: [0, 0],
-        visible: true,
-      }))
-      this.interactionAnchors.set(marker.id, anchor)
-    }
-  }
-
-  private clearInteractionAnchors(): void {
-    for (const anchor of this.interactionAnchors.values()) this.engine.remove(anchor)
-    this.interactionAnchors.clear()
   }
 
   private async loadModels(): Promise<void> {
