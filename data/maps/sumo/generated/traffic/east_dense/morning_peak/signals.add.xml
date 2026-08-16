@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='utf-8'?>
+<additional>
+  <tlLogic id="citypulse_demo_3" type="static" programID="demo_3_morning_peak" offset="0">
+    <phase duration="55" state="gggrrrgGgGGggggrrrgGgGGg" name="p1_green" />
+    <phase duration="3" state="gggrrrgygyyygggrrrgygyyy" name="p1_yellow" />
+    <phase duration="47" state="gggGgggrgrrrgggGgggrgrrr" name="p2_green" />
+    <phase duration="3" state="gggyyygrgrrrgggyyygrgrrr" name="p2_yellow" />
+  </tlLogic>
+  <tlLogic id="3807" type="static" programID="demo_5_morning_peak" offset="0">
+    <phase duration="34" state="rrrrrgGgGGGGGg" name="p1_green" />
+    <phase duration="3" state="rrrrrgygyyyyyy" name="p1_yellow" />
+    <phase duration="37" state="GGGGGgrgrrrrrr" name="p2_green" />
+    <phase duration="3" state="yyyyygrgrrrrrr" name="p2_yellow" />
+  </tlLogic>
+  <tlLogic id="3936" type="static" programID="demo_6_morning_peak" offset="0">
+    <phase duration="57" state="grggrrrgggGGggrggrrrrggGGGgg" name="p1_green" />
+    <phase duration="3" state="grggrrrgggyyygrggrrrrggyyyyy" name="p1_yellow" />
+    <phase duration="26" state="grggrrggggrrrgrggrrggggrrrrr" name="p2_green" />
+    <phase duration="3" state="grggrrygggrrrgrggrryyggrrrrr" name="p2_yellow" />
+    <phase duration="45" state="ggggggrgggrrrgGggGGrrggrrrrr" name="p3_green" />
+    <phase duration="3" state="gyggyyrgggrrrgyggyyrrggrrrrr" name="p3_yellow" />
+  </tlLogic>
+  <tlLogic id="3864" type="static" programID="demo_9_morning_peak" offset="0">
+    <phase duration="56" state="gggggGGgggrggrrrrrgGggGGgggrrrrrrrrgrggrrrr" name="p1_green" />
+    <phase duration="3" state="gggggyyyygrggrrrrrgyggyyyyyrrrrrrrrgrggrrrr" name="p1_yellow" />
+    <phase duration="48" state="gggggrrrrgGggGGggggrggrrrrrrrrrrrrrgGggGGgg" name="p2_green" />
+    <phase duration="3" state="gggggrrrrgyggyyyyygrggrrrrrrrrrrrrrgyggyyyy" name="p2_yellow" />
+    <phase duration="32" state="gggggrrrrgrggrrrrrgrggrrrrrGGGGGGGGgrggrrrr" name="p3_green" />
+    <phase duration="3" state="gggggrrrrgrggrrrrrgrggrrrrryyyyyyyygrggrrrr" name="p3_yellow" />
+  </tlLogic>
+</additional>

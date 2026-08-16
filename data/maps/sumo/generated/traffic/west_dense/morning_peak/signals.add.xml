@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='utf-8'?>
+<additional>
+  <tlLogic id="892" type="static" programID="demo_14_morning_peak" offset="0">
+    <phase duration="22" state="rrrGGGGGg" name="p1_green" />
+    <phase duration="3" state="rrryyyyyy" name="p1_yellow" />
+    <phase duration="47" state="GGGrrrrrr" name="p2_green" />
+    <phase duration="3" state="yyyrrrrrr" name="p2_yellow" />
+  </tlLogic>
+  <tlLogic id="1117" type="static" programID="demo_15_morning_peak" offset="0">
+    <phase duration="50" state="gGGGGggrrgGGGGggrr" name="p1_green" />
+    <phase duration="3" state="gyyyyygrrgyyyyygrr" name="p1_yellow" />
+    <phase duration="59" state="grrrrrgGggrrrrrgGg" name="p2_green" />
+    <phase duration="3" state="grrrrrgyygrrrrrgyy" name="p2_yellow" />
+  </tlLogic>
+  <tlLogic id="891" type="static" programID="demo_19_morning_peak" offset="0">
+    <phase duration="35" state="grggrrrrgGGggrggrrrggGGg" name="p1_green" />
+    <phase duration="3" state="grggrrrrgyyygrggrrrggyyy" name="p1_yellow" />
+    <phase duration="35" state="gGggGggrgrrrgGggGggggrrr" name="p2_green" />
+    <phase duration="3" state="gyggyyyrgrrrgyggyyyggrrr" name="p2_yellow" />
+  </tlLogic>
+</additional>
