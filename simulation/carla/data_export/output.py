@@ -31,19 +31,27 @@ class RunOutput:
         self._root = Path(root)
         self._map_name = map_name
         run_ts = time.strftime("%Y%m%d-%H%M%S")
-        self.run_id = run_ts
-        self.dir = self._root / map_name / run_ts
+        run_id = run_ts
+        # 同秒同地图的多段导出(运行时 stop 后再次 start)会撞目录:以原子
+        # mkdir 探测,已存在则追加 -2/-3 后缀,避免 manifest 追加/覆盖。
+        suffix = 2
+        while True:
+            self.dir = self._root / map_name / run_id
+            try:
+                (self.dir / "sensors").mkdir(parents=True, exist_ok=False)
+                break
+            except FileExistsError:
+                run_id = f"{run_ts}-{suffix}"
+                suffix += 1
+            except OSError as exc:
+                raise ExportConfigError(
+                    f"cannot create export output dir '{self.dir}': {exc}")
+        self.run_id = run_id
         self._finalized = False
-
-        try:
-            (self.dir / "sensors").mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            raise ExportConfigError(
-                f"cannot create export output dir '{self.dir}': {exc}")
 
         self._meta_path = self.dir / "meta.json"
         self._meta: Dict[str, Any] = {
-            "run_id": run_ts,
+            "run_id": run_id,
             "map": map_name,
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "aborted": False,

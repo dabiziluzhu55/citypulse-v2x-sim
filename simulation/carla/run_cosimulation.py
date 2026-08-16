@@ -34,7 +34,7 @@ import signal
 import sys
 import time
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from data_export import (ExporterManager, ExportContext, FrameRegistry,
                          RunOutput, SensorFarm, load_export_config,
@@ -42,6 +42,8 @@ from data_export import (ExporterManager, ExportContext, FrameRegistry,
                          EXPORTER_REGISTRY, ExportConfigError)
 
 import toolchain_env  # 统一环境配置:env > config/toolchain.json > 自动探测
+
+from export_control import DEFAULT_PORT, ExportControlServer
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -309,6 +311,9 @@ class CoSimulationBridge:
         export_config_path: Optional[str] = None,
         export_dir: Optional[str] = None,
         export_kinds: Optional[List[str]] = None,
+        control_host: str = "127.0.0.1",
+        control_port: int = DEFAULT_PORT,
+        control_enabled: bool = True,
     ):
         # ── Paths ──
         if not os.path.isfile(sumocfg_path):
@@ -329,7 +334,15 @@ class CoSimulationBridge:
         self._export_dir = export_dir
         self._export_kinds = export_kinds
         self._export_manager = None  # data_export.ExporterManager (if export mode)
+        self._export_sensor_count = 0  # sensors of the active segment (status)
         self._sim_aborted = False    # True when the loop ended early (Ctrl+C / error)
+
+        # ── Runtime export control (TCP channel, see export_control.py) ──
+        self._control_host = control_host
+        self._control_port = control_port
+        self._control_enabled = control_enabled
+        self._export_server = None   # ExportControlServer (when listening)
+        self._export_run_dir = None  # output dir of the most recent segment
 
         # ── Runtime state (populated during run) ──
         self._client = None
@@ -354,6 +367,7 @@ class CoSimulationBridge:
         try:
             self._setup_carla()
             self._setup_sumo_official()
+            self._start_control_server()
             self._setup_exporters()
             self._position_spectator()
             self._sync_loop()
@@ -1001,26 +1015,44 @@ class CoSimulationBridge:
             return self._carla_map_name or "unknown_map"
 
     def _setup_exporters(self) -> None:
-        """Activate the data-export pipeline (spawn sensors, start writers).
-
-        Called after CARLA and SUMO are up, before the spectator positioning
-        and the sync loop.  Failures here are never fatal: export is disabled
-        and the simulation continues.
+        """CLI path: activate the data-export pipeline (spawn sensors, start
+        writers).  Called after CARLA and SUMO are up, before the spectator
+        positioning and the sync loop.  Failures here are never fatal: export
+        is disabled and the simulation continues.
         """
         if not self._export_config_path:
             return
+        resp = self._start_export(self._export_config_path,
+                                  self._export_kinds, self._export_dir)
+        if not resp["ok"]:
+            logger.error("Data export disabled: %s", resp["message"])
+
+    def _start_export(self, config_path: str, kinds: Optional[List[str]],
+                      export_dir: Optional[str]) -> Dict[str, Any]:
+        """Start one export segment — shared by the CLI path and the runtime
+        'start' command.  Must be called on the simulation thread.  Returns
+        the control-channel style response dict."""
+        if self._export_manager is not None:
+            return {"ok": False, "state": self._export_state(),
+                    "run_dir": self._export_run_dir,
+                    "message": "export already active (stop it first)"}
         try:
-            cfg = load_export_config(self._export_config_path, self._step_length)
+            cfg = load_export_config(config_path, self._step_length)
         except ExportConfigError as exc:
-            logger.error("Export config invalid — data export disabled: %s", exc)
-            return
-        out_dir = self._export_dir or cfg.output_dir
+            return {"ok": False, "state": "off", "run_dir": None,
+                    "message": f"export config invalid: {exc}"}
+        if kinds is not None:
+            unknown = [k for k in kinds if k not in EXPORTER_REGISTRY]
+            if unknown:
+                return {"ok": False, "state": "off", "run_dir": None,
+                        "message": "unknown exporter kind(s): "
+                                   + ", ".join(unknown)}
+        out_dir = export_dir or cfg.output_dir
         try:
             run_output = RunOutput(out_dir, self._display_map_name(), cfg)
         except Exception as exc:
-            logger.error("Cannot create export output dir '%s' — data export "
-                         "disabled: %s", out_dir, exc)
-            return
+            return {"ok": False, "state": "off", "run_dir": None,
+                    "message": f"cannot create export output dir '{out_dir}': {exc}"}
         ctx = ExportContext(
             world=self._world,
             client=self._client,
@@ -1034,25 +1066,158 @@ class CoSimulationBridge:
             write_threads=cfg.write_threads,
         )
         try:
-            self._export_manager = ExporterManager(cfg, ctx, kinds=self._export_kinds)
-            self._export_manager.setup_all()
+            manager = ExporterManager(cfg, ctx, kinds=kinds)
+            manager.setup_all()
         except Exception as exc:
             logger.error("Data export setup failed — export disabled: %s", exc)
-            self._export_manager = None
             try:
                 run_output.finalize({"error": str(exc)}, aborted=True)
             except Exception:
                 pass
+            return {"ok": False, "state": "off", "run_dir": None,
+                    "message": f"export setup failed: {exc}"}
+        self._export_manager = manager
+        self._export_sensor_count = len(ctx.frame_registry.expected_sensors)
+        self._export_run_dir = str(run_output.dir)
+        n = self._export_sensor_count
+        msg = (f"export started: {n} sensor(s) → {run_output.dir}"
+               if n else "export active, but no sensor could be spawned "
+                         "(see warnings)")
+        return {"ok": True, "state": "running", "run_dir": self._export_run_dir,
+                "message": msg}
 
-    def _teardown_exporters(self) -> None:
+    def _teardown_exporters(self, aborted: Optional[bool] = None) -> None:
         """Stop exporters.  MUST run before ``sync.close()`` — sensor actors
-        are destroyed while the CARLA world is still alive."""
+        are destroyed while the CARLA world is still alive.
+
+        ``aborted`` defaults to ``self._sim_aborted``; the runtime 'stop'
+        command passes ``aborted=False`` so the segment finalises cleanly.
+        """
         if self._export_manager is not None:
             try:
-                self._export_manager.teardown_all(aborted=self._sim_aborted)
+                self._export_manager.teardown_all(
+                    aborted=self._sim_aborted if aborted is None else aborted)
             except Exception as exc:
                 logger.warning("Data export teardown error: %s", exc)
             self._export_manager = None
+
+    # ─────────────────────────────────────────────────────────────────
+    # Runtime export control (export_control.py TCP channel)
+    # ─────────────────────────────────────────────────────────────────
+
+    def _start_control_server(self) -> None:
+        """Open the TCP control channel (default 127.0.0.1:19090) so
+        ``export_control.py`` can start/pause/resume/stop the export while
+        the simulation runs.  A busy port disables the channel only — the
+        simulation is unaffected."""
+        if not self._control_enabled:
+            return
+        server = ExportControlServer(self._control_host, self._control_port,
+                                     handler=self._handle_export_command,
+                                     log=logger)
+        if server.start():
+            self._export_server = server
+            logger.info("Export control channel on %s:%d — use "
+                        "export_control.py start|pause|resume|stop|status",
+                        self._control_host, server.port)
+
+    def _drain_export_commands(self) -> None:
+        """Execute queued control commands on the simulation thread
+        (called every tick from the sync loop)."""
+        if self._export_server is not None:
+            self._export_server.drain()
+
+    def _handle_export_command(self, cmd: str,
+                               params: Dict[str, Any]) -> Dict[str, Any]:
+        if cmd == "status":
+            return self._export_status()
+        if cmd == "start":
+            return self._export_start_cmd(params)
+        if cmd == "pause":
+            return self._export_pause()
+        if cmd == "resume":
+            return self._export_resume()
+        if cmd == "stop":
+            return self._export_stop()
+        return {"ok": False, "state": self._export_state(),
+                "run_dir": self._export_run_dir,
+                "message": f"unknown command '{cmd}'"}
+
+    def _export_state(self) -> str:
+        m = self._export_manager
+        if m is None:
+            return "off"
+        return "paused" if m.is_paused() else "running"
+
+    def _export_status(self) -> Dict[str, Any]:
+        state = self._export_state()
+        parts = [f"export state: {state}"]
+        if self._export_manager is not None:
+            parts.append(f"{self._export_sensor_count} sensor(s)")
+        if self._export_run_dir:
+            parts.append(self._export_run_dir)
+        return {"ok": True, "state": state, "run_dir": self._export_run_dir,
+                "message": " · ".join(parts)}
+
+    def _export_start_cmd(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        raw_cfg = params.get("export_config")
+        if raw_cfg is not None and not isinstance(raw_cfg, str):
+            return {"ok": False, "state": self._export_state(),
+                    "run_dir": None, "message": "export_config must be a string"}
+        if raw_cfg:
+            try:
+                cfg_path = resolve_export_config_path(
+                    raw_cfg, self._display_map_name())
+            except ExportConfigError as exc:
+                return {"ok": False, "state": self._export_state(),
+                        "run_dir": None, "message": str(exc)}
+        elif self._export_config_path:
+            cfg_path = self._export_config_path
+        else:
+            cfg_path = resolve_export_config_path(None, self._display_map_name())
+            if cfg_path is None:
+                return {"ok": False, "state": self._export_state(),
+                        "run_dir": None,
+                        "message": (f"no export config for map "
+                                    f"'{self._display_map_name()}' in "
+                                    f"config/export_configs/ — save camera "
+                                    f"points with spectator_coords.py --save, "
+                                    f"or pass export_config")}
+        kinds = _parse_export_kinds(params.get("kinds"))
+        export_dir = params.get("export_dir") or None
+        if export_dir is not None and not isinstance(export_dir, str):
+            return {"ok": False, "state": self._export_state(),
+                    "run_dir": None, "message": "export_dir must be a string"}
+        return self._start_export(cfg_path, kinds, export_dir)
+
+    def _export_pause(self) -> Dict[str, Any]:
+        if self._export_manager is None:
+            return {"ok": False, "state": "off", "run_dir": self._export_run_dir,
+                    "message": "no active export to pause"}
+        self._export_manager.pause()
+        return {"ok": True, "state": "paused", "run_dir": self._export_run_dir,
+                "message": "export paused (frames stop being written)"}
+
+    def _export_resume(self) -> Dict[str, Any]:
+        if self._export_manager is None:
+            return {"ok": False, "state": "off", "run_dir": self._export_run_dir,
+                    "message": "no active export to resume"}
+        self._export_manager.resume()
+        return {"ok": True, "state": "running", "run_dir": self._export_run_dir,
+                "message": "export resumed"}
+
+    def _export_stop(self) -> Dict[str, Any]:
+        if self._export_manager is None:
+            return {"ok": False, "state": "off", "run_dir": self._export_run_dir,
+                    "message": "no active export to stop"}
+        try:
+            self._teardown_exporters(aborted=False)
+        except Exception as exc:
+            return {"ok": False, "state": self._export_state(),
+                    "run_dir": self._export_run_dir,
+                    "message": f"stop failed: {exc}"}
+        return {"ok": True, "state": "off", "run_dir": self._export_run_dir,
+                "message": "export stopped (segment finalised)"}
 
     # ─────────────────────────────────────────────────────────────────
     # Phase 4: Synchronization loop
@@ -1110,6 +1275,10 @@ class CoSimulationBridge:
             # ── Data export: feed one simulation step to the exporters ──
             if self._export_manager is not None:
                 self._export_manager.on_sim_tick(step, sim_time)
+
+            # ── Runtime export control: execute queued commands (start /
+            #    pause / resume / stop) at the tick boundary ──
+            self._drain_export_commands()
 
             # ── Scene-membership pass (~1s cadence): bound CARLA actors to
             #    the scene box — vehicles outside run in SUMO only ──
@@ -1236,6 +1405,12 @@ class CoSimulationBridge:
         """Release all resources."""
         logger.info("Cleaning up ...")
 
+        # Control channel first: cancel queued commands so no export
+        # operation runs after the sim loop ended.
+        if self._export_server is not None:
+            self._export_server.close()
+            self._export_server = None
+
         # Exporters first: sensor actors must be destroyed while the CARLA
         # world is still alive (before SimulationSynchronization.close()).
         self._teardown_exporters()
@@ -1337,13 +1512,6 @@ Examples:
              "(e.g. 'Demo_1_Enhanced'). The map must have been imported into "
              "CARLA's Unreal project beforehand.",
     )
-    # ── Optional scene reference ──
-    parser.add_argument(
-        "--scene",
-        help="Optional scene name for reference (e.g. 'scene_1'). "
-             "Reserved for future use with config.json scene-to-map resolution.",
-    )
-
     # ── CARLA connection ──
     parser.add_argument(
         "--carla-host", default="127.0.0.1",
@@ -1377,6 +1545,20 @@ Examples:
         "--junction",
         help="SUMO junction ID to focus the CARLA spectator camera on "
              "(e.g. '4427').",
+    )
+
+    # ── Runtime export control (TCP channel, see export_control.py) ──
+    parser.add_argument(
+        "--control-host", default="127.0.0.1",
+        help="Export control listen host (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--control-port", type=int, default=DEFAULT_PORT,
+        help="Export control listen port (default: 19090)",
+    )
+    parser.add_argument(
+        "--no-control", action="store_true",
+        help="Disable the runtime export control channel",
     )
     parser.add_argument(
         "--scene-box",
@@ -1494,9 +1676,27 @@ Examples:
         export_config_path=export_config_path,
         export_dir=args.export_dir,
         export_kinds=export_kinds,
+        control_host=args.control_host,
+        control_port=args.control_port,
+        control_enabled=not args.no_control,
     )
     bridge.run()
     return 0
+
+
+def _parse_export_kinds(raw: Any) -> Optional[List[str]]:
+    """Normalise the control-channel 'kinds' field: None/empty → None (all
+    kinds in the config); a comma-separated string or a JSON array → list."""
+    if raw is None:
+        return None
+    if isinstance(raw, list):
+        items = [str(k).strip() for k in raw]
+    elif isinstance(raw, str):
+        items = [k.strip() for k in raw.split(",")]
+    else:
+        return []  # 非法类型 → 触发 _start_export 的 unknown-kind 校验
+    items = [k for k in items if k]
+    return items or None
 
 
 if __name__ == "__main__":

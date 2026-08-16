@@ -72,7 +72,9 @@ algorithms/mappo/runs/
 *.orig
 /runs/
 
-
 # CARLA Maps
 data/maps/carla/*
 data/maps/xodr/*
+
+# vibe coding
+.claude

@@ -60,6 +60,16 @@ class FrameRegistry:
         """The row whose simulation time is nearest ``sim_ts``."""
         return self._rows.get(round(sim_ts / self._step))
 
+    def min_key_above(self, key: int) -> Optional[int]:
+        """Smallest row key strictly greater than ``key`` (None when none
+        exists).  Used by the manifest exporter to skip the gap before a
+        segment that started mid-run."""
+        best = None
+        for k in self._rows:
+            if k > key and (best is None or k < best):
+                best = k
+        return best
+
     def record_sensor(self, row: Dict[str, Any], sensor_name: str,
                       status: str, **extra: Any) -> None:
         """Fill (or overwrite) a sensor's slot in ``row``."""

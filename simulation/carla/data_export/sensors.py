@@ -64,6 +64,9 @@ class ManagedSensor:
     actor: Any = None
     queue: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=QUEUE_MAXSIZE))
     stop_event: threading.Event = field(default_factory=threading.Event)
+    # 暂停门控(由联仿控制通道设置):置位期间 _on_data 静默丢弃数据,
+    # seq 不递增 → 不写盘、队列/results 不堆积,恢复后捕获序号连续。
+    pause_event: threading.Event = field(default_factory=threading.Event)
     workers: List[threading.Thread] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
     seq: int = 0                    # next capture sequence (callback only)
@@ -155,6 +158,8 @@ def _on_data(ms: ManagedSensor, data: Any) -> None:
         logger.warning("[export] %s: unexpected sensor data %r — ignored",
                        ms.name, type(data).__name__)
         return
+    if ms.pause_event.is_set():
+        return  # 暂停:不分配 seq、不写盘、不产生 results(静默丢弃)
     ms.seq += 1
     seq = ms.seq
     try:
@@ -251,3 +256,19 @@ class SensorFarm:
                     self._logger.debug("[export] %s: destroy error: %s",
                                        ms.name, exc)
                 ms.actor = None
+
+    # -- pause / resume (runtime control, see export_control.py) --------
+
+    def pause_all(self) -> None:
+        """Gate capture on every sensor (idempotent).  In-flight frames
+        finish writing; no new frames are captured or saved."""
+        for ms in self._sensors:
+            ms.pause_event.set()
+
+    def resume_all(self) -> None:
+        """Open the capture gate on every sensor (idempotent)."""
+        for ms in self._sensors:
+            ms.pause_event.clear()
+
+    def any_paused(self) -> bool:
+        return any(ms.pause_event.is_set() for ms in self._sensors)

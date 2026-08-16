@@ -209,6 +209,16 @@ TAZ 裁剪采用**三阶段**算法：
 | **阶段 B1 — 种子展开** | 以所有 TAZ 种子路口为起点（距离 0），同时进行 BFS 向外展开 `--dist` 米。每条边累积沿道路距离，≤ `--dist` 的继续展开，> `--dist` 的保留边和远端路口但停止 |
 | **阶段 B2 — 路径路口展开** | MST 路径上的中间路口以**固定小距离 `--path-dist`**（默认 50m）展开，与 `--dist` 无关。保证路径路口的邻边和转向连接完整，道路不在路径路口处中断 |
 
+**裁剪流水线：**
+
+```mermaid
+flowchart TD
+    A["TAZ 种子路口集合<br/>(intersections.json 解析为 junction ID)"] --> B["阶段 A · MST 最小生成树<br/>保留种子间连通路径<br/>(无条件保留，不受 --dist 限制)"]
+    B --> C["阶段 B1 · 种子展开<br/>BFS 拓扑距离 ≤ --dist"]
+    C --> D["阶段 B2 · 路径路口展开<br/>MST 中间路口 ≤ --path-dist"]
+    D --> E["裁剪后 .net.xml<br/>完整拓扑 + 数据保真"]
+```
+
 > **说明：**
 > - **连通性保证**：只要原始路网连通，MST 阶段 A 保证所有 TAZ 路口在裁剪结果中**始终连通**（每个路口通过最短路径与最近的邻居相连，路径上的道路无条件保留）。
 > - **范围控制**：TAZ 路口之间的间接道路只保留 MST 所选路径；种子路口周边的其他道路由 `--dist` 控制，路径路口的周边道路由 `--path-dist` 控制。
@@ -297,7 +307,6 @@ python run_cosimulation.py \
 | `--sumocfg` | ✓ | — | SUMO `.sumocfg` 配置文件 |
 | `--carla-map` | ✓ | — | CARLA 中预导入的地图名称（如 `Demo_1_Enhanced`）。地图须事先通过 RoadRunner 导出并导入到 CARLA Unreal 项目中 |
 | `--junction` | 推荐 | — | CARLA 视角自动定位的目标路口 ID（SUMO junction ID），无参时则自动跳转到地图中生成的第一辆车的正上方 |
-| `--scene` | | — | 可选场景名称，需是已经导入到CARLA中的地图 |
 | `--carla-host` | | `127.0.0.1` | CARLA 服务端 IP |
 | `--carla-port` | | `2000` | CARLA 服务端端口 |
 | `--step-length` | | sumocfg 的 `<time><step-length>`（未配置则 `0.05`） | 仿真步长（秒），两个仿真器同步使用。未显式传参时默认读取 `--sumocfg` 中配置的步长，显式传参优先级最高 |
@@ -341,12 +350,15 @@ python run_cosimulation.py \
 
 **工作流说明：**
 
-```
-TotalMap.net.xml → run_xml2odr.py → .xodr → 地图加工
-                            ↓
-                   CARLA Unreal 项目导入
-                            ↓
-run_cosimulation.py --carla-map <地图名> → client.load_world() → 联合仿真
+```mermaid
+flowchart TD
+    A["TotalMap.net.xml<br/>(SUMO 源路网)"] --> B["run_xml2odr.py<br/>裁剪 + 转 .xodr"]
+    B --> C[".xodr 小地图"]
+    C --> D["地图加工<br/>(RoadRunner)"]
+    D --> E["CARLA Unreal 项目导入"]
+    E --> F["run_cosimulation.py<br/>--carla-map 地图名"]
+    F --> G["client.load_world()"]
+    G --> H["联合仿真<br/>SUMO 主导 + CARLA 渲染"]
 ```
 
 ### 6.1 快速传送工具（tp.py）
@@ -375,7 +387,7 @@ python tp.py --list                    # 离线列出全部 TAZ 组与组内路�
 
 ---
 
-### 7. 数据导出模式（模拟街边摄像头"拍摄录像"）
+### 7. 数据导出模式
 
 联仿运行时可以按配置的**路侧固定点位**导出数据：RGB 拍摄画面（PNG 帧序列）+ 路侧激光雷达（PLY 点云）+ 每帧元数据（JSON manifest）。架构可插拔（`data_export/` 包），新增导出类型只需新写一个 `@register("类型")` 类，无需改动联仿主脚本。
 
@@ -537,13 +549,13 @@ CARLA 同步模式下传感器**每个仿真 tick 最多触发一次**，实际�
 
 终端出现 `sensor queue full — dropping frame` 说明**编码/写盘跟不上捕获率**（每传感器一个有界队列，满时丢新帧）。PNG/PLY 编码是纯 CPU 且帧间独立，多核服务器上并行编码可直接提升吞吐：
 
-- `output.write_threads`：**每个传感器的并行编码 worker 数**，默认 `2`（`1` = 单线程），范围 1-16。丢帧告警出现时增大它（如 3 相机 × 2 worker = 6 线程，16+ 核服务器余量充足）
+- `output.write_threads`：**每个传感器的并行编码 worker 数**，默认 `2`（`1` = 单线程），范围 1-16。丢帧告警出现时增大它——在导出配置 `config/export_configs/<地图>.json` 的 `output` 对象中设置（与 `fps`/`export_dir` 并列，如 `"write_threads": 4`；3 相机 × 4 worker = 12 线程，16+ 核服务器余量充足）
 - 帧完成是乱序的，但**按捕获序号有序落盘与索引**（文件名 = f(序号)），manifest 行序与捕获顺序严格一致；被丢的帧在运行级 manifest 中标记为 `no_data`
 - 仿真不受丢帧影响：回调非阻塞、异常隔离，联仿主循环从不等待导出
 - 每次运行结束打印汇总：`[export] cam_01: 1200 written, 34 dropped (2.8%), avg save 61 ms/frame`（meta.json 的 `sensors[].avg_save_ms` 同源）
 - 若加大 write_threads 后仍持续丢帧（CPU 已饱和）：**减相机数 → 降分辨率(1280×720) → 降 fps**；检查导出目录是否为 NVMe/SSD（`--check-env` 会估算磁盘占用）
 
-#### 7.4 掉速警告（实时优先）
+#### 7.4 掉速警告
 
 3-5 台 1080p 相机下通常可维持实时。若导出管线落后（rt < 0.8 持续 ≥5 秒且传感器有积压），状态行会出现 `export=BEHIND`，并按 10 秒/条打印处置建议：**减相机数 → 降分辨率(1280×720) → 降 fps → 增大 --step-length**。（`--quiet` 下警告不可见，属预期。）
 
@@ -560,9 +572,92 @@ data_export/
 └── exporters/       内置导出器（新类型加在这里）
 ```
 
+**导出器插件架构（UML 类图）：**
+
+```mermaid
+classDiagram
+    direction LR
+    class Exporter {
+        <<abstract>>
+        +name: str
+        +setup(ctx) *
+        +on_sim_tick(export_frame, sim_time) *
+        +teardown() *
+        +managed(): List~ManagedSensor~
+    }
+    class FileSinkExporter {
+        #_save_frame(ms, frame, ts) *
+        #_save(data, path) *
+    }
+    class RgbCameraExporter
+    class LidarExporter
+    class KittiExporter
+    class ManifestExporter
+    class ManagedSensor {
+        +pending() bool
+        +stop_and_drain() int
+    }
+    class SensorFarm {
+        +spawn_all(specs)
+        +destroy_all()
+        +pause_all()
+        +resume_all()
+    }
+    class ExporterManager {
+        +setup_all()
+        +on_sim_tick(export_frame, sim_time)
+        +teardown_all()
+        +pause()
+        +resume()
+    }
+
+    Exporter <|-- FileSinkExporter
+    Exporter <|-- ManifestExporter
+    FileSinkExporter <|-- RgbCameraExporter
+    FileSinkExporter <|-- LidarExporter
+    FileSinkExporter <|-- KittiExporter
+    ExporterManager --> SensorFarm : 生命周期编排
+    SensorFarm *-- ManagedSensor : 持有
+    Exporter o-- ManagedSensor : managed()
+```
+
+> 子类用 `@register("类型")` 注册进 `EXPORTER_REGISTRY`；`SensorFarm` 负责 spawn 传感器 + 回调入队 + writer 线程落盘，`ExporterManager` 负责生命周期编排与异常隔离（5 连错禁用）。
+
 新增一个导出类型 = 新建 `data_export/exporters/xxx.py` + `@register("xxx")` + 在 `exporters/__init__.py` 加一行 import，无需改 `run_cosimulation.py`。传感器数据经 `listen()` 回调入队、writer 线程落盘，主循环零阻塞；导出器异常不会中断仿真。
 
 本机无 CARLA 时可用 `python -m data_export.selfcheck` 跑离线自检（注册表/配置校验/桩生命周期全流程）。
+
+#### 7.6 运行时手动控制数据导出（export_control.py）
+
+联仿运行期间，可在另一终端用 `export_control.py` 随时**开始 / 暂停 / 继续 / 关闭**数据导出，无需重启联仿：
+
+```bash
+python export_control.py status                       # 查询当前导出状态
+python export_control.py start --export-config WestZone    # 开新段（配置按地图自动查找，可省略）
+python export_control.py start --export rgb_camera,lidar   # 指定导出种类（缺省 = 配置全部）
+python export_control.py pause                        # 暂停（停止写盘，仿真照常）
+python export_control.py resume                       # 继续
+python export_control.py stop                         # 关闭当前段（manifest 正常收官）
+```
+
+- **控制通道默认开启**：联仿监听 `127.0.0.1:19090`（仅本机），可用 `--control-port`/`--control-host` 修改，`--no-control` 关闭。端口被占用时仅该通道失效并告警，联仿不受影响。
+- **保留原有 CLI 开启方式**：`--export ... --export-config ...` 启动的导出同样可被 `pause/resume/stop` 控制；未用 CLI 开启导出时，控制通道仍可随时 `start`。
+- **状态机**：`off --start--> running --pause--> paused --resume--> running`；`running/paused --stop--> off`。start 在 running/paused 态会被拒绝（先 stop）；pause/resume 幂等。
+
+```mermaid
+stateDiagram-v2
+    [*] --> off
+    off --> running : start（校验配置 / spawn 传感器）
+    running --> paused : pause（停止写盘）
+    paused --> running : resume
+    running --> off : stop（manifest 收官）
+    paused --> off : stop
+    note right of running : running/paused 态下 start 会被拒绝<br/>stop 后再 start 开启新段（新目录 + 重新 spawn）
+```
+
+- **多段导出**：`stop` 后再次 `start` 会开**新段**——新时间戳目录（同秒自动加 `-2/-3` 后缀）、重新 spawn 传感器。段内帧号连续不跳不重：暂停期间的 tick 在 manifest 中记为 `no_data`，暂停跨过不产生帧号空洞；manifest 行号 = 仿真帧号（`round(sim_time/step)`），跨段时间对齐一目了然；跨段文件号各自从 `000001` 重新计（目录不同无冲突）。
+- **语义说明**：暂停是在采集侧门控——停止写盘与编码，但 CARLA server 每 tick 仍会渲染传感器。若要省 server 渲染开销，只能 stop（销毁传感器）。
+- 控制脚本零依赖（仅标准库），可在无 CARLA/SUMO 的机器上运行。
 
 ---
 
@@ -604,23 +699,24 @@ TAZ 模式在 BFS 距离裁剪的基础上增加了**最小生成树保留**与*
 
 ## 联合仿真架构
 
-```
-┌─────────────┐     ┌──────────────────┐       ┌─────────────┐
-│  SUMO        │    │run_cosimulation.py│      │   CARLA     │
-│  (交通仿真)   │     │  (桥接器)         │      │   (3D 渲染)  │
-└──────┬───────┘    └───────┬──────────┘      └────┬─────┘
-       │                     │                       │
-       │ 1. traci.start()    │                       │
-       │◄───────────────────►│ 2. load_world()       │
-       │                     │    (预导入 RoadRunner  │
-       │                     │     地图)              │
-       │                     │──────────────────────►│
-       │  ◄── 主循环 ──       │                       │
-       │ traci.simulationStep│                       │
-       │◄────────────────────│ 同步车辆 + 红绿灯       │
-       │                     │──────────────────────►│
-       │                     │ world.tick()          │
-       │                     │◄──────────────────────│
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as SUMO<br/>交通仿真（主导）
+    participant B as run_cosimulation.py<br/>桥接器
+    participant C as CARLA<br/>3D 渲染
+
+    Note over B: 环境自检 · 场景框计算
+    B->>S: traci.start() 建立连接
+    B->>C: client.load_world()<br/>加载预导入的 RoadRunner 地图
+    loop 主循环（按 step-length 同步）
+        B->>S: traci.simulationStep()
+        S-->>B: 车辆 / 红绿灯状态
+        Note over B: 过滤：场景框外车辆<br/>spawn 被门控拒绝
+        B->>C: 同步车辆 + 红绿灯<br/>（spawn / 移动 / destroy）
+        C-->>B: world.tick() 一帧完成
+    end
+    Note over S,C: SUMO 主导全部逻辑 · CARLA 仅负责 3D 渲染
 ```
 
 ### 坐标转换
@@ -647,88 +743,12 @@ TAZ 模式在 BFS 距离裁剪的基础上增加了**最小生成树保留**与*
 ---
 
 ## 常见问题
-
-**Q: 如何搭建 RoadRunner → CARLA 地图导入流程？**
-
-1. 用 `run_xml2odr.py` 生成 `.xodr`
-2. 在 RoadRunner 中导入 `.xodr`，导入是一定要勾选No Projection Mode，否则会导致坐标系错位，完成导入后即可开始加工场景（建筑、道钉、绿化等）
-3. RoadRunner 导出为 CARLA Filmbox（FBX + GEOJSON + PNG + XML + XODR）
-4. 用 `make import ARGS="--package=Import/<场景目录>"` 导入到 CARLA Editor 的 Content 中
-5. 在 Editor 中 File → Cook Content for Linux，把 cooked 文件拷贝到打包版 Content 目录（非必要，打包版启动更快，但是打包本身很耗时，适用于最终部署）
-6. 启动`CARLA`源码版的独立游戏进程模式或者已导入地图的`CARLA`打包版，`python run_cosimulation.py --carla-map <地图名>` 运行联仿
-
-**Q: 为什么 UE4 Editor 模式下联仿地图会消失/无响应？**
-
-UE4 Editor 和 CARLA 同步模式（sync mode）不兼容。`load_world()` + `world.tick()` 接管 PIE World 后，Editor viewport 失去渲染能力。**必须用打包版 CARLA。**
-
-**Q: 如何新增自定义地图到打包版？**
-
-```bash
-# 1. 导入到 Editor
-make import ARGS="--package=Import/Scene_N_Filmbox"
-
-# 2. Cook Content → Linux（在 Editor 中）
-# 3. 拷贝 cooked 资产
-cp -r Unreal/CarlaUE4/Saved/Cooked/LinuxNoEditor/CarlaUE4/Content/map_package/ \
-     Dist/CARLA_Shipping_*/LinuxNoEditor/CarlaUE4/Content/
-
-# 4. 重启
-./Dist/CARLA_Shipping_*/LinuxNoEditor/CarlaUE4.sh -vulkan
-```
-
-**Q: netconvert 未找到？**
-
-**推荐**：在 `config/toolchain.json` 配置 `sumo_home`（一处配置，`run_xml2odr.py`/`validate.py` 等全部生效）：
-
-```json
-{ "sumo_home": "/path/to/sumo", "carla_root": "", "sumo_toolkit_dir": "" }
-```
-
-或临时用环境变量：
-
-```bash
-export SUMO_HOME=/path/to/sumo
-export PATH=$SUMO_HOME/bin:$PATH
-```
-
-macOS 用户：`brew install sumo`
-
-注意：`run_cosimulation.py` 本身不需要 netconvert，但 `run_xml2odr.py` 需要它。
-
-**Q: CARLA 导入失败？**
-
-`run_cosimulation.py` 和 `spectator_coords.py` 按顺序搜索：环境变量 `CARLA_ROOT` → `config/toolchain.json` 的 `carla_root`，把其中的 `Co-Simulation/Sumo` 包与 Python API egg（`PythonAPI/carla/dist/*.egg`）加入 `sys.path`。**在 `config/toolchain.json` 配置 `carla_root` 即可，无需改脚本、无任何硬编码路径**。
-
-如仍未找到，可手动设置（`CARLA_ROOT` 指向 CARLA 源码目录，`SUMO_HOME` 指向 SUMO 安装目录）：
-```bash
-export PYTHONPATH=/path/to/carla/PythonAPI/carla/dist/carla-*.egg:$PYTHONPATH
-export CARLA_ROOT=/path/to/carla-source
-export SUMO_HOME=/path/to/sumo
-```
-
-**Q: 地图加载失败（RuntimeError）？**
-
-- 确认地图已正确导入到 CARLA 的打包版中
-- 导入后需重启 CARLA 服务端
-- 地图名称区分大小写
-- 使用 `--check-env` 可查看 CARLA 当前可用的地图列表
-
-**Q: 联仿时 CARLA 里看不到任何车辆（甚至 actors 计数在增长）？**
-
-按顺序排查：
-1. **观察者相机位置**：未指定 `--junction` 时，脚本会自动把相机移到地图路网拓扑中心上方（日志 "Scene centre (map topology)"）。若日志出现 "spectator will stay at default position"，说明地图无路网拓扑，需加 `--junction <路口ID>`。
-2. **offset 置零是否生效**：脚本在 `SimulationSynchronization` 构造后强制 `BridgeHelper.offset = (0, 0)`（恒等映射 `carla=(sumo_x, -sumo_y)`，CARLA 地图与 SUMO net 位于同一内部坐标）。若该置零被改掉，SUMO 1.12.x 的 sumolib `getLocationOffset()` 会返回网络 `<location netOffset>`（TotalMap 为 -5488893.66,-13133184.77，tmerc 投影原点），所有车辆被映射到约 550 万米之外——CARLA 在虚空位置也能 spawn 成功，所以 **actors 计数仍在增长、但车辆全部在场景之外**，这是"actors>0 却看不到车"的典型症状。脚本有运行时自检：offset 非 (0,0) 直接报错中止。
-3. **场景过滤生效情况**：日志应出现 `Scene box (map topology + 300m pad)` 与 `Scene spawn gate installed`。场景外车辆不会被 spawn 进 CARLA（只在 SUMO 运行），这是设计行为。
-4. **地图对齐**：CARLA 地图须与 SUMO 内部坐标系一致（联仿使用恒等映射 `carla=(sumo_x, -sumo_y)`，无补偿参数）。RoadRunner 导入 xodr 时会忽略头部 `<offset>`、把场景整体平移（纯平移，EastZone 曾被平移 ≈(-27001, +43023)）到自己的局部原点——若发生这种错位，正解是在 RoadRunner 里把整张场景平移回 SUMO 内部坐标系（任意路口导出坐标 = SUMO junction 坐标，如 demo_3 → (27588.96, 41949.82)）后重新导出 Filmbox（FBX+xodr+geojson 一起动，**只改 xodr 无效**——可见网格在 FBX 里）→ 重新 `make import` → 重启服务端。重导出后用 `python validate.py <地图名>` 检查（替代原 `verify_xodr_alignment.py`，并新增路口拓扑与官方工具 round-trip 检查；当前 EastZoneNew 已验证对齐，联仿无需任何 shift 参数）。
-5. **状态行自诊断**：状态行显示前 3 个已追踪车辆的 SUMO 坐标（`pos=veh@(x,y)`）；若某 actor 距场景中心 >500km，周期性日志会打 ERROR `Offset/alignment mismatch`。
+**Q: 进入地图后什么都看不见，车辆、道路、建筑都看不见？**
+在没启动联仿的情况下，`CARLA`中默认观察者默认位于`World Origin`，即`SUMO`地图的坐标原点，但是`CARLA`所仿真的场景大概率不在`World Origin`周围，所以直接进入地图看不见任何东西是正常的。启动联仿后，会自动将观察者传送到第一辆生成的车辆周边，或者也可以指定路口启动仿真，仿真启动后会自动将观察者传送到指定路口，详细可见上文。
 
 **Q: SUMO 整网仿真的车辆会全部进入 CARLA 吗？**
 
 不会（设计行为）。官方 `SimulationSynchronization` 本会把**全网**（46×58km）每个出发的车辆都 spawn 进 CARLA；`run_cosimulation.py` 通过**场景框**限制 CARLA 渲染范围：场景框由 CARLA 地图路网拓扑自动计算（外扩 300m，可用 `--scene-box X0,Y0,X1,Y1` 手动覆盖），场景外车辆的 spawn 被门控拒绝（INVALID_ACTOR_ID），车辆进出场景时动态 spawn/destroy（约 1s 检查一次）。场景外车辆继续在 SUMO 中正常运行。
-
-**Q: 如何确认所需路口与 TotalMap 路口的对应关系？**
-
-用 SUMO GUI（netedit）打开 `TotalMap.net.xml`，根据路口坐标或截图定位路口，查看其 junction ID，填入 `config/intersections.json`。
 
 **Q: 裁剪后路口数量不合理（过多或过少）？**
 
@@ -738,20 +758,5 @@ export SUMO_HOME=/path/to/sumo
 
 工具不会中断——失败的路口记录到失败列表，其余继续处理。最终打印三类结果摘要：成功、跳过、失败。
 
-**Q: TAZ 裁剪后道路在路口处断断续续、车道变少？**
-
-这是裁剪范围问题，不是原文件问题（原文件的边、车道、转向连接都是完整的）。可能原因与对策：
-- **MST 路径路口周边道路丢失**：路径路口默认只展开 `--path-dist`（50m），其邻边与转向连接只保留较短范围。调大 `--path-dist`（如 100-200m）可恢复更多周边道路。
-- **种子路口周边道路丢失**：调大 `--dist`。
-- **裁剪边界断头**：距离超过 `--dist`/`--path-dist` 的道路对端路口不会展开，路网在边界处断头是裁剪的正常语义；如需覆盖更远，调大对应距离参数。
-
-**Q: TAZ 模式与单路口模式有什么区别？**
-
-TAZ 模式专为多路口组合场景设计。关键区别：
-- **连通保证（MST）**：TAZ 路口之间即使不相邻（中间隔着多个路口），裁剪结果也保证它们**始终连通**——工具会计算每个路口到最近邻居的最短路径（最小生成树），路径上的道路无条件保留，不受 `--dist` 限制。例如 TAZ_1 中 demo_3 与 demo_5 相距 7.9km 且无直接连接，但两者之间的 MST 路径依然完整保留。
 - **多级展开**：所有 TAZ 路口同时作为 BFS 种子，各自向外展开 `--dist` 米；MST 路径上的中间路口再以较小的 `--path-dist`（默认 50m）展开，保证路径路口的邻边和转向连接完整，道路不会在路径路口处中断。
 - 如果只需要单个路口的路网，使用单路口模式即可；TAZ 模式下若只配一个路口，效果与单路口模式完全相同。
-
-**Q: 支持哪些 net.xml 格式？**
-
-标准 SUMO net.xml（version 1.0+），包括：十字路口、T 型路口、信号灯路口 (`traffic_light`)、优先路口 (`priority`)、死胡同 (`dead_end`)、内部边和内部路口。
