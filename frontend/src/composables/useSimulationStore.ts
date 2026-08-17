@@ -14,7 +14,7 @@ import {
   STATUS_POLL_INTERVAL_MS,
 } from '../constants/simulationOptions'
 import { snapshotToTrafficView } from '../utils/trafficStateMerge'
-import { VehiclePresentationTimeline } from '../mapv/vehiclePresentationTimeline'
+import { VehiclePresentationCoordinator } from '../mapv/vehiclePresentationCoordinator'
 import { shouldApplySimulationSnapshot } from '../utils/snapshotOrdering'
 import { simulationSnapshotErrorMessage } from '../utils/simulationSessionError.ts'
 import {
@@ -141,9 +141,12 @@ const displayedOfficialTime = ref('')
 // Changes only after the backend accepts a different session. Renderers use
 // this boundary to discard vehicles and interpolation state from the old run.
 const renderSessionRevision = ref(0)
-const vehiclePresentationTimeline = new VehiclePresentationTimeline()
+const simulationPresentationGeneration = ref(0)
+const rejectedStaleSessionSnapshotCount = ref(0)
+const vehiclePresentationTimeline = new VehiclePresentationCoordinator()
 const vehicleDisplayElapsedSeconds = ref<number | null>(null)
 const vehiclePresentationRevision = ref(0)
+const vehicleAuthoritativeHistoryRevision = ref(0)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let pollAbortController: AbortController | null = null
@@ -151,6 +154,7 @@ let requestVersion = 0
 let initialized = false
 let playbackRateSamples: PlaybackRateSample[] = []
 let clockTimer: ReturnType<typeof setInterval> | null = null
+let presentationFrameId: number | null = null
 const confirmedClock = new ConfirmedSimulationClock()
 
 const trafficView = computed(() =>
@@ -235,6 +239,10 @@ function recordPlaybackRate(next: SimulationSnapshot): void {
 }
 
 function applySnapshot(next: SimulationSnapshot) {
+  if (sessionId.value && next.session_id !== sessionId.value) {
+    rejectedStaleSessionSnapshotCount.value += 1
+    return
+  }
   if (!shouldApplySimulationSnapshot(snapshot.value, next, sessionId.value)) return
   recordPlaybackRate(next)
   confirmedClock.accept({
@@ -246,13 +254,15 @@ function applySnapshot(next: SimulationSnapshot) {
   recordSimulationDiagnosticSnapshot(next, achievedPlaybackSpeed.value)
   const previousState = state.value
   const nextTrafficView = snapshotToTrafficView(next)
-  vehiclePresentationTimeline.push(
+  const vehicleFrameAccepted = vehiclePresentationTimeline.push(
     nextTrafficView,
     next.sequence,
     next.state,
     next.playback_speed,
     Date.now(),
+    next.intersections,
   )
+  if (vehicleFrameAccepted) vehicleAuthoritativeHistoryRevision.value += 1
   vehicleDisplayElapsedSeconds.value = vehiclePresentationTimeline.tick(Date.now())
   vehiclePresentationRevision.value += 1
   snapshot.value = next
@@ -368,13 +378,22 @@ function bindSession(
   runtimePayload?: StartSimulationRequest,
 ) {
   const sessionChanged = Boolean(nextSessionId && nextSessionId !== sessionId.value)
-  if (sessionChanged) {
+  const acceptedNewSession = Boolean(nextSessionId && runtimePayload)
+  const presentationBoundary = sessionChanged || acceptedNewSession || (!nextSessionId && Boolean(sessionId.value))
+  if (presentationBoundary) {
+    stopPolling()
+    connectSimulationStream('')
     // This synchronous revision is the render boundary for all session-owned
     // overlays. Components clear before any target from the accepted run is installed.
+    simulationPresentationGeneration.value += 1
+    rejectedStaleSessionSnapshotCount.value = 0
     renderSessionRevision.value += 1
     vehiclePresentationTimeline.reset(nextSessionId)
+    vehicleAuthoritativeHistoryRevision.value += 1
     vehicleDisplayElapsedSeconds.value = null
     vehiclePresentationRevision.value += 1
+    snapshot.value = null
+    clearPersistedRuntimeDisturbances()
   }
   const runtimeSessionId = runtimeDisturbanceTargets.value[0]?.sessionId ?? ''
   if (nextSessionId && runtimeSessionId && runtimeSessionId !== nextSessionId) {
@@ -414,6 +433,7 @@ function bindSession(
     activeSimulationPeriod.value = ''
     acceptedState.value = null
     vehiclePresentationTimeline.reset()
+    vehicleAuthoritativeHistoryRevision.value += 1
     vehicleDisplayElapsedSeconds.value = null
     vehiclePresentationRevision.value += 1
   }
@@ -434,15 +454,17 @@ function ensureInitialized() {
     return
   }
   initialized = true
-  if (clockTimer === null) {
-    clockTimer = setInterval(() => {
-      tickDisplayedClock()
-      const elapsedSeconds = vehiclePresentationTimeline.tick(Date.now())
-      if (elapsedSeconds !== vehicleDisplayElapsedSeconds.value) {
-        vehicleDisplayElapsedSeconds.value = elapsedSeconds
-        vehiclePresentationRevision.value += 1
-      }
-    }, 1_000 / 30)
+  if (clockTimer === null) clockTimer = setInterval(tickDisplayedClock, 250)
+  const tickPresentationFrame = () => {
+    presentationFrameId = requestAnimationFrame(tickPresentationFrame)
+    const elapsedSeconds = vehiclePresentationTimeline.tick(Date.now())
+    if (elapsedSeconds !== vehicleDisplayElapsedSeconds.value) {
+      vehicleDisplayElapsedSeconds.value = elapsedSeconds
+      vehiclePresentationRevision.value += 1
+    }
+  }
+  if (presentationFrameId === null && typeof requestAnimationFrame === 'function') {
+    presentationFrameId = requestAnimationFrame(tickPresentationFrame)
   }
 
   registerSimulationStreamHandler((message) => {
@@ -475,7 +497,6 @@ async function launchRun(
   startError.value = null
   try {
     const result = await startSimulation(payload)
-    onSessionAccepted?.(result)
     bindSession(result.session_id, {
       focusIntersectionId,
       scenarioPresetId: result.scenario_preset_id ?? payload.scenario_preset_id,
@@ -485,6 +506,7 @@ async function launchRun(
       period: payload.period,
       initialState: result.state,
     }, payload)
+    onSessionAccepted?.(result)
     lastMessage.value = result.state === 'QUEUED'
       ? '排队中，等待仿真资源'
       : `仿真已启动，状态：${result.state}`
@@ -581,6 +603,10 @@ export function useSimulationStore() {
     trafficView,
     presentationTrafficView,
     vehicleDisplayElapsedSeconds,
+    vehicleAuthoritativeHistoryRevision,
+    getVehicleAuthoritativeHistoryWindow: (elapsedSeconds = vehicleDisplayElapsedSeconds.value) => (
+      vehiclePresentationTimeline.authoritativeHistoryWindow(elapsedSeconds)
+    ),
     summary,
     state,
     starting,
@@ -600,6 +626,8 @@ export function useSimulationStore() {
     achievedPlaybackSpeed,
     displayedOfficialTime,
     renderSessionRevision,
+    simulationPresentationGeneration,
+    rejectedStaleSessionSnapshotCount,
     runtimeDisturbanceTargets,
     runtimeDisturbances,
     unmappedRuntimeEvents,

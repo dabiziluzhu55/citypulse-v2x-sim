@@ -10,7 +10,7 @@ import Point from 'ol/geom/Point'
 import VectorLayer from 'ol/layer/Vector'
 import VectorSource from 'ol/source/Vector'
 import GeoJSON from 'ol/format/GeoJSON'
-import { Circle as CircleStyle, Fill, RegularShape, Stroke, Style, Text } from 'ol/style'
+import { Circle as CircleStyle, Fill, Icon, RegularShape, Stroke, Style, Text } from 'ol/style'
 import { defaults as defaultControls, Attribution } from 'ol/control'
 import { defaults as defaultInteractions } from 'ol/interaction'
 import { fromLonLat } from 'ol/proj'
@@ -35,7 +35,6 @@ import {
   type VehicleHeadingState,
 } from '../../mapv/vehicleOrientation'
 import { SumoHeadingField } from '../../mapv/sumoHeadingTransform'
-import DetectedEventOverlay from './DetectedEventOverlay.vue'
 import type { CongestionLevel } from '../../types/intelligence'
 import {
   CONGESTION_FLOW_COLORS,
@@ -46,7 +45,16 @@ import {
   loadEdgeTopologySegmentMap,
 } from '../../utils/edgeTopologySegments'
 import { expandDirectedTopologyRoutes } from '../../mapv/directedTopologyRoutes'
-import { activeDetectedEventCards } from '../../utils/detectedEventDisplay'
+import {
+  DETECTED_EVENT_ICON_URL,
+  activeDetectedEventCards,
+  detectedEventClockTime,
+  detectedEventDurationSeconds,
+  detectedEventTypeLabel,
+  formatDetectedEventDuration,
+} from '../../utils/detectedEventDisplay'
+import { groupDetectedEventMapMarkers } from '../../utils/detectedEventMapMarkers'
+import type { DetectedEventCard } from '../../types/intelligence'
 import { loadFullRoadNetwork, releaseFullRoadNetwork } from '../../mapv/fullRoadNetwork'
 import {
   disturbanceRuntimeStateLabel,
@@ -69,6 +77,7 @@ const {
   presentationTrafficView,
   snapshot,
   renderSessionRevision,
+  simulationPresentationGeneration,
   runtimeDisturbances,
   unmappedRuntimeEvents,
 } = useSimulationStore()
@@ -78,11 +87,13 @@ const warningPopupRef = ref<HTMLElement | null>(null)
 const warningPopupTitle = ref('')
 const warningPopupEvents = ref<Array<{ id: string; label: string; time: string }>>([])
 const detectedEventCards = ref(activeDetectedEventCards(null))
-const overlayViewToken = ref(0)
+const detectedPopupRef = ref<HTMLElement | null>(null)
+const detectedPopupCards = ref<DetectedEventCard[]>([])
 
 let map: Map | null = null
 let resizeObserver: ResizeObserver | null = null
 let warningOverlay: Overlay | null = null
+let detectedOverlay: Overlay | null = null
 let topologyNodes: IntersectionTopologyNode[] = []
 let eventLanePositionIndex: EventLanePositionIndex | null = null
 let edgeCongestionLevels: Record<string, CongestionLevel> = {}
@@ -93,23 +104,40 @@ const vehicleHeadingField = new SumoHeadingField((coordinate) => [
   coordinate[2],
 ])
 
-function projectDetectedEventToOverlay(longitude: number, latitude: number): { x: number; y: number } | null {
-  if (!map) return null
-  const pixel = map.getPixelFromCoordinate(fromLonLat([longitude, latitude]))
-  if (!pixel || !Number.isFinite(pixel[0]) || !Number.isFinite(pixel[1])) return null
-  return { x: pixel[0], y: pixel[1] }
-}
-
-function bumpOverlayViewToken(): void {
-  const zoom = map?.getView().getZoom() ?? DEFAULT_MAP_ZOOM
-  const center = map?.getView().getCenter()
-  overlayViewToken.value = Math.round(zoom * 100) * 1_000_000_000
-    + Math.round((center?.[0] ?? 0) * 0.01)
-    + Math.round((center?.[1] ?? 0) * 0.01)
-}
-
 function syncDetectedEventCards(): void {
   detectedEventCards.value = activeDetectedEventCards(snapshot.value?.event_detection?.cards)
+  detectedEventSource.clear()
+  const activeSessionId = snapshot.value?.session_id ?? ''
+  for (const marker of groupDetectedEventMapMarkers(detectedEventCards.value)) {
+    const feature = new Feature({
+      geometry: new Point(fromLonLat([marker.longitude, marker.latitude])),
+    })
+    feature.setProperties({
+      markerId: marker.id,
+      cards: marker.cards,
+      count: marker.cards.length,
+      sessionId: activeSessionId,
+      sessionGeneration: simulationPresentationGeneration.value,
+    })
+    detectedEventSource.addFeature(feature)
+  }
+  if (import.meta.env.DEV) {
+    const diagnosticsWindow = window as Window & {
+      __CITYPULSE_EVENT_MARKER_DIAGNOSTICS__?: Record<string, unknown>
+    }
+    diagnosticsWindow.__CITYPULSE_EVENT_MARKER_DIAGNOSTICS__ = {
+      ...diagnosticsWindow.__CITYPULSE_EVENT_MARKER_DIAGNOSTICS__,
+      detectedEventMapMarkerCount: detectedEventSource.getFeatures().length,
+      detectedEventMapEventCount: detectedEventCards.value.length,
+      presentationGeneration: simulationPresentationGeneration.value,
+    }
+  }
+  if (detectedPopupCards.value.length > 0) {
+    const activeIds = new Set(detectedEventCards.value.map((card) => card.event_id))
+    if (!detectedPopupCards.value.some((card) => activeIds.has(card.event_id))) {
+      closeDetectedPopup()
+    }
+  }
 }
 const vehicleHeadingHistory = new globalThis.Map<string, VehicleHeadingState>()
 interface AnimatedVehicleFeature {
@@ -146,6 +174,7 @@ const fullRoadNetworkSource = new VectorSource()
 const topologyFlowSource = new VectorSource()
 const vehicleSource = new VectorSource()
 const disturbanceSource = new VectorSource()
+const detectedEventSource = new VectorSource()
 const geoJsonFormat = new GeoJSON()
 const modelRegistry = new TrafficModelRegistry()
 
@@ -197,7 +226,9 @@ function clearVehiclePresentation(): void {
 function clearSessionPresentation(): void {
   clearVehiclePresentation()
   detectedEventCards.value = []
+  detectedEventSource.clear()
   disturbanceSource.clear()
+  closeDetectedPopup()
   warningOverlay?.setPosition(undefined)
   warningPopupTitle.value = ''
   warningPopupEvents.value = []
@@ -309,6 +340,40 @@ const disturbanceLayer = new VectorLayer({
     return styles
   },
   zIndex: 9,
+})
+
+const detectedEventLayer = new VectorLayer({
+  source: detectedEventSource,
+  declutter: true,
+  style: (feature) => {
+    const count = Number(feature.get('count') ?? 1)
+    const styles = [new Style({
+      image: new Icon({
+        src: DETECTED_EVENT_ICON_URL,
+        anchor: [0.5, 1],
+        anchorXUnits: 'fraction',
+        anchorYUnits: 'fraction',
+        width: 34,
+        height: 34,
+      }),
+    })]
+    if (count > 1) {
+      styles.push(new Style({
+        text: new Text({
+          text: String(count),
+          font: '700 10px sans-serif',
+          fill: new Fill({ color: '#ffffff' }),
+          backgroundFill: new Fill({ color: '#8c091c' }),
+          backgroundStroke: new Stroke({ color: '#ffffff', width: 1 }),
+          padding: [2, 4, 2, 4],
+          offsetX: 13,
+          offsetY: -28,
+        }),
+      }))
+    }
+    return styles
+  },
+  zIndex: 10,
 })
 
 function renderDisturbanceWarnings(): void {
@@ -463,6 +528,23 @@ async function loadFullNetworkOverview(): Promise<void> {
 
 function handleMapClick(event: MapBrowserEvent): void {
   if (!map) return
+  const detectedFeature = map.forEachFeatureAtPixel(event.pixel, (candidate, layer) => (
+    layer === detectedEventLayer ? candidate : undefined
+  ))
+  if (detectedFeature) {
+    const featureGeneration = Number(detectedFeature.get('sessionGeneration'))
+    const featureSessionId = String(detectedFeature.get('sessionId') ?? '')
+    if (
+      featureGeneration === simulationPresentationGeneration.value
+      && featureSessionId === (snapshot.value?.session_id ?? '')
+    ) {
+      detectedPopupCards.value = detectedFeature.get('cards') as DetectedEventCard[]
+      detectedOverlay?.setPosition((detectedFeature.getGeometry() as Point).getCoordinates())
+      warningOverlay?.setPosition(undefined)
+      return
+    }
+  }
+  closeDetectedPopup()
   if (!warningOverlay) return
   const feature = map.forEachFeatureAtPixel(event.pixel, (candidate, layer) => (
     layer === disturbanceLayer ? candidate : undefined
@@ -495,6 +577,11 @@ function handleMapClick(event: MapBrowserEvent): void {
         time: `${(item as ScenarioDraftDisturbanceEvent).start_time}-${(item as ScenarioDraftDisturbanceEvent).end_time}`,
       })
   warningOverlay.setPosition((feature.getGeometry() as Point).getCoordinates())
+}
+
+function closeDetectedPopup(): void {
+  detectedOverlay?.setPosition(undefined)
+  detectedPopupCards.value = []
 }
 
 function renderNetwork() {
@@ -654,7 +741,6 @@ function syncMapViewportDiagnostics(): void {
 
 function handleMapMoveEnd(): void {
   syncMapViewportDiagnostics()
-  bumpOverlayViewToken()
   renderVehicles()
 }
 
@@ -685,6 +771,7 @@ onMounted(() => {
       networkLayer,
       vehicleLayer,
       disturbanceLayer,
+      detectedEventLayer,
     ],
     view: new View({
       center: fromLonLat(DEFAULT_MAP_CENTER),
@@ -712,13 +799,20 @@ onMounted(() => {
     })
     map.addOverlay(warningOverlay)
   }
+  if (detectedPopupRef.value) {
+    detectedOverlay = new Overlay({
+      element: detectedPopupRef.value,
+      positioning: 'bottom-center',
+      offset: [0, -38],
+      stopEvent: true,
+      autoPan: { animation: { duration: 180 }, margin: 18 },
+    })
+    map.addOverlay(detectedOverlay)
+  }
   map.on('singleclick', handleMapClick)
   map.on('pointerdrag', markUserViewportInteraction)
   map.getViewport().addEventListener('wheel', markUserViewportInteraction, { passive: true })
   map.on('moveend', handleMapMoveEnd)
-  map.getView().on('change:center', bumpOverlayViewToken)
-  map.getView().on('change:resolution', bumpOverlayViewToken)
-  bumpOverlayViewToken()
   syncMapViewportDiagnostics()
   renderNetwork()
   renderVehicles()
@@ -756,6 +850,7 @@ watch(activeIntersectionId, () => {
   focusedIntersectionId = null
   focusActiveIntersection()
 })
+
 watch([disturbanceEvents, runtimeDisturbances, snapshot, simulationStartTime], renderDisturbanceWarnings, { deep: true })
 watch(snapshot, refreshIntelligenceLayers)
 
@@ -769,11 +864,14 @@ onUnmounted(() => {
   map?.getViewport().removeEventListener('wheel', markUserViewportInteraction)
   warningOverlay?.setPosition(undefined)
   warningOverlay = null
+  detectedOverlay?.setPosition(undefined)
+  detectedOverlay = null
   topologyNodes = []
   eventLanePositionIndex = null
   topologyFlowSource.clear()
   fullRoadNetworkSource.clear()
   routeCongestionLevels = {}
+  detectedEventSource.clear()
   clearVehiclePresentation()
   map?.setTarget(undefined)
   map = null
@@ -783,13 +881,6 @@ onUnmounted(() => {
 <template>
   <div class="app-background-map">
     <div ref="mapEl" class="app-background-map__canvas" role="application" aria-label="二维交通路网地图" />
-    <DetectedEventOverlay
-      :cards="detectedEventCards"
-      :snapshot="snapshot"
-      :project="projectDetectedEventToOverlay"
-      :active="props.active"
-      :view-token="overlayViewToken"
-    />
     <div v-if="networkError" class="app-background-map__network-status">
       当前路口路网加载失败，已保留深色底图定位
     </div>
@@ -803,6 +894,18 @@ onUnmounted(() => {
         <time>{{ event.time }}</time>
       </div>
     </div>
+    <section v-show="detectedPopupCards.length" ref="detectedPopupRef" class="detected-event-map-popup" aria-label="事件识别详情">
+      <header>
+        <strong>事件识别</strong>
+        <button type="button" title="关闭" aria-label="关闭事件识别详情" @click="closeDetectedPopup">x</button>
+      </header>
+      <article v-for="card in detectedPopupCards" :key="card.event_id">
+        <strong>{{ detectedEventTypeLabel(card) }}</strong>
+        <span>{{ detectedEventClockTime(snapshot, card.start_seconds) }}</span>
+        <span>持续 {{ formatDetectedEventDuration(detectedEventDurationSeconds(snapshot, card)) }}</span>
+        <span>{{ card.intersection_id }} / {{ card.lane_ids.join('、') || '--' }}</span>
+      </article>
+    </section>
   </div>
 </template>
 
@@ -818,6 +921,24 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
 }
+
+.detected-event-map-popup {
+  width: min(300px, calc(100vw - 32px));
+  max-height: min(360px, calc(100vh - 32px));
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(82, 194, 250, 0.58);
+  border-radius: 6px;
+  background: rgba(3, 20, 31, 0.97);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.52);
+  color: #eaf8ff;
+}
+
+.detected-event-map-popup header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.detected-event-map-popup header button { width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: #eaf8ff; cursor: pointer; }
+.detected-event-map-popup article { display: grid; gap: 3px; padding: 8px 0; border-top: 1px solid rgba(120, 202, 235, 0.18); font-size: 12px; }
+.detected-event-map-popup article:first-of-type { margin-top: 7px; }
+.detected-event-map-popup article span { color: #a8d9ea; }
 
 .app-background-map__network-status {
   position: absolute;

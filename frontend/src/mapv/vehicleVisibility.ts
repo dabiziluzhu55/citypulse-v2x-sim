@@ -228,8 +228,101 @@ export class StableVehicleSelector {
     return next
   }
 
+  selectOverview(
+    vehicles: TrafficVehicleView[],
+    projector: RoadCoordinateProjector,
+    snapshotKey: string,
+    limit = MAX_VISIBLE_VEHICLES,
+    priority?: (item: VisibleVehicle) => boolean,
+  ): VisibleVehicle[] {
+    if (limit <= 0) {
+      this.reset()
+      return []
+    }
+    const current = new Map<string, VisibleVehicle>()
+    for (const vehicle of vehicles) {
+      if (vehicle.longitude == null || vehicle.latitude == null) continue
+      const [longitude, latitude] = projector([vehicle.longitude, vehicle.latitude])
+      if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) continue
+      current.set(vehicle.vehicle_id, {
+        vehicle,
+        longitude,
+        latitude,
+        distanceMeters: 0,
+      })
+    }
+    const isPriority = priority ?? (() => false)
+    const all = [...current.values()]
+    const retained = [...this.retained.keys()]
+      .map((id) => current.get(id))
+      .filter((item): item is VisibleVehicle => Boolean(item))
+    const retainedIds = new Set(retained.map((item) => item.vehicle.vehicle_id))
+    const priorityItems = all
+      .filter((item) => isPriority(item) && !retainedIds.has(item.vehicle.vehicle_id))
+      .sort((left, right) => left.vehicle.vehicle_id.localeCompare(right.vehicle.vehicle_id))
+    let selected = [...retained, ...priorityItems].slice(0, limit)
+    const selectedIds = new Set(selected.map((item) => item.vehicle.vehicle_id))
+    if (selected.length < limit) {
+      const remaining = all.filter((item) => !selectedIds.has(item.vehicle.vehicle_id))
+      const distributed = spatiallyDistributeVehicles(remaining, limit - selected.length)
+      selected = [...selected, ...distributed]
+    }
+    this.retained = new Map(selected.map((item) => [item.vehicle.vehicle_id, item]))
+    this.lastLimit = snapshotKey ? limit : null
+    return selected
+  }
+
   reset(): void {
     this.retained.clear()
     this.lastLimit = null
   }
+}
+
+function spatiallyDistributeVehicles(
+  vehicles: VisibleVehicle[],
+  limit: number,
+): VisibleVehicle[] {
+  if (vehicles.length <= limit) return vehicles
+  const longitudes = vehicles.map((item) => item.longitude)
+  const latitudes = vehicles.map((item) => item.latitude)
+  const minimumLongitude = Math.min(...longitudes)
+  const maximumLongitude = Math.max(...longitudes)
+  const minimumLatitude = Math.min(...latitudes)
+  const maximumLatitude = Math.max(...latitudes)
+  const gridSize = Math.max(1, Math.ceil(Math.sqrt(limit)))
+  const longitudeSpan = Math.max(1e-9, maximumLongitude - minimumLongitude)
+  const latitudeSpan = Math.max(1e-9, maximumLatitude - minimumLatitude)
+  const buckets = new Map<number, VisibleVehicle[]>()
+  for (const item of vehicles) {
+    const column = Math.min(
+      gridSize - 1,
+      Math.floor((item.longitude - minimumLongitude) / longitudeSpan * gridSize),
+    )
+    const row = Math.min(
+      gridSize - 1,
+      Math.floor((item.latitude - minimumLatitude) / latitudeSpan * gridSize),
+    )
+    const key = row * gridSize + column
+    const bucket = buckets.get(key) ?? []
+    bucket.push(item)
+    buckets.set(key, bucket)
+  }
+  const orderedBuckets = [...buckets.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, bucket]) => bucket.sort((left, right) => (
+      left.vehicle.vehicle_id.localeCompare(right.vehicle.vehicle_id)
+    )))
+  const selected: VisibleVehicle[] = []
+  for (let index = 0; selected.length < limit; index += 1) {
+    let added = false
+    for (const bucket of orderedBuckets) {
+      const item = bucket[index]
+      if (!item) continue
+      selected.push(item)
+      added = true
+      if (selected.length >= limit) break
+    }
+    if (!added) break
+  }
+  return selected
 }

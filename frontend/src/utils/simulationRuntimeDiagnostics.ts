@@ -1,4 +1,5 @@
 import type { SimulationSnapshot } from '../types/simulation'
+import type { VehicleMotionSampleResult, VehicleMotionWaitingReason } from '../mapv/vehicleMotionBuffer'
 
 const MAX_INTERVAL_SAMPLES = 60
 
@@ -57,6 +58,29 @@ export interface VehicleRuntimeDiagnosticUpdate {
   viewportTwinBlankFrameCount: number
   viewportFirstFrameVehicleCount: number
   surfaceExclusionVehicleFilterCount: number
+  motionSampleStatus: VehicleMotionSampleResult['status']
+  motionWaitingReason: VehicleMotionWaitingReason | null
+  authoritativeVehicleCount: number
+  sourceVehicleCount: number
+  viewportVehicleCount: number
+  selectedVehicleCount: number
+  playableVehicleCount: number
+  twinOutputVehicleCount: number
+  twinActualVisibleVehicleCount: number
+  twinActualVisibleVehicleIds: string[]
+  twinVisibleDisplayElapsedSeconds: number | null
+  twinSubmittedWindowDepthMs: number
+  twinWindowExhaustionCount: number
+  waitingTwinResetInterceptCount: number
+  workerCompilationQueueDepth: number
+  legalCompiledSegmentCount: number
+  twinResetReason: string | null
+  requestedIntersectionId?: string
+  committedIntersectionId?: string | null
+  viewportStageStatus?: string
+  viewportStageRejectionReasons?: string[]
+  firstSourceElapsedSeconds: number | null
+  latestSourceElapsedSeconds: number | null
 }
 
 interface RuntimeDiagnosticState {
@@ -126,6 +150,29 @@ interface RuntimeDiagnosticState {
   viewportTwinBlankFrames: number
   viewportFirstFrameVehicles: number
   surfaceExclusionVehicleFilters: number
+  motionSampleStatus: VehicleMotionSampleResult['status']
+  motionWaitingReason: VehicleMotionWaitingReason | null
+  authoritativeVehicles: number
+  sourceVehicles: number
+  viewportVehicles: number
+  selectedVehicles: number
+  playableVehicles: number
+  twinOutputVehicles: number
+  twinActualVisibleVehicles: number
+  twinActualVisibleVehicleIds: string[]
+  twinVisibleDisplayElapsedSeconds: number | null
+  twinSubmittedWindowDepthMs: number
+  twinWindowExhaustionCount: number
+  waitingTwinResetIntercepts: number
+  workerCompilationQueueDepth: number
+  legalCompiledSegments: number
+  twinResetReason: string | null
+  requestedIntersectionId: string
+  committedIntersectionId: string | null
+  viewportStageStatus: string
+  viewportStageRejectionReasons: string[]
+  firstVehicleSourceElapsedSeconds: number | null
+  latestVehicleSourceElapsedSeconds: number | null
   capturedAt: string
 }
 
@@ -196,6 +243,29 @@ const state: RuntimeDiagnosticState = {
   viewportTwinBlankFrames: 0,
   viewportFirstFrameVehicles: 0,
   surfaceExclusionVehicleFilters: 0,
+  motionSampleStatus: 'waiting',
+  motionWaitingReason: 'insufficient_frames',
+  authoritativeVehicles: 0,
+  sourceVehicles: 0,
+  viewportVehicles: 0,
+  selectedVehicles: 0,
+  playableVehicles: 0,
+  twinOutputVehicles: 0,
+  twinActualVisibleVehicles: 0,
+  twinActualVisibleVehicleIds: [],
+  twinVisibleDisplayElapsedSeconds: null,
+  twinSubmittedWindowDepthMs: 0,
+  twinWindowExhaustionCount: 0,
+  waitingTwinResetIntercepts: 0,
+  workerCompilationQueueDepth: 0,
+  legalCompiledSegments: 0,
+  twinResetReason: null,
+  requestedIntersectionId: '',
+  committedIntersectionId: null,
+  viewportStageStatus: 'idle',
+  viewportStageRejectionReasons: [],
+  firstVehicleSourceElapsedSeconds: null,
+  latestVehicleSourceElapsedSeconds: null,
   capturedAt: '',
 }
 
@@ -283,6 +353,29 @@ export function resetSimulationRuntimeDiagnostics(sessionId = ''): void {
   state.viewportTwinBlankFrames = 0
   state.viewportFirstFrameVehicles = 0
   state.surfaceExclusionVehicleFilters = 0
+  state.motionSampleStatus = 'waiting'
+  state.motionWaitingReason = 'insufficient_frames'
+  state.authoritativeVehicles = 0
+  state.sourceVehicles = 0
+  state.viewportVehicles = 0
+  state.selectedVehicles = 0
+  state.playableVehicles = 0
+  state.twinOutputVehicles = 0
+  state.twinActualVisibleVehicles = 0
+  state.twinActualVisibleVehicleIds = []
+  state.twinVisibleDisplayElapsedSeconds = null
+  state.twinSubmittedWindowDepthMs = 0
+  state.twinWindowExhaustionCount = 0
+  state.waitingTwinResetIntercepts = 0
+  state.workerCompilationQueueDepth = 0
+  state.legalCompiledSegments = 0
+  state.twinResetReason = null
+  state.requestedIntersectionId = ''
+  state.committedIntersectionId = null
+  state.viewportStageStatus = 'idle'
+  state.viewportStageRejectionReasons = []
+  state.firstVehicleSourceElapsedSeconds = null
+  state.latestVehicleSourceElapsedSeconds = null
   snapshotIntervalsMs = []
   lastSnapshotArrivalMs = null
   publish()
@@ -386,6 +479,37 @@ export function recordVehicleRuntimeDiagnostics(update: VehicleRuntimeDiagnostic
   state.viewportTwinBlankFrames = update.viewportTwinBlankFrameCount
   state.viewportFirstFrameVehicles = update.viewportFirstFrameVehicleCount
   state.surfaceExclusionVehicleFilters = update.surfaceExclusionVehicleFilterCount
+  state.motionSampleStatus = update.motionSampleStatus
+  state.motionWaitingReason = update.motionWaitingReason
+  state.authoritativeVehicles = update.authoritativeVehicleCount
+  state.sourceVehicles = update.sourceVehicleCount
+  state.viewportVehicles = update.viewportVehicleCount
+  state.selectedVehicles = update.selectedVehicleCount
+  state.playableVehicles = update.playableVehicleCount
+  state.twinOutputVehicles = update.twinOutputVehicleCount
+  state.twinActualVisibleVehicles = update.twinActualVisibleVehicleCount
+  state.twinActualVisibleVehicleIds = [...update.twinActualVisibleVehicleIds]
+  state.twinVisibleDisplayElapsedSeconds = update.twinVisibleDisplayElapsedSeconds
+  state.twinSubmittedWindowDepthMs = update.twinSubmittedWindowDepthMs
+  state.twinWindowExhaustionCount = update.twinWindowExhaustionCount
+  state.waitingTwinResetIntercepts = update.waitingTwinResetInterceptCount
+  state.workerCompilationQueueDepth = update.workerCompilationQueueDepth
+  state.legalCompiledSegments = update.legalCompiledSegmentCount
+  state.twinResetReason = update.twinResetReason
+  if (update.requestedIntersectionId !== undefined) {
+    state.requestedIntersectionId = update.requestedIntersectionId
+  }
+  if (update.committedIntersectionId !== undefined) {
+    state.committedIntersectionId = update.committedIntersectionId
+  }
+  if (update.viewportStageStatus !== undefined) {
+    state.viewportStageStatus = update.viewportStageStatus
+  }
+  if (update.viewportStageRejectionReasons !== undefined) {
+    state.viewportStageRejectionReasons = [...update.viewportStageRejectionReasons]
+  }
+  state.firstVehicleSourceElapsedSeconds = update.firstSourceElapsedSeconds
+  state.latestVehicleSourceElapsedSeconds = update.latestSourceElapsedSeconds
   publish()
 }
 

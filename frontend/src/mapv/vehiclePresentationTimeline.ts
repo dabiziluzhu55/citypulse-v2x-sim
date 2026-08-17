@@ -1,14 +1,14 @@
 import type { SimulationState } from '../types/simulation'
 import type { TrafficStateView, TrafficVehicleView } from '../types/traffic'
+import { VEHICLE_TWIN_RENDER_DELAY_MS } from './vehicleTwinPresentation.ts'
 
 export const MIN_SHARED_VEHICLE_DELAY_SECONDS = 2
 export const MAX_SHARED_VEHICLE_DELAY_SECONDS = 3
-const MAX_PRESENTATION_FRAMES = 64
+const MAX_PRESENTATION_FRAMES = 256
 const MIN_TRACKED_INTERVAL_MS = 20
 const MAX_TRACKED_INTERVAL_MS = 10_000
-const MAX_WALL_STEP_SECONDS = 0.25
 const MAX_RECOVERY_RATE_RATIO = 1.05
-const PRESENTATION_HISTORY_SECONDS = 8
+const PRESENTATION_HISTORY_SECONDS = 30
 const MAX_TRACKED_SOURCE_RATE = 20
 
 interface PresentationSourceFrame {
@@ -120,7 +120,13 @@ export class VehiclePresentationTimeline {
           MIN_SHARED_VEHICLE_DELAY_SECONDS,
           MAX_SHARED_VEHICLE_DELAY_SECONDS,
         )
-        this.delaySeconds = Math.max(this.delaySeconds, requestedDelay)
+        const twinLeadDelay = VEHICLE_TWIN_RENDER_DELAY_MS / 1_000
+          * Math.max(1, Number(playbackRate) || 1)
+          + 0.5
+        this.delaySeconds = Math.max(
+          this.delaySeconds,
+          Math.min(MAX_SHARED_VEHICLE_DELAY_SECONDS, Math.max(requestedDelay, twinLeadDelay)),
+        )
       }
     }
     this.frames.push({
@@ -133,19 +139,6 @@ export class VehiclePresentationTimeline {
     })
     this.frames = this.frames.slice(-MAX_PRESENTATION_FRAMES)
     this.prune()
-    const earliest = this.frames[0]?.elapsedSeconds
-    if (
-      earliest != null
-      && this.displayElapsedSeconds != null
-      && this.displayElapsedSeconds < earliest
-    ) {
-      // The source recovered faster than the retained history could be played.
-      // Re-anchor both maps to the oldest still-authoritative frame instead of
-      // reporting an elapsed time for vehicle data that no longer exists.
-      this.displayElapsedSeconds = earliest
-      this.lastTickWallTimeMs = arrivalTimeMs
-      this.historyReanchorCount += 1
-    }
     return true
   }
 
@@ -162,7 +155,7 @@ export class VehiclePresentationTimeline {
     }
     const wallDeltaSeconds = this.lastTickWallTimeMs == null
       ? 0
-      : clamp((wallTimeMs - this.lastTickWallTimeMs) / 1_000, 0, MAX_WALL_STEP_SECONDS)
+      : Math.max(0, (wallTimeMs - this.lastTickWallTimeMs) / 1_000)
     this.lastTickWallTimeMs = wallTimeMs
     if (latest.state === 'RUNNING' || latest.state === 'STARTING' || latest.state === 'STOPPING') {
       const observedSourceRate = percentile(this.sourceRates, 0.5)
@@ -175,7 +168,9 @@ export class VehiclePresentationTimeline {
         this.displayElapsedSeconds + wallDeltaSeconds * rate,
       )
     } else {
-      this.displayElapsedSeconds = Math.min(this.displayElapsedSeconds, target)
+      // No future microsteps will arrive while paused or terminal. Freeze both
+      // maps on a transmitted SUMO endpoint instead of an unplayable gap.
+      this.displayElapsedSeconds = latest.elapsedSeconds
     }
     return this.displayElapsedSeconds
   }
@@ -245,7 +240,11 @@ export class VehiclePresentationTimeline {
   private prune(): void {
     const latest = this.frames.at(-1)
     if (!latest) return
-    const cutoff = latest.elapsedSeconds - PRESENTATION_HISTORY_SECONDS
+    const retainedHistoryCutoff = latest.elapsedSeconds - PRESENTATION_HISTORY_SECONDS
+    const displayCutoff = this.displayElapsedSeconds == null
+      ? retainedHistoryCutoff
+      : this.displayElapsedSeconds - 1
+    const cutoff = Math.min(retainedHistoryCutoff, displayCutoff)
     while (this.frames.length > 2 && this.frames[1].elapsedSeconds < cutoff) this.frames.shift()
   }
 }

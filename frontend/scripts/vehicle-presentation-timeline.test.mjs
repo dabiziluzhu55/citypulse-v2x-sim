@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { VehiclePresentationTimeline } from '../src/mapv/vehiclePresentationTimeline.ts'
+import { VehiclePresentationCoordinator } from '../src/mapv/vehiclePresentationCoordinator.ts'
 
 function trafficView(elapsedSeconds, vehicles) {
   return {
@@ -77,7 +78,9 @@ test('tracks an accelerated authoritative source without exceeding the shared de
       1,
       sequence * 100,
     )
-    timeline.tick(sequence * 100)
+    for (let frame = 0; frame < 6; frame += 1) {
+      timeline.tick(sequence * 100 + frame * (100 / 6))
+    }
   }
   const stats = timeline.stats()
   assert.ok(stats.observedSourceRate >= 9)
@@ -85,7 +88,7 @@ test('tracks an accelerated authoritative source without exceeding the shared de
   assert.ok(12 - stats.displayElapsedSeconds <= 3)
 })
 
-test('reanchors to retained authority instead of reporting an expired display time', () => {
+test('retains authority around the display cursor instead of jumping it forward', () => {
   const timeline = new VehiclePresentationTimeline()
   for (let sequence = 0; sequence <= 4; sequence += 1) {
     timeline.push(
@@ -108,7 +111,100 @@ test('reanchors to retained authority instead of reporting an expired display ti
   }
   const stats = timeline.stats()
   const sample = timeline.sample()
-  assert.ok(stats.historyReanchorCount > 0)
-  assert.ok((stats.displayElapsedSeconds ?? 0) >= 11)
+  assert.equal(stats.historyReanchorCount, 0)
+  assert.ok((stats.displayElapsedSeconds ?? 0) < 11)
   assert.equal(sample?.view.elapsed_seconds, stats.displayElapsedSeconds)
+})
+
+test('advances a long main-thread frame at no more than 105 percent wall-clock speed', () => {
+  const timeline = new VehiclePresentationTimeline()
+  for (let sequence = 0; sequence <= 8; sequence += 1) {
+    timeline.push(
+      trafficView(sequence * 0.5, [vehicle('smooth', 116 + sequence * 0.00001)]),
+      sequence,
+      'RUNNING',
+      1,
+      sequence * 500,
+    )
+  }
+  const before = timeline.tick(4_000)
+  timeline.push(
+    trafficView(4.5, [vehicle('smooth', 116.00009)]),
+    9,
+    'RUNNING',
+    1,
+    4_250,
+  )
+  const after = timeline.tick(4_250)
+  assert.ok(before != null && after != null)
+  assert.ok(after - before >= 0.25 - 1e-9)
+  assert.ok(after - before <= 0.25 * 1.05 + 1e-9)
+})
+
+test('freezes a paused or terminal presentation on the latest authoritative endpoint', () => {
+  for (const state of ['PAUSED', 'COMPLETED']) {
+    const timeline = new VehiclePresentationTimeline()
+    timeline.push(trafficView(687, [vehicle('endpoint', 116)]), 1, 'RUNNING', 1, 0)
+    timeline.push(trafficView(822.5, [vehicle('endpoint', 116.001)]), 2, 'RUNNING', 1, 500)
+    timeline.tick(500)
+    timeline.push(trafficView(900, [vehicle('endpoint', 116.002)]), 3, state, 1, 1_000)
+
+    assert.equal(timeline.tick(1_000), 900)
+    assert.equal(timeline.sample()?.elapsedSeconds, 900)
+  }
+})
+
+for (const fps of [24, 30]) {
+  test(`does not accumulate clock drift during sustained ${fps} fps rendering`, () => {
+    const timeline = new VehiclePresentationTimeline()
+    let sequence = 0
+    let nextSourceWallTimeMs = 0
+    const frameIntervalMs = 1_000 / fps
+    for (let wallTimeMs = 0; wallTimeMs <= 20_000; wallTimeMs += frameIntervalMs) {
+      while (nextSourceWallTimeMs <= wallTimeMs + 1e-6) {
+        timeline.push(
+          trafficView(sequence * 0.5, [vehicle('steady', 116 + sequence * 0.000001)]),
+          sequence,
+          'RUNNING',
+          1,
+          nextSourceWallTimeMs,
+        )
+        sequence += 1
+        nextSourceWallTimeMs += 500
+      }
+      timeline.tick(wallTimeMs)
+    }
+    const stats = timeline.stats()
+    const latestElapsedSeconds = (sequence - 1) * 0.5
+    assert.ok(stats.displayElapsedSeconds != null)
+    assert.ok(
+      latestElapsedSeconds - stats.displayElapsedSeconds <= stats.delaySeconds + 0.6,
+      `clock drifted by ${latestElapsedSeconds - stats.displayElapsedSeconds}s`,
+    )
+  })
+}
+
+test('hydrates a late-mounted 3D renderer from authoritative history around the display time', () => {
+  const coordinator = new VehiclePresentationCoordinator()
+  for (let sequence = 0; sequence <= 980; sequence += 1) {
+    const elapsedSeconds = sequence * 0.5
+    coordinator.push(
+      trafficView(elapsedSeconds, [vehicle('late-mounted', 116 + sequence * 0.000001)]),
+      sequence,
+      'RUNNING',
+      1,
+      sequence * 500,
+    )
+  }
+  coordinator.tick(490_000)
+  const presented = coordinator.sample()
+  const history = coordinator.authoritativeHistoryWindow(presented?.elapsedSeconds ?? null)
+  assert.ok(presented && history)
+  assert.equal(presented.elapsedSeconds, 488)
+  assert.equal(history.displayElapsedSeconds, presented.elapsedSeconds)
+  assert.ok(history.frames.length >= 13)
+  assert.ok(history.leftFrame?.elapsedSeconds <= presented.elapsedSeconds)
+  assert.ok(history.rightFrame?.elapsedSeconds > presented.elapsedSeconds)
+  assert.ok(history.frames[0].elapsedSeconds <= presented.elapsedSeconds - 6)
+  assert.equal(history.frames.at(-1).elapsedSeconds, 490)
 })

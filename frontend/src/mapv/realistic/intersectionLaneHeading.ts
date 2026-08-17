@@ -68,6 +68,29 @@ export interface MotionPathSample {
   pathArcDistanceMeters: number
 }
 
+export interface MotionPathWorkerSegment {
+  renderPoints: [number, number][]
+  sourceStationsMeters?: number[]
+  sourceStartMeters: number
+  sourceLengthMeters: number
+}
+
+export interface MotionPathWorkerTrack {
+  renderPoints: [number, number][]
+  widthMeters: number
+}
+
+export interface MotionPathWorkerGeometry {
+  originPlane: [number, number]
+  horizontalScale: number
+  junctionShape: [number, number][]
+  motionPaths: Array<[
+    string,
+    { segments: MotionPathWorkerSegment[]; lengthMeters: number },
+  ]>
+  tracksByMotionPathKey: Array<[string, MotionPathWorkerTrack[]]>
+}
+
 export interface MotionPathSampler {
   project(
     motionPathKey: string,
@@ -82,6 +105,7 @@ export interface MotionPathSampler {
     vehicleHalfWidthMeters: number,
     allowJunction?: boolean,
   ): boolean
+  workerGeometry?: MotionPathWorkerGeometry
 }
 
 export interface LanePoseResolver {
@@ -183,6 +207,126 @@ function sampleGuideAtSourceDistance(
     }
   }
   return null
+}
+
+export function createMotionPathSamplerFromWorkerGeometry(
+  geometry: MotionPathWorkerGeometry,
+): MotionPathSampler {
+  const motionPaths = new Map(geometry.motionPaths)
+  const tracksByMotionPathKey = new Map(geometry.tracksByMotionPathKey)
+  const { horizontalScale, junctionShape, originPlane } = geometry
+  const sampler: MotionPathSampler = {
+    project(motionPathKey, coordinate) {
+      const path = motionPaths.get(motionPathKey)
+      if (!path || path.lengthMeters <= 1e-6) return null
+      const projected = projectBd09ToWebMercator(coordinate)
+      const localPoint: [number, number] = [
+        projected[0] - originPlane[0],
+        projected[1] - originPlane[1],
+      ]
+      const nearest = path.segments
+        .map((segment) => ({ segment, nearest: nearestPolylineProgress(localPoint, segment.renderPoints) }))
+        .filter((entry) => entry.nearest !== null)
+        .sort((left, right) => left.nearest!.distance - right.nearest!.distance)[0]
+      if (!nearest?.nearest) return null
+      return {
+        pathArcDistanceMeters: nearest.segment.sourceStartMeters
+          + nearest.nearest.progress * nearest.segment.sourceLengthMeters,
+        distanceMeters: nearest.nearest.distance / horizontalScale,
+      }
+    },
+    sample(motionPathKey, pathArcDistanceMeters) {
+      const path = motionPaths.get(motionPathKey)
+      if (!path || path.lengthMeters <= 1e-6) return null
+      const distanceMeters = Math.max(0, Math.min(path.lengthMeters, pathArcDistanceMeters))
+      const segment = path.segments.find((candidate, index) => (
+        distanceMeters <= candidate.sourceStartMeters + candidate.sourceLengthMeters + 1e-9
+        || index === path.segments.length - 1
+      ))
+      if (!segment) return null
+      const progress = segment.sourceLengthMeters > 1e-9
+        ? Math.max(0, Math.min(1, (
+            distanceMeters - segment.sourceStartMeters
+          ) / segment.sourceLengthMeters))
+        : 0
+      const guideSample = sampleGuideAtSourceDistance(
+        segment.renderPoints,
+        segment.sourceStationsMeters,
+        distanceMeters - segment.sourceStartMeters,
+      )
+      const point = guideSample?.point ?? samplePolyline(segment.renderPoints, progress)
+      const heading = guideSample?.heading ?? tangentAtProgress(segment.renderPoints, progress)
+      if (heading == null) return null
+      const [longitude, latitude] = unprojectWebMercatorToBd09([
+        originPlane[0] + point[0],
+        originPlane[1] + point[1],
+      ])
+      return { longitude, latitude, heading, pathArcDistanceMeters: distanceMeters }
+    },
+    containsVehicle(
+      motionPathKeys,
+      coordinate,
+      heading,
+      vehicleHalfLengthMeters,
+      vehicleHalfWidthMeters,
+      allowJunction = false,
+    ) {
+      const projected = projectBd09ToWebMercator(coordinate)
+      const center: [number, number] = [
+        projected[0] - originPlane[0],
+        projected[1] - originPlane[1],
+      ]
+      const pathTracks = motionPathKeys.flatMap((key) => tracksByMotionPathKey.get(key) ?? [])
+      if (pathTracks.length === 0) return false
+      const normal: [number, number] = [-Math.sin(heading), Math.cos(heading)]
+      const corners: [number, number][] = [-1, 1].flatMap((longitudinal) => (
+        [-1, 1].map((lateral) => ([
+          center[0]
+            + Math.cos(heading) * longitudinal * vehicleHalfLengthMeters * horizontalScale
+            + normal[0] * lateral * vehicleHalfWidthMeters * horizontalScale,
+          center[1]
+            + Math.sin(heading) * longitudinal * vehicleHalfLengthMeters * horizontalScale
+            + normal[1] * lateral * vehicleHalfWidthMeters * horizontalScale,
+        ] as [number, number]))
+      ))
+      const pointInPolygon = (point: [number, number], polygon: [number, number][]) => {
+        let inside = false
+        for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+          const left = polygon[index]
+          const right = polygon[previous]
+          if (
+            (left[1] > point[1]) !== (right[1] > point[1])
+            && point[0] < (right[0] - left[0]) * (point[1] - left[1])
+              / ((right[1] - left[1]) || 1e-12) + left[0]
+          ) inside = !inside
+        }
+        return inside
+      }
+      const cornerWithinTrack = (corner: [number, number], track: MotionPathWorkerTrack) => (
+        track.renderPoints.slice(1).some((end, index) => {
+          const start = track.renderPoints[index]
+          const dx = end[0] - start[0]
+          const dy = end[1] - start[1]
+          const length = Math.hypot(dx, dy)
+          if (length <= 1e-6) return false
+          const along = ((corner[0] - start[0]) * dx + (corner[1] - start[1]) * dy) / length
+          const lateral = Math.abs(
+            (corner[0] - start[0]) * -dy + (corner[1] - start[1]) * dx
+          ) / length
+          const endTolerance = vehicleHalfLengthMeters * horizontalScale + 0.15 * horizontalScale
+          return along >= (index === 0 ? -endTolerance : 0)
+            && along <= (index === track.renderPoints.length - 2 ? length + endTolerance : length)
+            && lateral / horizontalScale <= track.widthMeters / 2 + 0.15
+        })
+      )
+      return corners.every((corner) => (
+        (allowJunction && pointInPolygon(corner, junctionShape))
+        || pathTracks.some((track) => cornerWithinTrack(corner, track))
+      ))
+    },
+    workerGeometry: geometry,
+  }
+  return sampler
 }
 
 function joinPolylines(...polylines: Array<[number, number][]>): [number, number][] {
@@ -642,6 +786,32 @@ export function createIntersectionLanePoseResolver(
         || pathTracks.some((track) => cornerWithinTrack(corner, track))
       ))
     },
+  }
+  motionPathSampler.workerGeometry = {
+    originPlane: [originPlane[0], originPlane[1]],
+    horizontalScale,
+    junctionShape: (manifest.junctionShape ?? []).map((point) => [point[0], point[1]]),
+    motionPaths: [...motionPaths].map(([key, path]) => [
+      key,
+      {
+        lengthMeters: path.lengthMeters,
+        segments: path.segments.map((segment) => ({
+          renderPoints: segment.renderPoints.map((point) => [point[0], point[1]]),
+          sourceStationsMeters: segment.sourceStationsMeters
+            ? [...segment.sourceStationsMeters]
+            : undefined,
+          sourceStartMeters: segment.sourceStartMeters,
+          sourceLengthMeters: segment.sourceLengthMeters,
+        })),
+      },
+    ]),
+    tracksByMotionPathKey: [...tracksByMotionPathKey].map(([key, pathTracks]) => [
+      key,
+      pathTracks.map((track) => ({
+        renderPoints: track.renderPoints.map((point) => [point[0], point[1]]),
+        widthMeters: track.widthMeters,
+      })),
+    ]),
   }
   const resolver = ((
     laneId: string,

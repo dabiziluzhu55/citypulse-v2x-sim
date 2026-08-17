@@ -177,12 +177,12 @@ test('formats scenario ids, intersections, and period-relative windows for opera
   assert.equal(formatSimulationWindow('evening_peak', 300, 900), '17:35-17:50')
 })
 
-test('registers the frozen comparison contract before binding the websocket session', () => {
+test('binds the accepted presentation generation before registering comparison state', () => {
   const launchBlock = simulationStoreSource.slice(
     simulationStoreSource.indexOf('async function launchRun'),
     simulationStoreSource.indexOf('function clearStatusError'),
   )
-  assert.ok(launchBlock.indexOf('onSessionAccepted?.(result)') < launchBlock.indexOf('bindSession('))
+  assert.ok(launchBlock.indexOf('onSessionAccepted?.(result)') > launchBlock.indexOf('bindSession('))
   assert.match(homePageSource, /const frozenFocusIntersectionId = activeIntersectionId\.value/)
   assert.match(homePageSource, /beginComparisonRun\(result\.session_id, payload, controlledIntersectionIds\)/)
   assert.doesNotMatch(evaluationSource, /restored-session:/)

@@ -15,6 +15,8 @@ export type SimulationState =
   | 'COMPLETED'
   | 'FAILED'
 
+export type SimulationPresentationGeneration = number
+
 interface DisturbanceEventBase {
   event_id: string
   start_seconds: number

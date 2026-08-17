@@ -10,7 +10,7 @@ const BUFFER_INTERVAL_MULTIPLIER = 2
 const MAX_OUTPUT_STEP_SECONDS = 0.25
 const MAX_TIMING_SAMPLES = 30
 const ROBUST_RATE_SAMPLE_COUNT = 9
-const MAX_SOURCE_FRAMES = 40
+const MAX_SOURCE_FRAMES = 128
 const MAX_TRACKED_SOURCE_GAP_MS = 10_000
 const MIN_RATE_INTERVAL_MS = 100
 const MAX_PLAYBACK_RATE_RATIO = 1.05
@@ -18,6 +18,7 @@ const UNDERRUN_SLOWDOWN_WINDOW_SECONDS = 0.75
 const MAX_INTERPOLATED_SPEED_RATIO = 1.05
 const MAX_SYNTHETIC_ACCELERATION_MPS2 = 3
 const COMPILED_SEGMENT_VALIDATION_FPS = 45
+const MAX_WORKER_COMPILATIONS_IN_FLIGHT = 64
 
 export interface AuthoritativeVehicleFrame {
   sceneGeneration: number
@@ -25,10 +26,109 @@ export interface AuthoritativeVehicleFrame {
   elapsedSeconds: number
   arrivalTimeMs: number
   samples: VehicleTwinSample[]
+  sourceVehicleIds?: readonly string[]
+  viewportVehicleIds?: readonly string[]
+  selectedVehicleIds?: readonly string[]
+  /** @deprecated Use sourceVehicleIds. */
   presentVehicleIds?: readonly string[]
 }
 
 export type VehicleMotionSourceFrame = AuthoritativeVehicleFrame
+
+export type VehicleMotionWaitingReason =
+  | 'insufficient_frames'
+  | 'invalid_display_time'
+  | 'display_time_before_history'
+  | 'display_time_after_history'
+  | 'startup_buffering'
+  | 'compilation_pending'
+
+export interface VehicleMotionWaitingResult {
+  status: 'waiting'
+  reason: VehicleMotionWaitingReason
+  displayElapsedSeconds: number | null
+  sourceVehicleCount: number
+  viewportVehicleCount: number
+  selectedVehicleCount: number
+  authoritativeVehicleCount: number
+  unresolvedVehicleCount: number
+  samples: readonly []
+}
+
+export interface VehicleMotionReadyResult {
+  status: 'ready'
+  reason: null
+  displayElapsedSeconds: number
+  sourceVehicleCount: number
+  viewportVehicleCount: number
+  selectedVehicleCount: number
+  authoritativeVehicleCount: number
+  unresolvedVehicleCount: number
+  samples: VehicleTwinSample[]
+}
+
+export interface VehicleMotionAuthoritativeEmptyResult {
+  status: 'authoritative_empty'
+  reason: null
+  displayElapsedSeconds: number
+  sourceVehicleCount: 0
+  viewportVehicleCount: 0
+  selectedVehicleCount: 0
+  authoritativeVehicleCount: 0
+  unresolvedVehicleCount: 0
+  samples: VehicleTwinSample[]
+}
+
+export interface VehicleMotionViewportEmptyResult {
+  status: 'viewport_empty'
+  reason: null
+  displayElapsedSeconds: number
+  sourceVehicleCount: number
+  viewportVehicleCount: 0
+  selectedVehicleCount: 0
+  authoritativeVehicleCount: number
+  unresolvedVehicleCount: 0
+  samples: readonly []
+}
+
+export interface VehicleMotionSelectionEmptyResult {
+  status: 'selection_empty'
+  reason: null
+  displayElapsedSeconds: number
+  sourceVehicleCount: number
+  viewportVehicleCount: number
+  selectedVehicleCount: 0
+  authoritativeVehicleCount: number
+  unresolvedVehicleCount: number
+  samples: readonly []
+}
+
+export interface VehicleMotionUnresolvedResult {
+  status: 'unresolved'
+  reason: 'no_playable_segments'
+  displayElapsedSeconds: number
+  sourceVehicleCount: number
+  viewportVehicleCount: number
+  selectedVehicleCount: number
+  authoritativeVehicleCount: number
+  unresolvedVehicleCount: number
+  rejectionReasons: string[]
+  samples: readonly []
+}
+
+export type VehicleMotionSampleResult =
+  | VehicleMotionWaitingResult
+  | VehicleMotionReadyResult
+  | VehicleMotionAuthoritativeEmptyResult
+  | VehicleMotionViewportEmptyResult
+  | VehicleMotionSelectionEmptyResult
+  | VehicleMotionUnresolvedResult
+
+export interface VehicleCompilationReadyEvent {
+  generation: number
+  completedCount: number
+  pendingCount: number
+}
 
 export interface CompiledMotionSegment {
   key: string
@@ -44,6 +144,7 @@ export interface CompiledMotionSegment {
   consecutiveValidCount?: number
 }
 export type CompiledVehicleSegment = CompiledMotionSegment
+export type CompiledSourceMotionSegment = CompiledMotionSegment
 
 export type VehicleSegmentState = 'ready' | 'isolated' | 'recovering'
 
@@ -105,6 +206,13 @@ export interface VehicleMotionBufferStats {
   recoveredVehicleCount: number
   ghostVehicleIds: string[]
   hiddenUnresolvedVehicleIds: string[]
+  pendingCompilationCount: number
+  compilationDurationP95Ms: number
+  workerCompilationQueueDepth: number
+  staleWorkerResultCount: number
+  workerCompilationActive: boolean
+  firstSourceElapsedSeconds: number | null
+  latestSourceElapsedSeconds: number | null
 }
 
 export interface TimedVehicleSample {
@@ -120,6 +228,24 @@ function percentile(values: number[], ratio: number): number {
   if (values.length === 0) return 0
   const sorted = [...values].sort((left, right) => left - right)
   return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio))]
+}
+
+interface PendingSegmentCompilation {
+  generation: number
+  key: string
+  timeline: CompiledVehicleTimeline
+  previous: TimedVehicleSample
+  right: TimedVehicleSample
+}
+
+interface WorkerCompilationResponse {
+  type: 'compiled'
+  generation: number
+  results: Array<{
+    requestId: number
+    segment: CompiledMotionSegment
+    durationMs: number
+  }>
 }
 
 function shortestAngleDelta(from: number, to: number): number {
@@ -633,9 +759,27 @@ export class VehicleMotionBuffer {
   private sceneGeneration: number | null = null
   private motionPathSampler: MotionPathSampler | null = null
   private lastLegalOutputByVehicleId = new Map<string, VehicleTwinSample>()
+  private pendingCompilations: PendingSegmentCompilation[] = []
+  private compilationDurationsMs: number[] = []
+  private compilationScheduleId: number | null = null
+  private compilationGeneration = 0
+  private compilationWorker: Worker | null = null
+  private compilationWorkerUnavailable = false
+  private workerRequestSequence = 0
+  private workerCompilations = new Map<number, PendingSegmentCompilation>()
+  private staleWorkerResultCount = 0
+  private compilationReadyListener: ((event: VehicleCompilationReadyEvent) => void) | null = null
 
   setMotionPathSampler(value: MotionPathSampler | null): void {
     this.motionPathSampler = value
+    this.compilationWorkerUnavailable = false
+    this.restartCompilationWorker(true)
+  }
+
+  setCompilationReadyListener(
+    listener: ((event: VehicleCompilationReadyEvent) => void) | null,
+  ): void {
+    this.compilationReadyListener = listener
   }
 
   push(frame: VehicleMotionSourceFrame): boolean {
@@ -657,8 +801,24 @@ export class VehicleMotionBuffer {
     ).values()]
     const normalizedFrame = {
       ...frame,
+      sourceVehicleIds: [...new Set(
+        frame.sourceVehicleIds
+          ?? frame.presentVehicleIds
+          ?? deduplicatedSamples.map((sample) => sample.id),
+      )],
+      viewportVehicleIds: [...new Set(
+        frame.viewportVehicleIds
+          ?? frame.sourceVehicleIds
+          ?? frame.presentVehicleIds
+          ?? deduplicatedSamples.map((sample) => sample.id),
+      )],
+      selectedVehicleIds: [...new Set(
+        frame.selectedVehicleIds ?? deduplicatedSamples.map((sample) => sample.id),
+      )],
       presentVehicleIds: [...new Set(
-        frame.presentVehicleIds ?? deduplicatedSamples.map((sample) => sample.id),
+        frame.sourceVehicleIds
+          ?? frame.presentVehicleIds
+          ?? deduplicatedSamples.map((sample) => sample.id),
       )],
       samples: deduplicatedSamples.map((sample) => ({
         ...sample,
@@ -701,7 +861,30 @@ export class VehicleMotionBuffer {
     wallTimeMs: number,
     requestedDisplayElapsedSeconds: number | null = null,
   ): VehicleTwinSample[] | null {
-    if (this.frames.length < 2 || !Number.isFinite(wallTimeMs)) return null
+    const result = this.sampleResult(wallTimeMs, requestedDisplayElapsedSeconds)
+    return result.status === 'ready' || result.status === 'authoritative_empty'
+      ? result.samples
+      : null
+  }
+
+  sampleResult(
+    wallTimeMs: number,
+    requestedDisplayElapsedSeconds: number | null = null,
+  ): VehicleMotionSampleResult {
+    if (this.frames.length === 0 || !Number.isFinite(wallTimeMs)) {
+      return this.waitingResult('insufficient_frames', requestedDisplayElapsedSeconds)
+    }
+    if (this.frames.length === 1) {
+      const onlyFrame = this.frames[0]
+      if (
+        requestedDisplayElapsedSeconds == null
+        || !Number.isFinite(requestedDisplayElapsedSeconds)
+        || Math.abs(requestedDisplayElapsedSeconds - onlyFrame.elapsedSeconds) > 1e-6
+      ) return this.waitingResult('insufficient_frames', requestedDisplayElapsedSeconds)
+      this.renderElapsedSeconds = requestedDisplayElapsedSeconds
+      this.lastOutputWallTimeMs = wallTimeMs
+      return this.readyResult(requestedDisplayElapsedSeconds)
+    }
     const first = this.frames[0]
     const latest = this.frames.at(-1)!
     const readyElapsedSeconds = Math.min(
@@ -709,11 +892,15 @@ export class VehicleMotionBuffer {
       this.compiledReadyElapsedSeconds ?? this.frames[0].elapsedSeconds,
     )
     if (requestedDisplayElapsedSeconds != null) {
-      if (
-        !Number.isFinite(requestedDisplayElapsedSeconds)
-        || requestedDisplayElapsedSeconds < first.elapsedSeconds - 1e-6
-        || requestedDisplayElapsedSeconds > latest.elapsedSeconds + 1e-6
-      ) return null
+      if (!Number.isFinite(requestedDisplayElapsedSeconds)) {
+        return this.waitingResult('invalid_display_time', null)
+      }
+      if (requestedDisplayElapsedSeconds < first.elapsedSeconds - 1e-6) {
+        return this.waitingResult('display_time_before_history', requestedDisplayElapsedSeconds)
+      }
+      if (requestedDisplayElapsedSeconds > latest.elapsedSeconds + 1e-6) {
+        return this.waitingResult('display_time_after_history', requestedDisplayElapsedSeconds)
+      }
       this.renderElapsedSeconds = Math.max(
         this.renderElapsedSeconds ?? requestedDisplayElapsedSeconds,
         requestedDisplayElapsedSeconds,
@@ -721,7 +908,7 @@ export class VehicleMotionBuffer {
       this.lastOutputWallTimeMs = wallTimeMs
       this.globalBufferDepthSeconds = Math.max(0, latest.elapsedSeconds - this.renderElapsedSeconds)
       this.expectedPlaybackRate = 1
-      const result = this.interpolateAt(this.renderElapsedSeconds)
+      const result = this.readyResult(this.renderElapsedSeconds)
       this.pruneConsumedFrames()
       return result
     }
@@ -732,7 +919,7 @@ export class VehicleMotionBuffer {
         latest.elapsedSeconds - first.elapsedSeconds + 1e-9 < startupBufferSeconds
         || readyElapsedSeconds <= first.elapsedSeconds + 1e-9
       )
-    ) return null
+    ) return this.waitingResult('startup_buffering', this.renderElapsedSeconds)
 
     if (this.renderElapsedSeconds == null) {
       this.renderElapsedSeconds = Math.max(
@@ -768,9 +955,108 @@ export class VehicleMotionBuffer {
       this.underrunActive = nextUnderrunActive
     }
 
-    const result = this.interpolateAt(this.renderElapsedSeconds)
+    const result = this.readyResult(this.renderElapsedSeconds)
     this.pruneConsumedFrames()
     return result
+  }
+
+  private waitingResult(
+    reason: VehicleMotionWaitingReason,
+    displayElapsedSeconds: number | null,
+  ): VehicleMotionWaitingResult {
+    const rosters = Number.isFinite(displayElapsedSeconds)
+      ? this.vehicleRostersAt(Number(displayElapsedSeconds))
+      : { source: new Set<string>(), viewport: new Set<string>(), selected: new Set<string>() }
+    const authoritativeVehicleCount = rosters.source.size
+    return {
+      status: 'waiting',
+      reason,
+      displayElapsedSeconds: Number.isFinite(displayElapsedSeconds)
+        ? Number(displayElapsedSeconds)
+        : null,
+      sourceVehicleCount: rosters.source.size,
+      viewportVehicleCount: rosters.viewport.size,
+      selectedVehicleCount: rosters.selected.size,
+      authoritativeVehicleCount,
+      unresolvedVehicleCount: rosters.selected.size,
+      samples: [],
+    }
+  }
+
+  private readyResult(displayElapsedSeconds: number): VehicleMotionSampleResult {
+    const rosters = this.vehicleRostersAt(displayElapsedSeconds)
+    const authoritativeVehicleCount = rosters.source.size
+    if (rosters.source.size === 0) {
+      this.interpolateAt(displayElapsedSeconds)
+      return {
+        status: 'authoritative_empty',
+        reason: null,
+        displayElapsedSeconds,
+        sourceVehicleCount: 0,
+        viewportVehicleCount: 0,
+        selectedVehicleCount: 0,
+        authoritativeVehicleCount: 0,
+        unresolvedVehicleCount: 0,
+        samples: [],
+      }
+    }
+    if (rosters.viewport.size === 0) {
+      return {
+        status: 'viewport_empty',
+        reason: null,
+        displayElapsedSeconds,
+        sourceVehicleCount: rosters.source.size,
+        viewportVehicleCount: 0,
+        selectedVehicleCount: 0,
+        authoritativeVehicleCount,
+        unresolvedVehicleCount: 0,
+        samples: [],
+      }
+    }
+    if (rosters.selected.size === 0) {
+      return {
+        status: 'selection_empty',
+        reason: null,
+        displayElapsedSeconds,
+        sourceVehicleCount: rosters.source.size,
+        viewportVehicleCount: rosters.viewport.size,
+        selectedVehicleCount: 0,
+        authoritativeVehicleCount,
+        unresolvedVehicleCount: 0,
+        samples: [],
+      }
+    }
+    const samples = this.interpolateAt(displayElapsedSeconds)
+    const unresolvedVehicleCount = Math.max(0, rosters.selected.size - samples.length)
+    if (
+      samples.length === 0
+      && this.pendingCompilations.length + this.workerCompilations.size > 0
+    ) return this.waitingResult('compilation_pending', displayElapsedSeconds)
+    if (samples.length === 0) {
+      return {
+        status: 'unresolved',
+        reason: 'no_playable_segments',
+        displayElapsedSeconds,
+        sourceVehicleCount: rosters.source.size,
+        viewportVehicleCount: rosters.viewport.size,
+        selectedVehicleCount: rosters.selected.size,
+        authoritativeVehicleCount,
+        unresolvedVehicleCount,
+        rejectionReasons: this.rejectionReasonsAt(displayElapsedSeconds),
+        samples: [],
+      }
+    }
+    return {
+      status: 'ready',
+      reason: null,
+      displayElapsedSeconds,
+      sourceVehicleCount: rosters.source.size,
+      viewportVehicleCount: rosters.viewport.size,
+      selectedVehicleCount: rosters.selected.size,
+      authoritativeVehicleCount,
+      unresolvedVehicleCount,
+      samples,
+    }
   }
 
   pause(): void {
@@ -778,6 +1064,17 @@ export class VehicleMotionBuffer {
   }
 
   reset(): void {
+    this.compilationGeneration += 1
+    if (this.compilationScheduleId != null && typeof window !== 'undefined') {
+      window.cancelIdleCallback?.(this.compilationScheduleId)
+      window.clearTimeout(this.compilationScheduleId)
+    }
+    this.compilationScheduleId = null
+    this.pendingCompilations = []
+    this.workerCompilations.clear()
+    this.workerRequestSequence = 0
+    this.staleWorkerResultCount = 0
+    this.compilationDurationsMs = []
     this.frames = []
     this.arrivalIntervalsMs = []
     this.measuredRates = []
@@ -816,6 +1113,21 @@ export class VehicleMotionBuffer {
     this.timelines.clear()
     this.sceneGeneration = null
     this.lastLegalOutputByVehicleId.clear()
+    this.restartCompilationWorker()
+  }
+
+  destroy(): void {
+    this.compilationGeneration += 1
+    if (this.compilationScheduleId != null && typeof window !== 'undefined') {
+      window.cancelIdleCallback?.(this.compilationScheduleId)
+      window.clearTimeout(this.compilationScheduleId)
+    }
+    this.compilationScheduleId = null
+    this.pendingCompilations = []
+    this.workerCompilations.clear()
+    this.compilationWorker?.terminate()
+    this.compilationWorker = null
+    this.compilationReadyListener = null
   }
 
   stats(): VehicleMotionBufferStats {
@@ -859,14 +1171,21 @@ export class VehicleMotionBuffer {
       recoveredVehicleCount: this.recoveredVehicleCount,
       ghostVehicleIds: [...this.ghostVehicleIds],
       hiddenUnresolvedVehicleIds: [...this.hiddenUnresolvedVehicleIds],
+      pendingCompilationCount: this.pendingCompilations.length + this.workerCompilations.size,
+      compilationDurationP95Ms: percentile(this.compilationDurationsMs, 0.95),
+      workerCompilationQueueDepth: this.workerCompilations.size,
+      staleWorkerResultCount: this.staleWorkerResultCount,
+      workerCompilationActive: this.compilationWorker !== null,
+      firstSourceElapsedSeconds: this.frames[0]?.elapsedSeconds ?? null,
+      latestSourceElapsedSeconds: this.frames.at(-1)?.elapsedSeconds ?? null,
     }
   }
 
   private updateCompiledTimelines(current: VehicleMotionSourceFrame): void {
     const samplesById = new Map(current.samples.map((sample) => [sample.id, sample] as const))
-    const presentVehicleIds = current.presentVehicleIds
+    const selectedVehicleIds = current.selectedVehicleIds
       ?? current.samples.map((sample) => sample.id)
-    for (const vehicleId of presentVehicleIds) {
+    for (const vehicleId of selectedVehicleIds) {
       if (samplesById.has(vehicleId)) continue
       const timeline = this.timelines.get(vehicleId) ?? this.createTimeline(vehicleId)
       timeline.recoveryPending = true
@@ -887,51 +1206,246 @@ export class VehicleMotionBuffer {
         continue
       }
       const key = compiledMotionSegmentKey(previous, right)
-      let segment = this.compiledSegments.get(key)
-      if (!segment) {
-        segment = compileMotionSegment(previous, right, this.motionPathSampler)
-        this.compiledSegments.set(key, segment)
-        this.compiledSegmentCount += 1
-        if (!segment.valid) {
-          this.rejectedCompiledSegmentCount += 1
-          if (segment.rejectionReason === 'incompatible_motion_path') {
-            this.incompatiblePathInterpolationBlockedCount += 1
-          }
-          if (segment.rejectionReason?.includes('lane_change')) {
-            this.laneChangeCorridorViolationCount += 1
-          }
-          if (
-            segment.rejectionReason?.includes('off_road')
-            || segment.rejectionReason?.includes('corridor_violation')
-          ) this.intermediateOffRoadFrameCount += 1
-          if (segment.rejectionReason?.startsWith('endpoint:')) {
-            this.endpointValidationFailureCount += 1
-          }
-        }
-        if (segment.valid && segment.routeSource === 'buffered_lookahead') {
-          this.bufferedLookaheadSegmentCount += 1
-        }
-      }
-      if (segment.valid) {
-        timeline.consecutiveValidSegmentCount += 1
-        const recoveryRequired = timeline.recoveryPending
-        const playable = !recoveryRequired || timeline.consecutiveValidSegmentCount >= 2
-        segment.recoveryRequired = recoveryRequired
-        segment.playable = playable
-        segment.consecutiveValidCount = timeline.consecutiveValidSegmentCount
-        if (playable) timeline.recoveryPending = false
-      } else {
-        timeline.recoveryPending = true
-        timeline.consecutiveValidSegmentCount = 0
-      }
+      this.pendingCompilations.push({
+        generation: this.compilationGeneration,
+        key,
+        timeline,
+        previous,
+        right,
+      })
       // Every authoritative endpoint is retained. Segment validity controls
       // playback, never whether the next interval can be compiled.
       timeline.authoritativeSamples.push(right)
       timeline.lastMappedSequence = current.sequence
     }
+    this.schedulePendingCompilations()
     // Global playback readiness follows source depth only. An invalid vehicle
     // segment is isolated on its own timeline and must not pause the scene.
     this.compiledReadyElapsedSeconds = current.elapsedSeconds
+  }
+
+  private schedulePendingCompilations(): void {
+    if (this.pendingCompilations.length === 0 || this.compilationScheduleId != null) return
+    if (this.compilationWorker) {
+      this.dispatchWorkerCompilations()
+      return
+    }
+    if (typeof window === 'undefined') {
+      while (this.pendingCompilations.length > 0) this.processPendingCompilation()
+      return
+    }
+    const generation = this.compilationGeneration
+    const run = (deadline?: IdleDeadline) => {
+      this.compilationScheduleId = null
+      if (generation !== this.compilationGeneration) return
+      let processed = 0
+      while (
+        this.pendingCompilations.length > 0
+        && (processed < 16 || !deadline || deadline.timeRemaining() > 2)
+        && processed < 32
+      ) {
+        this.processPendingCompilation()
+        processed += 1
+      }
+      if (this.pendingCompilations.length > 0) this.schedulePendingCompilations()
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      this.compilationScheduleId = window.requestIdleCallback(run, { timeout: 100 })
+    } else {
+      this.compilationScheduleId = window.setTimeout(() => run(), 0)
+    }
+  }
+
+  private processPendingCompilation(): void {
+    const job = this.pendingCompilations.shift()
+    if (!job || job.generation !== this.compilationGeneration) return
+    const startedAt = performance.now()
+    let segment = this.compiledSegments.get(job.key)
+    const isNew = !segment
+    if (!segment) {
+      segment = compileMotionSegment(job.previous, job.right, this.motionPathSampler)
+    }
+    this.finishCompilation(job, segment, performance.now() - startedAt, isNew)
+    this.emitCompilationReady(1)
+  }
+
+  private finishCompilation(
+    job: PendingSegmentCompilation,
+    segment: CompiledMotionSegment,
+    durationMs: number,
+    isNew: boolean,
+  ): void {
+    if (job.generation !== this.compilationGeneration) {
+      this.staleWorkerResultCount += 1
+      return
+    }
+    if (isNew) {
+      this.compiledSegments.set(job.key, segment)
+      this.compiledSegmentCount += 1
+      if (!segment.valid) {
+        this.rejectedCompiledSegmentCount += 1
+        if (segment.rejectionReason === 'incompatible_motion_path') {
+          this.incompatiblePathInterpolationBlockedCount += 1
+        }
+        if (segment.rejectionReason?.includes('lane_change')) {
+          this.laneChangeCorridorViolationCount += 1
+        }
+        if (
+          segment.rejectionReason?.includes('off_road')
+          || segment.rejectionReason?.includes('corridor_violation')
+        ) this.intermediateOffRoadFrameCount += 1
+        if (segment.rejectionReason?.startsWith('endpoint:')) {
+          this.endpointValidationFailureCount += 1
+        }
+      }
+      if (segment.valid && segment.routeSource === 'buffered_lookahead') {
+        this.bufferedLookaheadSegmentCount += 1
+      }
+    }
+    if (segment.valid) {
+      job.timeline.consecutiveValidSegmentCount += 1
+      const recoveryRequired = job.timeline.recoveryPending
+      const playable = !recoveryRequired || job.timeline.consecutiveValidSegmentCount >= 2
+      segment.recoveryRequired = recoveryRequired
+      segment.playable = playable
+      segment.consecutiveValidCount = job.timeline.consecutiveValidSegmentCount
+      if (playable) job.timeline.recoveryPending = false
+    } else {
+      job.timeline.recoveryPending = true
+      job.timeline.consecutiveValidSegmentCount = 0
+    }
+    this.compilationDurationsMs.push(durationMs)
+    this.compilationDurationsMs = this.compilationDurationsMs.slice(-120)
+  }
+
+  private restartCompilationWorker(requeueInFlight = false): void {
+    if (requeueInFlight && this.workerCompilations.size > 0) {
+      const retryJobs = [...this.workerCompilations.values()]
+        .filter((job) => job.generation === this.compilationGeneration)
+      this.pendingCompilations.unshift(...retryJobs)
+    }
+    if (this.compilationScheduleId != null && typeof window !== 'undefined') {
+      window.cancelIdleCallback?.(this.compilationScheduleId)
+      window.clearTimeout(this.compilationScheduleId)
+      this.compilationScheduleId = null
+    }
+    this.compilationWorker?.terminate()
+    this.compilationWorker = null
+    this.workerCompilations.clear()
+    const geometry = this.motionPathSampler?.workerGeometry
+    if (
+      !geometry
+      || this.compilationWorkerUnavailable
+      || typeof window === 'undefined'
+      || typeof Worker === 'undefined'
+    ) {
+      this.schedulePendingCompilations()
+      return
+    }
+    try {
+      const worker = new Worker(
+        new URL('../workers/vehicleMotionCompiler.worker.ts', import.meta.url),
+        { type: 'module' },
+      )
+      worker.onmessage = (event: MessageEvent<WorkerCompilationResponse>) => {
+        const response = event.data
+        if (response.type !== 'compiled') return
+        if (response.generation !== this.compilationGeneration) {
+          this.staleWorkerResultCount += response.results.length
+          return
+        }
+        for (const result of response.results) {
+          const job = this.workerCompilations.get(result.requestId)
+          if (!job) {
+            this.staleWorkerResultCount += 1
+            continue
+          }
+          this.workerCompilations.delete(result.requestId)
+          this.finishCompilation(job, result.segment, result.durationMs, true)
+        }
+        this.emitCompilationReady(response.results.length)
+        this.schedulePendingCompilations()
+      }
+      worker.onerror = () => {
+        const retryJobs = [...this.workerCompilations.values()]
+          .filter((job) => job.generation === this.compilationGeneration)
+        this.workerCompilations.clear()
+        this.pendingCompilations.unshift(...retryJobs)
+        worker.terminate()
+        if (this.compilationWorker === worker) this.compilationWorker = null
+        this.compilationWorkerUnavailable = true
+        this.schedulePendingCompilations()
+      }
+      this.compilationWorker = worker
+      worker.postMessage({
+        type: 'configure',
+        generation: this.compilationGeneration,
+        geometry,
+      })
+    } catch {
+      this.compilationWorker = null
+      this.compilationWorkerUnavailable = true
+    }
+    this.schedulePendingCompilations()
+  }
+
+  private dispatchWorkerCompilations(): void {
+    const worker = this.compilationWorker
+    if (!worker) return
+    const available = Math.max(
+      0,
+      MAX_WORKER_COMPILATIONS_IN_FLIGHT - this.workerCompilations.size,
+    )
+    if (available === 0) return
+    const requests: Array<{
+      requestId: number
+      left: TimedVehicleSample
+      right: TimedVehicleSample
+    }> = []
+    while (requests.length < available && this.pendingCompilations.length > 0) {
+      const job = this.pendingCompilations.shift()
+      if (!job || job.generation !== this.compilationGeneration) continue
+      const cached = this.compiledSegments.get(job.key)
+      if (cached) {
+        this.finishCompilation(job, cached, 0, false)
+        continue
+      }
+      const requestId = ++this.workerRequestSequence
+      this.workerCompilations.set(requestId, job)
+      requests.push({
+        requestId,
+        left: this.workerTimedSample(job.previous),
+        right: this.workerTimedSample(job.right),
+      })
+    }
+    if (requests.length === 0) return
+    worker.postMessage({
+      type: 'compile',
+      generation: this.compilationGeneration,
+      jobs: requests,
+    })
+  }
+
+  private emitCompilationReady(completedCount: number): void {
+    if (completedCount <= 0) return
+    this.compilationReadyListener?.({
+      generation: this.compilationGeneration,
+      completedCount,
+      pendingCount: this.pendingCompilations.length + this.workerCompilations.size,
+    })
+  }
+
+  private workerTimedSample(timed: TimedVehicleSample): TimedVehicleSample {
+    return {
+      frame: {
+        sceneGeneration: timed.frame.sceneGeneration,
+        sequence: timed.frame.sequence,
+        elapsedSeconds: timed.frame.elapsedSeconds,
+        arrivalTimeMs: timed.frame.arrivalTimeMs,
+        samples: [],
+      },
+      sample: timed.sample,
+    }
   }
 
   private createTimeline(vehicleId: string): CompiledVehicleTimeline {
@@ -1000,10 +1514,11 @@ export class VehicleMotionBuffer {
       if (timeline.state !== 'ready') isolatedVehicleCount += 1
     }
     this.isolatedVehicleCount = isolatedVehicleCount
-    const authoritativeIds = this.vehicleRosterAt(elapsedSeconds)
+    const rosters = this.vehicleRostersAt(elapsedSeconds)
+    const authoritativeIds = rosters.source
     const outputIds = new Set(samples.map((sample) => sample.id))
     this.ghostVehicleIds = [...outputIds].filter((id) => !authoritativeIds.has(id))
-    this.hiddenUnresolvedVehicleIds = [...authoritativeIds].filter((id) => !outputIds.has(id))
+    this.hiddenUnresolvedVehicleIds = [...rosters.selected].filter((id) => !outputIds.has(id))
     return samples
   }
 
@@ -1023,13 +1538,24 @@ export class VehicleMotionBuffer {
 
     const regular = this.resolveAuthoritativeTimelineAt(timeline, elapsedSeconds)
     if (regular) {
+      const stabilized = this.stabilizeResolvedSample(
+        timeline,
+        regular,
+        displayDeltaSeconds,
+      )
+      if (!stabilized) {
+        timeline.state = 'isolated'
+        timeline.isolatedSinceElapsedSeconds ??= elapsedSeconds
+        timeline.lastRecoveryReason = 'non_continuous_display_candidate'
+        return null
+      }
       if (timeline.state !== 'ready') this.recoveredVehicleCount += 1
       timeline.state = 'ready'
       timeline.isolatedSinceElapsedSeconds = null
       timeline.isolationAnchor = null
       timeline.lastRecoveryReason = undefined
       timeline.playbackElapsedSeconds = elapsedSeconds
-      return this.stabilizeResolvedSample(timeline, regular, elapsedSeconds, displayDeltaSeconds)
+      return stabilized
     }
 
     if (timeline.state !== 'isolated') {
@@ -1047,10 +1573,14 @@ export class VehicleMotionBuffer {
   }
 
   private vehicleIsPresentAt(vehicleId: string, elapsedSeconds: number): boolean {
-    return this.vehicleRosterAt(elapsedSeconds).has(vehicleId)
+    return this.vehicleRostersAt(elapsedSeconds).source.has(vehicleId)
   }
 
-  private vehicleRosterAt(elapsedSeconds: number): Set<string> {
+  private vehicleRostersAt(elapsedSeconds: number): {
+    source: Set<string>
+    viewport: Set<string>
+    selected: Set<string>
+  } {
     let low = 0
     let high = this.frames.length
     while (low < high) {
@@ -1059,8 +1589,20 @@ export class VehicleMotionBuffer {
       else high = middle
     }
     const frame = low > 0 ? this.frames[low - 1] : null
-    if (!frame) return new Set()
-    return new Set(frame.presentVehicleIds ?? frame.samples.map((sample) => sample.id))
+    if (!frame) {
+      return { source: new Set(), viewport: new Set(), selected: new Set() }
+    }
+    const fallback = frame.samples.map((sample) => sample.id)
+    return {
+      source: new Set(frame.sourceVehicleIds ?? frame.presentVehicleIds ?? fallback),
+      viewport: new Set(
+        frame.viewportVehicleIds
+          ?? frame.sourceVehicleIds
+          ?? frame.presentVehicleIds
+          ?? fallback,
+      ),
+      selected: new Set(frame.selectedVehicleIds ?? fallback),
+    }
   }
 
   private resolveAuthoritativeTimelineAt(
@@ -1078,6 +1620,15 @@ export class VehicleMotionBuffer {
     }
     const left = low > 0 ? authoritative[low - 1] : null
     const right = low < authoritative.length ? authoritative[low] : null
+    // A validated authoritative endpoint is directly playable. Requiring its
+    // adjacent interval to finish compiling makes paused/latest frames wait
+    // forever for a future snapshot that cannot arrive.
+    if (left && Math.abs(left.frame.elapsedSeconds - elapsedSeconds) <= 1e-6) {
+      return this.cloneSample(left.sample, 'authoritative', elapsedSeconds)
+    }
+    if (right && Math.abs(right.frame.elapsedSeconds - elapsedSeconds) <= 1e-6) {
+      return this.cloneSample(right.sample, 'authoritative', elapsedSeconds)
+    }
     if (left && right && left !== right) {
       const duration = right.frame.elapsedSeconds - left.frame.elapsedSeconds
       const ratio = duration > 1e-9
@@ -1118,18 +1669,43 @@ export class VehicleMotionBuffer {
         displayElapsedSeconds: elapsedSeconds,
       }
     }
-    if (left && Math.abs(left.frame.elapsedSeconds - elapsedSeconds) <= 1e-6) {
-      return this.cloneSample(left.sample, 'authoritative', elapsedSeconds)
-    }
     return null
+  }
+
+  private rejectionReasonsAt(elapsedSeconds: number): string[] {
+    const reasons = new Set<string>()
+    for (const vehicleId of this.vehicleRostersAt(elapsedSeconds).selected) {
+      const timeline = this.timelines.get(vehicleId)
+      if (!timeline) {
+        reasons.add('pose_unmapped')
+        continue
+      }
+      const authoritative = timeline.authoritativeSamples
+      if (authoritative.length === 0) {
+        reasons.add('pose_unmapped')
+        continue
+      }
+      let rightIndex = authoritative.findIndex((sample) => (
+        sample.frame.elapsedSeconds > elapsedSeconds
+      ))
+      if (rightIndex < 0) rightIndex = authoritative.length
+      const left = rightIndex > 0 ? authoritative[rightIndex - 1] : null
+      const right = rightIndex < authoritative.length ? authoritative[rightIndex] : null
+      if (!left || !right) {
+        reasons.add('authoritative_interval_unavailable')
+        continue
+      }
+      const segment = this.compiledSegments.get(compiledMotionSegmentKey(left, right))
+      reasons.add(segment?.rejectionReason ?? 'compiled_segment_unavailable')
+    }
+    return [...reasons].slice(0, 20)
   }
 
   private stabilizeResolvedSample(
     timeline: CompiledVehicleTimeline,
     candidate: VehicleTwinSample,
-    elapsedSeconds: number,
     displayDeltaSeconds: number,
-  ): VehicleTwinSample {
+  ): VehicleTwinSample | null {
     const previous = this.lastLegalOutputByVehicleId.get(timeline.vehicleId)
     if (!previous || displayDeltaSeconds <= 1e-9) return candidate
     const previousArc = Number(previous.pathArcDistanceMeters)
@@ -1142,7 +1718,7 @@ export class VehicleMotionBuffer {
     ) {
       if (candidateArc + 0.02 < previousArc) {
         timeline.state = 'recovering'
-        return this.cloneSample(previous, 'held', elapsedSeconds)
+        return null
       }
       const speedLimit = Math.max(
         Number(previous.sourceSpeedMetersPerSecond) || 0,
@@ -1155,21 +1731,9 @@ export class VehicleMotionBuffer {
         speedLimit * displayDeltaSeconds
           + 0.5 * MAX_SYNTHETIC_ACCELERATION_MPS2 * displayDeltaSeconds * displayDeltaSeconds,
       )
-      if (candidateArc - previousArc > maximumStep && this.motionPathSampler) {
-        const limitedArc = previousArc + maximumStep
-        const pathSample = this.motionPathSampler.sample(candidate.motionPathKey, limitedArc)
-        if (pathSample) {
-          timeline.state = 'recovering'
-          return {
-            ...candidate,
-            point: [pathSample.longitude, pathSample.latitude, candidate.point[2]],
-            dir: pathSample.heading - (Number(candidate.modelForwardAxisAngle) || 0),
-            vehicleHeading: pathSample.heading,
-            pathArcDistanceMeters: limitedArc,
-            sampleQuality: 'held',
-            displayElapsedSeconds: elapsedSeconds,
-          }
-        }
+      if (candidateArc - previousArc > maximumStep) {
+        timeline.state = 'recovering'
+        return null
       }
     }
     return candidate

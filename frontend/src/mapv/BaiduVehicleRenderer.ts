@@ -39,7 +39,11 @@ import {
   isVehicleAnimationActive,
   VehiclePresentationClock,
 } from './vehiclePresentationClock'
-import { VehicleMotionBuffer } from './vehicleMotionBuffer'
+import {
+  VehicleMotionBuffer,
+  type VehicleMotionSampleResult,
+  type VehicleMotionWaitingReason,
+} from './vehicleMotionBuffer'
 import {
   classifyRoadTransition,
   resolveCrossedStopLine,
@@ -58,13 +62,16 @@ import {
   type VehicleConnectionLock,
   type VehicleRouteTurnResolutionStatus,
 } from './vehicleRouteTurnIndex.ts'
+import type { PreparedViewportVehicleStage } from './vehicleViewportPipeline.ts'
+import {
+  VEHICLE_TWIN_RENDER_DELAY_MS,
+  VehicleTwinPresenter,
+} from './vehicleTwinPresenter.ts'
 
-const TWIN_INTERPOLATION_DELAY_MS = 250
-const TWIN_INITIAL_SAMPLE_SPACING_MS = 50
 const VEHICLE_HISTORY_TTL_SNAPSHOTS = 30
 const LANE_RECOVERY_HOLD_SECONDS = 1.5
-const VIEWPORT_SNAPSHOT_HISTORY_SECONDS = 9
-const MAX_VIEWPORT_STAGING_SNAPSHOTS = 32
+const VIEWPORT_SNAPSHOT_HISTORY_SECONDS = 30
+const MAX_VIEWPORT_STAGING_SNAPSHOTS = 128
 export const NORMAL_TWIN_OUTPUT_FPS = 30
 export const STABLE_TWIN_OUTPUT_FPS = 24
 const NORMAL_OUTPUT_FRAME_MS = 1_000 / NORMAL_TWIN_OUTPUT_FPS
@@ -84,6 +91,18 @@ export interface VehicleRenderContext {
   laneRuntimeById?: Record<string, SimulationLaneRuntime>
   trafficPeriod?: string
   intersectionId?: string
+  playbackSpeed?: number
+}
+
+export type VehicleSelectionScope =
+  | { kind: 'overview' }
+  | { kind: 'intersection'; intersectionId: string }
+
+export interface VehicleRosterSnapshot {
+  sourceVehicleIds: string[]
+  viewportVehicleIds: string[]
+  selectedVehicleIds: string[]
+  playableVehicleIds: string[]
 }
 
 export interface VehicleRenderStats {
@@ -153,12 +172,33 @@ export interface VehicleRenderStats {
   recoveredVehicleCount: number
   ghostVehicleIds: string[]
   hiddenUnresolvedVehicleIds: string[]
+  pendingCompilationCount: number
+  compilationDurationP95Ms: number
   viewportPrecompileMilliseconds: number
   viewportTwinBlankFrameCount: number
   viewportFirstFrameVehicleCount: number
   surfaceExclusionVehicleFilterCount: number
   vehiclePoseDiagnostics: VehiclePoseDiagnostic[]
   displayElapsedSeconds: number | null
+  motionSampleStatus: VehicleMotionSampleResult['status']
+  motionWaitingReason: VehicleMotionWaitingReason | null
+  authoritativeVehicleCount: number
+  sourceVehicleCount: number
+  viewportVehicleCount: number
+  selectedVehicleCount: number
+  playableVehicleCount: number
+  twinOutputVehicleCount: number
+  twinActualVisibleVehicleCount: number
+  twinActualVisibleVehicleIds: string[]
+  twinVisibleDisplayElapsedSeconds: number | null
+  twinSubmittedWindowDepthMs: number
+  twinWindowExhaustionCount: number
+  waitingTwinResetInterceptCount: number
+  workerCompilationQueueDepth: number
+  legalCompiledSegmentCount: number
+  twinResetReason: string | null
+  firstSourceElapsedSeconds: number | null
+  latestSourceElapsedSeconds: number | null
 }
 
 interface BufferedViewportVehicleSnapshot {
@@ -166,18 +206,9 @@ interface BufferedViewportVehicleSnapshot {
   context: VehicleRenderContext
 }
 
-export interface ViewportVehicleStagingBuffer {
-  intersectionId: string
-  snapshots: BufferedViewportVehicleSnapshot[]
-  headingResolver: LaneHeadingResolver | null
-  poseResolver: LanePoseResolver | null
-  displayElapsedSeconds: number
-  authoritativeLocalVehicleCount: number
-  precompileMilliseconds: number
-  firstFrameVehicleCount: number
-  priorityVehicleIds: string[]
-}
-export type ViewportVehicleStage = ViewportVehicleStagingBuffer
+export type ViewportVehicleStagingBuffer = PreparedViewportVehicleStage
+export type ViewportVehicleStage = PreparedViewportVehicleStage
+export type { PreparedViewportVehicleStage } from './vehicleViewportPipeline.ts'
 
 export interface ViewportStagePreparationDiagnostic {
   reason: 'ready' | 'display_time_unavailable' | 'display_time_unbracketed' | 'local_poses_unresolved'
@@ -227,7 +258,7 @@ export interface VehiclePoseDiagnostic {
 
 export class BaiduVehicleRenderer {
   private readonly engine: mapvthree.Engine
-  private readonly twin: mapvthree.Twin
+  private readonly twinPresenter: VehicleTwinPresenter
   private readonly projector: RoadCoordinateProjector
   private readonly onDisplayElapsedSeconds?: (elapsedSeconds: number) => void
   private readonly selector = new StableVehicleSelector()
@@ -277,6 +308,7 @@ export class BaiduVehicleRenderer {
   private visibleCount = 0
   private primed = false
   private active = true
+  private cameraTransitionHeld = false
   private emptySourceSnapshotStreak = 0
   private lastRosterSequence = -1
   private twinPlaybackBacklogMs = 0
@@ -286,6 +318,7 @@ export class BaiduVehicleRenderer {
   private retainedMissingCount = 0
   private confirmedRemovedCount = 0
   private twinResetCount = 0
+  private twinResetReason: string | null = null
   private maximumTwinOutputGapMs = 0
   private emptyBufferInterceptCount = 0
   private terminalFreezeActive = false
@@ -318,6 +351,17 @@ export class BaiduVehicleRenderer {
   private sharedDisplayElapsedSeconds: number | null = null
   private viewportStagePreparationDiagnostic: ViewportStagePreparationDiagnostic | null = null
   private viewportReplayPriorityVehicleIds: ReadonlySet<string> | null = null
+  private motionSampleStatus: VehicleMotionSampleResult['status'] = 'waiting'
+  private motionWaitingReason: VehicleMotionWaitingReason | null = 'insufficient_frames'
+  private authoritativeVehicleCount = 0
+  private twinOutputVehicleCount = 0
+  private waitingTwinResetInterceptCount = 0
+  private sourceVehicleCount = 0
+  private viewportVehicleCount = 0
+  private selectedVehicleCount = 0
+  private playableVehicleCount = 0
+  private selectionScope: VehicleSelectionScope = { kind: 'overview' }
+  private selectionScopeDirty = false
 
   constructor(
     engine: mapvthree.Engine,
@@ -329,16 +373,21 @@ export class BaiduVehicleRenderer {
     this.onDisplayElapsedSeconds = onDisplayElapsedSeconds
     this.headingField = new SumoHeadingField(projector)
     const realisticModels = mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL as unknown as Record<string, string>
-    this.twin = engine.add(new mapvthree.Twin({
-      delay: TWIN_INTERPOLATION_DELAY_MS,
-      modelConfig: {
+    this.twinPresenter = new VehicleTwinPresenter(engine, {
         3: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.CAR,
         6: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.BUS,
         10: mapvthree.twinConstants.REALISTIC_TEMPLATE_MODEL.TRUCK,
         [ELECTRIC_BICYCLE_MODEL_TYPE]: realisticModels.ELECTRICBICYCLE,
-      },
-      keepSize: false,
-    }))
+    })
+    this.motionBuffer.setCompilationReadyListener(() => {
+      if (
+        !this.active
+        || this.cameraTransitionHeld
+        || !isVehicleAnimationActive(this.lastContext.state)
+      ) return
+      const wallTimeMs = performance.now()
+      if (this.pushMotionFrameAt(wallTimeMs, wallTimeMs)) this.engine.requestRender()
+    })
   }
 
   setLaneHeadingResolver(resolver: LaneHeadingResolver | null): void {
@@ -348,6 +397,22 @@ export class BaiduVehicleRenderer {
   setStableMode(stable: boolean): void {
     if (this.stableOutputMode !== stable) this.outputPacer.reset()
     this.stableOutputMode = stable
+  }
+
+  setSelectionScope(scope: VehicleSelectionScope): void {
+    const changed = this.selectionScope.kind !== scope.kind
+      || (
+        scope.kind === 'intersection'
+        && (
+          this.selectionScope.kind !== 'intersection'
+          || this.selectionScope.intersectionId !== scope.intersectionId
+        )
+      )
+    this.selectionScope = scope
+    if (changed) {
+      this.selector.reset()
+      this.selectionScopeDirty = true
+    }
   }
 
   setPresentationElapsedSeconds(elapsedSeconds: number | null): void {
@@ -382,131 +447,24 @@ export class BaiduVehicleRenderer {
     this.connectionLocksByVehicleId.clear()
   }
 
-  prepareViewportTransition(
-    intersectionId: string,
-    headingResolver: LaneHeadingResolver | null,
-    poseResolver: LanePoseResolver | null,
-  ): ViewportVehicleStagingBuffer | null {
-    const startedAt = performance.now()
-    const displayElapsedSeconds = this.sharedDisplayElapsedSeconds
-    if (displayElapsedSeconds == null || this.viewportSnapshots.length < 2) {
-      if (this.lastContext.sessionId && isVehicleAnimationActive(this.lastContext.state)) {
-        this.viewportStagePreparationDiagnostic = {
-          reason: 'display_time_unavailable',
-          intersectionId,
-          displayElapsedSeconds,
-          firstSnapshotElapsedSeconds: this.viewportSnapshots[0]?.context.elapsedSeconds ?? null,
-          latestSnapshotElapsedSeconds: this.viewportSnapshots.at(-1)?.context.elapsedSeconds ?? null,
-          snapshotCount: this.viewportSnapshots.length,
-          authoritativeLocalVehicleCount: 0,
-          validLocalVehicleCount: 0,
-        }
-        return null
-      }
-      return {
-        intersectionId,
-        snapshots: [...this.viewportSnapshots],
-        headingResolver,
-        poseResolver,
-        displayElapsedSeconds: displayElapsedSeconds ?? this.lastContext.elapsedSeconds,
-        authoritativeLocalVehicleCount: 0,
-        precompileMilliseconds: performance.now() - startedAt,
-        firstFrameVehicleCount: 0,
-        priorityVehicleIds: [],
-      }
-    }
-    const snapshots = [...this.viewportSnapshots]
-    const rightIndex = snapshots.findIndex((entry) => (
-      entry.context.elapsedSeconds > displayElapsedSeconds
-    ))
-    if (rightIndex <= 0) {
-      this.viewportStagePreparationDiagnostic = {
-        reason: 'display_time_unbracketed',
-        intersectionId,
-        displayElapsedSeconds,
-        firstSnapshotElapsedSeconds: snapshots[0]?.context.elapsedSeconds ?? null,
-        latestSnapshotElapsedSeconds: snapshots.at(-1)?.context.elapsedSeconds ?? null,
-        snapshotCount: snapshots.length,
-        authoritativeLocalVehicleCount: 0,
-        validLocalVehicleCount: 0,
-      }
-      return null
-    }
-    const left = snapshots[rightIndex - 1]
-    const right = snapshots[rightIndex]
-    if (!left || !right) return null
-    const authoritativeLocalVehicles = left.vehicles.filter((vehicle) => {
-      if (vehicle.longitude == null || vehicle.latitude == null || !poseResolver) return false
-      const coordinate = this.projector([vehicle.longitude, vehicle.latitude, 0])
-      return poseResolver.hasLane(vehicle.lane_id)
-        || poseResolver.coversDetailedArea([coordinate[0], coordinate[1]])
-    })
-    const validLocalVehicles = authoritativeLocalVehicles.filter((vehicle) => {
-      if (vehicle.longitude == null || vehicle.latitude == null || !poseResolver) return false
-      const coordinate = this.projector([vehicle.longitude, vehicle.latitude, 0])
-      const profile = resolveVehicleModelProfile(vehicle.type_id)
-      if (!poseResolver.hasLane(vehicle.lane_id)) return true
-      return Boolean(poseResolver(
-          vehicle.lane_id,
-          [coordinate[0], coordinate[1]],
-          profile.targetLengthMeters / 2,
-        ))
-    })
-    const rightVehiclesById = new Map(right.vehicles.map((vehicle) => [vehicle.vehicle_id, vehicle] as const))
-    const priorityVehicleIds = validLocalVehicles.flatMap((vehicle) => {
-      const rightVehicle = rightVehiclesById.get(vehicle.vehicle_id)
-      if (!rightVehicle || rightVehicle.longitude == null || rightVehicle.latitude == null || !poseResolver) return []
-      const rightCoordinate = this.projector([rightVehicle.longitude, rightVehicle.latitude, 0])
-      if (!poseResolver.hasLane(rightVehicle.lane_id)) return [vehicle.vehicle_id]
-      const profile = resolveVehicleModelProfile(rightVehicle.type_id)
-      return poseResolver(
-        rightVehicle.lane_id,
-        [rightCoordinate[0], rightCoordinate[1]],
-        profile.targetLengthMeters / 2,
-      ) ? [vehicle.vehicle_id] : []
-    })
-    if (authoritativeLocalVehicles.length > 0 && validLocalVehicles.length === 0) {
-      this.viewportStagePreparationDiagnostic = {
-        reason: 'local_poses_unresolved',
-        intersectionId,
-        displayElapsedSeconds,
-        firstSnapshotElapsedSeconds: snapshots[0]?.context.elapsedSeconds ?? null,
-        latestSnapshotElapsedSeconds: snapshots.at(-1)?.context.elapsedSeconds ?? null,
-        snapshotCount: snapshots.length,
-        authoritativeLocalVehicleCount: authoritativeLocalVehicles.length,
-        validLocalVehicleCount: 0,
-      }
-      return null
-    }
-    this.viewportStagePreparationDiagnostic = {
-      reason: 'ready',
-      intersectionId,
-      displayElapsedSeconds,
-      firstSnapshotElapsedSeconds: snapshots[0]?.context.elapsedSeconds ?? null,
-      latestSnapshotElapsedSeconds: snapshots.at(-1)?.context.elapsedSeconds ?? null,
-      snapshotCount: snapshots.length,
-      authoritativeLocalVehicleCount: authoritativeLocalVehicles.length,
-      validLocalVehicleCount: validLocalVehicles.length,
-    }
-    return {
-      intersectionId,
-      snapshots,
-      headingResolver,
-      poseResolver,
-      displayElapsedSeconds,
-      authoritativeLocalVehicleCount: authoritativeLocalVehicles.length,
-      precompileMilliseconds: performance.now() - startedAt,
-      firstFrameVehicleCount: validLocalVehicles.length,
-      priorityVehicleIds,
-    }
-  }
-
   commitViewportTransition(
     stage: ViewportVehicleStagingBuffer,
     hiddenRoadIds: Iterable<string> = [],
     surfaceVisibility: Iterable<RoadSurfaceVisibilityInterval> = [],
   ): boolean {
     const startedAt = performance.now()
+    if (
+      stage.readiness.status === 'waiting'
+      || stage.readiness.status === 'unresolved'
+      || (
+        stage.authoritativeLocalVehicleCount > 0
+        && stage.firstFrameSamples.length === 0
+      )
+    ) return false
+    if (
+      stage.firstFrameSamples.length > 0
+      && !this.twinPresenter.replacementIsReady()
+    ) return false
     this.headingField.setPreferredIntersection(stage.intersectionId)
     this.laneHeadingResolver = stage.headingResolver
     this.lanePoseResolver = stage.poseResolver
@@ -531,30 +489,41 @@ export class BaiduVehicleRenderer {
     this.invalidPoseReentrySnapshots.clear()
     this.terminalFreezeActive = false
     this.viewportTransitionActive = false
+    this.selectionScopeDirty = false
+    this.sceneGeneration += 1
     this.replayingViewportSnapshots = true
     this.viewportReplayPriorityVehicleIds = new Set(stage.priorityVehicleIds)
     const snapshots = stage.snapshots
+    this.viewportSnapshots.splice(0, this.viewportSnapshots.length, ...snapshots.map((entry) => ({
+      vehicles: [...entry.vehicles],
+      context: { ...entry.context, laneRuntimeById: { ...entry.context.laneRuntimeById } },
+    })))
     try {
       for (const snapshot of snapshots) {
         this.update(snapshot.vehicles, {
           ...snapshot.context,
           intersectionId: stage.intersectionId,
-          laneRuntimeById: {},
         }, true)
       }
     } finally {
       this.replayingViewportSnapshots = false
       this.viewportReplayPriorityVehicleIds = null
     }
-    const primingSamples = this.motionBuffer.sample(
+    const primingResult = this.motionBuffer.sampleResult(
       performance.now(),
       stage.displayElapsedSeconds,
     )
-    if (stage.authoritativeLocalVehicleCount > 0 && !primingSamples?.length) {
+    this.recordMotionSampleResult(primingResult)
+    const primingSamples = primingResult.status === 'ready'
+      ? primingResult.samples
+      : stage.firstFrameSamples
+    if (stage.authoritativeLocalVehicleCount > 0 && primingSamples.length === 0) {
       const motion = this.motionBuffer.stats()
-      console.warn('[vehicle-stage] no validated first frame', JSON.stringify({
+      console.warn('[vehicle-stage] first frame is still warming', JSON.stringify({
         intersectionId: stage.intersectionId,
         displayElapsedSeconds: stage.displayElapsedSeconds,
+        sampleStatus: primingResult.status,
+        waitingReason: primingResult.status === 'waiting' ? primingResult.reason : null,
         authoritativeLocalVehicleCount: stage.authoritativeLocalVehicleCount,
         latestMappedSourceCount: this.visibleCount,
         compiledSegmentCount: motion.compiledSegmentCount,
@@ -563,15 +532,22 @@ export class BaiduVehicleRenderer {
         hiddenUnresolvedVehicleCount: motion.hiddenUnresolvedVehicleIds.length,
         ghostVehicleCount: motion.ghostVehicleIds.length,
       }))
-      this.viewportTransitionActive = false
-      this.viewportTwinBlankFrameCount += 1
       return false
     }
-    this.twin.reset()
-    this.twinResetCount += 1
-    this.primed = true
-    if (primingSamples?.length) this.presentImmediate(primingSamples)
-    else this.primed = false
+    if (
+      primingResult.status === 'authoritative_empty'
+      || primingResult.status === 'viewport_empty'
+    ) {
+      this.twinPresenter.reset('viewport_authoritative_empty')
+      this.twinResetCount += 1
+      this.twinResetReason = 'viewport_authoritative_empty'
+      this.primed = false
+    } else if (primingSamples.length > 0) {
+      if (!this.twinPresenter.activateReplacement()) return false
+      this.primed = true
+      this.twinOutputVehicleCount = primingSamples.length
+      this.presentImmediate(primingSamples)
+    }
     this.viewportPrecompileMilliseconds = stage.precompileMilliseconds
       + performance.now() - startedAt
     this.viewportFirstFrameVehicleCount = primingSamples?.length ?? 0
@@ -582,6 +558,7 @@ export class BaiduVehicleRenderer {
   cancelViewportTransition(): void {
     if (!this.viewportTransitionActive) return
     this.viewportTransitionActive = false
+    this.twinPresenter.cancelReplacement()
     this.outputPacer.reset()
     this.twinPlaybackBacklogMs = 0
     this.syncMotionFrameScheduling()
@@ -620,9 +597,6 @@ export class BaiduVehicleRenderer {
     if (!this.replayingViewportSnapshots) this.recordViewportSnapshot(vehicles, context)
     const cameraRange = this.engine.map.getRange()
     const radiusMeters = resolveVehicleRenderRadius(cameraRange)
-    if (this.viewportTransitionActive && !this.replayingViewportSnapshots) {
-      return this.stats(vehicles.length, radiusMeters)
-    }
     const snapshotKey = `${context.sessionId}:${context.sequence}`
     const sameSession = context.sessionId === this.lastContext.sessionId
     const stateChanged = context.state !== this.lastContext.state
@@ -645,26 +619,32 @@ export class BaiduVehicleRenderer {
     const terminalState = context.state === 'STOPPED'
       || context.state === 'COMPLETED'
       || context.state === 'FAILED'
-    if (!terminalState && this.terminalFreezeActive) {
+    if (!terminalState && this.terminalFreezeActive && !this.cameraTransitionHeld) {
       this.terminalFreezeActive = false
-      const startableTwin = this.twin as mapvthree.Twin & { start?: () => void }
-      startableTwin.start?.()
+      this.twinPresenter.resume()
     }
     if (vehicles.length === 0 && terminalState) {
-      this.twin.reset()
+      this.twinPresenter.reset('terminal_authoritative_empty')
       this.twinResetCount += 1
+      this.twinResetReason = 'terminal_authoritative_empty'
       this.primed = false
       this.visibleCount = 0
       return this.stats(0, radiusMeters)
     }
     const renderableVehicles = vehicles
+    const sourceVehicleIds = [...new Set(
+      renderableVehicles.map((vehicle) => vehicle.vehicle_id),
+    )]
+    const viewportVehicles = this.selectViewportVehicles(renderableVehicles)
+    const viewportVehicleIds = [...new Set(
+      viewportVehicles.map((vehicle) => vehicle.vehicle_id),
+    )]
     const visible = this.replayingViewportSnapshots
-      ? this.selectViewportReplayVehicles(renderableVehicles, this.renderBudget.state().limit)
-      : this.selector.select(
-          renderableVehicles,
+      ? this.selectViewportReplayVehicles(viewportVehicles, this.renderBudget.state().limit)
+      : this.selectionScope.kind === 'overview'
+        ? this.selector.selectOverview(
+          viewportVehicles,
           this.projector,
-          this.engine.map.getCenter(),
-          cameraRange,
           snapshotKey,
           this.renderBudget.state().limit,
           this.lanePoseResolver
@@ -674,6 +654,20 @@ export class BaiduVehicleRenderer {
               ]))
             : undefined,
         )
+        : this.selector.select(
+            viewportVehicles,
+            this.projector,
+            this.engine.map.getCenter(),
+            cameraRange,
+            snapshotKey,
+            this.renderBudget.state().limit,
+            this.lanePoseResolver
+              ? (item) => Boolean(this.lanePoseResolver?.coversDetailedArea([
+                  item.longitude,
+                  item.latitude,
+                ]))
+              : undefined,
+          )
     const sourceTime = context.elapsedSeconds * 1_000
     const activeIds = new Set<string>()
     const drafts = visible.map(({ vehicle, longitude, latitude }) => {
@@ -1360,50 +1354,153 @@ export class BaiduVehicleRenderer {
       elapsedSeconds: context.elapsedSeconds,
       arrivalTimeMs: performance.now(),
       samples,
-      presentVehicleIds: renderableVehicles.map((vehicle) => vehicle.vehicle_id),
+      sourceVehicleIds,
+      viewportVehicleIds,
+      selectedVehicleIds: visible.map(({ vehicle }) => vehicle.vehicle_id),
     })
     this.recordSourceRoster(context.sequence, samples.length)
-    if (!terminalState && !isVehicleAnimationActive(context.state) && samples.length > 0) {
+    if (!isVehicleAnimationActive(context.state) && samples.length > 0) {
       this.presentImmediate(samples)
+      this.twinPresenter.freezeAfterVisible()
+      this.terminalFreezeActive = terminalState
     }
     return this.stats(vehicles.length, radiusMeters)
   }
 
   refreshViewport(): VehicleRenderStats {
+    if (this.selectionScopeDirty) {
+      this.selectionScopeDirty = false
+      if (this.hydrateAuthoritativeHistory(this.sharedDisplayElapsedSeconds)) {
+        const wallTimeMs = performance.now()
+        this.pushMotionFrameAt(wallTimeMs, wallTimeMs)
+        return this.stats(
+          this.lastVehicles.length,
+          resolveVehicleRenderRadius(this.engine.map.getRange()),
+        )
+      }
+    }
     return this.update(this.lastVehicles, this.lastContext, true)
   }
 
-  beginViewportTransition(): void {
+  beginViewportTransition(stage?: ViewportVehicleStagingBuffer): void {
     // Keep the active Twin and compiled samples alive while the new resolver is
     // prepared. Incoming authoritative snapshots are staged in the ring buffer.
-    this.sceneGeneration += 1
     this.viewportTransitionActive = true
+    if (stage?.firstFrameSamples.length) {
+      const time = this.presentationClock.next(performance.now())
+      const samples = stage.firstFrameSamples.map((sample) => ({
+        ...sample,
+        point: [...sample.point] as [number, number, number],
+        time,
+      }))
+      this.twinPresenter.beginReplacement(samples)
+    } else {
+      this.twinPresenter.cancelReplacement()
+    }
+  }
+
+  waitForViewportTransitionReady(
+    signal: AbortSignal,
+    timeoutMs?: number,
+  ): Promise<boolean> {
+    return this.twinPresenter.waitForReplacementReady(signal, timeoutMs)
   }
 
   setActive(active: boolean): void {
     if (this.active === active) return
     this.active = active
     if (active) {
-      const startableTwin = this.twin as mapvthree.Twin & { start?: () => void }
-      startableTwin.start?.()
+      if (!this.cameraTransitionHeld) this.twinPresenter.resume()
       this.outputPacer.reset()
       this.twinPlaybackBacklogMs = 0
-      this.update(this.lastVehicles, this.lastContext, true)
-      const samples = this.motionBuffer.sample(
+      if (!this.hydrateAuthoritativeHistory(this.sharedDisplayElapsedSeconds)) {
+        this.update(this.lastVehicles, this.lastContext, true)
+      }
+      const result = this.motionBuffer.sampleResult(
         performance.now(),
-        this.sharedDisplayElapsedSeconds,
+        this.motionQueryElapsedSeconds(),
       )
-      if (samples?.length) this.presentImmediate(samples)
+      this.recordMotionSampleResult(result)
+      if (result.status === 'ready' && result.samples.length > 0) {
+        this.presentImmediate(result.samples)
+      }
     } else {
       if (this.outputFrameId !== null) cancelAnimationFrame(this.outputFrameId)
       this.outputFrameId = null
       this.motionBuffer.pause()
       this.outputPacer.reset()
       this.twinPlaybackBacklogMs = 0
-      const pausableTwin = this.twin as mapvthree.Twin & { pause?: () => void }
-      pausableTwin.pause?.()
+      this.twinPresenter.freezeAfterVisible()
     }
     this.syncMotionFrameScheduling()
+  }
+
+  setCameraTransitionActive(active: boolean): void {
+    if (this.cameraTransitionHeld === active) return
+    this.cameraTransitionHeld = active
+    this.outputPacer.reset()
+    this.twinPlaybackBacklogMs = 0
+    this.motionBuffer.pause()
+
+    if (active) {
+      if (this.outputFrameId !== null) cancelAnimationFrame(this.outputFrameId)
+      this.outputFrameId = null
+      this.twinPresenter.freezeAfterVisible()
+    } else if (this.active && isVehicleAnimationActive(this.lastContext.state)) {
+      this.twinPresenter.resume()
+    }
+
+    if (import.meta.env.DEV) {
+      const twin = this.twinPresenter.state()
+      console.debug('[vehicle-camera-transition]', JSON.stringify({
+        active,
+        intersectionId: this.lastContext.intersectionId ?? '',
+        displayElapsedSeconds: this.motionQueryElapsedSeconds(),
+        actualVisibleCount: twin.actualVisibleCount,
+        visibleVehicleIds: twin.visibleVehicleIds,
+        visibleDisplayElapsedSeconds: twin.visibleDisplayElapsedSeconds,
+        windowExhaustionCount: twin.windowExhaustionCount,
+        frozen: twin.frozen,
+      }))
+    }
+
+    this.syncMotionFrameScheduling()
+  }
+
+  hydrateAuthoritativeHistory(displayElapsedSeconds: number | null): boolean {
+    if (
+      !Number.isFinite(displayElapsedSeconds)
+      || this.viewportSnapshots.length < 2
+    ) return false
+    const elapsedSeconds = Number(displayElapsedSeconds)
+    const first = this.viewportSnapshots[0]
+    const latest = this.viewportSnapshots.at(-1)!
+    if (
+      elapsedSeconds < first.context.elapsedSeconds - 1e-6
+      || elapsedSeconds > latest.context.elapsedSeconds + 1e-6
+    ) return false
+    this.motionBuffer.reset()
+    this.selector.reset()
+    this.outputPacer.reset()
+    this.poseHistory.clear()
+    this.poseStates.clear()
+    this.twinDirectionByVehicleId.clear()
+    this.pendingPoseCandidates.clear()
+    this.pendingLaneChanges.clear()
+    this.historyLastSeenSequence.clear()
+    this.routeCursorByVehicleId.clear()
+    this.connectionLocksByVehicleId.clear()
+    this.invalidPoseSuppressedVehicles.clear()
+    this.invalidPoseReentrySnapshots.clear()
+    this.replayingViewportSnapshots = true
+    try {
+      for (const snapshot of this.viewportSnapshots) {
+        this.update(snapshot.vehicles, snapshot.context, true)
+      }
+    } finally {
+      this.replayingViewportSnapshots = false
+    }
+    return true
   }
 
   clear(): void {
@@ -1430,6 +1527,15 @@ export class BaiduVehicleRenderer {
     this.maximumTwinOutputGapMs = 0
     this.twinGapFillFrameCount = 0
     this.emptyBufferInterceptCount = 0
+    this.motionSampleStatus = 'waiting'
+    this.motionWaitingReason = 'insufficient_frames'
+    this.authoritativeVehicleCount = 0
+    this.sourceVehicleCount = 0
+    this.viewportVehicleCount = 0
+    this.selectedVehicleCount = 0
+    this.playableVehicleCount = 0
+    this.twinOutputVehicleCount = 0
+    this.waitingTwinResetInterceptCount = 0
     this.motionBuffer.reset()
     this.presentationClock.reset()
     this.selector.reset()
@@ -1452,11 +1558,13 @@ export class BaiduVehicleRenderer {
     this.surfaceExclusionVehicleFilterCount = 0
     this.viewportTransitionActive = false
     this.terminalFreezeActive = false
-    this.twin.reset()
+    this.cameraTransitionHeld = false
+    this.selectionScopeDirty = false
+    this.twinPresenter.reset('runtime_reset')
     this.twinResetCount += 1
+    this.twinResetReason = 'runtime_reset'
     if (this.active) {
-      const startableTwin = this.twin as mapvthree.Twin & { start?: () => void }
-      startableTwin.start?.()
+      this.twinPresenter.resume()
     }
     this.syncMotionFrameScheduling()
   }
@@ -1464,6 +1572,7 @@ export class BaiduVehicleRenderer {
   private scheduleMotionFrame(): void {
     if (
       !this.active
+      || this.cameraTransitionHeld
       || !isVehicleAnimationActive(this.lastContext.state)
       || this.outputFrameId !== null
     ) return
@@ -1476,6 +1585,7 @@ export class BaiduVehicleRenderer {
 
   private syncMotionFrameScheduling(): void {
     const shouldRun = this.active
+      && !this.cameraTransitionHeld
       && isVehicleAnimationActive(this.lastContext.state)
     if (!shouldRun && this.outputFrameId !== null) {
       cancelAnimationFrame(this.outputFrameId)
@@ -1499,42 +1609,77 @@ export class BaiduVehicleRenderer {
   }
 
   private pushMotionFrameAt(sampleWallTimeMs: number, currentWallTimeMs: number): boolean {
-    const samples = this.motionBuffer.sample(
+    const result = this.motionBuffer.sampleResult(
       sampleWallTimeMs,
-      this.sharedDisplayElapsedSeconds,
+      this.motionQueryElapsedSeconds(),
     )
-    if (samples === null) {
+    this.recordMotionSampleResult(result)
+    if (result.status === 'waiting') {
       this.emptyBufferInterceptCount += 1
+      this.waitingTwinResetInterceptCount += 1
       if (this.viewportTransitionActive) this.viewportTwinBlankFrameCount += 1
+      if (this.primed) this.twinPresenter.freezeAfterVisible()
       return false
     }
-    if (samples.length === 0) {
+    if (result.status === 'unresolved') {
+      this.emptyBufferInterceptCount += 1
+      if (this.primed) this.twinPresenter.freezeAfterVisible()
+      return false
+    }
+    if (result.status === 'selection_empty') {
+      this.emptyBufferInterceptCount += 1
+      if (this.primed) this.twinPresenter.freezeAfterVisible()
+      return false
+    }
+    if (
+      result.status === 'authoritative_empty'
+      || result.status === 'viewport_empty'
+    ) {
       this.emptyBufferInterceptCount += 1
       if (this.primed) {
-        this.twin.reset()
+        this.twinPresenter.reset(result.status)
         this.twinResetCount += 1
+        this.twinResetReason = result.status
         this.primed = false
         this.confirmedRemovedCount += 1
         this.engine.requestRender()
       }
       return false
     }
-    const time = this.presentationClock.next(Date.now())
+    const samples = [...result.samples]
+    if (samples.length === 0) {
+      this.emptyBufferInterceptCount += 1
+      return false
+    }
+    const time = this.presentationClock.next(sampleWallTimeMs)
     this.recordTwinPushGap(currentWallTimeMs)
     const timedSamples = this.prepareTwinSamples(samples, time)
     const displayElapsedSeconds = timedSamples.find((sample) => (
       Number.isFinite(sample.displayElapsedSeconds)
     ))?.displayElapsedSeconds
-    if (displayElapsedSeconds != null) this.onDisplayElapsedSeconds?.(displayElapsedSeconds)
-    if (!this.primed) {
-      this.twin.push(timedSamples.map((sample) => ({
-        ...sample,
-        time: time - TWIN_INITIAL_SAMPLE_SPACING_MS,
-      })))
-      this.primed = true
+    if (displayElapsedSeconds != null) {
+      this.onDisplayElapsedSeconds?.(
+        this.sharedDisplayElapsedSeconds ?? displayElapsedSeconds,
+      )
     }
-    this.twin.push(timedSamples)
+    this.twinPresenter.push(timedSamples)
+    this.primed = true
+    this.twinOutputVehicleCount = timedSamples.length
     return true
+  }
+
+  private recordMotionSampleResult(result: VehicleMotionSampleResult): void {
+    this.motionSampleStatus = result.status
+    this.motionWaitingReason = result.status === 'waiting' ? result.reason : null
+    this.authoritativeVehicleCount = result.authoritativeVehicleCount
+    this.sourceVehicleCount = result.sourceVehicleCount
+    this.viewportVehicleCount = result.viewportVehicleCount
+    this.selectedVehicleCount = result.selectedVehicleCount
+    this.playableVehicleCount = result.status === 'ready' ? result.samples.length : 0
+    if (
+      result.status === 'authoritative_empty'
+      || result.status === 'viewport_empty'
+    ) this.twinOutputVehicleCount = 0
   }
 
   private recordSourceRoster(sequence: number, sampleCount: number): void {
@@ -1576,24 +1721,24 @@ export class BaiduVehicleRenderer {
   }
 
   private presentImmediate(samples: VehicleTwinSample[]): void {
-    const time = this.presentationClock.next(Date.now())
+    const time = this.presentationClock.next(performance.now())
     const timedSamples = this.prepareTwinSamples(samples, time)
     if (!this.primed) {
-      this.twin.reset()
+      this.twinPresenter.reset('initial_prime')
       this.twinResetCount += 1
+      this.twinResetReason = 'initial_prime'
+      this.primed = false
     }
-    this.twin.push(timedSamples.map((sample) => ({
-      ...sample,
-      time: time - TWIN_INITIAL_SAMPLE_SPACING_MS,
-    })))
-    this.twin.push(timedSamples)
+    this.twinPresenter.push(timedSamples)
     this.primed = true
+    this.twinOutputVehicleCount = timedSamples.length
     this.engine.requestRender()
   }
 
   private stats(inputCount: number, radiusMeters: number): VehicleRenderStats {
     const budget = this.renderBudget.state()
     const motion = this.motionBuffer.stats()
+    const twinVisible = this.twinPresenter.state()
     return {
       inputCount,
       visibleCount: this.visibleCount,
@@ -1612,7 +1757,7 @@ export class BaiduVehicleRenderer {
       retainedMissingCount: this.retainedMissingCount,
       confirmedRemovedCount: this.confirmedRemovedCount,
       twinResetCount: this.twinResetCount,
-      twinSafetyMarginMs: Math.max(0, TWIN_INTERPOLATION_DELAY_MS - this.maximumTwinOutputGapMs),
+      twinSafetyMarginMs: Math.max(0, VEHICLE_TWIN_RENDER_DELAY_MS - this.maximumTwinOutputGapMs),
       maximumTwinOutputGapMs: this.maximumTwinOutputGapMs,
       emptyBufferInterceptCount: this.emptyBufferInterceptCount,
       terminalFreezeActive: this.terminalFreezeActive,
@@ -1665,12 +1810,36 @@ export class BaiduVehicleRenderer {
       recoveredVehicleCount: motion.recoveredVehicleCount,
       ghostVehicleIds: motion.ghostVehicleIds,
       hiddenUnresolvedVehicleIds: motion.hiddenUnresolvedVehicleIds,
+      pendingCompilationCount: motion.pendingCompilationCount,
+      compilationDurationP95Ms: motion.compilationDurationP95Ms,
       viewportPrecompileMilliseconds: this.viewportPrecompileMilliseconds,
       viewportTwinBlankFrameCount: this.viewportTwinBlankFrameCount,
       viewportFirstFrameVehicleCount: this.viewportFirstFrameVehicleCount,
       surfaceExclusionVehicleFilterCount: this.surfaceExclusionVehicleFilterCount,
       vehiclePoseDiagnostics: this.vehiclePoseDiagnostics.slice(0, 100),
-      displayElapsedSeconds: motion.renderElapsedSeconds,
+      displayElapsedSeconds: this.sharedDisplayElapsedSeconds ?? motion.renderElapsedSeconds,
+      motionSampleStatus: this.motionSampleStatus,
+      motionWaitingReason: this.motionWaitingReason,
+      authoritativeVehicleCount: this.authoritativeVehicleCount,
+      sourceVehicleCount: this.sourceVehicleCount,
+      viewportVehicleCount: this.viewportVehicleCount,
+      selectedVehicleCount: this.selectedVehicleCount,
+      playableVehicleCount: this.playableVehicleCount,
+      twinOutputVehicleCount: this.twinOutputVehicleCount,
+      twinActualVisibleVehicleCount: twinVisible.actualVisibleCount,
+      twinActualVisibleVehicleIds: twinVisible.visibleVehicleIds.slice(0, 220),
+      twinVisibleDisplayElapsedSeconds: twinVisible.visibleDisplayElapsedSeconds,
+      twinSubmittedWindowDepthMs: twinVisible.submittedWindowDepthMs,
+      twinWindowExhaustionCount: twinVisible.windowExhaustionCount,
+      waitingTwinResetInterceptCount: this.waitingTwinResetInterceptCount,
+      workerCompilationQueueDepth: motion.workerCompilationQueueDepth,
+      legalCompiledSegmentCount: Math.max(
+        0,
+        motion.compiledSegmentCount - motion.rejectedCompiledSegmentCount,
+      ),
+      twinResetReason: this.twinResetReason,
+      firstSourceElapsedSeconds: motion.firstSourceElapsedSeconds,
+      latestSourceElapsedSeconds: motion.latestSourceElapsedSeconds,
     }
   }
 
@@ -1712,6 +1881,14 @@ export class BaiduVehicleRenderer {
     })
   }
 
+  private motionQueryElapsedSeconds(): number | null {
+    if (!Number.isFinite(this.sharedDisplayElapsedSeconds)) return null
+    const displayElapsedSeconds = Number(this.sharedDisplayElapsedSeconds)
+    if (!isVehicleAnimationActive(this.lastContext.state)) return displayElapsedSeconds
+    const playbackSpeed = Math.max(0, Number(this.lastContext.playbackSpeed) || 1)
+    return displayElapsedSeconds + VEHICLE_TWIN_RENDER_DELAY_MS / 1_000 * playbackSpeed
+  }
+
   private recordViewportSnapshot(
     vehicles: TrafficVehicleView[],
     context: VehicleRenderContext,
@@ -1736,12 +1913,21 @@ export class BaiduVehicleRenderer {
     ))
     const latestElapsedSeconds = this.viewportSnapshots.at(-1)?.context.elapsedSeconds
       ?? context.elapsedSeconds
+    const displayCutoff = Number.isFinite(this.sharedDisplayElapsedSeconds)
+      ? Number(this.sharedDisplayElapsedSeconds) - 1
+      : latestElapsedSeconds - VIEWPORT_SNAPSHOT_HISTORY_SECONDS
+    const retentionCutoff = Math.min(
+      latestElapsedSeconds - VIEWPORT_SNAPSHOT_HISTORY_SECONDS,
+      displayCutoff,
+    )
     while (
       this.viewportSnapshots.length > 1
       && (
-        this.viewportSnapshots.length > MAX_VIEWPORT_STAGING_SNAPSHOTS
-        || latestElapsedSeconds - this.viewportSnapshots[0].context.elapsedSeconds
-          > VIEWPORT_SNAPSHOT_HISTORY_SECONDS
+        this.viewportSnapshots[1].context.elapsedSeconds < retentionCutoff
+        || (
+          this.viewportSnapshots.length > MAX_VIEWPORT_STAGING_SNAPSHOTS
+          && this.viewportSnapshots[1].context.elapsedSeconds < displayCutoff
+        )
       )
     ) this.viewportSnapshots.shift()
   }
@@ -1777,6 +1963,29 @@ export class BaiduVehicleRenderer {
     return local.slice(0, limit)
   }
 
+  private selectViewportVehicles(vehicles: TrafficVehicleView[]): TrafficVehicleView[] {
+    if (this.selectionScope.kind === 'overview') {
+      return vehicles.filter((vehicle) => (
+        vehicle.longitude != null
+        && vehicle.latitude != null
+        && Number.isFinite(vehicle.longitude)
+        && Number.isFinite(vehicle.latitude)
+      ))
+    }
+    const resolver = this.lanePoseResolver
+    if (!resolver) return []
+    return vehicles.filter((vehicle) => {
+      if (vehicle.longitude == null || vehicle.latitude == null) return false
+      if (resolver.hasLane(vehicle.lane_id)) return true
+      const [longitude, latitude] = this.projector([
+        vehicle.longitude,
+        vehicle.latitude,
+        0,
+      ])
+      return resolver.coversDetailedArea([longitude, latitude])
+    })
+  }
+
   private recordTwinPushGap(wallTimeMs: number): void {
     if (this.lastTwinPushWallTimeMs != null && wallTimeMs > this.lastTwinPushWallTimeMs) {
       this.maximumTwinOutputGapMs = Math.max(
@@ -1791,6 +2000,6 @@ export class BaiduVehicleRenderer {
     if (this.outputFrameId !== null) cancelAnimationFrame(this.outputFrameId)
     this.outputFrameId = null
     this.clear()
-    this.engine.remove(this.twin)
+    this.twinPresenter.destroy()
   }
 }

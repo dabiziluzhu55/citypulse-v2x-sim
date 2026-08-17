@@ -39,3 +39,15 @@ test('camera preset changes keep the latest committed intersection center', () =
   assert.deepEqual(current.viewport.center, [116.0702724, 38.9768003])
   assert.equal(current.applyOptions.duration, 0)
 })
+
+test('local camera presets remain anchored to the committed intersection', () => {
+  const transaction = createIntersectionFocusTransaction(
+    [116.1267597, 38.9911472],
+    'demo_2',
+    { cameraPreset: 'birdseye' },
+  )
+
+  assert.equal(transaction.cameraPreset, 'birdseye')
+  assert.equal(transaction.anchorId, 'intersection:demo_2')
+  assert.deepEqual(transaction.viewport.center, [116.1267597, 38.9911472])
+})

@@ -120,6 +120,11 @@ declare module '@baidumap/mapv-three' {
     constructor(options?: Record<string, unknown>)
     push(data: Array<Record<string, unknown>>): void
     reset(): void
+    pause(): void
+    start(): void
+    dispose(): void
+    addEventListener(type: string, listener: (event: Record<string, unknown>) => void): void
+    removeEventListener(type: string, listener: (event: Record<string, unknown>) => void): void
   }
 
   export const twinConstants: {

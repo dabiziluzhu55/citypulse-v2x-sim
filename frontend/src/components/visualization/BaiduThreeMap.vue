@@ -26,8 +26,12 @@ import { BaiduRoadNetworkRenderer } from '../../mapv/BaiduRoadNetworkRenderer'
 import {
   BaiduVehicleRenderer,
   type VehicleRenderStats,
-  type ViewportVehicleStagingBuffer,
 } from '../../mapv/BaiduVehicleRenderer'
+import {
+  VehicleViewportPipeline,
+  type PreparedViewportVehicleStage,
+  type VehicleViewportAuthoritativeFrame,
+} from '../../mapv/vehicleViewportPipeline'
 import { ShowcaseGeoJsonLayers } from '../../mapv/showcaseLayers/ShowcaseGeoJsonLayers'
 import { ShowcaseModelLayers } from '../../mapv/showcaseLayers/ShowcaseModelLayers'
 import { RoadsideFacilityRenderer } from '../../mapv/showcaseLayers/RoadsideFacilityRenderer'
@@ -145,20 +149,32 @@ const containerRef = ref<HTMLElement | null>(null)
 const mapView = useAppMapView()
 const {
   activeIntersectionId,
+  committedIntersectionId,
   sceneStatus,
   sceneError,
   selectionRevision,
   setSceneLoading,
   setSceneReady,
   setSceneError,
+  restoreCommittedIntersection,
 } = useActiveIntersectionScene()
-const { isIntersectionSupported } = useCatalog(activeIntersectionId)
-const { geojson } = useSimulationMap(activeIntersectionId, ROAD_RENDER_RADIUS_METERS, isIntersectionSupported)
+const displayedIntersectionId = computed(() => (
+  committedIntersectionId.value ?? activeIntersectionId.value
+))
+const { isIntersectionSupported } = useCatalog(displayedIntersectionId)
+const { geojson } = useSimulationMap(
+  displayedIntersectionId,
+  ROAD_RENDER_RADIUS_METERS,
+  isIntersectionSupported,
+)
 const {
   snapshot,
   trafficView,
   vehicleDisplayElapsedSeconds,
+  vehicleAuthoritativeHistoryRevision,
+  getVehicleAuthoritativeHistoryWindow,
   renderSessionRevision,
+  simulationPresentationGeneration,
   runtimeDisturbances,
   unmappedRuntimeEvents,
   activeSimulationPeriod,
@@ -175,7 +191,7 @@ const runtimeDisturbanceMarkers = computed(() => {
     dedicatedEvents,
     eventLanePositionIndex.value,
     topologyNodes.value,
-    activeIntersectionId.value,
+    displayedIntersectionId.value,
   ).flatMap((marker) => marker.events.map((event) => ({
     ...event,
     longitude: marker.position.longitude,
@@ -271,12 +287,33 @@ const vehicleStats = ref<VehicleRenderStats>({
   recoveredVehicleCount: 0,
   ghostVehicleIds: [],
   hiddenUnresolvedVehicleIds: [],
+  pendingCompilationCount: 0,
+  compilationDurationP95Ms: 0,
   viewportPrecompileMilliseconds: 0,
   viewportTwinBlankFrameCount: 0,
   viewportFirstFrameVehicleCount: 0,
   surfaceExclusionVehicleFilterCount: 0,
   vehiclePoseDiagnostics: [],
   displayElapsedSeconds: null,
+  motionSampleStatus: 'waiting',
+  motionWaitingReason: 'insufficient_frames',
+  authoritativeVehicleCount: 0,
+  sourceVehicleCount: 0,
+  viewportVehicleCount: 0,
+  selectedVehicleCount: 0,
+  playableVehicleCount: 0,
+  twinOutputVehicleCount: 0,
+  twinActualVisibleVehicleCount: 0,
+  twinActualVisibleVehicleIds: [],
+  twinVisibleDisplayElapsedSeconds: null,
+  twinSubmittedWindowDepthMs: 0,
+  twinWindowExhaustionCount: 0,
+  waitingTwinResetInterceptCount: 0,
+  workerCompilationQueueDepth: 0,
+  legalCompiledSegmentCount: 0,
+  twinResetReason: null,
+  firstSourceElapsedSeconds: null,
+  latestSourceElapsedSeconds: null,
 })
 const vehicleBufferBusy = computed(() => {
   const current = snapshot.value
@@ -330,7 +367,14 @@ let cameraFlightGuard: CameraFlightGuard | null = null
 let lastRoadLodRefreshAt = 0
 let lastEmptyVehicleWarningSequence = -25
 let lastVehicleUnderrunCount = 0
+let consecutiveEmptyTwinFrames = 0
 let sceneSwitchRevision = 0
+let viewportPipelineGeneration = 0
+let suppressedRollbackIntersectionId: string | null = null
+let viewportStageStatus = 'idle'
+let viewportStageRejectionReasons: string[] = []
+let vehicleHistorySessionId = ''
+const processedVehicleHistoryKeys = new Set<string>()
 const sceneSwitchCoordinator = new SceneSwitchCoordinator()
 let lifecycleController = new AbortController()
 let componentDestroyed = false
@@ -376,6 +420,7 @@ const buildingZOffsetMeters = Number(import.meta.env.VITE_XIONGAN_BUILDING_Z_OFF
 const enableBuildingContactShadows = import.meta.env.VITE_XIONGAN_BUILDING_CONTACT_SHADOWS === 'true'
 const ACTIVE_FRAME_TIME_MS = 1_000 / MAP3D_NORMAL_FRAME_RATE
 const STABLE_FRAME_TIME_MS = 1_000 / MAP3D_STABLE_FRAME_RATE
+const VEHICLE_TWIN_VIEWPORT_WARMUP_TIMEOUT_MS = 8_000
 const projectScratch = new Vector3()
 let activeDebugManifest: RealisticIntersectionManifest | null = null
 const signalDisplayTimeline = new SignalDisplayTimeline()
@@ -705,7 +750,7 @@ function runtimeEventPosition(
     [event],
     eventLanePositionIndex.value,
     topologyNodes.value,
-    activeIntersectionId.value,
+    displayedIntersectionId.value,
   )[0]
   if (!registryMarker) return null
   const laneId = registryMarker.position.laneId ?? ''
@@ -754,22 +799,22 @@ function syncSceneEventMarkers(): void {
   const detectedMarkers = detectedEventCards.value.flatMap((card): SceneEventMarker[] => {
     const position = detectedEventPosition(card)
     return position ? [{
-      id: `detected:${card.event_id}`,
+      id: `detected:${simulationPresentationGeneration.value}:${card.event_id}`,
       color: detectedMarkerColor(card),
       intersectionId: card.intersection_id,
       position,
-      details: [{ kind: 'detected', id: `detected:${card.event_id}`, card }],
+      details: [{ kind: 'detected', id: `detected:${simulationPresentationGeneration.value}:${card.event_id}`, card }],
     }] : []
   })
   const runtimeMarkers = runtimeDisturbances.value.flatMap((event): SceneEventMarker[] => {
     if (!runtimeDisturbanceHasSceneMarker(event)) return []
     const position = runtimeEventPosition(event)
     return position ? [{
-      id: `runtime:${event.eventId}`,
+      id: `runtime:${simulationPresentationGeneration.value}:${event.eventId}`,
       color: 'red',
       intersectionId: position.intersectionId ?? (event.intersectionId || 'lane-resolved'),
       position,
-      details: [{ kind: 'runtime', id: `runtime:${event.eventId}`, event }],
+      details: [{ kind: 'runtime', id: `runtime:${simulationPresentationGeneration.value}:${event.eventId}`, event }],
     }] : []
   })
   sceneEventMarkers.value = mergeSceneEventMarkers([
@@ -931,7 +976,13 @@ function markInteracting(): void {
 
 function updateVehicleRenderStats(stats: VehicleRenderStats): void {
   vehicleStats.value = stats
-  recordVehicleRuntimeDiagnostics(stats)
+  recordVehicleRuntimeDiagnostics({
+    ...stats,
+    requestedIntersectionId: activeIntersectionId.value,
+    committedIntersectionId: committedIntersectionId.value,
+    viewportStageStatus,
+    viewportStageRejectionReasons,
+  })
   const current = snapshot.value
   if (showRenderDiagnostics) {
     const diagnosticsWindow = window as Window & {
@@ -948,24 +999,39 @@ function updateVehicleRenderStats(stats: VehicleRenderStats): void {
     }
     diagnosticsWindow.__CITYPULSE_VEHICLE_POSE_DIAGNOSTICS__ = {
       sessionId: current?.session_id ?? '',
-      intersectionId: activeIntersectionId.value,
+      intersectionId: displayedIntersectionId.value,
       snapshotSequence: current?.sequence ?? -1,
       poseViolationCount: stats.poseViolationCount,
       vehicles: stats.vehiclePoseDiagnostics,
       capturedAt: new Date().toISOString(),
     }
   }
+  consecutiveEmptyTwinFrames = stats.viewportVehicleCount > 0
+    && stats.twinActualVisibleVehicleCount === 0
+    ? consecutiveEmptyTwinFrames + 1
+    : 0
   if (
     showRenderDiagnostics
     && current?.state === 'RUNNING'
     && (current.metrics.active_vehicles ?? 0) > 0
-    && stats.visibleCount === 0
+    && consecutiveEmptyTwinFrames >= 2
     && current.sequence - lastEmptyVehicleWarningSequence >= 25
   ) {
     lastEmptyVehicleWarningSequence = current.sequence
-    console.warn('[vehicle-render] active simulation has no vehicles inside the camera radius', {
+    console.warn('[vehicle-render] authoritative vehicles produced no Twin output', {
       activeVehicles: current.metrics.active_vehicles,
       inputVehicles: stats.inputCount,
+      authoritativeVehicles: stats.authoritativeVehicleCount,
+      selectedVehicles: stats.visibleCount,
+      twinOutputVehicles: stats.twinOutputVehicleCount,
+      twinActualVisibleVehicles: stats.twinActualVisibleVehicleCount,
+      motionSampleStatus: stats.motionSampleStatus,
+      motionWaitingReason: stats.motionWaitingReason,
+      firstSourceElapsedSeconds: stats.firstSourceElapsedSeconds,
+      latestSourceElapsedSeconds: stats.latestSourceElapsedSeconds,
+      requestedDisplayElapsedSeconds: vehicleDisplayElapsedSeconds.value,
+      pendingCompilationCount: stats.pendingCompilationCount,
+      hiddenUnresolvedVehicleCount: stats.hiddenUnresolvedVehicleIds.length,
       renderRadiusMeters: Math.round(stats.radiusMeters),
       snapshotSequence: current.sequence,
     })
@@ -983,6 +1049,54 @@ function updateVehicleRenderStats(stats: VehicleRenderStats): void {
       vehicleLimit: stats.vehicleLimit,
     })
   }
+}
+
+function refreshVehicleViewportAfterCameraPlacement(): void {
+  if (!vehicleRenderer || cameraFlightActive) return
+  const renderIntersectionId = committedIntersectionId.value ?? activeIntersectionId.value
+  vehicleRenderer.setSelectionScope(
+    mapView.cameraPreset.value === 'overview'
+      ? { kind: 'overview' }
+      : { kind: 'intersection', intersectionId: renderIntersectionId },
+  )
+  updateVehicleRenderStats(vehicleRenderer.refreshViewport())
+  engine?.requestRender()
+}
+
+function syncVehicleAuthoritativeHistory(): VehicleRenderStats | null {
+  const history = getVehicleAuthoritativeHistoryWindow(vehicleDisplayElapsedSeconds.value)
+  if (!vehicleRenderer || !history) return null
+  if (vehicleHistorySessionId !== history.sessionId) {
+    vehicleHistorySessionId = history.sessionId
+    processedVehicleHistoryKeys.clear()
+  }
+  const renderIntersectionId = committedIntersectionId.value ?? activeIntersectionId.value
+  if (!cameraFlightActive) {
+    vehicleRenderer.setSelectionScope(
+      mapView.cameraPreset.value === 'overview'
+        ? { kind: 'overview' }
+        : { kind: 'intersection', intersectionId: renderIntersectionId },
+    )
+  }
+  vehicleRenderer.setPresentationElapsedSeconds(history.displayElapsedSeconds)
+  let latestStats: VehicleRenderStats | null = vehicleRenderer.debugStats()
+  for (const frame of history.frames) {
+    const historyKey = `${frame.sessionId}:${frame.sequence}:${frame.elapsedSeconds}:${frame.state}`
+    if (processedVehicleHistoryKeys.has(historyKey)) continue
+    latestStats = vehicleRenderer.update(frame.view.vehicles, {
+      sessionId: frame.sessionId,
+      state: frame.state,
+      sequence: frame.sequence,
+      elapsedSeconds: frame.elapsedSeconds,
+      laneRuntimeById: frame.intersectionRuntimeById[renderIntersectionId]?.lanes ?? {},
+      trafficPeriod: activeSimulationPeriod.value,
+      intersectionId: renderIntersectionId,
+      playbackSpeed: frame.playbackRate,
+    })
+    processedVehicleHistoryKeys.add(historyKey)
+  }
+  if (latestStats) updateVehicleRenderStats(latestStats)
+  return latestStats
 }
 
 function buildingIdleErrorTarget(): number {
@@ -1207,21 +1321,124 @@ async function waitForViewportVehicleStage(
   headingResolver: ReturnType<typeof createIntersectionLaneHeadingResolver>,
   poseResolver: ReturnType<typeof createIntersectionLanePoseResolver>,
   signal: AbortSignal,
-): Promise<ViewportVehicleStagingBuffer | null> {
+): Promise<PreparedViewportVehicleStage | null> {
   // A restored backend can advance slower than wall time while SUMO is busy.
   // Wait for the required two-second simulation window, not just three wall seconds.
+  const startedAt = performance.now()
   const deadline = performance.now() + 20_000
-  while (!signal.aborted) {
-    const stage = vehicleRenderer?.prepareViewportTransition(
-      intersectionId,
-      headingResolver,
-      poseResolver,
-    ) ?? null
-    if (stage) return stage
-    if (performance.now() >= deadline) return null
-    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+  const expectedPresentationGeneration = simulationPresentationGeneration.value
+  const pipelineGeneration = ++viewportPipelineGeneration
+  let pipeline: VehicleViewportPipeline | null = null
+  let lastUnresolved: PreparedViewportVehicleStage | null = null
+  let lastHistoryDiagnostic: Record<string, unknown> | null = null
+  viewportStageStatus = 'waiting'
+  viewportStageRejectionReasons = []
+  try {
+    while (!signal.aborted) {
+      if (simulationPresentationGeneration.value !== expectedPresentationGeneration) return null
+      const history = getVehicleAuthoritativeHistoryWindow(vehicleDisplayElapsedSeconds.value)
+      lastHistoryDiagnostic = history
+        ? {
+            displayElapsedSeconds: history.displayElapsedSeconds,
+            frameCount: history.frames.length,
+            firstElapsedSeconds: history.frames[0]?.elapsedSeconds ?? null,
+            latestElapsedSeconds: history.frames.at(-1)?.elapsedSeconds ?? null,
+            leftElapsedSeconds: history.leftFrame?.elapsedSeconds ?? null,
+            rightElapsedSeconds: history.rightFrame?.elapsedSeconds ?? null,
+          }
+        : {
+            displayElapsedSeconds: vehicleDisplayElapsedSeconds.value,
+            frameCount: 0,
+            snapshotSessionId: snapshot.value?.session_id ?? '',
+            snapshotState: snapshot.value?.state ?? null,
+            snapshotElapsedSeconds: snapshot.value?.elapsed_seconds ?? null,
+          }
+      if (!history) {
+        if (!snapshot.value?.session_id) {
+          return {
+            intersectionId,
+            sessionId: '',
+            presentationGeneration: expectedPresentationGeneration,
+            pipelineGeneration,
+            snapshots: [],
+            headingResolver,
+            poseResolver,
+            displayElapsedSeconds: vehicleDisplayElapsedSeconds.value ?? 0,
+            sourceVehicleCount: 0,
+            viewportVehicleCount: 0,
+            selectedVehicleCount: 0,
+            authoritativeLocalVehicleCount: 0,
+            precompileMilliseconds: performance.now() - startedAt,
+            firstFrameVehicleCount: 0,
+            firstFrameSamples: [],
+            priorityVehicleIds: [],
+            readiness: { status: 'authoritative_empty', sampleCount: 0 },
+          }
+        }
+      } else {
+        pipeline ??= new VehicleViewportPipeline({
+          intersectionId,
+          sessionId: history.sessionId,
+          presentationGeneration: expectedPresentationGeneration,
+          pipelineGeneration,
+          headingResolver,
+          poseResolver,
+          projector: coordinateProjector,
+        })
+        const frames: VehicleViewportAuthoritativeFrame[] = history.frames.map((frame) => ({
+          vehicles: frame.view.vehicles,
+          context: {
+            sessionId: frame.sessionId,
+            state: frame.state,
+            sequence: frame.sequence,
+            elapsedSeconds: frame.elapsedSeconds,
+            laneRuntimeById: frame.intersectionRuntimeById[intersectionId]?.lanes ?? {},
+            trafficPeriod: activeSimulationPeriod.value,
+            intersectionId,
+            playbackSpeed: frame.playbackRate,
+          },
+        }))
+        pipeline.ingest(frames)
+        const stage = pipeline.prepare(history.displayElapsedSeconds, startedAt)
+        if (
+          stage?.readiness.status === 'ready'
+          || stage?.readiness.status === 'authoritative_empty'
+          || stage?.readiness.status === 'viewport_empty'
+        ) {
+          viewportStageStatus = stage.readiness.status
+          viewportStageRejectionReasons = []
+          return stage
+        }
+        if (stage?.readiness.status === 'unresolved') {
+          lastUnresolved = stage
+          viewportStageStatus = 'unresolved'
+          viewportStageRejectionReasons = [...stage.readiness.rejectionReasons]
+        }
+      }
+      if (performance.now() >= deadline) {
+        console.warn('[vehicle-stage] authoritative history timed out', JSON.stringify({
+          intersectionId,
+          presentationGeneration: expectedPresentationGeneration,
+          pipelineGeneration,
+          lastStageStatus: lastUnresolved?.readiness.status ?? 'waiting',
+          lastRejectionReasons: lastUnresolved?.readiness.status === 'unresolved'
+            ? lastUnresolved.readiness.rejectionReasons
+            : [],
+          history: lastHistoryDiagnostic,
+        }))
+        if (lastUnresolved?.readiness.status === 'unresolved') {
+          throw new Error(
+            `Vehicle stage unresolved for ${intersectionId}: ${lastUnresolved.readiness.rejectionReasons.join(', ')}`,
+          )
+        }
+        return null
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 50))
+    }
+    return null
+  } finally {
+    pipeline?.destroy()
   }
-  return null
 }
 
 async function switchRealisticIntersection(
@@ -1249,17 +1466,27 @@ async function switchRealisticIntersection(
     }
     const headingResolver = createIntersectionLaneHeadingResolver(manifest)
     const poseResolver = createIntersectionLanePoseResolver(manifest, coordinateProjector)
-    const vehicleStage = await waitForViewportVehicleStage(
-      intersectionId,
-      headingResolver,
-      poseResolver,
-      signal,
-    )
+    const [vehicleStage, preparedEnvironment] = await Promise.all([
+      waitForViewportVehicleStage(
+        intersectionId,
+        headingResolver,
+        poseResolver,
+        signal,
+      ),
+      prepareIntersectionEnvironment(intersectionId, signal),
+    ])
     if (!vehicleStage) {
       console.warn('[vehicle-stage] preparation timed out', vehicleRenderer?.viewportStageDiagnostic())
       throw new Error(`Vehicle stage was not ready for ${intersectionId}`)
     }
-    vehicleRenderer?.beginViewportTransition()
+    if (
+      vehicleStage.presentationGeneration !== simulationPresentationGeneration.value
+      || vehicleStage.intersectionId !== intersectionId
+    ) return false
+    vehicleRenderer?.beginViewportTransition(vehicleStage)
+    const vehicleTwinReadyPromise = vehicleRenderer
+      ?.waitForViewportTransitionReady(signal, VEHICLE_TWIN_VIEWPORT_WARMUP_TIMEOUT_MS)
+      ?? Promise.resolve(true)
     const cameraPromise = new Promise<boolean>((resolve) => {
       if (!focusCamera) {
         resolve(true)
@@ -1284,16 +1511,29 @@ async function switchRealisticIntersection(
         },
       )
     })
-    const [cameraReady, preparedEnvironment] = await Promise.all([
+    const [cameraReady, vehicleTwinReady] = await Promise.all([
       cameraPromise,
-      prepareIntersectionEnvironment(intersectionId, signal),
+      vehicleTwinReadyPromise,
     ])
     if (
       !cameraReady
+      || !vehicleTwinReady
       || !sceneSwitchCoordinator.isCurrent(transaction)
       || revision !== sceneSwitchRevision
       || activeIntersectionId.value !== intersectionId
+      || vehicleStage.presentationGeneration !== simulationPresentationGeneration.value
     ) {
+      if (!cameraReady || !vehicleTwinReady) {
+        console.warn('[vehicle-stage] viewport commit gate not ready', JSON.stringify({
+          intersectionId,
+          cameraReady,
+          vehicleTwinReady,
+          warmupTimeoutMs: VEHICLE_TWIN_VIEWPORT_WARMUP_TIMEOUT_MS,
+          firstFrameVehicleCount: vehicleStage.firstFrameVehicleCount,
+          readiness: vehicleStage.readiness.status,
+          presentationGeneration: vehicleStage.presentationGeneration,
+        }))
+      }
       realisticIntersectionLayer.discard(intersectionId)
       return false
     }
@@ -1309,6 +1549,10 @@ async function switchRealisticIntersection(
     roadsideFacilityRenderer?.setRealisticDetailActive(true)
     realisticIntersectionLayer.activate(intersectionId)
     activeDebugManifest = manifest
+    commitIntersectionEnvironment(intersectionId, preparedEnvironment, revision)
+    setSceneReady(intersectionId)
+    committed = true
+    intersectionTopologyLayer?.setActiveIntersection(intersectionId)
     installSceneDebugApi()
     syncRuntimeDisturbanceRoads()
     syncSceneEventMarkers()
@@ -1316,26 +1560,15 @@ async function switchRealisticIntersection(
     realisticDetailReady = true
     syncRoadRendering(geojson.value)
     displaySignalsAt(vehicleStats.value.displayElapsedSeconds ?? snapshot.value?.elapsed_seconds ?? 0)
-    commitIntersectionEnvironment(intersectionId, preparedEnvironment, revision)
-    committed = true
 
-    const current = snapshot.value
-    const stats = vehicleRenderer?.update(trafficView.value?.vehicles ?? [], {
-      sessionId: current?.session_id ?? '',
-      state: current?.state ?? null,
-      sequence: current?.sequence ?? -1,
-      elapsedSeconds: current?.elapsed_seconds ?? 0,
-      laneRuntimeById: current?.intersections?.[intersectionId]?.lanes ?? {},
-      trafficPeriod: activeSimulationPeriod.value,
-      intersectionId,
-    }, true)
-    if (stats) updateVehicleRenderStats(stats)
+    syncVehicleAuthoritativeHistory()
     if (trackInitialPresentation) {
       initialCameraReady = true
       initialIntersectionReady = true
       initialEnvironmentReady = true
     }
-    setSceneReady(intersectionId)
+    viewportStageStatus = vehicleStage.readiness.status
+    viewportStageRejectionReasons = []
     return true
   } catch (cause) {
     if (prepared && !committed) realisticIntersectionLayer.discard(intersectionId)
@@ -1343,7 +1576,17 @@ async function switchRealisticIntersection(
     realisticDetailReady = realisticIntersectionLayer.activeIntersectionId !== null
     syncRoadRendering(geojson.value)
     roadsideFacilityRenderer?.setRealisticDetailActive(realisticDetailReady)
-    setSceneError(cause instanceof Error ? cause.message : '高精度路口加载失败')
+    const message = cause instanceof Error ? cause.message : '高精度路口加载失败'
+    viewportStageStatus = 'failed'
+    if (committedIntersectionId.value) {
+      suppressedRollbackIntersectionId = committedIntersectionId.value
+      const restoredIntersectionId = restoreCommittedIntersection(message)
+      if (restoredIntersectionId) {
+        intersectionTopologyLayer?.setActiveIntersection(restoredIntersectionId)
+      }
+    } else {
+      setSceneError(message)
+    }
     return false
   } finally {
     const current = sceneSwitchCoordinator.complete(transaction)
@@ -1756,16 +1999,19 @@ function registerThreeMapController(): void {
         eventProjectionCameraVersion += 1
         cameraFlightGuard?.cancel()
         cameraFlightActive = options.duration > 0
+        vehicleRenderer?.setCameraTransitionActive(cameraFlightActive)
         if (cameraFlightActive && engine) engine.controller.enabled = false
         const placedTarget = placeBaiduCameraTarget(target, scenePlacement)
         const finishFlight = () => {
           if (revision !== cameraFlightRevision) return
           cameraFlightGuard = null
           cameraFlightActive = false
+          vehicleRenderer?.setCameraTransitionActive(false)
           eventProjectionCameraVersion += 1
           enableCameraInteraction()
           refreshIntersectionRoadLod(true)
           roadsideFacilityRenderer?.refreshViewport(true)
+          refreshVehicleViewportAfterCameraPlacement()
           options.complete()
         }
         cameraFlightGuard = createCameraFlightGuard({
@@ -1795,6 +2041,7 @@ function registerThreeMapController(): void {
           options,
         )
         refreshIntersectionRoadLod(true)
+        refreshVehicleViewportAfterCameraPlacement()
       }
     },
     setRangeLimits: (minimum, maximum) => {
@@ -1916,6 +2163,8 @@ async function initMap(): Promise<void> {
     ? new BaiduRoadNetworkRenderer(engine, coordinateProjector)
     : new BaiduDetailedRoadRenderer(engine, coordinateProjector)
   vehicleRenderer = new BaiduVehicleRenderer(engine, coordinateProjector, displaySignalsAt)
+  vehicleHistorySessionId = ''
+  processedVehicleHistoryKeys.clear()
   vehicleRenderer.setPresentationElapsedSeconds(vehicleDisplayElapsedSeconds.value)
   vehicleRenderer.setStableMode(stableRenderMode.value)
   realisticIntersectionLayer = new MapvRealisticIntersectionLayer(engine, coordinateProjector)
@@ -1946,6 +2195,13 @@ async function initMap(): Promise<void> {
     { immediate: true },
   ))
   asyncWatchStops.push(watch(
+    mapView.cameraPreset,
+    () => {
+      refreshVehicleViewportAfterCameraPlacement()
+    },
+    { immediate: true },
+  ))
+  asyncWatchStops.push(watch(
     trafficView,
     (value) => {
       const current = snapshot.value
@@ -1954,23 +2210,22 @@ async function initMap(): Promise<void> {
         current?.elapsed_seconds ?? 0,
         value?.intersections,
       )
-      const stats = vehicleRenderer?.update(value?.vehicles ?? [], {
-        sessionId: current?.session_id ?? '',
-        state: current?.state ?? null,
-        sequence: current?.sequence ?? -1,
-        elapsedSeconds: current?.elapsed_seconds ?? 0,
-        laneRuntimeById: current?.intersections?.[activeIntersectionId.value]?.lanes ?? {},
-        trafficPeriod: activeSimulationPeriod.value,
-        intersectionId: activeIntersectionId.value,
-      })
-      if (stats) updateVehicleRenderStats(stats)
-      displaySignalsAt(stats?.displayElapsedSeconds ?? current?.elapsed_seconds ?? 0)
+    },
+    { immediate: true },
+  ))
+  asyncWatchStops.push(watch(
+    vehicleAuthoritativeHistoryRevision,
+    () => {
+      const stats = syncVehicleAuthoritativeHistory()
+      displaySignalsAt(stats?.displayElapsedSeconds ?? vehicleDisplayElapsedSeconds.value ?? 0)
     },
     { immediate: true },
   ))
   asyncWatchStops.push(watch(
     renderSessionRevision,
     () => {
+      vehicleHistorySessionId = ''
+      processedVehicleHistoryKeys.clear()
       vehicleRenderer?.clear()
       signalDisplayTimeline.clear()
       sceneEventMarkers.value = []
@@ -1989,7 +2244,7 @@ async function initMap(): Promise<void> {
     immediate: true,
   }))
   asyncWatchStops.push(watch(
-    [detectedEventCards, runtimeDisturbances, topologyNodes, eventLanePositionIndex],
+    [detectedEventCards, runtimeDisturbances, topologyNodes, eventLanePositionIndex, simulationPresentationGeneration],
     syncSceneEventMarkers,
     { deep: true, immediate: true },
   ))
@@ -2061,7 +2316,10 @@ async function initMap(): Promise<void> {
   asyncWatchStops.push(watch(
     [activeIntersectionId, selectionRevision],
     ([intersectionId]) => {
-      intersectionTopologyLayer?.setActiveIntersection(intersectionId)
+      if (suppressedRollbackIntersectionId === intersectionId) {
+        suppressedRollbackIntersectionId = null
+        return
+      }
       void switchRealisticIntersection(intersectionId)
     },
   ))

@@ -30,7 +30,7 @@ const {
   sceneStatus,
   selectIntersection,
 } = useActiveIntersectionScene()
-const { catalog } = useCatalog(activeIntersectionId)
+const { catalog, intersection } = useCatalog(activeIntersectionId)
 const localIntersectionOptions = Array.from({ length: 20 }, (_, index) => ({
   intersection_id: `demo_${index + 1}`,
 }))
@@ -51,7 +51,26 @@ function setCameraPreset(next: CesiumCameraPresetId) {
     sceneStatus.value !== 'ready'
     || committedIntersectionId.value !== activeIntersectionId.value
   ) return
-  mapView?.setCameraPreset(next)
+  if (!mapView) return
+  if (next === 'overview') {
+    mapView.setCameraPreset(next)
+    return
+  }
+  const selectedIntersection = intersection.value
+  if (
+    selectedIntersection?.longitude != null
+    && selectedIntersection.latitude != null
+    && Number.isFinite(selectedIntersection.longitude)
+    && Number.isFinite(selectedIntersection.latitude)
+  ) {
+    mapView.focusIntersection(
+      [selectedIntersection.longitude, selectedIntersection.latitude],
+      selectedIntersection.intersection_id,
+      { force: true, duration: 900, cameraPreset: next },
+    )
+    return
+  }
+  mapView.setCameraPreset(next)
 }
 
 const {

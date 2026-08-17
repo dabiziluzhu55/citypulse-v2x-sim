@@ -77,9 +77,18 @@ import {
   MAX_VEHICLE_OUTPUT_CATCH_UP_RATE,
   VehicleOutputPacer,
 } from '../src/mapv/vehicleOutputPacing.ts'
+import {
+  MapvTwinWindowProbe,
+  VEHICLE_TWIN_PRIME_SPACING_MS,
+  VEHICLE_TWIN_RENDER_DELAY_MS,
+} from '../src/mapv/vehicleTwinPresentation.ts'
 
 const vehicleRendererSource = await readFile(
   new URL('../src/mapv/BaiduVehicleRenderer.ts', import.meta.url),
+  'utf8',
+)
+const vehicleTwinPresenterSource = await readFile(
+  new URL('../src/mapv/vehicleTwinPresenter.ts', import.meta.url),
   'utf8',
 )
 const headingManifest = JSON.parse(await readFile(
@@ -508,6 +517,12 @@ test('recovers a long frame without advancing the vehicle clock above 110 percen
     recovered.sampleWallTimeMs - second.sampleWallTimeMs
       <= interval * MAX_VEHICLE_OUTPUT_CATCH_UP_RATE + 1e-9,
   )
+  const clock = new VehiclePresentationClock()
+  clock.next(first.sampleWallTimeMs)
+  const beforeLongFrame = clock.next(second.sampleWallTimeMs)
+  const afterLongFrame = clock.next(recovered.sampleWallTimeMs)
+  assert.ok(afterLongFrame - beforeLongFrame <= interval * MAX_VEHICLE_OUTPUT_CATCH_UP_RATE + 1e-9)
+  assert.match(vehicleRendererSource, /presentationClock\.next\(sampleWallTimeMs\)/)
 })
 
 test('does not turn held recovery poses into authoritative motion keyframes', () => {
@@ -572,7 +587,7 @@ test('compiles every authoritative interval once and reuses it for 1000 output q
   const compiled = buffer.stats().compiledSegmentCount
   assert.equal(compiled, (40 - 1) * vehicleCount)
   for (let output = 0; output < 1_000; output += 1) {
-    assert.ok(buffer.sample(4_000 + output * (1_000 / 45)))
+    assert.ok(buffer.sample(4_000 + output * (1_000 / 45), 1.95))
   }
   const stats = buffer.stats()
   assert.equal(stats.compiledSegmentCount, compiled)
@@ -1317,13 +1332,13 @@ test('limits roster churn to 32 vehicles when the performance tier changes', () 
   assert.equal(full.length - constrained.length, MAX_ROSTER_CHANGES_PER_SNAPSHOT)
 })
 
-test('paces Twin output and uses the authoritative display roster', () => {
-  assert.match(vehicleRendererSource, /TWIN_INTERPOLATION_DELAY_MS = 250/)
-  assert.match(vehicleRendererSource, /TWIN_INITIAL_SAMPLE_SPACING_MS = 50/)
+test('paces Twin output while keeping source, viewport, and selected rosters separate', () => {
+  assert.equal(VEHICLE_TWIN_RENDER_DELAY_MS, 500)
+  assert.equal(VEHICLE_TWIN_PRIME_SPACING_MS, 50)
   assert.doesNotMatch(vehicleRendererSource, /SOURCE_MISSING_GRACE_SNAPSHOTS/)
   assert.match(vehicleRendererSource, /NORMAL_OUTPUT_FRAME_MS = 1_000 \/ NORMAL_TWIN_OUTPUT_FPS/)
   assert.doesNotMatch(vehicleRendererSource, /filterSurfaceRenderableVehicles/)
-  assert.match(vehicleRendererSource, /VIEWPORT_SNAPSHOT_HISTORY_SECONDS = 9/)
+  assert.match(vehicleRendererSource, /VIEWPORT_SNAPSHOT_HISTORY_SECONDS = 30/)
   assert.match(vehicleRendererSource, /this\.replayingViewportSnapshots = true/)
   assert.match(vehicleRendererSource, /CONSTRAINED_OUTPUT_FRAME_MS = 1_000 \/ STABLE_TWIN_OUTPUT_FPS/)
   assert.match(vehicleRendererSource, /this\.twinPlaybackBacklogMs = pacing\.backlogMs/)
@@ -1331,13 +1346,24 @@ test('paces Twin output and uses the authoritative display roster', () => {
   assert.match(vehicleRendererSource, /recordSourceRoster\(context\.sequence/)
   assert.match(vehicleRendererSource, /!lanePose\s*&& this\.lanePoseResolver\?\.hasLane\(vehicle\.lane_id\)/)
   assert.doesNotMatch(vehicleRendererSource, /rejectedInsideDetailedLane[\s\S]{0,160}coversDetailedArea/)
-  assert.match(vehicleRendererSource, /presentVehicleIds: renderableVehicles\.map/)
+  assert.match(vehicleRendererSource, /sourceVehicleIds,/)
+  assert.match(vehicleRendererSource, /viewportVehicleIds,/)
+  assert.match(vehicleRendererSource, /selectedVehicleIds: visible\.map/)
+  assert.doesNotMatch(vehicleRendererSource, /presentVehicleIds:/)
   assert.doesNotMatch(vehicleRendererSource, /retainMissingSourceSamples/)
   assert.doesNotMatch(vehicleRendererSource, /emptyRenderStreak \+= 1/)
   assert.match(vehicleRendererSource, /!isVehicleAnimationActive\(this\.lastContext\.state\)/)
+  assert.match(
+    vehicleRendererSource,
+    /result\.status === 'waiting'[\s\S]{0,320}this\.twinPresenter\.freezeAfterVisible\(\)/,
+  )
+  assert.match(
+    vehicleRendererSource,
+    /result\.status === 'selection_empty'[\s\S]{0,180}this\.twinPresenter\.freezeAfterVisible\(\)/,
+  )
 })
 
-test('removes terminal vehicles instead of freezing a stale Twin roster', () => {
+test('freezes a non-empty terminal Twin roster and only clears an authoritative empty one', () => {
   assert.match(vehicleRendererSource, /context\.state === 'STOPPED'/)
   assert.match(vehicleRendererSource, /context\.state === 'COMPLETED'/)
   assert.match(vehicleRendererSource, /context\.state === 'FAILED'/)
@@ -1345,9 +1371,47 @@ test('removes terminal vehicles instead of freezing a stale Twin roster', () => 
     vehicleRendererSource.indexOf('vehicles.length === 0'),
     vehicleRendererSource.indexOf('const renderableVehicles'),
   )
-  assert.match(terminalEmptyBlock, /this\.twin\.reset\(\)/)
-  assert.doesNotMatch(vehicleRendererSource, /private freezeTerminalPose/)
+  assert.match(terminalEmptyBlock, /this\.twinPresenter\.reset\('terminal_authoritative_empty'\)/)
+  assert.match(vehicleRendererSource, /this\.twinPresenter\.freezeAfterVisible\(\)/)
 })
+
+test('reproduces MapV window exhaustion with zero delay and two 50 ms samples', () => {
+  const probe = new MapvTwinWindowProbe(0)
+  probe.push(950, 1_000)
+  probe.push(1_000, 1_000)
+  assert.equal(probe.tick(1_000), true)
+  assert.equal(probe.tick(1_050), false)
+})
+
+test('keeps the warming Twin sample window alive until MapV produces real instances', () => {
+  const warmupBlock = vehicleTwinPresenterSource.slice(
+    vehicleTwinPresenterSource.indexOf('private scheduleWarmupRender'),
+    vehicleTwinPresenterSource.indexOf('private cancelWarmupRender'),
+  )
+  assert.match(warmupBlock, /channel\.warmupSamples\.map/)
+  assert.match(warmupBlock, /this\.pushToChannel\(channel, samples\)/)
+  assert.match(warmupBlock, /channel\.actualVisibleCount > 0/)
+})
+
+for (const fps of [24, 30]) {
+  test(`keeps the MapV two-sample window alive at ${fps} fps across a 250 ms long frame`, () => {
+    const probe = new MapvTwinWindowProbe(VEHICLE_TWIN_RENDER_DELAY_MS)
+    probe.push(950, 1_000)
+    probe.push(1_000, 1_000)
+    const outputIntervalMs = 1_000 / fps
+    let nextOutputMs = 1_000 + outputIntervalMs
+    for (let wallTimeMs = 1_000; wallTimeMs <= 3_000; wallTimeMs += 1_000 / 60) {
+      const inLongFrame = wallTimeMs >= 1_600 && wallTimeMs < 1_850
+      if (!inLongFrame && wallTimeMs + 1e-6 >= nextOutputMs) {
+        probe.push(wallTimeMs, wallTimeMs)
+        nextOutputMs = wallTimeMs + outputIntervalMs
+      }
+      const visible = probe.tick(wallTimeMs)
+      if (wallTimeMs >= 1_500) assert.equal(visible, true, `window exhausted at ${wallTimeMs}`)
+    }
+    assert.ok(probe.depthMs() > 0)
+  })
+}
 
 test('preserves complete optional vehicle telemetry through the traffic view', () => {
   const source = {
@@ -2449,4 +2513,78 @@ test('does not apply a second bumper offset to a lane-resolved model center', ()
 
   assert.equal(sample.point[0], 116.501)
   assert.equal(sample.point[1], 39.801)
+})
+
+test('distinguishes motion buffering from an authoritative empty roster', () => {
+  const waitingBuffer = new VehicleMotionBuffer()
+  waitingBuffer.push({
+    sceneGeneration: 0,
+    sequence: 1,
+    elapsedSeconds: 10,
+    arrivalTimeMs: 10_000,
+    samples: [motionSample('waiting', 1)],
+    presentVehicleIds: ['waiting'],
+  })
+  assert.deepEqual(waitingBuffer.sampleResult(10_000, 8), {
+    status: 'waiting',
+    reason: 'insufficient_frames',
+    displayElapsedSeconds: 8,
+    sourceVehicleCount: 0,
+    viewportVehicleCount: 0,
+    selectedVehicleCount: 0,
+    authoritativeVehicleCount: 0,
+    unresolvedVehicleCount: 0,
+    samples: [],
+  })
+
+  const emptyBuffer = new VehicleMotionBuffer()
+  emptyBuffer.push({
+    sceneGeneration: 0, sequence: 1, elapsedSeconds: 10, arrivalTimeMs: 10_000,
+    samples: [], presentVehicleIds: [],
+  })
+  emptyBuffer.push({
+    sceneGeneration: 0, sequence: 2, elapsedSeconds: 10.5, arrivalTimeMs: 10_500,
+    samples: [], presentVehicleIds: [],
+  })
+  const empty = emptyBuffer.sampleResult(10_500, 10.25)
+  assert.equal(empty.status, 'authoritative_empty')
+  assert.equal(empty.authoritativeVehicleCount, 0)
+})
+
+test('does not classify an empty camera selection as an authoritative empty roster', () => {
+  const buffer = new VehicleMotionBuffer()
+  for (const [sequence, elapsedSeconds] of [[1, 10], [2, 10.5]]) {
+    buffer.push({
+      sceneGeneration: 0,
+      sequence,
+      elapsedSeconds,
+      arrivalTimeMs: elapsedSeconds * 1_000,
+      samples: [],
+      sourceVehicleIds: ['global', 'local'],
+      viewportVehicleIds: ['local'],
+      selectedVehicleIds: [],
+    })
+  }
+  const result = buffer.sampleResult(10_500, 10.25)
+  assert.equal(result.status, 'selection_empty')
+  assert.equal(result.sourceVehicleCount, 2)
+  assert.equal(result.viewportVehicleCount, 1)
+  assert.equal(result.selectedVehicleCount, 0)
+})
+
+test('notifies the renderer when a compiled interval becomes available', () => {
+  const buffer = new VehicleMotionBuffer()
+  const events = []
+  buffer.setCompilationReadyListener((event) => events.push(event))
+  buffer.push({
+    sceneGeneration: 0, sequence: 1, elapsedSeconds: 0, arrivalTimeMs: 0,
+    samples: [motionSample('compiled-notification', 0)],
+  })
+  buffer.push({
+    sceneGeneration: 0, sequence: 2, elapsedSeconds: 0.5, arrivalTimeMs: 500,
+    samples: [motionSample('compiled-notification', 1)],
+  })
+  assert.ok(events.length >= 1)
+  assert.equal(events.at(-1).pendingCount, 0)
+  assert.equal(buffer.sampleResult(500, 0.25).status, 'ready')
 })
