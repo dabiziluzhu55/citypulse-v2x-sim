@@ -893,14 +893,19 @@ class SimulationManager:
                     config.control_mode == "algorithm"
                     and elapsed + 1e-9 >= next_decision
                 )
+                fixed_telemetry_due = (
+                    config.control_mode == "fixed"
+                    and elapsed + 1e-9 >= next_decision
+                )
                 ai_frame_id = (
                     ai_frame_clock.poll(elapsed)
                     if ai_observer is not None
                     else None
                 )
                 vehicle_observations = None
-                if decision_due or ai_frame_id is not None:
+                if decision_due or fixed_telemetry_due or ai_frame_id is not None:
                     vehicle_tracker.refresh_observations(elapsed)
+                if decision_due or ai_frame_id is not None:
                     vehicle_observations = vehicle_tracker.observations(
                         reset_interval=decision_due
                     )
@@ -954,6 +959,9 @@ class SimulationManager:
                         decision_step += 1
                         while next_decision <= elapsed + 1e-9:
                             next_decision += config.decision_interval
+                elif fixed_telemetry_due:
+                    while next_decision <= elapsed + 1e-9:
+                        next_decision += config.decision_interval
 
                 if ai_observer is not None and ai_frame_id is not None:
                     from .run import _observe_ai_frame

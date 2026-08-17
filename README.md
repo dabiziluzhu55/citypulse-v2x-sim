@@ -39,9 +39,9 @@ python -m simulation.sumo.engine.run --gui --realtime --mode fixed \
 ```
 
 构建命令还会使用 SUMO routeSampler 联合拟合 20 个路口，按
-`data/maps/sumo/traffic_generation_policy.json` 为不同车型筛选长短途候选路线，生成早高峰、
+`data/maps/sumo/traffic/traffic_generation_policy.json` 为不同车型筛选长短途候选路线，生成早高峰、
 平峰和晚高峰 3 个全局真实车流场景，并按最终车流的起止区域生成对应的九区域 OD PCU 矩阵。
-数据口径、总量校验和场景切换见 [docs/traffic_demand.md](docs/traffic_demand.md)。
+数据口径、总量校验和场景切换见 [docs/sumo.md](docs/sumo.md) 的构建部分。
 
 后端可调用的会话、时间窗口、局部管控范围、交通倍率和扰动事件接口见
 [docs/sumo.md](docs/sumo.md)。
