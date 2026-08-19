@@ -416,7 +416,7 @@ test('keeps a vehicle at fixed scale while isolating incompatible motion epochs'
   assert.ok(outputs.every((sample) => !('transitionVisibility' in sample)))
 })
 
-test('classifies normal road changes without creating an incompatible transition', () => {
+test('accepts topology-confirmed road changes and rejects an unconfirmed raw bridge', () => {
   const previous = { roadId: 'incoming', laneId: 'incoming_0', motionPathKey: 'route:turn' }
   assert.equal(classifyRoadTransition({
     previous,
@@ -438,7 +438,7 @@ test('classifies normal road changes without creating an incompatible transition
     rawFallback: true,
     displacementStable: true,
     headingDeltaRadians: 10 * Math.PI / 180,
-  }), 'raw_continuous')
+  }), 'incompatible')
   assert.equal(classifyRoadTransition({
     previous,
     roadId: 'unrelated',

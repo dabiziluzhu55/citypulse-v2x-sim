@@ -104,6 +104,10 @@ import {
   resolveSessionEventMarkers,
   type EventLanePositionIndex,
 } from '../../utils/eventLanePositionIndex'
+import {
+  sharedLaneCongestionStateResolver,
+  type LaneCongestionStateSnapshot,
+} from '../../utils/laneCongestionState'
 import { SceneSwitchCoordinator } from '../../utils/sceneSwitchCoordinator'
 import { SignalDisplayTimeline } from '../../mapv/signalDisplayTimeline'
 import { detectMap3dCapability } from '../../mapv/map3dCapabilities'
@@ -210,6 +214,7 @@ const detectedEventCards = computed(() => (
 const sceneEventMarkers = ref<SceneEventMarker[]>([])
 const debugSceneEventMarkers = ref<SceneEventMarker[]>([])
 const debugTrafficStyle = ref<TrafficStylePayload | null>(null)
+let laneCongestionSnapshot: LaneCongestionStateSnapshot | null = null
 const detectedOverlayActive = computed(() => {
   const state = snapshot.value?.state
   return state === 'RUNNING' || state === 'PAUSED' || state === 'STARTING' || state === 'STOPPING'
@@ -314,6 +319,9 @@ const vehicleStats = ref<VehicleRenderStats>({
   twinResetReason: null,
   firstSourceElapsedSeconds: null,
   latestSourceElapsedSeconds: null,
+  sourceVehicleIntersectionCount: 0,
+  visualAddedIntersectionCount: 0,
+  collisionRejectedVehicleIds: [],
 })
 const vehicleBufferBusy = computed(() => {
   const current = snapshot.value
@@ -847,16 +855,48 @@ function syncTopologyCongestion(): void {
   )
   if (!trafficStyle || (!detectedOverlayActive.value && !debugTrafficStyle.value)) {
     intersectionTopologyLayer?.setRouteCongestion({})
-    laneCongestionFlowLayer?.setTrafficStyle([], null)
+    laneCongestionFlowLayer?.setLaneCongestion([], null)
+    laneCongestionSnapshot = null
     return
   }
+  laneCongestionSnapshot = current
+    ? sharedLaneCongestionStateResolver.resolve({
+        sessionId: current.session_id,
+        presentationGeneration: simulationPresentationGeneration.value,
+        sequence: current.sequence,
+        asOfSeconds: current.elapsed_seconds,
+        intersections: current.intersections,
+        laneEntries: eventLanePositionIndex.value?.entries,
+      })
+    : null
+  const laneMetricEdges = laneCongestionSnapshot?.edgeIdsWithLaneMetrics ?? new Set<string>()
+  const fallbackTrafficStyle: TrafficStylePayload = {
+    ...trafficStyle,
+    edges: Object.fromEntries(Object.entries(trafficStyle.edges).filter(([edgeId]) => (
+      !laneMetricEdges.has(edgeId)
+    ))),
+  }
   intersectionTopologyLayer?.setRouteCongestion(
-    buildDirectedRouteCongestionLevels(trafficStyle, routeIds),
+    buildDirectedRouteCongestionLevels(fallbackTrafficStyle, routeIds),
   )
-  laneCongestionFlowLayer?.setTrafficStyle(
+  laneCongestionFlowLayer?.setLaneCongestion(
     visibleManifests,
-    trafficStyle,
+    laneCongestionSnapshot,
+    eventLanePositionIndex.value?.entries,
   )
+  if (import.meta.env.DEV && laneCongestionSnapshot) {
+    const diagnosticsWindow = window as Window & {
+      __CITYPULSE_LANE_CONGESTION_DIAGNOSTICS__?: Record<string, unknown>
+    }
+    diagnosticsWindow.__CITYPULSE_LANE_CONGESTION_DIAGNOSTICS__ = {
+      ...diagnosticsWindow.__CITYPULSE_LANE_CONGESTION_DIAGNOSTICS__,
+      ...laneCongestionSnapshot.diagnostics,
+      threeDimensionalFlow: laneCongestionFlowLayer?.stats() ?? null,
+      fallbackEdgeCount: Object.keys(fallbackTrafficStyle.edges).length,
+      sessionId: current?.session_id ?? '',
+      sequence: current?.sequence ?? -1,
+    }
+  }
 }
 
 function createBaiduProvider(): mapvthree.BaiduVectorTileProvider {
@@ -2232,7 +2272,8 @@ async function initMap(): Promise<void> {
       sceneEventMarkerLayer?.setMarkers([])
       realisticIntersectionLayer?.updateRuntimeDisturbances([])
       intersectionTopologyLayer?.setRouteCongestion({})
-      laneCongestionFlowLayer?.setTrafficStyle([], null)
+      laneCongestionFlowLayer?.setLaneCongestion([], null)
+      laneCongestionSnapshot = null
       debugTrafficStyle.value = null
       engine?.requestRender()
     },

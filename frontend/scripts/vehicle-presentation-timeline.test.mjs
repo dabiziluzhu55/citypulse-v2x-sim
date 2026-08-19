@@ -3,6 +3,10 @@ import test from 'node:test'
 
 import { VehiclePresentationTimeline } from '../src/mapv/vehiclePresentationTimeline.ts'
 import { VehiclePresentationCoordinator } from '../src/mapv/vehiclePresentationCoordinator.ts'
+import {
+  interpolateCanonicalVehiclePosition,
+  registerCanonicalVehicleLaneGeometry,
+} from '../src/mapv/canonicalVehicleMotion.ts'
 
 function trafficView(elapsedSeconds, vehicles) {
   return {
@@ -30,6 +34,19 @@ function vehicle(id, longitude) {
     lane_id: 'edge_0',
   }
 }
+
+test('samples a curved source lane by arc length instead of cutting across it', () => {
+  registerCanonicalVehicleLaneGeometry([{
+    laneId: 'curve_0', edgeId: 'curve', kind: 'driving', intersectionId: 'demo_1',
+    coordinates: [[116, 39], [116.001, 39.001], [116.002, 39]],
+  }])
+  const left = { ...vehicle('curved', 116), latitude: 39, lane_id: 'curve_0' }
+  const right = { ...vehicle('curved', 116.002), latitude: 39, lane_id: 'curve_0' }
+  const middle = interpolateCanonicalVehiclePosition(left, right, 0.5)
+  assert.equal(middle.source, 'lane_frenet')
+  assert.ok(Math.abs(middle.longitude - 116.001) < 1e-6)
+  assert.ok(Math.abs(middle.latitude - 39.001) < 1e-6)
+})
 
 test('samples 2D and 3D from one delayed authoritative roster and time', () => {
   const timeline = new VehiclePresentationTimeline()

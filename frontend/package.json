@@ -31,7 +31,7 @@
     "test:roadside-facilities": "node --test scripts/roadside-facilities.test.mjs",
     "test:showcase-layers": "node --test scripts/showcase-layers.test.mjs",
     "test:vegetation": "node --test scripts/vegetation.test.mjs",
-    "test:vehicles": "node --test scripts/vehicle-visibility.test.mjs scripts/vehicle-authoritative-routes.test.mjs scripts/vehicle-model-dimensions.test.mjs scripts/vehicle-presentation-timeline.test.mjs",
+    "test:vehicles": "node --test scripts/vehicle-visibility.test.mjs scripts/vehicle-authoritative-routes.test.mjs scripts/vehicle-model-dimensions.test.mjs scripts/vehicle-presentation-timeline.test.mjs scripts/vehicle-frame-collision.test.mjs",
     "test:evaluation-comparison": "node --test scripts/evaluation-comparison.test.mjs",
     "test:playback-rate": "node --test scripts/playback-rate.test.mjs",
     "test:roads": "node --test scripts/road-geometry.test.mjs scripts/road-tileset.test.mjs scripts/road-joints.test.mjs",

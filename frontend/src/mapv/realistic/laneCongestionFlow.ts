@@ -1,5 +1,5 @@
-import type { CongestionLevel, TrafficStylePayload } from '../../types/intelligence'
-import { normalizeCongestionLevel } from '../../utils/topologyCongestion.ts'
+import type { CongestionLevel } from '../../types/intelligence'
+import type { LaneCongestionStateSnapshot } from '../../utils/laneCongestionState'
 import {
   projectBd09ToWebMercator,
   unprojectWebMercatorToBd09,
@@ -106,11 +106,11 @@ export function congestionAnimationSpeed(meanSpeedMetersPerSecond: number): numb
 
 export function buildLaneCongestionFlows(
   manifest: RealisticIntersectionManifest,
-  trafficStyle: TrafficStylePayload | null | undefined,
+  congestionState: LaneCongestionStateSnapshot | null | undefined,
   mapOrigin = manifest.origin.bd09,
 ): { flows: LaneCongestionFlow[]; diagnostics: LaneCongestionFlowDiagnostics } {
   const flows: LaneCongestionFlow[] = []
-  const styledEdges = trafficStyle?.edges ?? {}
+  const laneStates = congestionState?.lanes ?? {}
   const originBd09 = mapOrigin
   if (!originBd09) {
     return {
@@ -126,12 +126,12 @@ export function buildLaneCongestionFlows(
   }
   const originMercator = projectBd09ToWebMercator(originBd09)
   for (const edge of manifest.edges) {
-    const style = styledEdges[edge.id]
-    const level = normalizeCongestionLevel(style?.level)
-    if (!style || level === 'free') continue
-    const visual = CONGESTION_FLOW_VISUALS[level]
     for (const lane of edge.lanes) {
       if ((lane.kind ?? 'driving') !== 'driving') continue
+      const state = laneStates[lane.id]
+      if (!state || state.level === 'free') continue
+      const level = state.level
+      const visual = CONGESTION_FLOW_VISUALS[level]
       const points = laneGuidePoints(lane)
       if (points.length < 2) continue
       flows.push({
@@ -140,7 +140,7 @@ export function buildLaneCongestionFlows(
         level,
         color: visual.color,
         direction: 'forward',
-        animationSpeed: congestionAnimationSpeed(style.mean_speed),
+        animationSpeed: congestionAnimationSpeed(state.meanSpeed),
         mapCoordinates: points.map((point) => {
           const coordinate = unprojectWebMercatorToBd09([
             originMercator[0] + point[0],

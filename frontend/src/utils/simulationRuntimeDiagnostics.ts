@@ -81,6 +81,9 @@ export interface VehicleRuntimeDiagnosticUpdate {
   viewportStageRejectionReasons?: string[]
   firstSourceElapsedSeconds: number | null
   latestSourceElapsedSeconds: number | null
+  sourceVehicleIntersectionCount: number
+  visualAddedIntersectionCount: number
+  collisionRejectedVehicleIds: string[]
 }
 
 interface RuntimeDiagnosticState {
@@ -173,6 +176,9 @@ interface RuntimeDiagnosticState {
   viewportStageRejectionReasons: string[]
   firstVehicleSourceElapsedSeconds: number | null
   latestVehicleSourceElapsedSeconds: number | null
+  sourceVehicleIntersections: number
+  visualAddedIntersections: number
+  collisionRejectedVehicleIds: string[]
   capturedAt: string
 }
 
@@ -266,6 +272,9 @@ const state: RuntimeDiagnosticState = {
   viewportStageRejectionReasons: [],
   firstVehicleSourceElapsedSeconds: null,
   latestVehicleSourceElapsedSeconds: null,
+  sourceVehicleIntersections: 0,
+  visualAddedIntersections: 0,
+  collisionRejectedVehicleIds: [],
   capturedAt: '',
 }
 
@@ -376,6 +385,9 @@ export function resetSimulationRuntimeDiagnostics(sessionId = ''): void {
   state.viewportStageRejectionReasons = []
   state.firstVehicleSourceElapsedSeconds = null
   state.latestVehicleSourceElapsedSeconds = null
+  state.sourceVehicleIntersections = 0
+  state.visualAddedIntersections = 0
+  state.collisionRejectedVehicleIds = []
   snapshotIntervalsMs = []
   lastSnapshotArrivalMs = null
   publish()
@@ -510,6 +522,9 @@ export function recordVehicleRuntimeDiagnostics(update: VehicleRuntimeDiagnostic
   }
   state.firstVehicleSourceElapsedSeconds = update.firstSourceElapsedSeconds
   state.latestVehicleSourceElapsedSeconds = update.latestSourceElapsedSeconds
+  state.sourceVehicleIntersections = update.sourceVehicleIntersectionCount
+  state.visualAddedIntersections = update.visualAddedIntersectionCount
+  state.collisionRejectedVehicleIds = [...update.collisionRejectedVehicleIds]
   publish()
 }
 

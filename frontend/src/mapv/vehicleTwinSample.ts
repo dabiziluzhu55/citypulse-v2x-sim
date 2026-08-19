@@ -43,6 +43,8 @@ export interface VehicleTwinMotionMetadata {
   intermediatePoseValid?: boolean
   intermediateValidationReason?: string
   authoritativeSourceTimeSeconds?: number
+  authoritativeSourceLongitude?: number
+  authoritativeSourceLatitude?: number
   displayElapsedSeconds?: number
   motionPathKey?: string
   segmentKey?: string
@@ -93,6 +95,8 @@ export interface VehicleTwinSample {
   intermediatePoseValid?: boolean
   intermediateValidationReason?: string
   authoritativeSourceTimeSeconds?: number
+  authoritativeSourceLongitude?: number
+  authoritativeSourceLatitude?: number
   displayElapsedSeconds?: number
   motionPathKey?: string
   segmentKey?: string

@@ -27,7 +27,7 @@ test('backend congestion levels map to the required 3D flow palette', () => {
   assert.ok(congestionAnimationSpeed(0) < congestionAnimationSpeed(12))
 })
 
-test('lane flow projects an edge level only to driving lanes and preserves point order', async () => {
+test('lane flow renders only the congested driving lane and preserves point order', async () => {
   const manifest = JSON.parse(await readFile(
     new URL('../public/intersections/v3/demo_1/manifest.json', import.meta.url),
     'utf8',
@@ -37,29 +37,30 @@ test('lane flow projects an edge level only to driving lanes and preserves point
     && candidate.lanes.some((lane) => lane.kind !== 'driving')
   )) ?? manifest.edges.find((candidate) => candidate.lanes.some((lane) => lane.kind === 'driving'))
   assert.ok(edge)
-  const result = buildLaneCongestionFlows(manifest, {
-    as_of_seconds: 1,
-    edges: {
-      [edge.id]: {
-        level: 'severe', score: 1, mean_speed: 2, occupancy_pct: 90,
-        vehicle_count: 20, halting_count: 16,
-      },
-    },
-  })
   const drivingLanes = edge.lanes.filter((lane) => (lane.kind ?? 'driving') === 'driving')
-  assert.equal(result.flows.length, drivingLanes.length)
+  const congestedLane = drivingLanes[0]
+  const result = buildLaneCongestionFlows(manifest, {
+    sessionId: 'session-1', presentationGeneration: 1, sequence: 1, asOfSeconds: 1,
+    edgeIdsWithLaneMetrics: new Set([edge.id]), diagnostics: {},
+    lanes: Object.fromEntries(drivingLanes.map((lane, index) => [lane.id, {
+      laneId: lane.id, edgeId: edge.id, intersectionId: manifest.intersectionId,
+      ownerIntersectionId: manifest.intersectionId, vehicleCount: index ? 0 : 20,
+      haltingCount: index ? 0 : 16, meanSpeed: index ? 12 : 0.5,
+      occupancyPct: index ? 0 : 90, level: index ? 'free' : 'severe',
+      instantaneousLevel: index ? 'free' : 'severe', fallbackReason: null,
+    }])),
+  })
+  assert.equal(result.flows.length, 1)
   assert.ok(result.flows.every((flow) => flow.level === 'severe' && flow.direction === 'forward'))
   for (const flow of result.flows) {
+    assert.equal(flow.laneId, congestedLane.id)
     const lane = drivingLanes.find((candidate) => candidate.id === flow.laneId)
     const source = lane.vehicleGuidePoints ?? lane.renderPoints ?? lane.points
     assert.equal(flow.mapCoordinates.length, source.length)
     assert.notDeepEqual(flow.mapCoordinates[0], flow.mapCoordinates.at(-1))
   }
 
-  const free = buildLaneCongestionFlows(manifest, {
-    as_of_seconds: 2,
-    edges: { [edge.id]: { level: 'free', mean_speed: 10 } },
-  })
+  const free = buildLaneCongestionFlows(manifest, null)
   assert.equal(free.flows.length, 0)
 })
 

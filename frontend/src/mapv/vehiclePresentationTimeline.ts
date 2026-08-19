@@ -1,6 +1,7 @@
 import type { SimulationState } from '../types/simulation'
 import type { TrafficStateView, TrafficVehicleView } from '../types/traffic'
 import { VEHICLE_TWIN_RENDER_DELAY_MS } from './vehicleTwinPresentation.ts'
+import { interpolateCanonicalVehiclePosition } from './canonicalVehicleMotion.ts'
 
 export const MIN_SHARED_VEHICLE_DELAY_SECONDS = 2
 export const MAX_SHARED_VEHICLE_DELAY_SECONDS = 3
@@ -64,10 +65,11 @@ function interpolateVehicle(
   ratio: number,
 ): TrafficVehicleView {
   const pickRight = ratio >= 1
+  const canonicalPosition = interpolateCanonicalVehiclePosition(left, right, ratio)
   return {
     ...(pickRight ? right : left),
-    longitude: interpolateNumber(left.longitude, right.longitude, ratio),
-    latitude: interpolateNumber(left.latitude, right.latitude, ratio),
+    longitude: canonicalPosition.longitude,
+    latitude: canonicalPosition.latitude,
     x: left.x + (right.x - left.x) * ratio,
     y: left.y + (right.y - left.y) * ratio,
     speed: Math.max(0, left.speed + (right.speed - left.speed) * ratio),

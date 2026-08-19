@@ -1,88 +1,68 @@
-// traffic_style消费：有后端等级时直接使用，不再本地阈值重算
-
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-function normalizeCongestionLevel(value) {
-  if (value === 'slow' || value === 'congested' || value === 'severe' || value === 'free') return value
-  return 'free'
-}
+import {
+  classifyLaneCongestion,
+  LaneCongestionStateResolver,
+  normalizeLaneOccupancyPct,
+} from '../src/utils/laneCongestionState.ts'
 
-function worseCongestionLevel(left, right) {
-  const rank = { free: 0, slow: 1, congested: 2, severe: 3 }
-  return rank[left] >= rank[right] ? left : right
-}
-
-function buildIntersectionCongestionLevels(snapshot, trafficStyle) {
-  const levels = {}
-  if (!snapshot) return levels
-  const edges = trafficStyle?.edges
-  if (!edges || Object.keys(edges).length === 0) {
-    for (const intersectionId of Object.keys(snapshot.intersections ?? {})) levels[intersectionId] = 'free'
-    return levels
-  }
-  for (const [intersectionId, intersection] of Object.entries(snapshot.intersections ?? {})) {
-    let level = 'free'
-    for (const [laneId, lane] of Object.entries(intersection.lanes ?? {})) {
-      const edgeId = String(lane.edge_id || laneId.replace(/_\d+$/, ''))
-      const styled = edges[edgeId]
-      if (!styled) continue
-      level = worseCongestionLevel(level, normalizeCongestionLevel(styled.level))
-    }
-    levels[intersectionId] = level
-  }
-  return levels
-}
-
-test('uses backend traffic_style level and ignores local occupancy thresholds', () => {
-  const snapshot = {
-    intersections: {
-      demo_1: {
-        lanes: {
-          E1_0: {
-            edge_id: 'E1',
-            vehicle_count: 20,
-            halting_count: 20,
-            mean_speed: 0.1,
-            occupancy: 90,
-          },
-        },
-      },
-    },
-  }
-  const style = {
-    as_of_seconds: 10,
-    edges: {
-      E1: {
-        level: 'slow',
-        score: 0.45,
-        mean_speed: 0.1,
-        occupancy_pct: 90,
-        vehicle_count: 20,
-        halting_count: 20,
-      },
-    },
-  }
-  const levels = buildIntersectionCongestionLevels(snapshot, style)
-  assert.equal(levels.demo_1, 'slow')
+const metrics = (vehicleCount, haltingCount, meanSpeed, occupancyPct) => ({
+  vehicleCount, haltingCount, meanSpeed, occupancyPct,
 })
 
-test('missing traffic_style defaults to free without local recalculation', () => {
-  const snapshot = {
+test('classifies lane congestion with the backend thresholds', () => {
+  assert.equal(classifyLaneCongestion(metrics(2, 2, 0, 100)), 'free')
+  assert.equal(classifyLaneCongestion(metrics(4, 2, 7, 12)), 'slow')
+  assert.equal(classifyLaneCongestion(metrics(8, 4, 2.5, 22)), 'congested')
+  assert.equal(classifyLaneCongestion(metrics(10, 6, 0.8, 36)), 'severe')
+  assert.equal(normalizeLaneOccupancyPct(0.35), 35)
+  assert.equal(normalizeLaneOccupancyPct(35), 35)
+})
+
+function intersections(level) {
+  const runtime = level === 'severe'
+    ? { vehicle_count: 10, halting_count: 7, mean_speed: 0.5, occupancy: 45, edge_id: 'E1' }
+    : level === 'slow'
+      ? { vehicle_count: 5, halting_count: 2, mean_speed: 5, occupancy: 12, edge_id: 'E1' }
+      : { vehicle_count: 1, halting_count: 0, mean_speed: 12, occupancy: 1, edge_id: 'E1' }
+  return { demo_1: { current_phase: 0, pending_phase: null, stage: 'GREEN', stage_elapsed: 0, lanes: { E1_0: runtime } } }
+}
+
+const laneEntries = [{
+  laneId: 'E1_0', edgeId: 'E1', kind: 'driving', intersectionId: 'demo_1',
+  coordinates: [[116, 39], [116.001, 39]],
+}]
+
+test('confirms a lane level change for two snapshots and resets by session generation', () => {
+  const resolver = new LaneCongestionStateResolver()
+  const resolve = (sequence, level, generation = 1) => resolver.resolve({
+    sessionId: 'session-1', presentationGeneration: generation, sequence,
+    asOfSeconds: sequence, intersections: intersections(level), laneEntries,
+  }).lanes.E1_0.level
+  assert.equal(resolve(1, 'free'), 'free')
+  assert.equal(resolve(2, 'severe'), 'free')
+  assert.equal(resolve(3, 'severe'), 'severe')
+  assert.equal(resolve(4, 'free'), 'severe')
+  assert.equal(resolve(5, 'free'), 'free')
+  assert.equal(resolve(6, 'slow', 2), 'slow')
+})
+
+test('prefers the indexed owner when one lane appears in adjacent intersections', () => {
+  const resolver = new LaneCongestionStateResolver()
+  const snapshot = resolver.resolve({
+    sessionId: 'session-2', presentationGeneration: 1, sequence: 1, asOfSeconds: 1,
+    laneEntries,
     intersections: {
-      demo_1: {
-        lanes: {
-          E1_0: {
-            edge_id: 'E1',
-            vehicle_count: 20,
-            halting_count: 20,
-            mean_speed: 0.1,
-            occupancy: 90,
-          },
-        },
+      ...intersections('free'),
+      demo_2: {
+        current_phase: 0, pending_phase: null, stage: 'GREEN', stage_elapsed: 0,
+        lanes: { E1_0: { vehicle_count: 20, halting_count: 20, mean_speed: 0, occupancy: 90, edge_id: 'E1' } },
       },
     },
-  }
-  const levels = buildIntersectionCongestionLevels(snapshot, null)
-  assert.equal(levels.demo_1, 'free')
+  })
+  assert.equal(snapshot.lanes.E1_0.intersectionId, 'demo_1')
+  assert.equal(snapshot.lanes.E1_0.level, 'free')
+  assert.equal(snapshot.diagnostics.duplicateLaneCount, 1)
+  assert.equal(snapshot.diagnostics.duplicateConflictCount, 1)
 })

@@ -66,11 +66,9 @@ export function classifyRoadTransition(input: RoadTransitionInput): RoadTransiti
   ) return 'same_path'
   if (input.laneTransitionKind === 'topological') return 'topology_successor'
   if (previous.roadId === input.roadId && previous.laneId === input.laneId) return 'same_path'
-  const headingCompatible = input.headingDeltaRadians == null
-    || input.headingDeltaRadians <= MAX_RAW_TRANSITION_HEADING_DELTA
-  if (input.rawFallback && input.displacementStable && headingCompatible) {
-    return 'raw_continuous'
-  }
+  // A road/lane change without a topology-confirmed path must not be bridged
+  // with a geographic straight line. The future snapshot window can resolve
+  // the connection later without exposing an off-road transition meanwhile.
   return 'incompatible'
 }
 

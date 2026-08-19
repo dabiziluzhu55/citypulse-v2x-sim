@@ -1,4 +1,4 @@
-export type VehicleType = 'passenger' | 'bus' | 'truck'
+export type VehicleType = 'passenger' | 'bus' | 'truck' | 'electric_bicycle'
 
 export interface VehicleModelDefinition {
   type: VehicleType
@@ -16,14 +16,16 @@ export interface VehicleModelDefinition {
 }
 
 export const VEHICLE_DIMENSIONS: Record<VehicleType, { lengthMeters: number; widthMeters: number; heightMeters: number }> = {
-  passenger: { lengthMeters: 4.6, widthMeters: 1.8, heightMeters: 1.5 },
+  passenger: { lengthMeters: 5, widthMeters: 1.8, heightMeters: 1.5 },
   bus: { lengthMeters: 12, widthMeters: 2.5, heightMeters: 3.2 },
-  truck: { lengthMeters: 8.5, widthMeters: 2.4, heightMeters: 3.0 },
+  truck: { lengthMeters: 10, widthMeters: 2.5, heightMeters: 3.0 },
+  electric_bicycle: { lengthMeters: 1.8, widthMeters: 0.65, heightMeters: 1.7 },
 }
 
 const PASSENGER_COLORS = ['#d7e3ee', '#8fb8de', '#c7d2dc', '#a7c4dd', '#e6ebf0', '#9fb2c4']
 const BUS_COLOR = '#3f7bd6'
 const TRUCK_COLOR = '#c9954b'
+const ELECTRIC_BICYCLE_COLOR = '#63d6b5'
 
 /** 稳定哈希：同一 vehicle_id 在不同帧得到一致结果 */
 function stableHash(value: string): number {
@@ -34,7 +36,12 @@ function stableHash(value: string): number {
   return Math.abs(hash)
 }
 
-function resolveType(vehicleId: string, laneId: string): VehicleType {
+function resolveType(vehicleId: string, laneId: string, typeId?: string): VehicleType {
+  const normalized = typeId?.toLowerCase() ?? ''
+  if (normalized.includes('electric_bicycle') || normalized.includes('ebike')) return 'electric_bicycle'
+  if (normalized.includes('bus') || normalized.includes('coach')) return 'bus'
+  if (normalized.includes('truck') || normalized.includes('lorry')) return 'truck'
+  if (normalized.includes('passenger') || normalized.includes('car')) return 'passenger'
   const bucket = stableHash(`${vehicleId}|${laneId}`) % 100
   if (bucket < 8) return 'bus'
   if (bucket < 20) return 'truck'
@@ -44,6 +51,7 @@ function resolveType(vehicleId: string, laneId: string): VehicleType {
 function resolveColor(type: VehicleType, vehicleId: string): string {
   if (type === 'bus') return BUS_COLOR
   if (type === 'truck') return TRUCK_COLOR
+  if (type === 'electric_bicycle') return ELECTRIC_BICYCLE_COLOR
   const index = stableHash(vehicleId) % PASSENGER_COLORS.length
   return PASSENGER_COLORS[index] ?? PASSENGER_COLORS[0]
 }
@@ -76,11 +84,11 @@ export class TrafficModelRegistry {
     this.headingOffsetDegrees = options.headingOffsetDegrees ?? 0
   }
 
-  resolve(vehicleId: string, laneId: string): VehicleModelDefinition {
+  resolve(vehicleId: string, laneId: string, typeId?: string): VehicleModelDefinition {
     const cached = this.cache.get(vehicleId)
     if (cached) return cached
 
-    const type = resolveType(vehicleId, laneId)
+    const type = resolveType(vehicleId, laneId, typeId)
     const dimensions = VEHICLE_DIMENSIONS[type]
     const modelUri = this.modelUriByType[type]?.trim() || this.globalModelUri || undefined
     const modelScale = this.modelScaleByType[type] ?? 1

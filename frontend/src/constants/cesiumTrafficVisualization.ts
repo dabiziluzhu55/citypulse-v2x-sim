@@ -16,6 +16,7 @@ export const CESIUM_VEHICLE_MODEL_URIS: Record<VehicleType, string> = {
   passenger: CAR_MODEL_URI,
   bus: TRUCK_MODEL_URI,
   truck: TRUCK_MODEL_URI,
+  electric_bicycle: CAR_MODEL_URI,
 }
 
 /**
@@ -26,6 +27,7 @@ export const CESIUM_VEHICLE_MODEL_SCALES: Record<VehicleType, number> = {
   passenger: 1.15,
   bus: 2.0,
   truck: 1.4,
+  electric_bicycle: 0.45,
 }
 
 /** 车头朝向修正（度），叠加到 SUMO 航向 */

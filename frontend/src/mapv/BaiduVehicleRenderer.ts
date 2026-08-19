@@ -67,6 +67,7 @@ import {
   VEHICLE_TWIN_RENDER_DELAY_MS,
   VehicleTwinPresenter,
 } from './vehicleTwinPresenter.ts'
+import { auditVehicleFrameCollisions } from './vehicleFrameCollisionAudit.ts'
 
 const VEHICLE_HISTORY_TTL_SNAPSHOTS = 30
 const LANE_RECOVERY_HOLD_SECONDS = 1.5
@@ -199,6 +200,9 @@ export interface VehicleRenderStats {
   twinResetReason: string | null
   firstSourceElapsedSeconds: number | null
   latestSourceElapsedSeconds: number | null
+  sourceVehicleIntersectionCount: number
+  visualAddedIntersectionCount: number
+  collisionRejectedVehicleIds: string[]
 }
 
 interface BufferedViewportVehicleSnapshot {
@@ -362,6 +366,9 @@ export class BaiduVehicleRenderer {
   private playableVehicleCount = 0
   private selectionScope: VehicleSelectionScope = { kind: 'overview' }
   private selectionScopeDirty = false
+  private sourceVehicleIntersectionCount = 0
+  private visualAddedIntersectionCount = 0
+  private collisionRejectedVehicleIds = new Set<string>()
 
   constructor(
     engine: mapvthree.Engine,
@@ -1091,34 +1098,16 @@ export class BaiduVehicleRenderer {
           sequence: context.sequence,
         })
         if (stableSamples < 2) {
-          activeIds.add(vehicle.vehicle_id)
-          this.historyLastSeenSequence.set(vehicle.vehicle_id, context.sequence)
-          return [{
-            ...createVehicleTwinSample(
-              vehicle,
-              previousPose.longitude,
-              previousPose.latitude,
-              sourceTime,
-              profile,
-              previousPose.heading,
-              true,
-              {
-                motionPathKey: previousPose.motionPathKey,
-                connectionKey: previousPose.connectionKey,
-                routeHintSource: previousPose.routeHintSource,
-                segmentKey: previousPose.segmentKey,
-                occupancyKey: previousPose.occupancyKey,
-                arcDistanceMeters: previousPose.arcDistanceMeters,
-                pathArcDistanceMeters: previousPose.pathArcDistanceMeters,
-                transitionKind: previousPose.transitionKind,
-                roadTransitionKind: previousPose.roadTransitionKind,
-                poseSource: 'held',
-                sampleQuality: 'held',
-              },
-            ),
-            sceneGeneration: this.sceneGeneration,
-            motionEpoch,
-          }]
+          return this.retainStablePoseSample(
+            vehicle,
+            profile,
+            previousPose,
+            sourceTime,
+            context,
+            activeIds,
+            false,
+            'reentry_confirmation_pending',
+          )
         }
         if (roadTransitionKind === 'incompatible') {
           return this.retainStablePoseSample(
@@ -1331,6 +1320,8 @@ export class BaiduVehicleRenderer {
               : lanePose.sourceArcDistanceMeters - frontToCenterOffsetMeters,
             sourceLateralOffsetMeters: lanePose?.sourceLateralOffsetMeters
               ?? previousPose?.sourceLateralOffsetMeters,
+            authoritativeSourceLongitude: draft.sourceLongitude,
+            authoritativeSourceLatitude: draft.sourceLatitude,
             poseSource: draft.laneChanging
               ? 'lane_change'
               : lanePose ? 'topology' : 'raw',
@@ -1536,6 +1527,9 @@ export class BaiduVehicleRenderer {
     this.playableVehicleCount = 0
     this.twinOutputVehicleCount = 0
     this.waitingTwinResetInterceptCount = 0
+    this.sourceVehicleIntersectionCount = 0
+    this.visualAddedIntersectionCount = 0
+    this.collisionRejectedVehicleIds.clear()
     this.motionBuffer.reset()
     this.presentationClock.reset()
     this.selector.reset()
@@ -1646,9 +1640,19 @@ export class BaiduVehicleRenderer {
       }
       return false
     }
-    const samples = [...result.samples]
+    let samples = [...result.samples]
     if (samples.length === 0) {
       this.emptyBufferInterceptCount += 1
+      return false
+    }
+    const collisionAudit = auditVehicleFrameCollisions(samples)
+    this.sourceVehicleIntersectionCount += collisionAudit.sourceIntersectionCount
+    this.visualAddedIntersectionCount += collisionAudit.visualAddedIntersectionCount
+    for (const id of collisionAudit.rejectedVehicleIds) this.collisionRejectedVehicleIds.add(id)
+    samples = collisionAudit.acceptedSamples
+    if (samples.length === 0) {
+      this.emptyBufferInterceptCount += 1
+      if (this.primed) this.twinPresenter.freezeAfterVisible()
       return false
     }
     const time = this.presentationClock.next(sampleWallTimeMs)
@@ -1840,6 +1844,9 @@ export class BaiduVehicleRenderer {
       twinResetReason: this.twinResetReason,
       firstSourceElapsedSeconds: motion.firstSourceElapsedSeconds,
       latestSourceElapsedSeconds: motion.latestSourceElapsedSeconds,
+      sourceVehicleIntersectionCount: this.sourceVehicleIntersectionCount,
+      visualAddedIntersectionCount: this.visualAddedIntersectionCount,
+      collisionRejectedVehicleIds: [...this.collisionRejectedVehicleIds].slice(0, 100),
     }
   }
 

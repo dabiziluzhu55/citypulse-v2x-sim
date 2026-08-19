@@ -31,11 +31,10 @@ import { formatIntersectionLabel } from '../../utils/intersectionLabels'
 import { buildDisturbanceWarningAggregates } from '../../utils/disturbanceWarnings'
 import {
   resolveStableVehicleHeading,
-  shortestAngleDelta,
   type VehicleHeadingState,
 } from '../../mapv/vehicleOrientation'
 import { SumoHeadingField } from '../../mapv/sumoHeadingTransform'
-import type { CongestionLevel } from '../../types/intelligence'
+import type { CongestionLevel, TrafficStylePayload } from '../../types/intelligence'
 import {
   CONGESTION_FLOW_COLORS,
   normalizeCongestionLevel,
@@ -66,6 +65,10 @@ import {
   resolveSessionEventMarkers,
   type EventLanePositionIndex,
 } from '../../utils/eventLanePositionIndex'
+import {
+  sharedLaneCongestionStateResolver,
+  type LaneCongestionStateSnapshot,
+} from '../../utils/laneCongestionState'
 
 const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 
@@ -96,7 +99,7 @@ let warningOverlay: Overlay | null = null
 let detectedOverlay: Overlay | null = null
 let topologyNodes: IntersectionTopologyNode[] = []
 let eventLanePositionIndex: EventLanePositionIndex | null = null
-let edgeCongestionLevels: Record<string, CongestionLevel> = {}
+let laneCongestionSnapshot: LaneCongestionStateSnapshot | null = null
 let routeCongestionLevels: Record<string, CongestionLevel> = {}
 const vehicleHeadingField = new SumoHeadingField((coordinate) => [
   coordinate[0],
@@ -142,36 +145,18 @@ function syncDetectedEventCards(): void {
 const vehicleHeadingHistory = new globalThis.Map<string, VehicleHeadingState>()
 interface AnimatedVehicleFeature {
   feature: Feature<Point>
-  from: [number, number]
-  to: [number, number]
-  fromRotation: number
-  toRotation: number
-  startedAt: number
 }
 const vehicleFeatures = new globalThis.Map<string, AnimatedVehicleFeature>()
 const vehicleMissingFrames = new globalThis.Map<string, number>()
-let vehicleAnimationFrame: number | null = null
-let vehicleInterpolationMs = 500
-let lastVehicleSnapshotSequence = -1
-let lastVehicleSnapshotArrivalMs: number | null = null
-let vehicleSnapshotIntervalsMs: number[] = []
-let snapVehiclePositions = false
 let userViewportRevision = 0
 let selectionUserViewportRevision = 0
 let focusedIntersectionId: string | null = null
-const MIN_VEHICLE_INTERPOLATION_MS = 500
-const MAX_VEHICLE_INTERPOLATION_MS = 3_500
 const VEHICLE_VIEWPORT_HYSTERESIS_METERS = 120
-
-function percentile(values: number[], ratio: number): number {
-  if (values.length === 0) return MIN_VEHICLE_INTERPOLATION_MS
-  const sorted = [...values].sort((left, right) => left - right)
-  return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio))]
-}
 
 const networkSource = new VectorSource()
 const fullRoadNetworkSource = new VectorSource()
 const topologyFlowSource = new VectorSource()
+const laneCongestionSource = new VectorSource()
 const vehicleSource = new VectorSource()
 const disturbanceSource = new VectorSource()
 const detectedEventSource = new VectorSource()
@@ -210,17 +195,10 @@ const topologyFlowLayer = new VectorLayer({
 })
 
 function clearVehiclePresentation(): void {
-  if (vehicleAnimationFrame !== null) cancelAnimationFrame(vehicleAnimationFrame)
-  vehicleAnimationFrame = null
   vehicleSource.clear()
   vehicleFeatures.clear()
   vehicleHeadingHistory.clear()
   vehicleMissingFrames.clear()
-  vehicleInterpolationMs = MIN_VEHICLE_INTERPOLATION_MS
-  lastVehicleSnapshotSequence = -1
-  lastVehicleSnapshotArrivalMs = null
-  vehicleSnapshotIntervalsMs = []
-  snapVehiclePositions = false
 }
 
 function clearSessionPresentation(): void {
@@ -232,9 +210,9 @@ function clearSessionPresentation(): void {
   warningOverlay?.setPosition(undefined)
   warningPopupTitle.value = ''
   warningPopupEvents.value = []
-  edgeCongestionLevels = {}
+  laneCongestionSnapshot = null
+  laneCongestionSource.clear()
   routeCongestionLevels = {}
-  networkLayer.changed()
   topologyFlowLayer.changed()
 }
 
@@ -242,6 +220,7 @@ const VEHICLE_RADIUS: Record<string, number> = {
   passenger: 6,
   truck: 8,
   bus: 9,
+  electric_bicycle: 4,
 }
 
 const networkLayer = new VectorLayer({
@@ -257,16 +236,28 @@ const networkLayer = new VectorLayer({
         }),
       })
     }
-    const edgeId = String(feature.get('edge_id') ?? '')
-    const level = normalizeCongestionLevel(edgeCongestionLevels[edgeId] ?? 'free')
     return new Style({
       stroke: new Stroke({
-        color: level === 'free' ? 'rgba(90, 180, 255, 0.55)' : CONGESTION_FLOW_COLORS[level],
-        width: level === 'free' ? 2 : 3,
+        color: 'rgba(90, 180, 255, 0.55)',
+        width: 2,
       }),
     })
   },
   zIndex: 5,
+})
+
+const laneCongestionLayer = new VectorLayer({
+  source: laneCongestionSource,
+  style: (feature) => {
+    const level = normalizeCongestionLevel(feature.get('congestionLevel'))
+    return new Style({
+      stroke: new Stroke({
+        color: CONGESTION_FLOW_COLORS[level],
+        width: level === 'severe' ? 4 : level === 'congested' ? 3.5 : 3,
+      }),
+    })
+  },
+  zIndex: 5.5,
 })
 
 const vehicleLayer = new VectorLayer({
@@ -457,30 +448,73 @@ function renderDisturbanceWarnings(): void {
   }
 }
 
-function syncEdgeCongestion(): void {
-  const next: Record<string, CongestionLevel> = {}
-  const edges = snapshot.value?.traffic_style?.edges ?? {}
-  for (const [edgeId, style] of Object.entries(edges)) {
-    next[edgeId] = normalizeCongestionLevel(style.level)
+function syncLaneCongestion(): void {
+  laneCongestionSource.clear()
+  const current = snapshot.value
+  if (!current) {
+    laneCongestionSnapshot = null
+    return
   }
-  edgeCongestionLevels = next
-  networkLayer.changed()
+  laneCongestionSnapshot = sharedLaneCongestionStateResolver.resolve({
+    sessionId: current.session_id,
+    presentationGeneration: simulationPresentationGeneration.value,
+    sequence: current.sequence,
+    asOfSeconds: current.elapsed_seconds,
+    intersections: current.intersections,
+    laneEntries: eventLanePositionIndex?.entries,
+  })
+  const entriesByLaneId = new globalThis.Map(
+    eventLanePositionIndex?.entries.map((entry) => [entry.laneId, entry] as const) ?? [],
+  )
+  for (const state of Object.values(laneCongestionSnapshot.lanes)) {
+    if (state.level === 'free') continue
+    const entry = entriesByLaneId.get(state.laneId)
+    if (!entry || entry.kind !== 'driving') continue
+    const feature = new Feature({
+      geometry: new LineString(entry.coordinates.map((coordinate) => fromLonLat(coordinate))),
+    })
+    feature.setProperties({
+      laneId: state.laneId,
+      edgeId: state.edgeId,
+      congestionLevel: state.level,
+      meanSpeed: state.meanSpeed,
+    })
+    laneCongestionSource.addFeature(feature)
+  }
+  if (import.meta.env.DEV) {
+    const diagnosticsWindow = window as Window & {
+      __CITYPULSE_LANE_CONGESTION_DIAGNOSTICS__?: Record<string, unknown>
+    }
+    diagnosticsWindow.__CITYPULSE_LANE_CONGESTION_DIAGNOSTICS__ = {
+      ...laneCongestionSnapshot.diagnostics,
+      twoDimensionalFlowLaneCount: laneCongestionSource.getFeatures().length,
+      sessionId: current.session_id,
+      sequence: current.sequence,
+    }
+  }
 }
 
 function syncTopologyCongestion(): void {
   const routeIds = topologyFlowSource.getFeatures().map((feature) => (
     String(feature.get('routeId') ?? '')
   )).filter(Boolean)
-  routeCongestionLevels = buildDirectedRouteCongestionLevels(
-    snapshot.value?.traffic_style,
-    routeIds,
-  )
+  const trafficStyle = snapshot.value?.traffic_style
+  const laneEdges = laneCongestionSnapshot?.edgeIdsWithLaneMetrics ?? new Set<string>()
+  const fallbackTrafficStyle: TrafficStylePayload | null = trafficStyle
+    ? {
+        ...trafficStyle,
+        edges: Object.fromEntries(Object.entries(trafficStyle.edges).filter(([edgeId]) => (
+          !laneEdges.has(edgeId)
+        ))),
+      }
+    : null
+  routeCongestionLevels = buildDirectedRouteCongestionLevels(fallbackTrafficStyle, routeIds)
   topologyFlowLayer.changed()
 }
 
 function refreshIntelligenceLayers(): void {
   syncDetectedEventCards()
-  syncEdgeCongestion()
+  syncLaneCongestion()
   syncTopologyCongestion()
 }
 
@@ -513,6 +547,8 @@ async function loadTopologyOverview(): Promise<void> {
   syncTopologyCongestion()
   renderDisturbanceWarnings()
   syncDetectedEventCards()
+  syncLaneCongestion()
+  syncTopologyCongestion()
 }
 
 async function loadFullNetworkOverview(): Promise<void> {
@@ -606,54 +642,10 @@ function renderNetwork() {
   focusedIntersectionId = response.intersection_id
 }
 
-function scheduleVehicleAnimation(): void {
-  if (!props.active || vehicleAnimationFrame !== null) return
-  vehicleAnimationFrame = requestAnimationFrame(animateVehicles)
-}
-
-function animateVehicles(now: number): void {
-  vehicleAnimationFrame = null
-  if (!props.active) return
-  let pending = false
-  for (const state of vehicleFeatures.values()) {
-    const ratio = Math.min(1, Math.max(0, (now - state.startedAt) / vehicleInterpolationMs))
-    state.feature.getGeometry()?.setCoordinates([
-      state.from[0] + (state.to[0] - state.from[0]) * ratio,
-      state.from[1] + (state.to[1] - state.from[1]) * ratio,
-    ])
-    state.feature.set(
-      'rotation',
-      state.fromRotation + shortestAngleDelta(state.fromRotation, state.toRotation) * ratio,
-      true,
-    )
-    state.feature.changed()
-    if (ratio < 1) pending = true
-  }
-  if (pending) scheduleVehicleAnimation()
-}
-
 function renderVehicles() {
   if (!props.active) return
   const vehicles = presentationTrafficView.value?.vehicles ?? []
   const activeIds = new Set<string>()
-  const now = performance.now()
-  const sequence = snapshot.value?.sequence ?? -1
-  const isNewSourceSnapshot = sequence !== lastVehicleSnapshotSequence
-  if (isNewSourceSnapshot) {
-    if (lastVehicleSnapshotArrivalMs != null) {
-      const interval = now - lastVehicleSnapshotArrivalMs
-      if (interval > 0 && interval < 10_000) {
-        vehicleSnapshotIntervalsMs.push(interval)
-        vehicleSnapshotIntervalsMs = vehicleSnapshotIntervalsMs.slice(-30)
-        vehicleInterpolationMs = Math.min(
-          MAX_VEHICLE_INTERPOLATION_MS,
-          Math.max(MIN_VEHICLE_INTERPOLATION_MS, percentile(vehicleSnapshotIntervalsMs, .95)),
-        )
-      }
-    }
-    lastVehicleSnapshotSequence = sequence
-    lastVehicleSnapshotArrivalMs = now
-  }
   const mapSize = map?.getSize()
   const visibleExtent = map && mapSize
     ? bufferExtent(map.getView().calculateExtent(mapSize), VEHICLE_VIEWPORT_HYSTERESIS_METERS)
@@ -664,7 +656,7 @@ function renderVehicles() {
     }
     const target = fromLonLat([vehicle.longitude, vehicle.latitude]) as [number, number]
     if (visibleExtent && !containsCoordinate(visibleExtent, target)) continue
-    const definition = modelRegistry.resolve(vehicle.vehicle_id, vehicle.lane_id)
+    const definition = modelRegistry.resolve(vehicle.vehicle_id, vehicle.lane_id, vehicle.type_id)
     const previousHeading = vehicleHeadingHistory.get(vehicle.vehicle_id) ?? null
     const headingResolution = vehicleHeadingField.resolve(
       vehicle.angle,
@@ -686,34 +678,13 @@ function renderVehicles() {
     feature.set('vtype', definition.type)
     const targetRotation = Math.PI / 2 - resolvedHeading.heading
     if (existing) {
-      if (snapVehiclePositions || presentationTrafficView.value != null) {
-        existing.from = target
-        existing.to = target
-        existing.fromRotation = targetRotation
-        existing.toRotation = targetRotation
-        existing.startedAt = now
-        feature.getGeometry()?.setCoordinates(target)
-        feature.set('rotation', targetRotation)
-        feature.changed()
-        continue
-      }
-      const current = feature.getGeometry()?.getCoordinates() as [number, number] | undefined
-      existing.from = current ? [...current] as [number, number] : target
-      existing.to = target
-      existing.fromRotation = Number(feature.get('rotation') ?? targetRotation)
-      existing.toRotation = targetRotation
-      existing.startedAt = now
+      feature.getGeometry()?.setCoordinates(target)
+      feature.set('rotation', targetRotation)
+      feature.changed()
     } else {
       feature.set('rotation', targetRotation)
       vehicleSource.addFeature(feature)
-      vehicleFeatures.set(vehicle.vehicle_id, {
-        feature,
-        from: target,
-        to: target,
-        fromRotation: targetRotation,
-        toRotation: targetRotation,
-        startedAt: now,
-      })
+      vehicleFeatures.set(vehicle.vehicle_id, { feature })
     }
   }
   for (const id of vehicleHeadingHistory.keys()) {
@@ -724,8 +695,21 @@ function renderVehicles() {
     if (state) vehicleSource.removeFeature(state.feature)
     vehicleFeatures.delete(id)
   }
-  snapVehiclePositions = false
-  scheduleVehicleAnimation()
+  if (import.meta.env.DEV) {
+    const diagnosticsWindow = window as Window & {
+      __CITYPULSE_2D_VEHICLE_DIAGNOSTICS__?: Record<string, unknown>
+    }
+    diagnosticsWindow.__CITYPULSE_2D_VEHICLE_DIAGNOSTICS__ = {
+      sessionId: presentationTrafficView.value?.session_id ?? '',
+      displayElapsedSeconds: presentationTrafficView.value?.elapsed_seconds ?? null,
+      authoritativeVehicleCount: vehicles.length,
+      renderedVehicleCount: activeIds.size,
+      authoritativeVehicleIds: vehicles.map((vehicle) => vehicle.vehicle_id),
+      renderedVehicleIds: [...activeIds],
+      canonicalLaneGeometryAvailable: eventLanePositionIndex?.laneCount ?? 0,
+      capturedAt: new Date().toISOString(),
+    }
+  }
 }
 
 function markUserViewportInteraction(): void {
@@ -769,6 +753,7 @@ onMounted(() => {
       topologyBaseLayer,
       topologyFlowLayer,
       networkLayer,
+      laneCongestionLayer,
       vehicleLayer,
       disturbanceLayer,
       detectedEventLayer,
@@ -836,13 +821,9 @@ watch(renderSessionRevision, clearSessionPresentation, { flush: 'sync' })
 watch(() => props.active, (active) => {
   if (active) {
     map?.updateSize()
-    snapVehiclePositions = true
     renderVehicles()
     refreshIntelligenceLayers()
     map?.renderSync()
-  } else if (vehicleAnimationFrame !== null) {
-    cancelAnimationFrame(vehicleAnimationFrame)
-    vehicleAnimationFrame = null
   }
 })
 watch(activeIntersectionId, () => {
@@ -869,6 +850,7 @@ onUnmounted(() => {
   topologyNodes = []
   eventLanePositionIndex = null
   topologyFlowSource.clear()
+  laneCongestionSource.clear()
   fullRoadNetworkSource.clear()
   routeCongestionLevels = {}
   detectedEventSource.clear()

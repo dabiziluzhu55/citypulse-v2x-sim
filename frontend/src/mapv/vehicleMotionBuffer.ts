@@ -641,6 +641,16 @@ export function interpolateVehicleTwinSample(
         (Number(right.authoritativeSourceTimeSeconds) || right.time / 1_000)
         - (Number(left.authoritativeSourceTimeSeconds) || left.time / 1_000)
       ) * amount,
+    authoritativeSourceLongitude: Number.isFinite(left.authoritativeSourceLongitude)
+      && Number.isFinite(right.authoritativeSourceLongitude)
+      ? Number(left.authoritativeSourceLongitude)
+        + (Number(right.authoritativeSourceLongitude) - Number(left.authoritativeSourceLongitude)) * amount
+      : amount < 0.5 ? left.authoritativeSourceLongitude : right.authoritativeSourceLongitude,
+    authoritativeSourceLatitude: Number.isFinite(left.authoritativeSourceLatitude)
+      && Number.isFinite(right.authoritativeSourceLatitude)
+      ? Number(left.authoritativeSourceLatitude)
+        + (Number(right.authoritativeSourceLatitude) - Number(left.authoritativeSourceLatitude)) * amount
+      : amount < 0.5 ? left.authoritativeSourceLatitude : right.authoritativeSourceLatitude,
     time: 0,
   }
 }
