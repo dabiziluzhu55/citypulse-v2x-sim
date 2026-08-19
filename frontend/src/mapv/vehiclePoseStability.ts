@@ -53,11 +53,15 @@ export interface RoadTransitionInput {
   rawFallback: boolean
   displacementStable: boolean
   headingDeltaRadians?: number
+  canonicalRouteEvidence?: TrafficVehicleView['canonical_route_evidence']
 }
 
 export function classifyRoadTransition(input: RoadTransitionInput): RoadTransitionKind {
   const previous = input.previous
   if (!previous) return 'same_path'
+  if (input.canonicalRouteEvidence === 'lane_change') return 'lane_change'
+  if (input.canonicalRouteEvidence === 'unique_connection') return 'topology_successor'
+  if (input.canonicalRouteEvidence === 'same_lane') return 'same_path'
   if (input.laneChanging || input.laneTransitionKind === 'lane_change') return 'lane_change'
   if (
     input.motionPathKey

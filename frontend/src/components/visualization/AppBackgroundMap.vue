@@ -78,6 +78,7 @@ const { activeIntersectionId } = useActiveIntersectionScene()
 const { geojson, error: networkError } = useSimulationMap(activeIntersectionId)
 const {
   presentationTrafficView,
+  vehiclePresentationDiagnostics,
   snapshot,
   renderSessionRevision,
   simulationPresentationGeneration,
@@ -646,6 +647,7 @@ function renderVehicles() {
   if (!props.active) return
   const vehicles = presentationTrafficView.value?.vehicles ?? []
   const activeIds = new Set<string>()
+  const addedFeatures: Feature<Point>[] = []
   const mapSize = map?.getSize()
   const visibleExtent = map && mapSize
     ? bufferExtent(map.getView().calculateExtent(mapSize), VEHICLE_VIEWPORT_HYSTERESIS_METERS)
@@ -658,10 +660,10 @@ function renderVehicles() {
     if (visibleExtent && !containsCoordinate(visibleExtent, target)) continue
     const definition = modelRegistry.resolve(vehicle.vehicle_id, vehicle.lane_id, vehicle.type_id)
     const previousHeading = vehicleHeadingHistory.get(vehicle.vehicle_id) ?? null
-    const headingResolution = vehicleHeadingField.resolve(
-      vehicle.angle,
-      [vehicle.longitude, vehicle.latitude],
-    )
+    const canonicalHeading = Number(vehicle.canonical_heading_radians)
+    const headingResolution = Number.isFinite(canonicalHeading)
+      ? { heading: canonicalHeading, anchorIds: [], local: null }
+      : vehicleHeadingField.resolve(vehicle.angle, [vehicle.longitude, vehicle.latitude])
     if (!headingResolution && !previousHeading) continue
     const resolvedHeading = resolveStableVehicleHeading({
       sourceMapHeading: headingResolution?.heading,
@@ -674,19 +676,25 @@ function renderVehicles() {
     vehicleMissingFrames.delete(vehicle.vehicle_id)
     const existing = vehicleFeatures.get(vehicle.vehicle_id)
     const feature = existing?.feature ?? new Feature<Point>({ geometry: new Point(target) })
-    feature.set('color', definition.color)
-    feature.set('vtype', definition.type)
+    if (feature.get('color') !== definition.color) feature.set('color', definition.color)
+    if (feature.get('vtype') !== definition.type) feature.set('vtype', definition.type)
     const targetRotation = Math.PI / 2 - resolvedHeading.heading
     if (existing) {
-      feature.getGeometry()?.setCoordinates(target)
-      feature.set('rotation', targetRotation)
-      feature.changed()
+      const geometry = feature.getGeometry()
+      const current = geometry?.getCoordinates()
+      if (!current || Math.hypot(current[0] - target[0], current[1] - target[1]) > 0.002) {
+        geometry?.setCoordinates(target)
+      }
+      if (Math.abs(Number(feature.get('rotation') ?? 0) - targetRotation) > 1e-5) {
+        feature.set('rotation', targetRotation)
+      }
     } else {
       feature.set('rotation', targetRotation)
-      vehicleSource.addFeature(feature)
+      addedFeatures.push(feature)
       vehicleFeatures.set(vehicle.vehicle_id, { feature })
     }
   }
+  if (addedFeatures.length > 0) vehicleSource.addFeatures(addedFeatures)
   for (const id of vehicleHeadingHistory.keys()) {
     if (activeIds.has(id)) continue
     vehicleMissingFrames.delete(id)
@@ -702,11 +710,14 @@ function renderVehicles() {
     diagnosticsWindow.__CITYPULSE_2D_VEHICLE_DIAGNOSTICS__ = {
       sessionId: presentationTrafficView.value?.session_id ?? '',
       displayElapsedSeconds: presentationTrafficView.value?.elapsed_seconds ?? null,
-      authoritativeVehicleCount: vehicles.length,
+      authoritativeVehicleCount: vehiclePresentationDiagnostics.value.authoritativeVehicleCount,
+      canonicalVehicleCount: vehiclePresentationDiagnostics.value.canonicalVehicleCount,
+      unresolvedVehicleCount: vehiclePresentationDiagnostics.value.unresolvedVehicleCount,
       renderedVehicleCount: activeIds.size,
       authoritativeVehicleIds: vehicles.map((vehicle) => vehicle.vehicle_id),
       renderedVehicleIds: [...activeIds],
       canonicalLaneGeometryAvailable: eventLanePositionIndex?.laneCount ?? 0,
+      canonicalMotion: vehiclePresentationDiagnostics.value.motionAudit,
       capturedAt: new Date().toISOString(),
     }
   }

@@ -19,6 +19,10 @@ const outputPath = path.resolve(
   frontendDirectory,
   'public/intersections/v3/event-lane-position-index.json',
 )
+const vehicleMotionOutputPath = path.resolve(
+  frontendDirectory,
+  'public/intersections/v3/vehicle-motion-index.json',
+)
 
 function asArray(value) {
   if (value === undefined || value === null) return []
@@ -94,7 +98,11 @@ const lanes = asArray(network.edge).flatMap((edge) => asArray(edge.lane).flatMap
   return [{
     laneId: lane.id,
     edgeId: String(edge.id),
+    laneIndex: Number(lane.index) || 0,
     kind: laneKind(lane),
+    internal: String(edge.function ?? '') === 'internal' || String(edge.id).startsWith(':'),
+    widthMeters: Number(lane.width) || 3.5,
+    lengthMeters: Number(lane.length) || 0,
     directOwner,
     points,
   }]
@@ -118,7 +126,7 @@ const nodes = catalog.intersections.map((entry) => ({
   radiusMeters: Number(entry.radiusMeters) || 520,
 }))
 
-const entries = lanes.flatMap((lane, laneIndex) => {
+const resolvedLanes = lanes.map((lane, laneIndex) => {
   const coordinates = lanePointIndexes[laneIndex].map((index) => {
     const [longitude, latitude] = converted[index]
     return [Number(longitude.toFixed(7)), Number(latitude.toFixed(7))]
@@ -129,15 +137,70 @@ const entries = lanes.flatMap((lane, laneIndex) => {
     .sort((left, right) => left.distance - right.distance)[0]
   const intersectionId = lane.directOwner
     || (nearest && nearest.distance <= nearest.radiusMeters ? nearest.intersectionId : '')
-  if (!intersectionId) return []
+  return {
+    ...lane,
+    intersectionId,
+    coordinates,
+  }
+})
+
+const entries = resolvedLanes.flatMap((lane) => {
+  if (!lane.intersectionId) return []
   return [{
     laneId: lane.laneId,
     edgeId: lane.edgeId,
     kind: lane.kind,
-    intersectionId,
-    coordinates,
+    intersectionId: lane.intersectionId,
+    coordinates: lane.coordinates,
   }]
 }).sort((left, right) => left.laneId.localeCompare(right.laneId))
+
+const lanesByEdgeAndIndex = new Map(resolvedLanes.map((lane) => [
+  `${lane.edgeId}:${lane.laneIndex}`,
+  lane,
+]))
+const lanesById = new Map(resolvedLanes.map((lane) => [lane.laneId, lane]))
+const motionEntries = resolvedLanes
+  .filter((lane) => lane.kind === 'driving' && lane.intersectionId)
+  .map((lane) => ({
+    laneId: lane.laneId,
+    edgeId: lane.edgeId,
+    laneIndex: lane.laneIndex,
+    intersectionId: lane.intersectionId,
+    internal: lane.internal,
+    widthMeters: Number(lane.widthMeters.toFixed(3)),
+    lengthMeters: Number((lane.lengthMeters || 0).toFixed(3)),
+    sourcePoints: lane.points.map(([x, y]) => [Number(x.toFixed(3)), Number(y.toFixed(3))]),
+    coordinates: lane.coordinates,
+  }))
+  .sort((left, right) => left.laneId.localeCompare(right.laneId))
+
+const motionLaneIds = new Set(motionEntries.map((lane) => lane.laneId))
+const motionConnections = asArray(network.connection).flatMap((connection) => {
+  const fromLane = lanesByEdgeAndIndex.get(`${String(connection.from)}:${Number(connection.fromLane) || 0}`)
+  const toLane = lanesByEdgeAndIndex.get(`${String(connection.to)}:${Number(connection.toLane) || 0}`)
+  const viaLaneId = typeof connection.via === 'string' ? connection.via : ''
+  const viaLane = viaLaneId ? lanesById.get(viaLaneId) : undefined
+  if (
+    !fromLane
+    || !toLane
+    || !motionLaneIds.has(fromLane.laneId)
+    || !motionLaneIds.has(toLane.laneId)
+    || (viaLaneId && (!viaLane || !motionLaneIds.has(viaLaneId)))
+  ) return []
+  const viaLaneIds = viaLaneId ? [viaLaneId] : []
+  const connectionId = [fromLane.laneId, ...viaLaneIds, toLane.laneId].join('>')
+  return [{
+    connectionId,
+    fromLaneId: fromLane.laneId,
+    toLaneId: toLane.laneId,
+    viaLaneIds,
+    direction: String(connection.dir ?? ''),
+  }]
+})
+const uniqueMotionConnections = [...new Map(
+  motionConnections.map((connection) => [connection.connectionId, connection]),
+).values()].sort((left, right) => left.connectionId.localeCompare(right.connectionId))
 
 const payload = {
   schemaVersion: 1,
@@ -152,4 +215,26 @@ const payload = {
 }
 
 await writeFile(outputPath, `${JSON.stringify(payload)}\n`, 'utf8')
-console.log(JSON.stringify({ outputPath, laneCount: entries.length, networkSha256 }))
+const vehicleMotionPayload = {
+  schemaVersion: 1,
+  generatedAt: new Date().toISOString(),
+  networkSource: payload.networkSource,
+  intersectionCatalogSha256: payload.intersectionCatalogSha256,
+  coordinateSystems: {
+    source: 'SUMO_XY_METERS',
+    geographic: 'WGS84',
+  },
+  laneCount: motionEntries.length,
+  connectionCount: uniqueMotionConnections.length,
+  lanes: motionEntries,
+  connections: uniqueMotionConnections,
+}
+await writeFile(vehicleMotionOutputPath, `${JSON.stringify(vehicleMotionPayload)}\n`, 'utf8')
+console.log(JSON.stringify({
+  outputPath,
+  vehicleMotionOutputPath,
+  laneCount: entries.length,
+  motionLaneCount: motionEntries.length,
+  connectionCount: uniqueMotionConnections.length,
+  networkSha256,
+}))

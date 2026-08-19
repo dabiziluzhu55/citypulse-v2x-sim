@@ -680,6 +680,12 @@ export class BaiduVehicleRenderer {
     const drafts = visible.map(({ vehicle, longitude, latitude }) => {
       const previousHeading = this.poseHistory.get(vehicle.vehicle_id)
       const previousPose = this.poseStates.get(vehicle.vehicle_id) ?? null
+      if (vehicle.canonical_motion_resolved === false) {
+        this.temporarilyHiddenCount += 1
+        this.temporarilyHiddenVehicleIds.add(vehicle.vehicle_id)
+        this.invalidPoseSuppressedVehicles.add(vehicle.vehicle_id)
+        return null
+      }
       const profile = resolveVehicleModelProfile(vehicle.type_id)
       const telemetryReliable = !vehicleTelemetryIsPlaceholder(vehicle)
       const lanePosition = reliableVehicleLanePosition(vehicle)
@@ -1073,6 +1079,7 @@ export class BaiduVehicleRenderer {
         rawFallback: draft.rawFallback,
         displacementStable,
         headingDeltaRadians,
+        canonicalRouteEvidence: vehicle.canonical_route_evidence,
       })
       if (
         previousPose
@@ -1264,6 +1271,8 @@ export class BaiduVehicleRenderer {
           heading,
           true,
           {
+            canonicalSegmentId: vehicle.canonical_segment_id,
+            canonicalRouteEvidence: vehicle.canonical_route_evidence,
             motionPathKey: lanePose?.motionPathKey ?? `raw:${vehicle.road_id}:${vehicle.lane_id}`,
             connectionKey: activeConnectionLock?.connectionKey,
             routeHintSource: activeConnectionLock?.source,

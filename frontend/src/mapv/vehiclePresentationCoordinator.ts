@@ -5,6 +5,12 @@ import {
   type VehiclePresentationSample,
   type VehiclePresentationTimelineStats,
 } from './vehiclePresentationTimeline.ts'
+import {
+  canonicalVehicleMotionAudit,
+  interpolateCanonicalVehiclePosition,
+  resetCanonicalVehicleMotionDiagnostics,
+  type VehicleMotionLayerAudit,
+} from './canonicalVehicleMotion.ts'
 
 export interface AuthoritativeVehicleFrame {
   sessionId: string
@@ -32,6 +38,13 @@ export interface PresentedVehicleFrame extends VehiclePresentationSample {
   vehicles: PresentedVehiclePose[]
 }
 
+export interface CanonicalVehiclePresentationDiagnostics extends VehiclePresentationTimelineStats {
+  authoritativeVehicleCount: number
+  canonicalVehicleCount: number
+  unresolvedVehicleCount: number
+  motionAudit: VehicleMotionLayerAudit
+}
+
 export interface VehicleGeometryGeneration {
   sumoNetworkSha256: string
   visualManifestSha256: string
@@ -49,7 +62,41 @@ export class VehiclePresentationCoordinator {
     arrivalTimeMs: number,
     intersectionRuntimeById: Readonly<Record<string, SimulationIntersectionRuntime>> = {},
   ): boolean {
-    const accepted = this.timeline.push(view, sequence, state, playbackRate, arrivalTimeMs)
+    const previousFrame = this.authoritativeFrames.at(-1)
+    const previousById = previousFrame?.sessionId === view.session_id
+      ? new Map(previousFrame.view.vehicles.map((vehicle) => [vehicle.vehicle_id, vehicle] as const))
+      : new Map<string, TrafficVehicleView>()
+    const canonicalView: TrafficStateView = {
+      ...view,
+      vehicles: view.vehicles.map((vehicle) => {
+        const previous = previousById.get(vehicle.vehicle_id)
+        const endpoint = interpolateCanonicalVehiclePosition(vehicle, vehicle, 1)
+        if (!previous) return {
+          ...vehicle,
+          canonical_segment_id: endpoint.segmentId,
+          canonical_route_evidence: 'authoritative_endpoint' as const,
+          canonical_heading_radians: endpoint.headingRadians ?? undefined,
+          canonical_source_x: vehicle.x,
+          canonical_source_y: vehicle.y,
+          canonical_lane_station: endpoint.laneStation ?? undefined,
+          canonical_motion_resolved: endpoint.resolved,
+        }
+        const segment = interpolateCanonicalVehiclePosition(previous, vehicle, 0.5)
+        return {
+          ...vehicle,
+          canonical_segment_id: segment.segmentId,
+          canonical_route_evidence: segment.routeEvidence === 'unresolved'
+            ? undefined
+            : segment.routeEvidence,
+          canonical_heading_radians: endpoint.headingRadians ?? segment.headingRadians ?? undefined,
+          canonical_source_x: vehicle.x,
+          canonical_source_y: vehicle.y,
+          canonical_lane_station: endpoint.laneStation ?? undefined,
+          canonical_motion_resolved: segment.resolved,
+        }
+      }),
+    }
+    const accepted = this.timeline.push(canonicalView, sequence, state, playbackRate, arrivalTimeMs)
     if (!accepted) return false
     const frame: AuthoritativeVehicleFrame = {
       sessionId: view.session_id,
@@ -58,7 +105,7 @@ export class VehiclePresentationCoordinator {
       arrivalTimeMs,
       state,
       playbackRate: Math.max(0, Number(playbackRate) || 0),
-      view,
+      view: canonicalView,
       intersectionRuntimeById: Object.fromEntries(
         Object.entries(intersectionRuntimeById).map(([intersectionId, runtime]) => [
           intersectionId,
@@ -127,10 +174,18 @@ export class VehiclePresentationCoordinator {
   reset(sessionId = ''): void {
     this.timeline.reset(sessionId)
     this.authoritativeFrames = []
+    resetCanonicalVehicleMotionDiagnostics()
   }
 
-  stats(): VehiclePresentationTimelineStats {
-    return this.timeline.stats()
+  stats(): CanonicalVehiclePresentationDiagnostics {
+    const sample = this.sample()
+    return {
+      ...this.timeline.stats(),
+      authoritativeVehicleCount: sample?.authoritativeVehicleIds.size ?? 0,
+      canonicalVehicleCount: sample?.vehicles.length ?? 0,
+      unresolvedVehicleCount: sample?.unresolvedVehicleIds.size ?? 0,
+      motionAudit: canonicalVehicleMotionAudit(),
+    }
   }
 
   private pruneAuthoritativeHistory(): void {

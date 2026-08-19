@@ -3,6 +3,9 @@ import {
   MAX_MOTION_PATH_HEADING_DELTA,
   type MotionPathSampler,
 } from './realistic/intersectionLaneHeading.ts'
+import { sampleCanonicalVehicleSegment } from './canonicalVehicleMotion.ts'
+import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates.ts'
+import { moveFromFrontBumperToModelCenter } from './vehicleOrientation.ts'
 
 export const MIN_VEHICLE_BUFFER_SECONDS = 2
 export const MAX_VEHICLE_BUFFER_SECONDS = 3
@@ -254,6 +257,10 @@ function shortestAngleDelta(from: number, to: number): number {
 }
 
 function samplesCanShareMotionCurve(left: VehicleTwinSample, right: VehicleTwinSample): boolean {
+  if (
+    right.canonicalSegmentId
+    && ['same_lane', 'lane_change', 'unique_connection'].includes(String(right.canonicalRouteEvidence))
+  ) return true
   if (!left.motionPathKey || !right.motionPathKey) return true
   if (left.motionPathKey === right.motionPathKey) return true
   const corridorKeys = right.corridorMotionPathKeys ?? []
@@ -561,20 +568,48 @@ export function interpolateVehicleTwinSample(
   const constrainedLaneChangePoint = laneChangeTransition
     ? laneChangeGuidePoint(left, right, amount, motionPathSampler)
     : null
+  const canonicalPoint = !pathSample
+    && !constrainedLaneChangePoint
+    && left.detailedCorridorValidation !== true
+    && right.detailedCorridorValidation !== true
+    && typeof right.canonicalSegmentId === 'string'
+    && right.canonicalRouteEvidence !== 'authoritative_endpoint'
+    ? sampleCanonicalVehicleSegment(right.canonicalSegmentId, amount)
+    : null
+  const canonicalProjected = canonicalPoint?.longitude != null && canonicalPoint.latitude != null
+    ? projectSimulationCoordinateToBaiduMap([
+        canonicalPoint.longitude,
+        canonicalPoint.latitude,
+        left.point[2] + (right.point[2] - left.point[2]) * amount,
+      ])
+    : null
+  const canonicalCenter = canonicalProjected && canonicalPoint?.headingRadians != null
+    ? moveFromFrontBumperToModelCenter(
+        { longitude: canonicalProjected[0], latitude: canonicalProjected[1] },
+        canonicalPoint.headingRadians,
+        Math.max(0, Number(right.vehicleLengthMeters ?? left.vehicleLengthMeters) || 0) / 2,
+      )
+    : null
   const point: [number, number, number] = pathSample
     ? applyLateralOffset([
       pathSample.longitude,
       pathSample.latitude,
       left.point[2] + (right.point[2] - left.point[2]) * amount,
     ], pathSample.heading, lateralOffsetMeters)
-    : constrainedLaneChangePoint?.point ?? [
+    : constrainedLaneChangePoint?.point ?? (canonicalProjected ? [
+        canonicalCenter?.longitude ?? canonicalProjected[0],
+        canonicalCenter?.latitude ?? canonicalProjected[1],
+        canonicalProjected[2] ?? (left.point[2] + (right.point[2] - left.point[2]) * amount),
+      ] : [
         left.point[0] + (right.point[0] - left.point[0]) * amount,
         left.point[1] + (right.point[1] - left.point[1]) * amount,
         left.point[2] + (right.point[2] - left.point[2]) * amount,
-      ]
+      ])
   const interpolatedSourceHeading = leftHeading
     + shortestAngleDelta(leftHeading, rightHeading) * amount
-  const trajectoryHeading = pathSample?.heading ?? constrainedLaneChangePoint?.heading
+  const trajectoryHeading = pathSample?.heading
+    ?? constrainedLaneChangePoint?.heading
+    ?? canonicalPoint?.headingRadians
   const vehicleHeading = trajectoryHeading != null
     && Math.abs(shortestAngleDelta(interpolatedSourceHeading, trajectoryHeading))
       <= MAX_MOTION_PATH_HEADING_DELTA

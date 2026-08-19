@@ -15,6 +15,8 @@ import {
 } from '../constants/simulationOptions'
 import { snapshotToTrafficView } from '../utils/trafficStateMerge'
 import { VehiclePresentationCoordinator } from '../mapv/vehiclePresentationCoordinator'
+import { loadVehicleMotionIndex } from '../mapv/vehicleMotionIndex.ts'
+import { registerCanonicalVehicleMotionIndex } from '../mapv/canonicalVehicleMotion.ts'
 import { shouldApplySimulationSnapshot } from '../utils/snapshotOrdering'
 import { simulationSnapshotErrorMessage } from '../utils/simulationSessionError.ts'
 import {
@@ -155,6 +157,8 @@ let initialized = false
 let playbackRateSamples: PlaybackRateSample[] = []
 let clockTimer: ReturnType<typeof setInterval> | null = null
 let presentationFrameId: number | null = null
+let lastPresentationPublishMs = 0
+const PRESENTATION_PUBLISH_INTERVAL_MS = 1_000 / 30
 const confirmedClock = new ConfirmedSimulationClock()
 
 const trafficView = computed(() =>
@@ -163,6 +167,10 @@ const trafficView = computed(() =>
 const presentationTrafficView = computed(() => {
   void vehiclePresentationRevision.value
   return vehiclePresentationTimeline.sample()?.view ?? null
+})
+const vehiclePresentationDiagnostics = computed(() => {
+  void vehiclePresentationRevision.value
+  return vehiclePresentationTimeline.stats()
 })
 const runtimeDisturbances = computed(() => (
   runtimeDisturbanceViews(runtimeDisturbanceTargets.value, snapshot.value)
@@ -454,11 +462,22 @@ function ensureInitialized() {
     return
   }
   initialized = true
+  void loadVehicleMotionIndex()
+    .then((index) => {
+      registerCanonicalVehicleMotionIndex(index)
+      vehiclePresentationRevision.value += 1
+    })
+    .catch((cause: unknown) => console.error('[vehicle-motion] canonical index unavailable', cause))
   if (clockTimer === null) clockTimer = setInterval(tickDisplayedClock, 250)
   const tickPresentationFrame = () => {
     presentationFrameId = requestAnimationFrame(tickPresentationFrame)
+    const wallTimeMs = performance.now()
     const elapsedSeconds = vehiclePresentationTimeline.tick(Date.now())
-    if (elapsedSeconds !== vehicleDisplayElapsedSeconds.value) {
+    if (
+      elapsedSeconds !== vehicleDisplayElapsedSeconds.value
+      && wallTimeMs - lastPresentationPublishMs + 0.5 >= PRESENTATION_PUBLISH_INTERVAL_MS
+    ) {
+      lastPresentationPublishMs = wallTimeMs
       vehicleDisplayElapsedSeconds.value = elapsedSeconds
       vehiclePresentationRevision.value += 1
     }
@@ -602,6 +621,7 @@ export function useSimulationStore() {
     snapshot,
     trafficView,
     presentationTrafficView,
+    vehiclePresentationDiagnostics,
     vehicleDisplayElapsedSeconds,
     vehicleAuthoritativeHistoryRevision,
     getVehicleAuthoritativeHistoryWindow: (elapsedSeconds = vehicleDisplayElapsedSeconds.value) => (

@@ -39,6 +39,9 @@ test('samples a curved source lane by arc length instead of cutting across it', 
   registerCanonicalVehicleLaneGeometry([{
     laneId: 'curve_0', edgeId: 'curve', kind: 'driving', intersectionId: 'demo_1',
     coordinates: [[116, 39], [116.001, 39.001], [116.002, 39]],
+  }, {
+    laneId: 'edge_0', edgeId: 'edge', kind: 'driving', intersectionId: 'demo_1',
+    coordinates: [[115.99, 39], [116.01, 39]],
   }])
   const left = { ...vehicle('curved', 116), latitude: 39, lane_id: 'curve_0' }
   const right = { ...vehicle('curved', 116.002), latitude: 39, lane_id: 'curve_0' }
@@ -103,6 +106,30 @@ test('tracks an accelerated authoritative source without exceeding the shared de
   assert.ok(stats.observedSourceRate >= 9)
   assert.ok(stats.displayElapsedSeconds != null)
   assert.ok(12 - stats.displayElapsedSeconds <= 3)
+})
+
+test('expands the shared delay for 5x Twin lookahead without exceeding four seconds', () => {
+  const timeline = new VehiclePresentationTimeline()
+  for (let sequence = 0; sequence <= 8; sequence += 1) {
+    timeline.push(
+      trafficView(sequence * 2.5, [vehicle('five-x', 116 + sequence * 0.00001)]),
+      sequence,
+      'RUNNING',
+      5,
+      sequence * 500,
+    )
+  }
+  const expandedDelay = timeline.stats().delaySeconds
+  assert.equal(expandedDelay, 3)
+
+  timeline.push(trafficView(22.5, [vehicle('five-x', 116.00009)]), 9, 'RUNNING', 1, 5_000)
+  const reducedDelay = timeline.stats().delaySeconds
+  assert.equal(reducedDelay, expandedDelay - 0.025)
+
+  timeline.push(trafficView(25, [vehicle('five-x', 116.0001)]), 10, 'RUNNING', 5, 6_200)
+  assert.equal(timeline.stats().delaySeconds, 3.7)
+  timeline.push(trafficView(27.5, [vehicle('five-x', 116.00011)]), 11, 'RUNNING', 5, 8_200)
+  assert.equal(timeline.stats().delaySeconds, 4)
 })
 
 test('retains authority around the display cursor instead of jumping it forward', () => {

@@ -4,7 +4,7 @@ import { VEHICLE_TWIN_RENDER_DELAY_MS } from './vehicleTwinPresentation.ts'
 import { interpolateCanonicalVehiclePosition } from './canonicalVehicleMotion.ts'
 
 export const MIN_SHARED_VEHICLE_DELAY_SECONDS = 2
-export const MAX_SHARED_VEHICLE_DELAY_SECONDS = 3
+export const MAX_SHARED_VEHICLE_DELAY_SECONDS = 4
 const MAX_PRESENTATION_FRAMES = 256
 const MIN_TRACKED_INTERVAL_MS = 20
 const MAX_TRACKED_INTERVAL_MS = 10_000
@@ -25,6 +25,7 @@ export interface VehiclePresentationSample {
   elapsedSeconds: number
   view: TrafficStateView
   authoritativeVehicleIds: ReadonlySet<string>
+  unresolvedVehicleIds: ReadonlySet<string>
 }
 
 export interface VehiclePresentationTimelineStats {
@@ -63,21 +64,40 @@ function interpolateVehicle(
   left: TrafficVehicleView,
   right: TrafficVehicleView,
   ratio: number,
-): TrafficVehicleView {
+): TrafficVehicleView | null {
   const pickRight = ratio >= 1
   const canonicalPosition = interpolateCanonicalVehiclePosition(left, right, ratio)
+  if (
+    !canonicalPosition.resolved
+    || canonicalPosition.longitude == null
+    || canonicalPosition.latitude == null
+    || canonicalPosition.sourceX == null
+    || canonicalPosition.sourceY == null
+  ) return null
+  const canonicalAngle = canonicalPosition.headingRadians == null
+    ? left.angle + shortestAngleDelta(left.angle, right.angle) * ratio
+    : ((90 - canonicalPosition.headingRadians * 180 / Math.PI) % 360 + 360) % 360
   return {
     ...(pickRight ? right : left),
     longitude: canonicalPosition.longitude,
     latitude: canonicalPosition.latitude,
-    x: left.x + (right.x - left.x) * ratio,
-    y: left.y + (right.y - left.y) * ratio,
+    x: canonicalPosition.sourceX,
+    y: canonicalPosition.sourceY,
     speed: Math.max(0, left.speed + (right.speed - left.speed) * ratio),
-    angle: left.angle + shortestAngleDelta(left.angle, right.angle) * ratio,
+    angle: canonicalAngle,
+    lane_id: canonicalPosition.laneId,
     acceleration: interpolateNumber(left.acceleration, right.acceleration, ratio) ?? undefined,
-    lane_position: interpolateNumber(left.lane_position, right.lane_position, ratio) ?? undefined,
+    lane_position: canonicalPosition.laneStation ?? undefined,
     distance: interpolateNumber(left.distance, right.distance, ratio) ?? undefined,
     target_speed: interpolateNumber(left.target_speed, right.target_speed, ratio) ?? undefined,
+    canonical_segment_id: canonicalPosition.segmentId,
+    canonical_route_evidence: canonicalPosition.routeEvidence === 'unresolved'
+      ? undefined
+      : canonicalPosition.routeEvidence,
+    canonical_heading_radians: canonicalPosition.headingRadians ?? undefined,
+    canonical_source_x: canonicalPosition.sourceX,
+    canonical_source_y: canonicalPosition.sourceY,
+    canonical_lane_station: canonicalPosition.laneStation ?? undefined,
   }
 }
 
@@ -124,11 +144,14 @@ export class VehiclePresentationTimeline {
         )
         const twinLeadDelay = VEHICLE_TWIN_RENDER_DELAY_MS / 1_000
           * Math.max(1, Number(playbackRate) || 1)
-          + 0.5
-        this.delaySeconds = Math.max(
-          this.delaySeconds,
-          Math.min(MAX_SHARED_VEHICLE_DELAY_SECONDS, Math.max(requestedDelay, twinLeadDelay)),
+          + intervalMs / 1_000
+        const desiredDelay = Math.min(
+          MAX_SHARED_VEHICLE_DELAY_SECONDS,
+          Math.max(requestedDelay, twinLeadDelay),
         )
+        this.delaySeconds = desiredDelay >= this.delaySeconds
+          ? desiredDelay
+          : Math.max(desiredDelay, this.delaySeconds - 0.025)
       }
     }
     this.frames.push({
@@ -191,6 +214,7 @@ export class VehiclePresentationTimeline {
         elapsedSeconds,
         view: { ...left.view, elapsed_seconds: elapsedSeconds },
         authoritativeVehicleIds: ids,
+        unresolvedVehicleIds: new Set(),
       }
     }
     const duration = right.elapsedSeconds - left.elapsedSeconds
@@ -199,9 +223,14 @@ export class VehiclePresentationTimeline {
       : clamp((elapsedSeconds - left.elapsedSeconds) / duration, 0, 1)
     const rightById = new Map(right.view.vehicles.map((vehicle) => [vehicle.vehicle_id, vehicle] as const))
     const roster = ratio >= 1 ? right.view.vehicles : left.view.vehicles
-    const vehicles = roster.map((vehicle) => {
+    const unresolvedVehicleIds = new Set<string>()
+    const vehicles = roster.flatMap((vehicle): TrafficVehicleView[] => {
       const rightVehicle = rightById.get(vehicle.vehicle_id)
-      return rightVehicle ? interpolateVehicle(vehicle, rightVehicle, ratio) : vehicle
+      if (!rightVehicle) return [vehicle]
+      const interpolated = interpolateVehicle(vehicle, rightVehicle, ratio)
+      if (interpolated) return [interpolated]
+      unresolvedVehicleIds.add(vehicle.vehicle_id)
+      return []
     })
     return {
       elapsedSeconds,
@@ -214,6 +243,7 @@ export class VehiclePresentationTimeline {
         vehicles,
       },
       authoritativeVehicleIds: new Set(roster.map((vehicle) => vehicle.vehicle_id)),
+      unresolvedVehicleIds,
     }
   }
 

@@ -31,6 +31,8 @@ export type RoadTransitionKind =
   | 'incompatible'
 
 export interface VehicleTwinMotionMetadata {
+  canonicalSegmentId?: string
+  canonicalRouteEvidence?: string
   connectionKey?: string
   routeHintSource?: 'fixed_route_index' | 'live_topology'
   connectionLockStage?: VehicleConnectionLockStage
@@ -83,6 +85,8 @@ export interface VehicleTwinSample {
   modelForwardAxisAngle: number
   sceneGeneration?: number
   motionEpoch?: number
+  canonicalSegmentId?: string
+  canonicalRouteEvidence?: string
   connectionKey?: string
   routeHintSource?: 'fixed_route_index' | 'live_topology'
   connectionLockStage?: VehicleConnectionLockStage
