@@ -343,7 +343,6 @@ function laneChangeGuidePoint(
     ? Number(right.pathArcDistanceMeters)
     : sampler.project(right.motionPathKey, [right.point[0], right.point[1]])?.pathArcDistanceMeters
   if (sourceStart == null || targetEnd == null) return null
-  const sourceProgress = clamp(amount, 0, 1)
   const durationSeconds = Math.max(0.001, (right.time - left.time) / 1_000)
   const sourceArcStart = Number(left.sourceArcDistanceMeters)
   const sourceArcEnd = Number(right.sourceArcDistanceMeters)
@@ -360,15 +359,10 @@ function laneChangeGuidePoint(
           + Math.max(0, Number(right.sourceSpeedMetersPerSecond) || 0))
           * 0.5 * durationSeconds,
       )
-  const sourceDistance = sourceStart + longitudinalAdvance * sourceProgress
   const targetStart = Math.max(0, targetEnd - longitudinalAdvance)
-  const targetDistance = targetStart + (targetEnd - targetStart) * sourceProgress
-  const sourceSample = sampler.sample(left.motionPathKey, sourceDistance)
-  const targetSample = sampler.sample(right.motionPathKey, targetDistance)
   const sourceAnchor = sampler.sample(left.motionPathKey, sourceStart)
   const targetAnchor = sampler.sample(right.motionPathKey, targetEnd)
-  if (!sourceSample || !targetSample || !sourceAnchor || !targetAnchor) return null
-  const lateralProgress = smoothLaneChangeProgress(sourceProgress)
+  if (!sourceAnchor || !targetAnchor) return null
   const startLateralOffset = signedLateralOffsetMeters(
     [sourceAnchor.longitude, sourceAnchor.latitude],
     [left.point[0], left.point[1]],
@@ -379,33 +373,59 @@ function laneChangeGuidePoint(
     [right.point[0], right.point[1]],
     targetAnchor.heading,
   )
-  const lateralOffsetMeters = startLateralOffset
-    + (endLateralOffset - startLateralOffset) * lateralProgress
-  const sourcePoint = applyLateralOffset(
-    [
+  const guideAt = (rawProgress: number) => {
+    const sourceProgress = clamp(rawProgress, 0, 1)
+    const lateralProgress = smoothLaneChangeProgress(sourceProgress)
+    const sourceDistance = sourceStart + longitudinalAdvance * sourceProgress
+    const targetDistance = targetStart + (targetEnd - targetStart) * sourceProgress
+    const sourceSample = sampler.sample(left.motionPathKey!, sourceDistance)
+    const targetSample = sampler.sample(right.motionPathKey!, targetDistance)
+    if (!sourceSample || !targetSample) return null
+    const linearLateralOffset = startLateralOffset
+      + (endLateralOffset - startLateralOffset) * sourceProgress
+    const sourcePoint = applyLateralOffset([
       sourceSample.longitude,
       sourceSample.latitude,
       left.point[2] + (right.point[2] - left.point[2]) * sourceProgress,
-    ],
-    sourceSample.heading,
-    startLateralOffset + (endLateralOffset - startLateralOffset) * sourceProgress,
-  )
-  const targetPoint = applyLateralOffset(
-    [targetSample.longitude, targetSample.latitude, sourcePoint[2]],
-    targetSample.heading,
-    startLateralOffset + (endLateralOffset - startLateralOffset) * sourceProgress,
-  )
-  const point: [number, number, number] = [
-    sourcePoint[0] + (targetPoint[0] - sourcePoint[0]) * lateralProgress,
-    sourcePoint[1] + (targetPoint[1] - sourcePoint[1]) * lateralProgress,
-    sourcePoint[2],
-  ]
+    ], sourceSample.heading, linearLateralOffset)
+    const targetPoint = applyLateralOffset(
+      [targetSample.longitude, targetSample.latitude, sourcePoint[2]],
+      targetSample.heading,
+      linearLateralOffset,
+    )
+    return {
+      point: [
+        sourcePoint[0] + (targetPoint[0] - sourcePoint[0]) * lateralProgress,
+        sourcePoint[1] + (targetPoint[1] - sourcePoint[1]) * lateralProgress,
+        sourcePoint[2],
+      ] as [number, number, number],
+      pathArcDistanceMeters: sourceDistance,
+      lateralOffsetMeters: startLateralOffset
+        + (endLateralOffset - startLateralOffset) * lateralProgress,
+      fallbackHeading: sourceSample.heading
+        + shortestAngleDelta(sourceSample.heading, targetSample.heading) * lateralProgress,
+    }
+  }
+  const current = guideAt(amount)
+  if (!current) return null
+  const epsilon = 0.002
+  const before = guideAt(amount - epsilon)
+  const after = guideAt(amount + epsilon)
+  const latitudeRadians = ((before?.point[1] ?? current.point[1])
+    + (after?.point[1] ?? current.point[1])) * Math.PI / 360
+  const eastMeters = before && after
+    ? (after.point[0] - before.point[0]) * Math.max(1, Math.cos(latitudeRadians) * 110_900)
+    : 0
+  const northMeters = before && after
+    ? (after.point[1] - before.point[1]) * 110_900
+    : 0
   return {
-    point,
-    heading: sourceSample.heading
-      + shortestAngleDelta(sourceSample.heading, targetSample.heading) * lateralProgress,
-    pathArcDistanceMeters: sourceDistance,
-    lateralOffsetMeters,
+    point: current.point,
+    heading: Math.hypot(eastMeters, northMeters) > 1e-6
+      ? Math.atan2(northMeters, eastMeters)
+      : current.fallbackHeading,
+    pathArcDistanceMeters: current.pathArcDistanceMeters,
+    lateralOffsetMeters: current.lateralOffsetMeters,
   }
 }
 
@@ -610,9 +630,19 @@ export function interpolateVehicleTwinSample(
   const trajectoryHeading = pathSample?.heading
     ?? constrainedLaneChangePoint?.heading
     ?? canonicalPoint?.headingRadians
+  const trajectoryHeadingAuthoritative = trajectoryHeading != null && Boolean(
+    (pathSample && (left.detailedCorridorValidation || right.detailedCorridorValidation))
+    || constrainedLaneChangePoint
+    || ['same_lane', 'lane_change', 'unique_connection'].includes(
+      String(right.canonicalRouteEvidence),
+    )
+  )
   const vehicleHeading = trajectoryHeading != null
-    && Math.abs(shortestAngleDelta(interpolatedSourceHeading, trajectoryHeading))
-      <= MAX_MOTION_PATH_HEADING_DELTA
+    && (
+      trajectoryHeadingAuthoritative
+      || Math.abs(shortestAngleDelta(interpolatedSourceHeading, trajectoryHeading))
+        <= MAX_MOTION_PATH_HEADING_DELTA
+    )
     ? trajectoryHeading
     : interpolatedSourceHeading
   const modelForwardAxisAngle = amount < 0.5
@@ -1544,6 +1574,7 @@ export class VehicleMotionBuffer {
   private interpolateAt(elapsedSeconds: number): VehicleTwinSample[] {
     const samples: VehicleTwinSample[] = []
     let isolatedVehicleCount = 0
+    const rosters = this.vehicleRostersAt(elapsedSeconds)
     for (const [vehicleId, timeline] of this.timelines) {
       const resolved = this.resolveVehicleAt(timeline, elapsedSeconds)
       if (resolved) {
@@ -1554,12 +1585,25 @@ export class VehicleMotionBuffer {
           resolved.displayElapsedSeconds,
         ))
       } else {
-        this.lastLegalOutputByVehicleId.delete(vehicleId)
+        const lastLegal = this.lastLegalOutputByVehicleId.get(vehicleId)
+        const lastLegalElapsedSeconds = Number(lastLegal?.displayElapsedSeconds)
+        const holdSeconds = Number.isFinite(lastLegalElapsedSeconds)
+          ? elapsedSeconds - lastLegalElapsedSeconds
+          : Number.POSITIVE_INFINITY
+        if (
+          lastLegal
+          && rosters.selected.has(vehicleId)
+          && holdSeconds >= 0
+          && holdSeconds <= 1
+        ) {
+          samples.push(this.cloneSample(lastLegal, 'held', elapsedSeconds))
+        } else {
+          this.lastLegalOutputByVehicleId.delete(vehicleId)
+        }
       }
       if (timeline.state !== 'ready') isolatedVehicleCount += 1
     }
     this.isolatedVehicleCount = isolatedVehicleCount
-    const rosters = this.vehicleRostersAt(elapsedSeconds)
     const authoritativeIds = rosters.source
     const outputIds = new Set(samples.map((sample) => sample.id))
     this.ghostVehicleIds = [...outputIds].filter((id) => !authoritativeIds.has(id))

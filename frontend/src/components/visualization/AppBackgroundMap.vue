@@ -691,8 +691,8 @@ function renderVehicles() {
     } else {
       feature.set('rotation', targetRotation)
       addedFeatures.push(feature)
-      vehicleFeatures.set(vehicle.vehicle_id, { feature })
     }
+    vehicleFeatures.set(vehicle.vehicle_id, { feature })
   }
   if (addedFeatures.length > 0) vehicleSource.addFeatures(addedFeatures)
   for (const id of vehicleHeadingHistory.keys()) {
@@ -704,6 +704,13 @@ function renderVehicles() {
     vehicleFeatures.delete(id)
   }
   if (import.meta.env.DEV) {
+    if (mapEl.value) {
+      mapEl.value.dataset.presentationState = vehiclePresentationDiagnostics.value.state
+      mapEl.value.dataset.presentationBufferSeconds = vehiclePresentationDiagnostics.value.bufferDepthSeconds.toFixed(3)
+      mapEl.value.dataset.presentationRateCorrection = vehiclePresentationDiagnostics.value.rateCorrection.toFixed(5)
+      mapEl.value.dataset.presentationSourceRate = vehiclePresentationDiagnostics.value.observedSourceRate.toFixed(5)
+      mapEl.value.dataset.presentationStarvationCount = String(vehiclePresentationDiagnostics.value.starvationCount)
+    }
     const diagnosticsWindow = window as Window & {
       __CITYPULSE_2D_VEHICLE_DIAGNOSTICS__?: Record<string, unknown>
     }
@@ -713,6 +720,12 @@ function renderVehicles() {
       authoritativeVehicleCount: vehiclePresentationDiagnostics.value.authoritativeVehicleCount,
       canonicalVehicleCount: vehiclePresentationDiagnostics.value.canonicalVehicleCount,
       unresolvedVehicleCount: vehiclePresentationDiagnostics.value.unresolvedVehicleCount,
+      presentationState: vehiclePresentationDiagnostics.value.state,
+      bufferDepthSeconds: vehiclePresentationDiagnostics.value.bufferDepthSeconds,
+      rateCorrection: vehiclePresentationDiagnostics.value.rateCorrection,
+      starvationCount: vehiclePresentationDiagnostics.value.starvationCount,
+      starvationDurationMs: vehiclePresentationDiagnostics.value.starvationDurationMs,
+      observedSourceRate: vehiclePresentationDiagnostics.value.observedSourceRate,
       renderedVehicleCount: activeIds.size,
       authoritativeVehicleIds: vehicles.map((vehicle) => vehicle.vehicle_id),
       renderedVehicleIds: [...activeIds],

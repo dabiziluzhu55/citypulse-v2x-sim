@@ -329,6 +329,14 @@ test('keeps one module timeout, delegates scene readiness, and tears down retrie
   assert.match(appSource, /map-dimension-toggle \*/)
 })
 
+test('keeps the 3D loading spinner moving when reduced motion is requested', () => {
+  const reducedMotionBlock = appThreeMapLoaderSource.slice(
+    appThreeMapLoaderSource.indexOf('@media (prefers-reduced-motion: reduce)'),
+  )
+  assert.match(reducedMotionBlock, /app-three-map-loader__spinner[\s\S]*animation-duration:\s*1\.2s/)
+  assert.doesNotMatch(reducedMotionBlock, /app-three-map-loader__spinner[\s\S]*animation:\s*none/)
+})
+
 test('mounts 3D lazily, preserves its engine, and releases the hidden 2D map', () => {
   assert.match(appSource, /const threeMapMounted = ref\(false\)/)
   assert.match(

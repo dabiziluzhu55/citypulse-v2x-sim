@@ -175,6 +175,7 @@ const {
   snapshot,
   trafficView,
   vehicleDisplayElapsedSeconds,
+  vehiclePresentationDiagnostics,
   vehicleAuthoritativeHistoryRevision,
   getVehicleAuthoritativeHistoryWindow,
   renderSessionRevision,
@@ -1031,6 +1032,12 @@ function updateVehicleRenderStats(stats: VehicleRenderStats): void {
     }
     diagnosticsWindow.__CITYPULSE_VEHICLE_DIAGNOSTICS__ = {
       ...stats,
+      presentationState: vehiclePresentationDiagnostics.value.state,
+      presentationBufferDepthSeconds: vehiclePresentationDiagnostics.value.bufferDepthSeconds,
+      presentationRateCorrection: vehiclePresentationDiagnostics.value.rateCorrection,
+      presentationObservedSourceRate: vehiclePresentationDiagnostics.value.observedSourceRate,
+      presentationStarvationCount: vehiclePresentationDiagnostics.value.starvationCount,
+      presentationStarvationDurationMs: vehiclePresentationDiagnostics.value.starvationDurationMs,
       activeVehicles: current?.metrics.active_vehicles ?? 0,
       requestedPlaybackSpeed: current?.playback_speed ?? 1,
       simulationProgressRate: stats.sourceRate,

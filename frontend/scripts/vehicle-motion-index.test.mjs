@@ -156,3 +156,60 @@ test('3D global interpolation samples the same canonical curve instead of its en
   assert.ok(Math.abs(middle.point[0] - expected[0]) < 1e-6)
   assert.ok(Math.abs(middle.point[1] - expected[1]) < 1e-6)
 })
+
+test('keeps authoritative endpoint coordinates immutable', () => {
+  const endpointIndex = {
+    schemaVersion: 1,
+    networkSource: { path: 'endpoint.net.xml', sha256: 'c'.repeat(64) },
+    intersectionCatalogSha256: 'd'.repeat(64),
+    coordinateSystems: { source: 'SUMO_XY_METERS', geographic: 'WGS84' },
+    laneCount: 1,
+    connectionCount: 0,
+    lanes: [{
+      laneId: 'endpoint_0', edgeId: 'endpoint', laneIndex: 0, intersectionId: 'demo_1',
+      internal: false, widthMeters: 3.5, lengthMeters: 20,
+      sourcePoints: [[0, 0], [20, 0]],
+      coordinates: [[116, 39], [116.0002, 39]],
+    }],
+    connections: [],
+  }
+  registerCanonicalVehicleMotionIndex(endpointIndex)
+  const offLane = {
+    ...vehicle('endpoint', endpointIndex.lanes[0], 10),
+    x: 10,
+    y: 7,
+    longitude: 116.0001,
+    latitude: 39.00007,
+  }
+  const endpoint = interpolateCanonicalVehiclePosition(offLane, offLane, 1)
+  assert.equal(endpoint.resolved, true)
+  assert.equal(endpoint.sourceY, 7)
+  assert.equal(endpoint.latitude, 39.00007)
+})
+
+test('rejects an unconfirmed two-lane jump', () => {
+  const lanes = [0, 1, 2].map((laneIndex) => ({
+    laneId: `wide_${laneIndex}`, edgeId: 'wide', laneIndex, intersectionId: 'demo_1',
+    internal: false, widthMeters: 3.5, lengthMeters: 40,
+    sourcePoints: [[0, laneIndex * 3.5], [40, laneIndex * 3.5]],
+    coordinates: [[116, 39 + laneIndex * 0.00003165], [116.0004, 39 + laneIndex * 0.00003165]],
+  }))
+  registerCanonicalVehicleMotionIndex({
+    schemaVersion: 1,
+    networkSource: { path: 'wide.net.xml', sha256: 'e'.repeat(64) },
+    intersectionCatalogSha256: 'f'.repeat(64),
+    coordinateSystems: { source: 'SUMO_XY_METERS', geographic: 'WGS84' },
+    laneCount: lanes.length,
+    connectionCount: 0,
+    lanes,
+    connections: [],
+  })
+  const left = { ...vehicle('wide-change', lanes[0], 10), x: 10, y: 0 }
+  const right = { ...vehicle('wide-change', lanes[2], 15), x: 15, y: 7 }
+  const unconfirmed = interpolateCanonicalVehiclePosition(
+    left,
+    right,
+    0.5,
+  )
+  assert.equal(unconfirmed.resolved, false)
+})

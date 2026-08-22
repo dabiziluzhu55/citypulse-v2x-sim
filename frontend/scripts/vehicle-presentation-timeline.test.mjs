@@ -64,8 +64,8 @@ test('samples 2D and 3D from one delayed authoritative roster and time', () => {
   }
   const elapsedSeconds = timeline.tick(4_000)
   const sample = timeline.sample()
-  assert.equal(elapsedSeconds, 2)
-  assert.equal(sample?.elapsedSeconds, 2)
+  assert.equal(elapsedSeconds, 1)
+  assert.equal(sample?.elapsedSeconds, 1)
   assert.equal(sample?.view.elapsed_seconds, sample?.elapsedSeconds)
   assert.deepEqual([...sample.authoritativeVehicleIds], ['shared'])
 })
@@ -82,13 +82,17 @@ test('removes a vehicle exactly when the delayed authoritative roster removes it
     )
   }
   timeline.tick(4_500)
-  const sample = timeline.sample()
-  assert.equal(sample?.elapsedSeconds, 2.5)
-  assert.deepEqual(sample?.view.vehicles, [])
-  assert.deepEqual([...sample.authoritativeVehicleIds], [])
+  const boundarySample = timeline.sample()
+  assert.equal(boundarySample?.elapsedSeconds, 1.5)
+  assert.deepEqual(boundarySample?.view.vehicles.map((item) => item.vehicle_id), ['departed'])
+  timeline.tick(5_500)
+  const removedSample = timeline.sample()
+  assert.ok((removedSample?.elapsedSeconds ?? 0) >= 2.5)
+  assert.deepEqual(removedSample?.view.vehicles, [])
+  assert.deepEqual([...(removedSample?.authoritativeVehicleIds ?? [])], [])
 })
 
-test('tracks an accelerated authoritative source without exceeding the shared delay window', () => {
+test('does not mistake a bursty source for permission to accelerate a 1x presentation', () => {
   const timeline = new VehiclePresentationTimeline()
   for (let sequence = 0; sequence <= 12; sequence += 1) {
     timeline.push(
@@ -105,7 +109,8 @@ test('tracks an accelerated authoritative source without exceeding the shared de
   const stats = timeline.stats()
   assert.ok(stats.observedSourceRate >= 9)
   assert.ok(stats.displayElapsedSeconds != null)
-  assert.ok(12 - stats.displayElapsedSeconds <= 3)
+  assert.ok(stats.displayElapsedSeconds <= 2)
+  assert.ok(stats.rateCorrection <= 0.01 + 1e-9)
 })
 
 test('expands the shared delay for 5x Twin lookahead without exceeding four seconds', () => {
@@ -124,7 +129,7 @@ test('expands the shared delay for 5x Twin lookahead without exceeding four seco
 
   timeline.push(trafficView(22.5, [vehicle('five-x', 116.00009)]), 9, 'RUNNING', 1, 5_000)
   const reducedDelay = timeline.stats().delaySeconds
-  assert.equal(reducedDelay, expandedDelay - 0.025)
+  assert.equal(reducedDelay, expandedDelay)
 
   timeline.push(trafficView(25, [vehicle('five-x', 116.0001)]), 10, 'RUNNING', 5, 6_200)
   assert.equal(timeline.stats().delaySeconds, 3.7)
@@ -160,7 +165,7 @@ test('retains authority around the display cursor instead of jumping it forward'
   assert.equal(sample?.view.elapsed_seconds, stats.displayElapsedSeconds)
 })
 
-test('advances a long main-thread frame at no more than 105 percent wall-clock speed', () => {
+test('advances a long main-thread frame at no more than 101 percent wall-clock speed', () => {
   const timeline = new VehiclePresentationTimeline()
   for (let sequence = 0; sequence <= 8; sequence += 1) {
     timeline.push(
@@ -182,7 +187,7 @@ test('advances a long main-thread frame at no more than 105 percent wall-clock s
   const after = timeline.tick(4_250)
   assert.ok(before != null && after != null)
   assert.ok(after - before >= 0.25 - 1e-9)
-  assert.ok(after - before <= 0.25 * 1.05 + 1e-9)
+  assert.ok(after - before <= 0.25 * 1.01 + 1e-9)
 })
 
 test('freezes a paused or terminal presentation on the latest authoritative endpoint', () => {
@@ -244,7 +249,7 @@ test('hydrates a late-mounted 3D renderer from authoritative history around the 
   const presented = coordinator.sample()
   const history = coordinator.authoritativeHistoryWindow(presented?.elapsedSeconds ?? null)
   assert.ok(presented && history)
-  assert.equal(presented.elapsedSeconds, 488)
+  assert.equal(presented.elapsedSeconds, 487)
   assert.equal(history.displayElapsedSeconds, presented.elapsedSeconds)
   assert.ok(history.frames.length >= 13)
   assert.ok(history.leftFrame?.elapsedSeconds <= presented.elapsedSeconds)
@@ -252,3 +257,130 @@ test('hydrates a late-mounted 3D renderer from authoritative history around the 
   assert.ok(history.frames[0].elapsedSeconds <= presented.elapsedSeconds - 6)
   assert.equal(history.frames.at(-1).elapsedSeconds, 490)
 })
+
+test('consumes the authority buffer through real 1x snapshot bursts without stop-and-catch-up', () => {
+  const timeline = new VehiclePresentationTimeline()
+  const burstIntervalsMs = [500, 1_000, 131, 1_157, 212, 500, 500, 500, 500, 500, 500, 500]
+  const arrivals = [0]
+  for (const interval of burstIntervalsMs) arrivals.push(arrivals.at(-1) + interval)
+  let nextSequence = 0
+  let previousDisplay = null
+  let previousWallTime = null
+  let minimumAdvance = Number.POSITIVE_INFINITY
+  let maximumRate = 0
+  const endWallTime = arrivals.at(-1)
+  for (let wallTime = 0; wallTime <= endWallTime + 1e-6; wallTime += 1000 / 60) {
+    while (nextSequence < arrivals.length && arrivals[nextSequence] <= wallTime + 1e-6) {
+      timeline.push(
+        trafficView(nextSequence * 0.5, [vehicle('bursty', 116 + nextSequence * 0.00001)]),
+        nextSequence,
+        'RUNNING',
+        1,
+        arrivals[nextSequence],
+      )
+      nextSequence += 1
+    }
+    const display = timeline.tick(wallTime)
+    if (display != null && previousDisplay != null && previousWallTime != null) {
+      const advance = display - previousDisplay
+      const wallDeltaSeconds = (wallTime - previousWallTime) / 1_000
+      minimumAdvance = Math.min(minimumAdvance, advance)
+      maximumRate = Math.max(maximumRate, advance / wallDeltaSeconds)
+    }
+    if (display != null) {
+      previousDisplay = display
+      previousWallTime = wallTime
+    }
+  }
+  const stats = timeline.stats()
+  assert.equal(stats.state, 'playing')
+  assert.equal(stats.starvationCount, 0)
+  assert.ok(minimumAdvance > 0)
+  assert.ok(maximumRate <= 1.01 + 1e-6)
+  assert.ok((stats.displayElapsedSeconds ?? 0) <= (arrivals.length - 1) * 0.5)
+})
+
+test('never advances beyond authority and resumes once one second is rebuffered', () => {
+  const timeline = new VehiclePresentationTimeline()
+  for (let sequence = 0; sequence <= 10; sequence += 1) {
+    timeline.push(
+      trafficView(sequence * 0.5, [vehicle('starved', 116 + sequence * 0.00001)]),
+      sequence,
+      'RUNNING',
+      1,
+      sequence * 500,
+    )
+  }
+  timeline.tick(5_000)
+  let starvationWallTime = 5_000
+  for (let wallTime = 5_050; wallTime <= 12_000; wallTime += 50) {
+    timeline.tick(wallTime)
+    assert.ok((timeline.stats().displayElapsedSeconds ?? 0) <= 5)
+    if (timeline.stats().state === 'starved') {
+      starvationWallTime = wallTime
+      break
+    }
+  }
+  const starved = timeline.stats()
+  assert.equal(starved.state, 'starved')
+  assert.equal(starved.starvationCount, 1)
+  const held = starved.displayElapsedSeconds
+  assert.equal(held, 5)
+  timeline.push(trafficView(5.5, [vehicle('starved', 116.00011)]), 11, 'RUNNING', 1, starvationWallTime + 50)
+  timeline.tick(starvationWallTime + 50)
+  assert.equal(timeline.stats().state, 'starved')
+  timeline.push(trafficView(6, [vehicle('starved', 116.00012)]), 12, 'RUNNING', 1, starvationWallTime + 100)
+  timeline.tick(starvationWallTime + 100)
+  assert.equal(timeline.stats().state, 'playing')
+  assert.equal(timeline.stats().starvationCount, 1)
+  timeline.tick(starvationWallTime + 200)
+  assert.ok((timeline.stats().displayElapsedSeconds ?? 0) > held)
+})
+
+for (const sourceRate of [0.84, 0.90, 0.94, 1]) {
+  test(`keeps a continuous authority-bounded presentation for a sustained ${sourceRate}x source`, () => {
+    const timeline = new VehiclePresentationTimeline()
+    const frameIntervalMs = 1_000 / 30
+    const sourceIntervalMs = 500 / sourceRate
+    let sequence = 0
+    let nextSourceWallTimeMs = 0
+    let previousDisplay = null
+    let previousDisplayWallTime = null
+    let maximumStationaryMs = 0
+    let stationaryMs = 0
+    let maximumRate = 0
+    for (let wallTimeMs = 0; wallTimeMs <= 600_000; wallTimeMs += frameIntervalMs) {
+      while (nextSourceWallTimeMs <= wallTimeMs + 1e-6) {
+        timeline.push(
+          trafficView(sequence * 0.5, [vehicle('sustainable', 116 + sequence * 0.000001)]),
+          sequence,
+          'RUNNING',
+          1,
+          nextSourceWallTimeMs,
+        )
+        sequence += 1
+        nextSourceWallTimeMs += sourceIntervalMs
+      }
+      const display = timeline.tick(wallTimeMs)
+      if (display != null && previousDisplay != null && previousDisplayWallTime != null) {
+        const wallDeltaSeconds = (wallTimeMs - previousDisplayWallTime) / 1_000
+        const advance = display - previousDisplay
+        if (advance <= 1e-9) stationaryMs += wallDeltaSeconds * 1_000
+        else stationaryMs = 0
+        maximumStationaryMs = Math.max(maximumStationaryMs, stationaryMs)
+        maximumRate = Math.max(maximumRate, advance / wallDeltaSeconds)
+      }
+      if (display != null) {
+        previousDisplay = display
+        previousDisplayWallTime = wallTimeMs
+      }
+      const latestElapsedSeconds = (sequence - 1) * 0.5
+      assert.ok(display == null || display <= latestElapsedSeconds + 1e-9)
+    }
+    const stats = timeline.stats()
+    assert.equal(stats.starvationCount, 0)
+    assert.ok(maximumStationaryMs < 100, `stationary for ${maximumStationaryMs}ms`)
+    assert.ok(maximumRate <= 1.01 + 1e-6)
+    assert.ok(Math.abs(stats.observedSourceRate - sourceRate) < 0.01)
+  })
+}

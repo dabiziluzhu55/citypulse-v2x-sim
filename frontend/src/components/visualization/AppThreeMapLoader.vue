@@ -273,7 +273,7 @@ watch(state, (nextState) => emit('stateChange', nextState), { immediate: true })
 
 @media (prefers-reduced-motion: reduce) {
   .app-three-map-loader__spinner {
-    animation: none;
+    animation-duration: 1.2s;
   }
 
   .map3d-loading-fade-leave-active {

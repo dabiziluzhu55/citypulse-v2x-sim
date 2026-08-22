@@ -2143,7 +2143,7 @@ test('classifies only adjacent lanes on the same road as a lane change', () => {
   assert.notEqual(changed.motionPathKey, first.motionPathKey)
 })
 
-test('keeps every 24, 30, and 45 fps lane-change frame inside the adjacent-lane corridor', () => {
+test('keeps every 24, 30, 45, and 60 fps lane-change pose tangent inside the adjacent-lane corridor', () => {
   const origin = { longitude: 116, latitude: 39 }
   const originPlane = projectBd09ToWebMercator([origin.longitude, origin.latitude])
   const manifest = {
@@ -2209,7 +2209,8 @@ test('keeps every 24, 30, and 45 fps lane-change frame inside the adjacent-lane 
     corridorMotionPathKeys: [leftPose.motionPathKey, rightPose.motionPathKey],
     time: 500,
   }
-  for (const fps of [24, 30, 45]) {
+  for (const fps of [24, 30, 45, 60]) {
+    const samples = []
     for (let frame = 0; frame <= Math.ceil(fps * 0.5); frame += 1) {
       const ratio = Math.min(1, frame / (fps * 0.5))
       const sample = interpolateVehicleTwinSample(
@@ -2218,6 +2219,7 @@ test('keeps every 24, 30, and 45 fps lane-change frame inside the adjacent-lane 
         ratio,
         resolver.motionPathSampler,
       )
+      samples.push(sample)
       assert.notEqual(sample.intermediatePoseValid, false, `${fps} fps frame ${frame}`)
       assert.equal(resolver.motionPathSampler.containsVehicle(
         [leftPose.motionPathKey, rightPose.motionPathKey],
@@ -2227,7 +2229,48 @@ test('keeps every 24, 30, and 45 fps lane-change frame inside the adjacent-lane 
         0.9,
       ), true, `${fps} fps OBB frame ${frame}`)
     }
+    for (let frame = 1; frame < samples.length - 1; frame += 1) {
+      const before = projectBd09ToWebMercator([samples[frame - 1].point[0], samples[frame - 1].point[1]])
+      const after = projectBd09ToWebMercator([samples[frame + 1].point[0], samples[frame + 1].point[1]])
+      const tangent = Math.atan2(after[1] - before[1], after[0] - before[0])
+      const delta = Math.abs(Math.atan2(
+        Math.sin(samples[frame].vehicleHeading - tangent),
+        Math.cos(samples[frame].vehicleHeading - tangent),
+      ))
+      assert.ok(delta <= 3 * Math.PI / 180, `${fps} fps frame ${frame} slip ${delta * 180 / Math.PI}deg`)
+    }
   }
+})
+
+test('holds the last legal 3D pose through one transient incompatible interval', () => {
+  const buffer = new VehicleMotionBuffer()
+  const frames = [
+    { elapsedSeconds: 0, x: 0, motionEpoch: 0 },
+    { elapsedSeconds: 0.5, x: 5, motionEpoch: 0 },
+    { elapsedSeconds: 1, x: 10, motionEpoch: 0 },
+    { elapsedSeconds: 1.5, x: 15, motionEpoch: 1 },
+  ]
+  frames.forEach((frame, sequence) => buffer.push({
+    sceneGeneration: 0,
+    sequence,
+    elapsedSeconds: frame.elapsedSeconds,
+    arrivalTimeMs: frame.elapsedSeconds * 1_000,
+    samples: [{
+      ...motionSample('transient-hold', frame.x),
+      sceneGeneration: 0,
+      motionEpoch: frame.motionEpoch,
+      sampleQuality: 'authoritative',
+    }],
+    presentVehicleIds: ['transient-hold'],
+  }))
+  const legal = buffer.sampleResult(750, 0.75)
+  assert.equal(legal.status, 'ready')
+  assert.equal(legal.samples[0].sampleQuality, 'authoritative')
+  const held = buffer.sampleResult(1_250, 1.25)
+  assert.equal(held.status, 'ready')
+  assert.equal(held.samples[0].sampleQuality, 'held')
+  assert.deepEqual(held.samples[0].point, legal.samples[0].point)
+  assert.deepEqual(buffer.stats().hiddenUnresolvedVehicleIds, [])
 })
 
 test('rejects an invalid lane-change segment before playback instead of holding then jumping', () => {
@@ -2587,4 +2630,44 @@ test('notifies the renderer when a compiled interval becomes available', () => {
   assert.ok(events.length >= 1)
   assert.equal(events.at(-1).pendingCount, 0)
   assert.equal(buffer.sampleResult(500, 0.25).status, 'ready')
+})
+
+test('rejects a 3D display request beyond the latest authoritative frame', () => {
+  const buffer = new VehicleMotionBuffer()
+  buffer.setMotionPathSampler({
+    project: (_key, coordinate) => ({
+      pathArcDistanceMeters: (coordinate[0] - 116) * 100_000,
+      distanceMeters: 0,
+    }),
+    sample: (_key, distanceMeters) => ({
+      longitude: 116 + distanceMeters / 100_000,
+      latitude: 39,
+      heading: 0,
+      pathArcDistanceMeters: distanceMeters,
+    }),
+    containsVehicle: () => true,
+  })
+  for (const [sequence, elapsedSeconds, distance] of [[1, 0, 0], [2, 0.5, 5]]) {
+    buffer.push({
+      sceneGeneration: 0,
+      sequence,
+      elapsedSeconds,
+      arrivalTimeMs: elapsedSeconds * 1_000,
+      samples: [{
+        ...motionSample('predicted-path', 116 + distance / 100_000),
+        point: [116 + distance / 100_000, 39, 1.1],
+        motionPathKey: 'lane:prediction',
+        pathArcDistanceMeters: distance,
+        sourceSpeedMetersPerSecond: 10,
+        vehicleHeading: 0,
+        modelForwardAxisAngle: 0,
+        sampleQuality: 'authoritative',
+      }],
+      presentVehicleIds: ['predicted-path'],
+    })
+  }
+  const beyondAuthority = buffer.sampleResult(1_000, 1)
+  assert.equal(beyondAuthority.status, 'waiting')
+  assert.equal(beyondAuthority.reason, 'display_time_after_history')
+  assert.equal(buffer.sampleResult(1_300, 1.3).reason, 'display_time_after_history')
 })

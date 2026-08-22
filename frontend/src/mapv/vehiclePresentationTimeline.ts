@@ -3,12 +3,17 @@ import type { TrafficStateView, TrafficVehicleView } from '../types/traffic'
 import { VEHICLE_TWIN_RENDER_DELAY_MS } from './vehicleTwinPresentation.ts'
 import { interpolateCanonicalVehiclePosition } from './canonicalVehicleMotion.ts'
 
-export const MIN_SHARED_VEHICLE_DELAY_SECONDS = 2
+export const MIN_SHARED_VEHICLE_DELAY_SECONDS = 3
 export const MAX_SHARED_VEHICLE_DELAY_SECONDS = 4
+const LOW_BUFFER_SECONDS = 1
+const RECOVERY_BUFFER_SECONDS = 1
 const MAX_PRESENTATION_FRAMES = 256
 const MIN_TRACKED_INTERVAL_MS = 20
 const MAX_TRACKED_INTERVAL_MS = 10_000
-const MAX_RECOVERY_RATE_RATIO = 1.05
+const MAX_NORMAL_PRESENTATION_RATE_RATIO = 1.01
+const MAX_RATE_RATIO_DECREASE_PER_SECOND = 0.10
+const MAX_RATE_RATIO_INCREASE_PER_SECOND = 0.02
+const AUTHORITY_EXHAUSTION_EPSILON_SECONDS = 1e-4
 const PRESENTATION_HISTORY_SECONDS = 30
 const MAX_TRACKED_SOURCE_RATE = 20
 
@@ -28,7 +33,17 @@ export interface VehiclePresentationSample {
   unresolvedVehicleIds: ReadonlySet<string>
 }
 
-export interface VehiclePresentationTimelineStats {
+export type PresentationState = 'buffering' | 'playing' | 'starved'
+
+export interface PresentationDiagnostics {
+  state: PresentationState
+  bufferDepthSeconds: number
+  rateCorrection: number
+  starvationCount: number
+  starvationDurationMs: number
+}
+
+export interface VehiclePresentationTimelineStats extends PresentationDiagnostics {
   delaySeconds: number
   displayElapsedSeconds: number | null
   sourceFrameCount: number
@@ -52,7 +67,11 @@ function shortestAngleDelta(from: number, to: number): number {
   return ((to - from + 180) % fullTurn + fullTurn) % fullTurn - 180
 }
 
-function interpolateNumber(left: number | null | undefined, right: number | null | undefined, ratio: number): number | null {
+function interpolateNumber(
+  left: number | null | undefined,
+  right: number | null | undefined,
+  ratio: number,
+): number | null {
   if (typeof left !== 'number' || !Number.isFinite(left)) {
     return typeof right === 'number' && Number.isFinite(right) ? right : null
   }
@@ -110,6 +129,12 @@ export class VehiclePresentationTimeline {
   private displayElapsedSeconds: number | null = null
   private lastTickWallTimeMs: number | null = null
   private historyReanchorCount = 0
+  private presentationState: PresentationState = 'buffering'
+  private presentationRateRatio = 1
+  private rateCorrection = 0
+  private starvationCount = 0
+  private starvationStartedAtMs: number | null = null
+  private completedStarvationDurationMs = 0
 
   push(
     view: TrafficStateView,
@@ -171,31 +196,90 @@ export class VehiclePresentationTimeline {
     const first = this.frames[0]
     const latest = this.frames.at(-1)
     if (!first || !latest) return null
-    const target = latest.elapsedSeconds - this.delaySeconds
-    if (target + 1e-9 < first.elapsedSeconds) return null
+    const availableHistorySeconds = latest.elapsedSeconds - first.elapsedSeconds
     if (this.displayElapsedSeconds == null) {
-      this.displayElapsedSeconds = Math.max(first.elapsedSeconds, target)
       this.lastTickWallTimeMs = wallTimeMs
+      if (availableHistorySeconds + 1e-9 < this.delaySeconds) {
+        this.presentationState = 'buffering'
+        return null
+      }
+      this.displayElapsedSeconds = Math.max(first.elapsedSeconds, latest.elapsedSeconds - this.delaySeconds)
+      this.presentationState = 'playing'
+      this.presentationRateRatio = 1
+      this.rateCorrection = 0
       return this.displayElapsedSeconds
     }
+
     const wallDeltaSeconds = this.lastTickWallTimeMs == null
       ? 0
       : Math.max(0, (wallTimeMs - this.lastTickWallTimeMs) / 1_000)
     this.lastTickWallTimeMs = wallTimeMs
-    if (latest.state === 'RUNNING' || latest.state === 'STARTING' || latest.state === 'STOPPING') {
-      const observedSourceRate = percentile(this.sourceRates, 0.5)
-      const sourceRate = Math.max(0, latest.playbackRate || 1, observedSourceRate)
-      const rate = this.displayElapsedSeconds + 1e-6 < target
-        ? sourceRate * MAX_RECOVERY_RATE_RATIO
-        : sourceRate
-      this.displayElapsedSeconds = Math.min(
-        target,
-        this.displayElapsedSeconds + wallDeltaSeconds * rate,
-      )
-    } else {
-      // No future microsteps will arrive while paused or terminal. Freeze both
-      // maps on a transmitted SUMO endpoint instead of an unplayable gap.
+    if (latest.state !== 'RUNNING' && latest.state !== 'STARTING' && latest.state !== 'STOPPING') {
       this.displayElapsedSeconds = latest.elapsedSeconds
+      this.presentationState = 'playing'
+      this.presentationRateRatio = 0
+      this.rateCorrection = 0
+      return this.displayElapsedSeconds
+    }
+
+    let bufferDepthSeconds = latest.elapsedSeconds - this.displayElapsedSeconds
+    if (this.presentationState === 'starved') {
+      if (bufferDepthSeconds + 1e-9 < RECOVERY_BUFFER_SECONDS) {
+        this.presentationRateRatio = 0
+        this.rateCorrection = -1
+        return this.displayElapsedSeconds
+      }
+      this.presentationState = 'playing'
+      if (this.starvationStartedAtMs != null) {
+        this.completedStarvationDurationMs += Math.max(0, wallTimeMs - this.starvationStartedAtMs)
+        this.starvationStartedAtMs = null
+      }
+    }
+
+    const requestedRate = Math.max(0.05, latest.playbackRate || 1)
+    const observedSourceRate = percentile(this.sourceRates, 0.5)
+    const sustainableRate = observedSourceRate > 0
+      ? Math.min(requestedRate * MAX_NORMAL_PRESENTATION_RATE_RATIO, observedSourceRate)
+      : requestedRate
+    let desiredRateRatio = clamp(
+      sustainableRate / requestedRate,
+      0.05,
+      MAX_NORMAL_PRESENTATION_RATE_RATIO,
+    )
+    if (bufferDepthSeconds > this.delaySeconds + 0.5) {
+      desiredRateRatio = Math.min(MAX_NORMAL_PRESENTATION_RATE_RATIO, Math.max(desiredRateRatio, 1))
+    } else if (bufferDepthSeconds < LOW_BUFFER_SECONDS) {
+      desiredRateRatio *= clamp(bufferDepthSeconds / LOW_BUFFER_SECONDS, 0, 1)
+    }
+
+    const rateDelta = desiredRateRatio - this.presentationRateRatio
+    const maximumRateStep = (
+      rateDelta < 0
+        ? MAX_RATE_RATIO_DECREASE_PER_SECOND
+        : MAX_RATE_RATIO_INCREASE_PER_SECOND
+    ) * wallDeltaSeconds
+    this.presentationRateRatio += clamp(rateDelta, -maximumRateStep, maximumRateStep)
+    this.presentationRateRatio = clamp(
+      this.presentationRateRatio,
+      0,
+      MAX_NORMAL_PRESENTATION_RATE_RATIO,
+    )
+    this.rateCorrection = this.presentationRateRatio - 1
+
+    const proposedElapsedSeconds = this.displayElapsedSeconds
+      + wallDeltaSeconds * requestedRate * this.presentationRateRatio
+    this.displayElapsedSeconds = Math.min(latest.elapsedSeconds, proposedElapsedSeconds)
+    bufferDepthSeconds = latest.elapsedSeconds - this.displayElapsedSeconds
+    if (
+      proposedElapsedSeconds >= latest.elapsedSeconds - AUTHORITY_EXHAUSTION_EPSILON_SECONDS
+      && bufferDepthSeconds <= AUTHORITY_EXHAUSTION_EPSILON_SECONDS
+      && wallDeltaSeconds > 0
+    ) {
+      this.presentationState = 'starved'
+      this.presentationRateRatio = 0
+      this.rateCorrection = -1
+      this.starvationCount += 1
+      this.starvationStartedAtMs = wallTimeMs
     }
     return this.displayElapsedSeconds
   }
@@ -256,10 +340,29 @@ export class VehiclePresentationTimeline {
     this.displayElapsedSeconds = null
     this.lastTickWallTimeMs = null
     this.historyReanchorCount = 0
+    this.presentationState = 'buffering'
+    this.presentationRateRatio = 1
+    this.rateCorrection = 0
+    this.starvationCount = 0
+    this.starvationStartedAtMs = null
+    this.completedStarvationDurationMs = 0
   }
 
   stats(): VehiclePresentationTimelineStats {
+    const latest = this.frames.at(-1)
+    const starvationDurationMs = this.completedStarvationDurationMs + (
+      this.starvationStartedAtMs != null && this.lastTickWallTimeMs != null
+        ? Math.max(0, this.lastTickWallTimeMs - this.starvationStartedAtMs)
+        : 0
+    )
     return {
+      state: this.presentationState,
+      bufferDepthSeconds: latest && this.displayElapsedSeconds != null
+        ? Math.max(0, latest.elapsedSeconds - this.displayElapsedSeconds)
+        : 0,
+      rateCorrection: this.rateCorrection,
+      starvationCount: this.starvationCount,
+      starvationDurationMs,
       delaySeconds: this.delaySeconds,
       displayElapsedSeconds: this.displayElapsedSeconds,
       sourceFrameCount: this.frames.length,
