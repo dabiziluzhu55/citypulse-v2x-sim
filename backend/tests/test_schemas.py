@@ -129,6 +129,69 @@ def test_disturbance_target_discriminated_union() -> None:
     assert accident.position_ratio == 0.6
 
 
+def test_speed_limit_accepts_speed_kmh() -> None:
+    target = DisturbanceTargetSpeedLimit(
+        event_type="speed_limit",
+        intersection_id="demo_15",
+        start_seconds=60,
+        end_seconds=300,
+        speed_kmh=30,
+    )
+    runtime = SpeedLimitRequest(
+        event_type="speed_limit",
+        event_id="speed-limit-kmh",
+        start_seconds=60,
+        end_seconds=300,
+        lane_ids=["-56734_0"],
+        speed_kmh=30,
+    )
+    assert target.max_speed == pytest.approx(30 / 3.6)
+    assert runtime.max_speed == pytest.approx(30 / 3.6)
+
+
+def test_speed_limit_rejects_inconsistent_units() -> None:
+    with pytest.raises(ValidationError):
+        DisturbanceTargetSpeedLimit(
+            event_type="speed_limit",
+            intersection_id="demo_15",
+            start_seconds=60,
+            end_seconds=300,
+            max_speed=5.0,
+            speed_kmh=30,
+        )
+    with pytest.raises(ValidationError):
+        SpeedLimitRequest(
+            event_type="speed_limit",
+            event_id="speed-limit-1",
+            start_seconds=60,
+            end_seconds=300,
+            lane_ids=["-56734_0"],
+            max_speed=5.0,
+            speed_kmh=30,
+        )
+
+
+def test_runtime_speed_limit_requires_speed_value() -> None:
+    with pytest.raises(ValidationError):
+        SpeedLimitRequest(
+            event_type="speed_limit",
+            event_id="speed-limit-1",
+            start_seconds=60,
+            end_seconds=300,
+            lane_ids=["-56734_0"],
+        )
+
+
+def test_disturbance_speed_limit_defaults_max_speed() -> None:
+    target = DisturbanceTargetSpeedLimit(
+        event_type="speed_limit",
+        intersection_id="demo_15",
+        start_seconds=60,
+        end_seconds=300,
+    )
+    assert target.max_speed == 5.0
+
+
 def test_event_discriminated_union() -> None:
     lane_closure = LaneClosureRequest(
         event_type="lane_closure",

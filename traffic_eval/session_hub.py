@@ -39,6 +39,7 @@ class SessionMetricsHub:
         self._session_root = session_root
         self._traffic_manifest_path = traffic_manifest_path
         self._metadata_store = metadata_store
+        self._session_manifest_mtime: dict[str, float] = {}
 
     def configure_paths(
         self,
@@ -73,6 +74,7 @@ class SessionMetricsHub:
                 collector.set_fuel_meta_by_type(fuel_meta)
             else:
                 collector.extend_warnings(warnings)
+            self._record_session_manifest_mtime(session_id, session_dir)
             self._active[session_id] = collector
             self._modes[session_id] = control_mode
 
@@ -81,6 +83,7 @@ class SessionMetricsHub:
             collector = self._active.get(snapshot.session_id)
             if collector is None:
                 return
+            self._maybe_reload_fuel_meta(snapshot, collector)
             collector.observe_snapshot(snapshot)
 
     def finalize(
@@ -127,6 +130,7 @@ class SessionMetricsHub:
             result.algorithm = mode or result.algorithm
             self._active.pop(session_id, None)
             self._modes.pop(session_id, None)
+            self._session_manifest_mtime.pop(session_id, None)
             self._store_completed(session_id, result)
             return result
 
@@ -139,6 +143,7 @@ class SessionMetricsHub:
         with self._lock:
             collector = self._active.pop(session_id, None)
             mode = self._modes.pop(session_id, "")
+            self._session_manifest_mtime.pop(session_id, None)
             if collector is None:
                 return
             result = collector.result(
@@ -223,6 +228,56 @@ class SessionMetricsHub:
             self._active.clear()
             self._modes.clear()
             self._completed.clear()
+            self._session_manifest_mtime.clear()
+
+    def _session_dir(self, session_id: str) -> Path | None:
+        if self._session_root is None:
+            return None
+        return self._session_root / session_id
+
+    def _record_session_manifest_mtime(
+        self, session_id: str, session_dir: Path | None
+    ) -> None:
+        if session_dir is None:
+            return
+        path = session_dir / "session_manifest.json"
+        if not path.is_file():
+            return
+        try:
+            self._session_manifest_mtime[session_id] = path.stat().st_mtime
+        except OSError:
+            return
+
+    def _maybe_reload_fuel_meta(
+        self,
+        snapshot: SimulationSnapshot,
+        collector: TrafficMetricsCollector,
+    ) -> None:
+        type_ids = [str(vehicle.type_id or "") for vehicle in snapshot.vehicles]
+        missing = collector.missing_fuel_meta_type_ids(type_ids)
+        if not missing:
+            return
+        session_dir = self._session_dir(snapshot.session_id)
+        if session_dir is None:
+            return
+        path = session_dir / "session_manifest.json"
+        if not path.is_file():
+            return
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            return
+        if mtime == self._session_manifest_mtime.get(snapshot.session_id):
+            return
+        fuel_meta, warnings = load_fuel_meta_by_type(
+            session_dir=session_dir,
+            traffic_manifest_path=self._traffic_manifest_path,
+        )
+        self._session_manifest_mtime[snapshot.session_id] = mtime
+        if fuel_meta:
+            collector.update_fuel_meta_by_type(fuel_meta)
+        elif warnings:
+            collector.extend_warnings(warnings)
 
     def _store_completed(self, session_id: str, result: EvalResult) -> None:
         if session_id in self._completed:

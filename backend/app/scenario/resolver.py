@@ -252,13 +252,26 @@ def _resolve_disturbance_target(
             target.lane_ids,
             catalog,
         )
+        if target.max_speed is None:
+            raise AppError(
+                code="INVALID_SPEED_LIMIT",
+                message="speed_limit requires max_speed or speed_kmh.",
+                status_code=422,
+            )
+        max_speed = float(target.max_speed)
+        validate_speed_limit_against_catalog(
+            max_speed,
+            lane_ids,
+            catalog,
+            intersection_ids={target.intersection_id},
+        )
         return SpeedLimitRequest(
             event_type="speed_limit",
             event_id=event_id,
             start_seconds=target.start_seconds,
             end_seconds=target.end_seconds,
             lane_ids=lane_ids,
-            max_speed=target.max_speed,
+            max_speed=max_speed,
         )
     if isinstance(target, DisturbanceTargetAccident):
         lane_id = _resolve_single_lane_id(
@@ -321,6 +334,38 @@ def _resolve_disturbance_target(
         message="Unsupported disturbance target type.",
         status_code=422,
     )
+
+
+def validate_speed_limit_against_catalog(
+    max_speed: float,
+    lane_ids: list[str],
+    catalog: SimulationCatalog,
+    *,
+    intersection_ids: set[str] | None = None,
+) -> None:
+    """限速必须严格低于目标车道的原始 max_speed，否则 SUMO 激活会失败。"""
+
+    scope = intersection_ids if intersection_ids is not None else set(catalog.intersections)
+    baselines: dict[str, float] = {}
+    for intersection_id in scope:
+        intersection = catalog.intersections.get(intersection_id)
+        if intersection is None:
+            continue
+        for lane in intersection.lanes:
+            baselines[lane.lane_id] = float(lane.max_speed)
+    for lane_id in lane_ids:
+        baseline = baselines.get(lane_id)
+        if baseline is None:
+            continue
+        if max_speed + 1e-9 >= baseline:
+            raise AppError(
+                code="INVALID_SPEED_LIMIT",
+                message=(
+                    f"Speed limit for {lane_id} must be below the lane's original "
+                    f"max_speed {baseline:g} m/s ({baseline * 3.6:g} km/h)."
+                ),
+                status_code=422,
+            )
 
 
 def _resolve_lane_ids(

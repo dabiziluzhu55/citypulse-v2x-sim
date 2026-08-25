@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -166,6 +167,164 @@ def test_provisional_fuel_excludes_electric() -> None:
     # (300ml /1000) / (3000m /100000) = 10
     assert result.fuel_intensity_L_per_100km == pytest.approx(10.0)
     assert result.metric_sources["fuel_intensity_L_per_100km"] == "snapshot_provisional"
+
+
+def test_provisional_fuel_skips_unknown_type_ids() -> None:
+    collector = TrafficMetricsCollector("sotl")
+    collector.set_fuel_meta_by_type(_fuel_meta())
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=5.0,
+            metrics=_Metrics(departed_vehicles=3),
+            vehicles=(
+                _Vehicle("gas", type_id="passenger", distance=1000, fuel_total_ml=100),
+                _Vehicle(
+                    "evt",
+                    type_id="citypulse_event_passenger",
+                    distance=9000,
+                    fuel_total_ml=999,
+                ),
+                _Vehicle(
+                    "mystery",
+                    type_id="mystery_car",
+                    distance=5000,
+                    fuel_total_ml=500,
+                ),
+            ),
+        )
+    )
+    result = collector.result(finished=False)
+    assert result.fuel_intensity_L_per_100km == pytest.approx(10.0)
+    assert result.metric_sources["fuel_intensity_L_per_100km"] == "snapshot_provisional"
+    assert any("mystery_car" in w for w in result.warnings)
+    assert any("citypulse_event_passenger" in w for w in result.warnings)
+
+
+def test_provisional_fuel_none_when_only_unknown_types() -> None:
+    collector = TrafficMetricsCollector("sotl")
+    collector.set_fuel_meta_by_type(_fuel_meta())
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=5.0,
+            metrics=_Metrics(departed_vehicles=1),
+            vehicles=(
+                _Vehicle("evt", type_id="mystery_car", distance=1000, fuel_total_ml=100),
+            ),
+        )
+    )
+    result = collector.result(finished=False)
+    assert result.fuel_intensity_L_per_100km is None
+    assert "fuel_intensity_L_per_100km" not in result.metric_sources
+    assert any("mystery_car" in w for w in result.warnings)
+
+
+def test_hub_reloads_session_manifest_for_unknown_type(tmp_path: Path) -> None:
+    traffic = tmp_path / "traffic_manifest.json"
+    traffic.write_text(
+        json.dumps(
+            {
+                "vehicle_profiles": {
+                    "passenger": {
+                        "powertrain": "gasoline",
+                        "fuel_density_mg_per_ml": 745.0,
+                    }
+                },
+                "vehicle_type_profiles": {"official_passenger": "passenger"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    session_id = "late-manifest"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    hub = SessionMetricsHub(session_root=tmp_path, traffic_manifest_path=traffic)
+    hub.start_session(session_id, "fixed")
+
+    known = _Vehicle(
+        "a", type_id="official_passenger", distance=1000, fuel_total_ml=100
+    )
+    late = _Vehicle("b", type_id="late_passenger", distance=1000, fuel_total_ml=300)
+    hub.observe(
+        _Snapshot(
+            session_id=session_id,
+            elapsed_seconds=1.0,
+            metrics=_Metrics(departed_vehicles=2),
+            vehicles=(known, late),
+        )
+    )
+    before = hub.get_metrics_payload(session_id)
+    assert before is not None
+    assert before["fuel_consumption"] == pytest.approx(10.0)
+    assert any("late_passenger" in w for w in before["warnings"])
+
+    (session_dir / "session_manifest.json").write_text(
+        json.dumps(
+            {
+                "vehicle_type_profiles": {
+                    "official_passenger": "passenger",
+                    "late_passenger": "passenger",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    hub.observe(
+        _Snapshot(
+            session_id=session_id,
+            elapsed_seconds=2.0,
+            metrics=_Metrics(departed_vehicles=2),
+            vehicles=(known, late),
+        )
+    )
+    after = hub.get_metrics_payload(session_id)
+    assert after is not None
+    assert after["fuel_consumption"] == pytest.approx(20.0)
+    assert after["metric_sources"]["fuel_intensity_L_per_100km"] == "snapshot_provisional"
+
+
+def test_hub_does_not_reread_unchanged_session_manifest(tmp_path: Path) -> None:
+    traffic = tmp_path / "traffic_manifest.json"
+    traffic.write_text(
+        json.dumps(
+            {
+                "vehicle_profiles": {
+                    "passenger": {
+                        "powertrain": "gasoline",
+                        "fuel_density_mg_per_ml": 745.0,
+                    }
+                },
+                "vehicle_type_profiles": {"official_passenger": "passenger"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    session_id = "stable-manifest"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    (session_dir / "session_manifest.json").write_text(
+        json.dumps({"vehicle_type_profiles": {"official_passenger": "passenger"}}),
+        encoding="utf-8",
+    )
+    hub = SessionMetricsHub(session_root=tmp_path, traffic_manifest_path=traffic)
+    hub.start_session(session_id, "fixed")
+    first_mtime = hub._session_manifest_mtime[session_id]
+
+    snapshot = _Snapshot(
+        session_id=session_id,
+        elapsed_seconds=1.0,
+        metrics=_Metrics(departed_vehicles=2),
+        vehicles=(
+            _Vehicle("a", type_id="official_passenger", distance=1000, fuel_total_ml=100),
+            _Vehicle("evt", type_id="citypulse_event_passenger", distance=10, fuel_total_ml=1),
+        ),
+    )
+    hub.observe(snapshot)
+    assert hub._session_manifest_mtime[session_id] == first_mtime
+    live = hub.get_metrics_payload(session_id)
+    assert live is not None
+    assert live["fuel_consumption"] == pytest.approx(10.0)
 
 
 def test_final_fuel_from_tripinfo_mixed_powertrains(tmp_path: Path) -> None:

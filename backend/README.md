@@ -467,6 +467,13 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
       "end_seconds": 300
     },
     {
+      "event_type": "speed_limit",
+      "intersection_id": "demo_3",
+      "start_seconds": 60,
+      "end_seconds": 300,
+      "speed_kmh": 30
+    },
+    {
       "event_type": "major_event_opening",
       "intersection_id": "demo_2",
       "start_seconds": 120,
@@ -483,7 +490,7 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 | `period` | `morning_peak` / `off_peak` / `evening_peak` |
 | `control_mode` | `fixed` / `max_pressure` / `sotl` |
 | `playback_speed` | 可选：1.0 / 1.25 / 1.5 / 2.0 / 3.0 / 5.0 |
-| `disturbance_targets` | 按路口描述的扰动（含大型活动）；后端解析为 lane 级事件 |
+| `disturbance_targets` | 按路口描述的扰动（含大型活动）；后端解析为 lane 级事件。`speed_limit` 须提供 `max_speed`（m/s）或 `speed_kmh`（km/h，用户最大限速）；后端换算后交给 SUMO |
 
 **返回示例：** HTTP 201
 
@@ -591,6 +598,19 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
   "start_seconds": 100,
   "end_seconds": 400,
   "lane_ids": ["-30_0"]
+}
+```
+
+道路限速示例（推荐前端提交 `speed_kmh`；也可直接提交 `max_speed`，单位 m/s）：
+
+```json
+{
+  "event_type": "speed_limit",
+  "event_id": "limit-001",
+  "start_seconds": 100,
+  "end_seconds": 400,
+  "lane_ids": ["-30_0"],
+  "speed_kmh": 30
 }
 ```
 

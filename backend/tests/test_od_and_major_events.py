@@ -29,7 +29,7 @@ from backend.app.services.scenario_export_service import ScenarioExportService, 
 from backend.app.services.simulation_service import SimulationService
 from backend.app.controllers.runtime import AlgorithmRuntimeStore
 from backend.app.services.snapshot_serializer import SnapshotSerializer
-from simulation.sumo import MajorEventClosingEvent, MajorEventOpeningEvent
+from simulation.sumo import MajorEventClosingEvent, MajorEventOpeningEvent, SpeedLimitEvent
 from simulation.sumo.engine.session import (
     IntersectionCapability,
     LaneCapability,
@@ -425,6 +425,22 @@ def test_major_event_request_conversion() -> None:
     assert closed.destination_lane_ids == ("-3000_0",)
     assert list(SimulationService._event_lane_ids(opened)) == ["-2000_0", "-1000_0"]
     assert list(SimulationService._event_lane_ids(closed)) == ["-2000_0", "-3000_0"]
+
+
+def test_speed_limit_speed_kmh_converts_for_sumo() -> None:
+    request = TypeAdapter(EventRequest).validate_python(
+        {
+            "event_type": "speed_limit",
+            "event_id": "limit-1",
+            "start_seconds": 10,
+            "end_seconds": 100,
+            "lane_ids": ["-2000_0"],
+            "speed_kmh": 30,
+        }
+    )
+    event = SimulationService._to_disturbance_event(request)
+    assert isinstance(event, SpeedLimitEvent)
+    assert event.max_speed == pytest.approx(30 / 3.6)
 
 
 def test_major_event_initial_and_runtime_paths(
