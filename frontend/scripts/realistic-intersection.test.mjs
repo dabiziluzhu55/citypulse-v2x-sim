@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { projectBd09ToWebMercator, wgs84ToBd09 } from '../src/mapv/sceneCoordinates.ts'
@@ -15,8 +16,13 @@ import {
   signalPoleBase,
   STOP_LINE_CENTER_OFFSET_METERS,
 } from '../src/mapv/realistic/intersectionApproachGeometry.ts'
-import { visualLanePoints } from '../src/mapv/realistic/intersectionRoadGeometry.ts'
 import { parseIntersectionEnvironmentManifest } from '../src/mapv/realistic/intersectionEnvironmentManifest.ts'
+import {
+  controlledLaneSignalForState,
+  vehicleGeometryGenerationIsValid,
+} from '../src/mapv/realistic/intersectionManifest.ts'
+import { sumoHeadingTransformIsValid } from '../src/mapv/sumoHeadingTransform.ts'
+import { vehicleRouteTurnIndexNetworkSha256 } from '../src/mapv/vehicleRouteTurnIndex.ts'
 
 function pointToSegmentDistance(point, start, end) {
   const dx = end[0] - start[0]
@@ -33,12 +39,27 @@ test('clips a lane shape at the exact preview radius', () => {
   assert.deepEqual(clipped, [[-140, 0], [-80, 0], [0, 0]])
 })
 
+test('aggregates multiple SUMO links into one controlled-lane signal color', () => {
+  assert.equal(controlledLaneSignalForState('rrGry', [0, 2, 4]), 'g')
+  assert.equal(controlledLaneSignalForState('rryry', [0, 2, 4]), 'y')
+  assert.equal(controlledLaneSignalForState('rrrrr', [0, 2, 4]), 'r')
+})
+
 test('catalog contains 20 projection-correct realistic intersections', async () => {
-  const catalog = JSON.parse(await readFile(
-    new URL('../public/intersections/v3/catalog.json', import.meta.url),
-    'utf8',
-  ))
+  const [catalogSource, sumoSource] = await Promise.all([
+    readFile(new URL('../public/intersections/v3/catalog.json', import.meta.url), 'utf8'),
+    readFile(new URL('../../data/maps/sumo/generated/network/TotalMap_20.signals.net.xml', import.meta.url)),
+  ])
+  const catalog = JSON.parse(catalogSource)
+  const sourceSha256 = createHash('sha256').update(sumoSource).digest('hex')
   assert.equal(catalog.schemaVersion, 3)
+  assert.equal(catalog.sourceSha256, sourceSha256)
+  assert.deepEqual(catalog.vehicleGeometryGeneration, {
+    schemaVersion: 1,
+    networkSourceSha256: sourceSha256,
+    intersectionCount: 20,
+    connectionCount: 421,
+  })
   assert.equal(catalog.intersections.length, 20)
   assert.deepEqual(
     catalog.intersections.map((item) => item.intersectionId),
@@ -50,6 +71,28 @@ test('catalog contains 20 projection-correct realistic intersections', async () 
       'utf8',
     ))
     assert.deepEqual(validateIntersectionManifest(manifest), [], entry.intersectionId)
+    assert.equal(sumoHeadingTransformIsValid(entry.sumoHeadingTransform), true)
+    assert.deepEqual(manifest.sumoHeadingTransform, entry.sumoHeadingTransform)
+    assert.equal(manifest.sumoHeadingTransform.sourceSha256, sourceSha256)
+    assert.equal(manifest.visualRoadSourceSha256, manifest.sourceSha256)
+    assert.equal(manifest.vehicleConnectionSourceSha256, sourceSha256)
+    assert.deepEqual(manifest.vehicleGeometryGeneration, {
+      schemaVersion: 1,
+      networkSourceSha256: sourceSha256,
+      headingSourceSha256: sourceSha256,
+      connectionSourceSha256: sourceSha256,
+      connectionCount: manifest.vehicleConnections.length,
+    })
+    assert.equal(
+      vehicleGeometryGenerationIsValid(manifest, vehicleRouteTurnIndexNetworkSha256()),
+      true,
+      `${entry.intersectionId} vehicle geometry generation must match the route index`,
+    )
+    assert.equal(
+      vehicleGeometryGenerationIsValid(manifest, '0'.repeat(64)),
+      false,
+      `${entry.intersectionId} must reject a stale route index generation`,
+    )
     assert.equal(manifest.intersectionId, entry.intersectionId)
     assert.ok(manifest.horizontalScale > 1.28 && manifest.horizontalScale < 1.30)
     assert.ok(manifest.connections.length > 0)
@@ -63,6 +106,34 @@ test('catalog contains 20 projection-correct realistic intersections', async () 
     assert.ok(maximumRoadRadius >= 130, `${entry.intersectionId} road coverage is too short`)
     assert.ok(manifest.edges.some((edge) => edge.incoming))
     assert.ok(manifest.edges.some((edge) => !edge.incoming))
+  }
+})
+
+test('targeted rebuilt intersections match the current SUMO source and repair authoritative demo_4 gaps', async () => {
+  const [source, ...manifestSources] = await Promise.all([
+    readFile(new URL('../../data/maps/sumo/generated/network/TotalMap_20.signals.net.xml', import.meta.url)),
+    ...[4, 5, 6, 8, 9].map((index) => readFile(
+      new URL(`../public/intersections/v3/demo_${index}/manifest.json`, import.meta.url),
+      'utf8',
+    )),
+  ])
+  const sourceSha256 = createHash('sha256').update(source).digest('hex')
+  const manifests = manifestSources.map(JSON.parse)
+  const [demo4] = manifests
+  manifests.forEach((manifest) => assert.equal(manifest.sourceSha256, sourceSha256))
+
+  const repairedPairs = [
+    ['4463', '-56733', '-56735'],
+    ['4463', '-56735', '-57184'],
+    ['4484', '-57185', '-57232'],
+    ['4484', '-57230', '-57232'],
+  ]
+  for (const [junctionId, ...edgeIds] of repairedPairs) {
+    assert.ok(demo4.roadJoints.some((joint) => (
+      joint.junctionId === junctionId
+      && joint.source === 'sumo_junction_shape'
+      && edgeIds.every((edgeId) => joint.connectedEdgeIds.includes(edgeId))
+    )), `${junctionId} ${edgeIds.join('/')} must have an authoritative joint`)
   }
 })
 
@@ -127,35 +198,43 @@ test('intersection detail models require a browser-ready placement contract', ()
   }), /detail model is incomplete/)
 })
 
-test('anchors stop lines at lane ends and places crosswalks after them', async () => {
-  const manifest = JSON.parse(await readFile(
-    new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url),
-    'utf8',
-  ))
-  for (const edge of manifest.edges.filter((candidate) => candidate.incoming)) {
-    const approach = buildIntersectionApproachGeometry(edge, manifest.horizontalScale, manifest.edges)
-    assert.ok(approach)
-    for (const sample of approach.laneSamples) {
-      const laneEnd = visualLanePoints(sample.lane).at(-1)
-      const distanceMeters = Math.hypot(
-        sample.point[0] - laneEnd[0],
-        sample.point[1] - laneEnd[1],
+test('anchors every stop line at the authoritative vehicle-guide lane end', async () => {
+  let incomingLaneCount = 0
+  for (let intersectionIndex = 1; intersectionIndex <= 20; intersectionIndex += 1) {
+    const manifest = JSON.parse(await readFile(
+      new URL(`../public/intersections/v3/demo_${intersectionIndex}/manifest.json`, import.meta.url),
+      'utf8',
+    ))
+    for (const edge of manifest.edges.filter((candidate) => candidate.incoming)) {
+      const approach = buildIntersectionApproachGeometry(edge, manifest.horizontalScale, manifest.edges)
+      assert.ok(approach)
+      for (const sample of approach.laneSamples) {
+        const laneEnd = sample.lane.vehicleGuidePoints.at(-1)
+        const distanceMeters = Math.hypot(
+          sample.point[0] - laneEnd[0],
+          sample.point[1] - laneEnd[1],
+        ) / manifest.horizontalScale
+        assert.ok(
+          Math.abs(distanceMeters - STOP_LINE_CENTER_OFFSET_METERS) < 0.01,
+          `demo_${intersectionIndex}:${sample.lane.id} stop line moved from its control boundary`,
+        )
+        incomingLaneCount += 1
+      }
+      const firstCrosswalk = approach.crosswalkBars[0].center
+      const along = (
+        (firstCrosswalk[0] - approach.stopLineCenter[0]) * approach.tangent[0]
+        + (firstCrosswalk[1] - approach.stopLineCenter[1]) * approach.tangent[1]
       ) / manifest.horizontalScale
-      assert.ok(Math.abs(distanceMeters - STOP_LINE_CENTER_OFFSET_METERS) < 0.01)
+      assert.ok(Math.abs(along - CROSSWALK_FIRST_CENTER_METERS) < 0.01)
+      assert.ok(along > 0)
+      assert.ok(approach.crosswalkBars.length >= 4)
+      assert.ok(approach.crosswalkBars.every((bar) => (
+        Math.abs(bar.length / manifest.horizontalScale - CROSSWALK_DEPTH_METERS) < 0.01
+        && Math.abs(bar.width / manifest.horizontalScale - CROSSWALK_STRIPE_WIDTH_METERS) < 0.01
+      )))
     }
-    const firstCrosswalk = approach.crosswalkBars[0].center
-    const along = (
-      (firstCrosswalk[0] - approach.stopLineCenter[0]) * approach.tangent[0]
-      + (firstCrosswalk[1] - approach.stopLineCenter[1]) * approach.tangent[1]
-    ) / manifest.horizontalScale
-    assert.ok(Math.abs(along - CROSSWALK_FIRST_CENTER_METERS) < 0.01)
-    assert.ok(along > 0)
-    assert.ok(approach.crosswalkBars.length >= 4)
-    assert.ok(approach.crosswalkBars.every((bar) => (
-      Math.abs(bar.length / manifest.horizontalScale - CROSSWALK_DEPTH_METERS) < 0.01
-      && Math.abs(bar.width / manifest.horizontalScale - CROSSWALK_STRIPE_WIDTH_METERS) < 0.01
-    )))
   }
+  assert.equal(incomingLaneCount, 177)
 })
 
 test('demo_2 rebuilds non-overlapping uniform lane cross sections with lane semantics', async () => {
@@ -218,7 +297,10 @@ test('crosswalk bars span paired carriageways continuously without median gaps',
   }
 })
 
-test('all compact intersections move crosswalks outward until their footprints no longer overlap', async () => {
+test('all crosswalks stay 1.2 metres downstream of stop lines and only trim conflicting bars', async () => {
+  let approachCount = 0
+  let connectionCount = 0
+  let controlledLaneCount = 0
   for (let index = 1; index <= 20; index += 1) {
     const id = `demo_${index}`
     const manifest = JSON.parse(await readFile(
@@ -226,6 +308,23 @@ test('all compact intersections move crosswalks outward until their footprints n
       'utf8',
     ))
     const approaches = buildCollisionFreeIntersectionApproaches(manifest.edges, manifest.horizontalScale)
+    approachCount += approaches.length
+    connectionCount += manifest.connections.length
+    controlledLaneCount += manifest.signalGroups.length
+    assert.ok(approaches.every(({ geometry }) => geometry.setbackMeters === 0))
+    for (const { geometry } of approaches) {
+      for (const bar of geometry.crosswalkBars) {
+        const nearEdge = [
+          bar.center[0] - geometry.tangent[0] * bar.length / 2,
+          bar.center[1] - geometry.tangent[1] * bar.length / 2,
+        ]
+        const gap = (
+          (nearEdge[0] - geometry.stopLineCenter[0]) * geometry.tangent[0]
+          + (nearEdge[1] - geometry.stopLineCenter[1]) * geometry.tangent[1]
+        ) / manifest.horizontalScale
+        assert.ok(Math.abs(gap - 1.2) <= 0.05, `${id} crosswalk gap ${gap}`)
+      }
+    }
     for (let left = 0; left < approaches.length; left += 1) {
       for (let right = left + 1; right < approaches.length; right += 1) {
         assert.equal(
@@ -240,6 +339,9 @@ test('all compact intersections move crosswalks outward until their footprints n
       }
     }
   }
+  assert.equal(approachCount, 73)
+  assert.equal(connectionCount, 315)
+  assert.equal(controlledLaneCount, 156)
 })
 
 test('crosswalk orientation follows the rebuilt road centerline instead of one skewed lane', () => {
@@ -267,16 +369,16 @@ test('crosswalk orientation follows the rebuilt road centerline instead of one s
 })
 
 test('demo_2 lanes align with the authoritative WGS84 road export', async () => {
-  const [manifestSource, roadsSource, mappingSource] = await Promise.all([
+  const [manifestSource, roadsSource, catalogSource] = await Promise.all([
     readFile(new URL('../public/intersections/v3/demo_2/manifest.json', import.meta.url), 'utf8'),
     readFile(new URL('../public/showcase-data/demo_2.roads.wgs84.geojson', import.meta.url), 'utf8'),
-    readFile(new URL('../../data/maps/sumo/TotalMap_20.intersections.json', import.meta.url), 'utf8'),
+    readFile(new URL('../public/intersections/v3/catalog.json', import.meta.url), 'utf8'),
   ])
   const manifest = JSON.parse(manifestSource)
   const roads = JSON.parse(roadsSource)
-  const mapping = JSON.parse(mappingSource)
-  assert.ok(Math.abs(manifest.origin.longitude - mapping.demo_2.junction_lon) < 1e-10)
-  assert.ok(Math.abs(manifest.origin.latitude - mapping.demo_2.junction_lat) < 1e-10)
+  const catalogEntry = JSON.parse(catalogSource).intersections.find((item) => item.intersectionId === 'demo_2')
+  assert.ok(Math.abs(manifest.origin.longitude - catalogEntry.longitude) < 1e-10)
+  assert.ok(Math.abs(manifest.origin.latitude - catalogEntry.latitude) < 1e-10)
 
   const origin = manifest.origin.webMercator
   let maximumDistance = 0

@@ -79,8 +79,6 @@ export const LEFT_SIDEBAR_REFERENCE_LAYOUT = {
     top: 420,
     width: col.width,
     height: 38,
-    gap: 15,
-    buttonWidth: (col.width - 12) / 2,
   },
   algorithmSelect: { left: col.left, top: 546, width: col.width, height: 40 },
   /** 相对原稿上移 15px，收紧「管控算法选择」下方空白 */

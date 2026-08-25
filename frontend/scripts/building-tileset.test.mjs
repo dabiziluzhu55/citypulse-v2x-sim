@@ -33,12 +33,14 @@ test('keeps Baidu roads and base landcover while native buildings stay disabled'
   assert.equal(createBaiduBaseDisplayOptions(false).building, false)
 })
 
-test('keeps one global local building source while all intersection roads stay prepared', () => {
+test('keeps one global local building source while intersection roads use bounded caches', () => {
   assert.match(baiduThreeMapSource, /\/3dtiles\/xiongan-webmercator\/tileset\.json/)
   assert.doesNotMatch(baiduThreeMapSource, /switchBuildingTileset/)
   assert.match(baiduThreeMapSource, /prepareOverview\(intersectionIds\)/)
   assert.match(baiduThreeMapSource, /validateGlobalBuildingSource/)
-  assert.match(baiduThreeMapSource, /cacheBytes: BUILDING_CACHE_BYTES/)
+  assert.match(baiduThreeMapSource, /BUILDING_CACHE_BYTES = 128 \* 1024 \* 1024/)
+  assert.match(baiduThreeMapSource, /RECOVERY_BUILDING_CACHE_BYTES = 64 \* 1024 \* 1024/)
+  assert.match(baiduThreeMapSource, /cacheBytes: stableRenderMode\.value \? RECOVERY_BUILDING_CACHE_BYTES : BUILDING_CACHE_BYTES/)
 })
 
 test('building projection maps the ECEF root to a local BD-09 WebMercator origin', () => {

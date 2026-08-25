@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   DISTURBANCE_EVENT_OPTIONS,
   SCENARIO_MODE_OPTIONS,
@@ -68,6 +68,14 @@ import {
   reconcileEventsForScenario,
   scenarioPresetIntersectionIds,
 } from '../../utils/scenarioPresetRules'
+import {
+  assertUniqueDisturbanceIntersections,
+  disturbanceIntersectionOwners,
+} from '../../utils/disturbanceIntersectionUniqueness'
+import {
+  assertSafeLaneClosureEvents,
+  laneClosureAvailability,
+} from '../../utils/safeLaneClosures'
 
 const props = defineProps<{
   sessionId: string
@@ -121,7 +129,6 @@ const {
   configNote,
   buildPayload,
   buildPayloadFor,
-  buildExport,
 } = useCompactScenarioConfig(
   intersection,
   periods,
@@ -154,13 +161,38 @@ const scenarioOptions = computed(() => SCENARIO_MODE_OPTIONS.map((item) => ({
   label: item.label,
   value: item.value,
 })))
+const occupiedDisturbanceIntersections = computed(() => disturbanceIntersectionOwners(
+  config.value.disturbance_events,
+  editingDisturbanceId.value,
+))
 const disturbanceIntersectionOptions = computed(() => {
+  const laneClosureSelected = DISTURBANCE_EVENT_OPTIONS.find(
+    (item) => item.value === disturbanceDraft.value.presetId,
+  )?.eventType === 'lane_closure'
   const candidateIds = scenarioPresetIntersectionIds(
     config.value.scenario_preset_id,
     scenarioPresets.value,
   )
-  return candidateIds
-    .map((id) => ({ label: formatIntersectionLabel(id), value: id }))
+  return candidateIds.map((id) => {
+    const owner = occupiedDisturbanceIntersections.value.get(id)
+    const laneClosure = laneClosureSelected ? laneClosureAvailability(id) : null
+    const ownerLabel = owner
+      ? DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === owner.preset_id)?.label
+        ?? owner.event_type
+      : ''
+    const laneClosureUnavailable = Boolean(laneClosure && !laneClosure.available)
+    const visibleLabel = owner
+      ? `${formatIntersectionLabel(id)}（已用于${ownerLabel}）`
+      : formatIntersectionLabel(id)
+    return {
+      label: visibleLabel,
+      accessibleLabel: laneClosureUnavailable
+        ? `${formatIntersectionLabel(id)}，施工占道不可用`
+        : visibleLabel,
+      value: id,
+      disabled: Boolean(owner) || laneClosureUnavailable,
+    }
+  })
 })
 const selectedDisturbanceIntersectionCount = computed(() => disturbanceDraft.value.intersectionIds.length)
 const selectedDisturbanceOption = computed(() => DISTURBANCE_EVENT_OPTIONS.find(
@@ -454,7 +486,7 @@ function openDisturbanceModal(event?: CompactDisturbanceEvent): void {
     presetId: event?.preset_id ?? DISTURBANCE_EVENT_OPTIONS[0].value,
     intersectionIds: event
       ? [...event.intersection_ids]
-      : disturbanceIntersectionOptions.value.slice(0, 1).map((item) => item.value),
+      : disturbanceIntersectionOptions.value.filter((item) => !item.disabled).slice(0, 1).map((item) => item.value),
     startTime: event?.start_time ?? config.value.simulation_start_time,
     endTime: event?.end_time ?? config.value.simulation_end_time,
     vehicleCount: event?.vehicle_count ?? DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
@@ -470,7 +502,9 @@ function closeDisturbanceModal(): void {
 }
 
 function selectAllDisturbanceIntersections(): void {
-  disturbanceDraft.value.intersectionIds = disturbanceIntersectionOptions.value.map((item) => item.value)
+  disturbanceDraft.value.intersectionIds = disturbanceIntersectionOptions.value
+    .filter((item) => !item.disabled)
+    .map((item) => item.value)
 }
 
 function clearDisturbanceIntersections(): void {
@@ -557,6 +591,18 @@ function saveDisturbanceEvent(): void {
   }))
   if (existingIndex >= 0) disturbanceEvents.splice(existingIndex, 1, nextEvent)
   else disturbanceEvents.push(nextEvent)
+  try {
+    assertUniqueDisturbanceIntersections(disturbanceEvents, disturbanceEventLabel)
+  } catch (error) {
+    disturbanceFormError.value = error instanceof Error ? error.message : '同一路口只能配置一个扰动事件'
+    return
+  }
+  try {
+    assertSafeLaneClosureEvents([nextEvent])
+  } catch (error) {
+    disturbanceFormError.value = error instanceof Error ? error.message : '当前路口没有可安全封闭的车道'
+    return
+  }
   requestConfiguration(
     { ...config.value, disturbance_events: disturbanceEvents },
     closeDisturbanceModal,
@@ -572,7 +618,7 @@ function removeDisturbanceEvent(eventId: string): void {
     editingDisturbanceId.value = null
     disturbanceDraft.value = {
       presetId: DISTURBANCE_EVENT_OPTIONS[0].value,
-      intersectionIds: disturbanceIntersectionOptions.value.slice(0, 1).map((item) => item.value),
+      intersectionIds: disturbanceIntersectionOptions.value.filter((item) => !item.disabled).slice(0, 1).map((item) => item.value),
       startTime: config.value.simulation_start_time,
       endTime: config.value.simulation_end_time,
       vehicleCount: DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
@@ -634,21 +680,6 @@ function requestControlModeChange(value: string): void {
   requestConfiguration({ ...config.value, control_mode: value })
 }
 
-function saveConfig() {
-  try {
-    const blob = new Blob([JSON.stringify(buildExport(), null, 2)], { type: 'application/json;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${config.value.scenario_preset_id}-scene-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
-    document.body.append(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 0)
-    feedback.value = '仿真场景配置已保存'
-  }
-  catch (error) { feedback.value = error instanceof Error ? error.message : '场景保存失败' }
-}
 async function exportConfig() {
   if (presetUnavailableMessage.value) {
     feedback.value = presetUnavailableMessage.value
@@ -703,6 +734,22 @@ function selectPlaybackSpeed(value: number) {
 function handleMultiplierKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') multiplierOpen.value = false
 }
+
+function handleModalKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') return
+  if (runtimeErrorOpen.value) {
+    runtimeErrorOpen.value = false
+  } else if (disturbanceModalOpen.value) {
+    closeDisturbanceModal()
+  } else {
+    return
+  }
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}
+
+onMounted(() => window.addEventListener('keydown', handleModalKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
 </script>
 
 <template>
@@ -846,11 +893,9 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
           top: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.top}px`,
           width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.width}px`,
           height: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.height}px`,
-          gap: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.gap}px`,
-          gridTemplateColumns: `repeat(2, ${LEFT_SIDEBAR_REFERENCE_LAYOUT.fileActions.buttonWidth}px)`,
+          gridTemplateColumns: 'minmax(0, 1fr)',
         }"
       >
-        <button type="button" @click="saveConfig">保存仿真场景</button>
         <button type="button" :disabled="exporting" @click="exportConfig">{{ exporting ? '导出中…' : '导出当前仿真场景' }}</button>
       </div>
 
@@ -994,7 +1039,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
           </dl>
           <p>{{ statusError || '仿真运行失败，请检查错误信息。' }}</p>
           <details open>
-            <summary>错误信息</summary>
+            <summary>后端原始错误</summary>
             <pre>{{ runtimeRawError }}</pre>
           </details>
         </section>
@@ -1097,6 +1142,8 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
                   v-for="option in disturbanceIntersectionOptions"
                   :key="option.value"
                   :value="option.value"
+                  :disabled="option.disabled"
+                  :aria-label="option.accessibleLabel"
                 >{{ option.label }}</el-checkbox>
               </el-checkbox-group>
             </fieldset>
@@ -1124,12 +1171,13 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   min-height: 0;
   padding-left: 4px;
   overflow: hidden;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .left-sidebar__scaler {
   transform-origin: top left;
   transform: scale(min(1, 100cqw / var(--dashboard-left-sidebar-design-width, 600px), 100cqh / var(--dashboard-sidebar-design-height, 990px)));
+  pointer-events: auto;
 }
 
 .left-sidebar__shell {
@@ -1519,6 +1567,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
 .runtime-error-modal {
   position: fixed; inset: 0; z-index: 3200; display: grid; place-items: center; padding: 24px;
   background: rgba(0,8,20,.7); backdrop-filter: blur(4px);
+  pointer-events: auto;
 }
 .runtime-error-modal__dialog {
   width: min(620px, calc(100vw - 48px)); max-height: min(620px, calc(100vh - 48px)); overflow: auto;
@@ -1555,6 +1604,7 @@ function handleMultiplierKeydown(event: KeyboardEvent) {
   padding: 24px;
   background: rgba(1, 10, 24, .34);
   backdrop-filter: blur(3px);
+  pointer-events: auto;
 }
 .disturbance-modal__dialog {
   position: relative;

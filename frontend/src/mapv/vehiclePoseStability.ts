@@ -1,82 +1,143 @@
 import type { TrafficVehicleView } from '../types/traffic'
+import type { LanePoseTransitionKind } from './realistic/intersectionLaneHeading.ts'
+import type { RoadTransitionKind } from './vehicleTwinSample.ts'
 
-export const MAX_VISUAL_BACKTRACK_METERS = 0.5
-export const MIN_VISUAL_BUMPER_GAP_METERS = 1
+export const MIN_STABLE_DISPLACEMENT_LIMIT_METERS = 2
 
 export interface VehiclePoseState {
+  telemetryReliable: boolean
   backendDistance?: number
   routeId?: string
   routeIndex?: number
+  roadId: string
+  laneIndex?: number
   laneId: string
   trackKey?: string
+  motionPathKey?: string
+  connectionKey?: string
+  routeHintSource?: 'fixed_route_index' | 'live_topology'
+  segmentKey?: string
+  occupancyKey?: string
   trackProgress?: number
   trackDistanceMeters?: number
+  arcDistanceMeters?: number
+  pathArcDistanceMeters?: number
+  matchConfidence?: number
+  transitionKind?: LanePoseTransitionKind | 'raw_fallback'
+  roadTransitionKind?: RoadTransitionKind
   crossedStopLine: boolean
   laneResolutionFailures: number
+  lifecycle: 'stable' | 'laneChanging' | 'recovering' | 'rawFallback' | 'missing'
+  lastStableElapsedSeconds: number
+  authoritativeSourceLongitude?: number
+  authoritativeSourceLatitude?: number
+  sourceArcDistanceMeters?: number
+  sourceLateralOffsetMeters?: number
   longitude: number
   latitude: number
   heading: number
+  elapsedSeconds: number
+  motionEpoch: number
   lastSeenSequence: number
 }
 
-export interface VisualQueueVehicle {
-  id: string
-  trackKey: string
-  lanePosition?: number
-  naturalCenterDistanceMeters: number
-  lengthMeters: number
-  previousCenterDistanceMeters?: number
+export const MAX_RAW_TRANSITION_HEADING_DELTA = 35 * Math.PI / 180
+
+export interface RoadTransitionInput {
+  previous: Pick<VehiclePoseState, 'roadId' | 'laneId' | 'motionPathKey'> | null
+  roadId: string
+  laneId: string
+  motionPathKey?: string
+  laneTransitionKind?: LanePoseTransitionKind | 'raw_fallback'
+  laneChanging: boolean
+  rawFallback: boolean
+  displacementStable: boolean
+  headingDeltaRadians?: number
+  canonicalRouteEvidence?: TrafficVehicleView['canonical_route_evidence']
 }
 
-export interface VisualQueueConstraint {
-  maximumCenterDistanceMeters: number | null
-  hidden: boolean
+export function classifyRoadTransition(input: RoadTransitionInput): RoadTransitionKind {
+  const previous = input.previous
+  if (!previous) return 'same_path'
+  if (input.canonicalRouteEvidence === 'lane_change') return 'lane_change'
+  if (input.canonicalRouteEvidence === 'unique_connection') return 'topology_successor'
+  if (input.canonicalRouteEvidence === 'same_lane') return 'same_path'
+  if (input.laneChanging || input.laneTransitionKind === 'lane_change') return 'lane_change'
+  if (
+    input.motionPathKey
+    && previous.motionPathKey
+    && input.motionPathKey === previous.motionPathKey
+  ) return 'same_path'
+  if (input.laneTransitionKind === 'topological') return 'topology_successor'
+  if (previous.roadId === input.roadId && previous.laneId === input.laneId) return 'same_path'
+  // A road/lane change without a topology-confirmed path must not be bridged
+  // with a geographic straight line. The future snapshot window can resolve
+  // the connection later without exposing an off-road transition meanwhile.
+  return 'incompatible'
+}
+
+export interface VehiclePosePoint {
+  longitude: number
+  latitude: number
 }
 
 function finiteNumber(value: number | undefined): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+export function vehicleTelemetryIsPlaceholder(vehicle: TrafficVehicleView): boolean {
+  return (vehicle.lane_position ?? 0) === 0
+    && (vehicle.distance ?? 0) === 0
+    && (vehicle.route_id ?? '') === ''
+    && (vehicle.route_index ?? -1) === -1
+}
+
+export function reliableVehicleLanePosition(vehicle: TrafficVehicleView): number | undefined {
+  if (vehicleTelemetryIsPlaceholder(vehicle)) return undefined
+  return finiteNumber(vehicle.lane_position)
+}
+
+export function maximumStableVehicleDisplacementMeters(
+  speedMetersPerSecond: number,
+  deltaSimulationSeconds: number,
+): number {
+  return Math.max(
+    MIN_STABLE_DISPLACEMENT_LIMIT_METERS,
+    Math.max(0, speedMetersPerSecond) * Math.max(0, deltaSimulationSeconds) * 1.25 + 1,
+  )
+}
+
+export function vehiclePoseDisplacementMeters(
+  left: VehiclePosePoint,
+  right: VehiclePosePoint,
+): number {
+  const latitude = (left.latitude + right.latitude) / 2 * Math.PI / 180
+  const east = (right.longitude - left.longitude) * Math.cos(latitude) * 110_900
+  const north = (right.latitude - left.latitude) * 110_900
+  return Math.hypot(east, north)
+}
+
+export function vehiclePoseDisplacementIsStable(
+  previous: Pick<VehiclePoseState, 'longitude' | 'latitude' | 'elapsedSeconds'>,
+  current: VehiclePosePoint,
+  speedMetersPerSecond: number,
+  elapsedSeconds: number,
+): boolean {
+  return vehiclePoseDisplacementMeters(previous, current) <= maximumStableVehicleDisplacementMeters(
+    speedMetersPerSecond,
+    elapsedSeconds - previous.elapsedSeconds,
+  )
+}
+
 export function routeAdvanced(
   previous: VehiclePoseState | null,
   vehicle: TrafficVehicleView,
 ): boolean {
-  if (!previous) return false
+  if (!previous || !previous.telemetryReliable || vehicleTelemetryIsPlaceholder(vehicle)) return false
   const previousIndex = finiteNumber(previous.routeIndex)
   const nextIndex = finiteNumber(vehicle.route_index)
   if (previousIndex != null && nextIndex != null && nextIndex > previousIndex) return true
   return Boolean(previous.routeId && vehicle.route_id && previous.routeId !== vehicle.route_id)
-}
-
-export function minimumForwardTrackDistance(
-  previous: VehiclePoseState | null,
-  vehicle: TrafficVehicleView,
-): number | undefined {
-  if (!previous?.trackKey || previous.trackDistanceMeters == null) return undefined
-  if (previous.laneId !== vehicle.lane_id || routeAdvanced(previous, vehicle)) return undefined
-  const previousBackendDistance = finiteNumber(previous.backendDistance)
-  const currentBackendDistance = finiteNumber(vehicle.distance)
-  const sameRoute = !previous.routeId || !vehicle.route_id || previous.routeId === vehicle.route_id
-  const sameRouteIndex = previous.routeIndex == null
-    || vehicle.route_index == null
-    || previous.routeIndex === vehicle.route_index
-  if (
-    sameRoute
-    && sameRouteIndex
-    && previousBackendDistance != null
-    && currentBackendDistance != null
-    && currentBackendDistance + 1e-6 >= previousBackendDistance
-  ) return previous.trackDistanceMeters - MAX_VISUAL_BACKTRACK_METERS
-  return undefined
-}
-
-export function shouldAllowStopClamp(
-  previous: VehiclePoseState | null,
-  vehicle: TrafficVehicleView,
-): boolean {
-  if (previous?.crossedStopLine) return false
-  if (routeAdvanced(previous, vehicle)) return false
-  return true
 }
 
 export function resolveCrossedStopLine(
@@ -90,50 +151,4 @@ export function resolveCrossedStopLine(
   if (routeAdvanced(previous, vehicle)) return true
   if (stopFrontLimitDistanceMeters == null || stopClamped) return false
   return naturalFrontDistanceMeters > stopFrontLimitDistanceMeters + 0.05
-}
-
-export function resolveVisualQueueConstraints(
-  vehicles: VisualQueueVehicle[],
-  bumperGapMeters = MIN_VISUAL_BUMPER_GAP_METERS,
-): Map<string, VisualQueueConstraint> {
-  const output = new Map<string, VisualQueueConstraint>()
-  const byTrack = new Map<string, VisualQueueVehicle[]>()
-  for (const vehicle of vehicles) {
-    const group = byTrack.get(vehicle.trackKey) ?? []
-    group.push(vehicle)
-    byTrack.set(vehicle.trackKey, group)
-  }
-  for (const group of byTrack.values()) {
-    group.sort((left, right) => (
-      (right.lanePosition ?? right.naturalCenterDistanceMeters)
-      - (left.lanePosition ?? left.naturalCenterDistanceMeters)
-    ))
-    let front: { center: number; halfLength: number } | null = null
-    for (const vehicle of group) {
-      if (!front) {
-        output.set(vehicle.id, { maximumCenterDistanceMeters: null, hidden: false })
-        front = {
-          center: vehicle.naturalCenterDistanceMeters,
-          halfLength: vehicle.lengthMeters / 2,
-        }
-        continue
-      }
-      const maximumCenter = front.center
-        - front.halfLength
-        - vehicle.lengthMeters / 2
-        - bumperGapMeters
-      const adjustedCenter = Math.min(vehicle.naturalCenterDistanceMeters, maximumCenter)
-      const wouldReverseTooFar = vehicle.previousCenterDistanceMeters != null
-        && adjustedCenter < vehicle.previousCenterDistanceMeters - MAX_VISUAL_BACKTRACK_METERS
-      const hidden = adjustedCenter < 0 || wouldReverseTooFar
-      output.set(vehicle.id, {
-        maximumCenterDistanceMeters: hidden ? null : maximumCenter,
-        hidden,
-      })
-      if (!hidden) {
-        front = { center: adjustedCenter, halfLength: vehicle.lengthMeters / 2 }
-      }
-    }
-  }
-  return output
 }

@@ -2,17 +2,18 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import type {
+  ControlledLaneSignalGroup,
   Point2,
   RealisticConnection,
   RealisticIntersectionManifest,
   RealisticLane,
 } from './intersectionManifest'
-import { signalColorForState } from './intersectionManifest'
+import { controlledLaneSignalForState } from './intersectionManifest'
 
 export type DemoCameraPreset = 'overview' | 'signals' | 'markings'
 
 interface SignalHeadMaterials {
-  linkIndex: number
+  linkIndexes: number[]
   red: THREE.MeshStandardMaterial
   amber: THREE.MeshStandardMaterial
   green: THREE.MeshStandardMaterial
@@ -354,10 +355,10 @@ export class RealisticIntersectionRenderer {
 
   setSignalState(state: string): void {
     for (const head of this.signalHeads) {
-      const active = signalColorForState(state, head.linkIndex)
-      applyLensState(head.red, head.redGlow, active === 'red', 0xff2d24)
-      applyLensState(head.amber, head.amberGlow, active === 'amber', 0xffb21c)
-      applyLensState(head.green, head.greenGlow, active === 'green', 0x39ff77)
+      const active = controlledLaneSignalForState(state, head.linkIndexes)
+      applyLensState(head.red, head.redGlow, active === 'r', 0xff2d24)
+      applyLensState(head.amber, head.amberGlow, active === 'y', 0xffb21c)
+      applyLensState(head.green, head.greenGlow, active === 'g', 0x39ff77)
     }
   }
 
@@ -697,26 +698,19 @@ export class RealisticIntersectionRenderer {
 
       for (let laneIndex = 0; laneIndex < edge.lanes.length; laneIndex += 1) {
         const lane = edge.lanes[laneIndex]
-        const connections = this.manifest.connections.filter(
-          (connection) => connection.fromEdge === edge.id && connection.fromLane === lane.index,
-        )
-        connections.forEach((connection, connectionIndex) => {
-          const shift = connections.length > 1 ? (connectionIndex - (connections.length - 1) / 2) * 0.62 : 0
-          const point: Point2 = [
-            laneSamples[laneIndex].point[0] + normal[0] * shift,
-            laneSamples[laneIndex].point[1] + normal[1] * shift,
-          ]
-          const head = this.createSignalHead(connection, housingMaterial, visorMaterial)
-          head.position.set(point[0], point[1], 5.54)
-          head.rotation.z = Math.atan2(-tangent[0], tangent[1])
-          this.scene.add(head)
-        })
+        const signalGroup = this.manifest.signalGroups.find((candidate) => candidate.laneId === lane.id)
+        if (!signalGroup) continue
+        const point = laneSamples[laneIndex].point
+        const head = this.createSignalHead(signalGroup, housingMaterial, visorMaterial)
+        head.position.set(point[0], point[1], 5.54)
+        head.rotation.z = Math.atan2(-tangent[0], tangent[1])
+        this.scene.add(head)
       }
     }
   }
 
   private createSignalHead(
-    connection: RealisticConnection,
+    signalGroup: ControlledLaneSignalGroup,
     housingMaterial: THREE.Material,
     visorMaterial: THREE.Material,
   ): THREE.Group {
@@ -762,8 +756,12 @@ export class RealisticIntersectionRenderer {
       group.add(glow)
     }
 
+    const representativeConnection = this.manifest.connections.find((connection) => (
+      (signalGroup.tlsId == null || connection.tlsId === signalGroup.tlsId)
+      && signalGroup.linkIndexes.includes(connection.linkIndex)
+    ))
     const plateMaterial = new THREE.MeshBasicMaterial({
-      map: makeDirectionTexture(connection.direction),
+      map: makeDirectionTexture(representativeConnection?.direction ?? 's'),
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -777,7 +775,7 @@ export class RealisticIntersectionRenderer {
     group.add(plateBack)
 
     this.signalHeads.push({
-      linkIndex: connection.linkIndex,
+      linkIndexes: [...signalGroup.linkIndexes],
       red: lensMaterials[0],
       amber: lensMaterials[1],
       green: lensMaterials[2],

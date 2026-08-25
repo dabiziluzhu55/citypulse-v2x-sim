@@ -65,7 +65,7 @@ test('toggles both side panels without unmounting them and labels the roadside d
   assert.match(bottomIconsSource, /aria-pressed="sidePanelsCollapsed"/)
   assert.match(bottomIconsSource, /收起两侧面板/)
   assert.match(bottomIconsSource, /展开两侧面板/)
-  assert.match(bottomIconsSource, />路测设备</)
+  assert.match(bottomIconsSource, />路侧设备</)
 })
 
 test('matches the communication-dialog chrome and removes the English event eyebrow', () => {
@@ -109,4 +109,22 @@ test('keeps render and simulation throughput diagnostics internal to development
   assert.match(baiduThreeMapSource, /__CITYPULSE_VEHICLE_DIAGNOSTICS__/)
   assert.match(baiduThreeMapSource, /simulationProgressRate: stats\.sourceRate/)
   assert.doesNotMatch(baiduThreeMapSource, />\s*实际倍率\s*</)
+})
+
+test('keeps lane-closure disabled labels compact and confirmation above the editor', () => {
+  assert.match(sidebarSource, /accessibleLabel: laneClosureUnavailable/)
+  assert.match(sidebarSource, /:aria-label="option\.accessibleLabel"/)
+  assert.doesNotMatch(sidebarSource, /unavailableLabel/)
+  assert.match(homeSource, /<Teleport to="body">[\s\S]*class="config-change-dialog"/)
+  assert.match(homeSource, /z-index: 3100/)
+  assert.match(sidebarSource, /z-index: 3000/)
+  assert.match(sidebarSource, /z-index: 3200/)
+  assert.match(homeSource, /configChangeDialogRef\.value\?\.focus\(\)/)
+})
+
+test('keeps one full-width current-simulation export action', () => {
+  assert.doesNotMatch(sidebarSource, /保存仿真场景|saveConfig\s*\(/)
+  assert.equal(sidebarSource.match(/导出当前仿真场景/g)?.length, 1)
+  assert.match(sidebarSource, /gridTemplateColumns: 'minmax\(0, 1fr\)'/)
+  assert.doesNotMatch(sidebarSource, /fileActions\.buttonWidth/)
 })

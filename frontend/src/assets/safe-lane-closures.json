@@ -1,0 +1,2765 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-10T11:59:17.351Z",
+  "sourcePath": "../data/maps/sumo/generated/network/TotalMap_20.signals.net.xml",
+  "sourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
+  "routeSources": [
+    {
+      "path": "../data/maps/sumo/generated/traffic/global/morning_peak/routes.rou.xml",
+      "sha256": "7c1aea4af2c43b59508588bdc22fce0933674cdb7e71298f0167b0b40584ea9c"
+    },
+    {
+      "path": "../data/maps/sumo/generated/traffic/global/off_peak/routes.rou.xml",
+      "sha256": "8e29a4b5ebb7eba7d3867919aca51001409f1b3bc3e2f4295ca01bdd0c5301f8"
+    },
+    {
+      "path": "../data/maps/sumo/generated/traffic/global/evening_peak/routes.rou.xml",
+      "sha256": "f732c5d9fce274f0ea8552f520f62a783f4968cacccc36702d0893f4de267e34"
+    }
+  ],
+  "selectionRule": [
+    "no exclusive fixed-route movement",
+    "most alternative lanes",
+    "lowest lane index",
+    "stable lane id"
+  ],
+  "intersections": {
+    "demo_1": {
+      "selectedLaneIds": [
+        "-56384_1"
+      ],
+      "candidates": [
+        {
+          "laneId": "-56384_0",
+          "edgeId": "-56384",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56915",
+              "routeCount": 579
+            }
+          ]
+        },
+        {
+          "laneId": "-56384_1",
+          "edgeId": "-56384",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 3,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56384_2",
+          "edgeId": "-56384",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 3,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56384_3",
+          "edgeId": "-56384",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": [
+            {
+              "toEdge": "manual_demo1_missing_arm",
+              "routeCount": 883
+            }
+          ]
+        },
+        {
+          "laneId": "-56907_0",
+          "edgeId": "-56907",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56907_1",
+          "edgeId": "-56907",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56907_2",
+          "edgeId": "-56907",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57218",
+              "routeCount": 695
+            }
+          ]
+        },
+        {
+          "laneId": "-57217_0",
+          "edgeId": "-57217",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "manual_demo1_missing_arm",
+              "routeCount": 423
+            }
+          ]
+        },
+        {
+          "laneId": "-57217_1",
+          "edgeId": "-57217",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57217_2",
+          "edgeId": "-57217",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57217_3",
+          "edgeId": "-57217",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56915",
+              "routeCount": 520
+            }
+          ]
+        },
+        {
+          "laneId": "-manual_demo1_missing_arm_0",
+          "edgeId": "-manual_demo1_missing_arm",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57218",
+              "routeCount": 592
+            }
+          ]
+        },
+        {
+          "laneId": "-manual_demo1_missing_arm_1",
+          "edgeId": "-manual_demo1_missing_arm",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56371",
+              "routeCount": 544
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_2": {
+      "selectedLaneIds": [
+        "-56734_0"
+      ],
+      "candidates": [
+        {
+          "laneId": "-51425_0",
+          "edgeId": "-51425",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51425_1",
+          "edgeId": "-51425",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51425_2",
+          "edgeId": "-51425",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51425_3",
+          "edgeId": "-51425",
+          "laneIndex": 3,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51425_4",
+          "edgeId": "-51425",
+          "laneIndex": 4,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56734_0",
+          "edgeId": "-56734",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56734_1",
+          "edgeId": "-56734",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56734_2",
+          "edgeId": "-56734",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-45801",
+              "routeCount": 888
+            }
+          ]
+        },
+        {
+          "laneId": "-57228_0",
+          "edgeId": "-57228",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57228_1",
+          "edgeId": "-57228",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57228_2",
+          "edgeId": "-57228",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_3": {
+      "selectedLaneIds": [
+        "-50816_0"
+      ],
+      "candidates": [
+        {
+          "laneId": "-46791_1",
+          "edgeId": "-46791",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "57582",
+              "routeCount": 491
+            },
+            {
+              "toEdge": "-57582.1757",
+              "routeCount": 365
+            },
+            {
+              "toEdge": "-46791.1195",
+              "routeCount": 274
+            }
+          ]
+        },
+        {
+          "laneId": "-50816_0",
+          "edgeId": "-50816",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50816_1",
+          "edgeId": "-50816",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50816_2",
+          "edgeId": "-50816",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "46791",
+              "routeCount": 267
+            }
+          ]
+        },
+        {
+          "laneId": "-52565_1",
+          "edgeId": "-52565",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "57582",
+              "routeCount": 295
+            },
+            {
+              "toEdge": "46791",
+              "routeCount": 291
+            },
+            {
+              "toEdge": "-57582.1757",
+              "routeCount": 265
+            }
+          ]
+        },
+        {
+          "laneId": "-57582_0",
+          "edgeId": "-57582",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57582_1",
+          "edgeId": "-57582",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57582_2",
+          "edgeId": "-57582",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-46791.1195",
+              "routeCount": 146
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_4": {
+      "selectedLaneIds": [
+        "-56732_0"
+      ],
+      "candidates": [
+        {
+          "laneId": "-50333_0",
+          "edgeId": "-50333",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50333_1",
+          "edgeId": "-50333",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56733",
+              "routeCount": 386
+            }
+          ]
+        },
+        {
+          "laneId": "-56732_0",
+          "edgeId": "-56732",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56732_1",
+          "edgeId": "-56732",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56732_2",
+          "edgeId": "-56732",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56613",
+              "routeCount": 365
+            }
+          ]
+        },
+        {
+          "laneId": "-57186_0",
+          "edgeId": "-57186",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57186_1",
+          "edgeId": "-57186",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57230",
+              "routeCount": 481
+            }
+          ]
+        },
+        {
+          "laneId": "-57229_0",
+          "edgeId": "-57229",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57229_1",
+          "edgeId": "-57229",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57229_2",
+          "edgeId": "-57229",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50675",
+              "routeCount": 624
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_5": {
+      "selectedLaneIds": [
+        "-50182_0"
+      ],
+      "candidates": [
+        {
+          "laneId": "-50182_0",
+          "edgeId": "-50182",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50182_1",
+          "edgeId": "-50182",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50182_2",
+          "edgeId": "-50182",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50820",
+              "routeCount": 1021
+            }
+          ]
+        },
+        {
+          "laneId": "-56392_0",
+          "edgeId": "-56392",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56392_1",
+          "edgeId": "-56392",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56392_2",
+          "edgeId": "-56392",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57586_0",
+          "edgeId": "-57586",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57586_1",
+          "edgeId": "-57586",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57586_2",
+          "edgeId": "-57586",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50172",
+              "routeCount": 830
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_6": {
+      "selectedLaneIds": [
+        "-50334_1"
+      ],
+      "candidates": [
+        {
+          "laneId": "-50334_0",
+          "edgeId": "-50334",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50818",
+              "routeCount": 599
+            }
+          ]
+        },
+        {
+          "laneId": "-50334_1",
+          "edgeId": "-50334",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50334_2",
+          "edgeId": "-50334",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57585",
+              "routeCount": 463
+            }
+          ]
+        },
+        {
+          "laneId": "-50819_0",
+          "edgeId": "-50819",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50819_1",
+          "edgeId": "-50819",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50819_2",
+          "edgeId": "-50819",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50342",
+              "routeCount": 463
+            }
+          ]
+        },
+        {
+          "laneId": "-56623_0",
+          "edgeId": "-56623",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57585",
+              "routeCount": 780
+            }
+          ]
+        },
+        {
+          "laneId": "-56623_1",
+          "edgeId": "-56623",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56623_2",
+          "edgeId": "-56623",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50818",
+              "routeCount": 641
+            }
+          ]
+        },
+        {
+          "laneId": "-57584_0",
+          "edgeId": "-57584",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57584_1",
+          "edgeId": "-57584",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57584_2",
+          "edgeId": "-57584",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56614",
+              "routeCount": 590
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_7": {
+      "selectedLaneIds": [],
+      "candidates": [
+        {
+          "laneId": "-46217_0",
+          "edgeId": "-46217",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-46216",
+              "routeCount": 654
+            },
+            {
+              "toEdge": "-46293",
+              "routeCount": 406
+            }
+          ]
+        },
+        {
+          "laneId": "-51871_0",
+          "edgeId": "-51871",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-51872",
+              "routeCount": 778
+            },
+            {
+              "toEdge": "-46293",
+              "routeCount": 652
+            }
+          ]
+        },
+        {
+          "laneId": "-51953_0",
+          "edgeId": "-51953",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-51872",
+              "routeCount": 578
+            },
+            {
+              "toEdge": "-46216",
+              "routeCount": 463
+            }
+          ]
+        }
+      ],
+      "unavailableReason": "当前三套固定路线下没有可安全封闭的进口车道"
+    },
+    "demo_8": {
+      "selectedLaneIds": [
+        "-57109_0"
+      ],
+      "candidates": [
+        {
+          "laneId": "-54807_0",
+          "edgeId": "-54807",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-54807_1",
+          "edgeId": "-54807",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-54807_2",
+          "edgeId": "-54807",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-54807_3",
+          "edgeId": "-54807",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57113",
+              "routeCount": 558
+            }
+          ]
+        },
+        {
+          "laneId": "-57109_0",
+          "edgeId": "-57109",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 3,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57109_1",
+          "edgeId": "-57109",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 3,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57109_2",
+          "edgeId": "-57109",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 3,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57109_3",
+          "edgeId": "-57109",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": [
+            {
+              "toEdge": "-54810",
+              "routeCount": 544
+            }
+          ]
+        },
+        {
+          "laneId": "-57112_0",
+          "edgeId": "-57112",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57112_1",
+          "edgeId": "-57112",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57112_2",
+          "edgeId": "-57112",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57112_3",
+          "edgeId": "-57112",
+          "laneIndex": 3,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57112_4",
+          "edgeId": "-57112",
+          "laneIndex": 4,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57236",
+              "routeCount": 527
+            }
+          ]
+        },
+        {
+          "laneId": "-57234_0",
+          "edgeId": "-57234",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57234_1",
+          "edgeId": "-57234",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57234_2",
+          "edgeId": "-57234",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57234_3",
+          "edgeId": "-57234",
+          "laneIndex": 3,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57234_4",
+          "edgeId": "-57234",
+          "laneIndex": 4,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57234_5",
+          "edgeId": "-57234",
+          "laneIndex": 5,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_9": {
+      "selectedLaneIds": [
+        "-50339_2"
+      ],
+      "candidates": [
+        {
+          "laneId": "-50241_1",
+          "edgeId": "-50241",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50338",
+              "routeCount": 491
+            },
+            {
+              "toEdge": "-56370",
+              "routeCount": 536
+            }
+          ]
+        },
+        {
+          "laneId": "-50339_0",
+          "edgeId": "-50339",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50339_1",
+          "edgeId": "-50339",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50339_2",
+          "edgeId": "-50339",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50339_3",
+          "edgeId": "-50339",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56370",
+              "routeCount": 473
+            },
+            {
+              "toEdge": "-56496",
+              "routeCount": 138
+            }
+          ]
+        },
+        {
+          "laneId": "-56369_0",
+          "edgeId": "-56369",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56369_1",
+          "edgeId": "-56369",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56369_2",
+          "edgeId": "-56369",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56369_3",
+          "edgeId": "-56369",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56620",
+              "routeCount": 393
+            }
+          ]
+        },
+        {
+          "laneId": "-56619_0",
+          "edgeId": "-56619",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56619_1",
+          "edgeId": "-56619",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56496",
+              "routeCount": 265
+            }
+          ]
+        },
+        {
+          "laneId": "-56619_2",
+          "edgeId": "-56619",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56619_3",
+          "edgeId": "-56619",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56715",
+              "routeCount": 343
+            }
+          ]
+        },
+        {
+          "laneId": "-57214_0",
+          "edgeId": "-57214",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57214_1",
+          "edgeId": "-57214",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57214_2",
+          "edgeId": "-57214",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57214_3",
+          "edgeId": "-57214",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50338",
+              "routeCount": 427
+            },
+            {
+              "toEdge": "-56496",
+              "routeCount": 233
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_10": {
+      "selectedLaneIds": [],
+      "candidates": [
+        {
+          "laneId": "-50726_0",
+          "edgeId": "-50726",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50725",
+              "routeCount": 817
+            },
+            {
+              "toEdge": "-57487",
+              "routeCount": 968
+            }
+          ]
+        },
+        {
+          "laneId": "-50758_1",
+          "edgeId": "-50758",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57446",
+              "routeCount": 980
+            },
+            {
+              "toEdge": "-50725",
+              "routeCount": 960
+            }
+          ]
+        },
+        {
+          "laneId": "-57445_0",
+          "edgeId": "-57445",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57487",
+              "routeCount": 986
+            },
+            {
+              "toEdge": "-57446",
+              "routeCount": 960
+            }
+          ]
+        }
+      ],
+      "unavailableReason": "当前三套固定路线下没有可安全封闭的进口车道"
+    },
+    "demo_11": {
+      "selectedLaneIds": [
+        "-56346_0"
+      ],
+      "candidates": [
+        {
+          "laneId": "-51264_0",
+          "edgeId": "-51264",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51264_1",
+          "edgeId": "-51264",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51264_2",
+          "edgeId": "-51264",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51264_3",
+          "edgeId": "-51264",
+          "laneIndex": 3,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51264_4",
+          "edgeId": "-51264",
+          "laneIndex": 4,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57056",
+              "routeCount": 96
+            }
+          ]
+        },
+        {
+          "laneId": "-56346_0",
+          "edgeId": "-56346",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 4,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56346_1",
+          "edgeId": "-56346",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 4,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56346_2",
+          "edgeId": "-56346",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 5,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56346_3",
+          "edgeId": "-56346",
+          "laneIndex": 3,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57053_0",
+          "edgeId": "-57053",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57053_1",
+          "edgeId": "-57053",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57053_2",
+          "edgeId": "-57053",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57053_3",
+          "edgeId": "-57053",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-51265",
+              "routeCount": 453
+            }
+          ]
+        },
+        {
+          "laneId": "-57303_0",
+          "edgeId": "-57303",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57056",
+              "routeCount": 584
+            }
+          ]
+        },
+        {
+          "laneId": "-57303_1",
+          "edgeId": "-57303",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57303_2",
+          "edgeId": "-57303",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57303_3",
+          "edgeId": "-57303",
+          "laneIndex": 3,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_12": {
+      "selectedLaneIds": [
+        "-50293_2"
+      ],
+      "candidates": [
+        {
+          "laneId": "-50293_0",
+          "edgeId": "-50293",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50293_1",
+          "edgeId": "-50293",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50293_2",
+          "edgeId": "-50293",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50293_3",
+          "edgeId": "-50293",
+          "laneIndex": 3,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50293_4",
+          "edgeId": "-50293",
+          "laneIndex": 4,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51253_0",
+          "edgeId": "-51253",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51253_1",
+          "edgeId": "-51253",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51253_2",
+          "edgeId": "-51253",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51253_3",
+          "edgeId": "-51253",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56564",
+              "routeCount": 719
+            }
+          ]
+        },
+        {
+          "laneId": "-51273_0",
+          "edgeId": "-51273",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-51257",
+              "routeCount": 470
+            }
+          ]
+        },
+        {
+          "laneId": "-51273_1",
+          "edgeId": "-51273",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-51273_2",
+          "edgeId": "-51273",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56346.1185",
+              "routeCount": 449
+            }
+          ]
+        },
+        {
+          "laneId": "-56345_0",
+          "edgeId": "-56345",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56564",
+              "routeCount": 412
+            }
+          ]
+        },
+        {
+          "laneId": "-56345_1",
+          "edgeId": "-56345",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56345_2",
+          "edgeId": "-56345",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56345_3",
+          "edgeId": "-56345",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-45669",
+              "routeCount": 523
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_13": {
+      "selectedLaneIds": [
+        "-56457_2"
+      ],
+      "candidates": [
+        {
+          "laneId": "-46884_0",
+          "edgeId": "-46884",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-46884_1",
+          "edgeId": "-46884",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56457_0",
+          "edgeId": "-56457",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 4,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56457_1",
+          "edgeId": "-56457",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 4,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56457_2",
+          "edgeId": "-56457",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 3,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56457_3",
+          "edgeId": "-56457",
+          "laneIndex": 3,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 3,
+          "alternativeConnectionCount": 3,
+          "unsafeMovements": []
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_14": {
+      "selectedLaneIds": [
+        "-52216_0"
+      ],
+      "candidates": [
+        {
+          "laneId": "-46539_0",
+          "edgeId": "-46539",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-46538",
+              "routeCount": 795
+            },
+            {
+              "toEdge": "-52559",
+              "routeCount": 1177
+            }
+          ]
+        },
+        {
+          "laneId": "-46785_1",
+          "edgeId": "-46785",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-52217",
+              "routeCount": 1116
+            },
+            {
+              "toEdge": "-46538",
+              "routeCount": 1212
+            }
+          ]
+        },
+        {
+          "laneId": "-52216_0",
+          "edgeId": "-52216",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-52216_1",
+          "edgeId": "-52216",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-52559",
+              "routeCount": 1030
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_15": {
+      "selectedLaneIds": [
+        "-52227_1"
+      ],
+      "candidates": [
+        {
+          "laneId": "-46787_1",
+          "edgeId": "-46787",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56027",
+              "routeCount": 663
+            },
+            {
+              "toEdge": "-52228",
+              "routeCount": 795
+            },
+            {
+              "toEdge": "-46786",
+              "routeCount": 935
+            }
+          ]
+        },
+        {
+          "laneId": "-52227_0",
+          "edgeId": "-52227",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-52561",
+              "routeCount": 805
+            }
+          ]
+        },
+        {
+          "laneId": "-52227_1",
+          "edgeId": "-52227",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-52227_2",
+          "edgeId": "-52227",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-52227_3",
+          "edgeId": "-52227",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-46786",
+              "routeCount": 680
+            }
+          ]
+        },
+        {
+          "laneId": "-52560_1",
+          "edgeId": "-52560",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-52228",
+              "routeCount": 1005
+            },
+            {
+              "toEdge": "-52561",
+              "routeCount": 986
+            },
+            {
+              "toEdge": "-56027",
+              "routeCount": 641
+            }
+          ]
+        },
+        {
+          "laneId": "-56026_0",
+          "edgeId": "-56026",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-46786",
+              "routeCount": 1195
+            }
+          ]
+        },
+        {
+          "laneId": "-56026_1",
+          "edgeId": "-56026",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 2,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56026_2",
+          "edgeId": "-56026",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-52561",
+              "routeCount": 954
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_16": {
+      "selectedLaneIds": [
+        "-50930_0"
+      ],
+      "candidates": [
+        {
+          "laneId": "-50930_0",
+          "edgeId": "-50930",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50930_1",
+          "edgeId": "-50930",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50942",
+              "routeCount": 883
+            }
+          ]
+        },
+        {
+          "laneId": "-50943_0",
+          "edgeId": "-50943",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-50943_1",
+          "edgeId": "-50943",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-55548",
+              "routeCount": 741
+            }
+          ]
+        },
+        {
+          "laneId": "-55547_0",
+          "edgeId": "-55547",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-55548",
+              "routeCount": 1065
+            },
+            {
+              "toEdge": "-50942",
+              "routeCount": 790
+            },
+            {
+              "toEdge": "-57803",
+              "routeCount": 899
+            }
+          ]
+        },
+        {
+          "laneId": "-57802_0",
+          "edgeId": "-57802",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57802_1",
+          "edgeId": "-57802",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-49533",
+              "routeCount": 778
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_17": {
+      "selectedLaneIds": [
+        "-57320_0"
+      ],
+      "candidates": [
+        {
+          "laneId": "-56184_0",
+          "edgeId": "-56184",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57321",
+              "routeCount": 909
+            },
+            {
+              "toEdge": "-57330",
+              "routeCount": 816
+            }
+          ]
+        },
+        {
+          "laneId": "-57320_0",
+          "edgeId": "-57320",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57320_1",
+          "edgeId": "-57320",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50050",
+              "routeCount": 931
+            }
+          ]
+        },
+        {
+          "laneId": "-57329_0",
+          "edgeId": "-57329",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-50050",
+              "routeCount": 984
+            }
+          ]
+        },
+        {
+          "laneId": "-57329_1",
+          "edgeId": "-57329",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_18": {
+      "selectedLaneIds": [
+        "-56004_1"
+      ],
+      "candidates": [
+        {
+          "laneId": "-56004_0",
+          "edgeId": "-56004",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56831",
+              "routeCount": 637
+            }
+          ]
+        },
+        {
+          "laneId": "-56004_1",
+          "edgeId": "-56004",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56004_2",
+          "edgeId": "-56004",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56004_3",
+          "edgeId": "-56004",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57058",
+              "routeCount": 864
+            }
+          ]
+        },
+        {
+          "laneId": "-56830_0",
+          "edgeId": "-56830",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57005",
+              "routeCount": 748
+            }
+          ]
+        },
+        {
+          "laneId": "-56830_1",
+          "edgeId": "-56830",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56830_2",
+          "edgeId": "-56830",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56830_3",
+          "edgeId": "-56830",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56009",
+              "routeCount": 951
+            }
+          ]
+        },
+        {
+          "laneId": "-57004_0",
+          "edgeId": "-57004",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57058",
+              "routeCount": 559
+            }
+          ]
+        },
+        {
+          "laneId": "-57004_1",
+          "edgeId": "-57004",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57004_2",
+          "edgeId": "-57004",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57004_3",
+          "edgeId": "-57004",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56831",
+              "routeCount": 880
+            }
+          ]
+        },
+        {
+          "laneId": "-57077_0",
+          "edgeId": "-57077",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56009",
+              "routeCount": 563
+            }
+          ]
+        },
+        {
+          "laneId": "-57077_1",
+          "edgeId": "-57077",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57077_2",
+          "edgeId": "-57077",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57077_3",
+          "edgeId": "-57077",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57005",
+              "routeCount": 858
+            }
+          ]
+        },
+        {
+          "laneId": "E7_0",
+          "edgeId": "E7",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56009",
+              "routeCount": 536
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_19": {
+      "selectedLaneIds": [
+        "-46538_0"
+      ],
+      "candidates": [
+        {
+          "laneId": "-46538_0",
+          "edgeId": "-46538",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-46538_1",
+          "edgeId": "-46538",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-55838",
+              "routeCount": 550
+            }
+          ]
+        },
+        {
+          "laneId": "-52215_0",
+          "edgeId": "-52215",
+          "laneIndex": 0,
+          "safe": true,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-52215_1",
+          "edgeId": "-52215",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 2,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57396",
+              "routeCount": 607
+            }
+          ]
+        },
+        {
+          "laneId": "-55837_0",
+          "edgeId": "-55837",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-46537",
+              "routeCount": 840
+            }
+          ]
+        },
+        {
+          "laneId": "-55837_1",
+          "edgeId": "-55837",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-52216",
+              "routeCount": 540
+            }
+          ]
+        },
+        {
+          "laneId": "-57395_0",
+          "edgeId": "-57395",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-52216",
+              "routeCount": 289
+            }
+          ]
+        },
+        {
+          "laneId": "-57395_1",
+          "edgeId": "-57395",
+          "laneIndex": 1,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-46537",
+              "routeCount": 785
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    },
+    "demo_20": {
+      "selectedLaneIds": [
+        "-56836_1"
+      ],
+      "candidates": [
+        {
+          "laneId": "-49964_0",
+          "edgeId": "-49964",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 3,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57314",
+              "routeCount": 582
+            },
+            {
+              "toEdge": "-57073",
+              "routeCount": 362
+            },
+            {
+              "toEdge": "-56837",
+              "routeCount": 354
+            }
+          ]
+        },
+        {
+          "laneId": "-56836_0",
+          "edgeId": "-56836",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56093",
+              "routeCount": 250
+            }
+          ]
+        },
+        {
+          "laneId": "-56836_1",
+          "edgeId": "-56836",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56836_2",
+          "edgeId": "-56836",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-56836_3",
+          "edgeId": "-56836",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57314",
+              "routeCount": 253
+            }
+          ]
+        },
+        {
+          "laneId": "-57067_0",
+          "edgeId": "-57067",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57314",
+              "routeCount": 189
+            }
+          ]
+        },
+        {
+          "laneId": "-57067_1",
+          "edgeId": "-57067",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57067_2",
+          "edgeId": "-57067",
+          "laneIndex": 2,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57067_3",
+          "edgeId": "-57067",
+          "laneIndex": 3,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56093",
+              "routeCount": 187
+            }
+          ]
+        },
+        {
+          "laneId": "-57333_0",
+          "edgeId": "-57333",
+          "laneIndex": 0,
+          "safe": false,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 0,
+          "unsafeMovements": [
+            {
+              "toEdge": "-57073",
+              "routeCount": 554
+            }
+          ]
+        },
+        {
+          "laneId": "-57333_1",
+          "edgeId": "-57333",
+          "laneIndex": 1,
+          "safe": true,
+          "routeMovementCount": 1,
+          "minimumAlternativeLaneCount": 1,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": []
+        },
+        {
+          "laneId": "-57333_2",
+          "edgeId": "-57333",
+          "laneIndex": 2,
+          "safe": false,
+          "routeMovementCount": 2,
+          "minimumAlternativeLaneCount": 0,
+          "alternativeConnectionCount": 1,
+          "unsafeMovements": [
+            {
+              "toEdge": "-56837",
+              "routeCount": 585
+            }
+          ]
+        }
+      ],
+      "unavailableReason": null
+    }
+  }
+}

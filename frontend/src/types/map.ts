@@ -65,7 +65,12 @@ export interface AppMapView {
   focusIntersection: (
     center: [number, number],
     intersectionId: string,
-    options?: { force?: boolean; duration?: number; complete?: () => void },
+    options?: {
+      force?: boolean
+      duration?: number
+      complete?: () => void
+      cameraPreset?: Exclude<CesiumCameraPresetId, 'overview'>
+    },
   ) => void
   fitBounds: (bounds: [number, number, number, number], anchorId?: string) => void
   flyToTemplate: (templateId: string) => void
