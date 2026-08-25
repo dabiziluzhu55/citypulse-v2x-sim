@@ -16,6 +16,7 @@ from ..events import (
     SpeedLimitEvent,
 )
 from ..session import (
+    DEFAULT_TRAFFIC_SCOPE_ID,
     IntersectionRuntimeSnapshot,
     LaneRuntimeSnapshot,
     SessionMetrics,
@@ -119,6 +120,7 @@ def loads_config(raw: str | bytes) -> SimulationConfig:
     data = dict(_loads(raw, "simulation_config"))
     data.pop("algorithm_endpoint", None)
     data.pop("algorithm_timeout", None)
+    data.setdefault("scenario_scope", DEFAULT_TRAFFIC_SCOPE_ID)
     data["intersection_ids"] = tuple(str(item) for item in data["intersection_ids"])
     data["origins"] = {
         str(key): tuple(str(item) for item in values)

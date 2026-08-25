@@ -42,7 +42,10 @@ class GeneratedArtifactLayout:
         return self.root / "reports"
 
     def global_traffic_scenario_dir(self, period_id: str) -> Path:
-        return self.root / "traffic" / "global" / period_id
+        return self.traffic_scenario_scope_dir("global", period_id)
+
+    def traffic_scenario_scope_dir(self, scope_id: str, period_id: str) -> Path:
+        return self.root / "traffic" / scope_id / period_id
 
     def traffic_scenario_dir(self, intersection_id: str, period_id: str) -> Path:
         """Legacy path resolver retained for callers migrating to global traffic."""

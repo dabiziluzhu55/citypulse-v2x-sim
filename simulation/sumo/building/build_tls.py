@@ -24,8 +24,11 @@ from .tls import (
     load_signal_configuration,
 )
 from .network_validation import validate_source_compatibility
-from .traffic import TrafficDemandError, load_traffic_demands
-from .traffic_policy import TrafficGenerationPolicyError
+from .traffic import (
+    TrafficDemandError,
+    TrafficGenerationPolicyError,
+    load_traffic_demands,
+)
 from .vehicle_profiles import VehicleProfileError
 
 
