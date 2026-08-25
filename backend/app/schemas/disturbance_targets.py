@@ -6,7 +6,11 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .events import DEFAULT_EVENT_VEHICLE_TYPE_ID
+from .events import (
+    DEFAULT_EVENT_VEHICLE_TYPE_ID,
+    DEFAULT_SPEED_LIMIT_MPS,
+    resolve_speed_limit_mps,
+)
 
 
 class DisturbanceTargetLaneClosure(BaseModel):
@@ -23,9 +27,27 @@ class DisturbanceTargetSpeedLimit(BaseModel):
     intersection_id: str
     start_seconds: float
     end_seconds: float
-    max_speed: float = Field(default=5.0, gt=0)
+    max_speed: float | None = Field(
+        default=None,
+        gt=0,
+        description="临时限速，单位 m/s。与 speed_kmh 至少提供一个；未提供时默认 5 m/s。",
+    )
+    speed_kmh: float | None = Field(
+        default=None,
+        gt=0,
+        description="最大限速速度，单位 km/h。前端用户输入建议用此字段，后端会换算为 max_speed。",
+    )
     event_id: str | None = None
     lane_ids: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _resolve_speed_limit(self) -> DisturbanceTargetSpeedLimit:
+        self.max_speed = resolve_speed_limit_mps(
+            self.max_speed,
+            self.speed_kmh,
+            default_mps=DEFAULT_SPEED_LIMIT_MPS,
+        )
+        return self
 
 
 class DisturbanceTargetAccident(BaseModel):
