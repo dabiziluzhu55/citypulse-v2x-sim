@@ -41,6 +41,13 @@ export interface TrafficVehicleView {
   next_intersection_id?: string | null
   target_speed?: number
   target_lane_index?: number
+  canonical_segment_id?: string
+  canonical_route_evidence?: 'same_lane' | 'lane_change' | 'unique_connection' | 'authoritative_endpoint'
+  canonical_heading_radians?: number
+  canonical_source_x?: number
+  canonical_source_y?: number
+  canonical_lane_station?: number
+  canonical_motion_resolved?: boolean
 }
 
 export interface TrafficStateView {

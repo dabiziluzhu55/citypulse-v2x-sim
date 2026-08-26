@@ -2,12 +2,12 @@ import type {
   Point2,
   RealisticRoadEdge,
   RealisticRoadJoint,
+  RoadSurfacePolygon,
 } from './intersectionManifest.ts'
+import polygonClipping from 'polygon-clipping'
 import {
-  convexHull,
   edgeCenterline,
   edgeRoadWidth,
-  expandPolygon,
   samplePolyline,
 } from './intersectionRoadGeometry.ts'
 
@@ -44,7 +44,8 @@ export interface RoadJointBuildInput {
 interface EndpointGeometry extends RoadEndpointTopology {
   sourceCenter: Point2
   center: Point2
-  cap: Point2[]
+  normal: Point2
+  roadWidth: number
 }
 
 const DEFAULT_MAXIMUM_SECONDARY_GAP_METERS = 20
@@ -76,17 +77,12 @@ function endpointGeometry(
   const sourceCenter = topology.endpoint === 'start' ? points[0] : points.at(-1)!
   const center = samplePolyline(points, topology.endpoint === 'start' ? overlapProgress : 1 - overlapProgress)
   const normal = normalAtEndpoint(points, topology.endpoint)
-  const halfWidth = edgeRoadWidth(edge) / 2
   return {
     ...topology,
     sourceCenter,
     center,
-    cap: [
-      [sourceCenter[0] + normal[0] * halfWidth, sourceCenter[1] + normal[1] * halfWidth],
-      [sourceCenter[0] - normal[0] * halfWidth, sourceCenter[1] - normal[1] * halfWidth],
-      [center[0] + normal[0] * halfWidth, center[1] + normal[1] * halfWidth],
-      [center[0] - normal[0] * halfWidth, center[1] - normal[1] * halfWidth],
-    ],
+    normal,
+    roadWidth: edgeRoadWidth(edge),
   }
 }
 
@@ -97,23 +93,135 @@ function polygonArea(points: Point2[]): number {
   }, 0)) / 2
 }
 
+function cap(endpoint: EndpointGeometry, halfWidth: number, at: 'source' | 'inner'): [Point2, Point2] {
+  const center = at === 'source' ? endpoint.sourceCenter : endpoint.center
+  return [
+    [center[0] + endpoint.normal[0] * halfWidth, center[1] + endpoint.normal[1] * halfWidth],
+    [center[0] - endpoint.normal[0] * halfWidth, center[1] - endpoint.normal[1] * halfWidth],
+  ]
+}
+
+function endpointSleeve(endpoint: EndpointGeometry, halfWidth: number): Point2[] {
+  const source = cap(endpoint, halfWidth, 'source')
+  const inner = cap(endpoint, halfWidth, 'inner')
+  return [source[0], inner[0], inner[1], source[1]]
+}
+
+function connectionSleeve(left: EndpointGeometry, right: EndpointGeometry, padding: number): Point2[] {
+  const leftCap = cap(left, left.roadWidth / 2 + padding, 'source')
+  const rightCap = cap(right, right.roadWidth / 2 + padding, 'source')
+  const parallel = distance(leftCap[0], rightCap[0]) + distance(leftCap[1], rightCap[1])
+  const crossed = distance(leftCap[0], rightCap[1]) + distance(leftCap[1], rightCap[0])
+  return crossed < parallel
+    ? [leftCap[0], rightCap[1], rightCap[0], leftCap[1]]
+    : [leftCap[0], rightCap[0], rightCap[1], leftCap[1]]
+}
+
+function bufferedPolygon(points: Point2[], padding: number): Point2[][] {
+  if (points.length < 3) return []
+  if (padding <= 1e-6) return [points]
+  const orientation = points.reduce((sum, point, index) => {
+    const next = points[(index + 1) % points.length]
+    return sum + point[0] * next[1] - next[0] * point[1]
+  }, 0) >= 0 ? 1 : -1
+  const offsetLines = points.map((point, index) => {
+    const next = points[(index + 1) % points.length]
+    const dx = next[0] - point[0]
+    const dy = next[1] - point[1]
+    const length = Math.hypot(dx, dy) || 1
+    const normal: Point2 = orientation > 0
+      ? [dy / length, -dx / length]
+      : [-dy / length, dx / length]
+    return {
+      point: [point[0] + normal[0] * padding, point[1] + normal[1] * padding] as Point2,
+      direction: [dx, dy] as Point2,
+      normal,
+    }
+  })
+  const expanded = points.map<Point2>((point, index) => {
+    const previous = offsetLines[(index - 1 + offsetLines.length) % offsetLines.length]
+    const next = offsetLines[index]
+    const cross = previous.direction[0] * next.direction[1] - previous.direction[1] * next.direction[0]
+    if (Math.abs(cross) <= 1e-8) {
+      return [
+        point[0] + (previous.normal[0] + next.normal[0]) / 2 * padding,
+        point[1] + (previous.normal[1] + next.normal[1]) / 2 * padding,
+      ] as Point2
+    }
+    const deltaX = next.point[0] - previous.point[0]
+    const deltaY = next.point[1] - previous.point[1]
+    const ratio = (deltaX * next.direction[1] - deltaY * next.direction[0]) / cross
+    const intersection: Point2 = [
+      previous.point[0] + previous.direction[0] * ratio,
+      previous.point[1] + previous.direction[1] * ratio,
+    ]
+    const miterDistance = distance(point, intersection)
+    if (miterDistance <= padding * 4) return intersection
+    const scale = padding * 4 / miterDistance
+    return [
+      point[0] + (intersection[0] - point[0]) * scale,
+      point[1] + (intersection[1] - point[1]) * scale,
+    ]
+  })
+  return [expanded]
+}
+
+function cleanPolygon(points: Point2[]): Point2[] {
+  const cleaned: Point2[] = []
+  for (const [rawX, rawY] of points) {
+    const point: Point2 = [Number(rawX.toFixed(6)), Number(rawY.toFixed(6))]
+    const previous = cleaned.at(-1)
+    if (previous && distance(previous, point) <= 1e-6) continue
+    cleaned.push(point)
+  }
+  if (cleaned.length > 2 && distance(cleaned[0], cleaned.at(-1)!) <= 1e-6) cleaned.pop()
+  return cleaned
+}
+
+function unionPolygons(polygons: Point2[][]): RoadSurfacePolygon[] {
+  const valid = polygons
+    .map(cleanPolygon)
+    .filter((polygon) => polygon.length >= 3 && polygonArea(polygon) > 1e-6)
+  if (valid.length === 0) return []
+  const [first, ...rest] = valid.map((polygon) => [polygon])
+  return polygonClipping.union(first, ...rest)
+    .map((polygon) => ({
+      outer: polygon[0].slice(0, -1) as Point2[],
+      holes: polygon.slice(1).map((ring) => ring.slice(0, -1) as Point2[]),
+    }))
+    .filter((part) => part.outer.length >= 3)
+}
+
+function largestOuter(parts: RoadSurfacePolygon[]): Point2[] {
+  return [...parts].sort((left, right) => polygonArea(right.outer) - polygonArea(left.outer))[0]?.outer ?? []
+}
+
 function joint(
   jointId: string,
   junctionId: string,
   kind: RealisticRoadJoint['kind'],
   endpoints: EndpointGeometry[],
+  connectionPairs: Array<[EndpointGeometry, EndpointGeometry]>,
   maxGapMeters: number,
   overlapMeters: number,
   horizontalScale: number,
   extraBoundary: Point2[] = [],
   source: RealisticRoadJoint['source'] = 'sumo_topology',
 ): RealisticRoadJoint | null {
-  const asphalt = source === 'sumo_junction_shape'
-    ? expandPolygon(extraBoundary, overlapMeters * horizontalScale)
-    : convexHull([
-      ...extraBoundary,
-      ...endpoints.flatMap((endpoint) => endpoint.cap),
+  const layerParts = (paddingMeters: number) => {
+    const padding = paddingMeters * horizontalScale
+    return unionPolygons([
+      ...(source === 'sumo_junction_shape' ? bufferedPolygon(extraBoundary, padding) : []),
+      ...endpoints.map((endpoint) => endpointSleeve(endpoint, endpoint.roadWidth / 2 + padding)),
+      ...connectionPairs.map(([left, right]) => connectionSleeve(left, right, padding)),
     ])
+  }
+  const surfaceParts = {
+    sidewalk: layerParts(3.18),
+    curb: layerParts(0.18),
+    asphalt: layerParts(0),
+  }
+  const asphalt = largestOuter(surfaceParts.asphalt)
   if (asphalt.length < 3 || polygonArea(asphalt) < 0.05 * horizontalScale * horizontalScale) return null
   return {
     jointId,
@@ -124,10 +232,11 @@ function joint(
     overlapMeters,
     source,
     polygons: {
-      sidewalk: expandPolygon(asphalt, 3.18 * horizontalScale),
-      curb: expandPolygon(asphalt, 0.18 * horizontalScale),
+      sidewalk: largestOuter(surfaceParts.sidewalk),
+      curb: largestOuter(surfaceParts.curb),
       asphalt,
     },
+    surfaceParts,
   }
 }
 
@@ -165,16 +274,23 @@ export function buildRoadJoints(input: RoadJointBuildInput): RealisticRoadJoint[
     const to = endpointMap.get(`${connection.junctionId}:${connection.toEdge}`)
     return from && to ? [distance(from.sourceCenter, to.sourceCenter) / horizontalScale] : []
   })
+  const primaryConnectionPairs = primaryPairs.flatMap((connection) => {
+    const from = endpointMap.get(`${connection.junctionId}:${connection.fromEdge}`)
+    const to = endpointMap.get(`${connection.junctionId}:${connection.toEdge}`)
+    return from && to ? [[from, to] as [EndpointGeometry, EndpointGeometry]] : []
+  })
   if (primaryEndpoints.length >= 2) {
     const primary = joint(
       `${input.primaryJunctionId}:primary`,
       input.primaryJunctionId,
       'junction',
       primaryEndpoints,
+      primaryConnectionPairs,
       Math.max(0, ...primaryGaps),
       overlapMeters,
       horizontalScale,
       input.primaryJunctionShape,
+      'sumo_junction_shape',
     )
     if (primary) result.push(primary)
   }
@@ -241,6 +357,11 @@ export function buildRoadJoints(input: RoadJointBuildInput): RealisticRoadJoint[
         junctionId,
         endpoints.length === 2 && !authoritativeJunction ? 'continuation' : 'junction',
         endpoints,
+        componentConnections.flatMap((connection) => {
+          const from = endpointMap.get(`${junctionId}:${connection.fromEdge}`)
+          const to = endpointMap.get(`${junctionId}:${connection.toEdge}`)
+          return from && to ? [[from, to] as [EndpointGeometry, EndpointGeometry]] : []
+        }),
         maximumComponentGap,
         overlapMeters,
         horizontalScale,

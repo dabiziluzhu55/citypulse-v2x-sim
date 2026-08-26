@@ -7,6 +7,36 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 DEFAULT_EVENT_VEHICLE_TYPE_ID = "citypulse_event_passenger"
+DEFAULT_SPEED_LIMIT_MPS = 5.0
+_KMH_TO_MPS = 1.0 / 3.6
+_SPEED_LIMIT_UNIT_TOLERANCE_MPS = 0.05
+
+
+def resolve_speed_limit_mps(
+    max_speed: float | None,
+    speed_kmh: float | None,
+    *,
+    default_mps: float | None = None,
+) -> float:
+    """将前端提交的限速统一为 SUMO 使用的 m/s。
+
+    ``max_speed`` 单位为 m/s，``speed_kmh`` 为单位 km/h 的最大限速速度。
+    至少提供一个；同时提供时必须表示同一限速。
+    """
+    if max_speed is not None and speed_kmh is not None:
+        converted = float(speed_kmh) * _KMH_TO_MPS
+        if abs(converted - float(max_speed)) > _SPEED_LIMIT_UNIT_TOLERANCE_MPS:
+            raise ValueError(
+                "max_speed (m/s) and speed_kmh (km/h) must describe the same limit."
+            )
+        return float(max_speed)
+    if max_speed is not None:
+        return float(max_speed)
+    if speed_kmh is not None:
+        return float(speed_kmh) * _KMH_TO_MPS
+    if default_mps is not None:
+        return float(default_mps)
+    raise ValueError("Either max_speed (m/s) or speed_kmh (km/h) is required.")
 
 
 class LaneClosureRequest(BaseModel):
@@ -23,7 +53,25 @@ class SpeedLimitRequest(BaseModel):
     start_seconds: float
     end_seconds: float
     lane_ids: list[str]
-    max_speed: float = Field(gt=0)
+    max_speed: float | None = Field(
+        default=None,
+        gt=0,
+        description="临时限速，单位 m/s。与 speed_kmh 至少提供一个；交给 SUMO 时使用此值。",
+    )
+    speed_kmh: float | None = Field(
+        default=None,
+        gt=0,
+        description="最大限速速度，单位 km/h。前端用户输入建议用此字段，后端会换算为 max_speed。",
+    )
+
+    @model_validator(mode="after")
+    def _resolve_speed_limit(self) -> SpeedLimitRequest:
+        self.max_speed = resolve_speed_limit_mps(
+            self.max_speed,
+            self.speed_kmh,
+            default_mps=None,
+        )
+        return self
 
 
 class AccidentRequest(BaseModel):

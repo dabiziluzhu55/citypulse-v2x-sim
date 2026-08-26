@@ -14,6 +14,13 @@ import {
 } from '../types/simulation.ts'
 import { simulationFuelIntensity } from '../utils/simulationEvaluation.ts'
 import { scenarioPresetIntersectionIds } from '../utils/scenarioPresetRules.ts'
+import {
+  formatIntersectionLabels,
+  formatScenarioPresetLabel,
+  formatSimulationOrigins,
+  formatSimulationPeriodLabel,
+  formatSimulationWindow,
+} from '../utils/scenarioDisplay.ts'
 
 const STORAGE_KEY = 'citypulse.evaluation_comparison.v3'
 const LEGACY_STORAGE_KEYS = [
@@ -168,7 +175,8 @@ export function comparisonContractDifferences(
     }
     appendDifferences(leadingLabels)
     if (
-      active.window_start_seconds !== candidate.window_start_seconds
+      active.period !== candidate.period
+      || active.window_start_seconds !== candidate.window_start_seconds
       || active.duration_seconds !== candidate.duration_seconds
     ) {
       differences.push(`展示窗口：${comparisonWindow(active)} → ${comparisonWindow(candidate)}`)
@@ -180,28 +188,22 @@ export function comparisonContractDifferences(
   }
 }
 
-function comparisonClock(totalSeconds: number): string {
-  const normalized = Math.max(0, Math.round(totalSeconds))
-  const hours = Math.floor(normalized / 3600) % 24
-  const minutes = Math.floor((normalized % 3600) / 60)
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
-}
-
 function comparisonWindow(contract: ScenarioComparisonContractV3): string {
-  return `${comparisonClock(contract.window_start_seconds)}–${comparisonClock(
-    contract.window_start_seconds + contract.duration_seconds,
-  )}`
+  return formatSimulationWindow(
+    contract.period,
+    contract.window_start_seconds,
+    contract.duration_seconds,
+  )
 }
 
 function comparisonContractValue(
   key: keyof ScenarioComparisonContractV3,
   value: unknown,
 ): string {
-  if (key === 'period') {
-    return ({ morning_peak: '早高峰', off_peak: '平峰', evening_peak: '晚高峰' } as Record<string, string>)[String(value)]
-      ?? String(value)
-  }
-  if (key === 'controlled_intersection_ids') return (value as string[]).join('、') || '无'
+  if (key === 'scenario_preset_id') return formatScenarioPresetLabel(String(value))
+  if (key === 'period') return formatSimulationPeriodLabel(String(value))
+  if (key === 'controlled_intersection_ids') return formatIntersectionLabels(value as string[])
+  if (key === 'origins') return formatSimulationOrigins(value)
   if (key === 'disturbance_targets') {
     const targets = value as Array<Record<string, unknown>>
     if (targets.length === 0) return '无'

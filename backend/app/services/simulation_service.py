@@ -674,6 +674,15 @@ class SimulationService:
                 message=f"Unknown lane IDs: {sorted(unknown)}",
                 status_code=422,
             )
+        if isinstance(event, SpeedLimitEvent):
+            from ..scenario.resolver import validate_speed_limit_against_catalog
+
+            validate_speed_limit_against_catalog(
+                event.max_speed,
+                list(event.lane_ids),
+                catalog,
+                intersection_ids=allowed_intersections,
+            )
 
     @staticmethod
     def _event_lane_ids(event: DisturbanceEvent) -> Iterable[str]:
@@ -695,12 +704,18 @@ class SimulationService:
                 lane_ids=tuple(request.lane_ids),
             )
         if isinstance(request, SpeedLimitRequest):
+            if request.max_speed is None:
+                raise AppError(
+                    code="INVALID_EVENT",
+                    message="speed_limit requires max_speed or speed_kmh.",
+                    status_code=422,
+                )
             return SpeedLimitEvent(
                 event_id=request.event_id,
                 start_seconds=request.start_seconds,
                 end_seconds=request.end_seconds,
                 lane_ids=tuple(request.lane_ids),
-                max_speed=request.max_speed,
+                max_speed=float(request.max_speed),
             )
         if isinstance(request, AccidentRequest):
             return AccidentEvent(

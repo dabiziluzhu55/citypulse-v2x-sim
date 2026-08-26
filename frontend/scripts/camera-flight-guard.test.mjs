@@ -57,23 +57,72 @@ test('cancelled camera flight guard cannot complete a stale transaction', async 
   assert.equal(completions, 0)
 })
 
+test('freezes Twin playback for a programmed camera flight and resumes before viewport refresh', async () => {
+  const [mapSource, rendererSource] = await Promise.all([
+    readFile(
+      new URL('../src/components/visualization/BaiduThreeMap.vue', import.meta.url),
+      'utf8',
+    ),
+    readFile(
+      new URL('../src/mapv/BaiduVehicleRenderer.ts', import.meta.url),
+      'utf8',
+    ),
+  ])
+
+  const flightStartAt = mapSource.indexOf('cameraFlightActive = options.duration > 0')
+  const holdAt = mapSource.indexOf(
+    'vehicleRenderer?.setCameraTransitionActive(cameraFlightActive)',
+    flightStartAt,
+  )
+  const flyAt = mapSource.indexOf('engine?.map.flyTo(placedTarget', holdAt)
+  const finishAt = mapSource.indexOf('const finishFlight = () =>', holdAt)
+  const releaseAt = mapSource.indexOf(
+    'vehicleRenderer?.setCameraTransitionActive(false)',
+    finishAt,
+  )
+  const refreshAt = mapSource.indexOf(
+    'refreshVehicleViewportAfterCameraPlacement()',
+    releaseAt,
+  )
+
+  assert.ok(flightStartAt >= 0)
+  assert.ok(holdAt > flightStartAt && holdAt < flyAt)
+  assert.ok(releaseAt > finishAt && releaseAt < refreshAt)
+  assert.match(rendererSource, /!this\.active\s*\|\| this\.cameraTransitionHeld/)
+  assert.match(rendererSource, /this\.twinPresenter\.freezeAfterVisible\(\)/)
+  assert.match(rendererSource, /!this\.cameraTransitionHeld\s*&& isVehicleAnimationActive/)
+  assert.match(mapSource, /VEHICLE_TWIN_VIEWPORT_WARMUP_TIMEOUT_MS = 8_000/)
+  assert.match(
+    mapSource,
+    /waitForViewportTransitionReady\(signal, VEHICLE_TWIN_VIEWPORT_WARMUP_TIMEOUT_MS\)/,
+  )
+})
+
 test('initial presentation waits for facilities while optional environment layers fail safely', async () => {
   const source = await readFile(
     new URL('../src/components/visualization/BaiduThreeMap.vue', import.meta.url),
     'utf8',
   )
-  const activateAt = source.indexOf('realisticIntersectionLayer.activate(intersectionId)')
-  const environmentAwaitAt = source.indexOf(
-    'await switchIntersectionEnvironment(intersectionId, revision)',
+  const environmentPrepareAt = source.indexOf(
+    'prepareIntersectionEnvironment(intersectionId, signal)',
+  )
+  const activateAt = source.indexOf(
+    'realisticIntersectionLayer.activate(intersectionId)',
+    environmentPrepareAt,
+  )
+  const environmentCommitAt = source.indexOf(
+    'commitIntersectionEnvironment(intersectionId, preparedEnvironment, revision)',
     activateAt,
   )
-  const environmentReadyAt = source.indexOf('initialEnvironmentReady = true', environmentAwaitAt)
-  const optionalLandcoverCatchAt = source.indexOf(
-    'ensureIntersectionLandcover(intersectionId, environment).catch',
+  const environmentReadyAt = source.indexOf('initialEnvironmentReady = true', environmentCommitAt)
+  const landcoverPrepareAt = source.indexOf(
+    'ensureIntersectionLandcover(intersectionId, environment, signal)',
   )
+  const optionalLandcoverCatchAt = source.indexOf('.catch((cause: unknown)', landcoverPrepareAt)
 
-  assert.ok(activateAt >= 0)
-  assert.ok(environmentAwaitAt > activateAt)
-  assert.ok(environmentReadyAt > environmentAwaitAt)
-  assert.ok(optionalLandcoverCatchAt > environmentAwaitAt)
+  assert.ok(environmentPrepareAt >= 0)
+  assert.ok(activateAt > environmentPrepareAt)
+  assert.ok(environmentCommitAt > activateAt)
+  assert.ok(environmentReadyAt > environmentCommitAt)
+  assert.ok(optionalLandcoverCatchAt > landcoverPrepareAt)
 })

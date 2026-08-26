@@ -12,6 +12,7 @@ declare module '@baidumap/mapv-three' {
       getHeading: () => number
       getPitch: () => number
       projectArrayCoordinate: (coordinate: readonly number[]) => number[]
+      unprojectArrayCoordinate: (coordinate: readonly number[]) => number[]
     }
     controller: {
       enabled: boolean
@@ -35,6 +36,7 @@ declare module '@baidumap/mapv-three' {
   export class Polyline {
     constructor(options?: Record<string, unknown>)
     lineWidth: number
+    enableAnimation: boolean
     dataSource: GeoJSONDataSource | null
     position: { z: number }
     material: import('three').Material
@@ -72,11 +74,29 @@ declare module '@baidumap/mapv-three' {
     renderOrder: number
   }
 
+  export class DOMOverlay {
+    constructor(options: {
+      dom: HTMLElement | string
+      point?: number[]
+      offset?: number[]
+      visible?: boolean
+      enableDragging?: boolean
+      className?: string
+    })
+    dom: HTMLElement
+    point: number[]
+    offset: number[]
+    visible: boolean
+    stopPropagation: boolean
+    dispose(): void
+  }
+
   export class EffectModelPoint {
     constructor(options?: Record<string, unknown>)
     dataSource: GeoJSONDataSource | null
     model: import('three').Object3D | null
     position: { z: number }
+    renderOrder: number
   }
 
   export class EffectPoint {
@@ -100,6 +120,11 @@ declare module '@baidumap/mapv-three' {
     constructor(options?: Record<string, unknown>)
     push(data: Array<Record<string, unknown>>): void
     reset(): void
+    pause(): void
+    start(): void
+    dispose(): void
+    addEventListener(type: string, listener: (event: Record<string, unknown>) => void): void
+    removeEventListener(type: string, listener: (event: Record<string, unknown>) => void): void
   }
 
   export const twinConstants: {

@@ -23,8 +23,9 @@ import type { StartSimulationRequest } from '../types/simulation'
 import type { TrafficFlowMode } from '../types/scenario'
 import { buildStartSimulationRequest } from '../utils/scenarioPayload'
 import { scenarioPresetIntersectionIds } from '../utils/scenarioPresetRules'
+import { assertUniqueDisturbanceIntersections } from '../utils/disturbanceIntersectionUniqueness.ts'
+import { assertSafeLaneClosureEvents } from '../utils/safeLaneClosures.ts'
 import {
-  SCENARIO_CONFIG_EXPORT_VERSION,
   DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
   resolveMajorEventVehicleCount,
   resolveImportedDisturbanceTimes,
@@ -45,26 +46,6 @@ export interface CompactScenarioConfig {
 }
 
 export type CompactDisturbanceEvent = ScenarioDraftDisturbanceEvent
-
-export interface ScenarioConfigExport {
-  version: typeof SCENARIO_CONFIG_EXPORT_VERSION
-  exported_at: string
-  ui_config: CompactScenarioConfig
-  display: {
-    scenario: string
-    disturbance: string
-    flow_mode: string
-    simulation_time: string
-    algorithm: string
-  }
-  backend_request: StartSimulationRequest
-  data_sources: {
-    scenario: 'catalog' | 'compatibility_preset'
-    disturbance: 'catalog'
-    time: 'local_range'
-    algorithm: 'backend'
-  }
-}
 
 const FLOW_MODE_TO_PERIOD: Record<TrafficFlowMode, string> = {
   flat: 'off_peak',
@@ -98,6 +79,11 @@ export function buildSimulationPayload(
   _supportedIntersectionIds: string[] = [],
   controlModes: string[] = [...SUPPORTED_BACKEND_CONTROL_MODES],
 ): StartSimulationRequest {
+  assertUniqueDisturbanceIntersections(config.disturbance_events, (event) => (
+    DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === event.preset_id)?.label
+      ?? event.event_type
+  ))
+  assertSafeLaneClosureEvents(config.disturbance_events)
   const time = simulationTimeWindow(
     config.flow_mode,
     config.simulation_start_time,
@@ -351,7 +337,7 @@ export function useCompactScenarioConfig(
       }]
     }
 
-    return {
+    const parsedConfig: CompactScenarioConfig = {
       scenario_preset_id: scenarioPresetId,
       flow_mode: mode,
       disturbance_events: disturbanceEvents,
@@ -364,42 +350,16 @@ export function useCompactScenarioConfig(
         ? controlMode
         : supportedControlModes.includes('fixed') ? 'fixed' : supportedControlModes[0],
     }
+    assertUniqueDisturbanceIntersections(parsedConfig.disturbance_events, (event) => (
+      DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === event.preset_id)?.label
+        ?? event.event_type
+    ))
+    assertSafeLaneClosureEvents(parsedConfig.disturbance_events)
+    return parsedConfig
   }
 
   function applyImportedConfig(input: unknown): void {
     config.value = parseImportedConfig(input)
-  }
-
-  function buildExport(): ScenarioConfigExport {
-    const backendRequest = buildSimulationPayload(
-      config.value,
-      null,
-      periods.value,
-      [],
-      [],
-      [...SUPPORTED_BACKEND_CONTROL_MODES],
-    )
-    return {
-      version: SCENARIO_CONFIG_EXPORT_VERSION,
-      exported_at: new Date().toISOString(),
-      ui_config: { ...config.value },
-      display: {
-        scenario: labels.value.scenario,
-        disturbance: labels.value.disturbance,
-        flow_mode: labels.value.flow,
-        simulation_time: labels.value.time,
-        algorithm: config.value.control_mode,
-      },
-      backend_request: backendRequest,
-      data_sources: {
-        scenario: scenarioPresets.value.some((item) => item.preset_id === config.value.scenario_preset_id)
-          ? 'catalog'
-          : 'compatibility_preset',
-        disturbance: 'catalog',
-        time: 'local_range',
-        algorithm: 'backend',
-      },
-    }
   }
 
   return {
@@ -412,6 +372,5 @@ export function useCompactScenarioConfig(
     buildPayloadFor,
     parseImportedConfig,
     applyImportedConfig,
-    buildExport,
   }
 }

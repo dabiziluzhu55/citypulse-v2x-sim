@@ -109,6 +109,7 @@ class RedisSimulationManager:
             window_start_seconds=config.window_start_seconds,
             duration_seconds=config.duration_seconds,
             flow_multiplier=config.flow_multiplier,
+            scenario_scope=config.scenario_scope,
             step_length=config.step_length,
             generated_dir=self.generated_dir,
             session_root=self.session_root,

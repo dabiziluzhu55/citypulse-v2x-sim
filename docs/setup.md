@@ -48,6 +48,6 @@ SUMO 1.12 等旧版还能优化带 `via` 的多边计数关系，但其 native m
 `traffic_quality_PERIOD.json/csv` 完整提供。新版继续保留 routeSampler 原生 mismatch。
 
 车型长短途分配和驻网负载目标由
-`data/maps/sumo/traffic_generation_policy.json` 独立配置，`build_tls` 默认自动加载。需要验证
+`data/maps/sumo/traffic/traffic_generation_policy.json` 独立配置，`build_tls` 默认自动加载。需要验证
 其他策略文件时可传入 `--traffic-policy PATH`。该文件不替代官方需求：官方 PCU、GEH、零流量
 和路口总量仍是构建硬门槛；距离比例、最终车型比例和负载目标采用最优结果加告警的策略。

@@ -24,12 +24,12 @@ export const SCENARIO_MODE_OPTIONS = [
     intersectionIds: Array.from({ length: 20 }, (_, index) => `demo_${index + 1}`),
   },
   {
-    label: '东部密集路口场景',
+    label: '东部密集区场景',
     value: 'east_dense',
     intersectionIds: ['demo_3', 'demo_5', 'demo_6', 'demo_9'],
   },
   {
-    label: '西部密集路口场景',
+    label: '西部密集区场景',
     value: 'west_dense',
     intersectionIds: ['demo_14', 'demo_15', 'demo_19'],
   },

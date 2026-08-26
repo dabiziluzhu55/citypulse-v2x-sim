@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- generated on 2026-08-16 22:20:11.579421 by routeSampler.py UNKNOWN
+<configuration>
+    <begin value="0"/>
+    <end value="7200"/>
+    <interval value="900"/>
+    <minimize-vehicles value="0.1"/>
+    <mismatch-output value="/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/generated/traffic/.work_west_dense/mismatch_west_dense_morning_peak_round1_passenger_42.xml"/>
+    <optimize value="full"/>
+    <output-file value="/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/generated/traffic/.work_west_dense/sample_west_dense_morning_peak_round1_passenger_42.rou.xml"/>
+    <prefix value="passenger_"/>
+    <route-files value="/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/generated/traffic/.work_west_dense/candidate_passenger.rou.xml"/>
+    <turn-files value="/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/generated/traffic/.work_west_dense/counts_west_dense_morning_peak_round1_passenger.xml"/>
+    <attributes value="type=&quot;official_passenger&quot; departLane=&quot;best&quot; departSpeed=&quot;max&quot;"/>
+    <write-flows value="number"/>
+</configuration>
+
+-->
+<data>
+    <interval id="deficit" begin="0.0" end="900.0">
+        <edgeRelation from="-46538" to="-46537" measuredCount="39" deficit="0"/>
+        <edgeRelation from="-46538" to="-55838" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-46538" to="-57396" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-46539" to="-46538" measuredCount="47" deficit="0"/>
+        <edgeRelation from="-46539" to="-52559" measuredCount="84" deficit="0"/>
+        <edgeRelation from="-46785" to="-46538" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-46785" to="-52217" measuredCount="46" deficit="0"/>
+        <edgeRelation from="-46787" to="-46786" measuredCount="42" deficit="0"/>
+        <edgeRelation from="-46787" to="-52228" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-46787" to="-56027" measuredCount="42" deficit="0"/>
+        <edgeRelation from="-52215" to="-52216" measuredCount="17" deficit="0"/>
+        <edgeRelation from="-52215" to="-55838" measuredCount="26" deficit="0"/>
+        <edgeRelation from="-52215" to="-57396" measuredCount="24" deficit="0"/>
+        <edgeRelation from="-52216" to="-52217" measuredCount="24" deficit="0"/>
+        <edgeRelation from="-52216" to="-52559" measuredCount="96" deficit="0"/>
+        <edgeRelation from="-52227" to="-46786" measuredCount="57" deficit="0"/>
+        <edgeRelation from="-52227" to="-52228" measuredCount="104" deficit="0"/>
+        <edgeRelation from="-52227" to="-52561" measuredCount="25" deficit="0"/>
+        <edgeRelation from="-52560" to="-52228" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-52560" to="-52561" measuredCount="45" deficit="0"/>
+        <edgeRelation from="-52560" to="-56027" measuredCount="37" deficit="0"/>
+        <edgeRelation from="-55837" to="-46537" measuredCount="22" deficit="0"/>
+        <edgeRelation from="-55837" to="-52216" measuredCount="33" deficit="0"/>
+        <edgeRelation from="-55837" to="-55838" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-56026" to="-46786" measuredCount="53" deficit="0"/>
+        <edgeRelation from="-56026" to="-52561" measuredCount="33" deficit="0"/>
+        <edgeRelation from="-56026" to="-56027" measuredCount="62" deficit="0"/>
+        <edgeRelation from="-57395" to="-46537" measuredCount="23" deficit="0"/>
+        <edgeRelation from="-57395" to="-52216" measuredCount="16" deficit="0"/>
+        <edgeRelation from="-57395" to="-57396" measuredCount="42" deficit="0"/>
+    </interval>
+    <interval id="deficit" begin="900.0" end="1800.0">
+        <edgeRelation from="-46538" to="-46537" measuredCount="33" deficit="0"/>
+        <edgeRelation from="-46538" to="-55838" measuredCount="28" deficit="0"/>
+        <edgeRelation from="-46538" to="-57396" measuredCount="19" deficit="0"/>
+        <edgeRelation from="-46539" to="-46538" measuredCount="44" deficit="0"/>
+        <edgeRelation from="-46539" to="-52559" measuredCount="89" deficit="0"/>
+        <edgeRelation from="-46785" to="-46538" measuredCount="39" deficit="0"/>
+        <edgeRelation from="-46785" to="-52217" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-46787" to="-46786" measuredCount="37" deficit="0"/>
+        <edgeRelation from="-46787" to="-52228" measuredCount="38" deficit="0"/>
+        <edgeRelation from="-46787" to="-56027" measuredCount="39" deficit="0"/>
+        <edgeRelation from="-52215" to="-52216" measuredCount="20" deficit="0"/>
+        <edgeRelation from="-52215" to="-55838" measuredCount="14" deficit="0"/>
+        <edgeRelation from="-52215" to="-57396" measuredCount="36" deficit="0"/>
+        <edgeRelation from="-52216" to="-52217" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-52216" to="-52559" measuredCount="95" deficit="0"/>
+        <edgeRelation from="-52227" to="-46786" measuredCount="52" deficit="0"/>
+        <edgeRelation from="-52227" to="-52228" measuredCount="100" deficit="0"/>
+        <edgeRelation from="-52227" to="-52561" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-52560" to="-52228" measuredCount="38" deficit="0"/>
+        <edgeRelation from="-52560" to="-52561" measuredCount="39" deficit="0"/>
+        <edgeRelation from="-52560" to="-56027" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-55837" to="-46537" measuredCount="30" deficit="0"/>
+        <edgeRelation from="-55837" to="-52216" measuredCount="36" deficit="0"/>
+        <edgeRelation from="-55837" to="-55838" measuredCount="46" deficit="0"/>
+        <edgeRelation from="-56026" to="-46786" measuredCount="47" deficit="0"/>
+        <edgeRelation from="-56026" to="-52561" measuredCount="31" deficit="0"/>
+        <edgeRelation from="-56026" to="-56027" measuredCount="55" deficit="0"/>
+        <edgeRelation from="-57395" to="-46537" measuredCount="26" deficit="0"/>
+        <edgeRelation from="-57395" to="-52216" measuredCount="13" deficit="0"/>
+        <edgeRelation from="-57395" to="-57396" measuredCount="51" deficit="0"/>
+    </interval>
+    <interval id="deficit" begin="1800.0" end="2700.0">
+        <edgeRelation from="-46538" to="-46537" measuredCount="36" deficit="0"/>
+        <edgeRelation from="-46538" to="-55838" measuredCount="18" deficit="0"/>
+        <edgeRelation from="-46538" to="-57396" measuredCount="24" deficit="0"/>
+        <edgeRelation from="-46539" to="-46538" measuredCount="48" deficit="0"/>
+        <edgeRelation from="-46539" to="-52559" measuredCount="85" deficit="0"/>
+        <edgeRelation from="-46785" to="-46538" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-46785" to="-52217" measuredCount="48" deficit="0"/>
+        <edgeRelation from="-46787" to="-46786" measuredCount="46" deficit="0"/>
+        <edgeRelation from="-46787" to="-52228" measuredCount="47" deficit="0"/>
+        <edgeRelation from="-46787" to="-56027" measuredCount="42" deficit="0"/>
+        <edgeRelation from="-52215" to="-52216" measuredCount="16" deficit="0"/>
+        <edgeRelation from="-52215" to="-55838" measuredCount="16" deficit="0"/>
+        <edgeRelation from="-52215" to="-57396" measuredCount="27" deficit="0"/>
+        <edgeRelation from="-52216" to="-52217" measuredCount="22" deficit="0"/>
+        <edgeRelation from="-52216" to="-52559" measuredCount="100" deficit="0"/>
+        <edgeRelation from="-52227" to="-46786" measuredCount="64" deficit="0"/>
+        <edgeRelation from="-52227" to="-52228" measuredCount="95" deficit="0"/>
+        <edgeRelation from="-52227" to="-52561" measuredCount="22" deficit="0"/>
+        <edgeRelation from="-52560" to="-52228" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-52560" to="-52561" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-52560" to="-56027" measuredCount="35" deficit="0"/>
+        <edgeRelation from="-55837" to="-46537" measuredCount="28" deficit="0"/>
+        <edgeRelation from="-55837" to="-52216" measuredCount="31" deficit="0"/>
+        <edgeRelation from="-55837" to="-55838" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-56026" to="-46786" measuredCount="58" deficit="0"/>
+        <edgeRelation from="-56026" to="-52561" measuredCount="36" deficit="0"/>
+        <edgeRelation from="-56026" to="-56027" measuredCount="67" deficit="0"/>
+        <edgeRelation from="-57395" to="-46537" measuredCount="46" deficit="0"/>
+        <edgeRelation from="-57395" to="-52216" measuredCount="15" deficit="0"/>
+        <edgeRelation from="-57395" to="-57396" measuredCount="46" deficit="0"/>
+    </interval>
+    <interval id="deficit" begin="2700.0" end="3600.0">
+        <edgeRelation from="-46538" to="-46537" measuredCount="33" deficit="0"/>
+        <edgeRelation from="-46538" to="-55838" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-46538" to="-57396" measuredCount="14" deficit="0"/>
+        <edgeRelation from="-46539" to="-46538" measuredCount="41" deficit="0"/>
+        <edgeRelation from="-46539" to="-52559" measuredCount="78" deficit="0"/>
+        <edgeRelation from="-46785" to="-46538" measuredCount="37" deficit="0"/>
+        <edgeRelation from="-46785" to="-52217" measuredCount="41" deficit="0"/>
+        <edgeRelation from="-46787" to="-46786" measuredCount="33" deficit="0"/>
+        <edgeRelation from="-46787" to="-52228" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-46787" to="-56027" measuredCount="34" deficit="0"/>
+        <edgeRelation from="-52215" to="-52216" measuredCount="15" deficit="0"/>
+        <edgeRelation from="-52215" to="-55838" measuredCount="15" deficit="0"/>
+        <edgeRelation from="-52215" to="-57396" measuredCount="22" deficit="0"/>
+        <edgeRelation from="-52216" to="-52217" measuredCount="26" deficit="0"/>
+        <edgeRelation from="-52216" to="-52559" measuredCount="92" deficit="0"/>
+        <edgeRelation from="-52227" to="-46786" measuredCount="58" deficit="0"/>
+        <edgeRelation from="-52227" to="-52228" measuredCount="116" deficit="0"/>
+        <edgeRelation from="-52227" to="-52561" measuredCount="20" deficit="0"/>
+        <edgeRelation from="-52560" to="-52228" measuredCount="44" deficit="0"/>
+        <edgeRelation from="-52560" to="-52561" measuredCount="34" deficit="0"/>
+        <edgeRelation from="-52560" to="-56027" measuredCount="30" deficit="0"/>
+        <edgeRelation from="-55837" to="-46537" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-55837" to="-52216" measuredCount="33" deficit="0"/>
+        <edgeRelation from="-55837" to="-55838" measuredCount="36" deficit="0"/>
+        <edgeRelation from="-56026" to="-46786" measuredCount="47" deficit="0"/>
+        <edgeRelation from="-56026" to="-52561" measuredCount="29" deficit="0"/>
+        <edgeRelation from="-56026" to="-56027" measuredCount="58" deficit="0"/>
+        <edgeRelation from="-57395" to="-46537" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-57395" to="-52216" measuredCount="15" deficit="0"/>
+        <edgeRelation from="-57395" to="-57396" measuredCount="39" deficit="0"/>
+    </interval>
+    <interval id="deficit" begin="3600.0" end="4500.0">
+        <edgeRelation from="-46538" to="-46537" measuredCount="34" deficit="0"/>
+        <edgeRelation from="-46538" to="-55838" measuredCount="25" deficit="0"/>
+        <edgeRelation from="-46538" to="-57396" measuredCount="20" deficit="0"/>
+        <edgeRelation from="-46539" to="-46538" measuredCount="46" deficit="0"/>
+        <edgeRelation from="-46539" to="-52559" measuredCount="87" deficit="0"/>
+        <edgeRelation from="-46785" to="-46538" measuredCount="41" deficit="0"/>
+        <edgeRelation from="-46785" to="-52217" measuredCount="46" deficit="0"/>
+        <edgeRelation from="-46787" to="-46786" measuredCount="41" deficit="0"/>
+        <edgeRelation from="-46787" to="-52228" measuredCount="70" deficit="0"/>
+        <edgeRelation from="-46787" to="-56027" measuredCount="45" deficit="0"/>
+        <edgeRelation from="-52215" to="-52216" measuredCount="19" deficit="0"/>
+        <edgeRelation from="-52215" to="-55838" measuredCount="15" deficit="0"/>
+        <edgeRelation from="-52215" to="-57396" measuredCount="20" deficit="0"/>
+        <edgeRelation from="-52216" to="-52217" measuredCount="20" deficit="0"/>
+        <edgeRelation from="-52216" to="-52559" measuredCount="98" deficit="0"/>
+        <edgeRelation from="-52227" to="-46786" measuredCount="49" deficit="0"/>
+        <edgeRelation from="-52227" to="-52228" measuredCount="101" deficit="0"/>
+        <edgeRelation from="-52227" to="-52561" measuredCount="23" deficit="0"/>
+        <edgeRelation from="-52560" to="-52228" measuredCount="34" deficit="0"/>
+        <edgeRelation from="-52560" to="-52561" measuredCount="42" deficit="0"/>
+        <edgeRelation from="-52560" to="-56027" measuredCount="42" deficit="0"/>
+        <edgeRelation from="-55837" to="-46537" measuredCount="26" deficit="0"/>
+        <edgeRelation from="-55837" to="-52216" measuredCount="35" deficit="0"/>
+        <edgeRelation from="-55837" to="-55838" measuredCount="40" deficit="0"/>
+        <edgeRelation from="-56026" to="-46786" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-56026" to="-52561" measuredCount="33" deficit="0"/>
+        <edgeRelation from="-56026" to="-56027" measuredCount="51" deficit="0"/>
+        <edgeRelation from="-57395" to="-46537" measuredCount="24" deficit="0"/>
+        <edgeRelation from="-57395" to="-52216" measuredCount="14" deficit="0"/>
+        <edgeRelation from="-57395" to="-57396" measuredCount="52" deficit="0"/>
+    </interval>
+    <interval id="deficit" begin="4500.0" end="5400.0">
+        <edgeRelation from="-46538" to="-46537" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-46538" to="-55838" measuredCount="27" deficit="0"/>
+        <edgeRelation from="-46538" to="-57396" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-46539" to="-46538" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-46539" to="-52559" measuredCount="82" deficit="0"/>
+        <edgeRelation from="-46785" to="-46538" measuredCount="40" deficit="0"/>
+        <edgeRelation from="-46785" to="-52217" measuredCount="42" deficit="0"/>
+        <edgeRelation from="-46787" to="-46786" measuredCount="38" deficit="0"/>
+        <edgeRelation from="-46787" to="-52228" measuredCount="46" deficit="0"/>
+        <edgeRelation from="-46787" to="-56027" measuredCount="36" deficit="0"/>
+        <edgeRelation from="-52215" to="-52216" measuredCount="28" deficit="0"/>
+        <edgeRelation from="-52215" to="-55838" measuredCount="13" deficit="0"/>
+        <edgeRelation from="-52215" to="-57396" measuredCount="23" deficit="0"/>
+        <edgeRelation from="-52216" to="-52217" measuredCount="23" deficit="0"/>
+        <edgeRelation from="-52216" to="-52559" measuredCount="93" deficit="0"/>
+        <edgeRelation from="-52227" to="-46786" measuredCount="61" deficit="0"/>
+        <edgeRelation from="-52227" to="-52228" measuredCount="109" deficit="0"/>
+        <edgeRelation from="-52227" to="-52561" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-52560" to="-52228" measuredCount="39" deficit="0"/>
+        <edgeRelation from="-52560" to="-52561" measuredCount="37" deficit="0"/>
+        <edgeRelation from="-52560" to="-56027" measuredCount="33" deficit="0"/>
+        <edgeRelation from="-55837" to="-46537" measuredCount="47" deficit="0"/>
+        <edgeRelation from="-55837" to="-52216" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-55837" to="-55838" measuredCount="49" deficit="0"/>
+        <edgeRelation from="-56026" to="-46786" measuredCount="54" deficit="0"/>
+        <edgeRelation from="-56026" to="-52561" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-56026" to="-56027" measuredCount="65" deficit="0"/>
+        <edgeRelation from="-57395" to="-46537" measuredCount="20" deficit="0"/>
+        <edgeRelation from="-57395" to="-52216" measuredCount="14" deficit="0"/>
+        <edgeRelation from="-57395" to="-57396" measuredCount="38" deficit="0"/>
+    </interval>
+    <interval id="deficit" begin="5400.0" end="6300.0">
+        <edgeRelation from="-46538" to="-46537" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-46538" to="-55838" measuredCount="16" deficit="0"/>
+        <edgeRelation from="-46538" to="-57396" measuredCount="15" deficit="0"/>
+        <edgeRelation from="-46539" to="-46538" measuredCount="46" deficit="0"/>
+        <edgeRelation from="-46539" to="-52559" measuredCount="92" deficit="0"/>
+        <edgeRelation from="-46785" to="-46538" measuredCount="41" deficit="0"/>
+        <edgeRelation from="-46785" to="-52217" measuredCount="45" deficit="0"/>
+        <edgeRelation from="-46787" to="-46786" measuredCount="48" deficit="0"/>
+        <edgeRelation from="-46787" to="-52228" measuredCount="34" deficit="0"/>
+        <edgeRelation from="-46787" to="-56027" measuredCount="48" deficit="0"/>
+        <edgeRelation from="-52215" to="-52216" measuredCount="14" deficit="0"/>
+        <edgeRelation from="-52215" to="-55838" measuredCount="29" deficit="0"/>
+        <edgeRelation from="-52215" to="-57396" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-52216" to="-52217" measuredCount="26" deficit="0"/>
+        <edgeRelation from="-52216" to="-52559" measuredCount="97" deficit="0"/>
+        <edgeRelation from="-52227" to="-46786" measuredCount="54" deficit="0"/>
+        <edgeRelation from="-52227" to="-52228" measuredCount="90" deficit="0"/>
+        <edgeRelation from="-52227" to="-52561" measuredCount="24" deficit="0"/>
+        <edgeRelation from="-52560" to="-52228" measuredCount="47" deficit="0"/>
+        <edgeRelation from="-52560" to="-52561" measuredCount="48" deficit="0"/>
+        <edgeRelation from="-52560" to="-56027" measuredCount="31" deficit="0"/>
+        <edgeRelation from="-55837" to="-46537" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-55837" to="-52216" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-55837" to="-55838" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-56026" to="-46786" measuredCount="58" deficit="0"/>
+        <edgeRelation from="-56026" to="-52561" measuredCount="34" deficit="0"/>
+        <edgeRelation from="-56026" to="-56027" measuredCount="56" deficit="0"/>
+        <edgeRelation from="-57395" to="-46537" measuredCount="22" deficit="0"/>
+        <edgeRelation from="-57395" to="-52216" measuredCount="13" deficit="0"/>
+        <edgeRelation from="-57395" to="-57396" measuredCount="40" deficit="0"/>
+    </interval>
+    <interval id="deficit" begin="6300.0" end="7200.0">
+        <edgeRelation from="-46538" to="-46537" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-46538" to="-55838" measuredCount="25" deficit="0"/>
+        <edgeRelation from="-46538" to="-57396" measuredCount="14" deficit="0"/>
+        <edgeRelation from="-46539" to="-46538" measuredCount="55" deficit="0"/>
+        <edgeRelation from="-46539" to="-52559" measuredCount="97" deficit="0"/>
+        <edgeRelation from="-46785" to="-46538" measuredCount="32" deficit="0"/>
+        <edgeRelation from="-46785" to="-52217" measuredCount="53" deficit="0"/>
+        <edgeRelation from="-46787" to="-46786" measuredCount="64" deficit="0"/>
+        <edgeRelation from="-46787" to="-52228" measuredCount="40" deficit="0"/>
+        <edgeRelation from="-46787" to="-56027" measuredCount="61" deficit="0"/>
+        <edgeRelation from="-52215" to="-52216" measuredCount="18" deficit="0"/>
+        <edgeRelation from="-52215" to="-55838" measuredCount="17" deficit="0"/>
+        <edgeRelation from="-52215" to="-57396" measuredCount="25" deficit="0"/>
+        <edgeRelation from="-52216" to="-52217" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-52216" to="-52559" measuredCount="102" deficit="0"/>
+        <edgeRelation from="-52227" to="-46786" measuredCount="59" deficit="0"/>
+        <edgeRelation from="-52227" to="-52228" measuredCount="119" deficit="0"/>
+        <edgeRelation from="-52227" to="-52561" measuredCount="24" deficit="0"/>
+        <edgeRelation from="-52560" to="-52228" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-52560" to="-52561" measuredCount="74" deficit="0"/>
+        <edgeRelation from="-52560" to="-56027" measuredCount="41" deficit="0"/>
+        <edgeRelation from="-55837" to="-46537" measuredCount="24" deficit="0"/>
+        <edgeRelation from="-55837" to="-52216" measuredCount="37" deficit="0"/>
+        <edgeRelation from="-55837" to="-55838" measuredCount="50" deficit="0"/>
+        <edgeRelation from="-56026" to="-46786" measuredCount="70" deficit="0"/>
+        <edgeRelation from="-56026" to="-52561" measuredCount="43" deficit="0"/>
+        <edgeRelation from="-56026" to="-56027" measuredCount="75" deficit="0"/>
+        <edgeRelation from="-57395" to="-46537" measuredCount="21" deficit="0"/>
+        <edgeRelation from="-57395" to="-52216" measuredCount="22" deficit="0"/>
+        <edgeRelation from="-57395" to="-57396" measuredCount="41" deficit="0"/>
+    </interval>
+</data>

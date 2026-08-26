@@ -1,12 +1,15 @@
+import type { CesiumCameraPresetId } from '../types/map'
+
 export interface IntersectionFocusOptions {
   force?: boolean
   duration?: number
   complete?: () => void
+  cameraPreset?: Exclude<CesiumCameraPresetId, 'overview'>
 }
 
 export interface IntersectionFocusTransaction {
   anchorId: string
-  cameraPreset: 'intersection'
+  cameraPreset: Exclude<CesiumCameraPresetId, 'overview'>
   viewport: {
     kind: 'center'
     center: [number, number]
@@ -26,7 +29,7 @@ export function createIntersectionFocusTransaction(
 ): IntersectionFocusTransaction {
   return {
     anchorId: `intersection:${intersectionId}`,
-    cameraPreset: 'intersection',
+    cameraPreset: options.cameraPreset ?? 'intersection',
     viewport: {
       kind: 'center',
       center: [...center],

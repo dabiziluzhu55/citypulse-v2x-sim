@@ -10,6 +10,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const manifest = JSON.parse(
   readFileSync(join(root, 'public/intersections/v3/edge-to-topology-segment.json'), 'utf8'),
 )
+const source = readFileSync(join(root, 'src/utils/edgeTopologySegments.ts'), 'utf8')
 
 function normalizeCongestionLevel(value) {
   if (value === 'slow' || value === 'congested' || value === 'severe' || value === 'free') return value
@@ -79,4 +80,10 @@ test('opposite directions can receive different congestion colors', () => {
   )
   assert.equal(levels[forward], 'severe')
   assert.equal(levels[reverse], 'slow')
+})
+
+test('batches missing-edge diagnostics instead of logging once per edge', () => {
+  assert.match(source, /pendingMissingEdges\.add\(edgeId\)/)
+  assert.match(source, /queueMicrotask\(flushMissingEdgeWarning\)/)
+  assert.doesNotMatch(source, /missing mapping for edge_id=/)
 })
