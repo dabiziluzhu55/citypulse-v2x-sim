@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, fields, is_dataclass
 from enum import Enum
 from typing import Any
 
@@ -14,7 +14,15 @@ class SnapshotSerializer:
         self._coordinate_converter = coordinate_converter
 
     def serialize(self, snapshot: SimulationSnapshot) -> dict[str, Any]:
-        payload = self._to_jsonable(snapshot)
+        # Avoid recursively converting the complete vehicle tuple here and
+        # converting it a second time in _serialize_vehicle below.
+        payload = {
+            descriptor.name: self._to_jsonable(
+                getattr(snapshot, descriptor.name)
+            )
+            for descriptor in fields(snapshot)
+            if descriptor.name != "vehicles"
+        }
         payload["vehicles"] = [
             self._serialize_vehicle(vehicle) for vehicle in snapshot.vehicles
         ]

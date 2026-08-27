@@ -1,4 +1,10 @@
 import type { DisturbanceTargetPayload, StartSimulationRequest } from '../types/simulation'
+import {
+  DEFAULT_SPEED_LIMIT_KMH,
+  MAX_SPEED_LIMIT_KMH,
+  MIN_SPEED_LIMIT_KMH,
+  isValidSpeedLimitKmh,
+} from '../constants/scenarioOptions.ts'
 import type { BackendControlMode } from '../constants/simulationOptions'
 import type { DisturbanceType } from '../types/scenario'
 import { resolveMajorEventVehicleCount } from './scenarioConfigMigration.ts'
@@ -31,6 +37,8 @@ export interface ScenarioDisturbanceInput {
   startSeconds?: number
   endSeconds?: number
   vehicleCount?: number
+  /** 前端输入单位为 km/h。 */
+  speedLimitKmh?: number
 }
 
 export function buildDisturbanceTargets(input: ScenarioPayloadInput): DisturbanceTargetPayload[] {
@@ -86,7 +94,19 @@ export function buildDisturbanceTargets(input: ScenarioPayloadInput): Disturbanc
           lane_ids: safeLaneClosureLaneIds(intersectionId),
         }
       }
-      if (event.eventType === 'speed_limit') return { event_type: 'speed_limit' as const, ...base, max_speed: 5 }
+      if (event.eventType === 'speed_limit') {
+        const speedLimitKmh = event.speedLimitKmh ?? DEFAULT_SPEED_LIMIT_KMH
+        if (!isValidSpeedLimitKmh(speedLimitKmh)) {
+          throw new Error(
+            `限速速度必须在 ${MIN_SPEED_LIMIT_KMH}-${MAX_SPEED_LIMIT_KMH} km/h 之间`,
+          )
+        }
+        return {
+          event_type: 'speed_limit' as const,
+          ...base,
+          max_speed: speedLimitKmh / 3.6,
+        }
+      }
       if (event.eventType === 'accident') return { event_type: 'accident' as const, ...base, position_ratio: 0.5 }
       const vehicleCount = resolveMajorEventVehicleCount(event.vehicleCount)
       if (event.eventType === 'major_event_opening') {

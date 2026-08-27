@@ -2,8 +2,8 @@ import { formatIntersectionLabel } from './intersectionLabels.ts'
 
 const SCENARIO_LABELS: Record<string, string> = {
   xiongan_20: '雄安20路口路网',
-  east_dense: '东部密集区场景',
-  west_dense: '西部密集区场景',
+  east_dense: '校园周边场景',
+  west_dense: '窄路密网片区场景',
 }
 
 const PERIOD_LABELS: Record<string, string> = {

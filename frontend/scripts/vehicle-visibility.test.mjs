@@ -1346,6 +1346,7 @@ test('paces Twin output while keeping source, viewport, and selected rosters sep
   assert.match(vehicleRendererSource, /recordSourceRoster\(context\.sequence/)
   assert.match(vehicleRendererSource, /!lanePose\s*&& this\.lanePoseResolver\?\.hasLane\(vehicle\.lane_id\)/)
   assert.doesNotMatch(vehicleRendererSource, /rejectedInsideDetailedLane[\s\S]{0,160}coversDetailedArea/)
+  assert.doesNotMatch(vehicleRendererSource, /samples = collisionAudit\.acceptedSamples/)
   assert.match(vehicleRendererSource, /sourceVehicleIds,/)
   assert.match(vehicleRendererSource, /viewportVehicleIds,/)
   assert.match(vehicleRendererSource, /selectedVehicleIds: visible\.map/)
@@ -1486,6 +1487,17 @@ test('uses a speed-aware outlier gate for same-lane positions', () => {
     0,
     11,
   ), false)
+  assert.equal(vehiclePoseDisplacementIsStable(
+    {
+      longitude: 116,
+      latitude: 39,
+      elapsedSeconds: 10,
+      speedMetersPerSecond: 10,
+    },
+    { longitude: 116.0001, latitude: 39 },
+    0,
+    11,
+  ), true)
 })
 
 test('keeps stop-boundary state diagnostic-only after a vehicle crosses it', () => {

@@ -420,7 +420,16 @@ def test_websocket_streams_from_queued_to_terminal(
         session_id, _ = redis_like_service.start(StartSimulationRequest(**_start_body()))
 
         def advance_later() -> None:
-            time.sleep(0.1)
+            # Wait until the WebSocket endpoint has subscribed so the QUEUED
+            # frame cannot be skipped by test-runner scheduling jitter.
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                with multi_manager._lock:
+                    # start() creates one metrics watcher subscription; the
+                    # second subscription belongs to the WebSocket endpoint.
+                    if len(multi_manager._subs.get(session_id, ())) >= 2:
+                        break
+                time.sleep(0.005)
             multi_manager.advance(session_id, "STARTING")
             time.sleep(0.05)
             multi_manager.advance(session_id, "RUNNING", progress=0.5)
@@ -514,8 +523,11 @@ def test_websocket_final_snapshot_waits_for_tripinfo_race(
                 (session_dir / "tripinfo.xml").write_text(
                     '<?xml version="1.0"?>\n'
                     "<tripinfos>\n"
-                    "  <tripinfo id='v1' depart='1' arrival='19' "
-                    "duration='12' waitingTime='3.5'/>\n"
+                    "  <tripinfo id='v1' vType='official_passenger' "
+                    "depart='1' arrival='19' duration='12' "
+                    "waitingTime='3.5' routeLength='1000'>\n"
+                    "    <emissions fuel_abs='74500'/>\n"
+                    "  </tripinfo>\n"
                     "</tripinfos>\n",
                     encoding="utf-8",
                 )

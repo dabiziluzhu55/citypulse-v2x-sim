@@ -150,8 +150,9 @@ const vehicleDisplayElapsedSeconds = ref<number | null>(null)
 const vehiclePresentationRevision = ref(0)
 const vehicleAuthoritativeHistoryRevision = ref(0)
 
-let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollTimer: ReturnType<typeof setTimeout> | null = null
 let pollAbortController: AbortController | null = null
+let pollInFlight = false
 let requestVersion = 0
 let initialized = false
 let playbackRateSamples: PlaybackRateSample[] = []
@@ -300,7 +301,7 @@ function applySnapshot(next: SimulationSnapshot) {
 
 function stopPolling() {
   if (pollTimer !== null) {
-    clearInterval(pollTimer)
+    clearTimeout(pollTimer)
     pollTimer = null
   }
   requestVersion += 1
@@ -315,9 +316,10 @@ async function pollOnce() {
     statusError.value = null
     return
   }
+  if (pollInFlight) return
 
-  const version = ++requestVersion
-  pollAbortController?.abort()
+  pollInFlight = true
+  const version = requestVersion
   const abortController = new AbortController()
   pollAbortController = abortController
   try {
@@ -354,22 +356,23 @@ async function pollOnce() {
     statusError.value = message
   } finally {
     if (pollAbortController === abortController) pollAbortController = null
+    pollInFlight = false
   }
+}
+
+function scheduleNextPoll() {
+  if (!sessionId.value || isTerminal(snapshot.value?.state) || pollTimer !== null) return
+  pollTimer = setTimeout(async () => {
+    pollTimer = null
+    await pollOnce()
+    scheduleNextPoll()
+  }, STATUS_POLL_INTERVAL_MS)
 }
 
 function startPolling() {
   stopPolling()
-  if (!sessionId.value) {
-    return
-  }
-  void pollOnce()
-  pollTimer = setInterval(() => {
-    if (isTerminal(snapshot.value?.state)) {
-      stopPolling()
-      return
-    }
-    void pollOnce()
-  }, STATUS_POLL_INTERVAL_MS)
+  if (!sessionId.value) return
+  void pollOnce().finally(scheduleNextPoll)
 }
 
 function bindSession(

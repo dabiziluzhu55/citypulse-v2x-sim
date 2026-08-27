@@ -166,8 +166,8 @@ test('describes changed event and clock windows in operator-facing terms', () =>
 
 test('formats scenario ids, intersections, and period-relative windows for operators', () => {
   assert.equal(formatScenarioPresetLabel('xiongan_20'), '雄安20路口路网')
-  assert.equal(formatScenarioPresetLabel('east_dense'), '东部密集区场景')
-  assert.equal(formatScenarioPresetLabel('west_dense'), '西部密集区场景')
+  assert.equal(formatScenarioPresetLabel('east_dense'), '校园周边场景')
+  assert.equal(formatScenarioPresetLabel('west_dense'), '窄路密网片区场景')
   assert.equal(formatIntersectionLabels(['demo_10', 'demo_2', 'demo_1', 'demo_2']), '路口1、路口2、路口10')
   assert.equal(formatSimulationWindow('morning_peak', 0, 900), '07:00-07:15')
   assert.equal(formatSimulationWindow('morning_peak', 300, 900), '07:05-07:20')

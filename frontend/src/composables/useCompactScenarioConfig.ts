@@ -1,6 +1,9 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import {
+  DEFAULT_SPEED_LIMIT_KMH,
   DISTURBANCE_EVENT_OPTIONS,
+  MAX_SPEED_LIMIT_KMH,
+  MIN_SPEED_LIMIT_KMH,
   SCENARIO_MODE_OPTIONS,
   SIMULATION_PERIOD_RANGES,
   SIMULATION_TIME_OPTIONS,
@@ -10,6 +13,7 @@ import {
   maximumSimulationEndTime,
   simulationTimeWindow,
   type ScenarioModeId,
+  isValidSpeedLimitKmh,
 } from '../constants/scenarioOptions'
 import {
   SIMULATION_SNAPSHOT_INTERVAL_MS,
@@ -125,6 +129,7 @@ export function buildSimulationPayload(
       startSeconds,
       endSeconds,
       vehicleCount: event.vehicle_count,
+      speedLimitKmh: event.max_speed_kmh,
     }
   })
   const period = resolvePeriod(config, periods)
@@ -306,6 +311,14 @@ export function useCompactScenarioConfig(
           : endTime
         const isMajorEvent = preset.eventType === 'major_event_opening'
           || preset.eventType === 'major_event_closing'
+        const isSpeedLimitEvent = preset.eventType === 'speed_limit'
+        if (
+          isSpeedLimitEvent
+          && value.max_speed_kmh !== undefined
+          && !isValidSpeedLimitKmh(value.max_speed_kmh)
+        ) {
+          throw new Error(`限速速度必须在 ${MIN_SPEED_LIMIT_KMH}-${MAX_SPEED_LIMIT_KMH} km/h 之间`)
+        }
         return {
           event_id: typeof value.event_id === 'string' ? value.event_id : `ui_import_${index + 1}`,
           preset_id: preset.value,
@@ -315,6 +328,11 @@ export function useCompactScenarioConfig(
           end_time: eventEndTime,
           ...(isMajorEvent ? {
             vehicle_count: resolveMajorEventVehicleCount(value.vehicle_count),
+          } : {}),
+          ...(isSpeedLimitEvent ? {
+            max_speed_kmh: isValidSpeedLimitKmh(value.max_speed_kmh)
+              ? value.max_speed_kmh
+              : DEFAULT_SPEED_LIMIT_KMH,
           } : {}),
         }
       })
@@ -334,6 +352,9 @@ export function useCompactScenarioConfig(
             ? { vehicle_count: DEFAULT_MAJOR_EVENT_VEHICLE_COUNT }
             : {}
         ),
+        ...(legacyPreset.eventType === 'speed_limit'
+          ? { max_speed_kmh: DEFAULT_SPEED_LIMIT_KMH }
+          : {}),
       }]
     }
 

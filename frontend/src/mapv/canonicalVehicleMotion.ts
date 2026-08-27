@@ -249,26 +249,38 @@ function vehicleStation(track: LaneTrack, vehicle: TrafficVehicleView): number |
       }
     }
   }
-  if (reliableLanePosition) return Math.max(0, Math.min(track.lengthMeters, lanePosition))
-  if (projection.error > track.widthMeters / 2 + 1.5) {
-    if (!networkSourceSha256 && vehicle.longitude != null && vehicle.latitude != null) {
-      let nearestIndex = 0
-      let nearestDistance = Number.POSITIVE_INFINITY
-      for (let index = 0; index < track.coordinates.length; index += 1) {
-        const candidate = geographicDistanceMeters(
-          track.coordinates[index],
-          [vehicle.longitude, vehicle.latitude],
-        )
-        if (candidate < nearestDistance) {
-          nearestDistance = candidate
-          nearestIndex = index
-        }
-      }
-      if (nearestDistance <= 15) return track.cumulativeMeters[nearestIndex]
-    }
-    return null
+  const projectedStation = Math.max(0, Math.min(track.lengthMeters, projection.station))
+  const reportedStation = Math.max(0, Math.min(track.lengthMeters, lanePosition))
+  if (reliableLanePosition && projection.error > track.widthMeters / 2 + 1.5) {
+    // A valid SUMO lane station remains authoritative for lateral snapping.
+    // The projection fallback below is only for longitudinal cache lag.
+    return reportedStation
   }
-  return projection.station
+  if (projection.error <= track.widthMeters / 2 + 1.5) {
+    if (!reliableLanePosition) return projectedStation
+
+    // lane_position used to be refreshed less often than x/y. Prefer the
+    // current source projection whenever the two sources are not coherent.
+    return Math.abs(reportedStation - projectedStation) <= 2
+      ? reportedStation
+      : projectedStation
+  }
+  if (!networkSourceSha256 && vehicle.longitude != null && vehicle.latitude != null) {
+    let nearestIndex = 0
+    let nearestDistance = Number.POSITIVE_INFINITY
+    for (let index = 0; index < track.coordinates.length; index += 1) {
+      const candidate = geographicDistanceMeters(
+        track.coordinates[index],
+        [vehicle.longitude, vehicle.latitude],
+      )
+      if (candidate < nearestDistance) {
+        nearestDistance = candidate
+        nearestIndex = index
+      }
+    }
+    if (nearestDistance <= 15) return track.cumulativeMeters[nearestIndex]
+  }
+  return null
 }
 
 function sampleTrack(track: LaneTrack, stationMeters: number): CanonicalVehicleInterpolation {
@@ -311,8 +323,25 @@ function segmentCacheKey(left: TrafficVehicleView, right: TrafficVehicleView): s
   ].join('|')
 }
 
-function connectionCandidates(leftLaneId: string, rightLaneId: string): VehicleMotionConnectionIndexEntry[] {
-  return connectionsByLanePair.get(lanePairKey(leftLaneId, rightLaneId)) ?? []
+function connectionCandidates(
+  leftLaneId: string,
+  rightLaneId: string,
+): VehicleMotionConnectionIndexEntry[] {
+  const candidates = connectionsByLanePair.get(
+    lanePairKey(leftLaneId, rightLaneId),
+  ) ?? []
+
+  if (candidates.length <= 1) return candidates
+
+  // 当车辆已经进入 SUMO 内部车道时，优先选择从该内部车道
+  // 正式开始的连接，避免同时命中“完整连接”和“内部子连接”。
+  const exactFromCandidates = candidates.filter(
+    (candidate) => candidate.fromLaneId === leftLaneId,
+  )
+
+  return exactFromCandidates.length > 0
+    ? exactFromCandidates
+    : candidates
 }
 
 function compileSegment(left: TrafficVehicleView, right: TrafficVehicleView): CompiledCanonicalSegment | null {
@@ -461,13 +490,12 @@ function authoritativeEndpoint(vehicle: TrafficVehicleView): CanonicalVehicleInt
     const sampled = sampleTrack(track, station)
     return {
       ...sampled,
-      longitude: vehicle.longitude ?? sampled.longitude,
-      latitude: vehicle.latitude ?? sampled.latitude,
       sourceX: vehicle.x,
       sourceY: vehicle.y,
       segmentId: `endpoint:${vehicle.vehicle_id}:${vehicle.lane_id}:${station.toFixed(2)}`,
       routeEvidence: 'authoritative_endpoint',
       source: 'authoritative_endpoint',
+      resolved: true,
     }
   }
   return {

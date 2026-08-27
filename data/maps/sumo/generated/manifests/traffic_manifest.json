@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "scope": "global",
-  "source": "/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/official/traffic/official_traffic_demands.json",
+  "source": "E:\\city\\citypulse-v2x-sim\\data\\maps\\sumo\\official\\traffic\\official_traffic_demands.json",
   "unit": "pcu",
   "interval_seconds": 900,
   "intersection_ids": [
@@ -98,8 +98,8 @@
       "truck": 0.05
     }
   },
-  "vehicle_profile_source": "/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/official/traffic/vehicle_profiles.json",
-  "traffic_generation_policy_source": "/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/official/traffic/traffic_generation_policy.json",
+  "vehicle_profile_source": "E:\\city\\citypulse-v2x-sim\\data\\maps\\sumo\\official\\traffic\\vehicle_profiles.json",
+  "traffic_generation_policy_source": "E:\\city\\citypulse-v2x-sim\\data\\maps\\sumo\\official\\traffic\\traffic_generation_policy.json",
   "vehicle_profile_schema_version": 2,
   "vehicle_profiles": {
     "bus": {

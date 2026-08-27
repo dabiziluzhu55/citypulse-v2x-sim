@@ -10,6 +10,8 @@ export interface ScenarioDraftDisturbanceEvent {
   start_time: string
   end_time: string
   vehicle_count?: number
+  /** 道路限速事件使用，单位 km/h。 */
+  max_speed_kmh?: number
 }
 
 const disturbanceEvents = ref<ScenarioDraftDisturbanceEvent[]>([])

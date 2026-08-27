@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  DEFAULT_SPEED_LIMIT_KMH,
   DISTURBANCE_EVENT_OPTIONS,
+  MAX_SPEED_LIMIT_KMH,
+  MIN_SPEED_LIMIT_KMH,
   SCENARIO_MODE_OPTIONS,
   SIMULATION_PERIOD_RANGES,
   TRAFFIC_FLOW_MODE_OPTIONS,
   clockTimeToMinutes,
   defaultSimulationTimeWindow,
+  isValidSpeedLimitKmh,
   maximumSimulationEndTime,
   minutesToClockTime,
   type DisturbancePresetId,
@@ -150,12 +154,14 @@ const disturbanceDraft = ref<{
   startTime: string
   endTime: string
   vehicleCount: number
+  speedLimitKmh: number
 }>({
   presetId: DISTURBANCE_EVENT_OPTIONS[0].value,
   intersectionIds: [],
   startTime: SIMULATION_PERIOD_RANGES.morning_peak.start,
   endTime: defaultSimulationTimeWindow('morning_peak').end,
   vehicleCount: DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
+  speedLimitKmh: DEFAULT_SPEED_LIMIT_KMH,
 })
 const scenarioOptions = computed(() => SCENARIO_MODE_OPTIONS.map((item) => ({
   label: item.label,
@@ -202,6 +208,11 @@ const isMajorDisturbance = computed(() => (
   selectedDisturbanceOption.value?.eventType === 'major_event_opening'
   || selectedDisturbanceOption.value?.eventType === 'major_event_closing'
 ))
+
+const isSpeedLimitDisturbance = computed(() => (
+  selectedDisturbanceOption.value?.eventType === 'speed_limit'
+))
+
 const availableDisturbanceEventOptions = computed(() => DISTURBANCE_EVENT_OPTIONS.map((option) => ({
   ...option,
   disabled: !eventTypes.value.includes(option.eventType),
@@ -490,6 +501,7 @@ function openDisturbanceModal(event?: CompactDisturbanceEvent): void {
     startTime: event?.start_time ?? config.value.simulation_start_time,
     endTime: event?.end_time ?? config.value.simulation_end_time,
     vehicleCount: event?.vehicle_count ?? DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
+    speedLimitKmh: event?.max_speed_kmh ?? DEFAULT_SPEED_LIMIT_KMH,
   }
   disturbanceFormError.value = ''
   disturbanceModalOpen.value = true
@@ -523,6 +535,14 @@ function selectDisturbanceType(presetId: DisturbancePresetId): void {
       || disturbanceDraft.value.vehicleCount > MAX_MAJOR_EVENT_VEHICLE_COUNT
     )
   ) disturbanceDraft.value.vehicleCount = DEFAULT_MAJOR_EVENT_VEHICLE_COUNT
+
+  if (
+    option.eventType === 'speed_limit'
+    && !isValidSpeedLimitKmh(disturbanceDraft.value.speedLimitKmh)
+  ) {
+    disturbanceDraft.value.speedLimitKmh = DEFAULT_SPEED_LIMIT_KMH
+  }
+
   disturbanceFormError.value = ''
 }
 
@@ -559,6 +579,16 @@ function saveDisturbanceEvent(): void {
     disturbanceFormError.value = `活动车辆数必须为 ${MIN_MAJOR_EVENT_VEHICLE_COUNT}-${MAX_MAJOR_EVENT_VEHICLE_COUNT} 的整数`
     return
   }
+
+  if (
+    isSpeedLimitDisturbance.value
+    && !isValidSpeedLimitKmh(disturbanceDraft.value.speedLimitKmh)
+  ) {
+    disturbanceFormError.value =
+      `限速速度必须在 ${MIN_SPEED_LIMIT_KMH}-${MAX_SPEED_LIMIT_KMH} km/h 之间`
+    return
+  }
+
   const outerStart = clockTimeToMinutes(config.value.simulation_start_time)
   const outerEnd = clockTimeToMinutes(config.value.simulation_end_time)
   const eventStart = clockTimeToMinutes(disturbanceDraft.value.startTime)
@@ -583,6 +613,9 @@ function saveDisturbanceEvent(): void {
     start_time: disturbanceDraft.value.startTime,
     end_time: disturbanceDraft.value.endTime,
     ...(isMajorDisturbance.value ? { vehicle_count: disturbanceDraft.value.vehicleCount } : {}),
+    ...(isSpeedLimitDisturbance.value
+      ? { max_speed_kmh: disturbanceDraft.value.speedLimitKmh }
+      : {}),
   }
   const existingIndex = config.value.disturbance_events.findIndex((event) => event.event_id === eventId)
   const disturbanceEvents = config.value.disturbance_events.map((event) => ({
@@ -622,6 +655,7 @@ function removeDisturbanceEvent(eventId: string): void {
       startTime: config.value.simulation_start_time,
       endTime: config.value.simulation_end_time,
       vehicleCount: DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
+      speedLimitKmh: DEFAULT_SPEED_LIMIT_KMH,
     }
   }
 }
@@ -1074,7 +1108,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
             >
               <button type="button" @click="openDisturbanceModal(event)">
                 <strong>{{ disturbanceEventLabel(event) }}</strong>
-                <small>{{ event.start_time }}-{{ event.end_time }} · {{ event.intersection_ids.map(formatIntersectionLabel).join('、') }}<template v-if="event.vehicle_count"> · 每路口 {{ event.vehicle_count }} 辆</template></small>
+                <small>
+                  {{ event.start_time }}-{{ event.end_time }}
+                  · {{ event.intersection_ids.map(formatIntersectionLabel).join('、') }}
+                  <template v-if="event.vehicle_count != null">
+                    · 每路口 {{ event.vehicle_count }} 辆
+                  </template>
+                  <template v-if="event.max_speed_kmh != null">
+                    · 限速 {{ event.max_speed_kmh }} km/h
+                  </template>
+                </small>
               </button>
               <button type="button" aria-label="删除扰动事件" title="删除" @click="removeDisturbanceEvent(event.event_id)">×</button>
             </div>
@@ -1124,6 +1167,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
                 v-model="disturbanceDraft.vehicleCount"
                 :min="MIN_MAJOR_EVENT_VEHICLE_COUNT"
                 :max="MAX_MAJOR_EVENT_VEHICLE_COUNT"
+                :step="1"
+                :precision="0"
+                controls-position="right"
+              />
+            </label>
+            <label
+              v-if="isSpeedLimitDisturbance"
+              class="disturbance-modal__vehicle-count"
+            >
+              <span>限速速度（km/h）</span>
+              <el-input-number
+                v-model="disturbanceDraft.speedLimitKmh"
+                :min="MIN_SPEED_LIMIT_KMH"
+                :max="MAX_SPEED_LIMIT_KMH"
                 :step="1"
                 :precision="0"
                 controls-position="right"
