@@ -48,11 +48,12 @@ class ExporterManager:
         """Sensor specs handed to an exporter of ``kind``.
 
         Most kinds consume the config sensors of their own ``type``; ``kitti``
-        is a consumer kind — no sensor has ``type == "kitti"``, it spawns the
-        config's rgb_camera + lidar specs (renamed internally by the
-        exporter, see ``data_export.exporters.kitti``).
+        and ``stream`` are consumer kinds — no sensor has ``type == "kitti"``
+        / ``"stream"``, they spawn the config's rgb_camera + lidar specs
+        (renamed internally by the exporters, see
+        ``data_export.exporters.kitti`` / ``stream``).
         """
-        if kind == "kitti":
+        if kind in ("kitti", "stream"):
             return [s for s in self._config.sensors
                     if s.type in ("rgb_camera", "lidar")]
         return by_type.get(kind, [])
@@ -70,9 +71,9 @@ class ExporterManager:
                 raise ExportConfigError(
                     f"unknown exporter kind '{kind}' "
                     f"(available: {', '.join(sorted(EXPORTER_REGISTRY))})")
-            if kind not in by_type and kind != "kitti":
-                # kitti 是消费型 kind:没有 type=="kitti" 的传感器,它消费
-                # 配置里的相机+lidar specs(见 _sensor_specs_for)。
+            if kind not in by_type and kind not in ("kitti", "stream"):
+                # kitti/stream 是消费型 kind:没有 type==kind 的传感器,它们
+                # 消费配置里的相机+lidar specs(见 _sensor_specs_for)。
                 self._ctx.logger.warning(
                     "[export] kind '%s' selected but the config has no "
                     "sensors of that type — nothing to do for it", kind)

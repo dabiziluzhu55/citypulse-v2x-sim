@@ -595,6 +595,122 @@ def _check_parallel_writers() -> None:
     assert ms2.queue.qsize() == 1
 
 
+def _check_stream() -> None:
+    """Real-time stream exporter: JPEG/lidar encoding round-trips plus a
+    ZeroMQ PUB loopback (meta + camera + lidar messages).  Skipped with a
+    warning when pyzmq or Pillow is not installed — never a failure."""
+    try:
+        import zmq  # noqa: F401
+    except ImportError:
+        print("  ⚠ stream check skipped: pyzmq not installed "
+              "(pip install pyzmq)")
+        return
+    try:
+        from PIL import Image as PILImage
+    except ImportError:
+        print("  ⚠ stream check skipped: Pillow not installed "
+              "(pip install pillow)")
+        return
+    import io
+    import zlib
+    from .exporters.stream import (STREAM_CODECS, _StreamPub, stream_codec,
+                                   estimate_stream_bytes_per_sec)
+
+    # Codec registry integrity: the built-in types are registered with the
+    # right capability flags.
+    assert set(STREAM_CODECS) >= {"rgb_camera", "lidar"}, \
+        f"stream codecs not registered: {sorted(STREAM_CODECS)}"
+    assert STREAM_CODECS["rgb_camera"].calibration is True
+    assert STREAM_CODECS["rgb_camera"].needs_pillow is True
+    assert STREAM_CODECS["lidar"].calibration is False
+
+    # Duck-typed sensor data (camera BGRA frame + lidar point cloud).
+    class _FakeLidar:
+        frame, timestamp = 7, 0.35
+
+        def __len__(self) -> int:
+            return 1234
+
+        @property
+        def raw_data(self) -> bytes:
+            return b"".join(struct.pack("<4f", float(i), 0.0, 0.0, 0.5)
+                            for i in range(1234))
+
+    class _FakeImage:
+        frame, timestamp = 7, 0.35
+        width, height, fov = 320, 240, 90.0
+
+        @property
+        def raw_data(self) -> bytes:
+            return bytes(320 * 240 * 4)  # BGRA8
+
+    # Encoding round-trips THROUGH the registered codecs (the exporter
+    # delegates to these, so this exercises the actual encode path).
+    lidar_meta, lidar_payload = STREAM_CODECS["lidar"].encode(
+        _FakeLidar(), None, SimpleNamespace(lidar_compress=True))
+    assert lidar_meta["format"] == "lidar_f32" and lidar_meta["compressed"]
+    assert lidar_meta["points"] == 1234
+    assert len(zlib.decompress(lidar_payload)) == 1234 * 16
+    rgb_meta, jpeg = STREAM_CODECS["rgb_camera"].encode(
+        _FakeImage(), None, SimpleNamespace(jpeg_quality=85))
+    assert rgb_meta["format"] == "jpeg" and rgb_meta["width"] == 320
+    assert PILImage.open(io.BytesIO(jpeg)).size == (320, 240)
+
+    # Extensibility: registering a third codec is all a new sensor type
+    # needs (no StreamExporter / manager / schema changes).  Register a fake
+    # type, exercise it, then remove it so the registry is unchanged.
+    @stream_codec("fake_stream_type", calibration=True)
+    def _encode_fake(data, spec, sconf):  # noqa: F811 (unused name on purpose)
+        return {"kind": "fake_stream_type", "format": "raw"}, b"FAKE"
+    try:
+        assert "fake_stream_type" in STREAM_CODECS
+        fmeta, fpay = STREAM_CODECS["fake_stream_type"].encode(None, None, None)
+        assert fmeta["format"] == "raw" and fpay == b"FAKE"
+        assert STREAM_CODECS["fake_stream_type"].calibration is True
+    finally:
+        del STREAM_CODECS["fake_stream_type"]
+    assert "fake_stream_type" not in STREAM_CODECS
+
+    # ZMQ loopback over ipc (no port conflicts).
+    addr = (f"ipc://{tempfile.gettempdir()}"
+            f"/citypulse_selfcheck_stream_{os.getpid()}.sock")
+    sub = zmq.Context().socket(zmq.SUB)
+    sub.setsockopt(zmq.SUBSCRIBE, b"")
+    sub.connect(addr)
+    pub = _StreamPub.bind(addr)
+    try:
+        pub.send_frame("meta", {"kind": "meta", "sensor": "meta"},
+                       b'{"map": "W"}')
+        pub.send_frame("cam_x", {"kind": "rgb_camera", "sensor": "cam_x",
+                                 "seq": 1, "world_frame": 7,
+                                 "sim_time": 0.35, "format": "jpeg"}, jpeg)
+        pub.send_frame("lidar_x", {"kind": "lidar", "sensor": "lidar_x",
+                                   "seq": 1, "world_frame": 7,
+                                   "sim_time": 0.35, "format": "lidar_f32",
+                                   "compressed": True,
+                                   "points": 1234}, lidar_payload)
+        topics = set()
+        for _ in range(3):
+            topic, meta_b, pl = sub.recv_multipart()
+            topics.add(topic)
+            m = json.loads(meta_b)
+            if topic == b"cam_x":
+                assert len(pl) == len(jpeg)
+            elif topic == b"lidar_x":
+                assert len(zlib.decompress(pl)) == 1234 * 16
+        assert topics == {b"meta", b"cam_x", b"lidar_x"}, topics
+    finally:
+        pub.close()
+        sub.close()
+
+    # Bandwidth estimate sanity: 3 cameras 1920×1080 @20fps ≈ 25 MB/s.
+    spec = SimpleNamespace(type="rgb_camera", attributes={
+        "image_size_x": 1920, "image_size_y": 1080, "sensor_tick": 0.05})
+    bps = estimate_stream_bytes_per_sec([spec, spec, spec])
+    expected = int(1920 * 1080 * 0.2 * 20.0 * 3)
+    assert abs(bps - expected) < expected * 0.01, (bps, expected)
+
+
 def _check_lifecycle() -> None:
     """Drive the full exporter lifecycle with stubs and assert the files."""
     _install_carla_stub()
@@ -821,6 +937,7 @@ def main(argv=None) -> int:
         ("plan lidar points", _check_plan_lidar_points),
         ("bin -> pcd", _check_bin2pcd),
         ("parallel writers (order/drop)", _check_parallel_writers),
+        ("stream exporter (ZMQ loopback)", _check_stream),
         ("full lifecycle (stubs)", _check_lifecycle),
     ]
     print("data_export self-check (no CARLA needed)")

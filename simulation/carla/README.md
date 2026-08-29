@@ -659,6 +659,62 @@ stateDiagram-v2
 - **语义说明**：暂停是在采集侧门控——停止写盘与编码，但 CARLA server 每 tick 仍会渲染传感器。若要省 server 渲染开销，只能 stop（销毁传感器）。
 - 控制脚本零依赖（仅标准库），可在无 CARLA/SUMO 的机器上运行。
 
+#### 7.7 实时流导出（stream，ZeroMQ PUB/SUB）
+
+`stream` 导出器把相机/激光雷达帧**实时**发布到 ZeroMQ PUB 通道，供事件识别等下游信息处理系统直接消费（对应车路协同架构中的"路侧传感器 → 边缘计算/事件识别"数据通路）。**不落盘**，与文件导出相互独立、可同时启用。
+
+```bash
+# 联仿端（stream 作为导出 kind，配置见下）
+python run_cosimulation.py --sumocfg … --carla-map WestZone \
+    --export stream
+
+# 消费端（另一终端；可先于联仿启动——SUB 会自动等待 PUB）
+python stream_consumer.py
+python stream_consumer.py --sensors demo_19,lidar_01   # 只订阅部分传感器
+python stream_consumer.py --save-dir ./recv            # 落盘验证（JPEG + KITTI .bin）
+```
+
+**配置**（`output.stream` 块，全部可选）：
+
+```json
+{
+  "version": 1,
+  "output": {
+    "fps": 30, "export_dir": "../../data/exports", "write_threads": 2,
+    "stream": {
+      "bind": "tcp://127.0.0.1:19091",
+      "jpeg_quality": 85,
+      "lidar_compress": true
+    }
+  },
+  "sensors": [ /* 相机与 lidar 点位，与文件导出共用 */ ]
+}
+```
+
+- `bind`：`tcp://<host>:<port>`（跨机；默认仅本机 127.0.0.1:19091）或 `ipc://<path>`（同机）。端口/路径冲突时 stream 导出器被禁用、仿真继续。
+- `jpeg_quality`：相机 JPEG 质量 1-100（默认 85）。**有损压缩仅适合 RGB 外观数据**——语义分割/深度等真值不得走 JPEG（与 CARLA 官方建议一致）。
+- `lidar_compress`：lidar 点云 zlib 压缩（默认开，无损）。未压缩时 16 B/点 f32。
+
+**线协议**（3-part 消息 `[topic, meta_json, payload]`）：topic = 传感器配置名；帧头含 `kind/sensor/seq/world_frame/sim_time/map/run_id`；相机 payload 为 JPEG，lidar payload 为 x/y/z+intensity f32（16 B/点，点序保留，KITTI .bin 兼容）。setup 时先发一条 `meta` 消息（运行级元数据：map/run_id/step_length/每传感器标定与位姿），订阅方可据此初始化。协议细节见 `data_export/exporters/stream.py` 模块 docstring。
+
+**语义约定**（下游必须遵守）：
+
+- **按 sim_time 消费**：帧由仿真 tick 驱动，wall-clock 帧率 = 1/step_length × rt（rt 为实时倍率）。事件识别延迟以**仿真秒**计量，不得假设恒定 wall-clock fps。
+- **丢帧有据可查**：发送侧有界队列满时丢**最新**帧（drop-newest），消息头 `seq` 跳号即丢帧证据；writer 并发完成导致**乱序到达**属正常（消费端示例已正确区分乱序与丢帧）。
+- **流中断自动恢复**：ZMQ SUB 自动重连；段重启后 `run_id` 变化、`seq` 重新编号。
+- **启动期丢帧**：订阅方在 PUB 绑定后 ~1s 内加入可能错过开头的 meta/帧（slow-joiner），属预期，靠 `seq` 检测。
+
+**依赖**：`pyzmq`（必需）、`Pillow`（由需要它的 codec 声明——缺省时 `rgb_camera` 类型被跳过、其余照常流）。两者均为可选导入——`selfcheck` 在缺失时跳过 stream 检查项、不报错。`--check-env` 在有 stream 配置时输出实时带宽估算（按各类型 codec 的估算钩子汇总）。
+
+**扩展新数据类型**：stream 用 **codec 注册表**把"传感器类型 → 编码方式"解耦（与 `@register` 同构），新增类型**无需改 `StreamExporter` / `manager` / 配置 schema**，只需：
+1. `data_export/config.py` 的 `BLUEPRINTS` 加 kind → blueprint id（相机类复用 `_CAMERA_PARAMS` 校验）
+2. 注册一个 `@stream_codec(...)` 编码器：签名 `encode(data, spec, sconf) -> (meta_extra, payload)`，并用 `calibration`（meta 附带标定）、`needs_pillow`、`estimate_bytes_per_sec`（check-env 带宽估算）声明能力
+3. 若 codec 写在独立模块，在 `data_export/exporters/__init__.py` 加一行 import
+
+   例（semantic_segmentation，语义真值须无损、不得用 JPEG）：`@stream_codec("semantic_segmentation", calibration=True)` 内以 PNG 编码。
+
+**性能**：1080p 相机 JPEG q85 ≈ 3-8 MB/s/台（20fps），3 台 WestZone 场景约 9-24 MB/s，千兆网余量充足；编码+发送在 writer 线程池执行，仿真 tick 零阻塞。多传感器并发发送经锁串行化，不产生消息损坏。
+
 ---
 
 ## 裁剪算法

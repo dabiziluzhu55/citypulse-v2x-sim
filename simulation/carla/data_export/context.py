@@ -24,6 +24,7 @@ class ExportContext:
     frame_registry: Any             # FrameRegistry
     logger: Any                     # logging.Logger
     write_threads: int = 2          # parallel encoder workers per sensor
+    export_config: Any = None       # validated ExportConfig (read by stream etc.)
 
 
 class FrameRegistry:

@@ -32,7 +32,7 @@ carla/
 │   ├── context.py              #   ExportContext + FrameRegistry（按 tick 索引）
 │   ├── output.py               #   输出目录布局 + JSONL/原子写
 │   ├── selfcheck.py            #   离线自检（无需 CARLA 即可运行）
-│   └── exporters/               #   内置导出器：rgb_camera / lidar / kitti / manifest
+│   └── exporters/               #   内置导出器：rgb_camera / lidar / kitti / stream / manifest
 │
 ├── config/                     # 配置目录
 │   ├── toolchain.json          #   SUMO/CARLA 环境路径统一配置
@@ -148,7 +148,11 @@ teardown → 数据导出器先停、manifest 最后 → meta.json（原子写�
 2. 在 `exporters/__init__.py` 的 import 列表加一行；
 3. 在导出配置的 `sensors[]` 中用 `"type": "your_kind"` 引用。
 
-`kind` 同时是配置字段值；`BLUEPRINTS` 映射表（`config.py`）负责 kind → CARLA blueprint id（`rgb_camera → sensor.camera.rgb`、`lidar → sensor.lidar.ray_cast`），新增传感器类型只需扩展该映射。已内置四种导出器：`rgb_camera`（PNG 帧 + calibration.json）、`lidar`（PLY 点云）、`kitti`（KITTI 布局数据集）、`manifest`（运行级索引，有任一导出器活跃时自动附带）。`kitti` 是"消费型"导出器：没有自己的传感器，而是把配置中的 rgb_camera + lidar 规格改为前缀 `kitti_` 后生成副本。
+`kind` 同时是配置字段值；`BLUEPRINTS` 映射表（`config.py`）负责 kind → CARLA blueprint id（`rgb_camera → sensor.camera.rgb`、`lidar → sensor.lidar.ray_cast`），新增传感器类型只需扩展该映射。已内置五种导出器：`rgb_camera`（PNG 帧 + calibration.json）、`lidar`（PLY 点云）、`kitti`（KITTI 布局数据集）、`stream`（实时 ZeroMQ 发布，见下）、`manifest`（运行级索引，有任一导出器活跃时自动附带）。`kitti` 与 `stream` 是"消费型"导出器：没有自己的传感器，而是把配置中的 rgb_camera + lidar 规格改为前缀 `kitti_`/`stream_` 后生成副本（互不冲突、可与文件导出器并存）。
+
+#### 实时流导出（stream）
+
+`stream` 导出器将相机/激光雷达帧经 **ZeroMQ PUB/SUB** 实时发布（对应车路协同架构的"路侧传感器 → 边缘计算/事件识别"数据通路），不落盘。发送挂在 writer 线程的 save 钩子上（复用线程池与 drop-newest 背压），仿真 tick 零阻塞；多传感器并发发送经 `_StreamPub` 内部锁串行化（ZMQ socket 非线程安全，无锁会消息交错损坏）。线协议为 3-part 消息 `[topic, meta_json, payload]`，setup 时先发 `meta`（运行级元数据 + 每传感器标定/位姿）；相机默认 JPEG（Pillow，有损仅限 RGB 外观数据）、lidar 默认 zlib 压缩（无损，16 B/点 f32、点序保留、KITTI .bin 兼容）。配置在 `output.stream` 块（`bind`/`jpeg_quality`/`lidar_compress`），依赖 pyzmq + Pillow（可选导入，缺失时降级或跳过）。语义约定：下游按 `sim_time` 消费（帧由仿真 tick 驱动，wall-clock 帧率 = 1/step_length × rt）、`seq` 跳号即丢帧证据、乱序到达属正常（writer 并发完成）。编码方式经 **codec 注册表**解耦（`STREAM_CODECS` + `@stream_codec`，与 `@register` 同构）：新增数据类型只需 `BLUEPRINTS` 加映射 + 注册 codec（可声明 `calibration`/`needs_pillow`/`estimate_bytes_per_sec`），`StreamExporter`/`manager`/schema 零改动。参考消费端 `stream_consumer.py`（自动等待/重连、丢帧检测、JPEG/.bin 落盘验证）。
 
 #### 线程模型与性能
 

@@ -87,6 +87,10 @@ class SensorSpec:
     note: str = ""                  # alignment note (effective fps etc.)
 
 
+# Default ZeroMQ bind address for the stream exporter (localhost only).
+DEFAULT_STREAM_BIND = "tcp://127.0.0.1:19091"
+
+
 @dataclass
 class ExportConfig:
     """Validated export configuration."""
@@ -96,6 +100,7 @@ class ExportConfig:
     output_fps: float
     output_dir: str
     write_threads: int = 2  # parallel encoder workers per sensor (1 = single-threaded)
+    stream: Dict[str, Any] = field(default_factory=dict)  # output.stream block (see _validate_stream)
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +193,34 @@ def validate_sensor_entry(entry: Any, idx: int, output_fps: float,
     return SensorSpec(name=name, type=stype,
                       blueprint=BLUEPRINTS[stype], transform=transform,
                       params=params)
+
+
+def _validate_stream(stream_raw: Any) -> Dict[str, Any]:
+    """Validate the optional ``output.stream`` block of an export config.
+
+    Recognised keys (all optional)::
+
+        {"bind": "tcp://127.0.0.1:19091",   # PUB bind address (tcp:// or ipc://)
+         "jpeg_quality": 85,                 # camera JPEG quality, 1-100
+         "lidar_compress": true}             # zlib-compress lidar payloads
+
+    Returns the validated block (defaults filled in).
+    """
+    if not isinstance(stream_raw, dict):
+        raise ExportConfigError("output.stream: must be an object")
+    bind = stream_raw.get("bind", DEFAULT_STREAM_BIND)
+    if not isinstance(bind, str) or not bind.strip():
+        raise ExportConfigError("output.stream.bind: non-empty string required")
+    if not (bind.startswith("tcp://") or bind.startswith("ipc://")):
+        raise ExportConfigError(
+            "output.stream.bind: must start with 'tcp://' or 'ipc://', "
+            f"got {bind!r}")
+    return {
+        "bind": bind.strip(),
+        "jpeg_quality": _check_param(stream_raw, "jpeg_quality", 1.0, 100.0,
+                                     True, 85, "output.stream"),
+        "lidar_compress": bool(stream_raw.get("lidar_compress", True)),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +372,8 @@ def load_export_config(path: str, step_length: float = 0.05) -> ExportConfig:
         raise ExportConfigError("output.export_dir: non-empty string required")
     # 每传感器并行编码 worker 数(多核服务器提升硬件利用率;1 = 单线程)
     write_threads = _check_param(output, "write_threads", 1.0, 16.0, True, 2, "output")
+    # 实时流导出器配置(output.stream,可选;无 stream 配置时导出器使用默认值)
+    stream = _validate_stream(output.get("stream", {}))
 
     sensors_raw = doc.get("sensors", [])
     if not isinstance(sensors_raw, list):
@@ -355,15 +390,18 @@ def load_export_config(path: str, step_length: float = 0.05) -> ExportConfig:
 
     return ExportConfig(version=version, sensors=sensors,
                         output_fps=output_fps, output_dir=output_dir,
-                        write_threads=write_threads)
+                        write_threads=write_threads, stream=stream)
 
 
 def export_config_to_dict(cfg: ExportConfig) -> Dict[str, Any]:
     """Serialise a resolved config (used for the run_config.json copy)."""
+    output = {"fps": cfg.output_fps, "export_dir": cfg.output_dir,
+              "write_threads": cfg.write_threads}
+    if cfg.stream:
+        output["stream"] = dict(cfg.stream)
     return {
         "version": cfg.version,
-        "output": {"fps": cfg.output_fps, "export_dir": cfg.output_dir,
-                   "write_threads": cfg.write_threads},
+        "output": output,
         "sensors": [
             {"name": s.name, "type": s.type, "blueprint": s.blueprint,
              "transform": dict(s.transform), "attributes": dict(s.attributes),

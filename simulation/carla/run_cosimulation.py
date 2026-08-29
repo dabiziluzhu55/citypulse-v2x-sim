@@ -559,6 +559,17 @@ class CoSimulationBridge:
                               f"~{est / 1e9:.2f} GB estimated per 10 min")
                 except OSError as exc:
                     print(f"  ⚠ disk check failed: {exc}")
+                # Stream bandwidth estimate (only when output.stream is set)
+                if cfg.stream:
+                    try:
+                        from data_export.exporters.stream import \
+                            estimate_stream_bytes_per_sec
+                        bps = estimate_stream_bytes_per_sec(cfg.sensors)
+                        print(f"  stream: bind={cfg.stream.get('bind')} "
+                              f"~{bps / 1e6:.1f} MB/s estimated "
+                              f"(JPEG camera + zlib lidar)")
+                    except Exception as exc2:
+                        print(f"  ⚠ stream estimate unavailable: {exc2}")
                 # fps alignment note
                 from data_export import effective_fps
                 print(f"  步长: {step_length:g}s")
@@ -1064,6 +1075,7 @@ class CoSimulationBridge:
             frame_registry=FrameRegistry(self._step_length),
             logger=logger,
             write_threads=cfg.write_threads,
+            export_config=cfg,
         )
         try:
             manager = ExporterManager(cfg, ctx, kinds=kinds)
