@@ -11,7 +11,9 @@ and the files written by ``spectator_coords.py --save`` share one schema::
         {"name": "cam_01", "type": "rgb_camera",
          "transform": {"x": ..., "y": ..., "z": ...,
                        "pitch": ..., "yaw": ..., "roll": ...},
-         "width": 1920, "height": 1080, "fov": 90.0, "fps": 30},
+         "width": 1920, "height": 1080, "fov": 90.0, "fps": 30,
+         "write_threads": 6},   # optional per-sensor writer workers (1-16,
+                                # absent = DEFAULT_WRITE_THREADS)
         {"name": "lidar_01", "type": "lidar",
          "transform": {...},
          "channels": 32, "range": 80.0, "points_per_second": 500000,
@@ -56,6 +58,11 @@ CONFIG_VERSION = 1
 # are treated as templates/examples and excluded from name resolution.
 EXPORT_CONFIG_DIR = "config/export_configs"
 
+# Parallel encoder workers per sensor when sensors[i].write_threads is unset
+# (0 = inherit this default).  The old top-level ``output.write_threads`` was
+# removed — the per-sensor key is the only knob now.
+DEFAULT_WRITE_THREADS = 2
+
 # Per-type parameter ranges: (key, lo, hi, must_be_int, default)
 _CAMERA_PARAMS: List[Tuple[str, float, float, bool, Any]] = [
     ("width", 64.0, 4096.0, True, 1920),
@@ -85,6 +92,7 @@ class SensorSpec:
     attributes: Dict[str, Any] = field(default_factory=dict)  # resolved CARLA blueprint attrs
     params: Dict[str, Any] = field(default_factory=dict)      # original high-level params
     note: str = ""                  # alignment note (effective fps etc.)
+    write_threads: int = 0          # parallel writer workers (0 = inherit DEFAULT_WRITE_THREADS)
 
 
 # Default ZeroMQ bind address for the stream exporter (localhost only).
@@ -99,7 +107,6 @@ class ExportConfig:
     sensors: List[SensorSpec]
     output_fps: float
     output_dir: str
-    write_threads: int = 2  # parallel encoder workers per sensor (1 = single-threaded)
     stream: Dict[str, Any] = field(default_factory=dict)  # output.stream block (see _validate_stream)
 
 
@@ -190,9 +197,13 @@ def validate_sensor_entry(entry: Any, idx: int, output_fps: float,
                 f"{ctx}: upper_fov ({params['upper_fov']:g}) must be > "
                 f"lower_fov ({params['lower_fov']:g})")
 
+    # 每传感器并行编码 worker 数(可选,1-16;缺省 0 = 继承 DEFAULT_WRITE_THREADS)。
+    # 显式写 0 是范围错误,防止静默产生 0 worker。
+    write_threads = _check_param(entry, "write_threads", 1.0, 16.0, True, 0, ctx)
+
     return SensorSpec(name=name, type=stype,
                       blueprint=BLUEPRINTS[stype], transform=transform,
-                      params=params)
+                      params=params, write_threads=write_threads)
 
 
 def _validate_stream(stream_raw: Any) -> Dict[str, Any]:
@@ -370,8 +381,12 @@ def load_export_config(path: str, step_length: float = 0.05) -> ExportConfig:
     output_dir = output.get("export_dir") or toolchain_env.resolve_exports_dir("")
     if not isinstance(output_dir, str) or not output_dir.strip():
         raise ExportConfigError("output.export_dir: non-empty string required")
-    # 每传感器并行编码 worker 数(多核服务器提升硬件利用率;1 = 单线程)
-    write_threads = _check_param(output, "write_threads", 1.0, 16.0, True, 2, "output")
+    # 顶层 write_threads 已移除:必须在 sensors[] 条目内按传感器设置(缺省 2)。
+    # 残留该键直接报错(而不是静默忽略)——防止用户以为改过配置实际却没生效。
+    if "write_threads" in output:
+        raise ExportConfigError(
+            "output.write_threads is removed — set it per sensor in "
+            "sensors[] instead (absent = DEFAULT_WRITE_THREADS=2)")
     # 实时流导出器配置(output.stream,可选;无 stream 配置时导出器使用默认值)
     stream = _validate_stream(output.get("stream", {}))
 
@@ -390,13 +405,17 @@ def load_export_config(path: str, step_length: float = 0.05) -> ExportConfig:
 
     return ExportConfig(version=version, sensors=sensors,
                         output_fps=output_fps, output_dir=output_dir,
-                        write_threads=write_threads, stream=stream)
+                        stream=stream)
 
 
 def export_config_to_dict(cfg: ExportConfig) -> Dict[str, Any]:
-    """Serialise a resolved config (used for the run_config.json copy)."""
-    output = {"fps": cfg.output_fps, "export_dir": cfg.output_dir,
-              "write_threads": cfg.write_threads}
+    """Serialise a resolved config (used for the run_config.json copy).
+
+    ``write_threads`` is serialised per sensor with the *effective* count
+    (``s.write_threads`` or ``DEFAULT_WRITE_THREADS``), so the run config
+    shows the worker count actually used.
+    """
+    output = {"fps": cfg.output_fps, "export_dir": cfg.output_dir}
     if cfg.stream:
         output["stream"] = dict(cfg.stream)
     return {
@@ -405,7 +424,8 @@ def export_config_to_dict(cfg: ExportConfig) -> Dict[str, Any]:
         "sensors": [
             {"name": s.name, "type": s.type, "blueprint": s.blueprint,
              "transform": dict(s.transform), "attributes": dict(s.attributes),
-             "params": dict(s.params), "note": s.note}
+             "params": dict(s.params), "note": s.note,
+             "write_threads": s.write_threads or DEFAULT_WRITE_THREADS}
             for s in cfg.sensors
         ],
     }

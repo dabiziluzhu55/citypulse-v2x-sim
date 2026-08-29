@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
 
 from .base import Exporter  # noqa: F401  (re-exported for convenience)
+from .config import DEFAULT_WRITE_THREADS
 
 
 @dataclass
@@ -23,7 +24,7 @@ class ExportContext:
     sensor_farm: Any                # data_export.sensors.SensorFarm
     frame_registry: Any             # FrameRegistry
     logger: Any                     # logging.Logger
-    write_threads: int = 2          # parallel encoder workers per sensor
+    write_threads: int = DEFAULT_WRITE_THREADS  # fallback for sensors without sensors[i].write_threads
     export_config: Any = None       # validated ExportConfig (read by stream etc.)
 
 

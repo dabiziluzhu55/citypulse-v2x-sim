@@ -19,6 +19,12 @@ Wire protocol (3-part messages, see the stream exporter docstring)::
     topic "meta"  → payload holds the run metadata document (map/run_id/
                     step_length/sensor calibration & poses); meta_json is
                     just the standard header — sent once at setup
+    topic "eos"   → end of stream, sent by the exporter at teardown AFTER
+                    every queued frame and BEFORE the socket closes; its
+                    payload is the per-sensor run summary.  This consumer
+                    prints it and exits (0) — no Ctrl-C needed on a normal
+                    shutdown.  A hard crash publishes no eos; fall back to
+                    Ctrl-C (or your own idle timeout).
     topic <sensor>→ meta_json holds {kind, sensor, seq, world_frame,
                     sim_time, format, …}; payload is the frame bytes
                     (JPEG for cameras, x/y/z/intensity f32 LE for lidar,
@@ -117,6 +123,13 @@ class Consumer:
                     if not quiet:
                         self._show_meta(json.loads(payload))
                     continue
+                if topic == b"eos":
+                    # End of stream — the run is over, exit cleanly (no
+                    # Ctrl-C needed on a normal shutdown).  The final
+                    # summary is printed once, by run() after the loop.
+                    if not quiet:
+                        self._show_eos(meta, json.loads(payload))
+                    break
                 if self._wanted and topic.decode() not in self._wanted:
                     continue
                 self._on_frame(topic.decode(), meta, payload)
@@ -169,6 +182,13 @@ class Consumer:
         for s in meta.get("sensors", []):
             print(f"  sensor {s['name']} ({s['type']}) "
                   f"pose={s.get('transform')}")
+
+    def _show_eos(self, header: Dict[str, Any], doc: Dict[str, Any]) -> None:
+        print(f"stream ended (run_id={doc.get('run_id')} "
+              f"sim_time={doc.get('sim_time')}s reason={doc.get('reason')})")
+        for s in doc.get("sensors", []):
+            print(f"  {s['name']} ({s['type']}): written={s.get('written')} "
+                  f"drops={s.get('drops')} errors={s.get('errors')}")
 
 
 def main(argv: Optional[List[str]] = None) -> int:

@@ -20,7 +20,13 @@ Wire protocol (ZeroMQ PUB/SUB, one 3-part message per frame)::
 One extra message is published once at setup with topic ``meta`` (same
 3-part shape: header in ``meta_json``, run metadata document in ``payload``
 — map, run_id, step_length, sensor calibration/poses) so a fresh subscriber
-can configure itself before the frame stream starts.
+can configure itself before the frame stream starts.  When the export run
+ends (teardown), one final message with topic ``eos`` (end of stream) is
+published AFTER every queued frame has been sent and BEFORE the socket
+closes — subscribers can treat it as the last message and exit cleanly
+(``stream_consumer.py`` does exactly that).  Note that a hard crash (no
+teardown) publishes no ``eos``; subscribers should fall back to Ctrl-C /
+their own idle timeout.
 
 Design notes (matches the exporter contract in ``base.py``):
 
@@ -69,14 +75,20 @@ self-checkable without them):
   keep streaming.
 
 Runtime configuration lives in the export config's ``output.stream`` block
-(validated by ``data_export.config``)::
+(validated by ``data_export.config``); the writer worker count is per
+sensor via ``sensors[i].write_threads`` (absent = DEFAULT_WRITE_THREADS)::
 
     "output": {
-      "fps": 30, "export_dir": "...", "write_threads": 2,
+      "fps": 30, "export_dir": "...",
       "stream": {"bind": "tcp://127.0.0.1:19091",
                  "jpeg_quality": 85,
                  "lidar_compress": true}
-    }
+    },
+    "sensors": [
+      {"name": "cam_01", "type": "rgb_camera", "transform": {...},
+       "width": 1920, "height": 1080, "fov": 90.0, "fps": 30,
+       "write_threads": 4}
+    ]
 
 ``bind`` accepts ``tcp://<host>:<port>`` (cross-machine; default
 127.0.0.1:19091 — localhost only) or ``ipc://<path>`` (same-machine
@@ -311,6 +323,7 @@ class StreamExporter(Exporter):
         self._pub: _StreamPub | None = None
         self._sconf = _StreamConfig()
         self._pillow_ok = False
+        self._last_sim_time = 0.0   # last tick's sim time (carried in EOS)
 
     # -- lifecycle ------------------------------------------------------
 
@@ -377,6 +390,7 @@ class StreamExporter(Exporter):
         """Mark the tick's registry row as ``sent`` for every streamed
         sensor — the manifest needs a slot per expected sensor to keep
         streaming (frames themselves are sent on writer threads)."""
+        self._last_sim_time = sim_time
         reg = self._ctx.frame_registry
         row = reg.get(export_frame)
         if row is not None:
@@ -393,6 +407,10 @@ class StreamExporter(Exporter):
                 ctx.logger.warning(
                     "[export] stream: %d frame(s) left unsent on shutdown "
                     "for '%s'", lost, ms.name)
+        # EOS AFTER every queued frame has been sent, BEFORE the socket
+        # closes — subscribers treat it as the last message and exit.
+        if self._pub is not None:
+            self._publish_eos()
         ctx.sensor_farm.destroy_all()
         if self._pub is not None:
             self._pub.close()
@@ -459,6 +477,28 @@ class StreamExporter(Exporter):
             "meta",
             {"kind": "meta", "sensor": "meta", "seq": 0, "world_frame": 0,
              "sim_time": 0.0, "map": self._ctx.map_name,
+             "run_id": self._ctx.run_output.run_id, "format": "json"},
+            json.dumps(doc, ensure_ascii=False).encode("utf-8"))
+
+    def _publish_eos(self) -> None:
+        """End-of-stream message (topic ``eos``): the LAST message of the
+        run, sent after every queued frame and before the socket closes.
+        Carries a per-sensor summary so subscribers can report the run."""
+        sensors = [{
+            "name": self._orig[ms.name], "type": ms.spec.type,
+            "written": ms.written, "drops": ms.drops, "errors": ms.errors,
+        } for ms in self._managed]
+        doc = {
+            "run_id": self._ctx.run_output.run_id,
+            "map": self._ctx.map_name,
+            "sim_time": self._last_sim_time,
+            "reason": "teardown",
+            "sensors": sensors,
+        }
+        self._pub.send_frame(
+            "eos",
+            {"kind": "eos", "sensor": "eos", "seq": 0, "world_frame": 0,
+             "sim_time": self._last_sim_time, "map": self._ctx.map_name,
              "run_id": self._ctx.run_output.run_id, "format": "json"},
             json.dumps(doc, ensure_ascii=False).encode("utf-8"))
 

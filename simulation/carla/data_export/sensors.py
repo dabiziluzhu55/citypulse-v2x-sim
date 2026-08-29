@@ -24,7 +24,8 @@ Correctness invariants:
   up (drop-newest, counters kept for the run meta).
 
 PNG/PLY encoding is pure CPU and embarrassingly parallel across frames, so
-``output.write_threads`` (default 2) scales encode throughput on multi-core
+``sensors[i].write_threads`` (default 2, per-sensor override — the old
+``output.write_threads`` is gone) scales encode throughput on multi-core
 servers — the first knob to turn when the "sensor queue full" warning
 appears.
 """
@@ -38,7 +39,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from .config import SensorSpec
+from .config import DEFAULT_WRITE_THREADS, SensorSpec
 
 logger = logging.getLogger("cosim.export")
 
@@ -171,8 +172,9 @@ def _on_data(ms: ManagedSensor, data: Any) -> None:
         if ms.drops <= 5 or ms.drops % 100 == 0:
             logger.warning(
                 "[export] %s: sensor queue full — dropping frame (drops=%d). "
-                "Encoder/disk cannot keep up — increase output.write_threads "
-                "or reduce resolution/fps.", ms.name, ms.drops)
+                "Encoder/disk cannot keep up — increase the sensor's "
+                "write_threads in the export config or reduce "
+                "resolution/fps.", ms.name, ms.drops)
 
 
 class SensorFarm:
@@ -185,7 +187,7 @@ class SensorFarm:
 
     def spawn_all(self, specs: List[SensorSpec],
                   save: Callable[[ManagedSensor, int, float, Any, int], Dict[str, Any]],
-                  workers_per_sensor: int = 1,
+                  workers_per_sensor: int = DEFAULT_WRITE_THREADS,
                   ) -> List[ManagedSensor]:
         """Spawn one actor per spec, attach listeners and start ``workers_per_sensor``
         writer workers each.  Failures are logged and skipped — never fatal."""
@@ -234,7 +236,10 @@ class SensorFarm:
 
         ms = ManagedSensor(name=spec.name, spec=spec, actor=actor)
         actor.listen(lambda data: _on_data(ms, data))
-        for idx in range(max(1, workers_per_sensor)):
+        # Per-sensor write_threads overrides the caller's fallback (the old
+        # global output.write_threads); the spawn log below prints the count.
+        n = spec.write_threads or workers_per_sensor
+        for idx in range(max(1, n)):
             worker = threading.Thread(target=_worker_loop, args=(ms, save),
                                       name=f"export-writer-{ms.name}-{idx}",
                                       daemon=True)

@@ -1074,7 +1074,6 @@ class CoSimulationBridge:
             sensor_farm=SensorFarm(self._world, logger),
             frame_registry=FrameRegistry(self._step_length),
             logger=logger,
-            write_threads=cfg.write_threads,
             export_config=cfg,
         )
         try:

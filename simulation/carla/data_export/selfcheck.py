@@ -595,6 +595,86 @@ def _check_parallel_writers() -> None:
     assert ms2.queue.qsize() == 1
 
 
+def _check_per_sensor_write_threads() -> None:
+    """Per-sensor write_threads (the only knob since the global
+    output.write_threads was removed): parse, effective serialization, range
+    rejection, legacy-key guard, and the spawned worker count per sensor."""
+    from .config import (DEFAULT_WRITE_THREADS, export_config_to_dict,
+                         validate_sensor_entry)
+    from .sensors import SensorFarm
+
+    doc = {"version": 1, "output": {"fps": 30, "export_dir": "exports"},
+           "sensors": [
+               {"name": "cam_01", "type": "rgb_camera",
+                "transform": {"x": 0, "y": 0, "z": 6},
+                "width": 1920, "height": 1080, "fov": 90.0, "fps": 30,
+                "write_threads": 6},
+               {"name": "lidar_01", "type": "lidar",
+                "transform": {"x": 0, "y": 0, "z": 5}}]}
+    cfg = _load_from_doc(doc)
+
+    # Parse: camera overrides, lidar falls back (0 = unset).
+    assert cfg.sensors[0].write_threads == 6
+    assert cfg.sensors[1].write_threads == 0
+    assert DEFAULT_WRITE_THREADS == 2
+
+    # Serialization shows the *effective* count per sensor.
+    dumped = export_config_to_dict(cfg)["sensors"]
+    assert dumped[0]["write_threads"] == 6
+    assert dumped[1]["write_threads"] == DEFAULT_WRITE_THREADS
+
+    # Range rejection: explicit 0 (unset sentinel) / out-of-range / non-int
+    # all carry the marker.  (Numeric strings are coerced like width/fps.)
+    for bad in (0, 17, 2.5):
+        entry = {"name": "a", "type": "rgb_camera",
+                 "transform": {"x": 0, "y": 0, "z": 0},
+                 "write_threads": bad}
+        try:
+            validate_sensor_entry(entry, 0, 30.0, set())
+            raise AssertionError(
+                f"should have been rejected: write_threads={bad!r}")
+        except ExportConfigError as exc:
+            assert "sensors[0].write_threads" in str(exc), str(exc)
+    assert validate_sensor_entry(
+        {"name": "a", "type": "rgb_camera",
+         "transform": {"x": 0, "y": 0, "z": 0}, "write_threads": "6"},
+        0, 30.0, set()).write_threads == 6
+
+    # Legacy guard: a leftover output.write_threads is a loud error, not a
+    # silent ignore (the exact trap that prompted this change).
+    legacy = {"version": 1,
+              "output": {"fps": 30, "export_dir": "exports",
+                         "write_threads": 4},
+              "sensors": [{"name": "cam_01", "type": "rgb_camera",
+                           "transform": {"x": 0, "y": 0, "z": 6}}]}
+    try:
+        _load_from_doc(legacy)
+        raise AssertionError("output.write_threads should be rejected")
+    except ExportConfigError as exc:
+        assert "output.write_threads" in str(exc), str(exc)
+
+    # Core: the farm spawns spec.write_threads workers (camera 6, lidar
+    # falls back to the caller's default 2).
+    _install_carla_stub()
+    world = FakeWorld(["sensor.camera.rgb", "sensor.lidar.ray_cast"])
+    farm = SensorFarm(world, logger)
+
+    def _fake_save(ms, frame, ts, data, seq):
+        return {"world_frame": frame, "sim_time": ts}
+
+    spawned = farm.spawn_all(cfg.sensors, save=_fake_save,
+                             workers_per_sensor=DEFAULT_WRITE_THREADS)
+    try:
+        cam, lidar = spawned
+        assert len(cam.workers) == 6, f"camera workers: {len(cam.workers)}"
+        assert len(lidar.workers) == DEFAULT_WRITE_THREADS, \
+            f"lidar workers: {len(lidar.workers)}"
+    finally:
+        for ms in spawned:
+            ms.stop_and_drain()
+        farm.destroy_all()
+
+
 def _check_stream() -> None:
     """Real-time stream exporter: JPEG/lidar encoding round-trips plus a
     ZeroMQ PUB loopback (meta + camera + lidar messages).  Skipped with a
@@ -689,8 +769,13 @@ def _check_stream() -> None:
                                    "sim_time": 0.35, "format": "lidar_f32",
                                    "compressed": True,
                                    "points": 1234}, lidar_payload)
+        pub.send_frame("eos", {"kind": "eos", "sensor": "eos", "seq": 0,
+                               "world_frame": 0, "sim_time": 0.35,
+                               "format": "json"},
+                       b'{"run_id": "R", "map": "W", "sim_time": 0.35, '
+                       b'"reason": "teardown", "sensors": []}')
         topics = set()
-        for _ in range(3):
+        for _ in range(4):
             topic, meta_b, pl = sub.recv_multipart()
             topics.add(topic)
             m = json.loads(meta_b)
@@ -698,7 +783,10 @@ def _check_stream() -> None:
                 assert len(pl) == len(jpeg)
             elif topic == b"lidar_x":
                 assert len(zlib.decompress(pl)) == 1234 * 16
-        assert topics == {b"meta", b"cam_x", b"lidar_x"}, topics
+            elif topic == b"eos":  # end-of-stream: last message of the run
+                assert m["kind"] == "eos"
+                assert json.loads(pl)["reason"] == "teardown"
+        assert topics == {b"meta", b"cam_x", b"lidar_x", b"eos"}, topics
     finally:
         pub.close()
         sub.close()
@@ -937,6 +1025,7 @@ def main(argv=None) -> int:
         ("plan lidar points", _check_plan_lidar_points),
         ("bin -> pcd", _check_bin2pcd),
         ("parallel writers (order/drop)", _check_parallel_writers),
+        ("per-sensor write_threads", _check_per_sensor_write_threads),
         ("stream exporter (ZMQ loopback)", _check_stream),
         ("full lifecycle (stubs)", _check_lifecycle),
     ]
