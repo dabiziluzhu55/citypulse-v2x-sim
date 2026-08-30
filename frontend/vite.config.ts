@@ -1,6 +1,5 @@
 import { defineConfig, loadEnv, type Plugin, type ProxyOptions } from 'vite'
 
-import copyPlugin from 'rollup-plugin-copy'
 import vue from '@vitejs/plugin-vue'
 
 import cesium from 'vite-plugin-cesium'
@@ -65,27 +64,23 @@ export default defineConfig(({ mode }) => {
       createDevSourceNoStorePlugin(),
       vue(),
       cesium(),
-      copyPlugin({
-        targets: [{ src: 'node_modules/@baidumap/mapv-three/dist/assets', dest: 'public/mapvthree' }],
-        hook: 'buildStart',
-      }),
     ],
-      optimizeDeps: {
+    optimizeDeps: {
       include: [
-      '@baidumap/mapv-three',
-      'three',
-    ],
-  },
+        '@baidumap/mapv-three',
+        'three',
+      ],
+    },
     cacheDir: env.VITE_CACHE_DIR?.trim() || 'node_modules/.vite',
     server: {
       host: '127.0.0.1',
       port: 5173,
       warmup: {
-      clientFiles: [
-      './src/components/visualization/AppThreeMapLoader.vue',
-      './src/components/visualization/BaiduThreeMap.vue',
-    ],
-  },
+        clientFiles: [
+          './src/components/visualization/AppThreeMapLoader.vue',
+          './src/components/visualization/BaiduThreeMap.vue',
+        ],
+      },
       watch: {
         ignored: [
           '**/node_modules/**',
