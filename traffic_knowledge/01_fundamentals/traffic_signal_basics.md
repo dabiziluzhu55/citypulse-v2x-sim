@@ -16,7 +16,9 @@ SUMO 官方同时支持 static、actuated、delay_based 等信号类型。本项
 
 ## 项目执行边界
 
-Backend 接受业务名 `control_mode` 并查注册表，Worker 根据 `algorithm_module` 加载本地控制器。算法返回建议动作，仿真内核负责相位安全转换。未来 LLM 只能推荐注册项和重点路口，不能直接写信号灯状态字符串或绕过 Backend 调用 SUMO。
+**【项目事实】** Backend 接受业务名 `control_mode` 并查注册表，Worker 根据 `algorithm_module` 加载本地控制器。算法只返回 `target_phase`，`SafePhaseController` 负责最小绿、黄灯和全红。黄灯时长和清空来自官方 TLS plan 的 `yellow` / `all_red`。
+
+**【规划功能】** CityPulse-Qwen 不替代上述注册算法，也不直接写灯色。它只在扰动接管窗口内输出结构化计划，再编译为同样的 `target_phase`。详见 `07_project/ai_control_architecture.md`。
 
 ## 来源
 
@@ -33,5 +35,5 @@ Backend 接受业务名 `control_mode` 并查注册表，Worker 根据 `algorith
 3. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - file: traffic_control/registry.py; traffic_control/protocol.py; simulation/sumo/controller.py
-   - 用于支持：项目控制链路和动作边界。
+   - file: traffic_control/registry.py; traffic_control/protocol.py; simulation/sumo/engine/signal.py
+   - 用于支持：项目控制链路、target_phase 和安全过渡。

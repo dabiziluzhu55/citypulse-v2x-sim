@@ -16,7 +16,9 @@
 
 ## 控制含义
 
-正常或低需求且规律稳定时，Fixed 可作为可解释基线。需求快速变化时可比较 SOTL 或 Max Pressure；密集路网、邻接影响明显时可在模型契约和评估通过的前提下比较 MAPPO。任何算法选择都应同时检查等待、排队、通行量、安全替代指标和决策延迟，不能只优化一个数字。
+**【项目事实】** 无扰动时由用户选择的 baseline controller（Fixed / SOTL / Max Pressure / IPPO / MAPPO）独立运行，用于公平对比。CityPulse-Qwen 不负责挑选这些算法。
+
+**【规划功能】** 当注入扰动并启用 AI 管控后，才对局部邻域做协同计划。研判仍应联合等待、排队、占用、下游存储、预测和安全替代指标，不能只优化一个数字。协同原则见 `01_fundamentals/multi_intersection_coordination.md`。
 
 ## 来源
 

@@ -14,6 +14,8 @@
 
 `citypulse-v2x-sim` 是 SUMO 微观仿真：车辆具有位置、速度、加速度、路线和下一信号等状态；系统再聚合出车道 `vehicle_count`、`halting_count`、`mean_speed`、`waiting_time`、`occupancy` 等观测。宏观结论应由多个相邻时刻、车道和路口联合判断，避免用单帧噪声触发控制建议。
 
+生成需求按车辆数混合客车、公交、电动自行车和货车。SOTL / IPPO 使用 `vehicle_count` 而不是 PCU。电动自行车 PCU=0.5、公交 PCU=2.0，但在请求计数中各算 1 辆。行人需求未生成。
+
 SUMO 将速度低于 0.1 m/s 的车辆计入车道 halting 数。该阈值是仿真口径，不是现实世界“拥堵车辆”的通用法定定义。
 
 ## 对大模型的使用提示

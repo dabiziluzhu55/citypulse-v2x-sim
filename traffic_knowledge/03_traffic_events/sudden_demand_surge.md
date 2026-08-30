@@ -14,15 +14,24 @@
 
 ## 可考虑的管控动作
 
-提前预警并监测入口方向；比较 SOTL、Max Pressure、IPPO/MAPPO 与 Fixed；保护下游存储并避免把所有绿时集中到单方向。必要时建议外部系统实施信息发布或需求管理，但 LLM 不得自行执行路网改造、绕行或设备控制。
+**【项目事实】** 可复现的需求冲击注入类型是 `major_event_opening`（向场馆汇聚）和 `major_event_closing`（由场馆扩散）。开场与散场的走廊方向相反，不能共用同一套优先相位叙述。
+
+提前预警并监测主方向；保护下游存储，避免只加长出口/入口单个路口的绿灯。**【规划功能】** 散场 AI scope 应覆盖离场走廊而不只是场馆路口。模型不得执行路网改造或设备控制。
+
+| 对象 | 开场 | 散场 |
+| --- | --- | --- |
+| 道路容量 | 通常不变 | 通常不变 |
+| 交通需求 | 向场馆汇聚 | 由场馆扩散 |
+| 上游排队 | 入口走廊 | 出口后的下游走廊 |
+| 信号目标 | 入口协同与冲突方向限制 | 疏散走廊协同，禁止单路口加绿 |
 
 ## 当前项目能力
 
-仿真支持 `major_event_opening` 和 `major_event_closing`，可在时窗内按请求车辆数和来源/目的车道注入活动交通。短时预测用过去 60 秒、每 5 秒一帧的 20 路口四特征预测未来约 60 秒车辆数；STGCN 不可用时降级移动平均。预测不是事件真值。
+仿真支持 `major_event_opening` 和 `major_event_closing`，可在时窗内按请求车辆数和来源/目的车道注入活动交通。短时预测由 NarrowNet-TDP 使用过去 12 帧四特征预测未来约 60 秒路口车辆数；不可用时降级移动平均。预测不是事件真值，Qwen 不得自己编造预测曲线。
 
-## LLM 判断指标
+## 判断指标
 
-使用车辆数/到达趋势、短时预测及 fallback 标志、进口排队、平均速度、通行量、完成率、事件时窗和空间方向。若预测历史不足或模型 fallback，应降低置信度。
+使用车辆数/到达趋势、短时预测及 fallback 标志、进口排队、平均速度、通行量、完成率、事件时窗和空间方向。历史不足或 fallback 时应降低置信度。
 
 ## 来源
 
@@ -34,5 +43,5 @@
 2. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - file: backend/app/schemas/events.py; simulation/sumo/events.py; backend/app/services/prediction_runtime.py; docs/official20_prediction_handoff.md
+   - file: backend/app/schemas/events.py; simulation/sumo/engine/events.py; backend/app/services/prediction_runtime.py; backend/app/services/intelligence_runtime.py
    - 用于支持：活动注入、预测契约和 fallback。

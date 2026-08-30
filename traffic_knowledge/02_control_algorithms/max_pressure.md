@@ -29,7 +29,7 @@ Fixed 不看实时状态；SOTL 累计未服务相位的车辆请求；Max Press
 - 实际名称：`max_pressure`；模块：`traffic_control.max_pressure`。
 - 支持预设：当前三个预设均允许。
 - 当前状态：本地 Protocol 2.0 可运行，无 checkpoint。
-- LLM 推荐：允许；推荐理由应提及队列位置、下游可接收能力和转向观测质量。
+- 角色：baseline controller。产品实现含下游反压，适合作为无 AI 时的可解释对照。Qwen 不负责改选该模式。
 
 ## 来源
 

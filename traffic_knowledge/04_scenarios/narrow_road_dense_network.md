@@ -4,7 +4,7 @@
 
 ## 与当前预设的关系
 
-当前 `west_dense` 被代码定义为“西部密集路口场景”，受控路口为 `demo_14`、`demo_15`、`demo_19`。项目坐标映射显示三组路口中心直线距离约为 195.6–413.1 米，能支持“受控路口空间上较近”，但仓库仍没有提供这些道路“狭窄”的红线宽度结论。直线距离也不能代替沿道路距离、直接连接关系或有效排队存储量。本文件在短路段和有限存储经 SUMO 拓扑或测绘确认后适用。
+**【项目事实】** Backend `west_dense` 标签为“窄路密网片区场景”，路口为 `demo_14`、`demo_15`、`demo_19`。前端可能显示“西部密集区场景”。三路口中心直线距离约 195–413 m；SUMO 进口边长度约 48–291 m，多数 1–2 车道，周期约 75–115 s。这支持“受控路口近、存储有限”，仍不能写成红线宽度实测达标。直线距离不等于沿路距离。**【规划功能】** 该预设仅 3 个路口，AI 可对整个预设协同，仍须按事件方向选择优先走廊。
 
 ## 运行机理
 
@@ -16,11 +16,11 @@
 
 ## 控制思路
 
-优先保护下游存储与路口清空。Max Pressure 的下游反压可作为可解释对照；MAPPO 可纳入协调比较，但其西部预设同样属于 20 路口 cooperative checkpoint 的子集零样本推理。SOTL 主要累计上游请求，若不同时看下游状态，需特别关注过度放行风险。任何协调算法都应与 Fixed 基线做多种子评估。
+优先保护下游存储与路口清空。无扰动时 Max Pressure / MAPPO / SOTL / Fixed 仍是用户选择的 baseline，西部 MAPPO/IPPO 是 20 路口模型零样本。SOTL 主要累计上游请求，密网中需警惕向已回溢方向继续放行。
 
-## LLM 决策提示
+## 检索与决策提示
 
-推荐应指出关键下游、传播方向、受影响相邻路口和回溢证据。若缺少道路长度、车道容量或邻接拓扑，应请求补证或降低置信度，而不是把“西部密集”直接改写为“窄路实测事实”。
+推荐应指出关键下游、传播方向和回溢证据。可以把 Backend 标签和已测进口长度写入依据，但不能把“窄路密网”写成红线宽度达标或规划密度已实现。
 
 ## 来源
 
@@ -37,7 +37,7 @@
 3. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - file: backend/app/scenario/presets.py; data/maps/sumo/TotalMap_20.intersections.json; traffic_control/max_pressure.py; traffic_control/mappo/aliases.py
+   - file: backend/app/scenario/presets.py; data/maps/sumo/official/map/TotalMap_20.intersections.json; traffic_control/max_pressure.py; traffic_control/mappo/aliases.py
    - 用于支持：西部预设、路口坐标、项目反压实现和零样本边界。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim
 4. 《河北雄安新区规划纲要》

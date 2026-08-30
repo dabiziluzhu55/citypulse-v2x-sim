@@ -23,10 +23,15 @@
 | 急刹率 | 急刹事件数/出发车辆数×100 | 次/100 辆；安全替代指标，非事故率 |
 | 预设 / preset | 一组受控路口和地图模板 | `xiongan_20`、`east_dense`、`west_dense` |
 | period | 需求与信号方案的场景切片 | `morning_peak`、`off_peak`、`evening_peak` |
+| baseline controller | 用户选择的产品控制算法 | `control_mode` ∈ 注册表；AI 不是其中一项 |
+| AI takeover | 【规划功能】扰动后局部临时接管 | 尚未实现 |
+| AI controlled intersections | 【规划功能】被接管路口集合 | 必须是当前 preset 子集 |
+| AI control window | 【规划功能】接管时间区间 | 不等于 event window 或 simulation duration |
+| NarrowNet-TDP | 当前短时预测模型 | 未来约 60 s 路口 `vehicle_count`；可 fallback |
 
 ## 易混淆项
 
-`accident` 注入事件是仿真实验输入；规则检测的事故候选不是外部确认事实。`east_dense` 不是代码层面的“校园”同义词，`west_dense` 也不是“窄路”实测结论。`fuel_consumption` 前端兼容名实际映射 L/100 km 燃油强度，不是总燃油量。
+`accident` 注入事件是仿真实验输入；规则检测候选不是外部确认事实。Backend 将 `east_dense` 标为“校园周边场景”、`west_dense` 标为“窄路密网片区场景”，但这不是实测学校或红线宽度结论。`fuel_consumption` 前端兼容名实际映射 L/100 km 燃油强度。CityPulse-Qwen 不是 `control_mode`。
 
 ## 来源
 

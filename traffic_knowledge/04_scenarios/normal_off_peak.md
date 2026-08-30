@@ -2,7 +2,7 @@
 
 ## 项目定义
 
-`off_peak` 是项目支持的第三个 period，与 `morning_peak`、`evening_peak` 并列。它表示平峰需求与相应信号方案，不意味着所有路口始终自由流或不存在事件。
+**【项目事实】** `off_peak` 是第三个 period，官方时钟 14:30–16:30。前端 `flow_mode: flat` 映射到它。它表示平峰需求与相应信号方案，不意味着自由流或无事件。
 
 ## 预期状态
 
@@ -30,5 +30,5 @@ Fixed 可作为优先基线。自适应算法若频繁切相位但等待和通�
 2. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - file: simulation/sumo/scenario.py; data/maps/sumo/official_traffic_demands.json; algorithms/event_detection/rules.py
+   - file: simulation/sumo/engine/scenario.py; data/maps/sumo/official/traffic/official_traffic_demands.json; algorithms/event_detection/rules.py
    - 用于支持：off_peak 场景、平峰方案和信号感知检测。

@@ -18,7 +18,7 @@
 - Backend / Worker 映射：`kernel_mode="fixed"`。
 - 支持预设：`xiongan_20`、`east_dense`、`west_dense`，注册表未设额外限制。
 - 当前状态：可运行；不需要模型 checkpoint。
-- LLM 推荐：允许，可作为默认回退或基线；执行前仍由 Backend 校验请求。
+- 角色：用户选择的 baseline controller 之一，也是 **【规划功能】** AI 故障或接管结束后的回退算法。CityPulse-Qwen 不负责决定是否改用 Fixed。
 
 ## 决策关注指标
 

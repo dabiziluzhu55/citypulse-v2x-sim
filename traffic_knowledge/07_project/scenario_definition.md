@@ -2,49 +2,70 @@
 
 ## 场景预设
 
-| preset_id | 代码标签 | 受控路口 | map_template |
+**【项目事实】** `backend/app/scenario/presets.py`：
+
+| preset_id | Backend catalog 标签 | 受控路口 | map_template |
 | --- | --- | --- | --- |
 | `xiongan_20` | 雄安20路口路网 | `demo_1`–`demo_20` | `xiongan20` |
-| `east_dense` | 东部密集路口场景 | `demo_3/5/6/9` | `east_dense` |
-| `west_dense` | 西部密集路口场景 | `demo_14/15/19` | `west_dense` |
+| `east_dense` | 校园周边场景 | `demo_3`、`demo_5`、`demo_6`、`demo_9` | `east_dense` |
+| `west_dense` | 窄路密网片区场景 | `demo_14`、`demo_15`、`demo_19` | `west_dense` |
 
-场景标签和 `demo_*` 是项目内部标识，不是公开地理路口名称。当前代码没有把东部标为校园。西部预设三个路口的项目映射坐标彼此较近，但这只能支撑“密集路口”的空间特征，不能单独证明道路红线宽度、沿路间距或存储能力；这些几何与业务语义仍需由 SUMO 拓扑、地图标注、赛题资料或现场数据补充。
+`demo_*` 是项目内部标识，不是公开地理路口名。RAG 以 Backend registry 为准。
 
-## 雄安规划知识与仿真事实
+校园是 Backend 业务标签，不是实测学校出入口标定。窄路密网是 Backend 业务标签；西部三路口直线距离约 195–413 m，进口路段存在约 48–291 m 的短存储，但红线宽度仍无测绘结论。
 
-雄安官方规划明确提出起步区 10–15 公里/平方公里的路网密度，雄东片区控详规给出约 12 公里/平方公里并区分主干路、次干路和支路。这些是地域规划依据，可用于设计和校准仿真，但不能直接写成 `xiongan_20` 已达到的测量结论。项目正式对外报告前，应在相同裁剪边界内计算道路中心线总长度/面积、路段长度分布、节点密度、车道与道路等级，再与对应片区口径比较。详细规则见 `04_scenarios/xiongan_narrow_road_dense_network.md`。
+## 交通需求 scope 与管控路口
+
+**【项目事实】** 生成清单存在独立交通 scope：`global`、`east_dense`、`west_dense`。场景编译键为 `{scenario_scope}_{period}`。Backend 启动路径当前 **不写入** `SimulationConfig.scenario_scope`，默认 `global`。因此通过 API 启动 `east_dense` / `west_dense` 时，通常是 **global 交通流 + 预设路口子集受控/观测**。不得把局部生成包的车辆数直接说成当前 API 会话需求。
 
 ## 时段与窗口
 
-period 只能是 `morning_peak`、`off_peak`、`evening_peak`。场景编译还接收窗口起点、持续时间、随机种子、步长、来源车道和流量倍率；倍率允许范围由代码校验。比较算法必须固定这些条件。
+**【项目事实】** period 只能是 `morning_peak`、`off_peak`、`evening_peak`。官方时钟：07:00–09:00、14:30–16:30、17:30–19:30。启动还接收 `window_start_seconds`、`duration_seconds`、`seed`、`step_length`。前端 `flow_mode: flat` 映射 `off_peak`。比较算法必须固定这些条件。
 
 ## 扰动事件
 
-可注入 `lane_closure`、`speed_limit`、`accident`、`major_event_opening`、`major_event_closing`。Backend 确保目标路口属于预设、车道属于当前场景、事件 ID 不重复且时间/位置合法。异常停车和普通拥堵不是独立注入类型；拥堵通常由需求、控制和阻塞共同演化。
+**【项目事实】** 可注入：
 
-## 场景导出边界
+| event_type | 前端标签 | SUMO 效果 |
+| --- | --- | --- |
+| `lane_closure` | 施工占道 | 禁止指定车道一类机动车通行 |
+| `speed_limit` | 道路限速 | 降低车道允许速度；DisturbanceTarget 默认 5 m/s，且必须低于原 max_speed |
+| `accident` | 交通事故 | 在 `position_ratio` 处停放障碍车 |
+| `major_event_opening` | 大型活动开场 | 从来源车道向场馆车道按 `vehicle_count` 生成到达流 |
+| `major_event_closing` | 大型活动散场 | 从场馆向目的车道生成离开流 |
 
-`xiongan_20` 可额外导出全局九区域 OD/TAZ；`east_dense` 和 `west_dense` 只导出局部场景 SUMO 包，不包含该全局 OD，因为其空间口径不匹配。知识库不得把全局 OD 统计嫁接到局部预设。
+启动用路口级 `disturbance_targets`，Backend 解析到车道；运行中用车道级 `EventRequest`。事件状态：`SCHEDULED` / `ACTIVE` / `COMPLETED` / `CANCELLED` / `FAILED`。异常停车和普通拥堵不是独立注入类型。
+
+**【规划功能】** AI 管控范围必须是当前 preset 子集；大网优先事件路口的有限邻域。见 `ai_control_architecture.md`。
+
+## 雄安规划与仿真事实
+
+雄安起步区规划路网密度 10–15 公里/平方公里，雄东片区控详规约 12 公里/平方公里。这是规划口径，不是 `xiongan_20` 已测密度。20 个受控路口空间跨度约数十公里，不等于一块连续密网。
+
+## 场景导出与 OD
+
+**【项目事实】** `xiongan_20` 可导出全局九区 OD；`east_dense` / `west_dense` 局部包不带该全局 OD。九区对角（区内）被排除。east 四路口同属 `zone_3`、west 三路口同属 `zone_7`，故局部 OD 矩阵区际为 0。不得把全局 OD 嫁接到局部预设。
 
 ## 预测适用性
 
-STGCN 模型固定 20 路口节点顺序。局部预设的智能输出应检查运行时代码如何填充未选路口以及 fallback 状态；本版不把官方 20 路口预测精度直接外推为东/西局部场景精度。
+**【项目事实】** NarrowNet-TDP 按官方 20 路口 / 206 车道图推理。局部预设只采集受控路口车道，其余节点为 0，不能把官方精度外推到东/西局部场景。`fallback=true` 时结果是移动平均。
 
 ## 来源
 
 1. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - file: backend/app/scenario/presets.py; backend/app/scenario/resolver.py; simulation/sumo/scenario.py; backend/app/schemas/events.py; backend/app/services/scenario_export_service.py; docs/official20_prediction_handoff.md
-   - 用于支持：预设、period、事件校验、OD 和预测边界。
+   - revision: 89e1a8173132fc734b4d0c51fb0b71fa36dd4b9d
+   - file: backend/app/scenario/presets.py; backend/app/scenario/resolver.py; backend/app/schemas/events.py; backend/app/schemas/disturbance_targets.py; backend/app/services/simulation_service.py; data/maps/sumo/generated/manifests/traffic_manifest.json
+   - 用于支持：预设、事件、scope 和 OD 边界。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim
 2. 《河北雄安新区规划纲要》
    - 发布机构：中共中央、国务院批复；中国雄安官网公开
    - 年份：2018
    - URL：https://www.xiongan.gov.cn/2018-04/21/c_129855813_8.htm
-   - 用于支持：起步区路网密度及城市街道分层规划背景。
+   - 用于支持：起步区路网密度规划背景。
 3. 《河北雄安新区雄东片区控制性详细规划》
    - 发布机构：河北雄安新区管理委员会
    - 版本：2020 年 4 月
    - URL：https://www.xiongan.gov.cn/download/xaxqxdpqkzxxxgh.pdf
-   - 用于支持：片区路网密度、道路分级以及规划指标不可跨空间范围套用。
+   - 用于支持：片区路网密度不可跨空间套用。

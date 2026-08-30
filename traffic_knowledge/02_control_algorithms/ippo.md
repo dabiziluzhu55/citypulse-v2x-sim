@@ -21,7 +21,7 @@ IPPO 适合在训练拓扑、观测契约和需求分布具有代表性时比较
 - 支持 `xiongan_20`、`east_dense`、`west_dense`。东/西局部预设使用 20 路口通用模型的子集零样本推理，不能声称已针对该局部场景微调。
 - 默认动作间隔 15 s，并取动作间隔、决策间隔和最小绿的最大值。
 - 当前状态：仓库含部署 checkpoint，可运行但依赖 torch 和模型契约通过。
-- LLM 推荐：允许；必须注明模型别名、预设适配方式和分布外风险。
+- 角色：baseline controller。局部预设为零样本。Qwen 不得改选 IPPO 或改写 `model_alias`。前端另限制 IPPO 仅 `off_peak`，Backend 未强制。
 
 ## 决策评估
 

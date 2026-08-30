@@ -1,6 +1,6 @@
 # 可复现仿真案例库
 
-本目录用于第二阶段沉淀经过验证的仿真实验，不收录未经复现的“成功案例”。每个案例建议一个 Markdown 文件，并把原始 JSON/TripInfo/会话 manifest 保留在知识库外的稳定制品位置，通过哈希或相对链接引用。
+本目录用于沉淀经过验证的仿真实验，不收录未经复现的“成功案例”。需求生成制品目录见 `04_scenarios/simulation_demand_catalog.md`。规划中的 AI 管控原则案例见 `04_scenarios/ai_control_cases.md`，那些还不是已跑通的 takeover 实验。
 
 ## 案例最小模板
 

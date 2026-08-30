@@ -2,7 +2,7 @@
 
 ## 项目定义
 
-项目支持 `morning_peak` 和 `evening_peak` 两个 period，并为各路口匹配对应的交通需求与固定信号方案。名称表示项目数据中的场景切片，不自动证明现实日期、真实钟点或需求比例；具体时钟与流量以生成清单和运行会话为准。
+**【项目事实】** 项目支持 `morning_peak` 和 `evening_peak`。官方时钟分别为 07:00–09:00 与 17:30–19:30，并匹配对应需求与固定信号方案。名称是项目数据切片，不自动证明某一现实日期的真实比例。生成制品的观测 PCU 见 `simulation_demand_catalog.md`；API 会话流量以当次运行为准。
 
 ## 典型机理
 
@@ -10,11 +10,11 @@
 
 ## 观测与判断
 
-比较同一预设、同一 period、相同窗口和种子的车辆数、平均速度、停止数、等待、排队和通行量。早高峰与晚高峰不可直接用一个绝对阈值判定，方向需求和固定配时方案可能不同。STGCN 预测提供未来约 60 秒车辆数参考，但 fallback 或分布外场景需降低置信度。
+比较同一预设、同一 period、相同窗口和种子的车辆数、平均速度、停止数、等待、排队和通行量。早高峰与晚高峰不可直接用一个绝对阈值判定，方向需求和固定配时方案可能不同。NarrowNet-TDP 提供未来约 60 秒路口车辆数参考；`fallback=true` 或局部预设输入稀疏时需降低置信度。
 
 ## 控制思路
 
-Fixed 是 period 对应方案的基线；SOTL 可响应局部请求变化；Max Pressure 可抑制向拥堵下游放行；IPPO/MAPPO 仅在模型契约、场景适配和评估通过时推荐。高峰控制评价应关注整个窗口及恢复段，而不是只看某个瞬时排队最小值。
+无扰动时由用户选择的 baseline controller 运行。高峰评价应关注整个窗口及恢复段。**【规划功能】** 高峰中的事故或占道才触发 AI 局部接管，Qwen 不负责在算法之间做选择。
 
 ## 来源
 
@@ -26,6 +26,6 @@ Fixed 是 period 对应方案的基线；SOTL 可响应局部请求变化；Max 
 2. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - file: simulation/sumo/scenario.py; data/maps/sumo/official_traffic_demands.json; data/maps/sumo/official_tls_plans.json
+   - file: simulation/sumo/engine/scenario.py; data/maps/sumo/official/traffic/official_traffic_demands.json; data/maps/sumo/official/tls/official_tls_plans.json; backend/app/services/prediction_runtime.py
    - 用于支持：period 枚举、需求和信号方案关联。
 
