@@ -70,10 +70,22 @@ export default defineConfig(({ mode }) => {
         hook: 'buildStart',
       }),
     ],
+      optimizeDeps: {
+      include: [
+      '@baidumap/mapv-three',
+      'three',
+    ],
+  },
     cacheDir: env.VITE_CACHE_DIR?.trim() || 'node_modules/.vite',
     server: {
       host: '127.0.0.1',
       port: 5173,
+      warmup: {
+      clientFiles: [
+      './src/components/visualization/AppThreeMapLoader.vue',
+      './src/components/visualization/BaiduThreeMap.vue',
+    ],
+  },
       watch: {
         ignored: [
           '**/node_modules/**',

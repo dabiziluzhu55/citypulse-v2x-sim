@@ -1923,7 +1923,7 @@ async function waitForPresentationGate(
 async function waitForFinalRenderFrames(
   frameCount = FINAL_RENDER_FRAME_COUNT,
   signal: AbortSignal = lifecycleController.signal,
-  timeoutMs = 5_000,
+  timeoutMs = 15_000,
 ): Promise<boolean> {
   const activeEngine = engine
   if (!activeEngine) return false

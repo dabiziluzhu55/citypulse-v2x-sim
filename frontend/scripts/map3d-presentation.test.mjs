@@ -232,7 +232,10 @@ test('uses the scene deadline as a partial-building fallback without hiding core
     'present',
   )
 
-  const recentlyProgressed = createBuildingLoadTracker(55_000, 1)
+  const recentlyProgressed = createBuildingLoadTracker(
+  MAP3D_PRESENTATION_HARD_TIMEOUT_MS - MAP3D_STALL_WINDOW_MS / 2,
+  1,
+)
   assert.equal(
     resolveMap3dPresentationDecision(
       { ...signals, buildingReadyTiles: 0, buildingCoverage: 0 },
@@ -276,9 +279,9 @@ test('opens the 3D presentation only after every core stage is ready', () => {
 })
 
 test('keeps module, scene deadline, stability, and stall timing separate', () => {
-  assert.equal(MAP3D_MODULE_LOAD_TIMEOUT_MS, 15_000)
-  assert.equal(MAP3D_PRESENTATION_HARD_TIMEOUT_MS, 60_000)
-  assert.equal(MAP3D_STALL_WINDOW_MS, 10_000)
+  assert.equal(MAP3D_MODULE_LOAD_TIMEOUT_MS, 60_000)
+  assert.equal(MAP3D_PRESENTATION_HARD_TIMEOUT_MS, 90_000)
+  assert.equal(MAP3D_STALL_WINDOW_MS, 30_000)
   assert.equal(BUILDING_STABLE_SAMPLE_INTERVAL_MS, 250)
   assert.equal(FINAL_RENDER_FRAME_COUNT, 2)
 })
