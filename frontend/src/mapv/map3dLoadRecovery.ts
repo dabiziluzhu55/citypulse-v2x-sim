@@ -72,7 +72,10 @@ export function classifyMap3dFailure(cause: unknown): Map3dFailure {
     }
   }
 
-  if (/3d tiles|tileset|\.glb|manifest|模型|设施|资产/i.test(detail)) {
+  if (
+    /3d tiles|tileset|\.glb|manifest|模型|设施|资产/i.test(detail)
+    || /unexpected token '<'|not valid json|返回类型错误/i.test(detail)
+  ) {
     return {
       code: 'scene-assets',
       message: '三维场景资产加载失败，可重试或返回 2D 地图',

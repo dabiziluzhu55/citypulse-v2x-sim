@@ -7,7 +7,7 @@
   ],
   "sourceCoordinateSystem": "SUMO XY, tmerc",
   "renderCoordinateSystem": "LOCAL_BD09_WEB_MERCATOR_METERS, Z-up",
-  "sourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
+  "sourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
   "origin": {
     "x": 25275.64,
     "y": 43193.89,
@@ -27,19 +27,7 @@
     "latitude": 38.98367933020957
   },
   "horizontalScale": 1.2864628741800834,
-  "sumoUnitScale": 0.9231634979229262,
-  "sumoHeadingTransform": {
-    "xAxis": [
-      -0.565066516399,
-      -0.728668840136
-    ],
-    "yAxis": [
-      0.727788836695,
-      -0.569680078421
-    ],
-    "determinant": 0.852224184874,
-    "sourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36"
-  },
+  "sumoUnitScale": 0.923165244292594,
   "radiusMeters": 520,
   "radiusSceneUnits": 668.9606945736434,
   "junctionShape": [
@@ -585,15 +573,7 @@
           602.727
         ]
       ],
-      "roadWidth": 9.906,
-      "surfaceExclusions": [
-        {
-          "startOffsetMeters": 463.395,
-          "endOffsetMeters": 471.385,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        }
-      ]
+      "roadWidth": 9.906
     },
     {
       "id": "-50221",
@@ -5164,51 +5144,7 @@
           -406.893
         ]
       ],
-      "roadWidth": 7.912,
-      "surfaceExclusions": [
-        {
-          "startOffsetMeters": 0,
-          "endOffsetMeters": 306.24,
-          "reason": "building_overlap_visual_override",
-          "source": "manual_visual_review"
-        },
-        {
-          "startOffsetMeters": 121.297,
-          "endOffsetMeters": 133.229,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 143.168,
-          "endOffsetMeters": 157.088,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 167.031,
-          "endOffsetMeters": 176.974,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 186.916,
-          "endOffsetMeters": 202.825,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 256.492,
-          "endOffsetMeters": 266.434,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 268.422,
-          "endOffsetMeters": 286.319,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        }
-      ]
+      "roadWidth": 7.912
     },
     {
       "id": "-50358",
@@ -6664,87 +6600,7 @@
           -522.946
         ]
       ],
-      "roadWidth": 7.912,
-      "surfaceExclusions": [
-        {
-          "startOffsetMeters": 0,
-          "endOffsetMeters": 389.836,
-          "reason": "building_overlap_visual_override",
-          "source": "manual_visual_review"
-        },
-        {
-          "startOffsetMeters": 15.993,
-          "endOffsetMeters": 23.99,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 25.989,
-          "endOffsetMeters": 35.985,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 41.982,
-          "endOffsetMeters": 59.975,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 61.974,
-          "endOffsetMeters": 81.966,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 93.961,
-          "endOffsetMeters": 109.954,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 133.943,
-          "endOffsetMeters": 175.925,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 177.924,
-          "endOffsetMeters": 209.911,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 211.91,
-          "endOffsetMeters": 229.902,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 237.899,
-          "endOffsetMeters": 263.888,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 271.884,
-          "endOffsetMeters": 293.875,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 313.866,
-          "endOffsetMeters": 333.858,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 335.857,
-          "endOffsetMeters": 375.84,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        }
-      ]
+      "roadWidth": 7.912
     },
     {
       "id": "-50359",
@@ -7066,33 +6922,7 @@
           302.455
         ]
       ],
-      "roadWidth": 7.912,
-      "surfaceExclusions": [
-        {
-          "startOffsetMeters": 19.759,
-          "endOffsetMeters": 43.471,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 55.326,
-          "endOffsetMeters": 61.254,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 67.182,
-          "endOffsetMeters": 75.086,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 90.894,
-          "endOffsetMeters": 108.677,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        }
-      ]
+      "roadWidth": 7.912
     },
     {
       "id": "-50365",
@@ -7414,33 +7244,7 @@
           24.175
         ]
       ],
-      "roadWidth": 7.912,
-      "surfaceExclusions": [
-        {
-          "startOffsetMeters": 33.791,
-          "endOffsetMeters": 85.472,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 101.374,
-          "endOffsetMeters": 111.313,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 139.141,
-          "endOffsetMeters": 159.018,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 166.969,
-          "endOffsetMeters": 194.797,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        }
-      ]
+      "roadWidth": 7.912
     },
     {
       "id": "-50366",
@@ -8032,33 +7836,7 @@
           340.058
         ]
       ],
-      "roadWidth": 7.912,
-      "surfaceExclusions": [
-        {
-          "startOffsetMeters": 5.915,
-          "endOffsetMeters": 13.801,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 23.659,
-          "endOffsetMeters": 31.545,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 45.347,
-          "endOffsetMeters": 51.261,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 86.75,
-          "endOffsetMeters": 100.551,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        }
-      ]
+      "roadWidth": 7.912
     },
     {
       "id": "-50815.251",
@@ -16269,51 +16047,7 @@
           -28.041
         ]
       ],
-      "roadWidth": 7.912,
-      "surfaceExclusions": [
-        {
-          "startOffsetMeters": 0,
-          "endOffsetMeters": 306.105,
-          "reason": "building_overlap_visual_override",
-          "source": "manual_visual_review"
-        },
-        {
-          "startOffsetMeters": 13.914,
-          "endOffsetMeters": 17.889,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 19.877,
-          "endOffsetMeters": 41.742,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 43.729,
-          "endOffsetMeters": 47.704,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 101.349,
-          "endOffsetMeters": 119.238,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 160.979,
-          "endOffsetMeters": 170.915,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 174.89,
-          "endOffsetMeters": 175.568,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        }
-      ]
+      "roadWidth": 7.912
     },
     {
       "id": "-56640",
@@ -17769,81 +17503,7 @@
           -22.585
         ]
       ],
-      "roadWidth": 7.912,
-      "surfaceExclusions": [
-        {
-          "startOffsetMeters": 0,
-          "endOffsetMeters": 389.573,
-          "reason": "building_overlap_visual_override",
-          "source": "manual_visual_review"
-        },
-        {
-          "startOffsetMeters": 13.985,
-          "endOffsetMeters": 53.941,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 55.939,
-          "endOffsetMeters": 75.917,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 95.895,
-          "endOffsetMeters": 115.873,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 125.862,
-          "endOffsetMeters": 147.837,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 165.817,
-          "endOffsetMeters": 173.808,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 179.802,
-          "endOffsetMeters": 191.789,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 193.787,
-          "endOffsetMeters": 255.719,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 307.661,
-          "endOffsetMeters": 323.643,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 329.637,
-          "endOffsetMeters": 347.617,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 351.613,
-          "endOffsetMeters": 363.6,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 365.597,
-          "endOffsetMeters": 373.589,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        }
-      ]
+      "roadWidth": 7.912
     },
     {
       "id": "-56641",
@@ -18165,21 +17825,7 @@
           335.071
         ]
       ],
-      "roadWidth": 7.912,
-      "surfaceExclusions": [
-        {
-          "startOffsetMeters": 23.781,
-          "endOffsetMeters": 37.654,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        },
-        {
-          "startOffsetMeters": 45.581,
-          "endOffsetMeters": 89.181,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        }
-      ]
+      "roadWidth": 7.912
     },
     {
       "id": "-56647",
@@ -18501,15 +18147,7 @@
           325.54
         ]
       ],
-      "roadWidth": 7.912,
-      "surfaceExclusions": [
-        {
-          "startOffsetMeters": 23.853,
-          "endOffsetMeters": 67.583,
-          "reason": "building_overlap_far_field",
-          "source": "building_triangle_audit"
-        }
-      ]
+      "roadWidth": 7.912
     },
     {
       "id": "-56648",
@@ -23287,6 +22925,18 @@
       ]
     }
   ],
+  "sumoHeadingTransform": {
+    "xAxis": [
+      -0.565066516399,
+      -0.728668840136
+    ],
+    "yAxis": [
+      0.727788836695,
+      -0.569680078421
+    ],
+    "determinant": 0.852224184874,
+    "sourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e"
+  },
   "roadJoints": [
     {
       "jointId": "3936:primary",
@@ -26067,10 +25717,6 @@
       "maxGapMeters": 4.602,
       "overlapMeters": 0.5,
       "source": "sumo_topology",
-      "surfaceHidden": {
-        "reason": "building_overlap_visual_override",
-        "source": "manual_visual_review"
-      },
       "polygons": {
         "sidewalk": [
           [
@@ -26279,10 +25925,6 @@
       "maxGapMeters": 4.605,
       "overlapMeters": 0.5,
       "source": "sumo_topology",
-      "surfaceHidden": {
-        "reason": "building_overlap_visual_override",
-        "source": "manual_visual_review"
-      },
       "polygons": {
         "sidewalk": [
           [
@@ -50753,13 +50395,13 @@
       ]
     }
   ],
-  "vehicleConnectionSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
-  "visualRoadSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
+  "vehicleConnectionSourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
+  "visualRoadSourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
   "vehicleGeometryGeneration": {
     "schemaVersion": 1,
-    "networkSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
-    "headingSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
-    "connectionSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
+    "networkSourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
+    "headingSourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
+    "connectionSourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
     "connectionCount": 28
   }
 }

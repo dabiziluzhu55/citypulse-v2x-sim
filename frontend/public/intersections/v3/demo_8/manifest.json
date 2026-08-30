@@ -7,7 +7,7 @@
   ],
   "sourceCoordinateSystem": "SUMO XY, tmerc",
   "renderCoordinateSystem": "LOCAL_BD09_WEB_MERCATOR_METERS, Z-up",
-  "sourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
+  "sourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
   "origin": {
     "x": 18770.81,
     "y": 42400.78,
@@ -27,19 +27,7 @@
     "latitude": 39.01999504707965
   },
   "horizontalScale": 1.2871233826931008,
-  "sumoUnitScale": 0.9204037171681239,
-  "sumoHeadingTransform": {
-    "xAxis": [
-      -0.560991431586,
-      -0.74368300708
-    ],
-    "yAxis": [
-      0.722491160966,
-      -0.552056977991
-    ],
-    "determinant": 0.847003633576,
-    "sourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36"
-  },
+  "sumoUnitScale": 0.9204042481667799,
   "radiusMeters": 520,
   "radiusSceneUnits": 669.3041590004124,
   "junctionShape": [
@@ -60156,6 +60144,18 @@
       ]
     }
   ],
+  "sumoHeadingTransform": {
+    "xAxis": [
+      -0.560991431586,
+      -0.74368300708
+    ],
+    "yAxis": [
+      0.722491160966,
+      -0.552056977991
+    ],
+    "determinant": 0.847003633576,
+    "sourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e"
+  },
   "roadJoints": [
     {
       "jointId": "4393:primary",
@@ -86978,13 +86978,13 @@
       ]
     }
   ],
-  "vehicleConnectionSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
-  "visualRoadSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
+  "vehicleConnectionSourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
+  "visualRoadSourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
   "vehicleGeometryGeneration": {
     "schemaVersion": 1,
-    "networkSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
-    "headingSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
-    "connectionSourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
+    "networkSourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
+    "headingSourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
+    "connectionSourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
     "connectionCount": 29
   }
 }

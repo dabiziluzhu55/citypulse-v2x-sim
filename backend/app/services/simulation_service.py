@@ -231,7 +231,11 @@ class SimulationService:
                     metrics[key] = evaluation[key]
             payload["metrics"] = metrics
             payload["evaluation"] = evaluation
-        intelligence = self._intelligence.observe(snapshot)
+        # The metrics watcher is the single writer for intelligence state.
+        # Snapshot serialization only reads the latest completed result so
+        # REST and WebSocket clients do not repeat prediction work or wait on
+        # the intelligence lock while vehicle payloads are being serialized.
+        intelligence = self._intelligence.get(snapshot.session_id)
         payload["event_detection"] = intelligence["event_detection"]
         payload["prediction"] = intelligence["prediction"]
         payload["traffic_style"] = intelligence["traffic_style"]

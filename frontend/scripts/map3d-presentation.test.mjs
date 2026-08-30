@@ -55,6 +55,20 @@ const simulationStoreSource = await readFile(
 )
 const indexSource = await readFile(new URL('../index.html', import.meta.url), 'utf8')
 const mainSource = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
+const viteConfigSource = await readFile(new URL('../vite.config.ts', import.meta.url), 'utf8')
+const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+const assetSyncSource = await readFile(
+  new URL('./sync-mapvthree-assets.mjs', import.meta.url),
+  'utf8',
+)
+const fetchJsonAssetSource = await readFile(
+  new URL('../src/utils/fetchJsonAsset.ts', import.meta.url),
+  'utf8',
+)
+const map3dLoadRecoverySource = await readFile(
+  new URL('../src/mapv/map3dLoadRecovery.ts', import.meta.url),
+  'utf8',
+)
 
 function sample(overrides = {}) {
   return {
@@ -68,6 +82,21 @@ function sample(overrides = {}) {
     ...overrides,
   }
 }
+
+test('syncs mapv-three assets before Vite scans the public directory', () => {
+  assert.doesNotMatch(viteConfigSource, /rollup-plugin-copy|copyPlugin/)
+  assert.equal(packageJson.scripts.predev, 'npm run sync:mapvthree-assets')
+  assert.equal(packageJson.scripts.prebuild, 'npm run sync:mapvthree-assets')
+  assert.match(assetSyncSource, /await rm\(target/)
+  assert.match(assetSyncSource, /await cp\(source, target/)
+})
+
+test('rejects HTML fallbacks before parsing static JSON assets', () => {
+  assert.match(fetchJsonAssetSource, /headers\.get\('content-type'\)/)
+  assert.match(fetchJsonAssetSource, /includes\('json'\)/)
+  assert.match(fetchJsonAssetSource, /返回类型错误/)
+  assert.match(map3dLoadRecoverySource, /not valid json/)
+})
 
 function advanceSamples(tracker, nextSample, quality, count) {
   let next = tracker
@@ -232,7 +261,10 @@ test('uses the scene deadline as a partial-building fallback without hiding core
     'present',
   )
 
-  const recentlyProgressed = createBuildingLoadTracker(55_000, 1)
+  const recentlyProgressed = createBuildingLoadTracker(
+    MAP3D_PRESENTATION_HARD_TIMEOUT_MS - MAP3D_STALL_WINDOW_MS / 2,
+    1,
+  )
   assert.equal(
     resolveMap3dPresentationDecision(
       { ...signals, buildingReadyTiles: 0, buildingCoverage: 0 },
@@ -276,9 +308,9 @@ test('opens the 3D presentation only after every core stage is ready', () => {
 })
 
 test('keeps module, scene deadline, stability, and stall timing separate', () => {
-  assert.equal(MAP3D_MODULE_LOAD_TIMEOUT_MS, 15_000)
-  assert.equal(MAP3D_PRESENTATION_HARD_TIMEOUT_MS, 60_000)
-  assert.equal(MAP3D_STALL_WINDOW_MS, 10_000)
+  assert.equal(MAP3D_MODULE_LOAD_TIMEOUT_MS, 60_000)
+  assert.equal(MAP3D_PRESENTATION_HARD_TIMEOUT_MS, 90_000)
+  assert.equal(MAP3D_STALL_WINDOW_MS, 30_000)
   assert.equal(BUILDING_STABLE_SAMPLE_INTERVAL_MS, 250)
   assert.equal(FINAL_RENDER_FRAME_COUNT, 2)
 })
@@ -301,7 +333,10 @@ test('initializes the overview before buildings and does not focus the initial i
     baiduThreeMapSource,
     /presentationReady = true\s+if \(buildingTileset\) buildingTileset\.cullRequestsWhileMoving = true/,
   )
-  assert.match(baiduThreeMapSource, /await fetch\(tilesetUrl\)/)
+  assert.match(
+    baiduThreeMapSource,
+    /await fetchJsonAsset<\{ asset\?: unknown; root\?: unknown \}>\(\s*tilesetUrl,/,
+  )
   assert.match(baiduThreeMapSource, /缺少 asset 或 root/)
 })
 

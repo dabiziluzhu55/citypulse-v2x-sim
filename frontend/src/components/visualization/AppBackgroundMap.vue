@@ -153,12 +153,14 @@ let userViewportRevision = 0
 let selectionUserViewportRevision = 0
 let focusedIntersectionId: string | null = null
 const VEHICLE_VIEWPORT_HYSTERESIS_METERS = 120
+const VEHICLE_DIAGNOSTICS_INTERVAL_MS = 1_000
+let lastVehicleDiagnosticsAt = 0
 
 const networkSource = new VectorSource()
 const fullRoadNetworkSource = new VectorSource()
 const topologyFlowSource = new VectorSource()
 const laneCongestionSource = new VectorSource()
-const vehicleSource = new VectorSource()
+const vehicleSource = new VectorSource({ useSpatialIndex: false })
 const disturbanceSource = new VectorSource()
 const detectedEventSource = new VectorSource()
 const geoJsonFormat = new GeoJSON()
@@ -260,25 +262,53 @@ const laneCongestionLayer = new VectorLayer({
   },
   zIndex: 5.5,
 })
+interface CachedVehicleStyle {
+  signature: string
+  style: Style
+  image: RegularShape
+}
 
-const vehicleLayer = new VectorLayer({
-  source: vehicleSource,
-  style: (feature) => {
-    const color = String(feature.get('color') ?? '#21e6ff')
-    const vtype = String(feature.get('vtype') ?? 'passenger')
-    const rotation = Number(feature.get('rotation') ?? 0)
-    const radius = VEHICLE_RADIUS[vtype] ?? 6
-    return new Style({
-      image: new RegularShape({
-        points: 3,
-        radius,
-        radius2: radius * 0.45,
-        rotation,
-        fill: new Fill({ color }),
-        stroke: new Stroke({ color: 'rgba(4, 18, 31, 0.9)', width: 1 }),
+const vehicleStyleCache = new WeakMap<object, CachedVehicleStyle>()
+
+function resolveVehicleStyle(rawFeature: unknown): Style {
+  const feature = rawFeature as Feature<Point>
+  const color = String(feature.get('color') ?? '#21e6ff')
+  const vtype = String(feature.get('vtype') ?? 'passenger')
+  const rotation = Number(feature.get('rotation') ?? 0)
+  const radius = VEHICLE_RADIUS[vtype] ?? 6
+  const signature = `${color}|${vtype}|${radius}`
+
+  let cached = vehicleStyleCache.get(feature)
+
+  if (!cached || cached.signature !== signature) {
+    const image = new RegularShape({
+      points: 3,
+      radius,
+      radius2: radius * 0.45,
+      rotation,
+      fill: new Fill({ color }),
+      stroke: new Stroke({
+        color: 'rgba(4, 18, 31, 0.9)',
+        width: 1,
       }),
     })
-  },
+
+    cached = {
+      signature,
+      image,
+      style: new Style({ image }),
+    }
+
+    vehicleStyleCache.set(feature, cached)
+  } else {
+    cached.image.setRotation(rotation)
+  }
+
+  return cached.style
+}
+const vehicleLayer = new VectorLayer({
+  source: vehicleSource,
+  style: resolveVehicleStyle,
   zIndex: 6,
 })
 
@@ -686,10 +716,10 @@ function renderVehicles() {
         geometry?.setCoordinates(target)
       }
       if (Math.abs(Number(feature.get('rotation') ?? 0) - targetRotation) > 1e-5) {
-        feature.set('rotation', targetRotation)
+        feature.set('rotation', targetRotation, true)
       }
     } else {
-      feature.set('rotation', targetRotation)
+      feature.set('rotation', targetRotation, true)
       addedFeatures.push(feature)
     }
     vehicleFeatures.set(vehicle.vehicle_id, { feature })
@@ -703,7 +733,13 @@ function renderVehicles() {
     if (state) vehicleSource.removeFeature(state.feature)
     vehicleFeatures.delete(id)
   }
-  if (import.meta.env.DEV) {
+  vehicleLayer.changed()
+  const diagnosticsNow = performance.now()
+  if (
+    import.meta.env.DEV
+    && diagnosticsNow - lastVehicleDiagnosticsAt >= VEHICLE_DIAGNOSTICS_INTERVAL_MS
+  ) {
+    lastVehicleDiagnosticsAt = diagnosticsNow
     if (mapEl.value) {
       mapEl.value.dataset.presentationState = vehiclePresentationDiagnostics.value.state
       mapEl.value.dataset.presentationBufferSeconds = vehiclePresentationDiagnostics.value.bufferDepthSeconds.toFixed(3)
@@ -727,8 +763,8 @@ function renderVehicles() {
       starvationDurationMs: vehiclePresentationDiagnostics.value.starvationDurationMs,
       observedSourceRate: vehiclePresentationDiagnostics.value.observedSourceRate,
       renderedVehicleCount: activeIds.size,
-      authoritativeVehicleIds: vehicles.map((vehicle) => vehicle.vehicle_id),
-      renderedVehicleIds: [...activeIds],
+      authoritativeVehicleIds: vehicles.slice(0, 100).map((vehicle) => vehicle.vehicle_id),
+      renderedVehicleIds: [...activeIds].slice(0, 100),
       canonicalLaneGeometryAvailable: eventLanePositionIndex?.laneCount ?? 0,
       canonicalMotion: vehiclePresentationDiagnostics.value.motionAudit,
       capturedAt: new Date().toISOString(),

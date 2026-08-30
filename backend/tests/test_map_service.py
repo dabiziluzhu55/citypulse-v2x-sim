@@ -1,5 +1,6 @@
 """地图GeoJSON服务测试"""
 
+import json
 from unittest.mock import MagicMock
 
 from backend.app.schemas.maps import MapGeoJsonResponse
@@ -80,13 +81,41 @@ def test_geojson_format(monkeypatch) -> None:
     assert cached is response
 
 
-def test_generated_geojson_does_not_load_sumo(monkeypatch) -> None:
+def test_generated_geojson_does_not_load_sumo(monkeypatch, tmp_path) -> None:
     from backend.app.core.config import get_settings
 
     settings = get_settings()
     manager = MagicMock()
     manager.catalog.return_value = build_demo_catalog()
     service = MapService(settings, manager)
+    artifact_path = tmp_path / "demo_2.roads.wgs84.geojson"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "metadata": {
+                    "intersection_id": "demo_2",
+                    "output_crs": "WGS84",
+                    "radius_m": 600.0,
+                },
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"edge_id": "generated-road"},
+                        "geometry": {
+                            "type": "LineString",
+                            "coordinates": [
+                                [116.1267, 38.9911],
+                                [116.1268, 38.9912],
+                            ],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(service, "_generated_geojson_path", lambda _id: artifact_path)
     load_net = MagicMock(side_effect=AssertionError("SUMO must not load for generated GeoJSON"))
     monkeypatch.setattr(service, "_load_net", load_net)
 
@@ -98,5 +127,5 @@ def test_generated_geojson_does_not_load_sumo(monkeypatch) -> None:
     ]
 
     assert response.geojson["metadata"]["data_source"] == "generated"
-    assert len(lines) == 15
+    assert len(lines) == 1
     load_net.assert_not_called()

@@ -7,12 +7,12 @@ import {
   Map3dPerformanceGovernor,
 } from '../src/mapv/map3dPerformanceGovernor.ts'
 
-test('uses a 45 fps normal budget and a 30 fps latched stable budget', () => {
-  assert.equal(MAP3D_NORMAL_FRAME_RATE, 45)
-  assert.equal(MAP3D_STABLE_FRAME_RATE, 30)
+test('uses a 30 fps normal budget and a 24 fps latched stable budget', () => {
+  assert.equal(MAP3D_NORMAL_FRAME_RATE, 30)
+  assert.equal(MAP3D_STABLE_FRAME_RATE, 24)
   const governor = new Map3dPerformanceGovernor()
   let degraded = false
-  for (let now = 0; now <= 6_000; now += 1_000 / 30) degraded ||= governor.recordFrame(now)
+  for (let now = 0; now <= 6_000; now += 1_000 / 20) degraded ||= governor.recordFrame(now)
   assert.equal(degraded, true)
   assert.equal(governor.stats().stableMode, true)
 })

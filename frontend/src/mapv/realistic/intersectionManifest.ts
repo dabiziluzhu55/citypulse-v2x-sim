@@ -2,6 +2,7 @@ import {
   sumoHeadingTransformIsValid,
   type SumoHeadingTransform,
 } from '../sumoHeadingTransform.ts'
+import { fetchJsonAsset } from '../../utils/fetchJsonAsset.ts'
 
 export type Point2 = [number, number]
 
@@ -201,9 +202,7 @@ export function controlledLaneSignalForState(
 export async function loadIntersectionManifest(
   url = '/intersections/v3/demo_2/manifest.json',
 ): Promise<RealisticIntersectionManifest> {
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`Intersection asset returned HTTP ${response.status}`)
-  const value = await response.json() as RealisticIntersectionManifest
+  const value = await fetchJsonAsset<RealisticIntersectionManifest>(url, '路口资源')
   if (![1, 2, 3].includes(value.schemaVersion) || !value.connections.length || !value.edges.length) {
     throw new Error('Intersection asset structure is incomplete')
   }

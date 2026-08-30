@@ -104,6 +104,7 @@ import {
   resolveSessionEventMarkers,
   type EventLanePositionIndex,
 } from '../../utils/eventLanePositionIndex'
+import { fetchJsonAsset } from '../../utils/fetchJsonAsset'
 import {
   sharedLaneCongestionStateResolver,
   type LaneCongestionStateSnapshot,
@@ -1730,10 +1731,11 @@ async function prepareIntersectionEnvironment(
   const environment = await loadIntersectionEnvironmentManifest(intersectionId)
   if (signal.aborted) throw new DOMException('Environment loading aborted', 'AbortError')
   const facilitiesPromise = environment.facilitiesUrl && enableRoadsideFacilities
-    ? fetch(environment.facilitiesUrl, { signal }).then(async (response) => {
-        if (!response.ok) throw new Error(`Roadside facilities returned HTTP ${response.status}`)
-        return parseSceneFacilityManifest(await response.json())
-      })
+    ? fetchJsonAsset<unknown>(
+        environment.facilitiesUrl,
+        `路口 ${intersectionId} 路侧设施`,
+        { signal },
+      ).then((value) => parseSceneFacilityManifest(value))
     : Promise.resolve(null)
   const landcoverPromise = ensureIntersectionLandcover(intersectionId, environment, signal)
     .catch((cause: unknown) => {
@@ -1810,22 +1812,19 @@ function createBuildingTileset(url: string): mapvthree.Default3DTiles {
 
 async function validateGlobalBuildingSource(): Promise<void> {
   if (!enableLocalTileset) return
-  const tilesetResponse = await fetch(tilesetUrl)
-  if (!tilesetResponse.ok) {
-    throw new Error(`全域建筑 tileset 加载失败 (${tilesetResponse.status})`)
-  }
-  const tilesetJson = await tilesetResponse.json() as { asset?: unknown; root?: unknown }
+  const tilesetJson = await fetchJsonAsset<{ asset?: unknown; root?: unknown }>(
+    tilesetUrl,
+    '全域建筑 tileset',
+  )
   if (!tilesetJson.asset || !tilesetJson.root) {
     throw new Error('全域建筑 tileset 解析失败：缺少 asset 或 root')
   }
   if (!import.meta.env.DEV) return
   emit('loading', '正在检查全域本地建筑数据')
   const manifestUrl = buildingTilesetManifestUrl(tilesetUrl, window.location.href)
-  const response = await fetch(manifestUrl)
-  if (!response.ok) {
-    throw new Error(`全域建筑 manifest 加载失败 (${response.status})`)
-  }
-  const diagnosis = assertGlobalBuildingSource(await response.json())
+  const diagnosis = assertGlobalBuildingSource(
+    await fetchJsonAsset<unknown>(manifestUrl, '全域建筑 manifest'),
+  )
   console.info('[building-tileset] global source verified', {
     url: tilesetUrl,
     sourceTiles: diagnosis.sourceTiles,
@@ -1923,7 +1922,7 @@ async function waitForPresentationGate(
 async function waitForFinalRenderFrames(
   frameCount = FINAL_RENDER_FRAME_COUNT,
   signal: AbortSignal = lifecycleController.signal,
-  timeoutMs = 5_000,
+  timeoutMs = 15_000,
 ): Promise<boolean> {
   const activeEngine = engine
   if (!activeEngine) return false
@@ -1972,9 +1971,10 @@ async function addStaticRoadTileset(): Promise<void> {
     './manifest.json',
     new URL(roadTilesetUrl, window.location.href),
   )
-  const response = await fetch(manifestUrl)
-  if (!response.ok) throw new Error(`道路 3D Tiles manifest 加载失败 (${response.status})`)
-  roadTilesetManifest = await response.json() as StaticRoadTilesetManifest
+  roadTilesetManifest = await fetchJsonAsset<StaticRoadTilesetManifest>(
+    manifestUrl,
+    '道路 3D Tiles manifest',
+  )
   roadTileset = engine.add(new mapvthree.Default3DTiles({
     url: roadTilesetUrl,
     errorTarget: 8,

@@ -333,6 +333,40 @@ test('builds one unique disturbance target for every selected intersection', () 
   assert.equal(new Set(payload.disturbance_targets.map((target) => target.event_id)).size, 2)
 })
 
+test('converts speed limit from km/h to m/s and rejects values outside 20-80', () => {
+  const baseInput = {
+    scenarioPresetId: 'east_dense',
+    period: 'morning_peak',
+    windowStartSeconds: 0,
+    durationSeconds: 600,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    snapshotIntervalSeconds: 0.2,
+  }
+
+  const payload = buildStartSimulationRequest({
+    ...baseInput,
+    disturbanceEvents: [{
+      eventType: 'speed_limit',
+      intersectionIds: ['demo_6'],
+      speedLimitKmh: 60,
+    }],
+  })
+
+  assert.equal(payload.disturbance_targets[0].max_speed, 60 / 3.6)
+
+  for (const speedLimitKmh of [19, 81]) {
+    assert.throws(() => buildStartSimulationRequest({
+      ...baseInput,
+      disturbanceEvents: [{
+        eventType: 'speed_limit',
+        intersectionIds: ['demo_6'],
+        speedLimitKmh,
+      }],
+    }), /20-80/)
+  }
+})
+
 test('flattens multiple non-conflicting events into unique backend disturbance targets', () => {
   const payload = buildStartSimulationRequest({
     scenarioPresetId: 'east_dense',

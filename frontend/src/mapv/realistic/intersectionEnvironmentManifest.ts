@@ -1,5 +1,6 @@
 import type { ShowcaseGeoJsonLayerUrls } from '../showcaseLayers/ShowcaseGeoJsonLayers.ts'
 import type { ShowcaseLandmark } from '../showcaseLayers/ShowcaseModelLayers.ts'
+import { fetchJsonAsset } from '../../utils/fetchJsonAsset.ts'
 
 export interface IntersectionEnvironmentManifest {
   schemaVersion: 1
@@ -101,7 +102,9 @@ export function parseIntersectionEnvironmentManifest(
 export async function loadIntersectionEnvironmentManifest(
   intersectionId: string,
 ): Promise<IntersectionEnvironmentManifest> {
-  const response = await fetch(`/intersections/v3/${intersectionId}/environment.json`)
-  if (!response.ok) throw new Error(`Intersection environment returned HTTP ${response.status}`)
-  return parseIntersectionEnvironmentManifest(await response.json(), intersectionId)
+  const value = await fetchJsonAsset<unknown>(
+    `/intersections/v3/${intersectionId}/environment.json`,
+    `路口 ${intersectionId} 环境清单`,
+  )
+  return parseIntersectionEnvironmentManifest(value, intersectionId)
 }

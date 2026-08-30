@@ -9,6 +9,7 @@ import { moveFromFrontBumperToModelCenter } from './vehicleOrientation.ts'
 
 export const MIN_VEHICLE_BUFFER_SECONDS = 2
 export const MAX_VEHICLE_BUFFER_SECONDS = 3
+const MAX_LEGAL_POSE_HOLD_SECONDS = MAX_VEHICLE_BUFFER_SECONDS
 const BUFFER_INTERVAL_MULTIPLIER = 2
 const MAX_OUTPUT_STEP_SECONDS = 0.25
 const MAX_TIMING_SAMPLES = 30
@@ -1594,7 +1595,7 @@ export class VehicleMotionBuffer {
           lastLegal
           && rosters.selected.has(vehicleId)
           && holdSeconds >= 0
-          && holdSeconds <= 1
+          && holdSeconds <= MAX_LEGAL_POSE_HOLD_SECONDS
         ) {
           samples.push(this.cloneSample(lastLegal, 'held', elapsedSeconds))
         } else {

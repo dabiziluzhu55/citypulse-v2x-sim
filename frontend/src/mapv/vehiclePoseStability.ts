@@ -6,6 +6,7 @@ export const MIN_STABLE_DISPLACEMENT_LIMIT_METERS = 2
 
 export interface VehiclePoseState {
   telemetryReliable: boolean
+  speedMetersPerSecond?: number
   backendDistance?: number
   routeId?: string
   routeIndex?: number
@@ -100,10 +101,16 @@ export function reliableVehicleLanePosition(vehicle: TrafficVehicleView): number
 export function maximumStableVehicleDisplacementMeters(
   speedMetersPerSecond: number,
   deltaSimulationSeconds: number,
+  previousSpeedMetersPerSecond = speedMetersPerSecond,
 ): number {
+  const referenceSpeed = Math.max(
+    0,
+    speedMetersPerSecond,
+    previousSpeedMetersPerSecond,
+  )
   return Math.max(
     MIN_STABLE_DISPLACEMENT_LIMIT_METERS,
-    Math.max(0, speedMetersPerSecond) * Math.max(0, deltaSimulationSeconds) * 1.25 + 1,
+    referenceSpeed * Math.max(0, deltaSimulationSeconds) * 1.25 + 1,
   )
 }
 
@@ -118,7 +125,10 @@ export function vehiclePoseDisplacementMeters(
 }
 
 export function vehiclePoseDisplacementIsStable(
-  previous: Pick<VehiclePoseState, 'longitude' | 'latitude' | 'elapsedSeconds'>,
+  previous: Pick<
+    VehiclePoseState,
+    'longitude' | 'latitude' | 'elapsedSeconds' | 'speedMetersPerSecond'
+  >,
   current: VehiclePosePoint,
   speedMetersPerSecond: number,
   elapsedSeconds: number,
@@ -126,6 +136,7 @@ export function vehiclePoseDisplacementIsStable(
   return vehiclePoseDisplacementMeters(previous, current) <= maximumStableVehicleDisplacementMeters(
     speedMetersPerSecond,
     elapsedSeconds - previous.elapsedSeconds,
+    previous.speedMetersPerSecond,
   )
 }
 

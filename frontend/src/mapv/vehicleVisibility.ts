@@ -8,9 +8,9 @@ const CAMERA_RANGE_FACTOR = 1.2
 const EXIT_RADIUS_HYSTERESIS_METERS = 80
 export const MAX_ROSTER_CHANGES_PER_SNAPSHOT = 32
 
-export const MAX_VISIBLE_VEHICLES = 450
-export const BALANCED_VISIBLE_VEHICLES = 320
-export const CONSTRAINED_VISIBLE_VEHICLES = 220
+export const MAX_VISIBLE_VEHICLES = 320
+export const BALANCED_VISIBLE_VEHICLES = 240
+export const CONSTRAINED_VISIBLE_VEHICLES = 160
 
 export type VehicleRenderQuality = 'full' | 'balanced' | 'constrained'
 

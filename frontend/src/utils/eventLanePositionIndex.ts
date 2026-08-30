@@ -1,6 +1,7 @@
 import type { IntersectionTopologyNode } from '../mapv/intersectionTopology.ts'
 import type { DisturbanceRuntimeView } from './runtimeDisturbances.ts'
 import { runtimeDisturbanceLaneIds } from './runtimeDisturbances.ts'
+import { fetchJsonAsset } from './fetchJsonAsset.ts'
 
 export type EventLaneKind = 'driving' | 'bicycle' | 'pedestrian'
 
@@ -90,10 +91,8 @@ export function parseEventLanePositionIndex(value: unknown): EventLanePositionIn
 export async function loadEventLanePositionIndex(
   url = '/intersections/v3/event-lane-position-index.json',
 ): Promise<EventLanePositionIndex> {
-  indexPromise ??= fetch(url).then(async (response) => {
-    if (!response.ok) throw new Error(`Event lane position index returned HTTP ${response.status}`)
-    return parseEventLanePositionIndex(await response.json())
-  })
+  indexPromise ??= fetchJsonAsset<unknown>(url, '事件车道位置索引')
+    .then((value) => parseEventLanePositionIndex(value))
   return indexPromise
 }
 

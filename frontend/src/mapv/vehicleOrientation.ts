@@ -5,8 +5,8 @@ const TRAJECTORY_MIN_DISTANCE_METERS = 0.25
 const STOP_SPEED_MPS = 0.35
 const START_SPEED_MPS = 0.8
 export const MAX_LANE_MOVEMENT_HEADING_DELTA = Math.PI / 4
+export const MAX_SOURCE_MOVEMENT_HEADING_DELTA = 30 * Math.PI / 180
 export const MAX_VEHICLE_HEADING_RATE = 120 * Math.PI / 180
-export const MAX_UNSUPPORTED_RAW_HEADING_JUMP = Math.PI / 2
 
 export interface GeographicPoint {
   longitude: number
@@ -87,12 +87,17 @@ export function resolveStableVehicleHeading(
     && Number.isFinite(input.sourceMapHeading)
     ? normalizeRadians(input.sourceMapHeading)
     : null
+  const laneHeading = input.laneHeading != null
+    && Number.isFinite(input.laneHeading)
+    ? normalizeRadians(input.laneHeading)
+    : null
+
   if (!previous) {
     const initial = input.speedMetersPerSecond > STOP_SPEED_MPS
       && input.topologyConfirmed
-      && input.laneHeading != null
-      ? input.laneHeading
-      : sourceHeading ?? input.laneHeading ?? 0
+      && laneHeading != null
+      ? laneHeading
+      : sourceHeading ?? laneHeading ?? 0
     const heading = normalizeRadians(initial)
     return {
       heading,
@@ -110,23 +115,42 @@ export function resolveStableVehicleHeading(
   const moving = previous.moving
     ? input.speedMetersPerSecond > STOP_SPEED_MPS && movementHeading != null
     : input.speedMetersPerSecond >= START_SPEED_MPS && movementHeading != null
+  const topologyOnlyMotion = Boolean(
+    movementHeading == null
+    && input.speedMetersPerSecond > STOP_SPEED_MPS
+    && input.topologyConfirmed
+    && laneHeading != null
+  )
   let target = previous.reliableHeading
   let topologyHeading = false
+  const laneAgreesWithMovement = laneHeading != null
+    && movementHeading != null
+    && Math.abs(shortestAngleDelta(laneHeading, movementHeading))
+      <= MAX_LANE_MOVEMENT_HEADING_DELTA
   if (
     moving
     && input.topologyConfirmed
-    && input.laneHeading != null
-    && Number.isFinite(input.laneHeading)
+    && laneHeading != null
+    && laneAgreesWithMovement
   ) {
-    target = input.laneHeading
+    // Trust a topology tangent only when the observed displacement confirms it.
+    target = laneHeading
     topologyHeading = true
-  } else if (moving && sourceHeading != null) {
-    const unsupportedJump = Math.abs(shortestAngleDelta(previous.reliableHeading, sourceHeading))
-      > MAX_UNSUPPORTED_RAW_HEADING_JUMP
-      && movementHeading != null
-      && Math.abs(shortestAngleDelta(sourceHeading, movementHeading)) > MAX_LANE_MOVEMENT_HEADING_DELTA
-    target = unsupportedJump ? previous.reliableHeading : sourceHeading
-  } else if (!moving) {
+  } else if (moving && movementHeading != null) {
+    const sourceAgreesWithMovement = sourceHeading != null
+      && Math.abs(shortestAngleDelta(sourceHeading, movementHeading))
+        <= MAX_SOURCE_MOVEMENT_HEADING_DELTA
+    // Prefer observed displacement when raw telemetry points away from motion.
+    target = sourceAgreesWithMovement && sourceHeading != null
+      ? sourceHeading
+      : movementHeading
+  } else if (topologyOnlyMotion && laneHeading != null) {
+    // The speed still indicates motion but the authoritative displacement is
+    // too short to yield a stable trajectory heading. Follow confirmed lane
+    // topology through the ordinary turn-rate limiter.
+    target = laneHeading
+  } else {
+    // Hold the last reliable heading while stopped to avoid low-speed jitter.
     target = previous.reliableHeading
   }
   const elapsedSeconds = Math.max(0, input.timeSeconds - previous.timeSeconds)
@@ -135,7 +159,7 @@ export function resolveStableVehicleHeading(
   const heading = previous.heading + (topologyHeading
     ? targetDelta
     : Math.max(-maximumTurn, Math.min(maximumTurn, targetDelta)))
-  const reliableHeading = topologyHeading || moving
+  const reliableHeading = topologyHeading || moving || topologyOnlyMotion
     ? heading
     : previous.reliableHeading
   return {
