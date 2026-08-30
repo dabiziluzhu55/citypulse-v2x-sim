@@ -249,22 +249,32 @@ function vehicleStation(track: LaneTrack, vehicle: TrafficVehicleView): number |
       }
     }
   }
-  const projectedStation = Math.max(0, Math.min(track.lengthMeters, projection.station))
-  const reportedStation = Math.max(0, Math.min(track.lengthMeters, lanePosition))
+  const projectedStation = Math.max(
+    0,
+    Math.min(track.lengthMeters, projection.station),
+  )
+  const reportedStation = Math.max(
+    0,
+    Math.min(track.lengthMeters, lanePosition),
+  )
+
   if (reliableLanePosition && projection.error > track.widthMeters / 2 + 1.5) {
-    // A valid SUMO lane station remains authoritative for lateral snapping.
-    // The projection fallback below is only for longitudinal cache lag.
+    // Keep the rendered endpoint on its authoritative lane even when the raw
+    // x/y sample is temporarily outside the indexed lane corridor.
     return reportedStation
   }
+
   if (projection.error <= track.widthMeters / 2 + 1.5) {
     if (!reliableLanePosition) return projectedStation
 
-    // lane_position used to be refreshed less often than x/y. Prefer the
-    // current source projection whenever the two sources are not coherent.
-    return Math.abs(reportedStation - projectedStation) <= 2
+    // lane_position can lag behind the live x/y telemetry. Prefer the live
+    // projection when the two longitudinal positions are no longer coherent.
+    const stationGapMeters = Math.abs(reportedStation - projectedStation)
+    return stationGapMeters <= 2
       ? reportedStation
       : projectedStation
   }
+
   if (!networkSourceSha256 && vehicle.longitude != null && vehicle.latitude != null) {
     let nearestIndex = 0
     let nearestDistance = Number.POSITIVE_INFINITY
@@ -280,6 +290,7 @@ function vehicleStation(track: LaneTrack, vehicle: TrafficVehicleView): number |
     }
     if (nearestDistance <= 15) return track.cumulativeMeters[nearestIndex]
   }
+
   return null
 }
 

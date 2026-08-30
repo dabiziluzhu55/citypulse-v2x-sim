@@ -285,8 +285,10 @@ function applySnapshot(next: SimulationSnapshot) {
   else statusError.value = null
   if (isTerminal(next.state)) {
     stopPolling()
-    localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
-    localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+    if (next.state !== 'COMPLETED') {
+      localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
+      localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+    }
     clearPersistedRuntimeDisturbances(false)
     connectSimulationStream('')
     activeScenarioPresetId.value = ''

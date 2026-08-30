@@ -70,6 +70,7 @@ import {
 import { auditVehicleFrameCollisions } from './vehicleFrameCollisionAudit.ts'
 
 const VEHICLE_HISTORY_TTL_SNAPSHOTS = 30
+const LANE_RECOVERY_HOLD_SECONDS = 1.5
 const VIEWPORT_SNAPSHOT_HISTORY_SECONDS = 30
 const MAX_VIEWPORT_STAGING_SNAPSHOTS = 128
 export const NORMAL_TWIN_OUTPUT_FPS = 30
@@ -288,6 +289,11 @@ export class BaiduVehicleRenderer {
   }>()
   private readonly routeCursorByVehicleId = new Map<string, number>()
   private readonly connectionLocksByVehicleId = new Map<string, VehicleConnectionLock>()
+  private readonly invalidPoseSuppressedVehicles = new Set<string>()
+  private readonly invalidPoseReentrySnapshots = new Map<string, {
+    count: number
+    sequence: number
+  }>()
   private readonly presentationClock = new VehiclePresentationClock()
   private readonly motionBuffer = new VehicleMotionBuffer()
   private readonly outputPacer = new VehicleOutputPacer()
@@ -449,6 +455,8 @@ export class BaiduVehicleRenderer {
     this.historyLastSeenSequence.clear()
     this.pendingLaneChanges.clear()
     this.connectionLocksByVehicleId.clear()
+    this.invalidPoseSuppressedVehicles.clear()
+    this.invalidPoseReentrySnapshots.clear()
   }
 
   commitViewportTransition(
@@ -489,6 +497,8 @@ export class BaiduVehicleRenderer {
     void surfaceVisibility
     this.routeCursorByVehicleId.clear()
     this.connectionLocksByVehicleId.clear()
+    this.invalidPoseSuppressedVehicles.clear()
+    this.invalidPoseReentrySnapshots.clear()
     this.terminalFreezeActive = false
     this.viewportTransitionActive = false
     this.selectionScopeDirty = false
@@ -869,12 +879,43 @@ export class BaiduVehicleRenderer {
           this.laneRecoveryCount += 1
           this.laneRecoveryVehicleIds.add(vehicle.vehicle_id)
         }
+        if (
+          previousPose
+          && context.elapsedSeconds - previousPose.lastStableElapsedSeconds
+            <= LANE_RECOVERY_HOLD_SECONDS
+        ) {
+          return {
+            vehicle,
+            profile,
+            previousHeading,
+            previousPose,
+            laneHeading: null,
+            lanePose: null,
+            resolverOptions,
+            sourceLongitude: longitude,
+            sourceLatitude: latitude,
+            longitude: previousPose.longitude,
+            latitude: previousPose.latitude,
+            telemetryReliable,
+            sourceMapHeading,
+            headingResolution,
+            heldForLaneRecovery: true,
+            laneChanging: false,
+            rawFallback: false,
+            rejectionReason: recoveredLanePose
+              ? 'recovery_pending'
+              : 'incompatible_topology_transition',
+            routeTurnResolution,
+          }
+        }
       }
-      const rawFallback = lanePose === null && !laneChanging
       const rejectedInsideDetailedLane = Boolean(
         !lanePose
         && this.lanePoseResolver?.hasLane(vehicle.lane_id),
       )
+      const rawFallback = lanePose === null
+        && !laneChanging
+        && !rejectedInsideDetailedLane
       if (lanePose) {
         this.maximumRoadMappingErrorMeters = Math.max(
           this.maximumRoadMappingErrorMeters,
@@ -885,6 +926,34 @@ export class BaiduVehicleRenderer {
       }
       if (rawFallback && this.lanePoseResolver?.hasLane(vehicle.lane_id)) {
         this.detailedAreaRawFallbackCount += 1
+      }
+      if (rejectedInsideDetailedLane) {
+        this.invalidPoseSuppressedVehicles.add(vehicle.vehicle_id)
+        this.invalidPoseReentrySnapshots.delete(vehicle.vehicle_id)
+        this.temporarilyHiddenCount += 1
+        this.temporarilyHiddenVehicleIds.add(vehicle.vehicle_id)
+        activeIds.add(vehicle.vehicle_id)
+        this.historyLastSeenSequence.set(vehicle.vehicle_id, context.sequence)
+        return null
+      }
+      if (lanePose && this.invalidPoseSuppressedVehicles.has(vehicle.vehicle_id)) {
+        const previous = this.invalidPoseReentrySnapshots.get(vehicle.vehicle_id)
+        const count = previous?.sequence === context.sequence
+          ? previous.count
+          : (previous?.count ?? 0) + 1
+        this.invalidPoseReentrySnapshots.set(vehicle.vehicle_id, {
+          count,
+          sequence: context.sequence,
+        })
+        if (count < 2) {
+          this.temporarilyHiddenCount += 1
+          this.temporarilyHiddenVehicleIds.add(vehicle.vehicle_id)
+          activeIds.add(vehicle.vehicle_id)
+          this.historyLastSeenSequence.set(vehicle.vehicle_id, context.sequence)
+          return null
+        }
+        this.invalidPoseSuppressedVehicles.delete(vehicle.vehicle_id)
+        this.invalidPoseReentrySnapshots.delete(vehicle.vehicle_id)
       }
       const laneHeading = lanePose?.heading
         ?? (fallbackLaneHeading != null
@@ -937,7 +1006,9 @@ export class BaiduVehicleRenderer {
       const frontToCenterOffsetMeters = lanePose?.modelCenterResolved === false
         ? profile.targetLengthMeters / 2
         : lanePose ? 0 : profile.targetLengthMeters / 2
-      const centerHeading = draft.sourceMapHeading ?? lanePose?.heading ?? previousPose?.heading
+      const centerHeading = lanePose?.heading
+        ?? previousPose?.heading
+        ?? draft.sourceMapHeading
       if (frontToCenterOffsetMeters > 0 && centerHeading != null) {
         point = moveFromFrontBumperToModelCenter(
           point,
@@ -1082,21 +1153,23 @@ export class BaiduVehicleRenderer {
           : []
       }
       const stableLaneHeading = lanePose?.heading ?? draft.laneHeading
-      const topologyHeadingConsistent = stableLaneHeading != null && (
-        draft.sourceMapHeading == null
-        || Math.abs(shortestAngleDelta(draft.sourceMapHeading, stableLaneHeading)) <= Math.PI / 3
+      // A successfully resolved detailed-lane pose is valid topology for an
+      // initial heading. Later frames are still checked against authoritative
+      // displacement inside resolveStableVehicleHeading.
+      const topologyConfirmed = Boolean(
+        lanePose
+        && !draft.laneChanging
       )
       const resolved = resolveStableVehicleHeading({
         sourceMapHeading: draft.sourceMapHeading,
         speedMetersPerSecond: vehicle.speed,
-        current: point,
+        current: {
+          longitude: draft.sourceLongitude,
+          latitude: draft.sourceLatitude,
+        },
         timeSeconds: context.elapsedSeconds,
         laneHeading: stableLaneHeading,
-        topologyConfirmed: Boolean(
-          lanePose
-          && !draft.laneChanging
-          && topologyHeadingConsistent
-        ),
+        topologyConfirmed,
       }, previousHeading ?? null)
       const heading = resolved.heading
       this.poseHistory.set(vehicle.vehicle_id, resolved.state)
@@ -1443,6 +1516,8 @@ export class BaiduVehicleRenderer {
     this.historyLastSeenSequence.clear()
     this.routeCursorByVehicleId.clear()
     this.connectionLocksByVehicleId.clear()
+    this.invalidPoseSuppressedVehicles.clear()
+    this.invalidPoseReentrySnapshots.clear()
     this.replayingViewportSnapshots = true
     try {
       for (const snapshot of this.viewportSnapshots) {
@@ -1502,6 +1577,8 @@ export class BaiduVehicleRenderer {
     this.pendingLaneChanges.clear()
     this.routeCursorByVehicleId.clear()
     this.connectionLocksByVehicleId.clear()
+    this.invalidPoseSuppressedVehicles.clear()
+    this.invalidPoseReentrySnapshots.clear()
     this.viewportSnapshots.splice(0)
     this.replayingViewportSnapshots = false
     this.viewportPrecompileMilliseconds = 0
@@ -1818,6 +1895,8 @@ export class BaiduVehicleRenderer {
       this.twinDirectionByVehicleId.delete(id)
       this.routeCursorByVehicleId.delete(id)
       this.connectionLocksByVehicleId.delete(id)
+      this.invalidPoseSuppressedVehicles.delete(id)
+      this.invalidPoseReentrySnapshots.delete(id)
     }
   }
 

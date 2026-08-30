@@ -182,6 +182,20 @@ test('a non-empty authoritative roster with no mapped pose is unresolved', () =>
   target.destroy()
 })
 
+test('nearby unsupported lanes do not block an intersection switch', () => {
+  const target = pipeline()
+  target.ingest([frame(12, 122, [
+    vehicle('nearby-other-intersection', 0.002, 'lane-outside-manifest'),
+  ])])
+  const stage = target.prepare(122, performance.now())
+
+  assert.equal(stage?.readiness.status, 'viewport_empty')
+  assert.equal(stage?.sourceVehicleCount, 1)
+  assert.equal(stage?.viewportVehicleCount, 0)
+  assert.equal(stage?.authoritativeLocalVehicleCount, 0)
+  target.destroy()
+})
+
 test('viewport history is ingested incrementally and interpolates a legal first frame', () => {
   const target = pipeline()
   const first = frame(20, 200, [vehicle('vehicle-moving', 0.001)])
