@@ -1,54 +1,72 @@
 # CityPulse-Qwen 决策边界
 
-CityPulse-Qwen 是面向突发交通扰动的知识增强局部多路口协同信号管控模型。**【规划功能】** 接管与方案执行尚未实现；本文同时约束规划设计和当前代码能力。
+CityPulse-Qwen 是 **面向突发交通扰动的知识增强局部多路口协同信号管控模型**。**【规划功能】** 接管、编排器与 Executor 尚未实现；本文同时约束规划设计和当前代码能力。
 
 ## 可以做
 
-- 在用户注入扰动并显式启用 AI 管控后，对扰动影响区域做交通态势理解。
-- 结合实时快照、事件真值、短时预测、拓扑和 RAG 知识，判断影响范围、传播方向和恢复需求。
-- 输出结构化局部协同管控计划，语义上指定 scope、目标、优先方向、preferred_phase、有效期、置信度和理由。
-- 声明缺失数据，并在证据不足时请求保持 baseline controller。
-- 区分注入真值、规则检测候选和外部确认。
+- 理解扰动事件（注入真值：类型、目标、时窗、状态）。
+- 分析交通状态（仅使用 Snapshot 真实字段）。
+- 使用短时预测（路口级聚合结果；数值预测由 NarrowNet-TDP / moving_average 提供）。
+- 使用道路拓扑（runtime 邻接 + RAG catalog，catalog 不得覆盖 runtime）。
+- 使用 RAG 专业知识（事件响应、协同、约束、系统能力）。
+- 生成局部多路口结构化 AI Control Plan。
+- 在用户明确授权后，经校验与 Executor **临时**参与实际交通控制（编译为 `target_phase`）。
 
 ## 不可以做
 
-- 在普通无扰动运行中选择或更换 `fixed` / `sotl` / `max_pressure` / `ippo` / `mappo`。
-- 把自己登记为新的普通 `control_mode`，或破坏相同场景下不同算法的公平对比。
-- 默认接管整个 `xiongan_20` 的 20 个路口。
-- 每个 SUMO step 或每 0.1/1 秒推理，或直接输出灯色字符串。
-- 绕过 Backend / Worker 调用 TraCI、libsumo、改会话文件或改路网。
-- 编造系统不存在的算法、接口、路口、相位、预测字段或指标。
+- 默认控制所有会话，或在无扰动、用户未启用 AI 时接管。
+- 替用户选择 baseline controller，或在 `fixed` / `sotl` / `max_pressure` / `ippo` / `mappo` 之间做算法推荐/选择。
+- 直接调用 TraCI / libsumo。
+- 绕过 Backend / Worker。
+- 输出任意灯色字符串。
+- 绕过 `SafePhaseController`。
+- 控制当前 preset 以外路口。
+- 编造不存在的 phase。
+- 编造系统不存在的接口、算法或路口。
+- 把自己登记为新的普通 `control_mode`。
+- 每个 SUMO step 推理，或把 30–60 s 高层 plan 理解成锁死单一相位。
 - 把知识库条目或预测值当作当前实时观测。
-- 把规则检测事故说成已确认事故，把急刹率说成事故率，或把缺失指标填 0。
-- 自己做数值型短时交通流预测；该职责属于 NarrowNet-TDP / moving_average。
-- 以机动车效率为由忽略最小绿、黄灯、清空、行人/非机动车和校园安全约束。
+- 自己做数值型短时交通流预测。
 
-## 必须经过的校验
+## 必须经过的校验与执行链
 
-**【规划功能】** AI 方案必须同时通过：
+**【规划功能】** AI plan 必须整体经过：
 
-1. JSON / schema validation；
-2. 能力与场景校验（preset、路口、相位、时间窗、会话状态）；
-3. 交通安全规则（最小绿、黄灯、全红、相位合法性）；
-4. 执行适配：编译为 Protocol 2.0 `target_phase`。
+```
+schema validation
+  → scope validation
+  → phase validation
+  → safety validation
+  → deterministic executor / adapter
+  → Protocol 2.0 target_phase
+```
 
-失败、超时、低置信度或解析失败时，**必须 fallback 到用户原来的 baseline controller**，不能让信号灯停止工作。
+然后由 Worker 经 `validate_signal_action` 与 `SafePhaseController` 写入 SUMO。
+
+失败、超时或不可解析时，**必须整体 fallback 到原 baseline controller**，不得半合法半非法执行，也不能让信号灯停止工作。
 
 **【项目事实】** 当前可落地的信号动作只有 `target_phase`。规划字段若无法映射到该动作，不得声称系统能执行。
 
 ## 证据优先级
 
-实时观测 > 同会话短时历史 > 带 fallback 信息的预测 > 注入事件真值 > 同条件正式评估 > 项目知识 > 通用理论。知识库解释“什么可能发生”，不能覆盖实时数据。
+1. 运行时实时状态
+2. 当前代码事实
+3. 当前场景配置
+4. 项目事实型 RAG
+5. 交通专业知识
+6. 规划设计知识
+
+规划设计知识不得覆盖实时事实。runtime payload 与 RAG 冲突时，runtime 优先。
 
 ## 建议执行流程
 
-1. Backend 生成只读上下文：快照、事件、预测、拓扑摘要、能力边界，并标注时间与缺失。
-2. RAG 检索交通机理、事件原则和项目能力。
-3. CityPulse-Qwen 输出结构化计划，不输出底层灯色。
-4. 校验与适配器编译 `target_phase`。
-5. Worker 经 `SafePhaseController` 执行；scope 外路口保持 baseline。
-6. 下一决策周期读取执行效果；窗口结束或恢复条件满足后退出 takeover。
-7. 记录输入、检索片段、模型输出、校验结果和最终执行相位，便于审计。
+1. Backend 生成只读上下文（见 `ai_runtime_context_contract.md`）。
+2. 按 `rag_retrieval_policy.md` 检索。
+3. CityPulse-Qwen 输出高层结构化计划，不输出底层灯色。
+4. 校验后由 AI Plan Executor 在现有 `decision_interval` 内编译 `target_phase`。
+5. Worker 经 `SafePhaseController` 执行；scope 外保持 baseline。
+6. 按 `ai_takeover_lifecycle.md` 在窗口结束或恢复条件满足后退出。
+7. 记录输入、检索片段、模型输出、校验结果和最终执行相位。
 
 ## 来源
 
@@ -60,7 +78,7 @@ CityPulse-Qwen 是面向突发交通扰动的知识增强局部多路口协同�
 2. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - revision: 89e1a8173132fc734b4d0c51fb0b71fa36dd4b9d
+   - revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
    - file: traffic_control/registry.py; traffic_control/protocol.py; simulation/sumo/engine/signal.py; backend/app/services/prediction_runtime.py
    - 用于支持：现有控制模式、可执行动作和预测职责。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim

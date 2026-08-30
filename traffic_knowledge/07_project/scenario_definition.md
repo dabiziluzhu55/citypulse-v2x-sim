@@ -46,17 +46,32 @@
 
 **【项目事实】** `xiongan_20` 可导出全局九区 OD；`east_dense` / `west_dense` 局部包不带该全局 OD。九区对角（区内）被排除。east 四路口同属 `zone_3`、west 三路口同属 `zone_7`，故局部 OD 矩阵区际为 0。不得把全局 OD 嫁接到局部预设。
 
-## 预测适用性
+## 预测：底层粒度 vs 聚合粒度
 
-**【项目事实】** NarrowNet-TDP 按官方 20 路口 / 206 车道图推理。局部预设只采集受控路口车道，其余节点为 0，不能把官方精度外推到东/西局部场景。`fallback=true` 时结果是移动平均。
+不得写成“20 个节点 STGCN”。当前预测栈是 **NarrowNet-TDP**，`stgcn_root` 仅兼容旧配置。
+
+**【项目事实】模型底层预测粒度**（`PredictionRuntime` / 交付包）：
+
+- 历史 12 帧；
+- 特征：车道 `vehicle_count`、`halting_count`、`mean_speed`、`occupancy`；
+- 206 个训练车道节点；
+- 输出未来约 60 s 的车道级 `vehicle_count`。
+
+**【项目事实】提供给 Frontend / 规划中 LLM 的聚合预测粒度**（`IntelligenceHub` → `PredictionPayload`）：
+
+- 按 `tls_manifest` 进口车道映射到官方路口节点后求和；
+- 路口级字段：`current_vehicle_count`、`predicted_vehicle_count`、`delta`、`delta_ratio`；
+- 另含 `horizon_seconds`、`model`、`fallback`、`fallback_reason`。
+
+局部预设只采集受控路口车道，其余训练节点为 0，不能把官方 20 路口精度外推到东/西局部场景。`fallback=true` 时聚合结果来自移动平均，不是 NarrowNet-TDP。
 
 ## 来源
 
 1. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - revision: 89e1a8173132fc734b4d0c51fb0b71fa36dd4b9d
-   - file: backend/app/scenario/presets.py; backend/app/scenario/resolver.py; backend/app/schemas/events.py; backend/app/schemas/disturbance_targets.py; backend/app/services/simulation_service.py; data/maps/sumo/generated/manifests/traffic_manifest.json
+   - revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
+   - file: backend/app/scenario/presets.py; backend/app/scenario/resolver.py; backend/app/schemas/events.py; backend/app/schemas/disturbance_targets.py; backend/app/services/simulation_service.py; backend/app/services/prediction_runtime.py; backend/app/services/intelligence_runtime.py; data/maps/sumo/generated/manifests/traffic_manifest.json
    - 用于支持：预设、事件、scope 和 OD 边界。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim
 2. 《河北雄安新区规划纲要》

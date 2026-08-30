@@ -39,9 +39,9 @@
   baseline controller
   → 事件生效
   → AI 接管局部路口
-  → CityPulse-Qwen 生成协同方案
-  → schema / 安全校验
-  → 适配为 Protocol 2.0 target_phase
+  → CityPulse-Qwen 生成高层协同方案
+  → schema / scope / phase / safety 校验
+  → AI Plan Executor 在现有 decision_interval 内编译 Protocol 2.0 target_phase
   → SUMO Worker 经 SafePhaseController 执行
   → AI 周期反馈
   → AI 结束
@@ -99,31 +99,31 @@
 
 **【项目事实】** SUMO 默认步长 `step_length=0.1` s。已注册算法的 Backend 默认 `decision_interval=5.0` s。算法只输出 `target_phase`，黄灯和全红由 `SafePhaseController` 执行。
 
-**【规划功能】** CityPulse-Qwen 不应每个 SUMO step 推理，也不应每 0.1 s 或 1 s 调用大模型。建议决策周期可配置，例如 30–60 个仿真秒。每次重读最新状态、事件、预测和上一周期效果。`AI decision interval ≠ SUMO simulation step`。
+**【规划功能】** CityPulse-Qwen 不应每个 SUMO step 推理，也不应每 0.1 s 或 1 s 调用大模型。建议每 30–60 个仿真秒生成一次高层 AI plan。Executor 仍按现有约 5 s 决策周期选择 `target_phase`。不得把一次 plan 理解成锁死某个相位 30–60 s。`AI decision interval ≠ signal decision interval ≠ SUMO simulation step`。详见 `ai_plan_executor.md`、`ai_takeover_lifecycle.md`。
 
 ## 输入数据
 
 **【项目事实】** 当前会话可提供：
 
 - 实时快照：`SimulationSnapshot` 中的路口相位、阶段、车道 `vehicle_count` / `halting_count` / `mean_speed` / `waiting_time` / `occupancy` / `lane_has_green` / `current_allowed_speed_mps`、车辆轨迹和 `events`
-- 预测：`prediction` 载荷，路口级未来约 60 秒 `vehicle_count`；模型为 NarrowNet-TDP 或 `moving_average` fallback
+- 预测：底层 NarrowNet-TDP 在 206 车道节点上预测约 60 秒 `vehicle_count`；Backend 聚合为路口级 `current_vehicle_count` / `predicted_vehicle_count` / `delta`。不可用时 `moving_average` fallback。不得写成 20 节点 STGCN。
 - 规则检测：`event_detection.cards`
 - 场景契约：preset、period、路口、车道、origin
 - Catalog：控制模式白名单、事件类型
 
-**【规划功能】** RAG 检索块、AI scope、上一周期执行效果、显式邻接拓扑摘要。邻接关系目前可从车道 `downstream_lane_ids`、路口坐标和官方 TLS 拓扑推断，但没有独立的“一跳邻域 API”。
+**【规划功能】** RAG 检索块、AI scope、上一周期执行效果。邻接关系没有独立一跳邻域 API；静态目录见 `intersection_topology_catalog.md`，运行时仍以 Snapshot `downstream_lane_ids`、Protocol 2.0 `direct_neighbors` 和当前 preset 为准。完整输入清单见 `ai_runtime_context_contract.md`。
 
 ## 预测与大模型职责
 
 统一表述：**预测模型回答接下来可能怎样，CityPulse-Qwen 回答应该怎样管。**
 
-**【项目事实】** 数值短时预测由 Backend `IntelligenceHub` + NarrowNet-TDP 完成，不是 Qwen。历史 12 帧、四特征（`vehicle_count`、`halting_count`、`mean_speed`、`occupancy`）、未来约 60 秒路口车辆数。模型不可用、历史不足或推理失败时降级移动平均，并返回 `fallback` 与 `fallback_reason`。局部预设下未选路口特征为 0，精度不能外推为官方 20 路口精度。
+**【项目事实】** 数值短时预测由 Backend `IntelligenceHub` + NarrowNet-TDP 完成，不是 Qwen。必须区分：模型底层是 12 帧 × 四特征 × 206 车道节点的约 60 秒 `vehicle_count`；LLM/Frontend 收到的是路口级聚合预测。模型不可用、历史不足或推理失败时降级移动平均，并返回 `fallback` 与 `fallback_reason`。局部预设下未选路口特征为 0，精度不能外推为官方 20 路口精度。
 
 CityPulse-Qwen 不得自己编造数值型短时预测。
 
 ## 输出、校验与执行
 
-**【规划功能】** Qwen 输出结构化管控计划，不得直接输出 SUMO 灯色字符串，不得连接 libsumo / TraCI。计划经 schema 校验和安全规则后，由执行适配器编译为现有 Protocol 2.0：
+**【规划功能】** Qwen 输出结构化 AI Control Plan，不得直接输出 SUMO 灯色字符串，不得连接 libsumo / TraCI。计划必须经过 schema → scope → phase → safety validation，再由 AI Plan Executor 编译为现有 Protocol 2.0：
 
 ```json
 {"signals": {"demo_5": {"target_phase": 2}}, "vehicles": {}}
@@ -139,10 +139,10 @@ Worker 已有 `SafePhaseController` 强制最小绿、黄灯和全红清空。�
 - 输出无法解析或 schema 失败；
 - 路口、相位或时间窗非法；
 - 安全规则失败；
-- 模型超时或低置信度低于阈值；
+- 模型超时、输出不可解析或校验失败；
 - AI control window 结束。
 
-回退不得中断仿真，也不得改写用户原来选择的 `control_mode`。
+`confidence` 可保留但第一版不设绝对阈值。回退不得中断仿真，也不得改写用户原来选择的 `control_mode`。状态机见 `ai_takeover_lifecycle.md`。
 
 ## 前端展示原则
 
@@ -155,7 +155,7 @@ Worker 已有 `SafePhaseController` 强制最小绿、黄灯和全红清空。�
 1. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - revision: 89e1a8173132fc734b4d0c51fb0b71fa36dd4b9d
+   - revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
    - file: traffic_control/registry.py; traffic_control/protocol.py; backend/app/scenario/presets.py; backend/app/schemas/events.py; backend/app/schemas/simulations.py; simulation/sumo/engine/signal.py; backend/app/services/prediction_runtime.py; backend/app/services/intelligence_runtime.py
    - 用于支持：现有控制模式、协议动作、事件类型、安全状态机和预测职责。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim

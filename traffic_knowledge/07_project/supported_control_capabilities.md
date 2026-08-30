@@ -14,7 +14,7 @@
 
 Backend 默认启用注册表全部模式；部署可用 `enabled_control_modes_csv` 收窄。Catalog 返回运行时白名单。
 
-CityPulse-Qwen **不是** 表中的 `control_mode`。**【规划功能】** 它只在扰动 + 用户启用 AI 时临时接管局部路口；未接管路口和 AI 结束后仍用上表算法。
+CityPulse-Qwen **不是** 表中的 `control_mode`，也 **不负责** 推荐或选择上表算法。用户选择的 `control_mode` 始终是 baseline controller。**【规划功能】** AI takeover 是扰动存在且用户主动启用后，对允许范围内部分路口的 **临时覆盖**；未接管路口和 AI 结束后仍用上表算法。它不是新增的普通控制模式。
 
 ## 模型别名
 
@@ -33,7 +33,7 @@ CityPulse-Qwen **不是** 表中的 `control_mode`。**【规划功能】** 它�
 1. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - revision: 89e1a8173132fc734b4d0c51fb0b71fa36dd4b9d
+   - revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
    - file: traffic_control/registry.py; backend/app/core/config.py; backend/app/schemas/simulations.py; traffic_control/ippo/aliases.py; traffic_control/mappo/aliases.py
    - 用于支持：模式、白名单、预设约束和模型别名。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim

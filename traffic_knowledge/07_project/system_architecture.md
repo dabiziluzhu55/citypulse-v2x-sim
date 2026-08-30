@@ -12,7 +12,7 @@
 
 内部 HTTP `/api/v1/internal/algorithm/{name}/initialize|step|finish` 仅服务 `max_pressure` 和 `sotl`。IPPO/MAPPO 走 Worker 内 `LocalAlgorithmClient`。
 
-**【规划功能】** CityPulse-Qwen 不进入上述注册表。启用 AI 管控时，由规划中的编排器在局部路口临时替换 baseline 的 `target_phase` 来源，详见 `ai_control_architecture.md`。
+**【规划功能】** CityPulse-Qwen 不进入上述注册表。它生成结构化 AI Control Plan；Backend AI Control Orchestrator 做安全校验，AI Plan Executor 在现有决策周期内把它转换成 Protocol 2.0 可执行 `target_phase`。CityPulse-Qwen 本身不直接操作 SUMO。详见 `ai_control_architecture.md`、`ai_plan_executor.md`。
 
 ## 评估链路
 
@@ -20,7 +20,7 @@
 
 ## 智能分析链路
 
-**【项目事实】** Backend `IntelligenceHub` 保存短时历史。预测模块是 **NarrowNet-TDP**（`backend/models/prediction/narrow_net_tdp`），不是在线依赖外部 STGCN 仓库；`stgcn_root` 仅兼容旧配置。历史 12 帧、特征为车道 `vehicle_count` / `halting_count` / `mean_speed` / `occupancy`、206 个训练车道节点，输出未来约 60 秒车辆数并聚合到 20 个官方路口。不可用时降级 `moving_average`，返回 `fallback` 与 `fallback_reason`。
+**【项目事实】** Backend `IntelligenceHub` 保存短时历史。预测模块是 **NarrowNet-TDP**（`backend/models/prediction/narrow_net_tdp`），不是在线依赖外部 STGCN 仓库；`stgcn_root` 仅兼容旧配置。历史 12 帧、特征为车道 `vehicle_count` / `halting_count` / `mean_speed` / `occupancy`、206 个训练车道节点，底层在 206 个车道节点上预测未来约 60 秒 `vehicle_count`；Backend 再聚合为路口级 `PredictionPayload.intersections`。不可用时降级 `moving_average`，返回 `fallback` 与 `fallback_reason`。不得写成“20 节点 STGCN”。
 
 事件检测是规则/CUSUM 候选，写入 `event_detection.cards`，不修改 SUMO。检测语义包括 `normal`、`localized_blockage`、`spillback`、`capacity_drop`、`unknown_abnormal`。
 
@@ -51,14 +51,14 @@
 
 ## 代码归属
 
-`traffic_control/` 是产品部署算法；`algorithms/` 主要是训练、实验和事件检测研究代码，不自动等于产品 `control_mode`。**【规划功能】** 未来 Qwen 应由 Backend 托管，只生成结构化计划，不得直接导入训练脚本或连接 libsumo。
+`traffic_control/` 是产品部署算法；`algorithms/` 主要是训练、实验和事件检测研究代码，不自动等于产品 `control_mode`。**【规划功能】** 未来 Qwen 应由 Backend 托管，生成结构化 AI Control Plan，经 Orchestrator / 安全校验 / Executor 变成 `target_phase`。Qwen 不得直接导入训练脚本或连接 libsumo。
 
 ## 来源
 
 1. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - revision: 89e1a8173132fc734b4d0c51fb0b71fa36dd4b9d
+   - revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
    - file: backend/app/api/router.py; backend/app/services/simulation_service.py; backend/app/services/prediction_runtime.py; backend/app/services/intelligence_runtime.py; simulation/sumo/engine/session.py; traffic_control/protocol.py
    - 用于支持：架构、API、预测和快照字段。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim
