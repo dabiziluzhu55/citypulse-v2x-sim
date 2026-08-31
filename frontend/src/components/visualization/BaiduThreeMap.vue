@@ -1126,7 +1126,6 @@ function syncVehicleAuthoritativeHistory(): VehicleRenderStats | null {
         : { kind: 'intersection', intersectionId: renderIntersectionId },
     )
   }
-  vehicleRenderer.setPresentationElapsedSeconds(history.displayElapsedSeconds)
   let latestStats: VehicleRenderStats | null = vehicleRenderer.debugStats()
   for (const frame of history.frames) {
     const historyKey = `${frame.sessionId}:${frame.sequence}:${frame.elapsedSeconds}:${frame.state}`
@@ -1143,6 +1142,7 @@ function syncVehicleAuthoritativeHistory(): VehicleRenderStats | null {
     })
     processedVehicleHistoryKeys.add(historyKey)
   }
+  vehicleRenderer.setPresentationElapsedSeconds(history.displayElapsedSeconds)
   if (latestStats) updateVehicleRenderStats(latestStats)
   return latestStats
 }

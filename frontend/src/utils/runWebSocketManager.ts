@@ -10,11 +10,12 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 const MAX_RECONNECT_DELAY_MS = 30_000
 const STREAM_STALE_TIMEOUT_MS = 20_000
+const DECODER_WORKER_RETRY_DELAY_MS = 5_000
 let shouldReconnect = false
 let lastStreamMessageAt = 0
 let streamWatchdog: ReturnType<typeof setInterval> | null = null
 let decoderWorker: Worker | null = null
-let decoderWorkerUnavailable = false
+let decoderWorkerRetryAfterMs = 0
 let decodeGeneration = 0
 const handlers = new Set<MessageHandler>()
 const connectionListeners = new Set<(connected: boolean) => void>()
@@ -116,7 +117,7 @@ function dispatchMessage(message: SimulationWsMessage): void {
 
 function ensureDecoderWorker(): Worker | null {
   if (decoderWorker) return decoderWorker
-  if (decoderWorkerUnavailable || typeof Worker === 'undefined') return null
+  if (typeof Worker === 'undefined' || Date.now() < decoderWorkerRetryAfterMs) return null
   try {
     decoderWorker = new Worker(
       new URL('../workers/simulationSnapshotDecoder.worker.ts', import.meta.url),
@@ -135,15 +136,18 @@ function ensureDecoderWorker(): Worker | null {
       )
       for (const message of event.data.messages) dispatchMessage(message)
     }
-    decoderWorker.onerror = () => {
+    decoderWorker.onerror = (event) => {
+      console.error('[simulation-stream] snapshot decoder worker failed', event.message)
       decoderWorker?.terminate()
       decoderWorker = null
-      decoderWorkerUnavailable = true
+      decoderWorkerRetryAfterMs = Date.now() + DECODER_WORKER_RETRY_DELAY_MS
     }
+    decoderWorkerRetryAfterMs = 0
     return decoderWorker
-  } catch {
+  } catch (cause) {
+    console.error('[simulation-stream] snapshot decoder worker unavailable', cause)
     decoderWorker = null
-    decoderWorkerUnavailable = true
+    decoderWorkerRetryAfterMs = Date.now() + DECODER_WORKER_RETRY_DELAY_MS
     return null
   }
 }

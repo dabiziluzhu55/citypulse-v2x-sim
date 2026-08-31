@@ -780,6 +780,15 @@ export class BaiduVehicleRenderer {
         this.ambiguousIncomingPendingCount += 1
       }
       if (routeTurnResolution.status === 'mismatch') this.connectionMismatchCount += 1
+      const canonicalTransitionResolved = Boolean(
+        vehicle.canonical_motion_resolved === true
+        && vehicle.canonical_segment_id
+        && (
+          vehicle.canonical_route_evidence === 'same_lane'
+          || vehicle.canonical_route_evidence === 'lane_change'
+          || vehicle.canonical_route_evidence === 'unique_connection'
+        )
+      )
       const resolverOptions = {
         speedMetersPerSecond: vehicle.speed,
         expectedHeading: sourceMapHeading,
@@ -843,7 +852,7 @@ export class BaiduVehicleRenderer {
         )
         recoveredLanePose = lanePose !== null
       }
-      if (recoveredLanePose && lanePose) {
+      if (recoveredLanePose && lanePose && !canonicalTransitionResolved) {
         this.laneRecoveryCount += 1
         this.laneRecoveryVehicleIds.add(vehicle.vehicle_id)
         const pending = this.pendingPoseCandidates.get(vehicle.vehicle_id)
@@ -874,7 +883,11 @@ export class BaiduVehicleRenderer {
         && previousPose
         && previousPose.laneId !== vehicle.lane_id,
       )
-      if (!lanePose && (recoveredLanePose || incompatibleTransition)) {
+      if (
+        !lanePose
+        && !canonicalTransitionResolved
+        && (recoveredLanePose || incompatibleTransition)
+      ) {
         if (!recoveredLanePose) {
           this.laneRecoveryCount += 1
           this.laneRecoveryVehicleIds.add(vehicle.vehicle_id)
@@ -902,6 +915,7 @@ export class BaiduVehicleRenderer {
             heldForLaneRecovery: true,
             laneChanging: false,
             rawFallback: false,
+            canonicalFallback: false,
             rejectionReason: recoveredLanePose
               ? 'recovery_pending'
               : 'incompatible_topology_transition',
@@ -911,11 +925,17 @@ export class BaiduVehicleRenderer {
       }
       const rejectedInsideDetailedLane = Boolean(
         !lanePose
+        && !canonicalTransitionResolved
         && this.lanePoseResolver?.hasLane(vehicle.lane_id),
+      )
+      const canonicalFallback = Boolean(
+        !lanePose
+        && canonicalTransitionResolved
       )
       const rawFallback = lanePose === null
         && !laneChanging
         && !rejectedInsideDetailedLane
+        && !canonicalFallback
       if (lanePose) {
         this.maximumRoadMappingErrorMeters = Math.max(
           this.maximumRoadMappingErrorMeters,
@@ -980,6 +1000,7 @@ export class BaiduVehicleRenderer {
         heldForLaneRecovery: false,
         laneChanging,
         rawFallback,
+        canonicalFallback,
         rejectionReason: laneChanging
           ? 'lane_change_in_progress'
           : rawFallback ? 'no_compatible_topology_pose' : undefined,
@@ -1068,9 +1089,16 @@ export class BaiduVehicleRenderer {
       }
       const motionEpoch = previousPose?.motionEpoch ?? 0
       const candidateMotionPathKey = lanePose?.motionPathKey
-        ?? (draft.rawFallback || draft.laneChanging
+        ?? (draft.rawFallback || draft.laneChanging || draft.canonicalFallback
           ? `raw:${vehicle.road_id}:${vehicle.lane_id}`
           : previousPose?.motionPathKey)
+      const canInheritLateralOffset = Boolean(
+        previousPose
+        && previousPose.laneId === vehicle.lane_id
+        && previousPose.motionPathKey === candidateMotionPathKey
+      )
+      const stableSourceLateralOffsetMeters = lanePose?.sourceLateralOffsetMeters
+        ?? (canInheritLateralOffset ? previousPose?.sourceLateralOffsetMeters : 0)
       const candidateTransitionKind = lanePose?.transitionKind
         ?? (draft.rawFallback || draft.laneChanging
           ? 'raw_fallback'
@@ -1228,8 +1256,7 @@ export class BaiduVehicleRenderer {
         sourceArcDistanceMeters: lanePose?.sourceArcDistanceMeters == null
           ? previousPose?.sourceArcDistanceMeters
           : lanePose.sourceArcDistanceMeters - frontToCenterOffsetMeters,
-        sourceLateralOffsetMeters: lanePose?.sourceLateralOffsetMeters
-          ?? previousPose?.sourceLateralOffsetMeters,
+        sourceLateralOffsetMeters: stableSourceLateralOffsetMeters,
         longitude: point.longitude,
         latitude: point.latitude,
         heading,
@@ -1353,8 +1380,7 @@ export class BaiduVehicleRenderer {
             sourceArcDistanceMeters: lanePose?.sourceArcDistanceMeters == null
               ? previousPose?.sourceArcDistanceMeters
               : lanePose.sourceArcDistanceMeters - frontToCenterOffsetMeters,
-            sourceLateralOffsetMeters: lanePose?.sourceLateralOffsetMeters
-              ?? previousPose?.sourceLateralOffsetMeters,
+            sourceLateralOffsetMeters: stableSourceLateralOffsetMeters,
             authoritativeSourceLongitude: draft.sourceLongitude,
             authoritativeSourceLatitude: draft.sourceLatitude,
             poseSource: draft.laneChanging

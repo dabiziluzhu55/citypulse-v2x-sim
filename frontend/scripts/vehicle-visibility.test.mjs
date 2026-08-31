@@ -1348,7 +1348,11 @@ test('paces Twin output while keeping source, viewport, and selected rosters sep
   assert.match(vehicleRendererSource, /this\.twinPlaybackBacklogMs = pacing\.backlogMs/)
   assert.match(vehicleRendererSource, /this\.pushMotionFrameAt\(pacing\.sampleWallTimeMs, wallTimeMs\)/)
   assert.match(vehicleRendererSource, /recordSourceRoster\(context\.sequence/)
-  assert.match(vehicleRendererSource, /!lanePose\s*&& this\.lanePoseResolver\?\.hasLane\(vehicle\.lane_id\)/)
+  assert.match(vehicleRendererSource, /const canonicalTransitionResolved = Boolean/)
+  assert.match(
+    vehicleRendererSource,
+    /const rejectedInsideDetailedLane = Boolean\([\s\S]{0,180}!canonicalTransitionResolved[\s\S]{0,180}this\.lanePoseResolver\?\.hasLane\(vehicle\.lane_id\)/,
+  )
   assert.match(vehicleRendererSource, /LANE_RECOVERY_HOLD_SECONDS = 1\.5/)
   assert.match(vehicleRendererSource, /heldForLaneRecovery: true/)
   assert.match(
@@ -1360,6 +1364,8 @@ test('paces Twin output while keeping source, viewport, and selected rosters sep
     /if \(rejectedInsideDetailedLane\) \{[\s\S]{0,520}return null/,
   )
   assert.match(vehicleRendererSource, /invalidPoseReentrySnapshots/)
+  assert.match(vehicleRendererSource, /stableSourceLateralOffsetMeters/)
+  assert.match(vehicleMotionBufferSource, /const canonicalMotionResolved = Boolean/)
   assert.match(
     vehicleMotionBufferSource,
     /MAX_LEGAL_POSE_HOLD_SECONDS = MAX_VEHICLE_BUFFER_SECONDS/,
@@ -1517,6 +1523,16 @@ test('uses a speed-aware outlier gate for same-lane positions', () => {
     0,
     11,
   ), true)
+})
+
+test('primes each re-entering Twin vehicle with a zero-distance segment', () => {
+  assert.match(vehicleTwinPresenterSource, /lastSubmittedVehicleIds: Set<string>/)
+  assert.match(vehicleTwinPresenterSource, /const reenteredSamples = channel\.primed/)
+  assert.match(vehicleTwinPresenterSource, /sourceSpeedMetersPerSecond: 0/)
+  assert.match(
+    vehicleTwinPresenterSource,
+    /channel\.lastSubmittedVehicleIds = new Set\(samples\.map\(\(sample\) => sample\.id\)\)/,
+  )
 })
 
 test('keeps stop-boundary state diagnostic-only after a vehicle crosses it', () => {

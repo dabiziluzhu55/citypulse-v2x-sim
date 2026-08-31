@@ -892,7 +892,18 @@ watch(activeIntersectionId, () => {
   focusActiveIntersection()
 })
 
-watch([disturbanceEvents, runtimeDisturbances, snapshot, simulationStartTime], renderDisturbanceWarnings, { deep: true })
+watch(
+  [
+    disturbanceEvents,
+    runtimeDisturbances,
+    // The warning overlay only needs a refresh boundary from the snapshot.
+    // Watching the full snapshot deeply traverses every vehicle once per update.
+    () => snapshot.value?.sequence ?? -1,
+    simulationStartTime,
+  ],
+  renderDisturbanceWarnings,
+  { deep: true },
+)
 watch(snapshot, refreshIntelligenceLayers)
 
 

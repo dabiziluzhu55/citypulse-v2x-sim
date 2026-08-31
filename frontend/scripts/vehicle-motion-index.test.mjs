@@ -213,11 +213,13 @@ test('3D global interpolation samples the same canonical curve instead of its en
     scale: [1, 1, 1], color: '#fff', vehicleHeading: 0, modelForwardAxisAngle: 0,
     motionPathKey: 'raw:curve:curve_0', canonicalSegmentId: 'previous',
     canonicalRouteEvidence: 'authoritative_endpoint', vehicleLengthMeters: 0,
+    detailedCorridorValidation: true,
   }, {
     id: 'curve-3d', point: rightPoint, dir: 0, time: 500, modelType: 3,
     scale: [1, 1, 1], color: '#fff', vehicleHeading: 0, modelForwardAxisAngle: 0,
     motionPathKey: 'raw:curve:curve_0', canonicalSegmentId: canonical.segmentId,
     canonicalRouteEvidence: canonical.routeEvidence, vehicleLengthMeters: 0,
+    detailedCorridorValidation: true,
   }, 0.5)
   const expected = projectSimulationCoordinateToBaiduMap([116.0001, 39.0001, 1.1])
   assert.ok(Math.abs(middle.point[0] - expected[0]) < 1e-6)
