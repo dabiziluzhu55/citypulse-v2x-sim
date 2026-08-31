@@ -732,10 +732,10 @@ async function exportConfig() {
     const link = document.createElement('a')
     link.href = url
     link.download = filename ?? `${config.value.scenario_preset_id}-${Date.now()}.zip`
-    document.body.append(link)
+    document.body.appendChild(link)
     link.click()
     link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
     feedback.value = validation.summary
   } catch (error) {
     feedback.value = simulationApiErrorMessage(error, '场景导出失败')

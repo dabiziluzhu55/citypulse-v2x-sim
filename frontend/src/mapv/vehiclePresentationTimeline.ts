@@ -4,9 +4,9 @@ import { VEHICLE_TWIN_RENDER_DELAY_MS } from './vehicleTwinPresentation.ts'
 import { interpolateCanonicalVehiclePosition } from './canonicalVehicleMotion.ts'
 
 export const MIN_SHARED_VEHICLE_DELAY_SECONDS = 3
-export const MAX_SHARED_VEHICLE_DELAY_SECONDS = 6
+export const MAX_SHARED_VEHICLE_DELAY_SECONDS = 8
 const LOW_BUFFER_SECONDS = 1
-const RECOVERY_BUFFER_SECONDS = 1
+const RECOVERY_BUFFER_SECONDS = 1.5
 const MAX_PRESENTATION_FRAMES = 256
 const MIN_TRACKED_INTERVAL_MS = 20
 const MAX_TRACKED_INTERVAL_MS = 10_000

@@ -1,4 +1,6 @@
 export const MAX_VEHICLE_OUTPUT_CATCH_UP_RATE = 1.05
+export const MAX_REPLAYABLE_OUTPUT_GAP_MS = 500
+export const MAX_VEHICLE_OUTPUT_BACKLOG_MS = 500
 
 export interface VehicleOutputPacingFrame {
   sampleWallTimeMs: number
@@ -17,10 +19,23 @@ export class VehicleOutputPacer {
       return null
     }
     if (this.nextOutputDueMs != null && wallTimeMs < this.nextOutputDueMs - 1) return null
-    const actualGapMs = this.lastOutputWallTimeMs == null
+    const previousOutputWallTimeMs = this.lastOutputWallTimeMs
+    const actualGapMs = previousOutputWallTimeMs == null
       ? frameIntervalMs
-      : Math.max(0, wallTimeMs - this.lastOutputWallTimeMs)
+      : Math.max(0, wallTimeMs - previousOutputWallTimeMs)
     this.lastOutputWallTimeMs = wallTimeMs
+    if (previousOutputWallTimeMs != null && actualGapMs > MAX_REPLAYABLE_OUTPUT_GAP_MS) {
+      // A hidden tab or a 2D view can suspend requestAnimationFrame for seconds.
+      // Re-anchor to current wall time instead of replaying stale Twin frames.
+      this.nextOutputDueMs = wallTimeMs + frameIntervalMs
+      this.sampleWallTimeMs = wallTimeMs
+      this.backlogMs = 0
+      return {
+        sampleWallTimeMs: wallTimeMs,
+        backlogMs: 0,
+        catchingUp: false,
+      }
+    }
     const previousDueMs = this.nextOutputDueMs ?? wallTimeMs
     this.nextOutputDueMs = previousDueMs + frameIntervalMs
     if (this.nextOutputDueMs < wallTimeMs - frameIntervalMs) {
@@ -31,7 +46,10 @@ export class VehicleOutputPacer {
       this.sampleWallTimeMs = wallTimeMs
     } else {
       if (actualGapMs > frameIntervalMs * 1.5) {
-        this.backlogMs += actualGapMs - frameIntervalMs
+        this.backlogMs = Math.min(
+          MAX_VEHICLE_OUTPUT_BACKLOG_MS,
+          this.backlogMs + actualGapMs - frameIntervalMs,
+        )
       } else if (actualGapMs < frameIntervalMs) {
         this.backlogMs = Math.max(0, this.backlogMs - (frameIntervalMs - actualGapMs))
       }

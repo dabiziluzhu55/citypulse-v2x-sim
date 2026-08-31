@@ -1834,8 +1834,34 @@ export class VehicleMotionBuffer {
           + 0.5 * MAX_SYNTHETIC_ACCELERATION_MPS2 * displayDeltaSeconds * displayDeltaSeconds,
       )
       if (candidateArc - previousArc > maximumStep) {
+        if (!this.motionPathSampler) {
+          timeline.state = 'isolated'
+          return null
+        }
+        const reconciledArc = previousArc + maximumStep
+        const reconciledPose = this.motionPathSampler.sample(
+          candidate.motionPathKey,
+          reconciledArc,
+        )
+        if (!reconciledPose) {
+          timeline.state = 'isolated'
+          return null
+        }
         timeline.state = 'recovering'
-        return null
+        return {
+          ...candidate,
+          point: [
+            reconciledPose.longitude,
+            reconciledPose.latitude,
+            candidate.point[2],
+          ],
+          vehicleHeading: reconciledPose.heading,
+          dir: reconciledPose.heading - candidate.modelForwardAxisAngle,
+          pathArcDistanceMeters: reconciledPose.pathArcDistanceMeters,
+          reconciling: true,
+          sampleQuality: 'held',
+          poseSource: 'held',
+        }
       }
     }
     return candidate
