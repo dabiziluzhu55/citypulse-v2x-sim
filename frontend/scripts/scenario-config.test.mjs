@@ -21,6 +21,14 @@ import {
 } from '../src/constants/scenarioOptions.ts'
 import { formatIntersectionLabel } from '../src/utils/intersectionLabels.ts'
 import { buildStartSimulationRequest } from '../src/utils/scenarioPayload.ts'
+import {
+  assertSafeLaneClosureEvents,
+  laneClosureAvailability,
+} from '../src/utils/safeLaneClosures.ts'
+import {
+  assertUniqueDisturbanceIntersections,
+  disturbanceIntersectionOwners,
+} from '../src/utils/disturbanceIntersectionUniqueness.ts'
 import { buildDisturbanceWarningAggregates } from '../src/utils/disturbanceWarnings.ts'
 import {
   SCENARIO_CONFIG_EXPORT_VERSION,
@@ -325,7 +333,41 @@ test('builds one unique disturbance target for every selected intersection', () 
   assert.equal(new Set(payload.disturbance_targets.map((target) => target.event_id)).size, 2)
 })
 
-test('flattens multiple configured events into unique backend disturbance targets', () => {
+test('converts speed limit from km/h to m/s and rejects values outside 20-80', () => {
+  const baseInput = {
+    scenarioPresetId: 'east_dense',
+    period: 'morning_peak',
+    windowStartSeconds: 0,
+    durationSeconds: 600,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    snapshotIntervalSeconds: 0.2,
+  }
+
+  const payload = buildStartSimulationRequest({
+    ...baseInput,
+    disturbanceEvents: [{
+      eventType: 'speed_limit',
+      intersectionIds: ['demo_6'],
+      speedLimitKmh: 60,
+    }],
+  })
+
+  assert.equal(payload.disturbance_targets[0].max_speed, 60 / 3.6)
+
+  for (const speedLimitKmh of [19, 81]) {
+    assert.throws(() => buildStartSimulationRequest({
+      ...baseInput,
+      disturbanceEvents: [{
+        eventType: 'speed_limit',
+        intersectionIds: ['demo_6'],
+        speedLimitKmh,
+      }],
+    }), /20-80/)
+  }
+})
+
+test('flattens multiple non-conflicting events into unique backend disturbance targets', () => {
   const payload = buildStartSimulationRequest({
     scenarioPresetId: 'east_dense',
     period: 'morning_peak',
@@ -335,8 +377,8 @@ test('flattens multiple configured events into unique backend disturbance target
     playbackSpeed: 1,
     disturbanceEvents: [
       { eventId: 'construction', eventType: 'lane_closure', intersectionIds: ['demo_3', 'demo_5'] },
-      { eventId: 'arrival', eventType: 'speed_limit', intersectionIds: ['demo_5'] },
-      { eventId: 'incident', eventType: 'accident', intersectionIds: ['demo_6'] },
+      { eventId: 'arrival', eventType: 'speed_limit', intersectionIds: ['demo_6'] },
+      { eventId: 'incident', eventType: 'accident', intersectionIds: ['demo_9'] },
     ],
     snapshotIntervalSeconds: 0.2,
   })
@@ -346,9 +388,95 @@ test('flattens multiple configured events into unique backend disturbance target
   )
   assert.deepEqual(
     payload.disturbance_targets.map((target) => target.intersection_id),
-    ['demo_3', 'demo_5', 'demo_5', 'demo_6'],
+    ['demo_3', 'demo_5', 'demo_6', 'demo_9'],
   )
   assert.equal(new Set(payload.disturbance_targets.map((target) => target.event_id)).size, 4)
+})
+
+test('rejects one intersection assigned to multiple events even at different times', () => {
+  assert.throws(() => buildStartSimulationRequest({
+    scenarioPresetId: 'east_dense',
+    period: 'morning_peak',
+    windowStartSeconds: 0,
+    durationSeconds: 600,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    disturbanceEvents: [
+      {
+        eventId: 'construction', eventType: 'lane_closure', intersectionIds: ['demo_5'],
+        startOffsetSeconds: 0, endOffsetSeconds: 120,
+      },
+      {
+        eventId: 'arrival', eventType: 'speed_limit', intersectionIds: ['demo_5'],
+        startOffsetSeconds: 300, endOffsetSeconds: 420,
+      },
+    ],
+    snapshotIntervalSeconds: 0.2,
+  }), /路口5.*lane_closure.*speed_limit/)
+})
+
+test('excludes the edited event itself while detecting occupied intersections', () => {
+  const events = [
+    { event_id: 'first', intersection_ids: ['demo_3', 'demo_5'] },
+    { event_id: 'second', intersection_ids: ['demo_6'] },
+  ]
+  const owners = disturbanceIntersectionOwners(events, 'first')
+  assert.equal(owners.has('demo_3'), false)
+  assert.equal(owners.has('demo_5'), false)
+  assert.equal(owners.get('demo_6')?.event_id, 'second')
+  assert.doesNotThrow(() => assertUniqueDisturbanceIntersections(events))
+  assert.throws(() => assertUniqueDisturbanceIntersections([
+    ...events,
+    { event_id: 'imported', intersection_ids: ['demo_6'] },
+  ]), /路口6.*second.*imported/)
+})
+
+test('uses explicit safe lane ids and rejects construction where no fixed-route-safe lane exists', () => {
+  const payload = buildStartSimulationRequest({
+    scenarioPresetId: 'xiongan_20',
+    period: 'morning_peak',
+    windowStartSeconds: 0,
+    durationSeconds: 900,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    disturbanceEvents: [{
+      eventId: 'safe-construction',
+      eventType: 'lane_closure',
+      intersectionIds: ['demo_1', 'demo_6'],
+      startSeconds: 0,
+      endSeconds: 600,
+    }],
+    snapshotIntervalSeconds: 0.2,
+  })
+  assert.deepEqual(
+    payload.disturbance_targets.map((target) => [target.intersection_id, target.lane_ids]),
+    [
+      ['demo_1', ['-56384_1']],
+      ['demo_6', ['-50334_1']],
+    ],
+  )
+  assert.equal(laneClosureAvailability('demo_7').available, false)
+  assert.equal(laneClosureAvailability('demo_10').available, false)
+  for (const intersectionId of ['demo_7', 'demo_10']) {
+    assert.throws(() => assertSafeLaneClosureEvents([{
+      event_type: 'lane_closure',
+      intersection_ids: [intersectionId],
+    }]), new RegExp(`${formatIntersectionLabel(intersectionId)}.*不支持施工占道`))
+    assert.throws(() => buildStartSimulationRequest({
+      scenarioPresetId: 'xiongan_20',
+      period: 'morning_peak',
+      windowStartSeconds: 0,
+      durationSeconds: 900,
+      controlMode: 'fixed',
+      playbackSpeed: 1,
+      disturbanceEvents: [{ eventType: 'lane_closure', intersectionIds: [intersectionId] }],
+      snapshotIntervalSeconds: 0.2,
+    }), /不支持施工占道/)
+  }
+  assert.doesNotThrow(() => assertSafeLaneClosureEvents([{
+    event_type: 'speed_limit',
+    intersection_ids: ['demo_7', 'demo_10'],
+  }]))
 })
 
 test('sends real opening and closing events with a per-intersection vehicle count', () => {

@@ -14,6 +14,9 @@ import {
   STATUS_POLL_INTERVAL_MS,
 } from '../constants/simulationOptions'
 import { snapshotToTrafficView } from '../utils/trafficStateMerge'
+import { VehiclePresentationCoordinator } from '../mapv/vehiclePresentationCoordinator'
+import { loadVehicleMotionIndex } from '../mapv/vehicleMotionIndex.ts'
+import { registerCanonicalVehicleMotionIndex } from '../mapv/canonicalVehicleMotion.ts'
 import { shouldApplySimulationSnapshot } from '../utils/snapshotOrdering'
 import { simulationSnapshotErrorMessage } from '../utils/simulationSessionError.ts'
 import {
@@ -45,6 +48,13 @@ import {
   recordSimulationDiagnosticConnection,
   resetSimulationRuntimeDiagnostics,
 } from '../utils/simulationRuntimeDiagnostics'
+import {
+  DISTURBANCE_RUNTIME_STORAGE_KEY,
+  freezeDisturbanceRuntimeTargets,
+  parseStoredDisturbanceRuntimeTargets,
+  runtimeDisturbanceViews,
+  type DisturbanceRuntimeTarget,
+} from '../utils/runtimeDisturbances'
 
 function isTerminal(state: SimulationState | null | undefined): boolean {
   return !!state && TERMINAL_SIMULATION_STATES.includes(state)
@@ -57,6 +67,7 @@ interface StoredSimulationContext {
   controlMode: string
   playbackSpeed: number
   websocketUrl: string
+  period: string
 }
 
 function readStoredSimulationContext(): StoredSimulationContext | null {
@@ -78,6 +89,7 @@ function readStoredSimulationContext(): StoredSimulationContext | null {
         controlMode: parsed.controlMode,
         playbackSpeed: typeof parsed.playbackSpeed === 'number' ? parsed.playbackSpeed : 1,
         websocketUrl: typeof parsed.websocketUrl === 'string' ? parsed.websocketUrl : '',
+        period: typeof parsed.period === 'string' ? parsed.period : '',
       }
     }
   } catch {
@@ -93,6 +105,12 @@ function isMissingSessionError(message: string): boolean {
 const sessionId = ref(localStorage.getItem(ACTIVE_SESSION_ID_KEY) ?? '')
 const storedContext = readStoredSimulationContext()
 const snapshot = ref<SimulationSnapshot | null>(null)
+const storedRuntimeTargets = parseStoredDisturbanceRuntimeTargets(
+  localStorage.getItem(DISTURBANCE_RUNTIME_STORAGE_KEY),
+)
+const runtimeDisturbanceTargets = ref<DisturbanceRuntimeTarget[]>(
+  storedRuntimeTargets?.sessionId === sessionId.value ? storedRuntimeTargets.targets : [],
+)
 const starting = ref(false)
 const controlling = ref(false)
 const startError = ref<string | null>(null)
@@ -116,24 +134,72 @@ const activePlaybackSpeed = ref(
 const activeWebsocketUrl = ref(
   storedContext?.sessionId === sessionId.value ? storedContext.websocketUrl : '',
 )
+const activeSimulationPeriod = ref(
+  storedContext?.sessionId === sessionId.value ? storedContext.period : '',
+)
 const achievedPlaybackSpeed = ref<number | null>(null)
 const acceptedState = ref<SimulationState | null>(null)
 const displayedOfficialTime = ref('')
 // Changes only after the backend accepts a different session. Renderers use
 // this boundary to discard vehicles and interpolation state from the old run.
 const renderSessionRevision = ref(0)
+const simulationPresentationGeneration = ref(0)
+const rejectedStaleSessionSnapshotCount = ref(0)
+const vehiclePresentationTimeline = new VehiclePresentationCoordinator()
+const vehicleDisplayElapsedSeconds = ref<number | null>(null)
+const vehiclePresentationRevision = ref(0)
+const vehicleAuthoritativeHistoryRevision = ref(0)
 
-let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollTimer: ReturnType<typeof setTimeout> | null = null
 let pollAbortController: AbortController | null = null
+let pollInFlight = false
 let requestVersion = 0
 let initialized = false
 let playbackRateSamples: PlaybackRateSample[] = []
 let clockTimer: ReturnType<typeof setInterval> | null = null
+let presentationFrameId: number | null = null
+let lastPresentationPublishMs = 0
+const PRESENTATION_PUBLISH_INTERVAL_MS = 1_000 / 30
 const confirmedClock = new ConfirmedSimulationClock()
 
 const trafficView = computed(() =>
   snapshot.value ? snapshotToTrafficView(snapshot.value) : null,
 )
+const presentationTrafficView = computed(() => {
+  void vehiclePresentationRevision.value
+  return vehiclePresentationTimeline.sample()?.view ?? null
+})
+const vehiclePresentationDiagnostics = computed(() => {
+  void vehiclePresentationRevision.value
+  return vehiclePresentationTimeline.stats()
+})
+const runtimeDisturbances = computed(() => (
+  runtimeDisturbanceViews(runtimeDisturbanceTargets.value, snapshot.value)
+))
+const unmappedRuntimeEvents = computed(() => {
+  const mapped = new Set(runtimeDisturbances.value.map((target) => target.eventId))
+  return (snapshot.value?.events ?? []).filter((event) => !mapped.has(event.event_id))
+})
+
+function setRuntimeDisturbanceTargets(
+  nextSessionId: string,
+  payload: StartSimulationRequest,
+): void {
+  runtimeDisturbanceTargets.value = freezeDisturbanceRuntimeTargets(
+    nextSessionId,
+    payload.disturbance_targets,
+  )
+  localStorage.setItem(DISTURBANCE_RUNTIME_STORAGE_KEY, JSON.stringify({
+    version: 1,
+    sessionId: nextSessionId,
+    targets: runtimeDisturbanceTargets.value,
+  }))
+}
+
+function clearPersistedRuntimeDisturbances(clearMemory = true): void {
+  localStorage.removeItem(DISTURBANCE_RUNTIME_STORAGE_KEY)
+  if (clearMemory) runtimeDisturbanceTargets.value = []
+}
 
 const summary = computed<TrafficSummary>(() => {
   const metrics = snapshot.value?.metrics
@@ -182,6 +248,10 @@ function recordPlaybackRate(next: SimulationSnapshot): void {
 }
 
 function applySnapshot(next: SimulationSnapshot) {
+  if (sessionId.value && next.session_id !== sessionId.value) {
+    rejectedStaleSessionSnapshotCount.value += 1
+    return
+  }
   if (!shouldApplySimulationSnapshot(snapshot.value, next, sessionId.value)) return
   recordPlaybackRate(next)
   confirmedClock.accept({
@@ -192,6 +262,18 @@ function applySnapshot(next: SimulationSnapshot) {
   })
   recordSimulationDiagnosticSnapshot(next, achievedPlaybackSpeed.value)
   const previousState = state.value
+  const nextTrafficView = snapshotToTrafficView(next)
+  const vehicleFrameAccepted = vehiclePresentationTimeline.push(
+    nextTrafficView,
+    next.sequence,
+    next.state,
+    next.playback_speed,
+    Date.now(),
+    next.intersections,
+  )
+  if (vehicleFrameAccepted) vehicleAuthoritativeHistoryRevision.value += 1
+  vehicleDisplayElapsedSeconds.value = vehiclePresentationTimeline.tick(Date.now())
+  vehiclePresentationRevision.value += 1
   snapshot.value = next
   tickDisplayedClock()
   acceptedState.value = next.state
@@ -203,12 +285,16 @@ function applySnapshot(next: SimulationSnapshot) {
   else statusError.value = null
   if (isTerminal(next.state)) {
     stopPolling()
-    localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
-    localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+    if (next.state !== 'COMPLETED') {
+      localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
+      localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+    }
+    clearPersistedRuntimeDisturbances(false)
     connectSimulationStream('')
     activeScenarioPresetId.value = ''
     activePlaybackSpeed.value = 1
     activeWebsocketUrl.value = ''
+    activeSimulationPeriod.value = ''
     restoredSession.value = false
   } else if (previousState === 'QUEUED' && next.state !== 'QUEUED') {
     lastMessage.value = '已获得仿真资源，正在启动仿真'
@@ -217,7 +303,7 @@ function applySnapshot(next: SimulationSnapshot) {
 
 function stopPolling() {
   if (pollTimer !== null) {
-    clearInterval(pollTimer)
+    clearTimeout(pollTimer)
     pollTimer = null
   }
   requestVersion += 1
@@ -232,9 +318,10 @@ async function pollOnce() {
     statusError.value = null
     return
   }
+  if (pollInFlight) return
 
-  const version = ++requestVersion
-  pollAbortController?.abort()
+  pollInFlight = true
+  const version = requestVersion
   const abortController = new AbortController()
   pollAbortController = abortController
   try {
@@ -252,6 +339,7 @@ async function pollOnce() {
       stopPolling()
       localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
       localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+      clearPersistedRuntimeDisturbances()
       connectSimulationStream('')
       sessionId.value = ''
       snapshot.value = null
@@ -262,6 +350,7 @@ async function pollOnce() {
       activeControlMode.value = ''
       activePlaybackSpeed.value = 1
       activeWebsocketUrl.value = ''
+      activeSimulationPeriod.value = ''
       restoredSession.value = false
       statusError.value = '仿真会话已失效，请重新启动仿真'
       return
@@ -269,22 +358,23 @@ async function pollOnce() {
     statusError.value = message
   } finally {
     if (pollAbortController === abortController) pollAbortController = null
+    pollInFlight = false
   }
+}
+
+function scheduleNextPoll() {
+  if (!sessionId.value || isTerminal(snapshot.value?.state) || pollTimer !== null) return
+  pollTimer = setTimeout(async () => {
+    pollTimer = null
+    await pollOnce()
+    scheduleNextPoll()
+  }, STATUS_POLL_INTERVAL_MS)
 }
 
 function startPolling() {
   stopPolling()
-  if (!sessionId.value) {
-    return
-  }
-  void pollOnce()
-  pollTimer = setInterval(() => {
-    if (isTerminal(snapshot.value?.state)) {
-      stopPolling()
-      return
-    }
-    void pollOnce()
-  }, STATUS_POLL_INTERVAL_MS)
+  if (!sessionId.value) return
+  void pollOnce().finally(scheduleNextPoll)
 }
 
 function bindSession(
@@ -295,11 +385,32 @@ function bindSession(
     controlMode: string
     playbackSpeed: number
     websocketUrl: string
+    period: string
     initialState?: SimulationState
   },
+  runtimePayload?: StartSimulationRequest,
 ) {
-  if (nextSessionId && nextSessionId !== sessionId.value) {
+  const sessionChanged = Boolean(nextSessionId && nextSessionId !== sessionId.value)
+  const acceptedNewSession = Boolean(nextSessionId && runtimePayload)
+  const presentationBoundary = sessionChanged || acceptedNewSession || (!nextSessionId && Boolean(sessionId.value))
+  if (presentationBoundary) {
+    stopPolling()
+    connectSimulationStream('')
+    // This synchronous revision is the render boundary for all session-owned
+    // overlays. Components clear before any target from the accepted run is installed.
+    simulationPresentationGeneration.value += 1
+    rejectedStaleSessionSnapshotCount.value = 0
     renderSessionRevision.value += 1
+    vehiclePresentationTimeline.reset(nextSessionId)
+    vehicleAuthoritativeHistoryRevision.value += 1
+    vehicleDisplayElapsedSeconds.value = null
+    vehiclePresentationRevision.value += 1
+    snapshot.value = null
+    clearPersistedRuntimeDisturbances()
+  }
+  const runtimeSessionId = runtimeDisturbanceTargets.value[0]?.sessionId ?? ''
+  if (nextSessionId && runtimeSessionId && runtimeSessionId !== nextSessionId) {
+    clearPersistedRuntimeDisturbances()
   }
   sessionId.value = nextSessionId
   acceptedState.value = context?.initialState ?? null
@@ -312,6 +423,7 @@ function bindSession(
       activeControlMode.value = context.controlMode
       activePlaybackSpeed.value = context.playbackSpeed
       activeWebsocketUrl.value = context.websocketUrl
+      activeSimulationPeriod.value = context.period
       localStorage.setItem(ACTIVE_SIMULATION_CONTEXT_KEY, JSON.stringify({
         sessionId: nextSessionId,
         focusIntersectionId: context.focusIntersectionId,
@@ -319,19 +431,29 @@ function bindSession(
         controlMode: context.controlMode,
         playbackSpeed: context.playbackSpeed,
         websocketUrl: context.websocketUrl,
+        period: context.period,
       }))
     }
   } else {
     localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
     localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
+    clearPersistedRuntimeDisturbances()
     sessionIntersectionId.value = ''
     activeScenarioPresetId.value = ''
     activeControlMode.value = ''
     activePlaybackSpeed.value = 1
     activeWebsocketUrl.value = ''
+    activeSimulationPeriod.value = ''
     acceptedState.value = null
+    vehiclePresentationTimeline.reset()
+    vehicleAuthoritativeHistoryRevision.value += 1
+    vehicleDisplayElapsedSeconds.value = null
+    vehiclePresentationRevision.value += 1
   }
   snapshot.value = null
+  if (nextSessionId && runtimePayload) {
+    setRuntimeDisturbanceTargets(nextSessionId, runtimePayload)
+  }
   resetPlaybackRateTracking()
   resetDisplayedClock()
   resetSimulationRuntimeDiagnostics(nextSessionId)
@@ -345,7 +467,29 @@ function ensureInitialized() {
     return
   }
   initialized = true
-  if (clockTimer === null) clockTimer = setInterval(tickDisplayedClock, 100)
+  void loadVehicleMotionIndex()
+    .then((index) => {
+      registerCanonicalVehicleMotionIndex(index)
+      vehiclePresentationRevision.value += 1
+    })
+    .catch((cause: unknown) => console.error('[vehicle-motion] canonical index unavailable', cause))
+  if (clockTimer === null) clockTimer = setInterval(tickDisplayedClock, 250)
+  const tickPresentationFrame = () => {
+    presentationFrameId = requestAnimationFrame(tickPresentationFrame)
+    const wallTimeMs = performance.now()
+    const elapsedSeconds = vehiclePresentationTimeline.tick(Date.now())
+    if (
+      elapsedSeconds !== vehicleDisplayElapsedSeconds.value
+      && wallTimeMs - lastPresentationPublishMs + 0.5 >= PRESENTATION_PUBLISH_INTERVAL_MS
+    ) {
+      lastPresentationPublishMs = wallTimeMs
+      vehicleDisplayElapsedSeconds.value = elapsedSeconds
+      vehiclePresentationRevision.value += 1
+    }
+  }
+  if (presentationFrameId === null && typeof requestAnimationFrame === 'function') {
+    presentationFrameId = requestAnimationFrame(tickPresentationFrame)
+  }
 
   registerSimulationStreamHandler((message) => {
     if (message.type === 'snapshot') {
@@ -377,15 +521,16 @@ async function launchRun(
   startError.value = null
   try {
     const result = await startSimulation(payload)
-    onSessionAccepted?.(result)
     bindSession(result.session_id, {
       focusIntersectionId,
       scenarioPresetId: result.scenario_preset_id ?? payload.scenario_preset_id,
       controlMode: payload.control_mode,
       playbackSpeed: payload.playback_speed ?? 1,
       websocketUrl: result.websocket_url,
+      period: payload.period,
       initialState: result.state,
-    })
+    }, payload)
+    onSessionAccepted?.(result)
     lastMessage.value = result.state === 'QUEUED'
       ? '排队中，等待仿真资源'
       : `仿真已启动，状态：${result.state}`
@@ -480,6 +625,13 @@ export function useSimulationStore() {
     sessionId,
     snapshot,
     trafficView,
+    presentationTrafficView,
+    vehiclePresentationDiagnostics,
+    vehicleDisplayElapsedSeconds,
+    vehicleAuthoritativeHistoryRevision,
+    getVehicleAuthoritativeHistoryWindow: (elapsedSeconds = vehicleDisplayElapsedSeconds.value) => (
+      vehiclePresentationTimeline.authoritativeHistoryWindow(elapsedSeconds)
+    ),
     summary,
     state,
     starting,
@@ -495,9 +647,15 @@ export function useSimulationStore() {
     activeScenarioPresetId,
     activeControlMode,
     activePlaybackSpeed,
+    activeSimulationPeriod,
     achievedPlaybackSpeed,
     displayedOfficialTime,
     renderSessionRevision,
+    simulationPresentationGeneration,
+    rejectedStaleSessionSnapshotCount,
+    runtimeDisturbanceTargets,
+    runtimeDisturbances,
+    unmappedRuntimeEvents,
     launchRun,
     pauseRun,
     resumeRun,

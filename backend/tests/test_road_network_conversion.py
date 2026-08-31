@@ -37,8 +37,8 @@ def test_real_network_conversion_is_valid(converted_collection) -> None:
     features = converted_collection["features"]
 
     assert metadata["output_crs"] == "WGS84"
-    assert metadata["feature_count"] == len(features) == 15
-    assert metadata["vertex_count"] == 490
+    assert metadata["feature_count"] == len(features) == 16
+    assert metadata["vertex_count"] == 460
     assert all(not feature["properties"]["edge_id"].startswith(":") for feature in features)
     assert len({feature["id"] for feature in features}) == len(features)
 

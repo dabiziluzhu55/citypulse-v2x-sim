@@ -1,6 +1,9 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import {
+  DEFAULT_SPEED_LIMIT_KMH,
   DISTURBANCE_EVENT_OPTIONS,
+  MAX_SPEED_LIMIT_KMH,
+  MIN_SPEED_LIMIT_KMH,
   SCENARIO_MODE_OPTIONS,
   SIMULATION_PERIOD_RANGES,
   SIMULATION_TIME_OPTIONS,
@@ -10,6 +13,7 @@ import {
   maximumSimulationEndTime,
   simulationTimeWindow,
   type ScenarioModeId,
+  isValidSpeedLimitKmh,
 } from '../constants/scenarioOptions'
 import {
   SIMULATION_SNAPSHOT_INTERVAL_MS,
@@ -23,8 +27,9 @@ import type { StartSimulationRequest } from '../types/simulation'
 import type { TrafficFlowMode } from '../types/scenario'
 import { buildStartSimulationRequest } from '../utils/scenarioPayload'
 import { scenarioPresetIntersectionIds } from '../utils/scenarioPresetRules'
+import { assertUniqueDisturbanceIntersections } from '../utils/disturbanceIntersectionUniqueness.ts'
+import { assertSafeLaneClosureEvents } from '../utils/safeLaneClosures.ts'
 import {
-  SCENARIO_CONFIG_EXPORT_VERSION,
   DEFAULT_MAJOR_EVENT_VEHICLE_COUNT,
   resolveMajorEventVehicleCount,
   resolveImportedDisturbanceTimes,
@@ -45,26 +50,6 @@ export interface CompactScenarioConfig {
 }
 
 export type CompactDisturbanceEvent = ScenarioDraftDisturbanceEvent
-
-export interface ScenarioConfigExport {
-  version: typeof SCENARIO_CONFIG_EXPORT_VERSION
-  exported_at: string
-  ui_config: CompactScenarioConfig
-  display: {
-    scenario: string
-    disturbance: string
-    flow_mode: string
-    simulation_time: string
-    algorithm: string
-  }
-  backend_request: StartSimulationRequest
-  data_sources: {
-    scenario: 'catalog' | 'compatibility_preset'
-    disturbance: 'catalog'
-    time: 'local_range'
-    algorithm: 'backend'
-  }
-}
 
 const FLOW_MODE_TO_PERIOD: Record<TrafficFlowMode, string> = {
   flat: 'off_peak',
@@ -98,6 +83,11 @@ export function buildSimulationPayload(
   _supportedIntersectionIds: string[] = [],
   controlModes: string[] = [...SUPPORTED_BACKEND_CONTROL_MODES],
 ): StartSimulationRequest {
+  assertUniqueDisturbanceIntersections(config.disturbance_events, (event) => (
+    DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === event.preset_id)?.label
+      ?? event.event_type
+  ))
+  assertSafeLaneClosureEvents(config.disturbance_events)
   const time = simulationTimeWindow(
     config.flow_mode,
     config.simulation_start_time,
@@ -139,6 +129,7 @@ export function buildSimulationPayload(
       startSeconds,
       endSeconds,
       vehicleCount: event.vehicle_count,
+      speedLimitKmh: event.max_speed_kmh,
     }
   })
   const period = resolvePeriod(config, periods)
@@ -320,6 +311,14 @@ export function useCompactScenarioConfig(
           : endTime
         const isMajorEvent = preset.eventType === 'major_event_opening'
           || preset.eventType === 'major_event_closing'
+        const isSpeedLimitEvent = preset.eventType === 'speed_limit'
+        if (
+          isSpeedLimitEvent
+          && value.max_speed_kmh !== undefined
+          && !isValidSpeedLimitKmh(value.max_speed_kmh)
+        ) {
+          throw new Error(`限速速度必须在 ${MIN_SPEED_LIMIT_KMH}-${MAX_SPEED_LIMIT_KMH} km/h 之间`)
+        }
         return {
           event_id: typeof value.event_id === 'string' ? value.event_id : `ui_import_${index + 1}`,
           preset_id: preset.value,
@@ -329,6 +328,11 @@ export function useCompactScenarioConfig(
           end_time: eventEndTime,
           ...(isMajorEvent ? {
             vehicle_count: resolveMajorEventVehicleCount(value.vehicle_count),
+          } : {}),
+          ...(isSpeedLimitEvent ? {
+            max_speed_kmh: isValidSpeedLimitKmh(value.max_speed_kmh)
+              ? value.max_speed_kmh
+              : DEFAULT_SPEED_LIMIT_KMH,
           } : {}),
         }
       })
@@ -348,10 +352,13 @@ export function useCompactScenarioConfig(
             ? { vehicle_count: DEFAULT_MAJOR_EVENT_VEHICLE_COUNT }
             : {}
         ),
+        ...(legacyPreset.eventType === 'speed_limit'
+          ? { max_speed_kmh: DEFAULT_SPEED_LIMIT_KMH }
+          : {}),
       }]
     }
 
-    return {
+    const parsedConfig: CompactScenarioConfig = {
       scenario_preset_id: scenarioPresetId,
       flow_mode: mode,
       disturbance_events: disturbanceEvents,
@@ -364,42 +371,16 @@ export function useCompactScenarioConfig(
         ? controlMode
         : supportedControlModes.includes('fixed') ? 'fixed' : supportedControlModes[0],
     }
+    assertUniqueDisturbanceIntersections(parsedConfig.disturbance_events, (event) => (
+      DISTURBANCE_EVENT_OPTIONS.find((item) => item.value === event.preset_id)?.label
+        ?? event.event_type
+    ))
+    assertSafeLaneClosureEvents(parsedConfig.disturbance_events)
+    return parsedConfig
   }
 
   function applyImportedConfig(input: unknown): void {
     config.value = parseImportedConfig(input)
-  }
-
-  function buildExport(): ScenarioConfigExport {
-    const backendRequest = buildSimulationPayload(
-      config.value,
-      null,
-      periods.value,
-      [],
-      [],
-      [...SUPPORTED_BACKEND_CONTROL_MODES],
-    )
-    return {
-      version: SCENARIO_CONFIG_EXPORT_VERSION,
-      exported_at: new Date().toISOString(),
-      ui_config: { ...config.value },
-      display: {
-        scenario: labels.value.scenario,
-        disturbance: labels.value.disturbance,
-        flow_mode: labels.value.flow,
-        simulation_time: labels.value.time,
-        algorithm: config.value.control_mode,
-      },
-      backend_request: backendRequest,
-      data_sources: {
-        scenario: scenarioPresets.value.some((item) => item.preset_id === config.value.scenario_preset_id)
-          ? 'catalog'
-          : 'compatibility_preset',
-        disturbance: 'catalog',
-        time: 'local_range',
-        algorithm: 'backend',
-      },
-    }
   }
 
   return {
@@ -412,6 +393,5 @@ export function useCompactScenarioConfig(
     buildPayloadFor,
     parseImportedConfig,
     applyImportedConfig,
-    buildExport,
   }
 }

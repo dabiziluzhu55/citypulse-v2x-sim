@@ -7,8 +7,26 @@ const sceneError = ref<string | null>(null)
 const selectionRevision = ref(0)
 const committedIntersectionId = ref<string | null>(null)
 
+export interface IntersectionSceneSelectionState {
+  requestedIntersectionId: string
+  committedIntersectionId: string | null
+  switching: boolean
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  error: string | null
+}
+
 export function useActiveIntersectionScene() {
   const hasActiveIntersection = computed(() => Boolean(activeIntersectionId.value))
+  const selectionState = computed<IntersectionSceneSelectionState>(() => ({
+    requestedIntersectionId: activeIntersectionId.value,
+    committedIntersectionId: committedIntersectionId.value,
+    switching: Boolean(
+      committedIntersectionId.value
+      && committedIntersectionId.value !== activeIntersectionId.value
+    ),
+    status: sceneStatus.value,
+    error: sceneError.value,
+  }))
 
   function selectIntersection(intersectionId: string): void {
     if (!intersectionId) return
@@ -35,6 +53,14 @@ export function useActiveIntersectionScene() {
     sceneError.value = message
   }
 
+  function restoreCommittedIntersection(message: string): string | null {
+    const committed = committedIntersectionId.value
+    if (committed) activeIntersectionId.value = committed
+    sceneStatus.value = committed ? 'ready' : 'error'
+    sceneError.value = message
+    return committed
+  }
+
   return {
     activeIntersectionId,
     hasActiveIntersection,
@@ -42,9 +68,11 @@ export function useActiveIntersectionScene() {
     sceneError,
     selectionRevision,
     committedIntersectionId,
+    selectionState,
     selectIntersection,
     setSceneLoading,
     setSceneReady,
     setSceneError,
+    restoreCommittedIntersection,
   }
 }

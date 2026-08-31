@@ -31,6 +31,23 @@ const requestedIntersectionId = process.argv
   .find((argument) => argument.startsWith('--intersection='))
   ?.split('=', 2)[1]
 
+async function loadIntersectionMapping() {
+  try {
+    return JSON.parse(await readFile(mappingPath, 'utf8'))
+  } catch (cause) {
+    if (!(cause instanceof Error) || !('code' in cause) || cause.code !== 'ENOENT') throw cause
+    const catalog = JSON.parse(await readFile(path.resolve(outputDirectory, 'catalog.json'), 'utf8'))
+    return Object.fromEntries(asArray(catalog.intersections).map((entry) => [
+      String(entry.intersectionId),
+      {
+        junction_id: String(entry.junctionId),
+        lon: Number(entry.longitude),
+        lat: Number(entry.latitude),
+      },
+    ]))
+  }
+}
+
 function asArray(value) {
   if (value === undefined) return []
   return Array.isArray(value) ? value : [value]
@@ -177,12 +194,11 @@ function toWebMercator([longitude, latitude]) {
   return projectBd09ToWebMercator(wgs84ToBd09(longitude, latitude))
 }
 
-const [source, mappingSource, tlsManifestSource] = await Promise.all([
+const [source, mapping, tlsManifestSource] = await Promise.all([
   readFile(sourcePath, 'utf8'),
-  readFile(mappingPath, 'utf8'),
+  loadIntersectionMapping(),
   readFile(tlsManifestPath, 'utf8'),
 ])
-const mapping = JSON.parse(mappingSource)
 const tlsManifest = JSON.parse(tlsManifestSource)
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -414,8 +430,10 @@ function registerPoint(point, apply) {
 for (const item of pending) {
   const { manifest, sumoOrigin } = item
   registerPoint(sumoOrigin, (value) => { item.originWgs84 = value })
-  registerPoint([sumoOrigin[0] + 1, sumoOrigin[1]], (value) => { item.axisXWgs84 = value })
-  registerPoint([sumoOrigin[0], sumoOrigin[1] + 1], (value) => { item.axisYWgs84 = value })
+  registerPoint([sumoOrigin[0] + 1, sumoOrigin[1]], (value) => { item.axisXPositiveWgs84 = value })
+  registerPoint([sumoOrigin[0] - 1, sumoOrigin[1]], (value) => { item.axisXNegativeWgs84 = value })
+  registerPoint([sumoOrigin[0], sumoOrigin[1] + 1], (value) => { item.axisYPositiveWgs84 = value })
+  registerPoint([sumoOrigin[0], sumoOrigin[1] - 1], (value) => { item.axisYNegativeWgs84 = value })
   manifest.junctionShape.forEach((point, index) => registerPoint(
     [sumoOrigin[0] + point[0], sumoOrigin[1] + point[1]],
     (value) => { item.junctionWgs84 ??= []; item.junctionWgs84[index] = value },
@@ -467,12 +485,24 @@ for (const item of pending) {
   const originWgs84 = item.originWgs84
   const originBd09 = wgs84ToBd09(...originWgs84)
   const originPlane = projectBd09ToWebMercator(originBd09)
-  const axisXPlane = toWebMercator(item.axisXWgs84)
-  const axisYPlane = toWebMercator(item.axisYWgs84)
-  const scaleX = Math.hypot(axisXPlane[0] - originPlane[0], axisXPlane[1] - originPlane[1])
-  const scaleY = Math.hypot(axisYPlane[0] - originPlane[0], axisYPlane[1] - originPlane[1])
+  const axisXPositivePlane = toWebMercator(item.axisXPositiveWgs84)
+  const axisXNegativePlane = toWebMercator(item.axisXNegativeWgs84)
+  const axisYPositivePlane = toWebMercator(item.axisYPositiveWgs84)
+  const axisYNegativePlane = toWebMercator(item.axisYNegativeWgs84)
+  const xAxis = [
+    (axisXPositivePlane[0] - axisXNegativePlane[0]) / 2,
+    (axisXPositivePlane[1] - axisXNegativePlane[1]) / 2,
+  ]
+  const yAxis = [
+    (axisYPositivePlane[0] - axisYNegativePlane[0]) / 2,
+    (axisYPositivePlane[1] - axisYNegativePlane[1]) / 2,
+  ]
+  const scaleX = Math.hypot(...xAxis)
+  const scaleY = Math.hypot(...yAxis)
   const sumoUnitScale = (scaleX + scaleY) / 2
   const horizontalScale = 1 / Math.cos(originWgs84[1] * Math.PI / 180)
+  const roundedXAxis = xAxis.map((value) => Number(value.toFixed(12)))
+  const roundedYAxis = yAxis.map((value) => Number(value.toFixed(12)))
 
   manifest.origin.longitude = originWgs84[0]
   manifest.origin.latitude = originWgs84[1]
@@ -480,6 +510,14 @@ for (const item of pending) {
   manifest.origin.webMercator = originPlane
   manifest.horizontalScale = horizontalScale
   manifest.sumoUnitScale = sumoUnitScale
+  manifest.sumoHeadingTransform = {
+    xAxis: roundedXAxis,
+    yAxis: roundedYAxis,
+    determinant: Number((
+      roundedXAxis[0] * roundedYAxis[1] - roundedXAxis[1] * roundedYAxis[0]
+    ).toFixed(12)),
+    sourceSha256,
+  }
   manifest.radiusSceneUnits = manifest.radiusMeters * horizontalScale
   manifest.junctionShape = roundShape(item.junctionWgs84.map((point) => {
     const projected = toWebMercator(point)
@@ -600,6 +638,17 @@ for (const item of pending) {
       curb: roundShape(joint.polygons.curb),
       asphalt: roundShape(joint.polygons.asphalt),
     },
+    surfaceParts: joint.surfaceParts && Object.fromEntries(
+      Object.entries(joint.surfaceParts).map(([layer, parts]) => [
+        layer,
+        parts.map((part) => ({
+          outer: roundShape(part.outer),
+          ...(part.holes?.length
+            ? { holes: part.holes.map((hole) => roundShape(hole)) }
+            : {}),
+        })),
+      ]),
+    ),
   }))
   manifest.edges.forEach((edge) => {
     delete edge.fromJunction
@@ -623,6 +672,7 @@ for (const item of pending) {
     longitude: manifest.origin.longitude,
     latitude: manifest.origin.latitude,
     horizontalScale: manifest.horizontalScale,
+    sumoHeadingTransform: manifest.sumoHeadingTransform,
     radiusMeters: manifest.radiusMeters,
     assetUrl: `/intersections/v3/${manifest.intersectionId}/manifest.json`,
   })

@@ -15,6 +15,8 @@ export type SimulationState =
   | 'COMPLETED'
   | 'FAILED'
 
+export type SimulationPresentationGeneration = number
+
 interface DisturbanceEventBase {
   event_id: string
   start_seconds: number
@@ -65,7 +67,8 @@ export interface LaneClosureDisturbanceTarget extends DisturbanceTargetBase {
 export interface SpeedLimitDisturbanceTarget extends DisturbanceTargetBase {
   event_type: 'speed_limit'
   lane_ids?: string[]
-  max_speed?: number
+  /** 后端/SUMO 使用 m/s。 */
+  max_speed: number
 }
 
 export interface AccidentDisturbanceTarget extends DisturbanceTargetBase {
@@ -224,9 +227,11 @@ export interface SimulationEvaluation {
 export interface SimulationEvent {
   event_id: string
   event_type: string
-  state?: string
+  state?: 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
   start_seconds?: number
   end_seconds?: number
+  error?: string | null
+  details?: Record<string, unknown> | null
   [key: string]: unknown
 }
 

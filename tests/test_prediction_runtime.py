@@ -1,4 +1,4 @@
-# PredictionRuntime：模型包缺失时不可用，不在无包时强行推理
+# PredictionRuntime：NarrowNet-TDP交付包缺失时不可用，不在无包时强行推理
 
 from __future__ import annotations
 
@@ -7,9 +7,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import numpy as np
+from backend.app.services.prediction_runtime import PredictionRuntime
 
-from backend.app.services.prediction_runtime import PredictionRuntime, _calc_chebynet_gso
+
+BUNDLE_DIR = (
+    Path(__file__).resolve().parents[1]
+    / "backend"
+    / "models"
+    / "prediction"
+    / "narrow_net_tdp"
+)
 
 
 class PredictionRuntimeTests(unittest.TestCase):
@@ -31,27 +38,51 @@ class PredictionRuntimeTests(unittest.TestCase):
 
     def test_history_insufficient_returns_fallback_meta(self):
         runtime = PredictionRuntime(None)
-        # 即使available=False，也应给出明确降级原因且不抛异常
         values, meta = runtime.predict_vehicle_counts([{}] * 3)
         self.assertIsNone(values)
         self.assertTrue(meta["fallback"])
-
-    def test_chebynet_gso_shape(self):
-        adjacency = np.eye(20, dtype=np.float32)
-        adjacency[0, 1] = adjacency[1, 0] = 1.0
-        gso = _calc_chebynet_gso(adjacency)
-        self.assertEqual(gso.shape, (20, 20))
 
     def test_from_settings_empty_string(self):
         runtime = PredictionRuntime.from_settings(model_dir="", stgcn_root="")
         self.assertFalse(runtime.status.available)
 
+    def test_bundle_load_and_smoke_inference(self):
+        if not BUNDLE_DIR.is_dir():
+            self.skipTest("NarrowNet-TDP交付包不在仓库中")
+        try:
+            import torch  # noqa: F401
+        except Exception:
+            self.skipTest("torch不可用")
+
+        runtime = PredictionRuntime(BUNDLE_DIR, device="cpu")
+        self.assertTrue(
+            runtime.status.available,
+            msg=runtime.status.reason,
+        )
+        self.assertEqual(len(runtime.nodes), 206)
+        self.assertEqual(runtime.status.model, "NarrowNet-TDP")
+
+        empty_frame = {
+            lane: {
+                "vehicle_count": 0.0,
+                "halting_count": 0.0,
+                "mean_speed": 0.0,
+                "occupancy": 0.0,
+            }
+            for lane in runtime.nodes
+        }
+        values, meta = runtime.predict_vehicle_counts([empty_frame] * runtime.n_his)
+        self.assertFalse(meta["fallback"], msg=meta.get("fallback_reason"))
+        self.assertIsNotNone(values)
+        assert values is not None
+        self.assertEqual(len(values), 206)
+        self.assertTrue(all(value >= 0.0 for value in values.values()))
+
 
 class NormalizationContractSmokeTests(unittest.TestCase):
     def test_manifest_json_roundtrip_shape(self):
-        # 仅校验模型包契约字段形状，不加载权重
         payload = {
-            "nodes": [f"demo_{i}" for i in [1, *range(10, 21), *range(2, 10)]],
+            "node_order": [f"lane_{i}" for i in range(206)],
             "features": ["vehicle_count", "halting_count", "mean_speed", "occupancy"],
             "n_his": 12,
             "normalization": {
@@ -61,10 +92,9 @@ class NormalizationContractSmokeTests(unittest.TestCase):
                 "target_std": 1.0,
             },
         }
-        self.assertEqual(len(payload["nodes"]), 20)
+        self.assertEqual(len(payload["node_order"]), 206)
         self.assertEqual(len(payload["features"]), 4)
-        text = json.dumps(payload)
-        loaded = json.loads(text)
+        loaded = json.loads(json.dumps(payload))
         self.assertEqual(loaded["n_his"], 12)
 
 

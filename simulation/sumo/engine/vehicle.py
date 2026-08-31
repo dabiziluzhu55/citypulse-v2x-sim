@@ -87,6 +87,34 @@ class VehicleTelemetryTracker:
         self._sampled_fuel_mg = 0.0
         self._sampled_fuel_ml = 0.0
         self._sampled_braking = 0
+        constants = getattr(traci, "constants", None)
+        vehicle_api = getattr(traci, "vehicle", None)
+        self._subscription_enabled = bool(
+            constants is not None
+            and vehicle_api is not None
+            and hasattr(vehicle_api, "subscribe")
+            and hasattr(vehicle_api, "getAllSubscriptionResults")
+        )
+        self._subscription_variables: tuple[int, ...] = ()
+        if self._subscription_enabled:
+            self._subscription_variables = (
+                constants.VAR_POSITION,
+                constants.VAR_SPEED,
+                constants.VAR_ACCELERATION,
+                constants.VAR_ANGLE,
+                constants.VAR_ROAD_ID,
+                constants.VAR_LANE_ID,
+                constants.VAR_LANE_INDEX,
+                constants.VAR_LANEPOSITION,
+                constants.VAR_ALLOWED_SPEED,
+                constants.VAR_ROUTE_ID,
+                constants.VAR_ROUTE_INDEX,
+                constants.VAR_WAITING_TIME,
+                constants.VAR_ACCUMULATED_WAITING_TIME,
+                constants.VAR_TIMELOSS,
+                constants.VAR_DISTANCE,
+                constants.VAR_FUELCONSUMPTION,
+            )
 
     def update_vehicle_set(
         self,
@@ -112,6 +140,51 @@ class VehicleTelemetryTracker:
                 type_id=type_id,
                 last_observed_time=now,
             )
+            if self._subscription_enabled:
+                self.traci.vehicle.subscribe(
+                    vehicle_id,
+                    self._subscription_variables,
+                )
+
+    def sync_subscription_results(self) -> None:
+        """Copy one coherent SUMO-step vehicle frame into the local cache."""
+
+        if not self._subscription_enabled:
+            return
+        constants = self.traci.constants
+        results = self.traci.vehicle.getAllSubscriptionResults() or {}
+        for value, raw in results.items():
+            vehicle_id = str(value)
+            tracked = self._tracked.get(vehicle_id)
+            if tracked is None or not isinstance(raw, Mapping):
+                continue
+            required = self._subscription_variables
+            if any(variable not in raw for variable in required):
+                continue
+            tracked.values = {
+                "position": raw[constants.VAR_POSITION],
+                "speed": raw[constants.VAR_SPEED],
+                "acceleration": raw[constants.VAR_ACCELERATION],
+                "angle": raw[constants.VAR_ANGLE],
+                "road_id": raw[constants.VAR_ROAD_ID],
+                "lane_id": raw[constants.VAR_LANE_ID],
+                "lane_index": raw[constants.VAR_LANE_INDEX],
+                "lane_position": raw[constants.VAR_LANEPOSITION],
+                "allowed_speed": raw[constants.VAR_ALLOWED_SPEED],
+                "route_id": raw[constants.VAR_ROUTE_ID],
+                "route_index": raw[constants.VAR_ROUTE_INDEX],
+                # libsumo exposes subscribed compound VAR_NEXT_TLS values as
+                # a SWIG TraCIResult rather than the iterable returned by the
+                # direct getter. Refresh the compound value at decision time.
+                "next_tls": tracked.values.get("next_tls", ()),
+                "waiting_time": raw[constants.VAR_WAITING_TIME],
+                "accumulated_waiting_time": raw[
+                    constants.VAR_ACCUMULATED_WAITING_TIME
+                ],
+                "time_loss": raw[constants.VAR_TIMELOSS],
+                "distance": raw[constants.VAR_DISTANCE],
+                "fuel_rate": raw[constants.VAR_FUELCONSUMPTION],
+            }
 
     def refresh_observations(self, elapsed: float) -> None:
         """Read full state once immediately before a decision or AI frame."""
@@ -121,7 +194,21 @@ class VehicleTelemetryTracker:
             raise ValueError("Vehicle telemetry time cannot move backwards.")
         for vehicle_id in sorted(self._tracked):
             tracked = self._tracked[vehicle_id]
-            tracked.values = self._read_direct(vehicle_id)
+            if not tracked.values:
+                # A newly departed vehicle has no subscription frame until the
+                # next simulationStep. Keep a direct first-frame fallback only.
+                tracked.values = self._read_direct(vehicle_id)
+            elif self._subscription_enabled:
+                # VAR_ROUTE (0x57) is not a supported libsumo subscription
+                # variable. Route edges are decision-only data, so one getter
+                # per vehicle at the low-frequency observation boundary is
+                # sufficient and avoids blocking each presentation snapshot.
+                tracked.values["route_edges"] = self.traci.vehicle.getRoute(
+                    vehicle_id
+                )
+                tracked.values["next_tls"] = self.traci.vehicle.getNextTLS(
+                    vehicle_id
+                )
             road_id = str(tracked.values["road_id"])
             lane_index = int(tracked.values["lane_index"])
             if (
@@ -318,7 +405,7 @@ class VehicleTelemetryTracker:
         )
 
     def runtime_fields(self, vehicle_id: str) -> Mapping[str, object] | None:
-        """Return cached non-positional fields without rebuilding full observations."""
+        """Return one coherent cached vehicle frame without direct SUMO getters."""
 
         tracked = self._tracked.get(vehicle_id)
         if tracked is None or not tracked.values:
@@ -327,6 +414,11 @@ class VehicleTelemetryTracker:
         next_signal = self._next_signal(tracked.values["next_tls"])
         return {
             "type_id": tracked.type_id,
+            "position": tracked.values["position"],
+            "speed": float(tracked.values["speed"]),
+            "angle": float(tracked.values["angle"]),
+            "road_id": str(tracked.values["road_id"]),
+            "lane_id": str(tracked.values["lane_id"]),
             "acceleration": float(tracked.values["acceleration"]),
             "lane_index": int(tracked.values["lane_index"]),
             "lane_position": float(tracked.values["lane_position"]),

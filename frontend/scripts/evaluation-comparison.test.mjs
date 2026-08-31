@@ -18,6 +18,11 @@ import {
   buildAlgorithmMetricSeries,
   evaluationTimes,
 } from '../src/constants/metricsEvaluation.ts'
+import {
+  formatIntersectionLabels,
+  formatScenarioPresetLabel,
+  formatSimulationWindow,
+} from '../src/utils/scenarioDisplay.ts'
 
 const evaluationSource = await readFile(
   new URL('../src/composables/useEvaluationComparison.ts', import.meta.url),
@@ -55,7 +60,7 @@ function payload(overrides = {}) {
     scenario_preset_id: 'xiongan_20',
     period: 'morning_peak',
     origins: { demo_2: ['west'] },
-    window_start_seconds: 7 * 3600,
+    window_start_seconds: 0,
     duration_seconds: 900,
     control_mode: 'fixed',
     seed: 42,
@@ -137,14 +142,15 @@ test('reports only result-affecting contract differences', () => {
   const candidate = createScenarioFingerprint(payload({ period: 'off_peak', duration_seconds: 60 }), ['demo_2'])
   assert.deepEqual(comparisonContractDifferences(baseline, candidate), [
     '交通时段：早高峰 → 平峰',
-    '展示窗口：07:00–07:15 → 07:00–07:01',
+    '展示窗口：07:00-07:15 → 14:30-14:31',
   ])
 })
 
 test('describes changed event and clock windows in operator-facing terms', () => {
   const baseline = createScenarioFingerprint(payload(), ['demo_2'])
   const candidate = createScenarioFingerprint(payload({
-    window_start_seconds: 14 * 3600 + 30 * 60,
+    period: 'off_peak',
+    window_start_seconds: 0,
     duration_seconds: 900,
     disturbance_targets: [{
       event_type: 'accident', event_id: 'runtime', intersection_id: 'demo_8',
@@ -152,17 +158,31 @@ test('describes changed event and clock windows in operator-facing terms', () =>
     }],
   }), ['demo_2'])
   assert.deepEqual(comparisonContractDifferences(baseline, candidate), [
-    '展示窗口：07:00–07:15 → 14:30–14:45',
+    '交通时段：早高峰 → 平峰',
+    '展示窗口：07:00-07:15 → 14:30-14:45',
     '扰动事件：无 → 路口8 事故',
   ])
 })
 
-test('registers the frozen comparison contract before binding the websocket session', () => {
+test('formats scenario ids, intersections, and period-relative windows for operators', () => {
+  assert.equal(formatScenarioPresetLabel('xiongan_20'), '雄安20路口路网')
+  assert.equal(formatScenarioPresetLabel('east_dense'), '校园周边场景')
+  assert.equal(formatScenarioPresetLabel('west_dense'), '窄路密网片区场景')
+  assert.equal(formatIntersectionLabels(['demo_10', 'demo_2', 'demo_1', 'demo_2']), '路口1、路口2、路口10')
+  assert.equal(formatSimulationWindow('morning_peak', 0, 900), '07:00-07:15')
+  assert.equal(formatSimulationWindow('morning_peak', 300, 900), '07:05-07:20')
+  assert.equal(formatSimulationWindow('off_peak', 0, 900), '14:30-14:45')
+  assert.equal(formatSimulationWindow('off_peak', 300, 900), '14:35-14:50')
+  assert.equal(formatSimulationWindow('evening_peak', 0, 900), '17:30-17:45')
+  assert.equal(formatSimulationWindow('evening_peak', 300, 900), '17:35-17:50')
+})
+
+test('binds the accepted presentation generation before registering comparison state', () => {
   const launchBlock = simulationStoreSource.slice(
     simulationStoreSource.indexOf('async function launchRun'),
     simulationStoreSource.indexOf('function clearStatusError'),
   )
-  assert.ok(launchBlock.indexOf('onSessionAccepted?.(result)') < launchBlock.indexOf('bindSession('))
+  assert.ok(launchBlock.indexOf('onSessionAccepted?.(result)') > launchBlock.indexOf('bindSession('))
   assert.match(homePageSource, /const frozenFocusIntersectionId = activeIntersectionId\.value/)
   assert.match(homePageSource, /beginComparisonRun\(result\.session_id, payload, controlledIntersectionIds\)/)
   assert.doesNotMatch(evaluationSource, /restored-session:/)

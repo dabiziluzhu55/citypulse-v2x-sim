@@ -24,12 +24,12 @@ export const SCENARIO_MODE_OPTIONS = [
     intersectionIds: Array.from({ length: 20 }, (_, index) => `demo_${index + 1}`),
   },
   {
-    label: '东部密集路口场景',
+    label: '校园周边场景',
     value: 'east_dense',
     intersectionIds: ['demo_3', 'demo_5', 'demo_6', 'demo_9'],
   },
   {
-    label: '西部密集路口场景',
+    label: '窄路密网片区场景',
     value: 'west_dense',
     intersectionIds: ['demo_14', 'demo_15', 'demo_19'],
   },
@@ -328,6 +328,17 @@ export const DISTURBANCE_EVENT_OPTIONS: DisturbanceEventOption[] = [
   { label: '大型活动开场', value: 'event_arrival', eventType: 'major_event_opening' },
   { label: '交通事故', value: 'accident', eventType: 'accident' },
 ]
+
+export const MIN_SPEED_LIMIT_KMH = 20
+export const MAX_SPEED_LIMIT_KMH = 80
+export const DEFAULT_SPEED_LIMIT_KMH = 40
+
+export function isValidSpeedLimitKmh(value: unknown): value is number {
+  return typeof value === 'number'
+    && Number.isFinite(value)
+    && value >= MIN_SPEED_LIMIT_KMH
+    && value <= MAX_SPEED_LIMIT_KMH
+}
 
 export const DEFAULT_BACKEND_EVENT_TYPES: DisturbanceType[] = [
   'lane_closure',

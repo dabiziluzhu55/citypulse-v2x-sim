@@ -364,7 +364,7 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
   "scenario_presets": [
     {
       "preset_id": "east_dense",
-      "label": "东部密集路口场景",
+      "label": "校园周边场景",
       "intersection_ids": ["demo_3", "demo_5", "demo_6", "demo_9"],
       "map_template": "east_dense"
     }
@@ -467,6 +467,13 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
       "end_seconds": 300
     },
     {
+      "event_type": "speed_limit",
+      "intersection_id": "demo_3",
+      "start_seconds": 60,
+      "end_seconds": 300,
+      "speed_kmh": 30
+    },
+    {
       "event_type": "major_event_opening",
       "intersection_id": "demo_2",
       "start_seconds": 120,
@@ -483,7 +490,7 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 | `period` | `morning_peak` / `off_peak` / `evening_peak` |
 | `control_mode` | `fixed` / `max_pressure` / `sotl` |
 | `playback_speed` | 可选：1.0 / 1.25 / 1.5 / 2.0 / 3.0 / 5.0 |
-| `disturbance_targets` | 按路口描述的扰动（含大型活动）；后端解析为 lane 级事件 |
+| `disturbance_targets` | 按路口描述的扰动（含大型活动）；后端解析为 lane 级事件。`speed_limit` 须提供 `max_speed`（m/s）或 `speed_kmh`（km/h，用户最大限速）；后端换算后交给 SUMO |
 
 **返回示例：** HTTP 201
 
@@ -510,7 +517,7 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 状态与 WebSocket 快照额外包含（与扰动 `events` 分离）：
 
 - `event_detection`：算法识别事件卡片（含经纬度、`display_label`、`prediction_summary`）
-- `prediction`：官方路口未来约 60 秒 `vehicle_count`；`PREDICTION_MODEL_DIR` 可用时为 STGCN，否则 `moving_average` 降级（含 `fallback`/`fallback_reason`）
+- `prediction`：官方路口未来约 60 秒 `vehicle_count`；`PREDICTION_MODEL_DIR` 指向NarrowNet-TDP交付包时为模型推理（206车道聚合到路口），否则 `moving_average` 降级（含 `fallback`/`fallback_reason`）
 - `traffic_style.edges`：后端唯一计算的拥堵等级（`occupancy_pct` 为 0～100），供蓝线着色，独立于事件图标
 
 `traffic_state` 展示约定：`localized_blockage`=疑似局部阻塞，`spillback`=排队溢出，`unknown_abnormal`=交通异常
@@ -591,6 +598,19 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
   "start_seconds": 100,
   "end_seconds": 400,
   "lane_ids": ["-30_0"]
+}
+```
+
+道路限速示例（推荐前端提交 `speed_kmh`；也可直接提交 `max_speed`，单位 m/s）：
+
+```json
+{
+  "event_type": "speed_limit",
+  "event_id": "limit-001",
+  "start_seconds": 100,
+  "end_seconds": 400,
+  "lane_ids": ["-30_0"],
+  "speed_kmh": 30
 }
 ```
 
@@ -740,11 +760,11 @@ Worker 应回调 `ALGORITHM_BASE_URL` + `/api/v1/internal/algorithm/{name}/...`
 
 ## 场景预设
 
-| preset_id | 管控路口 |
-|-----------|----------|
-| `xiongan_20` | demo_1 … demo_20 |
-| `east_dense` | demo_3、demo_5、demo_6、demo_9 |
-| `west_dense` | demo_14、demo_15、demo_19 |
+| preset_id | 显示名 | 管控路口 |
+|-----------|--------|----------|
+| `xiongan_20` | 雄安20路口路网 | demo_1 … demo_20 |
+| `east_dense` | 校园周边场景 | demo_3、demo_5、demo_6、demo_9 |
+| `west_dense` | 窄路密网片区场景 | demo_14、demo_15、demo_19 |
 
 ## 管控算法
 

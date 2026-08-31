@@ -14,6 +14,10 @@ from typing import Mapping, Sequence
 from uuid import uuid4
 
 from ..building.artifacts import GeneratedArtifactLayout
+from ..building.build_traffic import (
+    DEFAULT_TRAFFIC_SCOPE_ID,
+    SUPPORTED_TRAFFIC_SCOPE_IDS,
+)
 from .events import (
     AccidentEvent,
     DisturbanceEvent,
@@ -81,6 +85,7 @@ def _playback_delay_seconds(
 class SimulationConfig:
     intersection_ids: tuple[str, ...]
     period: str = "morning_peak"
+    scenario_scope: str = DEFAULT_TRAFFIC_SCOPE_ID
     origins: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     window_start_seconds: float = 0.0
     duration_seconds: float | None = None
@@ -133,8 +138,17 @@ class IntersectionCapability:
 
 
 @dataclass(frozen=True)
+class ScenarioScopeCapability:
+    scope_id: str
+    label: str
+    periods: tuple[str, ...]
+    intersection_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class SimulationCatalog:
     intersections: Mapping[str, IntersectionCapability]
+    scenario_scopes: Mapping[str, ScenarioScopeCapability] = field(default_factory=dict)
     event_types: tuple[str, ...] = (
         "lane_closure",
         "speed_limit",
@@ -322,6 +336,40 @@ def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatal
 
     intersections = {}
     period_order = {"morning_peak": 0, "off_peak": 1, "evening_peak": 2}
+    raw_scopes = traffic.get("available_scopes", {})
+    if not isinstance(raw_scopes, Mapping) or not raw_scopes:
+        raw_scopes = {
+            DEFAULT_TRAFFIC_SCOPE_ID: {
+                "scope_id": DEFAULT_TRAFFIC_SCOPE_ID,
+                "label": "Global official demand",
+                "periods": sorted(
+                    {
+                        str(item.get("period_id"))
+                        for item in traffic.get("scenarios", {}).values()
+                        if str(item.get("scope_id", DEFAULT_TRAFFIC_SCOPE_ID))
+                        == DEFAULT_TRAFFIC_SCOPE_ID
+                    },
+                    key=lambda value: (period_order.get(value, 99), value),
+                ),
+                "intersection_ids": list(traffic_intersections),
+            }
+        }
+    scenario_scopes = {}
+    for raw_scope_id, raw_scope in sorted(raw_scopes.items()):
+        scope_id = str(raw_scope.get("scope_id", raw_scope_id))
+        scenario_scopes[scope_id] = ScenarioScopeCapability(
+            scope_id=scope_id,
+            label=str(raw_scope.get("label", scope_id)),
+            periods=tuple(
+                sorted(
+                    (str(value) for value in raw_scope.get("periods", ())),
+                    key=lambda value: (period_order.get(value, 99), value),
+                )
+            ),
+            intersection_ids=tuple(
+                str(value) for value in raw_scope.get("intersection_ids", ())
+            ),
+        )
     for intersection_id, traffic_item in sorted(traffic_intersections.items()):
         tls_item = tls_intersections.get(intersection_id)
         if tls_item is None:
@@ -381,7 +429,10 @@ def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatal
             origins=origins,
             lanes=lanes,
         )
-    return SimulationCatalog(intersections=intersections)
+    return SimulationCatalog(
+        intersections=intersections,
+        scenario_scopes=scenario_scopes,
+    )
 
 
 class SimulationManager:
@@ -424,6 +475,7 @@ class SimulationManager:
                 window_start_seconds=config.window_start_seconds,
                 duration_seconds=config.duration_seconds,
                 flow_multiplier=config.flow_multiplier,
+                scenario_scope=config.scenario_scope,
                 step_length=config.step_length,
                 generated_dir=self.generated_dir,
                 session_root=self.session_root,
@@ -509,6 +561,26 @@ class SimulationManager:
             raise ScenarioCompilationError(f"Unknown intersections: {sorted(unknown)}")
         if config.control_mode not in {"fixed", "algorithm"}:
             raise ScenarioCompilationError("control_mode must be fixed or algorithm.")
+        if config.scenario_scope not in SUPPORTED_TRAFFIC_SCOPE_IDS:
+            raise ScenarioCompilationError(
+                f"scenario_scope must be one of {SUPPORTED_TRAFFIC_SCOPE_IDS}."
+            )
+        scope = catalog.scenario_scopes.get(config.scenario_scope)
+        if scope is None:
+            raise ScenarioCompilationError(
+                f"Traffic scenario scope {config.scenario_scope!r} is unavailable."
+            )
+        unavailable = set(config.intersection_ids) - set(scope.intersection_ids)
+        if unavailable:
+            raise ScenarioCompilationError(
+                f"Traffic scenario scope {config.scenario_scope!r} does not include "
+                f"intersections: {sorted(unavailable)}"
+            )
+        if config.period not in scope.periods:
+            raise ScenarioCompilationError(
+                f"Traffic scenario scope {config.scenario_scope!r} has no period "
+                f"{config.period!r}."
+            )
         if config.algorithm_transport not in {"local"}:
             raise ScenarioCompilationError(
                 "algorithm_transport must be local."
@@ -586,14 +658,27 @@ class SimulationManager:
             if record and channel in record.subscribers:
                 record.subscribers.remove(channel)
 
-    def _publish(self, record: _SessionRecord, snapshot: SimulationSnapshot) -> None:
+    def _publish(
+        self,
+        record: _SessionRecord,
+        snapshot: SimulationSnapshot,
+    ) -> None:
         with self._lock:
             record.snapshot = snapshot
+
             for channel in tuple(record.subscribers):
+                try:
+                    channel.put_nowait(snapshot)
+                    continue
+                except queue.Full:
+                    pass
+
+                # 队列已满时只丢弃最旧的一帧。
                 try:
                     channel.get_nowait()
                 except queue.Empty:
                     pass
+
                 try:
                     channel.put_nowait(snapshot)
                 except queue.Full:
@@ -819,6 +904,7 @@ class SimulationManager:
                     arrived_ids,
                     elapsed,
                 )
+                vehicle_tracker.sync_subscription_results()
                 departed = len(departed_ids)
                 arrived = len(arrived_ids)
                 total_departed += departed
@@ -832,14 +918,19 @@ class SimulationManager:
                     config.control_mode == "algorithm"
                     and elapsed + 1e-9 >= next_decision
                 )
+                fixed_telemetry_due = (
+                    config.control_mode == "fixed"
+                    and elapsed + 1e-9 >= next_decision
+                )
                 ai_frame_id = (
                     ai_frame_clock.poll(elapsed)
                     if ai_observer is not None
                     else None
                 )
                 vehicle_observations = None
-                if decision_due or ai_frame_id is not None:
+                if decision_due or fixed_telemetry_due or ai_frame_id is not None:
                     vehicle_tracker.refresh_observations(elapsed)
+                if decision_due or ai_frame_id is not None:
                     vehicle_observations = vehicle_tracker.observations(
                         reset_interval=decision_due
                     )
@@ -893,6 +984,9 @@ class SimulationManager:
                         decision_step += 1
                         while next_decision <= elapsed + 1e-9:
                             next_decision += config.decision_interval
+                elif fixed_telemetry_due:
+                    while next_decision <= elapsed + 1e-9:
+                        next_decision += config.decision_interval
 
                 if ai_observer is not None and ai_frame_id is not None:
                     from .run import _observe_ai_frame
@@ -1367,14 +1461,14 @@ def _capture_snapshot(
     speeds = []
     for vehicle_id in traci.vehicle.getIDList():
         vehicle_id = str(vehicle_id)
-        x, y = traci.vehicle.getPosition(vehicle_id)
-        speed = float(traci.vehicle.getSpeed(vehicle_id))
-        angle = float(traci.vehicle.getAngle(vehicle_id))
-        road_id = str(traci.vehicle.getRoadID(vehicle_id))
-        lane_id = str(traci.vehicle.getLaneID(vehicle_id))
-        speeds.append(speed)
         telemetry = vehicle_tracker.runtime_fields(vehicle_id)
         if telemetry is not None:
+            x, y = telemetry["position"]
+            speed = float(telemetry["speed"])
+            angle = float(telemetry["angle"])
+            road_id = str(telemetry["road_id"])
+            lane_id = str(telemetry["lane_id"])
+            speeds.append(speed)
             action = (
                 vehicle_action_controller.current_action(vehicle_id)
                 if vehicle_action_controller is not None
@@ -1412,6 +1506,12 @@ def _capture_snapshot(
                 )
             )
             continue
+        x, y = traci.vehicle.getPosition(vehicle_id)
+        speed = float(traci.vehicle.getSpeed(vehicle_id))
+        angle = float(traci.vehicle.getAngle(vehicle_id))
+        road_id = str(traci.vehicle.getRoadID(vehicle_id))
+        lane_id = str(traci.vehicle.getLaneID(vehicle_id))
+        speeds.append(speed)
         vehicle_values.append(
             VehicleRuntimeSnapshot(
                 vehicle_id=str(vehicle_id),

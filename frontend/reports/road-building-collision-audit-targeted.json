@@ -1,0 +1,6462 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "buildingGeometry": "projected GLB roof triangles",
+    "protectedRoads": "incident edges, lane centerlines, primary junction, and road joints with buffers",
+    "exclusion": "non-core widened road surfaces, plus audited centerline conflicts beyond 200 m for demo_5/demo_6/demo_9",
+    "farFieldRadiusMeters": 200,
+    "maximumRoadSampleSpacingMeters": 2
+  },
+  "intersections": [
+    {
+      "intersectionId": "demo_5",
+      "roofTriangles": 3049,
+      "exclusionEdges": [
+        {
+          "edgeId": "-48036",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 17.803,
+              "endOffsetMeters": 29.671,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_78.glb",
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-50026",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 53.685,
+              "endOffsetMeters": 63.653,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 354.636,
+              "endOffsetMeters": 368.589,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 374.569,
+              "endOffsetMeters": 378.556,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_0.glb",
+            "tile_roof_122.glb",
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.899,
+              "endOffsetMeters": 19.874,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 111.293,
+              "endOffsetMeters": 115.268,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 129.179,
+              "endOffsetMeters": 143.091,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_118.glb",
+            "tile_roof_126.glb",
+            "tile_roof_88.glb"
+          ]
+        },
+        {
+          "edgeId": "-50194",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 49.903,
+              "endOffsetMeters": 55.892,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50347",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.593,
+              "endOffsetMeters": 37.034,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_20.glb",
+            "tile_roof_38.glb",
+            "tile_roof_88.glb"
+          ]
+        },
+        {
+          "edgeId": "-50348",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 17.935,
+              "endOffsetMeters": 33.877,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 41.849,
+              "endOffsetMeters": 73.733,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 97.647,
+              "endOffsetMeters": 107.611,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_0.glb",
+            "tile_roof_124.glb",
+            "tile_roof_14.glb",
+            "tile_roof_148.glb",
+            "tile_roof_8.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 173.746,
+              "endOffsetMeters": 179.876,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 181.875,
+              "endOffsetMeters": 191.868,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 201.861,
+              "endOffsetMeters": 211.855,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 223.846,
+              "endOffsetMeters": 241.834,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 243.833,
+              "endOffsetMeters": 253.826,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 255.824,
+              "endOffsetMeters": 279.808,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_0.glb",
+            "tile_roof_104.glb",
+            "tile_roof_114.glb",
+            "tile_roof_118.glb",
+            "tile_roof_12.glb",
+            "tile_roof_120.glb",
+            "tile_roof_122.glb",
+            "tile_roof_128.glb",
+            "tile_roof_138.glb",
+            "tile_roof_30.glb",
+            "tile_roof_4.glb",
+            "tile_roof_44.glb",
+            "tile_roof_54.glb",
+            "tile_roof_64.glb",
+            "tile_roof_70.glb",
+            "tile_roof_84.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50362",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.819,
+              "endOffsetMeters": 27.684,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 57.345,
+              "endOffsetMeters": 71.187,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 106.781,
+              "endOffsetMeters": 110.736,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_124.glb",
+            "tile_roof_38.glb",
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 13.919,
+              "endOffsetMeters": 53.684,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 55.672,
+              "endOffsetMeters": 67.602,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 79.532,
+              "endOffsetMeters": 89.474,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 91.463,
+              "endOffsetMeters": 105.381,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 107.369,
+              "endOffsetMeters": 113.334,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 117.311,
+              "endOffsetMeters": 139.183,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_108.glb",
+            "tile_roof_128.glb",
+            "tile_roof_148.glb",
+            "tile_roof_38.glb",
+            "tile_roof_44.glb",
+            "tile_roof_54.glb",
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 75.613,
+              "endOffsetMeters": 105.46,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 161.175,
+              "endOffsetMeters": 173.113,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 175.103,
+              "endOffsetMeters": 193.012,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 200.971,
+              "endOffsetMeters": 208.93,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 218.879,
+              "endOffsetMeters": 242.756,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 254.695,
+              "endOffsetMeters": 274.593,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 278.573,
+              "endOffsetMeters": 294.491,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 296.481,
+              "endOffsetMeters": 322.349,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_106.glb",
+            "tile_roof_112.glb",
+            "tile_roof_134.glb",
+            "tile_roof_38.glb",
+            "tile_roof_86.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 23.865,
+              "endOffsetMeters": 55.681,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 81.535,
+              "endOffsetMeters": 103.411,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_130.glb",
+            "tile_roof_44.glb",
+            "tile_roof_54.glb",
+            "tile_roof_78.glb",
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-50390",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 23.841,
+              "endOffsetMeters": 33.774,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 147.016,
+              "endOffsetMeters": 156.95,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 182.778,
+              "endOffsetMeters": 184.765,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_114.glb",
+            "tile_roof_20.glb",
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-50391",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.92,
+              "endOffsetMeters": 43.78,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 45.77,
+              "endOffsetMeters": 53.73,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 73.63,
+              "endOffsetMeters": 81.59,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 101.49,
+              "endOffsetMeters": 111.44,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 123.38,
+              "endOffsetMeters": 133.33,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 143.28,
+              "endOffsetMeters": 155.22,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_108.glb",
+            "tile_roof_144.glb",
+            "tile_roof_20.glb",
+            "tile_roof_44.glb",
+            "tile_roof_54.glb",
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50392",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 29.392,
+              "endOffsetMeters": 37.23,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50394",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 167.351,
+              "endOffsetMeters": 177.314,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 213.178,
+              "endOffsetMeters": 225.133,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_54.glb",
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50395",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 11.909,
+              "endOffsetMeters": 19.848,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 21.861,
+              "endOffsetMeters": 45.71,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 55.647,
+              "endOffsetMeters": 67.571,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 75.521,
+              "endOffsetMeters": 85.458,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 91.42,
+              "endOffsetMeters": 115.268,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_20.glb",
+            "tile_roof_44.glb",
+            "tile_roof_64.glb",
+            "tile_roof_78.glb",
+            "tile_roof_86.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50400",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 17.702,
+              "endOffsetMeters": 31.47,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 43.271,
+              "endOffsetMeters": 53.105,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_138.glb",
+            "tile_roof_30.glb",
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50401",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 35.679,
+              "endOffsetMeters": 59.464,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 87.175,
+              "endOffsetMeters": 91.14,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_12.glb",
+            "tile_roof_36.glb",
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50402",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 35.776,
+              "endOffsetMeters": 47.702,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.771,
+              "endOffsetMeters": 29.571,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 31.542,
+              "endOffsetMeters": 43.37,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_12.glb",
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 25.964,
+              "endOffsetMeters": 59.917,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 91.872,
+              "endOffsetMeters": 107.85,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 109.847,
+              "endOffsetMeters": 111.845,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_136.glb",
+            "tile_roof_30.glb",
+            "tile_roof_44.glb",
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50408",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 57.112,
+              "endOffsetMeters": 64.99,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_44.glb",
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50411",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.33,
+              "endOffsetMeters": 17.246,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 19.162,
+              "endOffsetMeters": 28.743,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_118.glb",
+            "tile_roof_124.glb",
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.961,
+              "endOffsetMeters": 29.926,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 37.907,
+              "endOffsetMeters": 55.863,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 57.858,
+              "endOffsetMeters": 73.818,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 75.813,
+              "endOffsetMeters": 113.72,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 157.612,
+              "endOffsetMeters": 169.583,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_110.glb",
+            "tile_roof_116.glb",
+            "tile_roof_118.glb",
+            "tile_roof_120.glb",
+            "tile_roof_126.glb",
+            "tile_roof_136.glb",
+            "tile_roof_138.glb",
+            "tile_roof_144.glb",
+            "tile_roof_36.glb",
+            "tile_roof_4.glb",
+            "tile_roof_44.glb",
+            "tile_roof_54.glb",
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.665,
+              "endOffsetMeters": 41.119,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 48.952,
+              "endOffsetMeters": 50.91,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_138.glb",
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50416",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 0,
+              "endOffsetMeters": 23.678,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_30.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50424",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.735,
+              "endOffsetMeters": 25.569,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 29.503,
+              "endOffsetMeters": 35.403,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 49.171,
+              "endOffsetMeters": 51.138,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_20.glb",
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.825,
+              "endOffsetMeters": 27.694,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_78.glb",
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-53971",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 63.372,
+              "endOffsetMeters": 81.196,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56413",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.9,
+              "endOffsetMeters": 27.825,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_88.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 19.221,
+              "endOffsetMeters": 28.832,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_38.glb",
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 19.928,
+              "endOffsetMeters": 29.892,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 53.806,
+              "endOffsetMeters": 85.691,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 95.655,
+              "endOffsetMeters": 109.604,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_0.glb",
+            "tile_roof_14.glb",
+            "tile_roof_148.glb",
+            "tile_roof_30.glb",
+            "tile_roof_8.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 25.982,
+              "endOffsetMeters": 49.965,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 51.964,
+              "endOffsetMeters": 61.956,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 63.955,
+              "endOffsetMeters": 81.942,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 93.934,
+              "endOffsetMeters": 103.927,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 113.92,
+              "endOffsetMeters": 123.913,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 125.912,
+              "endOffsetMeters": 133.608,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_0.glb",
+            "tile_roof_114.glb",
+            "tile_roof_118.glb",
+            "tile_roof_12.glb",
+            "tile_roof_120.glb",
+            "tile_roof_122.glb",
+            "tile_roof_128.glb",
+            "tile_roof_138.glb",
+            "tile_roof_30.glb",
+            "tile_roof_4.glb",
+            "tile_roof_44.glb",
+            "tile_roof_54.glb",
+            "tile_roof_64.glb",
+            "tile_roof_70.glb",
+            "tile_roof_84.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56644",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 21.638,
+              "endOffsetMeters": 33.44,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56645",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 25.969,
+              "endOffsetMeters": 41.95,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 59.928,
+              "endOffsetMeters": 73.912,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 75.909,
+              "endOffsetMeters": 85.897,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 97.883,
+              "endOffsetMeters": 109.868,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 113.862,
+              "endOffsetMeters": 135.835,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_10.glb",
+            "tile_roof_38.glb",
+            "tile_roof_44.glb",
+            "tile_roof_54.glb",
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-56646",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 25.945,
+              "endOffsetMeters": 39.915,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 53.885,
+              "endOffsetMeters": 67.856,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 75.839,
+              "endOffsetMeters": 83.822,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_106.glb",
+            "tile_roof_86.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.816,
+              "endOffsetMeters": 106.75,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_130.glb",
+            "tile_roof_146.glb",
+            "tile_roof_30.glb",
+            "tile_roof_36.glb",
+            "tile_roof_44.glb",
+            "tile_roof_54.glb",
+            "tile_roof_64.glb",
+            "tile_roof_78.glb",
+            "tile_roof_8.glb",
+            "tile_roof_84.glb"
+          ]
+        },
+        {
+          "edgeId": "-56672",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 83.426,
+              "endOffsetMeters": 95.344,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 111.235,
+              "endOffsetMeters": 121.166,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_142.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56676",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 125.416,
+              "endOffsetMeters": 139.351,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 149.293,
+              "endOffsetMeters": 157.254,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 173.18,
+              "endOffsetMeters": 179.153,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_104.glb",
+            "tile_roof_20.glb",
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56681",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.899,
+              "endOffsetMeters": 39.748,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 45.71,
+              "endOffsetMeters": 55.647,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 63.597,
+              "endOffsetMeters": 75.521,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 85.458,
+              "endOffsetMeters": 109.307,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_20.glb",
+            "tile_roof_44.glb",
+            "tile_roof_64.glb",
+            "tile_roof_78.glb",
+            "tile_roof_86.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 29.502,
+              "endOffsetMeters": 35.403,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 43.27,
+              "endOffsetMeters": 59.005,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 62.938,
+              "endOffsetMeters": 64.905,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_100.glb",
+            "tile_roof_146.glb",
+            "tile_roof_44.glb",
+            "tile_roof_64.glb",
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 13.764,
+              "endOffsetMeters": 17.697,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 21.629,
+              "endOffsetMeters": 58.916,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_118.glb",
+            "tile_roof_12.glb",
+            "tile_roof_54.glb",
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 25.627,
+              "endOffsetMeters": 37.456,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 39.427,
+              "endOffsetMeters": 53.226,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_12.glb",
+            "tile_roof_30.glb",
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56687",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.978,
+              "endOffsetMeters": 17.975,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 19.972,
+              "endOffsetMeters": 35.95,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_30.glb",
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56690",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 35.861,
+              "endOffsetMeters": 65.745,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_124.glb",
+            "tile_roof_64.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 0,
+              "endOffsetMeters": 11.654,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_118.glb",
+            "tile_roof_20.glb",
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56696",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 178.063,
+              "endOffsetMeters": 179.556,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 187.536,
+              "endOffsetMeters": 193.521,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_118.glb",
+            "tile_roof_120.glb",
+            "tile_roof_126.glb",
+            "tile_roof_136.glb",
+            "tile_roof_144.glb",
+            "tile_roof_44.glb",
+            "tile_roof_54.glb",
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 25.455,
+              "endOffsetMeters": 50.91,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "surfaceExclusions": [
+            {
+              "startOffsetMeters": 15.733,
+              "endOffsetMeters": 82.6,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            },
+            {
+              "startOffsetMeters": 92.434,
+              "endOffsetMeters": 94.4,
+              "reason": "building_overlap_far_field",
+              "source": "building_triangle_audit"
+            }
+          ],
+          "tiles": [
+            "tile_roof_20.glb",
+            "tile_roof_44.glb",
+            "tile_roof_88.glb",
+            "tile_roof_94.glb"
+          ]
+        }
+      ],
+      "centerlineConflicts": [
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 0,
+          "endOffsetMeters": 1.987,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 1.987,
+          "endOffsetMeters": 3.975,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 3.975,
+          "endOffsetMeters": 5.962,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 5.962,
+          "endOffsetMeters": 7.949,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 7.949,
+          "endOffsetMeters": 9.937,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 9.937,
+          "endOffsetMeters": 11.924,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 11.924,
+          "endOffsetMeters": 13.912,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 13.912,
+          "endOffsetMeters": 15.899,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 15.899,
+          "endOffsetMeters": 17.886,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 17.886,
+          "endOffsetMeters": 19.874,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 129.179,
+          "endOffsetMeters": 131.167,
+          "tiles": [
+            "tile_roof_88.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 131.167,
+          "endOffsetMeters": 133.154,
+          "tiles": [
+            "tile_roof_88.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 133.154,
+          "endOffsetMeters": 135.141,
+          "tiles": [
+            "tile_roof_88.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 135.141,
+          "endOffsetMeters": 137.129,
+          "tiles": [
+            "tile_roof_88.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 137.129,
+          "endOffsetMeters": 139.116,
+          "tiles": [
+            "tile_roof_88.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 139.116,
+          "endOffsetMeters": 141.104,
+          "tiles": [
+            "tile_roof_88.glb"
+          ]
+        },
+        {
+          "edgeId": "-50193",
+          "startOffsetMeters": 141.104,
+          "endOffsetMeters": 143.091,
+          "tiles": [
+            "tile_roof_88.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 93.935,
+          "endOffsetMeters": 95.934,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 95.934,
+          "endOffsetMeters": 97.933,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 97.933,
+          "endOffsetMeters": 99.931,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 99.931,
+          "endOffsetMeters": 101.93,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 101.93,
+          "endOffsetMeters": 103.929,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 103.929,
+          "endOffsetMeters": 105.927,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 161.889,
+          "endOffsetMeters": 163.887,
+          "tiles": [
+            "tile_roof_70.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 163.887,
+          "endOffsetMeters": 165.886,
+          "tiles": [
+            "tile_roof_70.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 165.886,
+          "endOffsetMeters": 167.885,
+          "tiles": [
+            "tile_roof_70.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 167.885,
+          "endOffsetMeters": 169.883,
+          "tiles": [
+            "tile_roof_70.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 169.883,
+          "endOffsetMeters": 171.882,
+          "tiles": [
+            "tile_roof_70.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 181.875,
+          "endOffsetMeters": 183.874,
+          "tiles": [
+            "tile_roof_114.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 183.874,
+          "endOffsetMeters": 185.872,
+          "tiles": [
+            "tile_roof_114.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 185.872,
+          "endOffsetMeters": 187.871,
+          "tiles": [
+            "tile_roof_114.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 187.871,
+          "endOffsetMeters": 189.87,
+          "tiles": [
+            "tile_roof_114.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 189.87,
+          "endOffsetMeters": 191.868,
+          "tiles": [
+            "tile_roof_114.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 201.861,
+          "endOffsetMeters": 203.86,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 203.86,
+          "endOffsetMeters": 205.859,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 205.859,
+          "endOffsetMeters": 207.857,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 207.857,
+          "endOffsetMeters": 209.856,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 209.856,
+          "endOffsetMeters": 211.855,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 223.846,
+          "endOffsetMeters": 225.845,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 225.845,
+          "endOffsetMeters": 227.844,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 227.844,
+          "endOffsetMeters": 229.842,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 229.842,
+          "endOffsetMeters": 231.841,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 231.841,
+          "endOffsetMeters": 233.839,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 243.833,
+          "endOffsetMeters": 245.831,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 245.831,
+          "endOffsetMeters": 247.83,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 247.83,
+          "endOffsetMeters": 249.828,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 249.828,
+          "endOffsetMeters": 251.827,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 251.827,
+          "endOffsetMeters": 253.826,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 255.824,
+          "endOffsetMeters": 257.823,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 257.823,
+          "endOffsetMeters": 259.822,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 259.822,
+          "endOffsetMeters": 261.82,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 261.82,
+          "endOffsetMeters": 263.819,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 263.819,
+          "endOffsetMeters": 265.817,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 265.817,
+          "endOffsetMeters": 267.816,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 293.798,
+          "endOffsetMeters": 295.797,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 295.797,
+          "endOffsetMeters": 297.796,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 297.796,
+          "endOffsetMeters": 299.794,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 299.794,
+          "endOffsetMeters": 301.793,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50349",
+          "startOffsetMeters": 301.793,
+          "endOffsetMeters": 303.791,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50362",
+          "startOffsetMeters": 57.345,
+          "endOffsetMeters": 59.323,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50362",
+          "startOffsetMeters": 59.323,
+          "endOffsetMeters": 61.3,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50362",
+          "startOffsetMeters": 61.3,
+          "endOffsetMeters": 63.278,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50362",
+          "startOffsetMeters": 63.278,
+          "endOffsetMeters": 65.255,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50362",
+          "startOffsetMeters": 65.255,
+          "endOffsetMeters": 67.232,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50362",
+          "startOffsetMeters": 67.232,
+          "endOffsetMeters": 69.21,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50362",
+          "startOffsetMeters": 69.21,
+          "endOffsetMeters": 71.187,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50362",
+          "startOffsetMeters": 106.781,
+          "endOffsetMeters": 108.758,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-50362",
+          "startOffsetMeters": 108.758,
+          "endOffsetMeters": 110.736,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 31.814,
+          "endOffsetMeters": 33.802,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 33.802,
+          "endOffsetMeters": 35.79,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 35.79,
+          "endOffsetMeters": 37.779,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 37.779,
+          "endOffsetMeters": 39.767,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 39.767,
+          "endOffsetMeters": 41.756,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 41.756,
+          "endOffsetMeters": 43.743,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 43.743,
+          "endOffsetMeters": 45.732,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 45.732,
+          "endOffsetMeters": 47.72,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 47.72,
+          "endOffsetMeters": 49.708,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 49.708,
+          "endOffsetMeters": 51.697,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 51.697,
+          "endOffsetMeters": 53.684,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 55.672,
+          "endOffsetMeters": 57.66,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 57.66,
+          "endOffsetMeters": 59.649,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 59.649,
+          "endOffsetMeters": 61.637,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 61.637,
+          "endOffsetMeters": 63.626,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 63.626,
+          "endOffsetMeters": 65.614,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 65.614,
+          "endOffsetMeters": 67.602,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 79.532,
+          "endOffsetMeters": 81.521,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 81.521,
+          "endOffsetMeters": 83.509,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 83.509,
+          "endOffsetMeters": 85.497,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 85.497,
+          "endOffsetMeters": 87.486,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 87.486,
+          "endOffsetMeters": 89.474,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 91.463,
+          "endOffsetMeters": 93.451,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 93.451,
+          "endOffsetMeters": 95.439,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 95.439,
+          "endOffsetMeters": 97.428,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 97.428,
+          "endOffsetMeters": 99.416,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 99.416,
+          "endOffsetMeters": 101.404,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 101.404,
+          "endOffsetMeters": 103.393,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 103.393,
+          "endOffsetMeters": 105.381,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 117.311,
+          "endOffsetMeters": 119.3,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 119.3,
+          "endOffsetMeters": 121.288,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 121.288,
+          "endOffsetMeters": 123.276,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 123.276,
+          "endOffsetMeters": 125.265,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 125.265,
+          "endOffsetMeters": 127.253,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 127.253,
+          "endOffsetMeters": 129.241,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 129.241,
+          "endOffsetMeters": 131.23,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 131.23,
+          "endOffsetMeters": 133.218,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 133.218,
+          "endOffsetMeters": 135.206,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 135.206,
+          "endOffsetMeters": 137.195,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 137.195,
+          "endOffsetMeters": 139.183,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 151.113,
+          "endOffsetMeters": 153.102,
+          "tiles": [
+            "tile_roof_108.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 153.102,
+          "endOffsetMeters": 155.09,
+          "tiles": [
+            "tile_roof_108.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 155.09,
+          "endOffsetMeters": 157.078,
+          "tiles": [
+            "tile_roof_108.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 157.078,
+          "endOffsetMeters": 159.067,
+          "tiles": [
+            "tile_roof_108.glb"
+          ]
+        },
+        {
+          "edgeId": "-50363",
+          "startOffsetMeters": 159.067,
+          "endOffsetMeters": 161.055,
+          "tiles": [
+            "tile_roof_108.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 254.695,
+          "endOffsetMeters": 256.685,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 256.685,
+          "endOffsetMeters": 258.675,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 258.675,
+          "endOffsetMeters": 260.665,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 260.665,
+          "endOffsetMeters": 262.655,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 262.655,
+          "endOffsetMeters": 264.644,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 264.644,
+          "endOffsetMeters": 266.634,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 266.634,
+          "endOffsetMeters": 268.624,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 268.624,
+          "endOffsetMeters": 270.614,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 270.614,
+          "endOffsetMeters": 272.604,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 272.604,
+          "endOffsetMeters": 274.593,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 278.573,
+          "endOffsetMeters": 280.563,
+          "tiles": [
+            "tile_roof_106.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 280.563,
+          "endOffsetMeters": 282.553,
+          "tiles": [
+            "tile_roof_106.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 282.553,
+          "endOffsetMeters": 284.542,
+          "tiles": [
+            "tile_roof_106.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 284.542,
+          "endOffsetMeters": 286.532,
+          "tiles": [
+            "tile_roof_106.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 286.532,
+          "endOffsetMeters": 288.522,
+          "tiles": [
+            "tile_roof_106.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 288.522,
+          "endOffsetMeters": 290.512,
+          "tiles": [
+            "tile_roof_106.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 290.512,
+          "endOffsetMeters": 292.502,
+          "tiles": [
+            "tile_roof_106.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 292.502,
+          "endOffsetMeters": 294.491,
+          "tiles": [
+            "tile_roof_106.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 296.481,
+          "endOffsetMeters": 298.471,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 298.471,
+          "endOffsetMeters": 300.461,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 300.461,
+          "endOffsetMeters": 302.451,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 302.451,
+          "endOffsetMeters": 304.44,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 304.44,
+          "endOffsetMeters": 306.43,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 306.43,
+          "endOffsetMeters": 308.42,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 308.42,
+          "endOffsetMeters": 310.41,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 310.41,
+          "endOffsetMeters": 312.4,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 312.4,
+          "endOffsetMeters": 314.39,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 314.39,
+          "endOffsetMeters": 316.379,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 316.379,
+          "endOffsetMeters": 318.369,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 318.369,
+          "endOffsetMeters": 320.359,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50364",
+          "startOffsetMeters": 320.359,
+          "endOffsetMeters": 322.349,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 0,
+          "endOffsetMeters": 1.989,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 1.989,
+          "endOffsetMeters": 3.977,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 3.977,
+          "endOffsetMeters": 5.966,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 5.966,
+          "endOffsetMeters": 7.955,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 23.865,
+          "endOffsetMeters": 25.853,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 25.853,
+          "endOffsetMeters": 27.842,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 27.842,
+          "endOffsetMeters": 29.831,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 29.831,
+          "endOffsetMeters": 31.819,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 31.819,
+          "endOffsetMeters": 33.808,
+          "tiles": [
+            "tile_roof_130.glb",
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 33.808,
+          "endOffsetMeters": 35.797,
+          "tiles": [
+            "tile_roof_130.glb",
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 35.797,
+          "endOffsetMeters": 37.785,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 37.785,
+          "endOffsetMeters": 39.774,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 39.774,
+          "endOffsetMeters": 41.762,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 41.762,
+          "endOffsetMeters": 43.751,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 43.751,
+          "endOffsetMeters": 45.738,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 45.738,
+          "endOffsetMeters": 47.727,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 47.727,
+          "endOffsetMeters": 49.715,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 49.715,
+          "endOffsetMeters": 51.704,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 51.704,
+          "endOffsetMeters": 53.693,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 53.693,
+          "endOffsetMeters": 55.681,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 81.535,
+          "endOffsetMeters": 83.523,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 83.523,
+          "endOffsetMeters": 85.512,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 85.512,
+          "endOffsetMeters": 87.501,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 87.501,
+          "endOffsetMeters": 89.49,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 89.49,
+          "endOffsetMeters": 91.478,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 91.478,
+          "endOffsetMeters": 93.467,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 93.467,
+          "endOffsetMeters": 95.456,
+          "tiles": [
+            "tile_roof_54.glb",
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 95.456,
+          "endOffsetMeters": 97.444,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 97.444,
+          "endOffsetMeters": 99.433,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 99.433,
+          "endOffsetMeters": 101.422,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 101.422,
+          "endOffsetMeters": 103.411,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50386",
+          "startOffsetMeters": 103.411,
+          "endOffsetMeters": 105.399,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 0,
+          "endOffsetMeters": 1.987,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 1.987,
+          "endOffsetMeters": 3.975,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 3.975,
+          "endOffsetMeters": 5.962,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 5.962,
+          "endOffsetMeters": 7.95,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 7.95,
+          "endOffsetMeters": 9.937,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 9.937,
+          "endOffsetMeters": 11.924,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 21.861,
+          "endOffsetMeters": 23.849,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 23.849,
+          "endOffsetMeters": 25.836,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 25.836,
+          "endOffsetMeters": 27.823,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 27.823,
+          "endOffsetMeters": 29.811,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 29.811,
+          "endOffsetMeters": 31.798,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 31.798,
+          "endOffsetMeters": 33.786,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 33.786,
+          "endOffsetMeters": 35.773,
+          "tiles": [
+            "tile_roof_20.glb",
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 35.773,
+          "endOffsetMeters": 37.76,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 37.76,
+          "endOffsetMeters": 39.748,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 39.748,
+          "endOffsetMeters": 41.735,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 41.735,
+          "endOffsetMeters": 43.722,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 43.722,
+          "endOffsetMeters": 45.71,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 55.647,
+          "endOffsetMeters": 57.634,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 57.634,
+          "endOffsetMeters": 59.622,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 59.622,
+          "endOffsetMeters": 61.609,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 61.609,
+          "endOffsetMeters": 63.596,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 63.596,
+          "endOffsetMeters": 65.584,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 65.584,
+          "endOffsetMeters": 67.571,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 75.521,
+          "endOffsetMeters": 77.508,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 77.508,
+          "endOffsetMeters": 79.495,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 79.495,
+          "endOffsetMeters": 81.483,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 81.483,
+          "endOffsetMeters": 83.47,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 83.47,
+          "endOffsetMeters": 85.458,
+          "tiles": [
+            "tile_roof_86.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 91.42,
+          "endOffsetMeters": 93.407,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 93.407,
+          "endOffsetMeters": 95.394,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 95.394,
+          "endOffsetMeters": 97.382,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 97.382,
+          "endOffsetMeters": 99.369,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 99.369,
+          "endOffsetMeters": 101.357,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 101.357,
+          "endOffsetMeters": 103.344,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 103.344,
+          "endOffsetMeters": 105.331,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 105.331,
+          "endOffsetMeters": 107.319,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 107.319,
+          "endOffsetMeters": 109.306,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 109.306,
+          "endOffsetMeters": 111.294,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 111.294,
+          "endOffsetMeters": 113.281,
+          "tiles": [
+            "tile_roof_64.glb",
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 113.281,
+          "endOffsetMeters": 115.268,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 115.268,
+          "endOffsetMeters": 117.256,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 117.256,
+          "endOffsetMeters": 119.243,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 119.243,
+          "endOffsetMeters": 121.23,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 121.23,
+          "endOffsetMeters": 123.218,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 123.218,
+          "endOffsetMeters": 125.205,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 125.205,
+          "endOffsetMeters": 127.193,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 127.193,
+          "endOffsetMeters": 129.18,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50399",
+          "startOffsetMeters": 129.18,
+          "endOffsetMeters": 131.167,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50401",
+          "startOffsetMeters": 45.589,
+          "endOffsetMeters": 47.571,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50401",
+          "startOffsetMeters": 47.571,
+          "endOffsetMeters": 49.554,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50401",
+          "startOffsetMeters": 49.554,
+          "endOffsetMeters": 51.536,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50401",
+          "startOffsetMeters": 51.536,
+          "endOffsetMeters": 53.518,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50401",
+          "startOffsetMeters": 53.518,
+          "endOffsetMeters": 55.5,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50401",
+          "startOffsetMeters": 55.5,
+          "endOffsetMeters": 57.482,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50401",
+          "startOffsetMeters": 57.482,
+          "endOffsetMeters": 59.464,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50403",
+          "startOffsetMeters": 1.743,
+          "endOffsetMeters": 3.486,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50403",
+          "startOffsetMeters": 3.486,
+          "endOffsetMeters": 5.229,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50403",
+          "startOffsetMeters": 5.229,
+          "endOffsetMeters": 6.972,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50403",
+          "startOffsetMeters": 6.972,
+          "endOffsetMeters": 8.715,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50403",
+          "startOffsetMeters": 8.715,
+          "endOffsetMeters": 10.457,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 9.857,
+          "endOffsetMeters": 11.828,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 11.828,
+          "endOffsetMeters": 13.8,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 13.8,
+          "endOffsetMeters": 15.771,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 15.771,
+          "endOffsetMeters": 17.742,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 17.742,
+          "endOffsetMeters": 19.714,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 19.714,
+          "endOffsetMeters": 21.685,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 21.685,
+          "endOffsetMeters": 23.656,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 23.656,
+          "endOffsetMeters": 25.628,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 25.628,
+          "endOffsetMeters": 27.599,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 27.599,
+          "endOffsetMeters": 29.571,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 31.542,
+          "endOffsetMeters": 33.513,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 33.513,
+          "endOffsetMeters": 35.485,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 35.485,
+          "endOffsetMeters": 37.456,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 37.456,
+          "endOffsetMeters": 39.427,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 39.427,
+          "endOffsetMeters": 41.399,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50404",
+          "startOffsetMeters": 41.399,
+          "endOffsetMeters": 43.37,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 91.872,
+          "endOffsetMeters": 93.87,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 93.87,
+          "endOffsetMeters": 95.867,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 95.867,
+          "endOffsetMeters": 97.864,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 97.864,
+          "endOffsetMeters": 99.861,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 99.861,
+          "endOffsetMeters": 101.859,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 101.859,
+          "endOffsetMeters": 103.856,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 103.856,
+          "endOffsetMeters": 105.853,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 105.853,
+          "endOffsetMeters": 107.85,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 109.847,
+          "endOffsetMeters": 111.845,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 111.845,
+          "endOffsetMeters": 113.842,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 113.842,
+          "endOffsetMeters": 115.839,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 115.839,
+          "endOffsetMeters": 117.836,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 117.836,
+          "endOffsetMeters": 119.834,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 119.834,
+          "endOffsetMeters": 121.831,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 121.831,
+          "endOffsetMeters": 123.828,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50405",
+          "startOffsetMeters": 123.828,
+          "endOffsetMeters": 125.825,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-50411",
+          "startOffsetMeters": 19.162,
+          "endOffsetMeters": 21.078,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50411",
+          "startOffsetMeters": 21.078,
+          "endOffsetMeters": 22.994,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50411",
+          "startOffsetMeters": 22.994,
+          "endOffsetMeters": 24.911,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50411",
+          "startOffsetMeters": 24.911,
+          "endOffsetMeters": 26.827,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50411",
+          "startOffsetMeters": 26.827,
+          "endOffsetMeters": 28.743,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 157.612,
+          "endOffsetMeters": 159.607,
+          "tiles": [
+            "tile_roof_136.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 159.607,
+          "endOffsetMeters": 161.602,
+          "tiles": [
+            "tile_roof_136.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 161.602,
+          "endOffsetMeters": 163.597,
+          "tiles": [
+            "tile_roof_136.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 163.597,
+          "endOffsetMeters": 165.593,
+          "tiles": [
+            "tile_roof_136.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 165.593,
+          "endOffsetMeters": 167.588,
+          "tiles": [
+            "tile_roof_136.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 167.588,
+          "endOffsetMeters": 169.583,
+          "tiles": [
+            "tile_roof_136.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 177.563,
+          "endOffsetMeters": 179.558,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 179.558,
+          "endOffsetMeters": 181.553,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 181.553,
+          "endOffsetMeters": 183.548,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 183.548,
+          "endOffsetMeters": 185.543,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 185.543,
+          "endOffsetMeters": 187.539,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 197.514,
+          "endOffsetMeters": 199.509,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 199.509,
+          "endOffsetMeters": 201.504,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 201.504,
+          "endOffsetMeters": 203.499,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 203.499,
+          "endOffsetMeters": 205.494,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 205.494,
+          "endOffsetMeters": 207.489,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 217.465,
+          "endOffsetMeters": 219.46,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 219.46,
+          "endOffsetMeters": 221.455,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 221.455,
+          "endOffsetMeters": 223.45,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 223.45,
+          "endOffsetMeters": 225.445,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 225.445,
+          "endOffsetMeters": 227.44,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 239.411,
+          "endOffsetMeters": 241.406,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 241.406,
+          "endOffsetMeters": 243.401,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 243.401,
+          "endOffsetMeters": 245.396,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 245.396,
+          "endOffsetMeters": 247.391,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 247.391,
+          "endOffsetMeters": 249.386,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 251.382,
+          "endOffsetMeters": 253.377,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 253.377,
+          "endOffsetMeters": 255.372,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 255.372,
+          "endOffsetMeters": 257.367,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 257.367,
+          "endOffsetMeters": 259.362,
+          "tiles": [
+            "tile_roof_144.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 259.362,
+          "endOffsetMeters": 261.357,
+          "tiles": [
+            "tile_roof_144.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 261.357,
+          "endOffsetMeters": 263.352,
+          "tiles": [
+            "tile_roof_144.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 263.352,
+          "endOffsetMeters": 265.347,
+          "tiles": [
+            "tile_roof_144.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 265.347,
+          "endOffsetMeters": 267.342,
+          "tiles": [
+            "tile_roof_144.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 267.342,
+          "endOffsetMeters": 269.337,
+          "tiles": [
+            "tile_roof_144.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 271.332,
+          "endOffsetMeters": 273.328,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 273.328,
+          "endOffsetMeters": 275.323,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 275.323,
+          "endOffsetMeters": 277.318,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 277.318,
+          "endOffsetMeters": 279.313,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 281.308,
+          "endOffsetMeters": 283.303,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 283.303,
+          "endOffsetMeters": 285.298,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 285.298,
+          "endOffsetMeters": 287.293,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 287.293,
+          "endOffsetMeters": 289.288,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 293.278,
+          "endOffsetMeters": 295.274,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 295.274,
+          "endOffsetMeters": 297.269,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 297.269,
+          "endOffsetMeters": 299.264,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 299.264,
+          "endOffsetMeters": 301.259,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 301.259,
+          "endOffsetMeters": 303.254,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 303.254,
+          "endOffsetMeters": 305.249,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 305.249,
+          "endOffsetMeters": 307.244,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 307.244,
+          "endOffsetMeters": 309.239,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 309.239,
+          "endOffsetMeters": 311.234,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 311.234,
+          "endOffsetMeters": 313.229,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50414",
+          "startOffsetMeters": 313.229,
+          "endOffsetMeters": 315.224,
+          "tiles": [
+            "tile_roof_126.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 1.958,
+          "endOffsetMeters": 3.916,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 3.916,
+          "endOffsetMeters": 5.874,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 5.874,
+          "endOffsetMeters": 7.832,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 7.832,
+          "endOffsetMeters": 9.79,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 9.79,
+          "endOffsetMeters": 11.748,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 11.748,
+          "endOffsetMeters": 13.706,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 13.706,
+          "endOffsetMeters": 15.665,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 15.665,
+          "endOffsetMeters": 17.623,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 17.623,
+          "endOffsetMeters": 19.581,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 19.581,
+          "endOffsetMeters": 21.539,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 21.539,
+          "endOffsetMeters": 23.497,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 23.497,
+          "endOffsetMeters": 25.455,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 25.455,
+          "endOffsetMeters": 27.413,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 27.413,
+          "endOffsetMeters": 29.371,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 29.371,
+          "endOffsetMeters": 31.329,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 31.329,
+          "endOffsetMeters": 33.287,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 33.287,
+          "endOffsetMeters": 35.245,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 35.245,
+          "endOffsetMeters": 37.203,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 37.203,
+          "endOffsetMeters": 39.161,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-50415",
+          "startOffsetMeters": 39.161,
+          "endOffsetMeters": 41.119,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 1.978,
+          "endOffsetMeters": 3.956,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 3.956,
+          "endOffsetMeters": 5.934,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 5.934,
+          "endOffsetMeters": 7.913,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 7.913,
+          "endOffsetMeters": 9.891,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 9.891,
+          "endOffsetMeters": 11.869,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 11.869,
+          "endOffsetMeters": 13.847,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 13.847,
+          "endOffsetMeters": 15.825,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 15.825,
+          "endOffsetMeters": 17.803,
+          "tiles": [
+            "tile_roof_78.glb",
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 17.803,
+          "endOffsetMeters": 19.781,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 19.781,
+          "endOffsetMeters": 21.759,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 21.759,
+          "endOffsetMeters": 23.738,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 23.738,
+          "endOffsetMeters": 25.716,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-53970",
+          "startOffsetMeters": 25.716,
+          "endOffsetMeters": 27.694,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 19.221,
+          "endOffsetMeters": 21.144,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 21.144,
+          "endOffsetMeters": 23.066,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 23.066,
+          "endOffsetMeters": 24.988,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 24.988,
+          "endOffsetMeters": 26.91,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 26.91,
+          "endOffsetMeters": 28.832,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 28.832,
+          "endOffsetMeters": 30.754,
+          "tiles": [
+            "tile_roof_38.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 30.754,
+          "endOffsetMeters": 32.676,
+          "tiles": [
+            "tile_roof_38.glb",
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 32.676,
+          "endOffsetMeters": 34.599,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 34.599,
+          "endOffsetMeters": 36.521,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 36.521,
+          "endOffsetMeters": 38.443,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 38.443,
+          "endOffsetMeters": 40.365,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 40.365,
+          "endOffsetMeters": 42.287,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56629",
+          "startOffsetMeters": 42.287,
+          "endOffsetMeters": 44.209,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 0,
+          "endOffsetMeters": 1.993,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 1.993,
+          "endOffsetMeters": 3.986,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 3.986,
+          "endOffsetMeters": 5.978,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 5.978,
+          "endOffsetMeters": 7.971,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 7.971,
+          "endOffsetMeters": 9.964,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 19.928,
+          "endOffsetMeters": 21.921,
+          "tiles": [
+            "tile_roof_148.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 21.921,
+          "endOffsetMeters": 23.914,
+          "tiles": [
+            "tile_roof_148.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 23.914,
+          "endOffsetMeters": 25.906,
+          "tiles": [
+            "tile_roof_148.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 25.906,
+          "endOffsetMeters": 27.899,
+          "tiles": [
+            "tile_roof_148.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 27.899,
+          "endOffsetMeters": 29.892,
+          "tiles": [
+            "tile_roof_148.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 53.806,
+          "endOffsetMeters": 55.799,
+          "tiles": [
+            "tile_roof_14.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 55.799,
+          "endOffsetMeters": 57.791,
+          "tiles": [
+            "tile_roof_14.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 57.791,
+          "endOffsetMeters": 59.784,
+          "tiles": [
+            "tile_roof_14.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 59.784,
+          "endOffsetMeters": 61.777,
+          "tiles": [
+            "tile_roof_14.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 61.777,
+          "endOffsetMeters": 63.77,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 63.77,
+          "endOffsetMeters": 65.763,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 65.763,
+          "endOffsetMeters": 67.755,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 67.755,
+          "endOffsetMeters": 69.748,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 69.748,
+          "endOffsetMeters": 71.741,
+          "tiles": [
+            "tile_roof_8.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 71.741,
+          "endOffsetMeters": 73.734,
+          "tiles": [
+            "tile_roof_8.glb",
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 73.734,
+          "endOffsetMeters": 75.727,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 75.727,
+          "endOffsetMeters": 77.719,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 77.719,
+          "endOffsetMeters": 79.712,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 79.712,
+          "endOffsetMeters": 81.705,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 81.705,
+          "endOffsetMeters": 83.698,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 83.698,
+          "endOffsetMeters": 85.691,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 95.655,
+          "endOffsetMeters": 97.647,
+          "tiles": [
+            "tile_roof_0.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 97.647,
+          "endOffsetMeters": 99.64,
+          "tiles": [
+            "tile_roof_0.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 99.64,
+          "endOffsetMeters": 101.633,
+          "tiles": [
+            "tile_roof_0.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 101.633,
+          "endOffsetMeters": 103.626,
+          "tiles": [
+            "tile_roof_0.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 103.626,
+          "endOffsetMeters": 105.619,
+          "tiles": [
+            "tile_roof_0.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 105.619,
+          "endOffsetMeters": 107.611,
+          "tiles": [
+            "tile_roof_0.glb"
+          ]
+        },
+        {
+          "edgeId": "-56630",
+          "startOffsetMeters": 107.611,
+          "endOffsetMeters": 109.604,
+          "tiles": [
+            "tile_roof_0.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 1.999,
+          "endOffsetMeters": 3.997,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 3.997,
+          "endOffsetMeters": 5.996,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 5.996,
+          "endOffsetMeters": 7.994,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 7.994,
+          "endOffsetMeters": 9.993,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 9.993,
+          "endOffsetMeters": 11.992,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 25.982,
+          "endOffsetMeters": 27.98,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 27.98,
+          "endOffsetMeters": 29.979,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 29.979,
+          "endOffsetMeters": 31.978,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 31.978,
+          "endOffsetMeters": 33.976,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 33.976,
+          "endOffsetMeters": 35.975,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 35.975,
+          "endOffsetMeters": 37.973,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 37.973,
+          "endOffsetMeters": 39.972,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 39.972,
+          "endOffsetMeters": 41.971,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 41.971,
+          "endOffsetMeters": 43.969,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 43.969,
+          "endOffsetMeters": 45.968,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 45.968,
+          "endOffsetMeters": 47.966,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 47.966,
+          "endOffsetMeters": 49.965,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 51.964,
+          "endOffsetMeters": 53.962,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 53.962,
+          "endOffsetMeters": 55.961,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 55.961,
+          "endOffsetMeters": 57.959,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 57.959,
+          "endOffsetMeters": 59.958,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 59.958,
+          "endOffsetMeters": 61.956,
+          "tiles": [
+            "tile_roof_120.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 63.955,
+          "endOffsetMeters": 65.954,
+          "tiles": [
+            "tile_roof_122.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 65.954,
+          "endOffsetMeters": 67.952,
+          "tiles": [
+            "tile_roof_122.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 67.952,
+          "endOffsetMeters": 69.951,
+          "tiles": [
+            "tile_roof_122.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 69.951,
+          "endOffsetMeters": 71.949,
+          "tiles": [
+            "tile_roof_122.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 71.949,
+          "endOffsetMeters": 73.948,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 73.948,
+          "endOffsetMeters": 75.947,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 75.947,
+          "endOffsetMeters": 77.945,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 77.945,
+          "endOffsetMeters": 79.944,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 79.944,
+          "endOffsetMeters": 81.942,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 93.934,
+          "endOffsetMeters": 95.933,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 95.933,
+          "endOffsetMeters": 97.931,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 97.931,
+          "endOffsetMeters": 99.93,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 99.93,
+          "endOffsetMeters": 101.928,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 101.928,
+          "endOffsetMeters": 103.927,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 113.92,
+          "endOffsetMeters": 115.919,
+          "tiles": [
+            "tile_roof_114.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 115.919,
+          "endOffsetMeters": 117.917,
+          "tiles": [
+            "tile_roof_114.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 117.917,
+          "endOffsetMeters": 119.916,
+          "tiles": [
+            "tile_roof_114.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 119.916,
+          "endOffsetMeters": 121.914,
+          "tiles": [
+            "tile_roof_114.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 121.914,
+          "endOffsetMeters": 123.913,
+          "tiles": [
+            "tile_roof_114.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 125.912,
+          "endOffsetMeters": 127.91,
+          "tiles": [
+            "tile_roof_84.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 127.91,
+          "endOffsetMeters": 129.909,
+          "tiles": [
+            "tile_roof_84.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 129.909,
+          "endOffsetMeters": 131.907,
+          "tiles": [
+            "tile_roof_84.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 131.907,
+          "endOffsetMeters": 133.906,
+          "tiles": [
+            "tile_roof_84.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 133.906,
+          "endOffsetMeters": 135.905,
+          "tiles": [
+            "tile_roof_70.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 135.905,
+          "endOffsetMeters": 137.903,
+          "tiles": [
+            "tile_roof_70.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 137.903,
+          "endOffsetMeters": 139.902,
+          "tiles": [
+            "tile_roof_70.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 139.902,
+          "endOffsetMeters": 141.9,
+          "tiles": [
+            "tile_roof_70.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 141.9,
+          "endOffsetMeters": 143.899,
+          "tiles": [
+            "tile_roof_70.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 147.896,
+          "endOffsetMeters": 149.895,
+          "tiles": [
+            "tile_roof_0.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 149.895,
+          "endOffsetMeters": 151.893,
+          "tiles": [
+            "tile_roof_0.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 151.893,
+          "endOffsetMeters": 153.892,
+          "tiles": [
+            "tile_roof_0.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 153.892,
+          "endOffsetMeters": 155.891,
+          "tiles": [
+            "tile_roof_0.glb",
+            "tile_roof_4.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 155.891,
+          "endOffsetMeters": 157.889,
+          "tiles": [
+            "tile_roof_4.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 157.889,
+          "endOffsetMeters": 159.888,
+          "tiles": [
+            "tile_roof_4.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 159.888,
+          "endOffsetMeters": 161.886,
+          "tiles": [
+            "tile_roof_4.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 161.886,
+          "endOffsetMeters": 163.885,
+          "tiles": [
+            "tile_roof_4.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 167.882,
+          "endOffsetMeters": 169.881,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 169.881,
+          "endOffsetMeters": 171.879,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 171.879,
+          "endOffsetMeters": 173.878,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 173.878,
+          "endOffsetMeters": 175.877,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 191.865,
+          "endOffsetMeters": 193.864,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 193.864,
+          "endOffsetMeters": 195.862,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 195.862,
+          "endOffsetMeters": 197.861,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 197.861,
+          "endOffsetMeters": 199.86,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 199.86,
+          "endOffsetMeters": 201.858,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 201.858,
+          "endOffsetMeters": 203.857,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 203.857,
+          "endOffsetMeters": 205.855,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 205.855,
+          "endOffsetMeters": 207.854,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 207.854,
+          "endOffsetMeters": 209.853,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 209.853,
+          "endOffsetMeters": 211.851,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 219.846,
+          "endOffsetMeters": 221.844,
+          "tiles": [
+            "tile_roof_128.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 221.844,
+          "endOffsetMeters": 223.843,
+          "tiles": [
+            "tile_roof_128.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 223.843,
+          "endOffsetMeters": 225.841,
+          "tiles": [
+            "tile_roof_128.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 225.841,
+          "endOffsetMeters": 227.84,
+          "tiles": [
+            "tile_roof_128.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 227.84,
+          "endOffsetMeters": 229.839,
+          "tiles": [
+            "tile_roof_128.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 229.839,
+          "endOffsetMeters": 231.837,
+          "tiles": [
+            "tile_roof_128.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 239.832,
+          "endOffsetMeters": 241.83,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 241.83,
+          "endOffsetMeters": 243.829,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 243.829,
+          "endOffsetMeters": 245.827,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 245.827,
+          "endOffsetMeters": 247.826,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 247.826,
+          "endOffsetMeters": 249.825,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 249.825,
+          "endOffsetMeters": 251.823,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 253.822,
+          "endOffsetMeters": 255.82,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 255.82,
+          "endOffsetMeters": 257.819,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 257.819,
+          "endOffsetMeters": 259.818,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56631",
+          "startOffsetMeters": 259.818,
+          "endOffsetMeters": 261.816,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 13.839,
+          "endOffsetMeters": 15.816,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 15.816,
+          "endOffsetMeters": 17.793,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 17.793,
+          "endOffsetMeters": 19.77,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 19.77,
+          "endOffsetMeters": 21.747,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 21.747,
+          "endOffsetMeters": 23.724,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 23.724,
+          "endOffsetMeters": 25.701,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 65.24,
+          "endOffsetMeters": 67.217,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 67.217,
+          "endOffsetMeters": 69.194,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 69.194,
+          "endOffsetMeters": 71.171,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 71.171,
+          "endOffsetMeters": 73.148,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 73.148,
+          "endOffsetMeters": 75.125,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 75.125,
+          "endOffsetMeters": 77.098,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 77.098,
+          "endOffsetMeters": 79.075,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 79.075,
+          "endOffsetMeters": 81.052,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 81.052,
+          "endOffsetMeters": 83.027,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 83.027,
+          "endOffsetMeters": 85.004,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 85.004,
+          "endOffsetMeters": 86.981,
+          "tiles": [
+            "tile_roof_130.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 112.681,
+          "endOffsetMeters": 114.658,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 114.658,
+          "endOffsetMeters": 116.635,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 116.635,
+          "endOffsetMeters": 118.612,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-56668",
+          "startOffsetMeters": 118.612,
+          "endOffsetMeters": 120.589,
+          "tiles": [
+            "tile_roof_78.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 0,
+          "endOffsetMeters": 1.967,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 1.967,
+          "endOffsetMeters": 3.934,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 3.934,
+          "endOffsetMeters": 5.9,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 5.9,
+          "endOffsetMeters": 7.867,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 7.867,
+          "endOffsetMeters": 9.834,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 9.834,
+          "endOffsetMeters": 11.801,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 43.27,
+          "endOffsetMeters": 45.237,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 45.237,
+          "endOffsetMeters": 47.204,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 47.204,
+          "endOffsetMeters": 49.171,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 49.171,
+          "endOffsetMeters": 51.137,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 51.137,
+          "endOffsetMeters": 53.104,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 53.104,
+          "endOffsetMeters": 55.071,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 55.071,
+          "endOffsetMeters": 57.038,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 57.038,
+          "endOffsetMeters": 59.005,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 62.938,
+          "endOffsetMeters": 64.905,
+          "tiles": [
+            "tile_roof_100.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 64.905,
+          "endOffsetMeters": 66.872,
+          "tiles": [
+            "tile_roof_100.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 66.872,
+          "endOffsetMeters": 68.839,
+          "tiles": [
+            "tile_roof_100.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 68.839,
+          "endOffsetMeters": 70.806,
+          "tiles": [
+            "tile_roof_100.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 70.806,
+          "endOffsetMeters": 72.773,
+          "tiles": [
+            "tile_roof_100.glb",
+            "tile_roof_146.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 72.773,
+          "endOffsetMeters": 74.739,
+          "tiles": [
+            "tile_roof_100.glb",
+            "tile_roof_146.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 74.739,
+          "endOffsetMeters": 76.706,
+          "tiles": [
+            "tile_roof_100.glb",
+            "tile_roof_146.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 76.706,
+          "endOffsetMeters": 78.673,
+          "tiles": [
+            "tile_roof_146.glb"
+          ]
+        },
+        {
+          "edgeId": "-56682",
+          "startOffsetMeters": 78.673,
+          "endOffsetMeters": 80.64,
+          "tiles": [
+            "tile_roof_146.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 0,
+          "endOffsetMeters": 1.966,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 1.966,
+          "endOffsetMeters": 3.933,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 3.933,
+          "endOffsetMeters": 5.899,
+          "tiles": [
+            "tile_roof_64.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 5.899,
+          "endOffsetMeters": 7.865,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 7.865,
+          "endOffsetMeters": 9.832,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 9.832,
+          "endOffsetMeters": 11.798,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 11.798,
+          "endOffsetMeters": 13.764,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 13.764,
+          "endOffsetMeters": 15.73,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 15.73,
+          "endOffsetMeters": 17.697,
+          "tiles": [
+            "tile_roof_54.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 41.219,
+          "endOffsetMeters": 43.185,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 43.185,
+          "endOffsetMeters": 45.152,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 45.152,
+          "endOffsetMeters": 47.118,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 47.118,
+          "endOffsetMeters": 49.084,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 49.084,
+          "endOffsetMeters": 51.051,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 51.051,
+          "endOffsetMeters": 53.017,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 53.017,
+          "endOffsetMeters": 54.983,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56683",
+          "startOffsetMeters": 54.983,
+          "endOffsetMeters": 56.949,
+          "tiles": [
+            "tile_roof_12.glb"
+          ]
+        },
+        {
+          "edgeId": "-56685",
+          "startOffsetMeters": 0,
+          "endOffsetMeters": 1.743,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56685",
+          "startOffsetMeters": 1.743,
+          "endOffsetMeters": 3.486,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56685",
+          "startOffsetMeters": 3.486,
+          "endOffsetMeters": 5.229,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56685",
+          "startOffsetMeters": 5.229,
+          "endOffsetMeters": 6.972,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56685",
+          "startOffsetMeters": 6.972,
+          "endOffsetMeters": 8.715,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 39.427,
+          "endOffsetMeters": 41.398,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 41.398,
+          "endOffsetMeters": 43.37,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 43.37,
+          "endOffsetMeters": 45.341,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 45.341,
+          "endOffsetMeters": 47.312,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 47.312,
+          "endOffsetMeters": 49.284,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 49.284,
+          "endOffsetMeters": 51.255,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 51.255,
+          "endOffsetMeters": 53.226,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 53.226,
+          "endOffsetMeters": 55.198,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 59.14,
+          "endOffsetMeters": 61.112,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 61.112,
+          "endOffsetMeters": 63.083,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 63.083,
+          "endOffsetMeters": 65.054,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 65.054,
+          "endOffsetMeters": 67.026,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56686",
+          "startOffsetMeters": 67.026,
+          "endOffsetMeters": 68.997,
+          "tiles": [
+            "tile_roof_30.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 0,
+          "endOffsetMeters": 1.942,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 1.942,
+          "endOffsetMeters": 3.885,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 3.885,
+          "endOffsetMeters": 5.827,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 5.827,
+          "endOffsetMeters": 7.77,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 7.77,
+          "endOffsetMeters": 9.712,
+          "tiles": [
+            "tile_roof_118.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 9.712,
+          "endOffsetMeters": 11.654,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 11.654,
+          "endOffsetMeters": 13.597,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 13.597,
+          "endOffsetMeters": 15.539,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 15.539,
+          "endOffsetMeters": 17.481,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 19.424,
+          "endOffsetMeters": 21.366,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 21.366,
+          "endOffsetMeters": 23.309,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 23.309,
+          "endOffsetMeters": 25.251,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56693",
+          "startOffsetMeters": 25.251,
+          "endOffsetMeters": 27.193,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 25.455,
+          "endOffsetMeters": 27.413,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 27.413,
+          "endOffsetMeters": 29.371,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 29.371,
+          "endOffsetMeters": 31.329,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 31.329,
+          "endOffsetMeters": 33.287,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 33.287,
+          "endOffsetMeters": 35.245,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 35.245,
+          "endOffsetMeters": 37.203,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 37.203,
+          "endOffsetMeters": 39.161,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 39.161,
+          "endOffsetMeters": 41.119,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 41.119,
+          "endOffsetMeters": 43.077,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 43.077,
+          "endOffsetMeters": 45.035,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 45.035,
+          "endOffsetMeters": 46.993,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 46.993,
+          "endOffsetMeters": 48.952,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 48.952,
+          "endOffsetMeters": 50.91,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 50.91,
+          "endOffsetMeters": 52.868,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 52.868,
+          "endOffsetMeters": 54.826,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 54.826,
+          "endOffsetMeters": 56.784,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 56.784,
+          "endOffsetMeters": 58.742,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 58.742,
+          "endOffsetMeters": 60.7,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56697",
+          "startOffsetMeters": 60.7,
+          "endOffsetMeters": 62.658,
+          "tiles": [
+            "tile_roof_138.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 19.667,
+          "endOffsetMeters": 21.633,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 21.633,
+          "endOffsetMeters": 23.6,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 23.6,
+          "endOffsetMeters": 25.567,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 25.567,
+          "endOffsetMeters": 27.533,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 27.533,
+          "endOffsetMeters": 29.5,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 29.5,
+          "endOffsetMeters": 31.467,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 31.467,
+          "endOffsetMeters": 33.433,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 33.433,
+          "endOffsetMeters": 35.4,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 35.4,
+          "endOffsetMeters": 37.367,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 37.367,
+          "endOffsetMeters": 39.333,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 39.333,
+          "endOffsetMeters": 41.3,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 41.3,
+          "endOffsetMeters": 43.267,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 43.267,
+          "endOffsetMeters": 45.233,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 45.233,
+          "endOffsetMeters": 47.2,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 47.2,
+          "endOffsetMeters": 49.167,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 49.167,
+          "endOffsetMeters": 51.133,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 51.133,
+          "endOffsetMeters": 53.1,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 53.1,
+          "endOffsetMeters": 55.067,
+          "tiles": [
+            "tile_roof_20.glb",
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 55.067,
+          "endOffsetMeters": 57.033,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 57.033,
+          "endOffsetMeters": 59,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 59,
+          "endOffsetMeters": 60.967,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 60.967,
+          "endOffsetMeters": 62.933,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 62.933,
+          "endOffsetMeters": 64.9,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 64.9,
+          "endOffsetMeters": 66.867,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 66.867,
+          "endOffsetMeters": 68.833,
+          "tiles": [
+            "tile_roof_44.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 68.833,
+          "endOffsetMeters": 70.8,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 70.8,
+          "endOffsetMeters": 72.767,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 72.767,
+          "endOffsetMeters": 74.733,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 74.733,
+          "endOffsetMeters": 76.7,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 76.7,
+          "endOffsetMeters": 78.667,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 78.667,
+          "endOffsetMeters": 80.633,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 80.633,
+          "endOffsetMeters": 82.6,
+          "tiles": [
+            "tile_roof_20.glb"
+          ]
+        },
+        {
+          "edgeId": "-56707",
+          "startOffsetMeters": 92.434,
+          "endOffsetMeters": 94.4,
+          "tiles": [
+            "tile_roof_94.glb"
+          ]
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "intersectionsWithExclusions": [
+      "demo_5"
+    ],
+    "exclusionEdges": 50,
+    "exclusionRanges": 126,
+    "centerlineConflicts": 639
+  }
+}

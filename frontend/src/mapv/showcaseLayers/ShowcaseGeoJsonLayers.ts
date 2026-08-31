@@ -36,13 +36,13 @@ export class ShowcaseGeoJsonLayers {
     this.projector = projector
   }
 
-  async load(urls: ShowcaseGeoJsonLayerUrls): Promise<void> {
+  async load(urls: ShowcaseGeoJsonLayerUrls, signal?: AbortSignal): Promise<void> {
     await Promise.all([
-      this.loadSafely('water', urls.water),
-      this.loadSafely('green', urls.green),
-      this.loadSafely('urban', urls.urban),
-      this.loadSafely('buildings', urls.buildings),
-      this.loadSafely('labels', urls.labels),
+      this.loadSafely('water', urls.water, signal),
+      this.loadSafely('green', urls.green, signal),
+      this.loadSafely('urban', urls.urban, signal),
+      this.loadSafely('buildings', urls.buildings, signal),
+      this.loadSafely('labels', urls.labels, signal),
     ])
     this.engine.requestRender()
   }
@@ -50,10 +50,11 @@ export class ShowcaseGeoJsonLayers {
   private async loadSafely(
     kind: keyof ShowcaseGeoJsonLayerUrls,
     url: string | undefined,
+    signal?: AbortSignal,
   ): Promise<void> {
     if (!url) return
     try {
-      const data = await this.fetchProjected(url)
+      const data = await this.fetchProjected(url, signal)
       if (this.destroyed) return
       if (kind === 'water') this.addWater(data)
       else if (kind === 'green') this.addGreen(data)
@@ -61,14 +62,22 @@ export class ShowcaseGeoJsonLayers {
       else if (kind === 'buildings') this.addBuildings(data)
       else this.addLabels(data)
     } catch (cause) {
+      if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
       console.warn(`[showcase-layers] ${kind} layer disabled`, cause)
     }
   }
 
-  private async fetchProjected(url: string) {
-    const response = await fetch(url)
+  private async fetchProjected(url: string, signal?: AbortSignal) {
+    const response = await fetch(url, { signal })
     if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`)
     return projectFeatureCollection(await response.json(), this.projector)
+  }
+
+  setVisible(visible: boolean): void {
+    for (const layer of this.layers) {
+      ;(layer as unknown as { visible: boolean }).visible = visible
+    }
+    this.engine.requestRender()
   }
 
   private addWater(data: object): void {

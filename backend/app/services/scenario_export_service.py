@@ -209,7 +209,7 @@ def _serialize_event(event: EventRequest) -> dict[str, object]:
             "start_seconds": event.start_seconds,
             "end_seconds": event.end_seconds,
             "lane_ids": event.lane_ids,
-            "max_speed": event.max_speed,
+            "max_speed": float(event.max_speed),
         }
     if isinstance(event, AccidentRequest):
         return {

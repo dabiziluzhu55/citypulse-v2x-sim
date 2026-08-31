@@ -1,3 +1,9 @@
+import {
+  sumoHeadingTransformIsValid,
+  type SumoHeadingTransform,
+} from '../sumoHeadingTransform.ts'
+import { fetchJsonAsset } from '../../utils/fetchJsonAsset.ts'
+
 export type Point2 = [number, number]
 
 export type RealisticLaneKind = 'driving' | 'bicycle' | 'pedestrian'
@@ -11,6 +17,10 @@ export interface RealisticLane {
   speed: number
   points: Point2[]
   renderPoints?: Point2[]
+  vehicleGuidePoints?: Point2[]
+  vehicleGuideSourceStationsMeters?: number[]
+  vehicleGuideSourceStartMeters?: number
+  vehicleGuideSourceEndMeters?: number
 }
 
 export interface RealisticRoadEdge {
@@ -19,7 +29,23 @@ export interface RealisticRoadEdge {
   incident?: boolean
   centerline?: Point2[]
   roadWidth?: number
+  surfaceExclusions?: RealisticRoadSurfaceExclusion[]
   lanes: RealisticLane[]
+}
+
+export interface RealisticRoadSurfaceExclusion {
+  startOffsetMeters: number
+  endOffsetMeters: number
+  reason:
+    | 'building_overlap'
+    | 'building_overlap_far_field'
+    | 'building_overlap_visual_override'
+  source: 'building_triangle_audit' | 'manual_visual_review'
+}
+
+export interface RoadSurfacePolygon {
+  outer: Point2[]
+  holes?: Point2[][]
 }
 
 export interface RealisticRoadJoint {
@@ -30,10 +56,19 @@ export interface RealisticRoadJoint {
   maxGapMeters: number
   overlapMeters: number
   source: 'sumo_topology' | 'sumo_junction_shape'
+  surfaceHidden?: {
+    reason: 'building_overlap_visual_override'
+    source: 'manual_visual_review'
+  }
   polygons: {
     sidewalk: Point2[]
     curb: Point2[]
     asphalt: Point2[]
+  }
+  surfaceParts?: {
+    sidewalk: RoadSurfacePolygon[]
+    curb: RoadSurfacePolygon[]
+    asphalt: RoadSurfacePolygon[]
   }
 }
 
@@ -49,10 +84,17 @@ export interface RealisticConnection {
   viaLaneId?: string
   viaPoints?: Point2[]
   renderPoints?: Point2[]
+  vehicleGuidePoints?: Point2[]
+  vehicleGuideSourceStationsMeters?: number[]
+  vehicleSourcePoints?: Point2[]
+  vehicleGuideEndpointLimited?: boolean
   viaSegments?: Array<{
     laneId: string
     points: Point2[]
     renderPoints: Point2[]
+    vehicleGuidePoints?: Point2[]
+    vehicleGuideSourceStationsMeters?: number[]
+    vehicleSourcePoints?: Point2[]
   }>
 }
 
@@ -73,6 +115,12 @@ export interface RealisticSignalStageTemplate {
 
 export type RealisticPhaseTemplates = Record<string, Record<string, RealisticSignalStageTemplate>>
 
+export interface ControlledLaneSignalGroup {
+  tlsId?: string
+  laneId: string
+  linkIndexes: number[]
+}
+
 export interface RealisticIntersectionManifest {
   schemaVersion: 1 | 2 | 3
   intersectionId: string
@@ -83,6 +131,16 @@ export interface RealisticIntersectionManifest {
   radiusSceneUnits?: number
   horizontalScale?: number
   sumoUnitScale?: number
+  sourceSha256?: string
+  visualRoadSourceSha256?: string
+  vehicleGeometryGeneration?: {
+    schemaVersion: 1
+    networkSourceSha256: string
+    headingSourceSha256: string
+    connectionSourceSha256: string
+    connectionCount: number
+  }
+  sumoHeadingTransform?: SumoHeadingTransform
   renderCoordinateSystem?: string
   origin: {
     x: number
@@ -96,12 +154,33 @@ export interface RealisticIntersectionManifest {
   edges: RealisticRoadEdge[]
   roadJoints?: RealisticRoadJoint[]
   connections: RealisticConnection[]
+  vehicleConnections?: RealisticConnection[]
+  vehicleConnectionSourceSha256?: string
   phases: RealisticPhase[]
   phaseTemplates?: RealisticPhaseTemplates
-  signalGroups: Array<{ tlsId?: string; laneId: string; linkIndexes: number[] }>
+  signalGroups: ControlledLaneSignalGroup[]
 }
 
 export type SignalColor = 'red' | 'amber' | 'green'
+
+export function vehicleGeometryGenerationIsValid(
+  value: Pick<
+    RealisticIntersectionManifest,
+    'vehicleGeometryGeneration' | 'vehicleConnectionSourceSha256' | 'sumoHeadingTransform'
+      | 'vehicleConnections' | 'connections'
+  >,
+  routeIndexSourceSha256?: string,
+): boolean {
+  const generation = value.vehicleGeometryGeneration
+  return generation?.schemaVersion === 1
+    && /^[a-f0-9]{64}$/.test(generation.networkSourceSha256)
+    && generation.headingSourceSha256 === generation.networkSourceSha256
+    && generation.connectionSourceSha256 === generation.networkSourceSha256
+    && value.sumoHeadingTransform?.sourceSha256 === generation.networkSourceSha256
+    && value.vehicleConnectionSourceSha256 === generation.networkSourceSha256
+    && generation.connectionCount === (value.vehicleConnections ?? value.connections).length
+    && (!routeIndexSourceSha256 || routeIndexSourceSha256 === generation.networkSourceSha256)
+}
 
 export function signalColorForState(state: string, linkIndex: number): SignalColor {
   const value = state[linkIndex]?.toLowerCase()
@@ -110,20 +189,34 @@ export function signalColorForState(state: string, linkIndex: number): SignalCol
   return 'red'
 }
 
+export function controlledLaneSignalForState(
+  state: string,
+  linkIndexes: readonly number[],
+): 'r' | 'y' | 'g' {
+  const values = linkIndexes.map((index) => state[index]?.toLowerCase() ?? 'r')
+  if (values.some((value) => value === 'g')) return 'g'
+  if (values.some((value) => value === 'y')) return 'y'
+  return 'r'
+}
+
 export async function loadIntersectionManifest(
   url = '/intersections/v3/demo_2/manifest.json',
 ): Promise<RealisticIntersectionManifest> {
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`Intersection asset returned HTTP ${response.status}`)
-  const value = await response.json() as RealisticIntersectionManifest
+  const value = await fetchJsonAsset<RealisticIntersectionManifest>(url, '路口资源')
   if (![1, 2, 3].includes(value.schemaVersion) || !value.connections.length || !value.edges.length) {
     throw new Error('Intersection asset structure is incomplete')
   }
   if (url.includes('/intersections/v3/') && (
     value.schemaVersion !== 3
     || value.renderCoordinateSystem !== 'LOCAL_BD09_WEB_MERCATOR_METERS, Z-up'
+    || !sumoHeadingTransformIsValid(value.sumoHeadingTransform)
   )) {
     throw new Error('Intersection asset coordinate contract is incompatible')
+  }
+  if (url.includes('/intersections/v3/')) {
+    if (!vehicleGeometryGenerationIsValid(value)) {
+      throw new Error('Intersection vehicle geometry generations are incompatible')
+    }
   }
   for (const joint of value.roadJoints ?? []) {
     if (
@@ -132,8 +225,43 @@ export async function loadIntersectionManifest(
       || !['continuation', 'junction'].includes(joint.kind)
       || joint.connectedEdgeIds.length < 2
       || !Object.values(joint.polygons).every((points) => Array.isArray(points) && points.length >= 3)
+      || (joint.surfaceParts && !Object.values(joint.surfaceParts).every((parts) => (
+        Array.isArray(parts)
+        && parts.length > 0
+        && parts.every((part) => (
+          Array.isArray(part.outer)
+          && part.outer.length >= 3
+          && (part.holes ?? []).every((hole) => Array.isArray(hole) && hole.length >= 3)
+        ))
+      )))
+      || (joint.surfaceHidden && (
+        joint.surfaceHidden.reason !== 'building_overlap_visual_override'
+        || joint.surfaceHidden.source !== 'manual_visual_review'
+      ))
     ) {
       throw new Error(`Intersection road joint ${joint.jointId || '<unknown>'} is invalid`)
+    }
+  }
+  for (const edge of value.edges) {
+    for (const exclusion of edge.surfaceExclusions ?? []) {
+      if (
+        !Number.isFinite(exclusion.startOffsetMeters)
+        || !Number.isFinite(exclusion.endOffsetMeters)
+        || exclusion.startOffsetMeters < 0
+        || exclusion.endOffsetMeters <= exclusion.startOffsetMeters
+        || ![
+          'building_overlap',
+          'building_overlap_far_field',
+          'building_overlap_visual_override',
+        ].includes(exclusion.reason)
+        || !['building_triangle_audit', 'manual_visual_review'].includes(exclusion.source)
+        || (
+          exclusion.reason === 'building_overlap_visual_override'
+          && exclusion.source !== 'manual_visual_review'
+        )
+      ) {
+        throw new Error(`Intersection road surface exclusion ${edge.id} is invalid`)
+      }
     }
   }
   return value

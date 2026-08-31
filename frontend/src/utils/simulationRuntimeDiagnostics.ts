@@ -1,4 +1,5 @@
 import type { SimulationSnapshot } from '../types/simulation'
+import type { VehicleMotionSampleResult, VehicleMotionWaitingReason } from '../mapv/vehicleMotionBuffer'
 
 const MAX_INTERVAL_SAMPLES = 60
 
@@ -17,6 +18,72 @@ export interface VehicleRuntimeDiagnosticUpdate {
   retainedMissingCount: number
   confirmedRemovedCount: number
   twinResetCount: number
+  twinSafetyMarginMs: number
+  maximumTwinOutputGapMs: number
+  emptyBufferInterceptCount: number
+  terminalFreezeActive: boolean
+  incompatiblePathInterpolationCount: number
+  incompatiblePathInterpolationBlockedCount: number
+  poseViolationCount: number
+  targetBufferSeconds: number
+  expectedPlaybackRate: number
+  globalBufferDepthSeconds: number
+  globalPlaybackRate: number
+  globalUnderrunPauseSeconds: number
+  authoritativeInterpolationCount: number
+  visibleTeleportCount: number
+  pathResetCount: number
+  movingFreezeFrameCount: number
+  batchArrivalCount: number
+  twinGapFillFrameCount: number
+  offRoadVehicleCount: number
+  stuckLaneChangeCount: number
+  maximumRoadMappingErrorMeters: number
+  routeHintHitCount: number
+  routeHintMismatchCount: number
+  ambiguousRouteCandidateRejectionCount: number
+  ambiguousIncomingPendingCount: number
+  staleConnectionReleaseCount: number
+  connectionMismatchCount: number
+  laneChangeCorridorViolationCount: number
+  intermediateOffRoadFrameCount: number
+  detailedAreaRawFallbackCount: number
+  compiledSegmentCount: number
+  compiledSegmentCacheHitCount: number
+  compiledSegmentCacheHitRate: number
+  isolatedVehicleCount: number
+  maximumIsolationSeconds: number
+  recoveredVehicleCount: number
+  viewportPrecompileMilliseconds: number
+  viewportTwinBlankFrameCount: number
+  viewportFirstFrameVehicleCount: number
+  surfaceExclusionVehicleFilterCount: number
+  motionSampleStatus: VehicleMotionSampleResult['status']
+  motionWaitingReason: VehicleMotionWaitingReason | null
+  authoritativeVehicleCount: number
+  sourceVehicleCount: number
+  viewportVehicleCount: number
+  selectedVehicleCount: number
+  playableVehicleCount: number
+  twinOutputVehicleCount: number
+  twinActualVisibleVehicleCount: number
+  twinActualVisibleVehicleIds: string[]
+  twinVisibleDisplayElapsedSeconds: number | null
+  twinSubmittedWindowDepthMs: number
+  twinWindowExhaustionCount: number
+  waitingTwinResetInterceptCount: number
+  workerCompilationQueueDepth: number
+  legalCompiledSegmentCount: number
+  twinResetReason: string | null
+  requestedIntersectionId?: string
+  committedIntersectionId?: string | null
+  viewportStageStatus?: string
+  viewportStageRejectionReasons?: string[]
+  firstSourceElapsedSeconds: number | null
+  latestSourceElapsedSeconds: number | null
+  sourceVehicleIntersectionCount: number
+  visualAddedIntersectionCount: number
+  collisionRejectedVehicleIds: string[]
 }
 
 interface RuntimeDiagnosticState {
@@ -46,6 +113,72 @@ interface RuntimeDiagnosticState {
   motionBufferUnderruns: number
   motionBufferUnderrunActive: boolean
   twinResetCount: number
+  twinSafetyMarginMs: number
+  maximumTwinOutputGapMs: number
+  emptyBufferInterceptCount: number
+  terminalFreezeActive: boolean
+  incompatiblePathInterpolations: number
+  incompatiblePathInterpolationBlocks: number
+  poseViolations: number
+  targetMotionBufferSeconds: number
+  expectedVehiclePlaybackRate: number
+  globalBufferDepthSeconds: number
+  globalVehiclePlaybackRate: number
+  globalUnderrunPauseSeconds: number
+  authoritativeInterpolations: number
+  visibleTeleports: number
+  pathResets: number
+  movingFreezeFrames: number
+  batchSnapshotArrivals: number
+  twinGapFillFrames: number
+  offRoadVehicles: number
+  stuckLaneChanges: number
+  maximumRoadMappingErrorMeters: number
+  routeHintHits: number
+  routeHintMismatches: number
+  ambiguousRouteCandidateRejections: number
+  ambiguousIncomingPending: number
+  staleConnectionReleases: number
+  connectionMismatches: number
+  laneChangeCorridorViolations: number
+  intermediateOffRoadFrames: number
+  detailedAreaRawFallbacks: number
+  compiledVehicleSegments: number
+  compiledSegmentCacheHits: number
+  compiledSegmentCacheHitRate: number
+  isolatedVehicles: number
+  maximumVehicleIsolationSeconds: number
+  recoveredVehicleTimelines: number
+  viewportPrecompileMilliseconds: number
+  viewportTwinBlankFrames: number
+  viewportFirstFrameVehicles: number
+  surfaceExclusionVehicleFilters: number
+  motionSampleStatus: VehicleMotionSampleResult['status']
+  motionWaitingReason: VehicleMotionWaitingReason | null
+  authoritativeVehicles: number
+  sourceVehicles: number
+  viewportVehicles: number
+  selectedVehicles: number
+  playableVehicles: number
+  twinOutputVehicles: number
+  twinActualVisibleVehicles: number
+  twinActualVisibleVehicleIds: string[]
+  twinVisibleDisplayElapsedSeconds: number | null
+  twinSubmittedWindowDepthMs: number
+  twinWindowExhaustionCount: number
+  waitingTwinResetIntercepts: number
+  workerCompilationQueueDepth: number
+  legalCompiledSegments: number
+  twinResetReason: string | null
+  requestedIntersectionId: string
+  committedIntersectionId: string | null
+  viewportStageStatus: string
+  viewportStageRejectionReasons: string[]
+  firstVehicleSourceElapsedSeconds: number | null
+  latestVehicleSourceElapsedSeconds: number | null
+  sourceVehicleIntersections: number
+  visualAddedIntersections: number
+  collisionRejectedVehicleIds: string[]
   capturedAt: string
 }
 
@@ -76,6 +209,72 @@ const state: RuntimeDiagnosticState = {
   motionBufferUnderruns: 0,
   motionBufferUnderrunActive: false,
   twinResetCount: 0,
+  twinSafetyMarginMs: 0,
+  maximumTwinOutputGapMs: 0,
+  emptyBufferInterceptCount: 0,
+  terminalFreezeActive: false,
+  incompatiblePathInterpolations: 0,
+  incompatiblePathInterpolationBlocks: 0,
+  poseViolations: 0,
+  targetMotionBufferSeconds: 2,
+  expectedVehiclePlaybackRate: 1,
+  globalBufferDepthSeconds: 0,
+  globalVehiclePlaybackRate: 1,
+  globalUnderrunPauseSeconds: 0,
+  authoritativeInterpolations: 0,
+  visibleTeleports: 0,
+  pathResets: 0,
+  movingFreezeFrames: 0,
+  batchSnapshotArrivals: 0,
+  twinGapFillFrames: 0,
+  offRoadVehicles: 0,
+  stuckLaneChanges: 0,
+  maximumRoadMappingErrorMeters: 0,
+  routeHintHits: 0,
+  routeHintMismatches: 0,
+  ambiguousRouteCandidateRejections: 0,
+  ambiguousIncomingPending: 0,
+  staleConnectionReleases: 0,
+  connectionMismatches: 0,
+  laneChangeCorridorViolations: 0,
+  intermediateOffRoadFrames: 0,
+  detailedAreaRawFallbacks: 0,
+  compiledVehicleSegments: 0,
+  compiledSegmentCacheHits: 0,
+  compiledSegmentCacheHitRate: 0,
+  isolatedVehicles: 0,
+  maximumVehicleIsolationSeconds: 0,
+  recoveredVehicleTimelines: 0,
+  viewportPrecompileMilliseconds: 0,
+  viewportTwinBlankFrames: 0,
+  viewportFirstFrameVehicles: 0,
+  surfaceExclusionVehicleFilters: 0,
+  motionSampleStatus: 'waiting',
+  motionWaitingReason: 'insufficient_frames',
+  authoritativeVehicles: 0,
+  sourceVehicles: 0,
+  viewportVehicles: 0,
+  selectedVehicles: 0,
+  playableVehicles: 0,
+  twinOutputVehicles: 0,
+  twinActualVisibleVehicles: 0,
+  twinActualVisibleVehicleIds: [],
+  twinVisibleDisplayElapsedSeconds: null,
+  twinSubmittedWindowDepthMs: 0,
+  twinWindowExhaustionCount: 0,
+  waitingTwinResetIntercepts: 0,
+  workerCompilationQueueDepth: 0,
+  legalCompiledSegments: 0,
+  twinResetReason: null,
+  requestedIntersectionId: '',
+  committedIntersectionId: null,
+  viewportStageStatus: 'idle',
+  viewportStageRejectionReasons: [],
+  firstVehicleSourceElapsedSeconds: null,
+  latestVehicleSourceElapsedSeconds: null,
+  sourceVehicleIntersections: 0,
+  visualAddedIntersections: 0,
+  collisionRejectedVehicleIds: [],
   capturedAt: '',
 }
 
@@ -123,6 +322,72 @@ export function resetSimulationRuntimeDiagnostics(sessionId = ''): void {
   state.motionBufferUnderruns = 0
   state.motionBufferUnderrunActive = false
   state.twinResetCount = 0
+  state.twinSafetyMarginMs = 0
+  state.maximumTwinOutputGapMs = 0
+  state.emptyBufferInterceptCount = 0
+  state.terminalFreezeActive = false
+  state.incompatiblePathInterpolations = 0
+  state.incompatiblePathInterpolationBlocks = 0
+  state.poseViolations = 0
+  state.targetMotionBufferSeconds = 2
+  state.expectedVehiclePlaybackRate = 1
+  state.globalBufferDepthSeconds = 0
+  state.globalVehiclePlaybackRate = 1
+  state.globalUnderrunPauseSeconds = 0
+  state.authoritativeInterpolations = 0
+  state.visibleTeleports = 0
+  state.pathResets = 0
+  state.movingFreezeFrames = 0
+  state.batchSnapshotArrivals = 0
+  state.twinGapFillFrames = 0
+  state.offRoadVehicles = 0
+  state.stuckLaneChanges = 0
+  state.maximumRoadMappingErrorMeters = 0
+  state.routeHintHits = 0
+  state.routeHintMismatches = 0
+  state.ambiguousRouteCandidateRejections = 0
+  state.ambiguousIncomingPending = 0
+  state.staleConnectionReleases = 0
+  state.connectionMismatches = 0
+  state.laneChangeCorridorViolations = 0
+  state.intermediateOffRoadFrames = 0
+  state.detailedAreaRawFallbacks = 0
+  state.compiledVehicleSegments = 0
+  state.compiledSegmentCacheHits = 0
+  state.compiledSegmentCacheHitRate = 0
+  state.isolatedVehicles = 0
+  state.maximumVehicleIsolationSeconds = 0
+  state.recoveredVehicleTimelines = 0
+  state.viewportPrecompileMilliseconds = 0
+  state.viewportTwinBlankFrames = 0
+  state.viewportFirstFrameVehicles = 0
+  state.surfaceExclusionVehicleFilters = 0
+  state.motionSampleStatus = 'waiting'
+  state.motionWaitingReason = 'insufficient_frames'
+  state.authoritativeVehicles = 0
+  state.sourceVehicles = 0
+  state.viewportVehicles = 0
+  state.selectedVehicles = 0
+  state.playableVehicles = 0
+  state.twinOutputVehicles = 0
+  state.twinActualVisibleVehicles = 0
+  state.twinActualVisibleVehicleIds = []
+  state.twinVisibleDisplayElapsedSeconds = null
+  state.twinSubmittedWindowDepthMs = 0
+  state.twinWindowExhaustionCount = 0
+  state.waitingTwinResetIntercepts = 0
+  state.workerCompilationQueueDepth = 0
+  state.legalCompiledSegments = 0
+  state.twinResetReason = null
+  state.requestedIntersectionId = ''
+  state.committedIntersectionId = null
+  state.viewportStageStatus = 'idle'
+  state.viewportStageRejectionReasons = []
+  state.firstVehicleSourceElapsedSeconds = null
+  state.latestVehicleSourceElapsedSeconds = null
+  state.sourceVehicleIntersections = 0
+  state.visualAddedIntersections = 0
+  state.collisionRejectedVehicleIds = []
   snapshotIntervalsMs = []
   lastSnapshotArrivalMs = null
   publish()
@@ -186,6 +451,80 @@ export function recordVehicleRuntimeDiagnostics(update: VehicleRuntimeDiagnostic
   state.motionBufferUnderruns = update.underrunCount
   state.motionBufferUnderrunActive = update.underrunActive
   state.twinResetCount = update.twinResetCount
+  state.twinSafetyMarginMs = update.twinSafetyMarginMs
+  state.maximumTwinOutputGapMs = update.maximumTwinOutputGapMs
+  state.emptyBufferInterceptCount = update.emptyBufferInterceptCount
+  state.terminalFreezeActive = update.terminalFreezeActive
+  state.incompatiblePathInterpolations = update.incompatiblePathInterpolationCount
+  state.incompatiblePathInterpolationBlocks = update.incompatiblePathInterpolationBlockedCount
+  state.poseViolations = update.poseViolationCount
+  state.targetMotionBufferSeconds = update.targetBufferSeconds
+  state.expectedVehiclePlaybackRate = update.expectedPlaybackRate
+  state.globalBufferDepthSeconds = update.globalBufferDepthSeconds
+  state.globalVehiclePlaybackRate = update.globalPlaybackRate
+  state.globalUnderrunPauseSeconds = update.globalUnderrunPauseSeconds
+  state.authoritativeInterpolations = update.authoritativeInterpolationCount
+  state.visibleTeleports = update.visibleTeleportCount
+  state.pathResets = update.pathResetCount
+  state.movingFreezeFrames = update.movingFreezeFrameCount
+  state.batchSnapshotArrivals = update.batchArrivalCount
+  state.twinGapFillFrames = update.twinGapFillFrameCount
+  state.offRoadVehicles = update.offRoadVehicleCount
+  state.stuckLaneChanges = update.stuckLaneChangeCount
+  state.maximumRoadMappingErrorMeters = update.maximumRoadMappingErrorMeters
+  state.routeHintHits = update.routeHintHitCount
+  state.routeHintMismatches = update.routeHintMismatchCount
+  state.ambiguousRouteCandidateRejections = update.ambiguousRouteCandidateRejectionCount
+  state.ambiguousIncomingPending = update.ambiguousIncomingPendingCount
+  state.staleConnectionReleases = update.staleConnectionReleaseCount
+  state.connectionMismatches = update.connectionMismatchCount
+  state.laneChangeCorridorViolations = update.laneChangeCorridorViolationCount
+  state.intermediateOffRoadFrames = update.intermediateOffRoadFrameCount
+  state.detailedAreaRawFallbacks = update.detailedAreaRawFallbackCount
+  state.compiledVehicleSegments = update.compiledSegmentCount
+  state.compiledSegmentCacheHits = update.compiledSegmentCacheHitCount
+  state.compiledSegmentCacheHitRate = update.compiledSegmentCacheHitRate
+  state.isolatedVehicles = update.isolatedVehicleCount
+  state.maximumVehicleIsolationSeconds = update.maximumIsolationSeconds
+  state.recoveredVehicleTimelines = update.recoveredVehicleCount
+  state.viewportPrecompileMilliseconds = update.viewportPrecompileMilliseconds
+  state.viewportTwinBlankFrames = update.viewportTwinBlankFrameCount
+  state.viewportFirstFrameVehicles = update.viewportFirstFrameVehicleCount
+  state.surfaceExclusionVehicleFilters = update.surfaceExclusionVehicleFilterCount
+  state.motionSampleStatus = update.motionSampleStatus
+  state.motionWaitingReason = update.motionWaitingReason
+  state.authoritativeVehicles = update.authoritativeVehicleCount
+  state.sourceVehicles = update.sourceVehicleCount
+  state.viewportVehicles = update.viewportVehicleCount
+  state.selectedVehicles = update.selectedVehicleCount
+  state.playableVehicles = update.playableVehicleCount
+  state.twinOutputVehicles = update.twinOutputVehicleCount
+  state.twinActualVisibleVehicles = update.twinActualVisibleVehicleCount
+  state.twinActualVisibleVehicleIds = [...update.twinActualVisibleVehicleIds]
+  state.twinVisibleDisplayElapsedSeconds = update.twinVisibleDisplayElapsedSeconds
+  state.twinSubmittedWindowDepthMs = update.twinSubmittedWindowDepthMs
+  state.twinWindowExhaustionCount = update.twinWindowExhaustionCount
+  state.waitingTwinResetIntercepts = update.waitingTwinResetInterceptCount
+  state.workerCompilationQueueDepth = update.workerCompilationQueueDepth
+  state.legalCompiledSegments = update.legalCompiledSegmentCount
+  state.twinResetReason = update.twinResetReason
+  if (update.requestedIntersectionId !== undefined) {
+    state.requestedIntersectionId = update.requestedIntersectionId
+  }
+  if (update.committedIntersectionId !== undefined) {
+    state.committedIntersectionId = update.committedIntersectionId
+  }
+  if (update.viewportStageStatus !== undefined) {
+    state.viewportStageStatus = update.viewportStageStatus
+  }
+  if (update.viewportStageRejectionReasons !== undefined) {
+    state.viewportStageRejectionReasons = [...update.viewportStageRejectionReasons]
+  }
+  state.firstVehicleSourceElapsedSeconds = update.firstSourceElapsedSeconds
+  state.latestVehicleSourceElapsedSeconds = update.latestSourceElapsedSeconds
+  state.sourceVehicleIntersections = update.sourceVehicleIntersectionCount
+  state.visualAddedIntersections = update.visualAddedIntersectionCount
+  state.collisionRejectedVehicleIds = [...update.collisionRejectedVehicleIds]
   publish()
 }
 

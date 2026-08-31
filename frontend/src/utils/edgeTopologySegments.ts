@@ -16,6 +16,18 @@ export interface EdgeTopologySegmentManifest {
 let edgeToSegment: Record<string, string> = {}
 let loaded = false
 const warnedMissingEdges = new Set<string>()
+const pendingMissingEdges = new Set<string>()
+let missingWarningScheduled = false
+
+function flushMissingEdgeWarning(): void {
+  missingWarningScheduled = false
+  if (pendingMissingEdges.size === 0) return
+  const missing = [...pendingMissingEdges]
+  pendingMissingEdges.clear()
+  const sample = missing.slice(0, 8).join('、')
+  const remainder = missing.length > 8 ? ` 等 ${missing.length} 条` : ''
+  console.warn(`[edge-topology] ${missing.length} 条边缺少拓扑映射，保留默认道路颜色：${sample}${remainder}`)
+}
 
 export function isInternalSumoEdgeId(edgeId: string): boolean {
   return edgeId.startsWith(':')
@@ -55,6 +67,7 @@ export async function loadEdgeTopologySegmentMap(
   edgeToSegment = manifest.edgeToSegment
   loaded = true
   warnedMissingEdges.clear()
+  pendingMissingEdges.clear()
   return edgeToSegment
 }
 
@@ -62,6 +75,7 @@ export function setEdgeTopologySegmentMapForTests(map: Record<string, string>): 
   edgeToSegment = { ...map }
   loaded = true
   warnedMissingEdges.clear()
+  pendingMissingEdges.clear()
 }
 
 export function resolveTopologySegmentId(edgeId: string): string | null {
@@ -70,7 +84,11 @@ export function resolveTopologySegmentId(edgeId: string): string | null {
   if (segmentId) return segmentId
   if (loaded && import.meta.env.DEV && !warnedMissingEdges.has(edgeId)) {
     warnedMissingEdges.add(edgeId)
-    console.warn(`[edge-topology] missing mapping for edge_id=${edgeId}; keep default road color`)
+    pendingMissingEdges.add(edgeId)
+    if (!missingWarningScheduled) {
+      missingWarningScheduled = true
+      queueMicrotask(flushMissingEdgeWarning)
+    }
   }
   return null
 }

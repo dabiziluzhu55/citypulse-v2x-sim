@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "models": [
+    {
+      "kind": "red",
+      "sourcePath": "E:/city/model/红色标识.glb",
+      "sourceSha256": "dc68d74313ace5761e19c695ca0ff3e51f65fed07a567df6fa826f129bfe6be5",
+      "outputUrl": "/models/events/event-marker-red.glb",
+      "outputSha256": "3c30bcf532a6043fbf8930b98c5cb332107d1b335347eed6fa6a6f0fe8707a03",
+      "sourceByteLength": 69012536,
+      "outputByteLength": 508960,
+      "triangles": 52498,
+      "bounds": {
+        "min": [
+          -32767,
+          -4032,
+          -27955
+        ],
+        "max": [
+          32767,
+          4032,
+          27955
+        ]
+      },
+      "textures": [
+        {
+          "name": "texture_pbr_20250901_normal",
+          "sourceWidth": 4096,
+          "sourceHeight": 4096,
+          "width": 1024,
+          "height": 1024,
+          "byteLength": 2856,
+          "mimeType": "image/webp"
+        },
+        {
+          "name": "texture_pbr_20250901",
+          "sourceWidth": 4096,
+          "sourceHeight": 4096,
+          "width": 1024,
+          "height": 1024,
+          "byteLength": 33578,
+          "mimeType": "image/webp"
+        },
+        {
+          "name": "texture_pbr_20250901_metallic-texture_pbr_20250901_roughness",
+          "sourceWidth": 4096,
+          "sourceHeight": 4096,
+          "width": 1024,
+          "height": 1024,
+          "byteLength": 8420,
+          "mimeType": "image/webp"
+        }
+      ],
+      "generatedAt": "2026-08-13T15:19:29.012Z",
+      "optimizer": {
+        "name": "@gltf-transform/functions",
+        "simplifyRatio": 0.035,
+        "simplifyError": 0.01,
+        "compression": "meshopt-high",
+        "maximumTextureSize": 1024,
+        "textureFormat": "webp"
+      }
+    },
+    {
+      "kind": "yellow",
+      "sourcePath": "E:/city/model/黄色标识.glb",
+      "sourceSha256": "bb5a61bcee3780801048a2dc3f453d8ea6a9f4432ade92b75d403011b7ec4257",
+      "outputUrl": "/models/events/event-marker-yellow.glb",
+      "outputSha256": "bf4f8c836bb96071c2e2eaed6e11b9a3e7878c1011d97bc8e4d69bb5fc049de0",
+      "sourceByteLength": 68605636,
+      "outputByteLength": 513112,
+      "triangles": 52496,
+      "bounds": {
+        "min": [
+          -32767,
+          -3284,
+          -28639
+        ],
+        "max": [
+          32767,
+          3284,
+          28639
+        ]
+      },
+      "textures": [
+        {
+          "name": "texture_pbr_20250901_normal",
+          "sourceWidth": 4096,
+          "sourceHeight": 4096,
+          "width": 1024,
+          "height": 1024,
+          "byteLength": 3322,
+          "mimeType": "image/webp"
+        },
+        {
+          "name": "texture_pbr_20250901",
+          "sourceWidth": 4096,
+          "sourceHeight": 4096,
+          "width": 1024,
+          "height": 1024,
+          "byteLength": 42384,
+          "mimeType": "image/webp"
+        },
+        {
+          "name": "texture_pbr_20250901_metallic-texture_pbr_20250901_roughness",
+          "sourceWidth": 4096,
+          "sourceHeight": 4096,
+          "width": 1024,
+          "height": 1024,
+          "byteLength": 13070,
+          "mimeType": "image/webp"
+        }
+      ],
+      "generatedAt": "2026-08-13T15:19:31.631Z",
+      "optimizer": {
+        "name": "@gltf-transform/functions",
+        "simplifyRatio": 0.035,
+        "simplifyError": 0.01,
+        "compression": "meshopt-high",
+        "maximumTextureSize": 1024,
+        "textureFormat": "webp"
+      }
+    }
+  ]
+}

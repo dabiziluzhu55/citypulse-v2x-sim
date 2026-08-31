@@ -45,7 +45,9 @@ const TIANDITU_ATTRIBUTION = '© 天地图 · 国家地理信息公共服务平�
 
 /** 浏览器端天地图 token（前端直连官方多子域，不经后端代理） */
 export const TIANDITU_BROWSER_TOKEN = (import.meta.env.VITE_TIANDITU_TOKEN ?? '').trim()
-
+const CARTO_BASEMAP_KEY = (
+  import.meta.env.VITE_CARTO_BASEMAP_KEY ?? ''
+).trim()
 /** 天地图官方 8 个子域，直连多子域可绕开同源 6 连接上限，显著提速 */
 const TIANDITU_SUBDOMAINS = ['0', '1', '2', '3', '4', '5', '6', '7']
 
@@ -80,9 +82,16 @@ function createTiandituSource(layer: 'img' | 'cia') {
 }
 
 function createCartoSource(path: 'dark_all' | 'dark_nolabels') {
+  const keyQuery = CARTO_BASEMAP_KEY
+    ? `?key=${encodeURIComponent(CARTO_BASEMAP_KEY)}`
+    : ''
+
   return new XYZ({
-    url: `https://{a-d}.basemaps.cartocdn.com/${path}/{z}/{x}/{y}{r}.png`,
+    url:
+      `https://{a-d}.basemaps.cartocdn.com/`
+      + `${path}/{z}/{x}/{y}.png${keyQuery}`,
     attributions: CARTO_ATTRIBUTION,
+    crossOrigin: 'anonymous',
   })
 }
 

@@ -12,6 +12,12 @@ export function simulationSnapshotErrorMessage(
   if (/fingerprint|topology|拓扑/i.test(detail)) {
     return `算法模型与当前路网拓扑不匹配。后端详情：${detail}`
   }
+  const invalidRoute = detail.match(
+    /Vehicle\s+['"]?[^'"]+['"]?\s+has no valid route\.\s+No connection between edge\s+['"]([^'"]+)['"]\s+and edge\s+['"]([^'"]+)['"]/i,
+  )
+  if (invalidRoute) {
+    return `扰动车道导致路线不可达：道路 ${invalidRoute[1]} 无法连接到 ${invalidRoute[2]}。请删除或调整对应的施工占道事件后重新启动仿真。后端详情：${detail}`
+  }
   if (/tensor|shape|dimension|action.?mask|张量|动作掩码/i.test(detail)) {
     return `算法模型输入或动作契约不兼容。后端详情：${detail}`
   }

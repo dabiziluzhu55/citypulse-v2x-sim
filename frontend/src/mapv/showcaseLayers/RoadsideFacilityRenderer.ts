@@ -58,6 +58,29 @@ export function resolveStreetlightHeading(
   return ((heading + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI
 }
 
+export interface PreparedRoadsideFacilityScene {
+  intersectionId: string
+  manifest: SceneFacilityManifest
+  group: Group
+  furnitureGroup: Group
+  legacySignalGroup: Group
+  legacyMarkingGroup: Group
+  signalLenses: Record<SignalColor, InstancedMesh>
+  rangeVisible: boolean
+  usedAt: number
+}
+
+export interface RoadsideFacilityRendererStats {
+  preparedSceneCount: number
+  activeIntersectionId: string | null
+  sceneBuildCount: number
+  cameraVisibilitySwitchCount: number
+}
+
+const PREPARED_SCENE_CACHE_LIMIT = 3
+export const ROADSIDE_FACILITY_SHOW_RANGE_METERS = 5_600
+export const ROADSIDE_FACILITY_HIDE_RANGE_METERS = 6_600
+
 export class RoadsideFacilityRenderer {
   private readonly engine: Engine
   private readonly projector: RoadCoordinateProjector
@@ -73,6 +96,10 @@ export class RoadsideFacilityRenderer {
   private streetlightKey = ''
   private realisticDetailActive = false
   private streetlightModelYawOffsetRadians = 0
+  private readonly preparedScenes = new Map<string, PreparedRoadsideFacilityScene>()
+  private activeIntersectionId: string | null = null
+  private sceneBuildCount = 0
+  private cameraVisibilitySwitchCount = 0
 
   constructor(
     engine: Engine,
@@ -108,14 +135,20 @@ export class RoadsideFacilityRenderer {
     normalized.rotation.x = Math.PI / 2
     normalized.scale.setScalar(heightMeters / size.y)
     normalized.updateMatrixWorld(true)
+    this.clear()
     this.clearStreetlightSource()
+    this.configureStreetlightSource(normalized)
     this.streetlightSource = normalized
     this.streetlightKey = key
     this.streetlightModelYawOffsetRadians = modelYawDegrees * Math.PI / 180
   }
 
-  render(manifest: SceneFacilityManifest): void {
-    this.clear()
+  prepareScene(manifest: SceneFacilityManifest): PreparedRoadsideFacilityScene {
+    const existing = this.preparedScenes.get(manifest.intersectionId)
+    if (existing) {
+      existing.usedAt = performance.now()
+      return existing
+    }
     const group = new Group()
     group.name = 'roadside-facilities'
     const furnitureGroup = new Group()
@@ -178,12 +211,12 @@ export class RoadsideFacilityRenderer {
       manifest.cameras,
     ))
 
-    this.signalLenses = {
+    const signalLenses = {
       red: this.signalLens('red', 5.05, manifest.signals),
       yellow: this.signalLens('yellow', 4.55, manifest.signals),
       green: this.signalLens('green', 4.05, manifest.signals),
     }
-    legacySignalGroup.add(this.signalLenses.red, this.signalLenses.yellow, this.signalLenses.green)
+    legacySignalGroup.add(signalLenses.red, signalLenses.yellow, signalLenses.green)
 
     const markings = new Map<string, SceneArrow[]>()
     for (const arrow of manifest.arrows) {
@@ -194,13 +227,46 @@ export class RoadsideFacilityRenderer {
       legacyMarkingGroup.add(this.arrowMesh(key, arrows))
     }
 
-    this.group = this.engine.add(group)
-    this.furnitureGroup = furnitureGroup
-    this.legacySignalGroup = legacySignalGroup
-    this.legacyMarkingGroup = legacyMarkingGroup
-    this.manifest = manifest
+    const mounted = this.engine.add(group)
+    mounted.visible = false
+    const prepared: PreparedRoadsideFacilityScene = {
+      intersectionId: manifest.intersectionId,
+      manifest,
+      group: mounted,
+      furnitureGroup,
+      legacySignalGroup,
+      legacyMarkingGroup,
+      signalLenses,
+      rangeVisible: true,
+      usedAt: performance.now(),
+    }
+    this.preparedScenes.set(manifest.intersectionId, prepared)
+    this.sceneBuildCount += 1
+    this.trimPreparedScenes(new Set([manifest.intersectionId, this.activeIntersectionId ?? '']))
+    return prepared
+  }
+
+  render(manifest: SceneFacilityManifest): void {
+    this.prepareScene(manifest)
+    this.activatePreparedScene(manifest.intersectionId)
+  }
+
+  activatePreparedScene(intersectionId: string): boolean {
+    const prepared = this.preparedScenes.get(intersectionId)
+    if (!prepared) return false
+    for (const scene of this.preparedScenes.values()) scene.group.visible = false
+    this.activeIntersectionId = intersectionId
+    prepared.usedAt = performance.now()
+    this.group = prepared.group
+    this.furnitureGroup = prepared.furnitureGroup
+    this.legacySignalGroup = prepared.legacySignalGroup
+    this.legacyMarkingGroup = prepared.legacyMarkingGroup
+    this.manifest = prepared.manifest
+    this.signalLenses = prepared.signalLenses
     this.updateSignals(null)
     this.refreshViewport()
+    this.trimPreparedScenes(new Set([intersectionId]))
+    return true
   }
 
   updateSignals(intersections: SignalRuntimeState[] | null): void {
@@ -235,11 +301,18 @@ export class RoadsideFacilityRenderer {
     this.engine.requestRender()
   }
 
-  refreshViewport(): void {
-    if (!this.group) return
+  refreshViewport(cameraStable = true): void {
+    if (!this.group || !this.activeIntersectionId || !cameraStable) return
+    const prepared = this.preparedScenes.get(this.activeIntersectionId)
+    if (!prepared) return
     const map = this.engine.map as typeof this.engine.map & { getRange?: () => number }
     const range = typeof map.getRange === 'function' ? map.getRange() : 0
-    const showFacilities = !Number.isFinite(range) || range <= 6_000
+    const previous = prepared.rangeVisible
+    if (!Number.isFinite(range)) prepared.rangeVisible = true
+    else if (prepared.rangeVisible && range > ROADSIDE_FACILITY_HIDE_RANGE_METERS) prepared.rangeVisible = false
+    else if (!prepared.rangeVisible && range < ROADSIDE_FACILITY_SHOW_RANGE_METERS) prepared.rangeVisible = true
+    if (previous !== prepared.rangeVisible) this.cameraVisibilitySwitchCount += 1
+    const showFacilities = prepared.rangeVisible
     this.group.visible = showFacilities
     if (this.furnitureGroup) this.furnitureGroup.visible = showFacilities
     if (this.legacySignalGroup) this.legacySignalGroup.visible = showFacilities && !this.realisticDetailActive
@@ -252,8 +325,24 @@ export class RoadsideFacilityRenderer {
   }
 
   clearScene(): void {
-    this.clear()
+    if (this.group) this.group.visible = false
+    this.activeIntersectionId = null
+    this.group = null
+    this.furnitureGroup = null
+    this.legacySignalGroup = null
+    this.legacyMarkingGroup = null
+    this.manifest = null
+    this.signalLenses = null
     this.engine.requestRender()
+  }
+
+  stats(): RoadsideFacilityRendererStats {
+    return {
+      preparedSceneCount: this.preparedScenes.size,
+      activeIntersectionId: this.activeIntersectionId,
+      sceneBuildCount: this.sceneBuildCount,
+      cameraVisibilitySwitchCount: this.cameraVisibilitySwitchCount,
+    }
   }
 
   private matrix(
@@ -320,29 +409,12 @@ export class RoadsideFacilityRenderer {
     this.streetlightSource.traverse((candidate) => {
       if (!(candidate instanceof Mesh)) return
       const sourceMaterials = Array.isArray(candidate.material) ? candidate.material : [candidate.material]
-      const clonedMaterials = sourceMaterials.map((sourceMaterial) => {
-        const material = sourceMaterial.clone()
-        if (material instanceof MeshStandardMaterial) {
-          material.roughness = Math.min(0.58, Math.max(0.32, material.roughness))
-          material.metalness = Math.min(0.62, Math.max(0.18, material.metalness))
-          material.color.multiplyScalar(1.28)
-          material.emissive.set('#111820')
-          material.emissiveIntensity = 0.2
-          for (const texture of [material.map, material.normalMap, material.metalnessMap, material.roughnessMap]) {
-            if (!texture) continue
-            texture.anisotropy = Math.max(texture.anisotropy, 8)
-            if (texture === material.map) texture.colorSpace = SRGBColorSpace
-            texture.needsUpdate = true
-          }
-          material.needsUpdate = true
-        }
-        return material
-      })
       const mesh = new InstancedMesh(
-        candidate.geometry.clone(),
-        Array.isArray(candidate.material) ? clonedMaterials : clonedMaterials[0],
+        candidate.geometry,
+        Array.isArray(candidate.material) ? sourceMaterials : sourceMaterials[0],
         points.length,
       )
+      mesh.userData.sharedRoadsideAsset = true
       mesh.name = `streetlight-model-${candidate.name || result.length}`
       points.forEach((point, index) => {
         const headingOffset = resolveStreetlightHeading(
@@ -353,14 +425,42 @@ export class RoadsideFacilityRenderer {
         mesh.setMatrixAt(index, this.streetlightMatrix)
       })
       mesh.instanceMatrix.needsUpdate = true
-      mesh.castShadow = true
-      mesh.receiveShadow = true
+      mesh.castShadow = false
+      mesh.receiveShadow = false
       mesh.computeBoundingBox()
       mesh.computeBoundingSphere()
       mesh.frustumCulled = false
       result.push(mesh)
     })
     return result
+  }
+
+  private configureStreetlightSource(source: Object3D): void {
+    source.traverse((candidate) => {
+      if (!(candidate instanceof Mesh)) return
+      candidate.castShadow = false
+      candidate.receiveShadow = false
+      const materials = Array.isArray(candidate.material) ? candidate.material : [candidate.material]
+      for (const material of materials) {
+        if (!(material instanceof MeshStandardMaterial)) continue
+        material.transparent = false
+        material.depthTest = true
+        material.depthWrite = true
+        material.roughness = Math.min(0.58, Math.max(0.32, material.roughness))
+        material.metalness = Math.min(0.62, Math.max(0.18, material.metalness))
+        material.color.multiplyScalar(1.28)
+        material.emissive.set('#111820')
+        material.emissiveIntensity = 0.2
+        for (const texture of [material.map, material.normalMap, material.metalnessMap, material.roughnessMap]) {
+          if (!texture) continue
+          texture.generateMipmaps = true
+          texture.anisotropy = Math.max(texture.anisotropy, 8)
+          if (texture === material.map) texture.colorSpace = SRGBColorSpace
+          texture.needsUpdate = true
+        }
+        material.needsUpdate = true
+      }
+    })
   }
 
   private signalLens(
@@ -431,20 +531,36 @@ export class RoadsideFacilityRenderer {
   }
 
   private clear(): void {
-    if (!this.group) return
-    this.engine.remove(this.group)
-    this.group.traverse((object) => {
-      if (!(object instanceof Mesh)) return
-      object.geometry.dispose()
-      const materials = Array.isArray(object.material) ? object.material : [object.material]
-      materials.forEach((material: Material) => material.dispose())
-    })
+    for (const prepared of this.preparedScenes.values()) this.disposePreparedScene(prepared)
+    this.preparedScenes.clear()
+    this.activeIntersectionId = null
     this.group = null
     this.furnitureGroup = null
     this.legacySignalGroup = null
     this.legacyMarkingGroup = null
     this.manifest = null
     this.signalLenses = null
+  }
+
+  private trimPreparedScenes(protectedIds: Set<string>): void {
+    const candidates = [...this.preparedScenes.values()]
+      .filter((scene) => !protectedIds.has(scene.intersectionId))
+      .sort((left, right) => left.usedAt - right.usedAt)
+    while (this.preparedScenes.size > PREPARED_SCENE_CACHE_LIMIT && candidates.length > 0) {
+      const scene = candidates.shift()!
+      this.preparedScenes.delete(scene.intersectionId)
+      this.disposePreparedScene(scene)
+    }
+  }
+
+  private disposePreparedScene(prepared: PreparedRoadsideFacilityScene): void {
+    this.engine.remove(prepared.group)
+    prepared.group.traverse((object) => {
+      if (!(object instanceof Mesh) || object.userData.sharedRoadsideAsset === true) return
+      object.geometry.dispose()
+      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      materials.forEach((material: Material) => material.dispose())
+    })
   }
 
   private clearStreetlightSource(): void {

@@ -3,7 +3,7 @@ import json
 
 import numpy as np
 
-from algorithms.prediction.evaluate_stage1_baselines import _metrics, evaluate
+from algorithms.prediction.evaluate_stage1_baselines import _metrics, _target_counts, evaluate
 
 
 def _write_split(path, x, y):
@@ -59,3 +59,14 @@ def test_metrics_do_not_treat_zero_count_roundoff_as_mape_denominator():
 
     assert metrics["mape"] == 0.0
     assert metrics["smape"] > 1.9
+
+
+def test_target_count_rounding_keeps_true_zero_in_smape():
+    # Float32 normalization of a true 0 can restore to a tiny negative value
+    # in float64.  The target is an integer vehicle count, so it must remain 0
+    # and incur the expected full sMAPE penalty for a non-zero prediction.
+    normalized_zero = np.asarray([-1.0 / 3.0], dtype=np.float32)
+    actual = _target_counts(normalized_zero, mean=1.0, std=3.0)
+
+    assert actual.tolist() == [0.0]
+    assert _metrics(np.asarray([1.0]), actual)["smape"] == 2.0

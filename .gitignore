@@ -78,3 +78,6 @@ data/maps/xodr/*
 
 # vibe coding
 .claude
+
+# prediction
+official20_lane206_prediction_backend_bundle_20260810/

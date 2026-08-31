@@ -15,7 +15,7 @@ export const CONGESTION_LEVEL_RANK: Record<CongestionLevel, number> = {
 export const CONGESTION_FLOW_COLORS: Record<CongestionLevel, string> = {
   free: '#00d9ff',
   slow: '#ffe566',
-  congested: '#ffb020',
+  congested: '#ffd21f',
   severe: '#ff3b30',
 }
 

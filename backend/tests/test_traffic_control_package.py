@@ -128,6 +128,11 @@ def _make_service(**settings_kwargs: object) -> SimulationService:
         citypulse_session_ttl_seconds=3600,
         session_root=Path("/tmp/citypulse-sessions"),
         generated_dir=Path("/tmp/citypulse-generated"),
+        intelligence_sample_seconds=5.0,
+        intelligence_history_frames=12,
+        prediction_horizon_seconds=60.0,
+        prediction_model_path=None,
+        stgcn_root="",
         **settings_kwargs,
     )
     return SimulationService(
@@ -215,7 +220,6 @@ def test_simulation_config_local_module_for_algorithms() -> None:
     fixed_cfg = service._build_config(_resolved(control_mode="fixed"))
     assert fixed_cfg.control_mode == "fixed"
     assert fixed_cfg.algorithm_module == ""
-    assert fixed_cfg.algorithm_endpoint == ""
 
     for mode, module in (
         ("sotl", "traffic_control.sotl"),
@@ -227,7 +231,6 @@ def test_simulation_config_local_module_for_algorithms() -> None:
         assert cfg.control_mode == "algorithm"
         assert cfg.algorithm_transport == "local"
         assert cfg.algorithm_module == module
-        assert cfg.algorithm_endpoint == ""
 
 
 def test_ippo_rejects_non_xiongan_20_preset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -594,10 +597,8 @@ def test_redis_codec_preserves_algorithm_transport_and_module() -> None:
         control_mode="algorithm",
         algorithm_transport="local",
         algorithm_module="traffic_control.ippo",
-        algorithm_endpoint="",
     )
     restored = loads_config(dumps_config(config))
     assert restored.algorithm_transport == "local"
     assert restored.algorithm_module == "traffic_control.ippo"
-    assert restored.algorithm_endpoint == ""
     assert restored == config

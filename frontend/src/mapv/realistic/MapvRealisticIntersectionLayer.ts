@@ -13,13 +13,18 @@ import { REALISTIC_INTERSECTION_SURFACE_Z } from '../sceneElevation'
 import {
   loadIntersectionManifest,
   realisticIntersectionAssetUrl,
+  controlledLaneSignalForState,
+  type ControlledLaneSignalGroup,
   type Point2,
-  type RealisticConnection,
   type RealisticIntersectionManifest,
+  type RoadSurfacePolygon,
 } from './intersectionManifest'
 import {
   buildCollisionFreeIntersectionApproaches,
+  buildIntersectionApproachGeometry,
+  pointAndTangent,
   SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS,
+  STOP_LINE_CENTER_OFFSET_METERS,
   signalPoleBase,
   type PositionedIntersectionApproach,
 } from './intersectionApproachGeometry'
@@ -28,6 +33,8 @@ import {
   edgeRoadWidth,
   expandPolygon,
   junctionApronPoints,
+  nearestPolylineProgress,
+  samplePolyline,
   visualLanePoints,
 } from './intersectionRoadGeometry'
 import {
@@ -48,10 +55,15 @@ import {
   laneArrowsAvailableForLod,
   type LaneArrowPattern,
 } from './laneDirectionArrows'
+import {
+  surfaceOffsetIsExcluded,
+  visiblePolylineSections,
+} from './roadSurfaceExclusions'
 
 interface SignalHeadMaterials {
   tlsId: string
-  linkIndex: number
+  laneId: string
+  linkIndexes: number[]
   red: THREE.MeshStandardMaterial
   yellow: THREE.MeshStandardMaterial
   green: THREE.MeshStandardMaterial
@@ -74,6 +86,7 @@ interface CachedOverviewIntersection {
 interface CachedMediumIntersection {
   manifest: RealisticIntersectionManifest
   object: RealisticIntersectionObject
+  usedAt: number
 }
 
 interface IntersectionViewport {
@@ -85,6 +98,22 @@ export interface RealisticSignalRuntimeState {
   intersection_id: string
   current_phase: number
   stage: string
+}
+
+export interface RealisticRuntimeDisturbance {
+  eventId: string
+  intersectionId: string
+  eventType: string
+  state: string
+  laneIds: string[]
+  positionRatio?: number
+}
+
+export interface RealisticLaneScenePosition {
+  scene: [number, number, number]
+  mapCoordinate: [number, number, number]
+  laneId: string
+  positionRatio: number
 }
 
 const COLORS = {
@@ -174,29 +203,33 @@ function addTransitionStrip(
   transitionLength: number,
   horizontalScale = 1,
   renderOrder = 0,
+  exclusions?: import('./intersectionManifest').RealisticRoadSurfaceExclusion[],
+  referencePoints: Point2[] = points,
 ): void {
-  const { fadeStart, fadeEnd } = roadBoundaryFadeFlags(points, radiusSceneUnits)
-  const sections = buildRoadTransitionSections(
-    points,
-    fadeStart,
-    fadeEnd,
-    transitionLength,
-  )
-  for (const item of sections) {
-    const sectionMaterial = item.opacity >= 0.999
-      ? material
-      : material.clone()
-    if (sectionMaterial !== material) {
-      sectionMaterial.opacity = item.opacity
-      sectionMaterial.transparent = true
-      sectionMaterial.depthWrite = false
-    }
-    const mesh = new THREE.Mesh(
-      stripGeometry(item.points, width, z, horizontalScale),
-      sectionMaterial,
+  for (const visiblePoints of visiblePolylineSections(points, exclusions, horizontalScale, referencePoints)) {
+    const { fadeStart, fadeEnd } = roadBoundaryFadeFlags(visiblePoints, radiusSceneUnits)
+    const sections = buildRoadTransitionSections(
+      visiblePoints,
+      fadeStart,
+      fadeEnd,
+      transitionLength,
     )
-    mesh.renderOrder = renderOrder
-    group.add(mesh)
+    for (const item of sections) {
+      const sectionMaterial = item.opacity >= 0.999
+        ? material
+        : material.clone()
+      if (sectionMaterial !== material) {
+        sectionMaterial.opacity = item.opacity
+        sectionMaterial.transparent = true
+        sectionMaterial.depthWrite = false
+      }
+      const mesh = new THREE.Mesh(
+        stripGeometry(item.points, width, z, horizontalScale),
+        sectionMaterial,
+      )
+      mesh.renderOrder = renderOrder
+      group.add(mesh)
+    }
   }
 }
 
@@ -245,8 +278,19 @@ function addPolylineSegments(
   }
 }
 
-function polygonMesh(points: Point2[], material: THREE.Material, z: number, renderOrder: number): THREE.Mesh {
-  const shape = new THREE.Shape(points.map(([x, y]) => new THREE.Vector2(x, y)))
+function polygonMesh(
+  polygon: Point2[] | RoadSurfacePolygon,
+  material: THREE.Material,
+  z: number,
+  renderOrder: number,
+): THREE.Mesh {
+  const outer = Array.isArray(polygon) ? polygon : polygon.outer
+  const shape = new THREE.Shape(outer.map(([x, y]) => new THREE.Vector2(x, y)))
+  if (!Array.isArray(polygon)) {
+    for (const hole of polygon.holes ?? []) {
+      shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))))
+    }
+  }
   const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), material)
   mesh.position.z = z
   mesh.renderOrder = renderOrder
@@ -261,13 +305,21 @@ function addRoadJointMeshes(
   const joints = manifest.roadJoints ?? []
   if (joints.length === 0) return false
   for (const joint of joints) {
+    if (joint.surfaceHidden) continue
+    const parts = joint.surfaceParts
     if (materials.sidewalk) {
-      group.add(polygonMesh(joint.polygons.sidewalk, materials.sidewalk, -0.072, 26))
+      for (const polygon of parts?.sidewalk ?? [joint.polygons.sidewalk]) {
+        group.add(polygonMesh(polygon, materials.sidewalk, -0.072, 26))
+      }
     }
     if (materials.curb) {
-      group.add(polygonMesh(joint.polygons.curb, materials.curb, -0.032, 27))
+      for (const polygon of parts?.curb ?? [joint.polygons.curb]) {
+        group.add(polygonMesh(polygon, materials.curb, -0.032, 27))
+      }
     }
-    group.add(polygonMesh(joint.polygons.asphalt, materials.asphalt, 0.014, 29))
+    for (const polygon of parts?.asphalt ?? [joint.polygons.asphalt]) {
+      group.add(polygonMesh(polygon, materials.asphalt, 0.014, 29))
+    }
   }
   return true
 }
@@ -294,6 +346,7 @@ function setLens(
 class RealisticIntersectionObject {
   readonly group = new THREE.Group()
   private readonly arrowGroup = new THREE.Group()
+  private readonly disturbanceGroup = new THREE.Group()
   private readonly signalHeads: SignalHeadMaterials[] = []
   private readonly glowTexture = makeGlowTexture()
   private readonly approaches: PositionedIntersectionApproach[]
@@ -309,7 +362,9 @@ class RealisticIntersectionObject {
     this.group.name = `realistic-intersection-${detail}:${manifest.intersectionId}`
     this.group.renderOrder = 30
     this.arrowGroup.name = `lane-direction-arrows:${manifest.intersectionId}:${detail}`
+    this.disturbanceGroup.name = `runtime-disturbances:${manifest.intersectionId}:${detail}`
     this.group.add(this.arrowGroup)
+    this.group.add(this.disturbanceGroup)
     this.buildRoads(detail === 'full', laneArrowsAvailableForLod(detail))
     if (detail === 'full') this.buildSignals()
     this.updateSignalState(null)
@@ -328,7 +383,7 @@ class RealisticIntersectionObject {
         ? undefined
         : templates[String(phase)] ?? templates[String(phase + 1)]
       const state = stage ? phaseTemplates?.[head.tlsId]?.[stage] : undefined
-      const signal = state?.[head.linkIndex]?.toLowerCase() ?? 'r'
+      const signal = controlledLaneSignalForState(state ?? '', head.linkIndexes)
       setLens(head.red, head.redGlow, signal !== 'g' && signal !== 'y', 0xff3028)
       setLens(head.yellow, head.yellowGlow, signal === 'y', 0xffb51c)
       setLens(head.green, head.greenGlow, signal === 'g', 0x32ff78)
@@ -337,6 +392,72 @@ class RealisticIntersectionObject {
 
   setArrowsVisible(visible: boolean): void {
     this.arrowGroup.visible = visible
+  }
+
+  updateRuntimeDisturbances(events: readonly RealisticRuntimeDisturbance[]): void {
+    this.clearRuntimeDisturbances()
+    const lanes = new Map(this.manifest.edges.flatMap((edge) => (
+      edge.lanes.map((lane) => [lane.id, lane] as const)
+    )))
+    for (const event of events) {
+      if (event.state !== 'ACTIVE') continue
+      const color = event.eventType === 'speed_limit' ? 0xff8a00 : 0xff243f
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: event.eventType === 'speed_limit' ? 0.48 : 0.58,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+      let materialUsed = false
+      for (const laneId of event.laneIds) {
+        const lane = lanes.get(laneId)
+        if (!lane) continue
+        const points = visualLanePoints(lane)
+        if (points.length < 2) continue
+        if (event.eventType === 'accident') {
+          const progress = Number.isFinite(event.positionRatio)
+            ? Math.max(0, Math.min(1, Number(event.positionRatio)))
+            : 0.5
+          const point = samplePolyline(points, progress)
+          const marker = new THREE.Mesh(
+            new THREE.RingGeometry(1.4 * this.horizontalScale, 2.4 * this.horizontalScale, 20),
+            material,
+          )
+          marker.position.set(point[0], point[1], 0.14)
+          marker.renderOrder = 55
+          this.disturbanceGroup.add(marker)
+          materialUsed = true
+          continue
+        }
+        const overlay = new THREE.Mesh(
+          stripGeometry(
+            points,
+            Math.max(1.2 * this.horizontalScale, lane.width * 0.72),
+            0.11,
+            this.horizontalScale,
+          ),
+          material,
+        )
+        overlay.renderOrder = 54
+        this.disturbanceGroup.add(overlay)
+        materialUsed = true
+      }
+      if (!materialUsed) material.dispose()
+    }
+  }
+
+  private clearRuntimeDisturbances(): void {
+    const materials = new Set<THREE.Material>()
+    for (const child of [...this.disturbanceGroup.children]) {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose()
+        const values = Array.isArray(child.material) ? child.material : [child.material]
+        values.forEach((material) => materials.add(material))
+      }
+      this.disturbanceGroup.remove(child)
+    }
+    materials.forEach((material) => material.dispose())
   }
 
   dispose(): void {
@@ -386,6 +507,7 @@ class RealisticIntersectionObject {
         transitionLength,
         1,
         26,
+        edge.surfaceExclusions,
       )
       addTransitionStrip(
         this.group,
@@ -397,6 +519,7 @@ class RealisticIntersectionObject {
         transitionLength,
         1,
         27,
+        edge.surfaceExclusions,
       )
       addTransitionStrip(
         this.group,
@@ -408,12 +531,20 @@ class RealisticIntersectionObject {
         transitionLength,
         scale,
         28,
+        edge.surfaceExclusions,
       )
       for (const lane of edge.lanes) {
         if (lane.kind !== 'bicycle') continue
-        const laneSurface = new THREE.Mesh(stripGeometry(visualLanePoints(lane), Math.max(0.4 * scale, lane.width - 0.08 * scale), 0.018), bicycle)
-        laneSurface.renderOrder = 30
-        this.group.add(laneSurface)
+        for (const points of visiblePolylineSections(
+          visualLanePoints(lane),
+          edge.surfaceExclusions,
+          scale,
+          centerline,
+        )) {
+          const laneSurface = new THREE.Mesh(stripGeometry(points, Math.max(0.4 * scale, lane.width - 0.08 * scale), 0.018), bicycle)
+          laneSurface.renderOrder = 30
+          this.group.add(laneSurface)
+        }
       }
       for (let laneIndex = 0; laneIndex < edge.lanes.length - 1; laneIndex += 1) {
         const left = edge.lanes[laneIndex]
@@ -426,16 +557,26 @@ class RealisticIntersectionObject {
           leftPoints[index][0] + (rightPoints[index][0] - leftPoints[index][0]) * ratio,
           leftPoints[index][1] + (rightPoints[index][1] - leftPoints[index][1]) * ratio,
         ] as Point2))
-        addPolylineSegments(
-          this.group,
-          boundary,
-          (left.kind === 'bicycle' || right.kind === 'bicycle' ? 0.14 : 0.1) * scale,
-          white,
-          left.kind === 'driving' && right.kind === 'driving',
-        )
+        for (const points of visiblePolylineSections(boundary, edge.surfaceExclusions, scale, centerline)) {
+          addPolylineSegments(
+            this.group,
+            points,
+            (left.kind === 'bicycle' || right.kind === 'bicycle' ? 0.14 : 0.1) * scale,
+            white,
+            left.kind === 'driving' && right.kind === 'driving',
+          )
+        }
       }
-      addPolylineSegments(this.group, offsetPolyline(centerline, roadWidth / 2), 0.12 * scale, white, false)
-      addPolylineSegments(this.group, offsetPolyline(centerline, -roadWidth / 2), 0.12 * scale, white, false)
+      for (const offset of [roadWidth / 2, -roadWidth / 2]) {
+        for (const points of visiblePolylineSections(
+          offsetPolyline(centerline, offset),
+          edge.surfaceExclusions,
+          scale,
+          centerline,
+        )) {
+          addPolylineSegments(this.group, points, 0.12 * scale, white, false)
+        }
+      }
     }
 
     if (!addRoadJointMeshes(this.group, this.manifest, { sidewalk, curb, asphalt })) {
@@ -481,7 +622,21 @@ class RealisticIntersectionObject {
   }
 
   private buildDirectionArrows(): void {
-    const arrows = buildLaneDirectionArrows(this.manifest)
+    const edges = new Map(this.manifest.edges.map((edge) => [edge.id, edge]))
+    const arrows = buildLaneDirectionArrows(this.manifest).filter((arrow) => {
+      const edge = edges.get(arrow.edgeId)
+      if (!edge?.surfaceExclusions?.length) return true
+      const centerline = edgeCenterline(edge)
+      const nearest = nearestPolylineProgress(arrow.point, centerline)
+      const lengthSceneUnits = centerline.slice(1).reduce((sum, point, index) => (
+        sum + Math.hypot(point[0] - centerline[index][0], point[1] - centerline[index][1])
+      ), 0)
+      return !nearest || !surfaceOffsetIsExcluded(
+        nearest.progress * lengthSceneUnits / this.horizontalScale,
+        edge.surfaceExclusions,
+        lengthSceneUnits / this.horizontalScale,
+      )
+    })
     const byPattern = new Map<LaneArrowPattern, typeof arrows>()
     for (const arrow of arrows) {
       byPattern.set(arrow.pattern, [...(byPattern.get(arrow.pattern) ?? []), arrow])
@@ -514,10 +669,13 @@ class RealisticIntersectionObject {
     const poleMaterial = new THREE.MeshStandardMaterial({ color: COLORS.pole, roughness: 0.34, metalness: 0.72 })
     const housingMaterial = new THREE.MeshStandardMaterial({ color: 0x101416, roughness: 0.42, metalness: 0.24 })
     const visorMaterial = new THREE.MeshStandardMaterial({ color: 0x07090a, roughness: 0.5 })
-    for (const { edge, geometry: approach } of this.approaches) {
-      const controlled = this.manifest.connections.filter((item) => item.fromEdge === edge.id)
+    for (const edge of this.manifest.edges.filter((candidate) => candidate.incoming)) {
+      const approach = buildIntersectionApproachGeometry(edge, scale, this.manifest.edges)
+      if (!approach) continue
+      const laneIds = new Set(edge.lanes.map((lane) => lane.id))
+      const controlled = this.manifest.signalGroups.filter((item) => laneIds.has(item.laneId))
       if (controlled.length === 0) continue
-      const { tangent, normal, stopLineCenter: center, laneSamples: samples, outerSide: side } = approach
+      const { tangent, normal, stopLineCenter: center, outerSide: side } = approach
       const poleBase = signalPoleBase(approach, scale)
       const pole = verticalCylinder(0.17 * scale, 6.2, poleMaterial)
       pole.position.set(poleBase[0], poleBase[1], 3.1)
@@ -527,26 +685,20 @@ class RealisticIntersectionObject {
         center[1] - normal[1] * 2.5 * scale * side - tangent[1] * SIGNAL_POLE_LONGITUDINAL_SETBACK_METERS * scale,
       ]
       this.group.add(boxBetween(poleBase, armEnd, 5.9, 0.2 * scale, poleMaterial, 0.2))
-      for (let laneIndex = 0; laneIndex < samples.length; laneIndex += 1) {
-        const lane = samples[laneIndex].lane
-        const connections = controlled.filter((item) => item.fromLane === lane.index)
-        connections.forEach((connection, connectionIndex) => {
-          const shift = (connectionIndex - (connections.length - 1) / 2) * 0.58 * scale
-          const head = this.createSignalHead(connection, housingMaterial, visorMaterial)
-          head.position.set(
-            samples[laneIndex].point[0] + normal[0] * shift,
-            samples[laneIndex].point[1] + normal[1] * shift,
-            5.56,
-          )
-          head.rotation.z = Math.atan2(-tangent[0], tangent[1])
-          this.group.add(head)
-        })
+      for (const signalGroup of controlled) {
+        const lane = edge.lanes.find((candidate) => candidate.id === signalGroup.laneId)
+        if (!lane) continue
+        const sample = pointAndTangent(lane, STOP_LINE_CENTER_OFFSET_METERS * scale, true)
+        const head = this.createSignalHead(signalGroup, housingMaterial, visorMaterial)
+        head.position.set(sample.point[0], sample.point[1], 5.56)
+        head.rotation.z = Math.atan2(-tangent[0], tangent[1])
+        this.group.add(head)
       }
     }
   }
 
   private createSignalHead(
-    connection: RealisticConnection,
+    signalGroup: ControlledLaneSignalGroup,
     housingMaterial: THREE.Material,
     visorMaterial: THREE.Material,
   ): THREE.Group {
@@ -585,8 +737,9 @@ class RealisticIntersectionObject {
       group.add(glow)
     })
     this.signalHeads.push({
-      tlsId: connection.tlsId,
-      linkIndex: connection.linkIndex,
+      tlsId: signalGroup.tlsId ?? this.manifest.tlsId ?? '',
+      laneId: signalGroup.laneId,
+      linkIndexes: [...signalGroup.linkIndexes],
       red: materials[0],
       yellow: materials[1],
       green: materials[2],
@@ -622,6 +775,7 @@ class RealisticIntersectionOverviewObject {
         transitionLength,
         scale,
         24,
+        edge.surfaceExclusions,
       )
     }
     if (!addRoadJointMeshes(this.group, manifest, { asphalt })) {
@@ -656,19 +810,73 @@ export class MapvRealisticIntersectionLayer {
   private readonly manifests = new Map<string, RealisticIntersectionManifest>()
   private readonly manifestRequests = new Map<string, Promise<RealisticIntersectionManifest>>()
   private readonly detailRequests = new Map<string, Promise<RealisticIntersectionManifest>>()
+  private readonly detailConsumers = new Map<string, Set<AbortSignal>>()
   private readonly pendingActivations = new Set<string>()
   private readonly lodById = new Map<string, IntersectionRoadLod>()
+  private readonly runtimeDisturbances = new Map<string, RealisticRuntimeDisturbance[]>()
+  private readonly runtimeDisturbanceSignatures = new Map<string, string>()
   private lastViewport: IntersectionViewport | null = null
   private activeId: string | null = null
+  private interactionActive = false
 
   constructor(
     private readonly engine: Engine,
     private readonly projector: RoadCoordinateProjector,
-    private readonly cacheLimit = 6,
+    private readonly cacheLimit = 2,
+    private readonly mediumCacheLimit = 4,
   ) {}
 
   get activeIntersectionId(): string | null {
     return this.activeId
+  }
+
+  resolveLaneScenePosition(
+    intersectionId: string,
+    laneId: string,
+    positionRatio = 0.5,
+  ): RealisticLaneScenePosition | null {
+    const manifest = this.manifests.get(intersectionId)
+    if (!manifest) return null
+    const lane = manifest.edges.flatMap((edge) => edge.lanes).find((candidate) => candidate.id === laneId)
+    if (!lane) return null
+    const ratio = Number.isFinite(positionRatio) ? Math.max(0, Math.min(1, positionRatio)) : 0.5
+    const point = samplePolyline(visualLanePoints(lane), ratio)
+    const origin = this.projector([manifest.origin.longitude, manifest.origin.latitude, 0])
+    const originCoordinate: [number, number, number] = [origin[0], origin[1], origin[2] ?? 0]
+    const originScene = this.engine.map.projectArrayCoordinate(originCoordinate)
+    const scene: [number, number, number] = [
+      originScene[0] + point[0],
+      originScene[1] + point[1],
+      (originScene[2] ?? 0) + REALISTIC_INTERSECTION_SURFACE_Z + 0.18,
+    ]
+    const mapPosition = this.engine.map.unprojectArrayCoordinate(scene)
+    return {
+      scene,
+      mapCoordinate: [mapPosition[0], mapPosition[1], mapPosition[2] ?? scene[2]],
+      laneId,
+      positionRatio: ratio,
+    }
+  }
+
+  resolveLaneScenePositionAny(
+    laneId: string,
+    positionRatio = 0.5,
+    preferredIntersectionId = '',
+  ): (RealisticLaneScenePosition & { intersectionId: string }) | null {
+    const intersectionIds = preferredIntersectionId
+      ? [preferredIntersectionId, ...this.manifests.keys()].filter(
+          (value, index, values) => values.indexOf(value) === index,
+        )
+      : [...this.manifests.keys()]
+    for (const intersectionId of intersectionIds) {
+      const position = this.resolveLaneScenePosition(intersectionId, laneId, positionRatio)
+      if (position) return { ...position, intersectionId }
+    }
+    return null
+  }
+
+  setInteractionActive(active: boolean): void {
+    this.interactionActive = active
   }
 
   async prepareOverview(intersectionIds: string[]): Promise<void> {
@@ -679,15 +887,10 @@ export class MapvRealisticIntersectionLayer {
         if (!intersectionId || this.overviewCache.has(intersectionId)) continue
         const manifest = await this.loadManifest(intersectionId)
         const overviewObject = new RealisticIntersectionOverviewObject(manifest)
-        const mediumObject = new RealisticIntersectionObject(manifest, 'medium')
         this.placeAtIntersection(overviewObject.group, manifest)
-        this.placeAtIntersection(mediumObject.group, manifest)
         overviewObject.group.visible = intersectionId !== this.activeId
-        mediumObject.group.visible = false
         this.engine.add(overviewObject.group)
-        this.engine.add(mediumObject.group)
         this.overviewCache.set(intersectionId, { manifest, object: overviewObject })
-        this.mediumCache.set(intersectionId, { manifest, object: mediumObject })
         this.engine.requestRender()
       }
     }
@@ -695,7 +898,17 @@ export class MapvRealisticIntersectionLayer {
     if (this.lastViewport) this.refreshViewport(this.lastViewport.center, this.lastViewport.rangeMeters)
   }
 
-  async prepare(intersectionId: string): Promise<RealisticIntersectionManifest> {
+  async prepare(
+    intersectionId: string,
+    signal?: AbortSignal,
+  ): Promise<RealisticIntersectionManifest> {
+    if (signal?.aborted) throw new DOMException('Intersection preparation aborted', 'AbortError')
+    if (signal) {
+      const consumers = this.detailConsumers.get(intersectionId) ?? new Set<AbortSignal>()
+      consumers.add(signal)
+      this.detailConsumers.set(intersectionId, consumers)
+    }
+    try {
     let cached = this.cache.get(intersectionId)
     if (cached) {
       cached.usedAt = performance.now()
@@ -704,11 +917,12 @@ export class MapvRealisticIntersectionLayer {
     let request = this.detailRequests.get(intersectionId)
     if (!request) {
       request = (async () => {
-      const manifest = await this.loadManifest(intersectionId)
-      const object = new RealisticIntersectionObject(manifest, 'full')
-      this.placeAtIntersection(object.group, manifest)
-      object.group.visible = false
-      this.engine.add(object.group)
+        const manifest = await this.loadManifest(intersectionId)
+        const object = new RealisticIntersectionObject(manifest, 'full')
+        object.updateRuntimeDisturbances(this.runtimeDisturbances.get(intersectionId) ?? [])
+        this.placeAtIntersection(object.group, manifest)
+        object.group.visible = false
+        this.engine.add(object.group)
         const detail = { manifest, object, usedAt: performance.now() }
         this.cache.set(intersectionId, detail)
         if (this.lastViewport) this.refreshViewport(this.lastViewport.center, this.lastViewport.rangeMeters)
@@ -719,7 +933,50 @@ export class MapvRealisticIntersectionLayer {
       })().finally(() => this.detailRequests.delete(intersectionId))
       this.detailRequests.set(intersectionId, request)
     }
-    return request
+    const manifest = await request
+    if (signal?.aborted) {
+      const hasCurrentConsumer = [...(this.detailConsumers.get(intersectionId) ?? [])]
+        .some((consumer) => consumer !== signal && !consumer.aborted)
+      if (!hasCurrentConsumer) this.discard(intersectionId)
+      throw new DOMException('Intersection preparation aborted', 'AbortError')
+    }
+    return manifest
+    } finally {
+      if (signal) {
+        const consumers = this.detailConsumers.get(intersectionId)
+        consumers?.delete(signal)
+        if (consumers?.size === 0) this.detailConsumers.delete(intersectionId)
+      }
+    }
+  }
+
+  discard(intersectionId: string): void {
+    if (intersectionId === this.activeId || this.pendingActivations.has(intersectionId)) return
+    const cached = this.cache.get(intersectionId)
+    if (!cached) return
+    this.engine.remove(cached.object.group)
+    cached.object.dispose()
+    this.cache.delete(intersectionId)
+    this.engine.requestRender()
+  }
+
+  cacheStats(): { overview: number; medium: number; full: number } {
+    return {
+      overview: this.overviewCache.size,
+      medium: this.mediumCache.size,
+      full: this.cache.size,
+    }
+  }
+
+  visibleCongestionManifests(): RealisticIntersectionManifest[] {
+    const visible = new Map<string, RealisticIntersectionManifest>()
+    for (const [intersectionId, cached] of this.mediumCache) {
+      if (cached.object.group.visible) visible.set(intersectionId, cached.manifest)
+    }
+    for (const [intersectionId, cached] of this.cache) {
+      if (cached.object.group.visible) visible.set(intersectionId, cached.manifest)
+    }
+    return [...visible.values()]
   }
 
   activate(intersectionId: string): RealisticIntersectionManifest {
@@ -774,6 +1031,13 @@ export class MapvRealisticIntersectionLayer {
       })
       .slice(0, this.cacheLimit)
       .map((candidate) => candidate.intersectionId))
+    const mediumIds = new Set(candidates
+      .filter((candidate) => candidate.desired === 'medium' || (
+        candidate.desired === 'full' && !fullIds.has(candidate.intersectionId)
+      ))
+      .sort((left, right) => left.distance - right.distance)
+      .slice(0, this.mediumCacheLimit)
+      .map((candidate) => candidate.intersectionId))
 
     for (const candidate of candidates) {
       const desired = candidate.desired === 'full' && !fullIds.has(candidate.intersectionId)
@@ -781,12 +1045,31 @@ export class MapvRealisticIntersectionLayer {
         : candidate.desired
       this.lodById.set(candidate.intersectionId, desired)
       const overview = this.overviewCache.get(candidate.intersectionId)
-      const medium = this.mediumCache.get(candidate.intersectionId)
+      let medium = this.mediumCache.get(candidate.intersectionId)
+      if (
+        !this.interactionActive
+        && desired === 'medium'
+        && mediumIds.has(candidate.intersectionId)
+        && !medium
+        && overview
+      ) {
+        const object = new RealisticIntersectionObject(overview.manifest, 'medium')
+        this.placeAtIntersection(object.group, overview.manifest)
+        object.group.visible = false
+        this.engine.add(object.group)
+        medium = { manifest: overview.manifest, object, usedAt: performance.now() }
+        this.mediumCache.set(candidate.intersectionId, medium)
+      }
       const detail = this.cache.get(candidate.intersectionId)
-      const actual = desired === 'full' && !detail ? 'medium' : desired
+      const actual = desired === 'full' && !detail
+        ? medium ? 'medium' : 'overview'
+        : desired === 'medium' && !medium
+          ? 'overview'
+          : desired
       if (overview) overview.object.group.visible = actual === 'overview'
       if (medium) {
         medium.object.group.visible = actual === 'medium'
+        if (actual === 'medium') medium.usedAt = performance.now()
         medium.object.setArrowsVisible(viewport.rangeMeters <= LANE_ARROW_MAX_VISIBLE_RANGE_METERS)
       }
       if (detail) {
@@ -794,13 +1077,16 @@ export class MapvRealisticIntersectionLayer {
         detail.object.setArrowsVisible(viewport.rangeMeters <= LANE_ARROW_MAX_VISIBLE_RANGE_METERS)
         if (actual === 'full') detail.usedAt = performance.now()
       }
-      if (desired === 'full' && !detail) {
+      if (!this.interactionActive && desired === 'full' && !detail) {
         void this.prepare(candidate.intersectionId).catch((cause: unknown) => {
           console.warn(`[intersection-lod] failed to prepare ${candidate.intersectionId}`, cause)
         })
       }
     }
-    this.trimCache()
+    if (!this.interactionActive) {
+      this.trimCache()
+      this.trimMediumCache(mediumIds)
+    }
     this.engine.requestRender()
   }
 
@@ -823,6 +1109,38 @@ export class MapvRealisticIntersectionLayer {
     this.engine.requestRender()
   }
 
+  updateRuntimeDisturbances(events: readonly RealisticRuntimeDisturbance[]): void {
+    const grouped = new Map<string, RealisticRuntimeDisturbance[]>()
+    for (const event of events) {
+      grouped.set(event.intersectionId, [
+        ...(grouped.get(event.intersectionId) ?? []),
+        { ...event, laneIds: [...event.laneIds] },
+      ])
+    }
+    const intersectionIds = new Set([
+      ...this.runtimeDisturbances.keys(),
+      ...grouped.keys(),
+    ])
+    let changed = false
+    for (const intersectionId of intersectionIds) {
+      const next = grouped.get(intersectionId) ?? []
+      const signature = JSON.stringify(next.map((event) => ({
+        eventId: event.eventId,
+        eventType: event.eventType,
+        state: event.state,
+        laneIds: [...event.laneIds].sort(),
+        positionRatio: event.positionRatio,
+      })))
+      if (this.runtimeDisturbanceSignatures.get(intersectionId) === signature) continue
+      changed = true
+      this.runtimeDisturbanceSignatures.set(intersectionId, signature)
+      if (next.length > 0) this.runtimeDisturbances.set(intersectionId, next)
+      else this.runtimeDisturbances.delete(intersectionId)
+      this.cache.get(intersectionId)?.object.updateRuntimeDisturbances(next)
+    }
+    if (changed) this.engine.requestRender()
+  }
+
   destroy(): void {
     for (const cached of this.cache.values()) {
       this.engine.remove(cached.object.group)
@@ -842,10 +1160,14 @@ export class MapvRealisticIntersectionLayer {
     this.manifests.clear()
     this.manifestRequests.clear()
     this.detailRequests.clear()
+    this.detailConsumers.clear()
     this.pendingActivations.clear()
     this.lodById.clear()
+    this.runtimeDisturbances.clear()
+    this.runtimeDisturbanceSignatures.clear()
     this.lastViewport = null
     this.activeId = null
+    this.interactionActive = false
   }
 
   private async loadManifest(intersectionId: string): Promise<RealisticIntersectionManifest> {
@@ -898,6 +1220,18 @@ export class MapvRealisticIntersectionLayer {
       this.engine.remove(cached.object.group)
       cached.object.dispose()
       this.cache.delete(id)
+    }
+  }
+
+  private trimMediumCache(keepIds: Set<string> = new Set()): void {
+    const candidates = [...this.mediumCache.entries()]
+      .filter(([id]) => id !== this.activeId && !keepIds.has(id))
+      .sort((left, right) => left[1].usedAt - right[1].usedAt)
+    while (this.mediumCache.size > this.mediumCacheLimit && candidates.length > 0) {
+      const [id, cached] = candidates.shift()!
+      this.engine.remove(cached.object.group)
+      cached.object.dispose()
+      this.mediumCache.delete(id)
     }
   }
 }

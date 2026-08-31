@@ -73,9 +73,9 @@ function metricStatusMessage(metric: EvaluationMetricKey): string {
   const status = pointMetricStatus(metric)
   if (!status || typeof pointMetricValue(metric) === 'number') return ''
   const algorithm = currentAlgorithmLabel.value || '当前算法'
-  if (metric === 'fuel' && status === 'pending') return `${algorithm}运行中，等待 TripInfo 终态回填`
-  if (metric === 'fuel' && status === 'unavailable') return `${algorithm}终态未提供可用燃油强度`
-  if (status === 'pending') return `${algorithm}实时口径尚未回填`
+  if (metric === 'fuel' && status === 'pending') return `${algorithm}运行中，燃油消耗数据将在仿真结束后生成`
+  if (metric === 'fuel' && status === 'unavailable') return `${algorithm}本次仿真暂无可用的燃油消耗数据`
+  if (status === 'pending') return `${algorithm}运行中，实时指标数据暂未返回`
   return ''
 }
 
@@ -205,7 +205,7 @@ watch(() => props.timeseries, () => {
                 :class="{ 'has-comparison-data': metricHasAnyValue(metric.key) }"
                 :title="metricStatusTitle(metric.key)"
               >
-                <strong>--</strong>
+                <strong>暂无数据</strong>
                 <span>{{ metricStatusMessage(metric.key) }}</span>
               </div>
             </div>
@@ -249,8 +249,8 @@ watch(() => props.timeseries, () => {
 </template>
 
 <style scoped>
-.right-sidebar { container-type: size; display: flex; justify-content: flex-end; align-items: flex-start; width: 100%; height: 100%; padding-right: 4px; overflow: hidden; pointer-events: auto; }
-.right-sidebar__scaler { transform-origin: top right; transform: scale(min(1,100cqw / var(--dashboard-right-sidebar-design-width,600px),100cqh / var(--dashboard-sidebar-design-height,990px))); }
+.right-sidebar { container-type: size; display: flex; justify-content: flex-end; align-items: flex-start; width: 100%; height: 100%; padding-right: 4px; overflow: hidden; pointer-events: none; }
+.right-sidebar__scaler { transform-origin: top right; transform: scale(min(1,100cqw / var(--dashboard-right-sidebar-design-width,600px),100cqh / var(--dashboard-sidebar-design-height,990px))); pointer-events: auto; }
 .right-sidebar__canvas { position: relative; flex-shrink: 0; overflow: hidden; color: #d8f4ff; font-family: 'PingFang SC','Microsoft YaHei',sans-serif; }
 .right-sidebar__frame { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .right-sidebar__clip { position: absolute; z-index: 1; overflow: hidden; pointer-events: none; }

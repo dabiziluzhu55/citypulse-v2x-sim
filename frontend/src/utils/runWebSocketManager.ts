@@ -9,7 +9,10 @@ let currentStreamUrl = ''
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 const MAX_RECONNECT_DELAY_MS = 30_000
+const STREAM_STALE_TIMEOUT_MS = 20_000
 let shouldReconnect = false
+let lastStreamMessageAt = 0
+let streamWatchdog: ReturnType<typeof setInterval> | null = null
 let decoderWorker: Worker | null = null
 let decoderWorkerUnavailable = false
 let decodeGeneration = 0
@@ -55,7 +58,27 @@ function clearReconnectTimer() {
   }
 }
 
+function stopStreamWatchdog() {
+  if (streamWatchdog !== null) {
+    clearInterval(streamWatchdog)
+    streamWatchdog = null
+  }
+}
+
+function startStreamWatchdog() {
+  stopStreamWatchdog()
+  streamWatchdog = setInterval(() => {
+    if (
+      socket?.readyState === WebSocket.OPEN
+      && Date.now() - lastStreamMessageAt > STREAM_STALE_TIMEOUT_MS
+    ) {
+      socket.close(4000, 'simulation stream stale')
+    }
+  }, 1_000)
+}
+
 function closeSocket() {
+  stopStreamWatchdog()
   if (socket) {
     socket.onopen = null
     socket.onmessage = null
@@ -181,18 +204,23 @@ export function connectSimulationStream(sessionId: string, backendStreamUrl = ''
 
   socket.onopen = () => {
     reconnectAttempts = 0
+    lastStreamMessageAt = Date.now()
+    startStreamWatchdog()
     notifyConnection(true)
   }
 
   socket.onmessage = (event) => {
+    lastStreamMessageAt = Date.now()
     decodeMessage(String(event.data), sessionId, generation)
   }
 
   socket.onerror = () => {
     notifyConnection(false)
+    socket?.close()
   }
 
   socket.onclose = () => {
+    stopStreamWatchdog()
     notifyConnection(false)
     scheduleReconnect()
   }

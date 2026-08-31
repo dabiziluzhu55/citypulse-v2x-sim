@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "scope": "global",
-  "source": "/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/official/traffic/official_traffic_demands.json",
+  "source": "/home/kemove/devdata1/zrl/citypulse-v2x-sim/data/maps/sumo/official/traffic/official_traffic_demands.json",
   "unit": "pcu",
   "interval_seconds": 900,
   "intersection_ids": [
@@ -26,6 +26,69 @@
     "demo_19",
     "demo_20"
   ],
+  "available_scopes": {
+    "global": {
+      "scope_id": "global",
+      "label": "Global official demand",
+      "intersection_ids": [
+        "demo_1",
+        "demo_2",
+        "demo_3",
+        "demo_4",
+        "demo_5",
+        "demo_6",
+        "demo_7",
+        "demo_8",
+        "demo_9",
+        "demo_11",
+        "demo_12",
+        "demo_14",
+        "demo_15",
+        "demo_10",
+        "demo_13",
+        "demo_16",
+        "demo_17",
+        "demo_18",
+        "demo_19",
+        "demo_20"
+      ],
+      "periods": [
+        "morning_peak",
+        "off_peak",
+        "evening_peak"
+      ]
+    },
+    "east_dense": {
+      "scope_id": "east_dense",
+      "label": "East dense area",
+      "intersection_ids": [
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9"
+      ],
+      "periods": [
+        "morning_peak",
+        "off_peak",
+        "evening_peak"
+      ]
+    },
+    "west_dense": {
+      "scope_id": "west_dense",
+      "label": "West dense area",
+      "intersection_ids": [
+        "demo_14",
+        "demo_15",
+        "demo_19"
+      ],
+      "periods": [
+        "morning_peak",
+        "off_peak",
+        "evening_peak"
+      ]
+    }
+  },
+  "skipped_scopes": {},
   "vehicle_mix": {
     "basis": "vehicle_count",
     "shares": {
@@ -35,8 +98,8 @@
       "truck": 0.05
     }
   },
-  "vehicle_profile_source": "/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/official/traffic/vehicle_profiles.json",
-  "traffic_generation_policy_source": "/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/official/traffic/traffic_generation_policy.json",
+  "vehicle_profile_source": "/home/kemove/devdata1/zrl/citypulse-v2x-sim/data/maps/sumo/official/traffic/vehicle_profiles.json",
+  "traffic_generation_policy_source": "/home/kemove/devdata1/zrl/citypulse-v2x-sim/data/maps/sumo/official/traffic/traffic_generation_policy.json",
   "vehicle_profile_schema_version": 2,
   "vehicle_profiles": {
     "bus": {
@@ -1090,6 +1153,7 @@
   "scenarios": {
     "global_morning_peak": {
       "scenario_id": "global_morning_peak",
+      "scope_id": "global",
       "period_id": "morning_peak",
       "label": "早高峰",
       "intersection_ids": [
@@ -1179,6 +1243,7 @@
     },
     "global_off_peak": {
       "scenario_id": "global_off_peak",
+      "scope_id": "global",
       "period_id": "off_peak",
       "label": "平峰",
       "intersection_ids": [
@@ -1268,6 +1333,7 @@
     },
     "global_evening_peak": {
       "scenario_id": "global_evening_peak",
+      "scope_id": "global",
       "period_id": "evening_peak",
       "label": "晚高峰",
       "intersection_ids": [
@@ -1354,6 +1420,348 @@
       "sampled_vehicle_count": 35715,
       "multi_intersection_vehicle_count": 25932,
       "multi_intersection_vehicle_share": 0.7260814783704326
+    },
+    "east_dense_morning_peak": {
+      "scenario_id": "east_dense_morning_peak",
+      "scope_id": "east_dense",
+      "period_id": "morning_peak",
+      "label": "早高峰",
+      "intersection_ids": [
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9"
+      ],
+      "program_ids": {
+        "demo_3": "demo_3_morning_peak",
+        "demo_5": "demo_5_morning_peak",
+        "demo_6": "demo_6_morning_peak",
+        "demo_9": "demo_9_morning_peak"
+      },
+      "official_time_range": {
+        "start": "07:00:00",
+        "end": "09:00:00"
+      },
+      "route_file": "traffic/east_dense/morning_peak/routes.rou.xml",
+      "additional_file": "traffic/east_dense/morning_peak/signals.add.xml",
+      "sumocfg": "traffic/east_dense/morning_peak/simulation.sumocfg",
+      "quality_report": "reports/traffic_quality_east_dense_morning_peak.json",
+      "quality_report_csv": "reports/traffic_quality_east_dense_morning_peak.csv",
+      "od_report": "reports/traffic_od_east_dense_morning_peak.json",
+      "od_matrix_csv": "reports/traffic_od_east_dense_morning_peak.csv",
+      "od_interzonal_pcu": 0.0,
+      "od_excluded_intra_zone_pcu": 7633.5,
+      "route_sampler_mismatch_files": {
+        "bus": "reports/traffic_east_dense_morning_peak_bus_mismatch.xml",
+        "electric_bicycle": "reports/traffic_east_dense_morning_peak_electric_bicycle_mismatch.xml",
+        "passenger": "reports/traffic_east_dense_morning_peak_passenger_mismatch.xml",
+        "truck": "reports/traffic_east_dense_morning_peak_truck_mismatch.xml"
+      },
+      "demand_duration": 7200,
+      "simulation_end": 7500,
+      "selected_seed": 42,
+      "selected_allocation_round": 1,
+      "route_policy_passed": false,
+      "departure_position": {
+        "strategy": "first_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 3636
+      },
+      "arrival_position": {
+        "strategy": "final_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 1144
+      },
+      "target_observation_pcu": 13752,
+      "sampled_vehicle_count": 6686,
+      "multi_intersection_vehicle_count": 4023,
+      "multi_intersection_vehicle_share": 0.6017050553395155
+    },
+    "east_dense_off_peak": {
+      "scenario_id": "east_dense_off_peak",
+      "scope_id": "east_dense",
+      "period_id": "off_peak",
+      "label": "平峰",
+      "intersection_ids": [
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9"
+      ],
+      "program_ids": {
+        "demo_3": "demo_3_off_peak",
+        "demo_5": "demo_5_off_peak",
+        "demo_6": "demo_6_off_peak",
+        "demo_9": "demo_9_off_peak"
+      },
+      "official_time_range": {
+        "start": "14:30:00",
+        "end": "16:30:00"
+      },
+      "route_file": "traffic/east_dense/off_peak/routes.rou.xml",
+      "additional_file": "traffic/east_dense/off_peak/signals.add.xml",
+      "sumocfg": "traffic/east_dense/off_peak/simulation.sumocfg",
+      "quality_report": "reports/traffic_quality_east_dense_off_peak.json",
+      "quality_report_csv": "reports/traffic_quality_east_dense_off_peak.csv",
+      "od_report": "reports/traffic_od_east_dense_off_peak.json",
+      "od_matrix_csv": "reports/traffic_od_east_dense_off_peak.csv",
+      "od_interzonal_pcu": 0.0,
+      "od_excluded_intra_zone_pcu": 4153.5,
+      "route_sampler_mismatch_files": {
+        "bus": "reports/traffic_east_dense_off_peak_bus_mismatch.xml",
+        "electric_bicycle": "reports/traffic_east_dense_off_peak_electric_bicycle_mismatch.xml",
+        "passenger": "reports/traffic_east_dense_off_peak_passenger_mismatch.xml",
+        "truck": "reports/traffic_east_dense_off_peak_truck_mismatch.xml"
+      },
+      "demand_duration": 7200,
+      "simulation_end": 7500,
+      "selected_seed": 42,
+      "selected_allocation_round": 1,
+      "route_policy_passed": false,
+      "departure_position": {
+        "strategy": "first_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 1919
+      },
+      "arrival_position": {
+        "strategy": "final_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 916
+      },
+      "target_observation_pcu": 7950,
+      "sampled_vehicle_count": 3633,
+      "multi_intersection_vehicle_count": 2442,
+      "multi_intersection_vehicle_share": 0.6721717588769612
+    },
+    "east_dense_evening_peak": {
+      "scenario_id": "east_dense_evening_peak",
+      "scope_id": "east_dense",
+      "period_id": "evening_peak",
+      "label": "晚高峰",
+      "intersection_ids": [
+        "demo_3",
+        "demo_5",
+        "demo_6",
+        "demo_9"
+      ],
+      "program_ids": {
+        "demo_3": "demo_3_evening_peak",
+        "demo_5": "demo_5_evening_peak",
+        "demo_6": "demo_6_evening_peak",
+        "demo_9": "demo_9_evening_peak"
+      },
+      "official_time_range": {
+        "start": "17:30:00",
+        "end": "19:30:00"
+      },
+      "route_file": "traffic/east_dense/evening_peak/routes.rou.xml",
+      "additional_file": "traffic/east_dense/evening_peak/signals.add.xml",
+      "sumocfg": "traffic/east_dense/evening_peak/simulation.sumocfg",
+      "quality_report": "reports/traffic_quality_east_dense_evening_peak.json",
+      "quality_report_csv": "reports/traffic_quality_east_dense_evening_peak.csv",
+      "od_report": "reports/traffic_od_east_dense_evening_peak.json",
+      "od_matrix_csv": "reports/traffic_od_east_dense_evening_peak.csv",
+      "od_interzonal_pcu": 0.0,
+      "od_excluded_intra_zone_pcu": 8063.0,
+      "route_sampler_mismatch_files": {
+        "bus": "reports/traffic_east_dense_evening_peak_bus_mismatch.xml",
+        "electric_bicycle": "reports/traffic_east_dense_evening_peak_electric_bicycle_mismatch.xml",
+        "passenger": "reports/traffic_east_dense_evening_peak_passenger_mismatch.xml",
+        "truck": "reports/traffic_east_dense_evening_peak_truck_mismatch.xml"
+      },
+      "demand_duration": 7200,
+      "simulation_end": 7500,
+      "selected_seed": 42,
+      "selected_allocation_round": 1,
+      "route_policy_passed": false,
+      "departure_position": {
+        "strategy": "first_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 3609
+      },
+      "arrival_position": {
+        "strategy": "final_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 1505
+      },
+      "target_observation_pcu": 15118,
+      "sampled_vehicle_count": 7053,
+      "multi_intersection_vehicle_count": 4791,
+      "multi_intersection_vehicle_share": 0.6792854104636324
+    },
+    "west_dense_morning_peak": {
+      "scenario_id": "west_dense_morning_peak",
+      "scope_id": "west_dense",
+      "period_id": "morning_peak",
+      "label": "早高峰",
+      "intersection_ids": [
+        "demo_14",
+        "demo_15",
+        "demo_19"
+      ],
+      "program_ids": {
+        "demo_14": "demo_14_morning_peak",
+        "demo_15": "demo_15_morning_peak",
+        "demo_19": "demo_19_morning_peak"
+      },
+      "official_time_range": {
+        "start": "07:00:00",
+        "end": "09:00:00"
+      },
+      "route_file": "traffic/west_dense/morning_peak/routes.rou.xml",
+      "additional_file": "traffic/west_dense/morning_peak/signals.add.xml",
+      "sumocfg": "traffic/west_dense/morning_peak/simulation.sumocfg",
+      "quality_report": "reports/traffic_quality_west_dense_morning_peak.json",
+      "quality_report_csv": "reports/traffic_quality_west_dense_morning_peak.csv",
+      "od_report": "reports/traffic_od_west_dense_morning_peak.json",
+      "od_matrix_csv": "reports/traffic_od_west_dense_morning_peak.csv",
+      "od_interzonal_pcu": 0.0,
+      "od_excluded_intra_zone_pcu": 7311.5,
+      "route_sampler_mismatch_files": {
+        "bus": "reports/traffic_west_dense_morning_peak_bus_mismatch.xml",
+        "electric_bicycle": "reports/traffic_west_dense_morning_peak_electric_bicycle_mismatch.xml",
+        "passenger": "reports/traffic_west_dense_morning_peak_passenger_mismatch.xml",
+        "truck": "reports/traffic_west_dense_morning_peak_truck_mismatch.xml"
+      },
+      "demand_duration": 7200,
+      "simulation_end": 7500,
+      "selected_seed": 42,
+      "selected_allocation_round": 1,
+      "route_policy_passed": false,
+      "departure_position": {
+        "strategy": "first_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 370
+      },
+      "arrival_position": {
+        "strategy": "final_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 338
+      },
+      "target_observation_pcu": 12597,
+      "sampled_vehicle_count": 6429,
+      "multi_intersection_vehicle_count": 3795,
+      "multi_intersection_vehicle_share": 0.5902939804013065
+    },
+    "west_dense_off_peak": {
+      "scenario_id": "west_dense_off_peak",
+      "scope_id": "west_dense",
+      "period_id": "off_peak",
+      "label": "平峰",
+      "intersection_ids": [
+        "demo_14",
+        "demo_15",
+        "demo_19"
+      ],
+      "program_ids": {
+        "demo_14": "demo_14_off_peak",
+        "demo_15": "demo_15_off_peak",
+        "demo_19": "demo_19_off_peak"
+      },
+      "official_time_range": {
+        "start": "14:30:00",
+        "end": "16:30:00"
+      },
+      "route_file": "traffic/west_dense/off_peak/routes.rou.xml",
+      "additional_file": "traffic/west_dense/off_peak/signals.add.xml",
+      "sumocfg": "traffic/west_dense/off_peak/simulation.sumocfg",
+      "quality_report": "reports/traffic_quality_west_dense_off_peak.json",
+      "quality_report_csv": "reports/traffic_quality_west_dense_off_peak.csv",
+      "od_report": "reports/traffic_od_west_dense_off_peak.json",
+      "od_matrix_csv": "reports/traffic_od_west_dense_off_peak.csv",
+      "od_interzonal_pcu": 0.0,
+      "od_excluded_intra_zone_pcu": 6255.5,
+      "route_sampler_mismatch_files": {
+        "bus": "reports/traffic_west_dense_off_peak_bus_mismatch.xml",
+        "electric_bicycle": "reports/traffic_west_dense_off_peak_electric_bicycle_mismatch.xml",
+        "passenger": "reports/traffic_west_dense_off_peak_passenger_mismatch.xml",
+        "truck": "reports/traffic_west_dense_off_peak_truck_mismatch.xml"
+      },
+      "demand_duration": 7200,
+      "simulation_end": 7500,
+      "selected_seed": 42,
+      "selected_allocation_round": 1,
+      "route_policy_passed": false,
+      "departure_position": {
+        "strategy": "first_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 184
+      },
+      "arrival_position": {
+        "strategy": "final_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 357
+      },
+      "target_observation_pcu": 10349,
+      "sampled_vehicle_count": 5483,
+      "multi_intersection_vehicle_count": 3016,
+      "multi_intersection_vehicle_share": 0.5500638336677002
+    },
+    "west_dense_evening_peak": {
+      "scenario_id": "west_dense_evening_peak",
+      "scope_id": "west_dense",
+      "period_id": "evening_peak",
+      "label": "晚高峰",
+      "intersection_ids": [
+        "demo_14",
+        "demo_15",
+        "demo_19"
+      ],
+      "program_ids": {
+        "demo_14": "demo_14_evening_peak",
+        "demo_15": "demo_15_evening_peak",
+        "demo_19": "demo_19_evening_peak"
+      },
+      "official_time_range": {
+        "start": "17:30:00",
+        "end": "19:30:00"
+      },
+      "route_file": "traffic/west_dense/evening_peak/routes.rou.xml",
+      "additional_file": "traffic/west_dense/evening_peak/signals.add.xml",
+      "sumocfg": "traffic/west_dense/evening_peak/simulation.sumocfg",
+      "quality_report": "reports/traffic_quality_west_dense_evening_peak.json",
+      "quality_report_csv": "reports/traffic_quality_west_dense_evening_peak.csv",
+      "od_report": "reports/traffic_od_west_dense_evening_peak.json",
+      "od_matrix_csv": "reports/traffic_od_west_dense_evening_peak.csv",
+      "od_interzonal_pcu": 0.0,
+      "od_excluded_intra_zone_pcu": 8263.0,
+      "route_sampler_mismatch_files": {
+        "bus": "reports/traffic_west_dense_evening_peak_bus_mismatch.xml",
+        "electric_bicycle": "reports/traffic_west_dense_evening_peak_electric_bicycle_mismatch.xml",
+        "passenger": "reports/traffic_west_dense_evening_peak_passenger_mismatch.xml",
+        "truck": "reports/traffic_west_dense_evening_peak_truck_mismatch.xml"
+      },
+      "demand_duration": 7200,
+      "simulation_end": 7500,
+      "selected_seed": 42,
+      "selected_allocation_round": 1,
+      "route_policy_passed": false,
+      "departure_position": {
+        "strategy": "first_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 497
+      },
+      "arrival_position": {
+        "strategy": "final_edge_midpoint",
+        "fraction": 0.5,
+        "remote_segment_when_extended": true,
+        "extended_vehicle_count": 612
+      },
+      "target_observation_pcu": 14922,
+      "sampled_vehicle_count": 7244,
+      "multi_intersection_vehicle_count": 4868,
+      "multi_intersection_vehicle_share": 0.6720044174489233
     }
   }
 }

@@ -16,11 +16,16 @@ import { distanceMeters as geographicDistanceMeters } from './vehicleVisibility'
 import { topologyFlowHeight } from './topologyFlowElevation'
 import { REALISTIC_INTERSECTION_SURFACE_Z } from './sceneElevation'
 import {
+  ACTIVE_INTERSECTION_MARKER_EFFECT_OPTIONS,
+  ACTIVE_INTERSECTION_MARKER_RENDER_ORDER,
+  ACTIVE_INTERSECTION_MARKER_WAVE_OPTIONS,
+  ACTIVE_INTERSECTION_MARKER_WAVE_RENDER_ORDER,
   INTERSECTION_MARKER_LABEL_HEIGHT_METERS,
   INTERSECTION_MARKER_EFFECT_OPTIONS,
   INTERSECTION_MARKER_MODEL_URL,
   INTERSECTION_MARKER_SURFACE_OFFSET_METERS,
-  INTERSECTION_MARKER_WAVE_OPTIONS,
+  anchorIntersectionMarkerModel,
+  configureSelectedIntersectionMarkerModel,
   createFallbackIntersectionMarkerModel,
   partitionIntersectionMarkerFeatures,
   shouldShowIntersectionMarkerLabel,
@@ -31,6 +36,7 @@ import {
   CONGESTION_FLOW_COLORS,
   normalizeCongestionLevel,
 } from '../utils/topologyCongestion'
+import { CONGESTION_FLOW_VISUALS } from './realistic/laneCongestionFlow'
 import { topologyDistanceMeters } from './intersectionTopology'
 
 const FLOW_LEVELS: CongestionLevel[] = ['free', 'slow', 'congested', 'severe']
@@ -44,6 +50,8 @@ interface TopologyRouteEntry {
   id: string
   baseFeature: Record<string, unknown>
   flowFeature: Record<string, unknown>
+  rawCoordinates: Array<[number, number]>
+  flowCoordinates: number[][]
   samples: Array<[number, number]>
 }
 
@@ -72,11 +80,13 @@ function cloneMarkerModel(source: THREE.Object3D, active: boolean): THREE.Object
       if (styled.emissiveIntensity != null) styled.emissiveIntensity = active ? 2.8 : 1.55
       if (styled.metalness != null) styled.metalness = Math.min(styled.metalness, 0.3)
       if (styled.roughness != null) styled.roughness = Math.min(styled.roughness, 0.42)
+      if (active) styled.depthWrite = false
       return material
     })
     child.material = Array.isArray(child.material) ? materials : materials[0]
   })
-  return clone
+  const anchored = anchorIntersectionMarkerModel(clone)
+  return active ? configureSelectedIntersectionMarkerModel(anchored) : anchored
 }
 
 function disposeMarkerModels(models: THREE.Object3D[]): void {
@@ -113,6 +123,16 @@ function configureOverlayMaterial(layer: unknown, opacity: number): void {
   owner.material.polygonOffsetUnits = -6
 }
 
+function configureForegroundLayer(layer: unknown, renderOrder: number): void {
+  const owner = layer as RenderMaterialOwner
+  owner.renderOrder = renderOrder
+  if (!owner.material) return
+  owner.material.transparent = true
+  owner.material.depthTest = false
+  owner.material.depthWrite = false
+  owner.material.needsUpdate = true
+}
+
 export class IntersectionTopologyLayer {
   private readonly baseLine: mapvthree.Polyline
   private readonly flowLines: Record<CongestionLevel, mapvthree.Polyline>
@@ -134,6 +154,8 @@ export class IntersectionTopologyLayer {
   private activeLabelKey = ''
   private destroyed = false
   private visibleRouteIds: string[] = []
+  private localFlowIntersectionIds = new Set<string>()
+  private flowAnimationPaused = false
 
   constructor(
     private readonly engine: mapvthree.Engine,
@@ -152,24 +174,25 @@ export class IntersectionTopologyLayer {
     configureOverlayMaterial(this.baseLine, 0.24)
     this.baseLine.renderOrder = 34
     this.flowLines = Object.fromEntries(FLOW_LEVELS.map((level, index) => {
+      const visual = CONGESTION_FLOW_VISUALS[level]
       const line = engine.add(new mapvthree.Polyline({
         flat: true,
         isCurve: false,
         color: new THREE.Color(CONGESTION_FLOW_COLORS[level]),
-        lineWidth: 2,
+        lineWidth: visual.lineWidth,
         keepSize: true,
         transparent: true,
-        opacity: 0.9,
+        opacity: visual.opacity,
         enableAnimation: true,
         enableAnimationChaos: false,
-        animationInterval: 2,
+        animationInterval: 4,
         animationTailType: 1,
-        animationTailRatio: 0.16,
-        animationSpeed: 0.85,
-        animationIdle: 1_600,
+        animationTailRatio: 0.24,
+        animationSpeed: 0.50,
+        animationIdle: 2_400,
         height: 0,
       }))
-      configureOverlayMaterial(line, 0.9)
+      configureOverlayMaterial(line, visual.opacity)
       line.renderOrder = 35 + index
       return [level, line]
     })) as Record<CongestionLevel, mapvthree.Polyline>
@@ -178,12 +201,14 @@ export class IntersectionTopologyLayer {
     this.markers.model = this.markerModel
     this.markers.position.z = 0
 
-    this.activeMarker = engine.add(new mapvthree.EffectModelPoint(INTERSECTION_MARKER_EFFECT_OPTIONS))
+    this.activeMarker = engine.add(new mapvthree.EffectModelPoint(ACTIVE_INTERSECTION_MARKER_EFFECT_OPTIONS))
     this.activeMarker.model = this.activeMarkerModel
     this.activeMarker.position.z = 0
+    configureForegroundLayer(this.activeMarker, ACTIVE_INTERSECTION_MARKER_RENDER_ORDER)
 
-    this.waves = engine.add(new mapvthree.EffectPoint(INTERSECTION_MARKER_WAVE_OPTIONS))
-    this.waves.position.z = 0.02
+    this.waves = engine.add(new mapvthree.EffectPoint(ACTIVE_INTERSECTION_MARKER_WAVE_OPTIONS))
+    this.waves.position.z = 0
+    configureForegroundLayer(this.waves, ACTIVE_INTERSECTION_MARKER_WAVE_RENDER_ORDER)
 
     this.labels = engine.add(new mapvthree.Text({
       fillStyle: '#bff5ff',
@@ -271,6 +296,23 @@ export class IntersectionTopologyLayer {
     this.engine.requestRender()
   }
 
+  setLocalFlowIntersections(intersectionIds: readonly string[]): void {
+    const next = new Set(intersectionIds)
+    const key = [...next].sort().join('|')
+    const currentKey = [...this.localFlowIntersectionIds].sort().join('|')
+    if (key === currentKey) return
+    this.localFlowIntersectionIds = next
+    const visible = this.routeEntries.filter((entry) => this.visibleRouteIds.includes(entry.id))
+    this.applyFlowLineData(visible.length ? visible : this.routeEntries)
+    this.engine.requestRender()
+  }
+
+  setAnimationPaused(paused: boolean): void {
+    if (paused === this.flowAnimationPaused) return
+    this.flowAnimationPaused = paused
+    for (const line of Object.values(this.flowLines)) line.enableAnimation = !paused
+  }
+
   refreshViewport(
     center: readonly number[] = this.engine.map.getCenter(),
     rangeMeters = this.engine.map.getRange(),
@@ -338,6 +380,8 @@ export class IntersectionTopologyLayer {
     this.visibleRouteCount = 0
     this.activeIntersectionId = null
     this.activeLabelKey = ''
+    this.localFlowIntersectionIds.clear()
+    this.flowAnimationPaused = false
   }
 
   private applyFlowLineData(entries: TopologyRouteEntry[]): void {
@@ -349,7 +393,8 @@ export class IntersectionTopologyLayer {
     }
     for (const entry of entries) {
       const level = normalizeCongestionLevel(this.routeCongestion[entry.id] ?? 'free')
-      buckets[level].push(entry.flowFeature)
+      if (level === 'free') continue
+      buckets[level].push(...this.clippedFlowFeatures(entry))
     }
     for (const level of FLOW_LEVELS) {
       const features = buckets[level]
@@ -357,6 +402,34 @@ export class IntersectionTopologyLayer {
         ? mapvthree.GeoJSONDataSource.fromGeoJSON({ type: 'FeatureCollection', features })
         : null
     }
+  }
+
+  private clippedFlowFeatures(entry: TopologyRouteEntry): Record<string, unknown>[] {
+    const clippingNodes = this.nodes.filter((node) => this.localFlowIntersectionIds.has(node.intersectionId))
+    if (!clippingNodes.length) return [entry.flowFeature]
+    const segments: number[][][] = []
+    let current: number[][] = []
+    entry.rawCoordinates.forEach((coordinate, index) => {
+      const clipped = clippingNodes.some((node) => topologyDistanceMeters(
+        { longitude: coordinate[0], latitude: coordinate[1] },
+        node,
+      ) <= node.radiusMeters * 1.05)
+      if (clipped) {
+        if (current.length >= 2) segments.push(current)
+        current = []
+        return
+      }
+      current.push(entry.flowCoordinates[index])
+    })
+    if (current.length >= 2) segments.push(current)
+    return segments.map((coordinates, index) => ({
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates },
+      properties: {
+        ...entry.flowFeature.properties as Record<string, unknown>,
+        clipped_segment: index,
+      },
+    }))
   }
 
   private async loadMarkerModels(): Promise<void> {
@@ -447,11 +520,14 @@ export class IntersectionTopologyLayer {
       latitude,
       topologyFlowHeight([longitude, latitude], this.nodes, 'base'),
     ]))
-    const flowProjected = route.coordinates.map(([longitude, latitude]) => this.projector([
-      longitude,
-      latitude,
-      topologyFlowHeight([longitude, latitude], this.nodes, 'flow'),
-    ]))
+    const flowProjected = route.coordinates.map(([longitude, latitude]) => {
+      const projected = this.projector([
+        longitude,
+        latitude,
+        topologyFlowHeight([longitude, latitude], this.nodes, 'flow'),
+      ])
+      return [projected[0], projected[1], projected[2] ?? 0]
+    })
     const properties = {
       topology_id: route.routeId,
       distance_m: Math.round(directDistanceMeters),
@@ -475,6 +551,8 @@ export class IntersectionTopologyLayer {
         },
         properties,
       },
+      rawCoordinates: route.coordinates.map((coordinate) => [...coordinate]),
+      flowCoordinates: flowProjected,
       samples: baseProjected
         .filter((_, index) => index % 8 === 0 || index === baseProjected.length - 1)
         .map((coordinate) => [coordinate[0], coordinate[1]]),

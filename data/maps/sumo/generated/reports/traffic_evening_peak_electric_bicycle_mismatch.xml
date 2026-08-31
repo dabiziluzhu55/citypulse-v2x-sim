@@ -1,4 +1,4 @@
 <?xml version='1.0' encoding='utf-8'?>
 <data native="false" reason="legacy-routeSampler-via-mismatch-unsupported">
-  <warning routeSampler="/usr/share/sumo/tools/routeSampler.py" turnCounts="/home/kemove/devdata1/lyx/citypulse-v2x-sim/data/maps/sumo/generated/traffic/.work/counts_evening_peak_round1_electric_bicycle.xml">The installed routeSampler can optimize via edge relations but crashes while serializing their native mismatch XML. Use the CityPulse traffic quality JSON/CSV for authoritative PCU, GEH, and zero-flow validation.</warning>
+  <warning routeSampler="/usr/share/sumo/tools/routeSampler.py" turnCounts="/home/kemove/devdata1/zrl/citypulse-v2x-sim/data/maps/sumo/generated/traffic/.work_global/counts_global_evening_peak_round1_electric_bicycle.xml">The installed routeSampler can optimize via edge relations but crashes while serializing their native mismatch XML. Use the CityPulse traffic quality JSON/CSV for authoritative PCU, GEH, and zero-flow validation.</warning>
 </data>

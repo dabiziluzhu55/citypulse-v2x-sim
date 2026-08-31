@@ -76,6 +76,13 @@ test('keeps asynchronous backend failures actionable and preserves raw details',
     simulationSnapshotErrorMessage({ state: 'FAILED', error: 'model checkpoint not found' }),
     /算法模型文件缺失.*model checkpoint not found/,
   )
+  assert.match(
+    simulationSnapshotErrorMessage({
+      state: 'FAILED',
+      error: "Vehicle 'passenger_0_1229.0' has no valid route. No connection between edge '-56384' and edge '-56915'.",
+    }),
+    /扰动车道导致路线不可达.*-56384.*-56915.*后端详情/,
+  )
   assert.equal(
     simulationSnapshotErrorMessage({ state: 'RUNNING', error: null }),
     null,

@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from simulation.sumo.engine.session import SimulationSnapshot
 
@@ -83,6 +83,29 @@ class TrafficMetricsCollector:
         }
         if not self._fuel_meta_by_type:
             self._warn("初始化数据缺少车辆燃油元数据，燃油强度不可计算")
+
+    def update_fuel_meta_by_type(
+        self, mapping: Mapping[str, VehicleTypeFuelMeta]
+    ) -> None:
+        """合并新增/更新的车型燃油元数据，不覆盖已有映射中未出现的类型"""
+
+        for type_id, meta in mapping.items():
+            key = str(type_id)
+            if not key:
+                continue
+            self._fuel_meta_by_type[key] = meta
+
+    def missing_fuel_meta_type_ids(self, type_ids: Iterable[str]) -> list[str]:
+        missing: list[str] = []
+        seen: set[str] = set()
+        for type_id in type_ids:
+            key = str(type_id or "")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            if key not in self._fuel_meta_by_type:
+                missing.append(key)
+        return missing
 
     def set_powertrain_by_type(self, mapping: Mapping[str, str]) -> None:
 
@@ -259,16 +282,22 @@ class TrafficMetricsCollector:
         records = self._closed + list(self._active.values())
         fuel_records: list[dict[str, Any]] = []
         for record in records:
-            type_id = str(record.get("type_id", ""))
-            if type_id not in self._fuel_meta_by_type:
-                self._warn(
-                    f"车辆类型 {type_id!r} 缺少powertrain，燃油强度记为不可用"
-                )
-                return None
-            powertrain = self._fuel_meta_by_type[type_id].powertrain
-            if powertrain in FUEL_POWERTRAINS:
+            type_id = str(record.get("type_id", "") or "")
+            meta = self._fuel_meta_by_type.get(type_id)
+            if meta is None:
+                if type_id:
+                    self._warn(
+                        f"车辆类型 {type_id!r} 缺少powertrain"
+                    )
+                else:
+                    self._warn("存在空车辆类型")
+                continue
+            if meta.powertrain in FUEL_POWERTRAINS:
                 fuel_records.append(record)
 
+        if not fuel_records:
+            self._warn("没有可用的燃油车辆数据，燃油强度记为不可用")
+            return None
         total_distance_m = sum(float(r["last_distance"]) for r in fuel_records)
         total_fuel_ml = sum(float(r["last_fuel_ml"]) for r in fuel_records)
         if total_distance_m <= 0:

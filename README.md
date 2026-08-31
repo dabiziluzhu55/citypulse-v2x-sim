@@ -32,7 +32,7 @@
 - 评估脚本在`traffic_eval/`（Backend封装；算法可直接import，无需启动后端）
 - `traffic_eval`：**Backend 容器封装**；sumo容器也需封装以便本地命令工具复用同一包，但Worker的仿真进程不负责指标计算
 
-- IPPO等含torch的推理只在SUMO Worker进程内运行，Backend启动不导入torch
+- IPPO等含torch的管控推理只在SUMO Worker进程内运行；Backend可带CPU torch用于NarrowNet-TDP短时交通预测
 
 ### 管控模式
 
@@ -128,7 +128,15 @@ python -m simulation.sumo.engine.run --gui --realtime --mode fixed \
   --intersection demo_2 --period morning_peak
 ```
 
-### 5. 多会话(redis模式)
+构建命令还会使用 SUMO routeSampler 联合拟合 20 个路口，按
+`data/maps/sumo/traffic/traffic_generation_policy.json` 为不同车型筛选长短途候选路线，生成早高峰、
+平峰和晚高峰 3 个全局真实车流场景，并按最终车流的起止区域生成对应的九区域 OD PCU 矩阵。
+数据口径、总量校验和场景切换见 [docs/sumo.md](docs/sumo.md) 的构建部分。
+
+后端可调用的会话、时间窗口、局部管控范围、交通倍率和扰动事件接口见
+[docs/sumo.md](docs/sumo.md)。
+
+### CARLA+SUMO联合仿真
 
 ```bash
 docker compose -f compose.redis.yml up -d
@@ -144,7 +152,7 @@ Worker使用prefork，一子进程同时只跑一个SUMO会话;与后端Backend�
 | 容器 | 内容 |
 |------|------|
 | frontend | 静态资源/Nginx |
-| backend | FastAPI，无SUMO/无torch |
+| backend | FastAPI+CPU torch（NarrowNet-TDP预测），无SUMO |
 | sumo-worker | `simulation`+`traffic_control`+SUMO(+torch) |
 | redis | 队列与会话状态 |
 

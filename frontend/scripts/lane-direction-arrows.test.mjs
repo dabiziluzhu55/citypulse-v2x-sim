@@ -88,17 +88,17 @@ test('audits the fixed twenty-intersection arrow contract', () => {
     }
   }
 
-  assert.equal(controlledLaneCount, 120)
-  assert.equal(multiMovementLaneCount, 96)
+  assert.equal(controlledLaneCount, 156)
+  assert.equal(multiMovementLaneCount, 97)
   assert.equal(bicycleClassificationCount, 29)
   assert.deepEqual(Object.fromEntries([...patterns].sort()), {
-    l: 6,
+    l: 16,
     'l+r': 5,
-    'l+s': 30,
-    'l+s+r': 26,
-    r: 3,
-    s: 15,
-    's+r': 35,
+    'l+s': 29,
+    'l+s+r': 18,
+    r: 9,
+    s: 34,
+    's+r': 45,
   })
 })
 
