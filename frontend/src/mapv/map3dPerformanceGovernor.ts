@@ -4,9 +4,9 @@ export interface Map3dPerformanceStats {
   longTaskCount: number
 }
 
-export const MAP3D_NORMAL_FRAME_RATE = 45
-export const MAP3D_STABLE_FRAME_RATE = 30
-export const MAP3D_LOW_FPS_THRESHOLD = 38
+export const MAP3D_NORMAL_FRAME_RATE = 30
+export const MAP3D_STABLE_FRAME_RATE = 24
+export const MAP3D_LOW_FPS_THRESHOLD = 26
 const LOW_FPS_WINDOW_MS = 5_000
 const LONG_TASK_THRESHOLD_MS = 100
 const LONG_TASK_WINDOW_MS = 60_000

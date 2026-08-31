@@ -2,9 +2,10 @@ export const ACTIVE_SESSION_ID_KEY = 'citypulse.active_session_id'
 export const ACTIVE_SIMULATION_CONTEXT_KEY = 'citypulse.active_simulation_context'
 
 export const STATUS_POLL_INTERVAL_MS = 2_000
-// Two full-network snapshots per second are sufficient for buffered animation and
-// substantially reduce JSON serialization pressure in 20-intersection sessions.
-export const SIMULATION_SNAPSHOT_INTERVAL_MS = 500
+// A stable one-second authoritative frame is preferable to missing a 500 ms
+// deadline for full-network payloads. The presentation timeline interpolates
+// between these frames; lower this only after stream P95 stays below 250 ms.
+export const SIMULATION_SNAPSHOT_INTERVAL_MS = 1_000
 
 export const DEFAULT_INTERSECTION_ID = 'demo_2'
 

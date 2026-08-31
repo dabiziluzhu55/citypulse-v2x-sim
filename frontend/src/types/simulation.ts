@@ -67,7 +67,8 @@ export interface LaneClosureDisturbanceTarget extends DisturbanceTargetBase {
 export interface SpeedLimitDisturbanceTarget extends DisturbanceTargetBase {
   event_type: 'speed_limit'
   lane_ids?: string[]
-  max_speed?: number
+  /** 后端/SUMO 使用 m/s。 */
+  max_speed: number
 }
 
 export interface AccidentDisturbanceTarget extends DisturbanceTargetBase {

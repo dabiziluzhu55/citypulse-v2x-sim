@@ -200,11 +200,15 @@ export class VehicleViewportPipeline {
       if (vehicle.longitude == null || vehicle.latitude == null) continue
       const coordinate = this.projector([vehicle.longitude, vehicle.latitude, 0])
       const mapCoordinate: [number, number] = [coordinate[0], coordinate[1]]
+      // Nearby roads can fall inside the detailed-area polygon without being
+      // part of this intersection manifest. Do not classify those vehicles as
+      // authoritative viewport vehicles, otherwise staging becomes
+      // `selection_empty` and the scene switch rolls back.
+      if (!resolver.hasLane(vehicle.lane_id)) continue
       const belongsToViewport = resolver.coversDetailedArea(mapCoordinate)
         || resolver.covers(vehicle.lane_id, mapCoordinate)
       if (!belongsToViewport) continue
       viewportVehicleIds.push(vehicle.vehicle_id)
-      if (!resolver.hasLane(vehicle.lane_id)) continue
       selectedVehicleIds.push(vehicle.vehicle_id)
       const profile = resolveVehicleModelProfile(vehicle.type_id)
       const pose = resolver(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from queue import Empty
@@ -214,22 +215,26 @@ async def simulation_stream(websocket: WebSocket, session_id: str) -> None:
     logger.info("WebSocket connected for session %s", session_id)
 
     async def _send_snapshot(snapshot) -> bool:
-        """推送快照；若为终态则先完成指标回填再推送唯一最终帧，返回是否应结束流"""
-
-        if snapshot.state in TERMINAL_STATES:
-            payload = await asyncio.to_thread(
-                service.serialize_terminal_snapshot, snapshot
-            )
-            await websocket.send_json({"type": "snapshot", "data": payload})
-            return True
-        await websocket.send_json(
-            {
-                "type": "snapshot",
-                "data": service.serialize_snapshot(snapshot),
-            }
+        terminal = snapshot.state in TERMINAL_STATES
+        serializer = (
+            service.serialize_terminal_snapshot
+            if terminal
+            else service.serialize_snapshot
         )
-        return False
 
+        message = await asyncio.to_thread(
+            lambda: json.dumps(
+                {
+                    "type": "snapshot",
+                    "data": serializer(snapshot),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
+
+        await websocket.send_text(message)
+        return terminal
     try:
         # 支持从QUEUED一直推送到终态
         initial_snapshot = subscription.get(timeout=2.0)

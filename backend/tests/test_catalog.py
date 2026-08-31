@@ -20,9 +20,11 @@ def test_catalog_returns_scenario_presets(client: TestClient) -> None:
         "xiongan_20",
     ]
     east_dense = next(item for item in presets if item["preset_id"] == "east_dense")
+    assert east_dense["label"] == "校园周边场景"
     assert east_dense["intersection_ids"] == ["demo_3", "demo_5", "demo_6", "demo_9"]
     assert east_dense["map_template"] == "east_dense"
     west_dense = next(item for item in presets if item["preset_id"] == "west_dense")
+    assert west_dense["label"] == "窄路密网片区场景"
     assert west_dense["intersection_ids"] == ["demo_14", "demo_15", "demo_19"]
 
 

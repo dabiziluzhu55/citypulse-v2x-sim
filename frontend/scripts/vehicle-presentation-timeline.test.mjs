@@ -85,7 +85,9 @@ test('removes a vehicle exactly when the delayed authoritative roster removes it
   const boundarySample = timeline.sample()
   assert.equal(boundarySample?.elapsedSeconds, 1.5)
   assert.deepEqual(boundarySample?.view.vehicles.map((item) => item.vehicle_id), ['departed'])
-  timeline.tick(5_500)
+  for (let frame = 1; frame <= 60; frame += 1) {
+    timeline.tick(4_500 + frame * (1_000 / 60))
+  }
   const removedSample = timeline.sample()
   assert.ok((removedSample?.elapsedSeconds ?? 0) >= 2.5)
   assert.deepEqual(removedSample?.view.vehicles, [])
@@ -113,7 +115,7 @@ test('does not mistake a bursty source for permission to accelerate a 1x present
   assert.ok(stats.rateCorrection <= 0.01 + 1e-9)
 })
 
-test('expands the shared delay for 5x Twin lookahead without exceeding four seconds', () => {
+test('expands the shared delay for 5x Twin lookahead without exceeding six seconds', () => {
   const timeline = new VehiclePresentationTimeline()
   for (let sequence = 0; sequence <= 8; sequence += 1) {
     timeline.push(
@@ -125,16 +127,16 @@ test('expands the shared delay for 5x Twin lookahead without exceeding four seco
     )
   }
   const expandedDelay = timeline.stats().delaySeconds
-  assert.equal(expandedDelay, 3)
+  assert.equal(expandedDelay, 6)
 
   timeline.push(trafficView(22.5, [vehicle('five-x', 116.00009)]), 9, 'RUNNING', 1, 5_000)
   const reducedDelay = timeline.stats().delaySeconds
-  assert.equal(reducedDelay, expandedDelay)
+  assert.equal(reducedDelay, 5.975)
 
   timeline.push(trafficView(25, [vehicle('five-x', 116.0001)]), 10, 'RUNNING', 5, 6_200)
-  assert.equal(timeline.stats().delaySeconds, 3.7)
+  assert.equal(timeline.stats().delaySeconds, 6)
   timeline.push(trafficView(27.5, [vehicle('five-x', 116.00011)]), 11, 'RUNNING', 5, 8_200)
-  assert.equal(timeline.stats().delaySeconds, 4)
+  assert.equal(timeline.stats().delaySeconds, 6)
 })
 
 test('retains authority around the display cursor instead of jumping it forward', () => {
@@ -165,7 +167,7 @@ test('retains authority around the display cursor instead of jumping it forward'
   assert.equal(sample?.view.elapsed_seconds, stats.displayElapsedSeconds)
 })
 
-test('advances a long main-thread frame at no more than 101 percent wall-clock speed', () => {
+test('caps a long main-thread frame to one smooth presentation step', () => {
   const timeline = new VehiclePresentationTimeline()
   for (let sequence = 0; sequence <= 8; sequence += 1) {
     timeline.push(
@@ -186,8 +188,8 @@ test('advances a long main-thread frame at no more than 101 percent wall-clock s
   )
   const after = timeline.tick(4_250)
   assert.ok(before != null && after != null)
-  assert.ok(after - before >= 0.25 - 1e-9)
-  assert.ok(after - before <= 0.25 * 1.01 + 1e-9)
+  assert.ok(after - before > 0)
+  assert.ok(after - before <= 0.05 * 1.01 + 1e-9)
 })
 
 test('freezes a paused or terminal presentation on the latest authoritative endpoint', () => {

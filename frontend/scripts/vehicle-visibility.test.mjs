@@ -87,6 +87,10 @@ const vehicleRendererSource = await readFile(
   new URL('../src/mapv/BaiduVehicleRenderer.ts', import.meta.url),
   'utf8',
 )
+const vehicleMotionBufferSource = await readFile(
+  new URL('../src/mapv/vehicleMotionBuffer.ts', import.meta.url),
+  'utf8',
+)
 const vehicleTwinPresenterSource = await readFile(
   new URL('../src/mapv/vehicleTwinPresenter.ts', import.meta.url),
   'utf8',
@@ -1345,7 +1349,23 @@ test('paces Twin output while keeping source, viewport, and selected rosters sep
   assert.match(vehicleRendererSource, /this\.pushMotionFrameAt\(pacing\.sampleWallTimeMs, wallTimeMs\)/)
   assert.match(vehicleRendererSource, /recordSourceRoster\(context\.sequence/)
   assert.match(vehicleRendererSource, /!lanePose\s*&& this\.lanePoseResolver\?\.hasLane\(vehicle\.lane_id\)/)
+  assert.match(vehicleRendererSource, /LANE_RECOVERY_HOLD_SECONDS = 1\.5/)
+  assert.match(vehicleRendererSource, /heldForLaneRecovery: true/)
+  assert.match(
+    vehicleRendererSource,
+    /const rawFallback = lanePose === null[\s\S]{0,120}&& !rejectedInsideDetailedLane/,
+  )
+  assert.match(
+    vehicleRendererSource,
+    /if \(rejectedInsideDetailedLane\) \{[\s\S]{0,520}return null/,
+  )
+  assert.match(vehicleRendererSource, /invalidPoseReentrySnapshots/)
+  assert.match(
+    vehicleMotionBufferSource,
+    /MAX_LEGAL_POSE_HOLD_SECONDS = MAX_VEHICLE_BUFFER_SECONDS/,
+  )
   assert.doesNotMatch(vehicleRendererSource, /rejectedInsideDetailedLane[\s\S]{0,160}coversDetailedArea/)
+  assert.doesNotMatch(vehicleRendererSource, /samples = collisionAudit\.acceptedSamples/)
   assert.match(vehicleRendererSource, /sourceVehicleIds,/)
   assert.match(vehicleRendererSource, /viewportVehicleIds,/)
   assert.match(vehicleRendererSource, /selectedVehicleIds: visible\.map/)
@@ -1486,6 +1506,17 @@ test('uses a speed-aware outlier gate for same-lane positions', () => {
     0,
     11,
   ), false)
+  assert.equal(vehiclePoseDisplacementIsStable(
+    {
+      longitude: 116,
+      latitude: 39,
+      elapsedSeconds: 10,
+      speedMetersPerSecond: 10,
+    },
+    { longitude: 116.0001, latitude: 39 },
+    0,
+    11,
+  ), true)
 })
 
 test('keeps stop-boundary state diagnostic-only after a vehicle crosses it', () => {
@@ -2381,22 +2412,141 @@ test('maps legacy source progress linearly without a local speed peak', () => {
   }
 })
 
-test('rejects an unconfirmed lane tangent that conflicts with the SUMO heading', () => {
+test('uses observed movement when an unconfirmed lane tangent conflicts with it', () => {
   const previous = resolveStableVehicleHeading({
-    sourceMapHeading: mapHeading(90),
+    sourceMapHeading: 0,
     speedMetersPerSecond: 8,
     current: { longitude: 116, latitude: 39 },
     timeSeconds: 0,
   }, null)
   const turning = resolveStableVehicleHeading({
-    sourceMapHeading: mapHeading(90),
+    sourceMapHeading: 0,
     speedMetersPerSecond: 8,
     current: { longitude: 116.00001, latitude: 39 },
     timeSeconds: 1,
     laneHeading: Math.PI / 2,
   }, previous.state)
 
-  assert.ok(Math.abs(shortestAngleDelta(turning.heading, mapHeading(90))) < 1e-9)
+  assert.ok(Math.abs(shortestAngleDelta(turning.heading, 0)) < 1e-9)
+})
+
+test('keeps the last legal 3D pose available throughout the lane recovery window', () => {
+  const buffer = new VehicleMotionBuffer()
+  const frames = [
+    { elapsedSeconds: 0, x: 0, motionEpoch: 0 },
+    { elapsedSeconds: 0.5, x: 5, motionEpoch: 0 },
+    { elapsedSeconds: 1, x: 10, motionEpoch: 0 },
+    { elapsedSeconds: 1.5, x: 15, motionEpoch: 1 },
+    { elapsedSeconds: 2, x: 20, motionEpoch: 0 },
+    { elapsedSeconds: 2.5, x: 25, motionEpoch: 1 },
+    { elapsedSeconds: 3, x: 30, motionEpoch: 0 },
+    { elapsedSeconds: 3.5, x: 35, motionEpoch: 1 },
+  ]
+  frames.forEach((frame, sequence) => buffer.push({
+    sceneGeneration: 0,
+    sequence,
+    elapsedSeconds: frame.elapsedSeconds,
+    arrivalTimeMs: frame.elapsedSeconds * 1_000,
+    samples: [{
+      ...motionSample('recovery-window-hold', frame.x),
+      sceneGeneration: 0,
+      motionEpoch: frame.motionEpoch,
+      sampleQuality: 'authoritative',
+    }],
+    presentVehicleIds: ['recovery-window-hold'],
+  }))
+
+  const legal = buffer.sampleResult(750, 0.75)
+  assert.equal(legal.status, 'ready')
+  assert.equal(legal.samples[0].sampleQuality, 'authoritative')
+
+  const held = buffer.sampleResult(3_250, 3.25)
+  assert.equal(held.status, 'ready')
+  assert.equal(held.samples[0].sampleQuality, 'held')
+  assert.deepEqual(held.samples[0].point, legal.samples[0].point)
+  assert.deepEqual(buffer.stats().hiddenUnresolvedVehicleIds, [])
+})
+
+test('uses straight displacement when raw heading conflicts below 90 degrees', () => {
+  const previous = resolveStableVehicleHeading({
+    sourceMapHeading: 0,
+    speedMetersPerSecond: 8,
+    current: { longitude: 116, latitude: 39 },
+    timeSeconds: 0,
+  }, null)
+  const oneMeterEast = 1 / (Math.cos(39 * Math.PI / 180) * 110_900)
+  const current = resolveStableVehicleHeading({
+    sourceMapHeading: Math.PI / 3,
+    speedMetersPerSecond: 8,
+    current: { longitude: 116 + oneMeterEast, latitude: 39 },
+    timeSeconds: 1,
+    laneHeading: 0,
+    topologyConfirmed: false,
+  }, previous.state)
+
+  assert.ok(Math.abs(shortestAngleDelta(current.heading, 0)) < 1e-9)
+})
+
+test('rejects a topology tangent that conflicts with actual movement', () => {
+  const previous = resolveStableVehicleHeading({
+    sourceMapHeading: 0,
+    speedMetersPerSecond: 8,
+    current: { longitude: 116, latitude: 39 },
+    timeSeconds: 0,
+  }, null)
+  const oneMeterEast = 1 / (Math.cos(39 * Math.PI / 180) * 110_900)
+  const current = resolveStableVehicleHeading({
+    sourceMapHeading: 0,
+    speedMetersPerSecond: 8,
+    current: { longitude: 116 + oneMeterEast, latitude: 39 },
+    timeSeconds: 1,
+    laneHeading: Math.PI / 2,
+    topologyConfirmed: true,
+  }, previous.state)
+
+  assert.ok(Math.abs(shortestAngleDelta(current.heading, 0)) < 1e-9)
+})
+
+test('initializes a detailed vehicle from its resolved lane tangent', () => {
+  const first = resolveStableVehicleHeading({
+    sourceMapHeading: Math.PI,
+    speedMetersPerSecond: 8,
+    current: { longitude: 116, latitude: 39 },
+    timeSeconds: 0,
+    laneHeading: 0,
+    topologyConfirmed: true,
+  }, null)
+
+  assert.ok(Math.abs(shortestAngleDelta(first.heading, 0)) < 1e-9)
+  assert.doesNotMatch(vehicleRendererSource, /topologyHeadingConsistent/)
+  assert.match(
+    vehicleRendererSource,
+    /const topologyConfirmed = Boolean\([\s\S]{0,120}lanePose[\s\S]{0,120}!draft\.laneChanging/,
+  )
+})
+
+test('rate-limits confirmed lane heading while displacement is below the motion threshold', () => {
+  const previous = resolveStableVehicleHeading({
+    sourceMapHeading: 0,
+    speedMetersPerSecond: 2,
+    current: { longitude: 116, latitude: 39 },
+    timeSeconds: 0,
+  }, null)
+  const creeping = resolveStableVehicleHeading({
+    sourceMapHeading: 0,
+    speedMetersPerSecond: 0.6,
+    current: { longitude: 116, latitude: 39 },
+    timeSeconds: 0.25,
+    laneHeading: Math.PI / 2,
+    topologyConfirmed: true,
+  }, previous.state)
+
+  const expectedTurn = MAX_VEHICLE_HEADING_RATE * 0.25
+  assert.ok(Math.abs(shortestAngleDelta(creeping.heading, expectedTurn)) < 1e-9)
+  assert.ok(Math.abs(shortestAngleDelta(
+    creeping.state.reliableHeading,
+    creeping.heading,
+  )) < 1e-9)
 })
 
 test('uses a topology-confirmed tangent without the generic raw heading rate limit', () => {
@@ -2418,20 +2568,19 @@ test('uses a topology-confirmed tangent without the generic raw heading rate lim
 })
 
 test('limits heading changes to 120 degrees per simulation second', () => {
-  const targetHeading = mapHeading(270)
+  const targetHeading = Math.PI
   const previous = resolveStableVehicleHeading({
-    sourceMapHeading: mapHeading(90),
+    sourceMapHeading: 0,
     speedMetersPerSecond: 8,
     current: { longitude: 116, latitude: 39 },
     timeSeconds: 0,
-    laneHeading: 0,
   }, null)
   const turning = resolveStableVehicleHeading({
     sourceMapHeading: targetHeading,
     speedMetersPerSecond: 8,
     current: {
-      longitude: 116 + Math.cos(targetHeading) / (Math.cos(39 * Math.PI / 180) * 110_900),
-      latitude: 39 + Math.sin(targetHeading) / 110_900,
+      longitude: 116 - 1 / (Math.cos(39 * Math.PI / 180) * 110_900),
+      latitude: 39,
     },
     timeSeconds: 0.5,
     laneHeading: Math.PI,

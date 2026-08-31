@@ -4,7 +4,7 @@ import { VEHICLE_TWIN_RENDER_DELAY_MS } from './vehicleTwinPresentation.ts'
 import { interpolateCanonicalVehiclePosition } from './canonicalVehicleMotion.ts'
 
 export const MIN_SHARED_VEHICLE_DELAY_SECONDS = 3
-export const MAX_SHARED_VEHICLE_DELAY_SECONDS = 4
+export const MAX_SHARED_VEHICLE_DELAY_SECONDS = 6
 const LOW_BUFFER_SECONDS = 1
 const RECOVERY_BUFFER_SECONDS = 1
 const MAX_PRESENTATION_FRAMES = 256
@@ -16,6 +16,7 @@ const MAX_RATE_RATIO_INCREASE_PER_SECOND = 0.02
 const AUTHORITY_EXHAUSTION_EPSILON_SECONDS = 1e-4
 const PRESENTATION_HISTORY_SECONDS = 30
 const MAX_TRACKED_SOURCE_RATE = 20
+const MAX_PRESENTATION_TICK_SECONDS = 0.05
 
 interface PresentationSourceFrame {
   sequence: number
@@ -92,7 +93,43 @@ function interpolateVehicle(
     || canonicalPosition.latitude == null
     || canonicalPosition.sourceX == null
     || canonicalPosition.sourceY == null
-  ) return null
+  ) {
+    const longitude = interpolateNumber(left.longitude, right.longitude, ratio)
+    const latitude = interpolateNumber(left.latitude, right.latitude, ratio)
+    const x = interpolateNumber(left.x, right.x, ratio)
+    const y = interpolateNumber(left.y, right.y, ratio)
+
+    if (
+      longitude == null
+      || latitude == null
+      || x == null
+      || y == null
+    ) return null
+
+    return {
+      ...(pickRight ? right : left),
+      longitude,
+      latitude,
+      x,
+      y,
+      speed: Math.max(0, left.speed + (right.speed - left.speed) * ratio),
+      angle: left.angle + shortestAngleDelta(left.angle, right.angle) * ratio,
+      lane_id: ratio < 0.5 ? left.lane_id : right.lane_id,
+      acceleration:
+        interpolateNumber(left.acceleration, right.acceleration, ratio)
+        ?? undefined,
+      lane_position:
+        interpolateNumber(left.lane_position, right.lane_position, ratio)
+        ?? undefined,
+      canonical_segment_id: undefined,
+      canonical_route_evidence: undefined,
+      canonical_heading_radians: undefined,
+      canonical_source_x: x,
+      canonical_source_y: y,
+      canonical_lane_station: undefined,
+      canonical_motion_resolved: false,
+    }
+  }
   const canonicalAngle = canonicalPosition.headingRadians == null
     ? left.angle + shortestAngleDelta(left.angle, right.angle) * ratio
     : ((90 - canonicalPosition.headingRadians * 180 / Math.PI) % 360 + 360) % 360
@@ -117,6 +154,41 @@ function interpolateVehicle(
     canonical_source_x: canonicalPosition.sourceX,
     canonical_source_y: canonicalPosition.sourceY,
     canonical_lane_station: canonicalPosition.laneStation ?? undefined,
+  }
+}
+
+function extrapolateDepartingVehicle(
+  vehicle: TrafficVehicleView,
+  durationSeconds: number,
+): TrafficVehicleView {
+  if (
+    vehicle.longitude == null
+    || vehicle.latitude == null
+    || !Number.isFinite(vehicle.speed)
+    || !Number.isFinite(vehicle.angle)
+  ) return vehicle
+
+  const distanceMeters = Math.min(
+    15,
+    Math.max(0, vehicle.speed) * durationSeconds,
+  )
+  const heading = (90 - vehicle.angle) * Math.PI / 180
+  const latitudeRadians = vehicle.latitude * Math.PI / 180
+
+  return {
+    ...vehicle,
+    x: vehicle.x + Math.cos(heading) * distanceMeters,
+    y: vehicle.y + Math.sin(heading) * distanceMeters,
+    longitude:
+      vehicle.longitude
+      + Math.cos(heading) * distanceMeters
+        / Math.max(1, 111_320 * Math.cos(latitudeRadians)),
+    latitude:
+      vehicle.latitude
+      + Math.sin(heading) * distanceMeters / 110_574,
+    lane_position: Number.isFinite(vehicle.lane_position)
+      ? Number(vehicle.lane_position) + distanceMeters
+      : vehicle.lane_position,
   }
 }
 
@@ -167,9 +239,18 @@ export class VehiclePresentationTimeline {
           MIN_SHARED_VEHICLE_DELAY_SECONDS,
           MAX_SHARED_VEHICLE_DELAY_SECONDS,
         )
-        const twinLeadDelay = VEHICLE_TWIN_RENDER_DELAY_MS / 1_000
-          * Math.max(1, Number(playbackRate) || 1)
-          + intervalMs / 1_000
+
+        const effectivePlaybackRate = Math.max(
+          1,
+          Number(playbackRate) || 1,
+        )
+
+        // Twin 的 500ms 是墙钟时间，需要换算为仿真时间。
+        // 另外至少预留两个权威快照间隔。
+        const twinLeadDelay =
+          VEHICLE_TWIN_RENDER_DELAY_MS / 1_000 * effectivePlaybackRate
+          + Math.max(1, simulationDeltaSeconds * 2)
+
         const desiredDelay = Math.min(
           MAX_SHARED_VEHICLE_DELAY_SECONDS,
           Math.max(requestedDelay, twinLeadDelay),
@@ -210,10 +291,17 @@ export class VehiclePresentationTimeline {
       return this.displayElapsedSeconds
     }
 
-    const wallDeltaSeconds = this.lastTickWallTimeMs == null
+    const rawWallDeltaSeconds = this.lastTickWallTimeMs == null
       ? 0
       : Math.max(0, (wallTimeMs - this.lastTickWallTimeMs) / 1_000)
     this.lastTickWallTimeMs = wallTimeMs
+
+    // 主线程发生长任务时，不让车辆在恢复后的单帧中跳过整段时间。
+    // 丢失的展示时间转化为额外缓冲延迟，后续缓慢消化。
+    const wallDeltaSeconds = Math.min(
+      rawWallDeltaSeconds,
+      MAX_PRESENTATION_TICK_SECONDS,
+    )
     if (latest.state !== 'RUNNING' && latest.state !== 'STARTING' && latest.state !== 'STOPPING') {
       this.displayElapsedSeconds = latest.elapsedSeconds
       this.presentationState = 'playing'
@@ -229,9 +317,18 @@ export class VehiclePresentationTimeline {
         this.rateCorrection = -1
         return this.displayElapsedSeconds
       }
+
       this.presentationState = 'playing'
+
+      // 已经重新获得完整缓冲，直接恢复正常墙钟速率。
+      this.presentationRateRatio = 1
+      this.rateCorrection = 0
+
       if (this.starvationStartedAtMs != null) {
-        this.completedStarvationDurationMs += Math.max(0, wallTimeMs - this.starvationStartedAtMs)
+        this.completedStarvationDurationMs += Math.max(
+          0,
+          wallTimeMs - this.starvationStartedAtMs,
+        )
         this.starvationStartedAtMs = null
       }
     }
@@ -310,7 +407,11 @@ export class VehiclePresentationTimeline {
     const unresolvedVehicleIds = new Set<string>()
     const vehicles = roster.flatMap((vehicle): TrafficVehicleView[] => {
       const rightVehicle = rightById.get(vehicle.vehicle_id)
-      if (!rightVehicle) return [vehicle]
+      if (!rightVehicle) {
+        const projectedRight = extrapolateDepartingVehicle(vehicle, duration)
+        const projected = interpolateVehicle(vehicle, projectedRight, ratio)
+        return [projected ?? vehicle]
+      }
       const interpolated = interpolateVehicle(vehicle, rightVehicle, ratio)
       if (interpolated) return [interpolated]
       unresolvedVehicleIds.add(vehicle.vehicle_id)

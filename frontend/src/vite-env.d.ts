@@ -7,6 +7,7 @@ declare module '*.vue' {
 }
 
 interface ImportMetaEnv {
+  readonly VITE_CARTO_BASEMAP_KEY?: string
   readonly VITE_BACKEND_PROXY_TARGET?: string
   readonly VITE_API_BASE_URL?: string
   readonly VITE_TRAFFIC_WS_URL?: string

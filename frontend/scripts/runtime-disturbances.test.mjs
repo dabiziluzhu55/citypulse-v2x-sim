@@ -143,7 +143,7 @@ test('the SUMO-derived event lane index resolves all non-cancelled states and in
     'utf8',
   ))
   const index = parseEventLanePositionIndex(raw)
-  assert.equal(index.networkSource.sha256, '1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36')
+  assert.equal(index.networkSource.sha256, '20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e')
   assert.equal(index.entries.length, index.laneCount)
   assert.ok(index.entries.length > 6_000)
   assert.equal(new Set(index.entries.map((entry) => entry.intersectionId)).size, 20)

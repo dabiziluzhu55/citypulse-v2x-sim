@@ -658,14 +658,27 @@ class SimulationManager:
             if record and channel in record.subscribers:
                 record.subscribers.remove(channel)
 
-    def _publish(self, record: _SessionRecord, snapshot: SimulationSnapshot) -> None:
+    def _publish(
+        self,
+        record: _SessionRecord,
+        snapshot: SimulationSnapshot,
+    ) -> None:
         with self._lock:
             record.snapshot = snapshot
+
             for channel in tuple(record.subscribers):
+                try:
+                    channel.put_nowait(snapshot)
+                    continue
+                except queue.Full:
+                    pass
+
+                # 队列已满时只丢弃最旧的一帧。
                 try:
                     channel.get_nowait()
                 except queue.Empty:
                     pass
+
                 try:
                     channel.put_nowait(snapshot)
                 except queue.Full:
@@ -891,6 +904,7 @@ class SimulationManager:
                     arrived_ids,
                     elapsed,
                 )
+                vehicle_tracker.sync_subscription_results()
                 departed = len(departed_ids)
                 arrived = len(arrived_ids)
                 total_departed += departed
@@ -1447,14 +1461,14 @@ def _capture_snapshot(
     speeds = []
     for vehicle_id in traci.vehicle.getIDList():
         vehicle_id = str(vehicle_id)
-        x, y = traci.vehicle.getPosition(vehicle_id)
-        speed = float(traci.vehicle.getSpeed(vehicle_id))
-        angle = float(traci.vehicle.getAngle(vehicle_id))
-        road_id = str(traci.vehicle.getRoadID(vehicle_id))
-        lane_id = str(traci.vehicle.getLaneID(vehicle_id))
-        speeds.append(speed)
         telemetry = vehicle_tracker.runtime_fields(vehicle_id)
         if telemetry is not None:
+            x, y = telemetry["position"]
+            speed = float(telemetry["speed"])
+            angle = float(telemetry["angle"])
+            road_id = str(telemetry["road_id"])
+            lane_id = str(telemetry["lane_id"])
+            speeds.append(speed)
             action = (
                 vehicle_action_controller.current_action(vehicle_id)
                 if vehicle_action_controller is not None
@@ -1492,6 +1506,12 @@ def _capture_snapshot(
                 )
             )
             continue
+        x, y = traci.vehicle.getPosition(vehicle_id)
+        speed = float(traci.vehicle.getSpeed(vehicle_id))
+        angle = float(traci.vehicle.getAngle(vehicle_id))
+        road_id = str(traci.vehicle.getRoadID(vehicle_id))
+        lane_id = str(traci.vehicle.getLaneID(vehicle_id))
+        speeds.append(speed)
         vehicle_values.append(
             VehicleRuntimeSnapshot(
                 vehicle_id=str(vehicle_id),

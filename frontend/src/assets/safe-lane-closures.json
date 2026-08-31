@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-10T11:59:17.351Z",
+  "generatedAt": "2026-08-27T08:37:32.037Z",
   "sourcePath": "../data/maps/sumo/generated/network/TotalMap_20.signals.net.xml",
-  "sourceSha256": "1f997d9fa7fea5e91fd9cf7821a5a72f67396732830a27ff724a67921d1c9a36",
+  "sourceSha256": "20f4230b25cff37747410f36ac6d5ff09c8753bc74fa689c8836a8983fb93f2e",
   "routeSources": [
     {
       "path": "../data/maps/sumo/generated/traffic/global/morning_peak/routes.rou.xml",
