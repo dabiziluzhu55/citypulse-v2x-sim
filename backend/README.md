@@ -364,7 +364,7 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
   "scenario_presets": [
     {
       "preset_id": "east_dense",
-      "label": "东部密集路口场景",
+      "label": "校园周边场景",
       "intersection_ids": ["demo_3", "demo_5", "demo_6", "demo_9"],
       "map_template": "east_dense"
     }
@@ -760,11 +760,11 @@ Worker 应回调 `ALGORITHM_BASE_URL` + `/api/v1/internal/algorithm/{name}/...`
 
 ## 场景预设
 
-| preset_id | 管控路口 |
-|-----------|----------|
-| `xiongan_20` | demo_1 … demo_20 |
-| `east_dense` | demo_3、demo_5、demo_6、demo_9 |
-| `west_dense` | demo_14、demo_15、demo_19 |
+| preset_id | 显示名 | 管控路口 |
+|-----------|--------|----------|
+| `xiongan_20` | 雄安20路口路网 | demo_1 … demo_20 |
+| `east_dense` | 校园周边场景 | demo_3、demo_5、demo_6、demo_9 |
+| `west_dense` | 窄路密网片区场景 | demo_14、demo_15、demo_19 |
 
 ## 管控算法
 

@@ -212,6 +212,7 @@ def test_resolve_mappo_east_dense_zero_shot(
 
 def test_backend_presets_are_self_contained() -> None:
     """backend 场景预设必须独立，不得依赖 algorithms/config。"""
+    assert SCENARIO_PRESET_REGISTRY["east_dense"].label == "校园周边场景"
     assert SCENARIO_PRESET_REGISTRY["east_dense"].intersection_ids == (
         "demo_3",
         "demo_5",
@@ -219,9 +220,11 @@ def test_backend_presets_are_self_contained() -> None:
         "demo_9",
     )
     assert SCENARIO_PRESET_REGISTRY["east_dense"].map_template == "east_dense"
+    assert SCENARIO_PRESET_REGISTRY["west_dense"].label == "窄路密网片区场景"
     assert SCENARIO_PRESET_REGISTRY["west_dense"].intersection_ids == (
         "demo_14",
         "demo_15",
         "demo_19",
     )
+    assert SCENARIO_PRESET_REGISTRY["west_dense"].map_template == "west_dense"
     assert len(SCENARIO_PRESET_REGISTRY["xiongan_20"].intersection_ids) == 20
