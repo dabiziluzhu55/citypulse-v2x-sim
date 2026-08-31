@@ -1,6 +1,6 @@
 """Protocol 2.0 → VehicleObservation extractor.
 
-Reuses the authoritative ``algorithms.cov2x.road.lane_state`` builder for the
+Reuses the authoritative ``traffic_control.cov2x.road.lane_state`` builder for the
 41-dim state and the action mask, and the new lane_state helpers for static
 road lane indices and green remaining time. This module only builds
 observations; it does not select actions or train a policy.
@@ -46,7 +46,7 @@ def build_vehicle_observations(
     the active slots of ``build_lane_actor_batch``.
 
     ``lane_state_module`` is injectable for environments without the full
-    CoSLight stack; it defaults to ``algorithms.cov2x.road.lane_state``.
+    CoSLight stack; it defaults to ``traffic_control.cov2x.road.lane_state``.
     """
     if lane_state_module is None:
         from traffic_control.cov2x.road import lane_state as lane_state_module

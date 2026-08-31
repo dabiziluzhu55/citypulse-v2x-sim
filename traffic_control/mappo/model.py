@@ -1,8 +1,10 @@
-"""Deployable MAPPO model definitions (self-contained inference copy).
+"""MAPPO cooperative actor/critic networks (deployment copy).
 
-Kept in sync with ``algorithms/mappo/models.py`` so the deployment layer does
-not depend on the training workspace.
+与算法端 ``algorithms/mappo/models.py`` 同源（网络结构、初始化种子完全一致），
+仅把 ``algorithms.mappo.config`` 中的两个常量内联，保证 traffic_control 包
+不依赖算法端训练代码。
 """
+
 from __future__ import annotations
 
 import math
@@ -11,8 +13,11 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+
 COOPERATIVE_MODEL_VERSION = "cooperative_joint_v1"
-MODEL_ACTOR_VARIANTS = {COOPERATIVE_MODEL_VERSION: "shared"}
+MODEL_ACTOR_VARIANTS = {
+    COOPERATIVE_MODEL_VERSION: "shared",
+}
 
 
 MASKED_LOGIT = -1e8

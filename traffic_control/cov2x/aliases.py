@@ -1,11 +1,4 @@
-"""Explicit scenario/model aliases for CoV2X deployment.
-
-Scenario presets declare only controlled intersection IDs
-(backend/app/scenario/presets.py).  This module maps a model alias to a
-checkpoint path plus the model training IDs, and a scenario alias to
-(scenario_preset_id, model_alias).  The resolver rejects combinations where
-the scenario controlled IDs are not a subset of the model training IDs.
-"""
+"""Versioned scenario/model aliases for CoV2X deployment."""
 
 from __future__ import annotations
 
@@ -15,8 +8,13 @@ from typing import Any
 
 from .contract import (
     DEFAULT_JOINT_MODEL_FILENAME,
+    TEMPORARY_CAP_MANIFEST_FILENAME,
+    TEMPORARY_CAP_MODEL_FILENAME,
     TRAINING_INTERSECTION_IDS,
 )
+
+
+DEFAULT_MODEL_ALIAS = "cov2x_g30_temp_cap_u24"
 
 
 @dataclass(frozen=True)
@@ -24,6 +22,8 @@ class ModelAlias:
     alias: str
     checkpoint_path: Path
     training_intersection_ids: tuple[str, ...]
+    adapter_module: str
+    manifest_path: Path | None = None
     description: str = ""
 
 
@@ -35,14 +35,32 @@ class ScenarioAlias:
     description: str = ""
 
 
+_MODEL_DIR = Path(__file__).resolve().parent / "models"
+
 MODEL_ALIASES: dict[str, ModelAlias] = {
+    DEFAULT_MODEL_ALIAS: ModelAlias(
+        alias=DEFAULT_MODEL_ALIAS,
+        checkpoint_path=_MODEL_DIR / TEMPORARY_CAP_MODEL_FILENAME,
+        manifest_path=_MODEL_DIR / TEMPORARY_CAP_MANIFEST_FILENAME,
+        training_intersection_ids=TRAINING_INTERSECTION_IDS,
+        adapter_module=(
+            "traffic_control.cov2x.candidates.temporary_cap_u24"
+        ),
+        description=(
+            "Frozen G30 Road/Cloud plus update-24 temporary base-relative "
+            "Vehicle speed-cap candidate"
+        ),
+    ),
     "cov2x_joint_ep12": ModelAlias(
         alias="cov2x_joint_ep12",
-        checkpoint_path=Path(__file__).resolve().parent
-        / "models"
-        / DEFAULT_JOINT_MODEL_FILENAME,
+        checkpoint_path=_MODEL_DIR / DEFAULT_JOINT_MODEL_FILENAME,
         training_intersection_ids=TRAINING_INTERSECTION_IDS,
-        description="EP12 车路云三端联合 CTDE 初版（format_version=2，默认部署）",
+        adapter_module=(
+            "traffic_control.cov2x.candidates.legacy_joint_ep12"
+        ),
+        description=(
+            "Legacy EP12 joint CTDE candidate (format_version=2)"
+        ),
     ),
 }
 
@@ -50,31 +68,36 @@ SCENARIO_ALIASES: dict[str, ScenarioAlias] = {
     "xiongan_20": ScenarioAlias(
         alias="xiongan_20",
         scenario_preset_id="xiongan_20",
-        model_alias="cov2x_joint_ep12",
-        description="雄安 20 路口全集，车路云三端联合初版",
+        model_alias=DEFAULT_MODEL_ALIAS,
+        description="Global demo_1..demo_20 scope",
     ),
     "east_dense": ScenarioAlias(
         alias="east_dense",
         scenario_preset_id="east_dense",
-        model_alias="cov2x_joint_ep12",
-        description="东部密集路口（demo_3/5/6/9）零样本推理，车路云联合初版",
+        model_alias=DEFAULT_MODEL_ALIAS,
+        description="East demo_3/5/6/9 scope; other intersections stay Fixed",
     ),
     "west_dense": ScenarioAlias(
         alias="west_dense",
         scenario_preset_id="west_dense",
-        model_alias="cov2x_joint_ep12",
-        description="西部密集路口（demo_14/15/19）零样本推理，车路云联合初版",
+        model_alias=DEFAULT_MODEL_ALIAS,
+        description="West demo_14/15/19 scope; other intersections stay Fixed",
     ),
 }
 
 
-def resolve_model_path(alias: str) -> Path:
+def resolve_model(alias: str) -> ModelAlias:
     model = MODEL_ALIASES.get(alias)
     if model is None:
         raise ValueError(
             f"Unknown CoV2X model alias: {alias!r}; "
             f"available: {sorted(MODEL_ALIASES)}"
         )
+    return model
+
+
+def resolve_model_path(alias: str) -> Path:
+    model = resolve_model(alias)
     path = model.checkpoint_path
     if not path.is_file():
         raise FileNotFoundError(f"CoV2X checkpoint does not exist: {path}")
@@ -85,8 +108,8 @@ def default_model_alias_for(scenario_preset_id: str) -> str:
     scenario = SCENARIO_ALIASES.get(scenario_preset_id)
     if scenario is None:
         raise ValueError(
-            f"No default CoV2X model alias for scenario preset {scenario_preset_id!r}; "
-            f"available: {sorted(SCENARIO_ALIASES)}"
+            f"No default CoV2X model alias for scenario preset "
+            f"{scenario_preset_id!r}; available: {sorted(SCENARIO_ALIASES)}"
         )
     return scenario.model_alias
 
@@ -95,13 +118,8 @@ def validate_alias_combo(
     intersection_ids: Any,
     model_alias: str,
 ) -> tuple[str, Path]:
-    """Validate that controlled IDs are a subset of the model training IDs."""
-    model = MODEL_ALIASES.get(model_alias)
-    if model is None:
-        raise ValueError(
-            f"Unknown CoV2X model alias: {model_alias!r}; "
-            f"available: {sorted(MODEL_ALIASES)}"
-        )
+    """Validate that controlled IDs are a subset of model training IDs."""
+    model = resolve_model(model_alias)
     controlled = tuple(str(iid) for iid in intersection_ids)
     trained = set(model.training_intersection_ids)
     unknown = [iid for iid in controlled if iid not in trained]

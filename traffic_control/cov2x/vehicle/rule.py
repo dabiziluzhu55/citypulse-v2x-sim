@@ -1,7 +1,7 @@
 """Conservative rule vehicle guidance, ported from the CoSLight controller.
 
 This is the Stage-2 rule baseline: same green-passage speed advice and
-queue-based lane-change heuristic as ``algorithms/cov2x/controller.py``
+queue-based lane-change heuristic as ``traffic_control/cov2x/controller.py``
 ``_build_vehicle_actions``, but expressed through the CoV2X lane-state
 helpers and Protocol 2.0 payloads.  It is intentionally torch-free.
 """

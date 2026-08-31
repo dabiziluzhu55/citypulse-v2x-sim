@@ -2,7 +2,7 @@
 
 Identity: approach advisor. There is one fixed slot per incoming edge of a
 controlled intersection; a slot selects one candidate vehicle (the semantics
-of ``algorithms/cov2x/road/lane_state.py``). Parameters are shared within the
+of ``traffic_control/cov2x/road/lane_state.py``). Parameters are shared within the
 homogeneous approach-agent population.
 
 Execution semantics (Protocol 2.0):

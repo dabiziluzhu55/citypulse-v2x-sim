@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_VERSION = "v8"
 DEFAULT_ACTION_INTERVAL = 15.0
-DEFAULT_MODEL_FILENAME = "ippo_v8_20tls_ep240.pt"
+DEFAULT_MODEL_FILENAME = "ippo_v8_20tls_ep160.pt"
 DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "models" / DEFAULT_MODEL_FILENAME
 
 MAX_WAITING = 200.0
@@ -756,7 +756,6 @@ def initialize(payload: dict) -> dict:
             phase_feature_schema=PHASE_FEATURE_SCHEMA,
             effective_demand_enabled=_effective_demand_enabled,
             model_version=MODEL_VERSION,
-            metadata=payload,
         )
         _model = IPPONetwork(_obs_dim, _act_dim)
         _model.load_state_dict(checkpoint["model_state_dict"])

@@ -1,4 +1,4 @@
-"""Deployment tests for the default (EP12) CoV2X algorithm.
+"""Deployment tests for the immutable legacy EP12 CoV2X candidate.
 
 Covers:
 - checkpoint alias/contract resolution (SHA256, format_version=2, config dims);
@@ -17,7 +17,6 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from traffic_control.cov2x.aliases import (
-    default_model_alias_for,
     resolve_model_path,
     validate_alias_combo,
 )
@@ -33,6 +32,7 @@ EXPECTED_EP12_SHA256 = (
 
 def _set_joint_env(monkeypatch) -> None:
     monkeypatch.setenv("COV2X_MODEL_ALIAS", "cov2x_joint_ep12")
+    monkeypatch.delenv("COV2X_MODEL_PATH", raising=False)
 
 
 def _metadata() -> dict:
@@ -170,7 +170,6 @@ def _payload(step_id: int, sim_time: float) -> dict:
 def test_ep12_alias_and_contract() -> None:
     path = resolve_model_path("cov2x_joint_ep12")
     assert path.name == "cov2x_joint_ep12.pt"
-    assert default_model_alias_for("xiongan_20") == "cov2x_joint_ep12"
     alias, resolved = validate_alias_combo(
         ["demo_3", "demo_5", "demo_6", "demo_9"], "cov2x_joint_ep12"
     )
@@ -206,7 +205,7 @@ def test_protocol_smoke_through_package_dispatch(monkeypatch) -> None:
             "intersections": _metadata()["intersections"],
         }
     )
-    assert os.environ["COV2X_MODEL_PATH"].endswith("cov2x_joint_ep12.pt")
+    assert "COV2X_MODEL_PATH" not in os.environ
 
 
 def test_demo4_offpeak_phase_order_never_emits_phase4(monkeypatch) -> None:

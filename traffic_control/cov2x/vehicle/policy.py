@@ -1,7 +1,7 @@
 """Shared vehicle/approach policy: PPO actor-critic with masked lane head.
 
 Agent identity follows the approach-advisor contract in
-``algorithms/cov2x/agents/vehicle.py``: one fixed slot per incoming edge of a
+``traffic_control/cov2x/vehicle/agent.py``: one fixed slot per incoming edge of a
 controlled intersection, parameters shared across the homogeneous
 population.  The actor emits a masked discrete lane command (keep/left/right)
 and a discrete speed fraction; the critic is a local per-slot value function

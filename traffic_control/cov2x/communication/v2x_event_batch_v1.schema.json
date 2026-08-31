@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:citypulse:cov2x:v2x-event-batch:1.0",
+  "title": "CoV2X V2X Event Batch v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "episode_id",
+    "snapshot_id",
+    "event_count",
+    "last_sequence",
+    "sink_error_count",
+    "events"
+  ],
+  "properties": {
+    "schema": {"const": "cov2x.v2x.event_batch"},
+    "schema_version": {"const": "1.0"},
+    "episode_id": {"type": ["string", "null"]},
+    "snapshot_id": {"type": ["string", "null"]},
+    "event_count": {"type": "integer", "minimum": 0},
+    "last_sequence": {"type": "integer", "minimum": 0},
+    "sink_error_count": {"type": "integer", "minimum": 0},
+    "events": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/event"}
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "schema_version",
+        "sequence",
+        "event",
+        "message_type",
+        "message_id",
+        "episode_id",
+        "snapshot_id",
+        "source_role",
+        "source_id",
+        "destination_role",
+        "destination_id",
+        "logical_phase",
+        "event_time_s",
+        "sent_time_s",
+        "message_age_s",
+        "ttl_s",
+        "expires_at_s",
+        "causal_parent_ids",
+        "payload_fields",
+        "drop_reason"
+      ],
+      "properties": {
+        "schema": {"const": "cov2x.v2x.event"},
+        "schema_version": {"const": "1.0"},
+        "sequence": {"type": "integer", "minimum": 1},
+        "event": {
+          "enum": ["SEND", "DELIVER", "CONSUME", "TTL_EXPIRED"]
+        },
+        "message_type": {
+          "enum": [
+            "VehicleStateV1",
+            "IntersectionSummaryV1",
+            "RegionalPriorityV1",
+            "SPaTV2",
+            "MAPV1"
+          ]
+        },
+        "message_id": {"type": "string", "minLength": 1},
+        "episode_id": {"type": "string", "minLength": 1},
+        "snapshot_id": {"type": "string", "minLength": 1},
+        "source_role": {"enum": ["cloud", "road", "vehicle"]},
+        "source_id": {"type": "string", "minLength": 1},
+        "destination_role": {"enum": ["cloud", "road", "vehicle"]},
+        "destination_id": {"type": "string", "minLength": 1},
+        "logical_phase": {
+          "enum": ["state", "cloud", "road", "vehicle", "commit"]
+        },
+        "event_time_s": {"type": "number"},
+        "sent_time_s": {"type": "number"},
+        "message_age_s": {"type": "number", "minimum": 0},
+        "ttl_s": {"type": "number", "minimum": 0},
+        "expires_at_s": {"type": "number"},
+        "causal_parent_ids": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "payload_fields": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "drop_reason": {
+          "type": ["string", "null"],
+          "enum": ["ttl_expired", null]
+        }
+      }
+    }
+  }
+}
