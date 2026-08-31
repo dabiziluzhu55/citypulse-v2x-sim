@@ -410,18 +410,26 @@ data/exports/<MapName>/<YYYYmmdd-HHMMSS>/
 通过 ZeroMQ PUB/SUB 通道将传感器数据以极低延迟推送至下游算法模块（如路侧边缘计算、目标检测、协同感知）：
 
 ```bash
-# 1. 联仿端启动实时流发布（默认绑定 tcp://127.0.0.1:19091）
+# 联仿端启动实时流发布（默认绑定 tcp://127.0.0.1:19091）
 python run_cosimulation.py --sumocfg simulation.sumocfg --carla-map EastZone --export stream
-
-# 2. 消费端订阅数据流（支持先于联仿启动，自动重连）
-python stream_consumer.py
-python stream_consumer.py --sensors cam_01 --save-dir ./recv_stream
 ```
 
 - **数据帧格式**：采用 3-part 消息包 `[Topic, HeaderJSON, BinaryPayload]`。
   - `Topic`：传感器标识名。
   - `HeaderJSON`：包含 `kind`, `seq`, `sim_time`, `world_frame`, `transform`。
   - `BinaryPayload`：RGB 相机为高质量 JPEG 编码字节流；LiDAR 为标准 Float32 (X, Y, Z, Intensity) 二进制点云。
+
+项目内提供了一个消费端示例（stream_consumer.py），可以用于模拟消费端的数据接收情况，也支持写盘模式，将数据写入磁盘直接查看效果。
+
+```bash
+
+# 消费端订阅数据流（支持先于联仿启动，自动重连）
+python stream_consumer.py
+python stream_consumer.py --sensors cam_01 # 只订阅特定的sensor
+python stream_consumer.py --save-dir ./recv_stream # 写盘模式
+```
+
+
 
 ---
 
