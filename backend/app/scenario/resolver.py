@@ -245,6 +245,7 @@ def _resolve_disturbance_target(
             start_seconds=target.start_seconds,
             end_seconds=target.end_seconds,
             lane_ids=lane_ids,
+            ai_control_enabled=target.ai_control_enabled,
         )
     if isinstance(target, DisturbanceTargetSpeedLimit):
         lane_ids = _resolve_lane_ids(
@@ -272,6 +273,7 @@ def _resolve_disturbance_target(
             end_seconds=target.end_seconds,
             lane_ids=lane_ids,
             max_speed=max_speed,
+            ai_control_enabled=target.ai_control_enabled,
         )
     if isinstance(target, DisturbanceTargetAccident):
         lane_id = _resolve_single_lane_id(
@@ -286,6 +288,7 @@ def _resolve_disturbance_target(
             end_seconds=target.end_seconds,
             lane_id=lane_id,
             position_ratio=target.position_ratio,
+            ai_control_enabled=target.ai_control_enabled,
         )
     if isinstance(target, DisturbanceTargetMajorEventOpening):
         venue_lane_id = _resolve_single_lane_id(
@@ -307,6 +310,7 @@ def _resolve_disturbance_target(
             vehicle_count=target.vehicle_count,
             source_lane_ids=source_lane_ids,
             vehicle_type_id=target.vehicle_type_id,
+            ai_control_enabled=target.ai_control_enabled,
         )
     if isinstance(target, DisturbanceTargetMajorEventClosing):
         venue_lane_id = _resolve_single_lane_id(
@@ -328,6 +332,7 @@ def _resolve_disturbance_target(
             vehicle_count=target.vehicle_count,
             destination_lane_ids=destination_lane_ids,
             vehicle_type_id=target.vehicle_type_id,
+            ai_control_enabled=target.ai_control_enabled,
         )
     raise AppError(
         code="INVALID_EVENT",

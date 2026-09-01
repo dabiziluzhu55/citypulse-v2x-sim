@@ -10,6 +10,7 @@ from ..controllers.registry import CONTROL_MODE_REGISTRY
 from ..core.playback import ALLOWED_PLAYBACK_SPEEDS, validate_playback_speed
 from ..scenario.presets import SCENARIO_PRESET_REGISTRY
 from .disturbance_targets import DisturbanceTarget
+from .ai_control import AIControlStatus
 
 
 class StartSimulationRequest(BaseModel):
@@ -109,6 +110,7 @@ class SimulationStatusResponse(BaseModel):
     event_detection: dict[str, Any] | None = None
     prediction: dict[str, Any] | None = None
     traffic_style: dict[str, Any] | None = None
+    ai_takeover: AIControlStatus = Field(default_factory=AIControlStatus)
     error: str | None = None
 
 

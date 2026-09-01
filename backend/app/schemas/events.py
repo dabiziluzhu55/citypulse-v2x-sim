@@ -45,6 +45,7 @@ class LaneClosureRequest(BaseModel):
     start_seconds: float
     end_seconds: float
     lane_ids: list[str]
+    ai_control_enabled: bool = False
 
 
 class SpeedLimitRequest(BaseModel):
@@ -63,6 +64,7 @@ class SpeedLimitRequest(BaseModel):
         gt=0,
         description="最大限速速度，单位 km/h。前端用户输入建议用此字段，后端会换算为 max_speed。",
     )
+    ai_control_enabled: bool = False
 
     @model_validator(mode="after")
     def _resolve_speed_limit(self) -> SpeedLimitRequest:
@@ -80,7 +82,8 @@ class AccidentRequest(BaseModel):
     start_seconds: float
     end_seconds: float
     lane_id: str
-    position_ratio: float = Field(ge=0.0, le=1.0)
+    position_ratio: float = Field(default=0.5, ge=0.0, le=1.0)
+    ai_control_enabled: bool = False
 
 
 class MajorEventOpeningRequest(BaseModel):
@@ -92,6 +95,7 @@ class MajorEventOpeningRequest(BaseModel):
     vehicle_count: int = Field(gt=0)
     source_lane_ids: list[str] = Field(default_factory=list)
     vehicle_type_id: str = DEFAULT_EVENT_VEHICLE_TYPE_ID
+    ai_control_enabled: bool = False
 
     @field_validator("vehicle_type_id")
     @classmethod
@@ -125,6 +129,7 @@ class MajorEventClosingRequest(BaseModel):
     vehicle_count: int = Field(gt=0)
     destination_lane_ids: list[str] = Field(default_factory=list)
     vehicle_type_id: str = DEFAULT_EVENT_VEHICLE_TYPE_ID
+    ai_control_enabled: bool = False
 
     @field_validator("vehicle_type_id")
     @classmethod

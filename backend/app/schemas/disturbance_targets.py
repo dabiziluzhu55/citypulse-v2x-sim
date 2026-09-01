@@ -19,6 +19,7 @@ class DisturbanceTargetLaneClosure(BaseModel):
     start_seconds: float
     end_seconds: float
     event_id: str | None = None
+    ai_control_enabled: bool = False
     lane_ids: list[str] | None = None
 
 
@@ -38,6 +39,7 @@ class DisturbanceTargetSpeedLimit(BaseModel):
         description="最大限速速度，单位 km/h。前端用户输入建议用此字段，后端会换算为 max_speed。",
     )
     event_id: str | None = None
+    ai_control_enabled: bool = False
     lane_ids: list[str] | None = None
 
     @model_validator(mode="after")
@@ -57,6 +59,7 @@ class DisturbanceTargetAccident(BaseModel):
     end_seconds: float
     position_ratio: float = Field(default=0.5, ge=0.0, le=1.0)
     event_id: str | None = None
+    ai_control_enabled: bool = False
     lane_id: str | None = None
 
 
@@ -67,6 +70,7 @@ class DisturbanceTargetMajorEventOpening(BaseModel):
     end_seconds: float
     vehicle_count: int = Field(gt=0)
     event_id: str | None = None
+    ai_control_enabled: bool = False
     venue_lane_id: str | None = None
     source_lane_ids: list[str] | None = None
     vehicle_type_id: str = DEFAULT_EVENT_VEHICLE_TYPE_ID
@@ -93,6 +97,7 @@ class DisturbanceTargetMajorEventClosing(BaseModel):
     end_seconds: float
     vehicle_count: int = Field(gt=0)
     event_id: str | None = None
+    ai_control_enabled: bool = False
     venue_lane_id: str | None = None
     destination_lane_ids: list[str] | None = None
     vehicle_type_id: str = DEFAULT_EVENT_VEHICLE_TYPE_ID

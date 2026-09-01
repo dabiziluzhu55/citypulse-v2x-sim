@@ -10,6 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from simulation.sumo.engine.distributed import RedisUnavailableError
 
+from .copilot.llm import LLMError, QwenProvider
+from .copilot.rag import ChromaKnowledgeRetriever
+from .copilot.traffic_tools import RoadTopology, ToolDataUnavailableError
 from .api.router import api_router
 from .controllers.runtime import AlgorithmRuntimeStore
 from .core.config import get_settings
@@ -142,15 +145,42 @@ async def lifespan(app: FastAPI):
             metrics_hub=metrics_hub,
             metadata_store=metadata_store,
         )
-        try:
-            recovered = simulation_service.recover_sessions()
-            if recovered:
-                logger.info("Recovered %s session watcher(s) after startup", recovered)
-        except Exception:
-            logger.exception("Session recovery failed during startup")
 
     scenario_export_service = (
         ScenarioExportService(settings, manager) if manager is not None else None
+    )
+
+    copilot_provider = None
+    copilot_config_error = None
+    try:
+        copilot_provider = QwenProvider.from_settings(settings)
+    except LLMError as exc:
+        copilot_config_error = "Copilot model configuration is invalid."
+        logger.error("Copilot provider configuration failed: code=%s", exc.code)
+
+    copilot_topology = None
+    topology_path = settings.generated_dir / "manifests" / "tls_manifest.json"
+    if topology_path.is_file():
+        try:
+            copilot_topology = RoadTopology.from_tls_manifest(topology_path)
+        except ToolDataUnavailableError as exc:
+            logger.warning("Copilot topology is unavailable: %s", exc)
+
+    knowledge_retriever = ChromaKnowledgeRetriever(
+        index_dir=settings.rag_index_path,
+        knowledge_manifest_path=settings.rag_knowledge_manifest_path,
+        embedding_model=settings.rag_embedding_model,
+        embedding_model_path=settings.rag_embedding_model_resolved_path,
+        device=settings.rag_embedding_device,
+        collection_name=settings.rag_collection_name,
+        query_instruction=settings.rag_query_instruction,
+        query_timeout_seconds=settings.rag_query_timeout_seconds,
+    )
+    logger.info(
+        "Traffic knowledge RAG configured: index=%s model=%s collection=%s",
+        settings.rag_index_path,
+        settings.rag_embedding_model,
+        settings.rag_collection_name,
     )
 
     app.state.settings = settings
@@ -162,6 +192,22 @@ async def lifespan(app: FastAPI):
     app.state.session_metadata_store = metadata_store
     app.state.simulation_service = simulation_service
     app.state.scenario_export_service = scenario_export_service
+    app.state.copilot_provider = copilot_provider
+    app.state.copilot_config_error = copilot_config_error
+    app.state.copilot_topology = copilot_topology
+    app.state.knowledge_retriever = knowledge_retriever
+    if simulation_service is not None:
+        simulation_service.configure_ai_control(
+            provider=copilot_provider,
+            retriever=knowledge_retriever,
+            topology=copilot_topology,
+        )
+        try:
+            recovered = simulation_service.recover_sessions()
+            if recovered:
+                logger.info("Recovered %s session watcher(s) after dependencies loaded", recovered)
+        except Exception:
+            logger.exception("Session recovery failed during startup")
     app.state.sumo_home_configured = sumo_home is not None
     app.state.artifacts_ready = len(missing_files) == 0
     app.state.missing_files = missing_files

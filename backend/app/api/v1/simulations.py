@@ -12,6 +12,7 @@ from queue import Empty
 from fastapi import APIRouter, Depends, Query, Response, WebSocket, WebSocketDisconnect, status
 
 from ...schemas.events import EventCreatedResponse, EventRequest
+from ...schemas.ai_control import AIControlStatus
 from ...schemas.intelligence import IntelligencePayload
 from ...schemas.simulations import (
     MetricsResponse,
@@ -68,6 +69,19 @@ def get_simulation_status(
     service: SimulationService = Depends(get_simulation_service),
 ) -> SimulationStatusResponse:
     return SimulationStatusResponse(**service.snapshot(session_id))
+
+
+@router.get(
+    "/simulations/{session_id}/ai-takeover",
+    response_model=AIControlStatus,
+)
+def get_ai_takeover_status(
+    session_id: str,
+    service: SimulationService = Depends(get_simulation_service),
+) -> AIControlStatus:
+    """Return the event-scoped AI signal-control state."""
+
+    return AIControlStatus(**service.snapshot(session_id)["ai_takeover"])
 
 
 @router.get("/simulations/{session_id}/metrics", response_model=MetricsResponse)
