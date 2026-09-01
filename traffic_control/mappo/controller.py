@@ -20,8 +20,8 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 import numpy as np
 import torch
 
-from algorithms.mappo.models import MAPPOPolicy
-from algorithms.mappo.features import IPPOV8FeatureBuilder
+from traffic_control.mappo.model import MAPPOPolicy
+from traffic_control.mappo.features import IPPOV8FeatureBuilder
 from traffic_control.mappo.contract import (
     EXPECTED_OBS_DIM,
     load_checkpoint_metadata,

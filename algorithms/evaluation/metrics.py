@@ -31,10 +31,8 @@ class BenchmarkResult:
     avg_decision_latency_ms: Optional[float] = None
     decision_latency_p95_ms: Optional[float] = None
     fuel_intensity_L_per_100km: Optional[float] = None
-    severe_conflict_exposure_per_10000: Optional[float] = None
     emergency_braking_exposure_per_1000: Optional[float] = None
     controlled_intersection_passages: int = 0
-    severe_conflict_events: int = 0
     emergency_braking_events: int = 0
     avg_queue_per_step: List[float] = field(default_factory=list)
     metric_sources: Dict[str, str] = field(default_factory=dict)
@@ -55,16 +53,12 @@ class BenchmarkResult:
             "fuel_intensity_L_per_100km": _rounded(
                 self.fuel_intensity_L_per_100km, 2
             ),
-            "severe_conflict_exposure_per_10000": _rounded(
-                self.severe_conflict_exposure_per_10000, 2
-            ),
             "emergency_braking_exposure_per_1000": _rounded(
                 self.emergency_braking_exposure_per_1000, 2
             ),
             "controlled_intersection_passages": (
                 self.controlled_intersection_passages
             ),
-            "severe_conflict_events": self.severe_conflict_events,
             "emergency_braking_events": self.emergency_braking_events,
             "departed": self.total_departed,
             "arrived": self.total_arrived,
@@ -91,7 +85,8 @@ def compute_from_tripinfo(
 ) -> BenchmarkResult:
     """Compute metrics from TripInfo plus optional live auxiliary sources.
 
-    TripInfo provides completed-trip travel/waiting times.  Queue length,
+    TripInfo provides travel/waiting times for all departed vehicles
+    (completed plus truncated unfinished ones, avoiding survivor bias).  Queue length,
     algorithm latency and fuel intensity cannot be inferred from TripInfo alone;
     missing auxiliary inputs therefore produce ``None`` (rendered as ``N/A``).
 
@@ -113,13 +108,15 @@ def compute_from_tripinfo(
     total_waiting = 0.0
     total_travel = 0.0
 
+    # 全口径：平均行程/平均等待统计全部已出发车辆（completed + 截断未完成，
+    # 即 vaporized="end" / arrival<0 的残余车辆），避免只统计成功到达车辆
+    # 造成的幸存者偏差（长时域下完成率常低于 10%）。completed 仅用于吞吐量。
     for trip in all_tripinfos:
         arrival = float(trip.get("arrival", -1))
-        if arrival < 0 or str(trip.get("vaporized", "false")).lower() == "true":
-            continue
+        if arrival >= 0 and str(trip.get("vaporized", "false")).lower() != "true":
+            completed.append(trip)
         total_travel += float(trip.get("duration", 0.0))
         total_waiting += float(trip.get("waitingTime", 0.0))
-        completed.append(trip)
 
     arrived = len(completed)
     result.total_arrived = arrived
@@ -127,13 +124,14 @@ def compute_from_tripinfo(
     result.total_planned = total_planned if total_planned > 0 else len(all_tripinfos)
     result.eval_duration_s = float(eval_duration_s)
 
-    if arrived:
-        result.avg_travel_time_s = total_travel / arrived
-        result.avg_waiting_time_s = total_waiting / arrived
-        result.metric_sources["avg_travel_time_s"] = "tripinfo_completed"
-        result.metric_sources["avg_waiting_time_s"] = "tripinfo_completed"
+    departed_all = len(all_tripinfos)
+    if departed_all:
+        result.avg_travel_time_s = total_travel / departed_all
+        result.avg_waiting_time_s = total_waiting / departed_all
+        result.metric_sources["avg_travel_time_s"] = "tripinfo_all_departed"
+        result.metric_sources["avg_waiting_time_s"] = "tripinfo_all_departed"
     else:
-        result.warnings.append("TripInfo 中没有已完成且未 vaporize 的车辆。")
+        result.warnings.append("TripInfo 中没有车辆记录。")
 
     if queue_timeseries is not None and len(queue_timeseries) > 0:
         result.avg_queue_per_step = [float(value) for value in queue_timeseries]
@@ -201,18 +199,21 @@ def compute_from_tripinfo(
 def apply_tripinfo_completed_metrics(
     result: EvalResult, tripinfo_path: str
 ) -> EvalResult:
-    """Replace sampled completed-trip metrics with exact TripInfo values.
+    """Replace sampled travel/waiting metrics with exact TripInfo values.
 
-    The live Protocol 2.0 payload has cumulative waiting, but does not expose
-    exact vehicle departure and arrival times.  Official post-run evaluation
-    therefore uses TripInfo for these two completed-trip metrics and keeps the
-    other four metrics from the live interface.
+    口径（2026-08-06 更新）：平均行程/平均等待统计全部已出发车辆（completed
+    + 截断未完成 vaporized="end" / arrival<0 的残余车辆），避免只统计成功
+    到达车辆产生的幸存者偏差（长时域下完成率常低于 10%）。未完成车辆的
+    duration 为评估截断时刻的已行驶时长（下限），waitingTime 为累计等待。
+    函数名保留历史命名以兼容既有导入；arrived 一致性门禁保留，防止 TripInfo
+    与实时统计不一致时发布假数据。
     """
 
     root = ET.parse(tripinfo_path).getroot()
+    all_records = list(root.findall("tripinfo"))
     completed = [
         trip
-        for trip in root.findall("tripinfo")
+        for trip in all_records
         if float(trip.get("arrival", -1)) >= 0
         and str(trip.get("vaporized", "false")).lower() != "true"
     ]
@@ -228,17 +229,58 @@ def apply_tripinfo_completed_metrics(
         if warning not in result.warnings:
             result.warnings.append(warning)
         return result
-    if not completed:
+    if not all_records:
         return result
 
+    total_waiting = 0.0
+    unfinished_waiting = 0.0
+    for trip in all_records:
+        waiting = float(trip.get("waitingTime", 0.0))
+        total_waiting += waiting
+        if (
+            float(trip.get("arrival", -1)) < 0
+            or str(trip.get("vaporized", "false")).lower() == "true"
+        ):
+            unfinished_waiting += waiting
+
     result.avg_travel_time_s = sum(
-        float(trip.get("duration", 0.0)) for trip in completed
-    ) / len(completed)
-    result.avg_waiting_time_s = sum(
-        float(trip.get("waitingTime", 0.0)) for trip in completed
-    ) / len(completed)
-    result.metric_sources["avg_travel_time_s"] = "tripinfo_completed"
-    result.metric_sources["avg_waiting_time_s"] = "tripinfo_completed"
+        float(trip.get("duration", 0.0)) for trip in all_records
+    ) / len(all_records)
+    result.avg_waiting_time_s = total_waiting / len(all_records)
+    result.metric_sources["avg_travel_time_s"] = "tripinfo_all_departed"
+    result.metric_sources["avg_waiting_time_s"] = "tripinfo_all_departed"
+
+    # Unified per-run schema totals (Task A).
+    result.all_waiting_total_s = total_waiting
+    result.unfinished_waiting_total_s = unfinished_waiting
+    result.end_waiting_total_s = total_waiting
+    result.departed_count = len(all_records)
+    result.arrived_count = len(completed)
+    result.trip_records = len(all_records)
+    result.provenance.update(
+        {
+            "all_waiting_total_s": "tripinfo_all_departed",
+            "unfinished_waiting_total_s": "tripinfo_unfinished",
+            "end_waiting_total_s": (
+                "tripinfo_all_departed (== all_waiting_total_s, frozen redundancy)"
+            ),
+            "departed_count": "tripinfo_records",
+            "arrived_count": "tripinfo_completed",
+            "avg_travel_time_s": "tripinfo_all_departed",
+            "avg_waiting_time_s": "tripinfo_all_departed",
+        }
+    )
+    result.availability.update(
+        {
+            "all_waiting_total_s": "available",
+            "unfinished_waiting_total_s": "available",
+            "end_waiting_total_s": "available",
+            "departed_count": "available",
+            "arrived_count": "available",
+            "avg_travel_time_s": "available",
+            "avg_waiting_time_s": "available",
+        }
+    )
     result.warnings = [
         warning
         for warning in result.warnings
@@ -345,7 +387,7 @@ def print_comparison_table(results: List[BenchmarkResult]) -> str:
     header = (
         f"{'算法':<20} {'行程(s)':>8} {'等待(s)':>8} {'排队':>6} "
         f"{'路网吞吐':>8} {'延迟(ms)':>8} {'油耗':>8} "
-        f"{'严重冲突/万次':>12} {'紧急制动/千次':>12}"
+        f"{'紧急制动/千次':>12}"
     )
     lines = [header, "-" * len(header)]
     for result in results:
@@ -357,7 +399,6 @@ def print_comparison_table(results: List[BenchmarkResult]) -> str:
             f"{_format_metric(result.throughput_veh_per_h, 8, 1)} "
             f"{_format_metric(result.avg_decision_latency_ms, 8, 3)} "
             f"{_format_metric(result.fuel_intensity_L_per_100km, 8, 2)} "
-            f"{_format_metric(result.severe_conflict_exposure_per_10000, 12, 2)} "
             f"{_format_metric(result.emergency_braking_exposure_per_1000, 12, 2)}"
         )
     return "\n".join(lines)
@@ -369,8 +410,8 @@ def _markdown_metric(value: Optional[float], precision: int) -> str:
 
 def print_markdown_table(results: List[BenchmarkResult]) -> str:
     lines = [
-        "| 算法 | 行程时间(s) | 等待时间(s) | 排队长度 | 路网吞吐量(veh/h) | 延迟(ms) | 油耗(L/100km) | 严重冲突暴露率(次/万次通行) | 紧急制动暴露率(次/千次通行) |",
-        "|------|------------|------------|---------|-------------------|---------|--------------|------------------------------|------------------------------|",
+        "| 算法 | 行程时间(s) | 等待时间(s) | 排队长度 | 路网吞吐量(veh/h) | 延迟(ms) | 油耗(L/100km) | 紧急制动暴露率(次/千次通行) |",
+        "|------|------------|------------|---------|-------------------|---------|--------------|------------------------------|",
     ]
     for result in results:
         lines.append(
@@ -381,7 +422,6 @@ def print_markdown_table(results: List[BenchmarkResult]) -> str:
             f"{_markdown_metric(result.throughput_veh_per_h, 1)} | "
             f"{_markdown_metric(result.avg_decision_latency_ms, 3)} | "
             f"{_markdown_metric(result.fuel_intensity_L_per_100km, 2)} | "
-            f"{_markdown_metric(result.severe_conflict_exposure_per_10000, 2)} | "
             f"{_markdown_metric(result.emergency_braking_exposure_per_1000, 2)} |"
         )
     return "\n".join(lines)

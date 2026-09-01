@@ -52,3 +52,15 @@ def test_rsu_covered_lanes_merges_protocol_and_extra():
     extra = {"r1": frozenset({"B_0"})}
     result = build_rsu_covered_lanes(protocol_lanes, extra)
     assert result["r1"] == frozenset({"A_0", ":r1_0", "B_0"})
+
+
+def test_capability_hash_namespace_matches_preregistration():
+    # 预注册 1.1：v2x_enabled = stable_hash01(f"{capability_seed}|capability|{vehicle_id}") < penetration_rate
+    from algorithms.v2x.messages import stable_hash01
+    cfg = V2XConfig(penetration_rate=0.5, capability_seed=7)
+    assert resolve_v2x_enabled(
+        vehicle_id="veh_1", vehicle_class="passenger",
+        explicit=None, type_v2x=None, config=cfg) == (
+        stable_hash01("7|capability|veh_1") < 0.5)
+    # 旧命名空间必须不再影响结果（域分离）
+    assert stable_hash01("7|veh_1") != stable_hash01("7|capability|veh_1")

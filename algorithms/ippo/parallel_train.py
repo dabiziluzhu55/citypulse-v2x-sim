@@ -40,7 +40,17 @@ from algorithms.ippo.controller import (  # noqa: E402
     PHASE_FEATURE_SCHEMA,
     load_checkpoint_metadata,
 )
-from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
+from traffic_control.common.environment_contract import (  # noqa: E402
+    JOINT_PERIODS,
+    validate_balanced_period_batch,
+    validate_training_periods,
+)
+from traffic_control.ippo.contract import (  # noqa: E402
+    MULTIPERIOD_CHECKPOINT_CONTRACT_VERSION,
+    MULTIPERIOD_MAX_ACTION_DIM,
+    load_contract,
+)
+from simulation.sumo import SimulationConfig, SimulationManager  # noqa: E402
 
 
 logging.basicConfig(
@@ -66,6 +76,108 @@ def _period_batch(
         str(periods[(int(seed) - training_seed_start) % len(periods)])
         for seed in seeds
     )
+
+
+def _validate_joint_run_shape(
+    *,
+    periods: Sequence[str],
+    workers: int,
+    episodes: int,
+    completed_episodes: int = 0,
+) -> int:
+    validate_training_periods(periods)
+    if workers not in {6, 9, 12}:
+        raise ValueError(
+            "joint IPPO workers must be one of 6, 9, or 12"
+        )
+    completed = int(completed_episodes)
+    if completed < 0:
+        raise ValueError("completed joint IPPO episodes must be non-negative")
+    if completed + episodes > 480:
+        raise ValueError(
+            "joint IPPO training is capped at 480 cumulative episodes"
+        )
+    if episodes % workers != 0:
+        raise ValueError(
+            "joint IPPO episodes must form complete synchronous batches "
+            f"(episodes={episodes}, workers={workers})"
+        )
+    return workers
+
+
+def _validate_resume_intersections(
+    requested: Sequence[str],
+    saved: Sequence[str],
+    *,
+    joint_training: bool,
+) -> tuple[str, ...]:
+    requested_ids = tuple(str(iid) for iid in requested)
+    saved_ids = tuple(str(iid) for iid in saved)
+    if joint_training:
+        if requested_ids != saved_ids:
+            raise ValueError(
+                "joint resume intersection_ids must exactly match checkpoint "
+                "identity and order"
+            )
+    elif not set(requested_ids) <= set(saved_ids):
+        raise ValueError(
+            "resume checkpoint intersection_ids are not a superset of this run: "
+            f"{requested_ids}"
+        )
+    return requested_ids
+
+
+def _validate_resume_duration(
+    requested: float,
+    saved: object,
+    *,
+    joint_training: bool,
+) -> float:
+    requested_duration = float(requested)
+    if saved is None:
+        if joint_training:
+            raise ValueError(
+                "joint resume checkpoint lacks episode duration metadata"
+            )
+        return requested_duration
+    saved_duration = float(saved)
+    if abs(saved_duration - requested_duration) > 1e-9:
+        raise ValueError(
+            "resume checkpoint episode duration does not match this run: "
+            f"checkpoint={saved_duration}, requested={requested_duration}"
+        )
+    return requested_duration
+
+
+def _validate_scheduled_periods(
+    results: Sequence[Mapping[str, object]],
+    scheduled_periods: Sequence[str],
+) -> dict[str, int]:
+    if len(results) != len(scheduled_periods):
+        raise RuntimeError(
+            "parallel results do not match the scheduled period count"
+        )
+    actual_periods = []
+    for result, scheduled_period in zip(results, scheduled_periods):
+        rollout = result.get("rollout")
+        if not isinstance(rollout, Mapping):
+            raise RuntimeError(
+                f"worker seed={result.get('seed')} returned no rollout"
+            )
+        metadata = rollout.get("metadata")
+        if not isinstance(metadata, Mapping):
+            raise RuntimeError(
+                f"worker seed={result.get('seed')} returned no metadata"
+            )
+        actual_period = str(metadata.get("period", ""))
+        if actual_period != str(scheduled_period):
+            raise RuntimeError(
+                f"worker seed={result.get('seed')} metadata period "
+                f"{actual_period!r} does not match scheduled period "
+                f"{str(scheduled_period)!r}"
+            )
+        actual_periods.append(actual_period)
+    return validate_balanced_period_batch(actual_periods)
 
 
 def _validated_worker_results(results: Sequence[Mapping[str, object]]) -> list[dict]:
@@ -128,6 +240,8 @@ def _run_sumo_worker(request: Mapping[str, object]) -> dict:
         policy_state=request.get("policy_state"),
         policy_seed=int(request["policy_seed"]),
         rollout_seed=seed,
+        action_dim=request.get("action_dim"),
+        environment_contract=request.get("environment_contract"),
     )
 
     manager = SimulationManager()
@@ -285,6 +399,8 @@ def _run_policy_batch(
     effective_demand_enabled: bool,
     policy_seed: int,
     policy_state: Mapping[str, torch.Tensor] | None,
+    action_dim: int | None = None,
+    environment_contract: Mapping[str, object] | None = None,
 ) -> list[dict]:
     if len(periods) != len(seeds):
         raise ValueError("periods must contain one value per rollout seed")
@@ -296,6 +412,8 @@ def _run_policy_batch(
         "effective_demand_enabled": effective_demand_enabled,
         "policy_seed": policy_seed,
         "policy_state": policy_state,
+        "action_dim": action_dim,
+        "environment_contract": environment_contract,
     }
     context = multiprocessing.get_context("spawn")
     results = []
@@ -392,10 +510,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.intersections > len(DEFAULT_INTERSECTION_IDS):
             parser.error(f"intersections must be <= {len(DEFAULT_INTERSECTION_IDS)}")
         intersections = tuple(DEFAULT_INTERSECTION_IDS[: args.intersections])
-    workers = min(args.workers, args.episodes)
     periods = tuple(args.periods or (args.period,))
     if any(not str(period).strip() for period in periods):
         parser.error("training periods must be non-empty")
+    joint_training = args.periods is not None
+    if joint_training:
+        try:
+            workers = _validate_joint_run_shape(
+                periods=periods,
+                workers=args.workers,
+                episodes=args.episodes,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+    else:
+        workers = min(args.workers, args.episodes)
     effective_demand_enabled = args.effective_demand == "on"
     save_path = args.save or (
         REPO_ROOT
@@ -421,6 +550,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
 
     initial_policy_state = None
+    frozen_environment_contract = None
     if resume_path is not None:
         checkpoint = load_checkpoint_metadata(resume_path)
         if checkpoint.get("model_version") != MODEL_VERSION:
@@ -429,11 +559,14 @@ def main(argv: list[str] | None = None) -> int:
             )
         if checkpoint.get("phase_feature_schema") != PHASE_FEATURE_SCHEMA:
             parser.error("resume checkpoint phase feature schema does not match")
-        if not set(intersections) <= set(str(iid) for iid in checkpoint["intersection_ids"]):
-            parser.error(
-                "resume checkpoint intersection_ids are not a superset of this run: "
-                f"{intersections}"
+        try:
+            _validate_resume_intersections(
+                intersections,
+                checkpoint["intersection_ids"],
+                joint_training=joint_training,
             )
+        except ValueError as exc:
+            parser.error(str(exc))
         if abs(float(checkpoint["action_interval"]) - args.action_interval) > 1e-9:
             parser.error("resume checkpoint action interval does not match this run")
         saved_periods = tuple(checkpoint.get("training_periods", ()))
@@ -441,6 +574,49 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(
                 f"resume checkpoint training periods {saved_periods} do not match {periods}"
             )
+        if joint_training:
+            try:
+                contract_version, frozen_environment_contract = load_contract(
+                    resume_path,
+                    checkpoint,
+                )
+            except ValueError as exc:
+                parser.error(f"joint resume checkpoint contract is invalid: {exc}")
+            if contract_version != MULTIPERIOD_CHECKPOINT_CONTRACT_VERSION:
+                parser.error(
+                    "joint resume checkpoint must use contract version 3"
+                )
+            try:
+                _validate_resume_duration(
+                    args.duration,
+                    checkpoint.get("episode_duration_s"),
+                    joint_training=True,
+                )
+            except (TypeError, ValueError) as exc:
+                parser.error(str(exc))
+            try:
+                _validate_joint_run_shape(
+                    periods=periods,
+                    workers=workers,
+                    episodes=args.episodes,
+                    completed_episodes=int(checkpoint.get("episode", 0)),
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+            if int(checkpoint["act_dim"]) != MULTIPERIOD_MAX_ACTION_DIM:
+                parser.error(
+                    "joint resume checkpoint does not use the fixed four-slot "
+                    "action space"
+                )
+            previous = checkpoint["training_seed_range"]
+            completed_before_resume = (
+                int(previous["end"]) - int(previous["start"]) + 1
+            )
+            if completed_before_resume % len(JOINT_PERIODS) != 0:
+                parser.error(
+                    "joint resume checkpoint seed range does not end on a "
+                    "complete three-period cycle"
+                )
         saved_effective_demand = bool(
             checkpoint.get("effective_demand_enabled", True)
         )
@@ -455,6 +631,7 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["IPPO_MODE"] = "train"
     os.environ["IPPO_ACTION_INTERVAL"] = str(args.action_interval)
     os.environ["IPPO_EFFECTIVE_DEMAND"] = args.effective_demand
+    os.environ["IPPO_EPISODE_DURATION_S"] = str(args.duration)
     os.environ["IPPO_TRAIN_SEED_START"] = str(recorded_start)
     os.environ["IPPO_TRAIN_SEED_END"] = str(last_seed)
     os.environ["IPPO_TRAIN_PERIODS"] = ",".join(periods)
@@ -490,27 +667,50 @@ def main(argv: list[str] | None = None) -> int:
             start=1,
         ):
             batch_started = time.time()
+            scheduled_periods = _period_batch(
+                seeds,
+                periods=periods,
+                training_seed_start=recorded_start,
+            )
+            if joint_training:
+                validate_balanced_period_batch(scheduled_periods)
             results = _run_policy_batch(
                 seeds=seeds,
                 intersections=intersections,
                 duration=args.duration,
                 step_length=args.step_length,
-                periods=_period_batch(
-                    seeds,
-                    periods=periods,
-                    training_seed_start=recorded_start,
-                ),
+                periods=scheduled_periods,
                 action_interval=args.action_interval,
                 effective_demand_enabled=effective_demand_enabled,
                 policy_seed=args.seed,
                 policy_state=policy_state,
+                action_dim=(
+                    MULTIPERIOD_MAX_ACTION_DIM
+                    if joint_training
+                    else None
+                ),
+                environment_contract=frozen_environment_contract,
             )
             rollouts = [result["rollout"] for result in results]
-            signatures = [
-                _metadata_signature(rollout["metadata"]) for rollout in rollouts
-            ]
-            if not _metadata_signatures_compatible(signatures):
-                raise RuntimeError("Parallel workers returned incompatible SUMO metadata")
+            if joint_training:
+                period_counts = _validate_scheduled_periods(
+                    results,
+                    scheduled_periods,
+                )
+            else:
+                signatures = [
+                    _metadata_signature(rollout["metadata"])
+                    for rollout in rollouts
+                ]
+                if not _metadata_signatures_compatible(signatures):
+                    raise RuntimeError(
+                        "Parallel workers returned incompatible SUMO metadata"
+                    )
+                period_counts = {
+                    period: scheduled_periods.count(period)
+                    for period in dict.fromkeys(scheduled_periods)
+                }
+
             worker_policy = rollouts[0]["policy_state"]
             if any(
                 not _policy_states_equal(worker_policy, rollout["policy_state"])
@@ -536,16 +736,21 @@ def main(argv: list[str] | None = None) -> int:
                 raise RuntimeError("A worker collected with a different policy generation")
 
             update = controller.ingest_parallel_rollouts(rollouts, update=True)
+            if joint_training:
+                frozen_environment_contract = (
+                    controller.export_environment_contract()
+                )
             os.environ["IPPO_TRAIN_SEED_END"] = str(seeds[-1])
             policy_state = controller.export_policy_state()
             metrics = [result["metrics"] for result in results]
             worker_elapsed = [float(result.get("elapsed", 0.0)) for result in results]
             episode_count = controller.training_episode_count()
             logger.info(
-                "BATCH%d OK seeds=%s episodes=%d samples=%d wall=%.1fs "
+                "BATCH%d OK seeds=%s period_counts=%s episodes=%d samples=%d wall=%.1fs "
                 "worker_mean=%.1fs worker_max=%.1fs arrived=%.1f waiting=%.1f",
                 batch_number,
                 list(seeds),
+                period_counts,
                 update["episodes"],
                 update["samples"],
                 time.time() - batch_started,

@@ -2,10 +2,15 @@
 """协议 2.0 适配器：step 载荷 → 上行草稿；actions → RSI/事件草稿。"""
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 from .derive import derive_phase_schedule
 from .messages import MessageDraft
+
+
+# VRC 特征维度（Task 1.1 若调整须同步并版本化记录）
+VRC_LOCAL_FEATURE_DIM = 8
+VRC_DERIVED_FEATURE_DIM = 6
 
 
 def build_bsm_draft(vehicle_id: str, raw: Mapping[str, Any]) -> MessageDraft:
@@ -53,21 +58,29 @@ def build_intent_draft(
 def build_spat_draft(
     intersection_id: str, state: Mapping[str, Any],
     phases_meta: Mapping[str, Mapping[str, Any]], *, sim_time: float,
+    vrc_local_features: Optional[Sequence[float]] = None,
+    vrc_derived_features: Optional[Sequence[float]] = None,
+    vrc_valid: bool = True,
 ) -> MessageDraft:
     remaining, nxt, start, status = derive_phase_schedule(state, phases_meta, sim_time)
     lanes = state.get("lanes") or {}
     conn_states = []
     for lane in lanes.values():
         conn_states.extend(lane.get("connection_signal_states") or [])
+    payload = {"intersection_id": intersection_id,
+               "current_phase": state.get("current_phase"),
+               "stage": state.get("stage"),
+               "stage_elapsed": state.get("stage_elapsed"),
+               "connection_signal_states": conn_states,
+               "remaining_time_s": remaining, "next_stage": nxt,
+               "next_stage_start_time": start, "schedule_status": status}
+    if vrc_local_features is not None:
+        payload["vrc_local_features"] = list(vrc_local_features)
+    if vrc_derived_features is not None:
+        payload["vrc_derived_features"] = list(vrc_derived_features)
+    payload["vrc_valid"] = bool(vrc_valid)
     return MessageDraft(
-        "SPaT", intersection_id, "cloud", sim_time,
-        {"intersection_id": intersection_id,
-         "current_phase": state.get("current_phase"),
-         "stage": state.get("stage"),
-         "stage_elapsed": state.get("stage_elapsed"),
-         "connection_signal_states": conn_states,
-         "remaining_time_s": remaining, "next_stage": nxt,
-         "next_stage_start_time": start, "schedule_status": status},
+        "SPaT", intersection_id, "cloud", sim_time, payload,
     )
 
 

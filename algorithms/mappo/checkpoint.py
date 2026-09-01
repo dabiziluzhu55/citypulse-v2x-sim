@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import MISSING, asdict, dataclass, fields
 import hashlib
 import json
@@ -26,10 +27,16 @@ from algorithms.mappo.config import (
 from algorithms.mappo.features import IPPO_V8_IDENTITY_OFFSET
 from algorithms.mappo.models import MAPPOPolicy
 from algorithms.mappo.trainer import MAPPOTrainer
+from traffic_control.common.environment_contract import (
+    JOINT_PERIODS,
+    validate_checkpoint_binding,
+)
+from traffic_control.mappo.contract import build_mappo_policy_spec
 
 
-CHECKPOINT_FORMAT_VERSION = 2
-SUPPORTED_CHECKPOINT_FORMAT_VERSIONS = frozenset({1, 2})
+CHECKPOINT_FORMAT_VERSION = 3
+LEGACY_CHECKPOINT_FORMAT_VERSION = 2
+SUPPORTED_CHECKPOINT_FORMAT_VERSIONS = frozenset({1, 2, 3})
 NOT_APPLICABLE = "N/A"
 
 
@@ -339,6 +346,79 @@ class CheckpointMetadata:
         )
 
 
+def _validated_environment_contract(
+    environment_contract: Mapping[str, Any],
+    metadata: CheckpointMetadata,
+) -> dict[str, Any]:
+    """Validate a v3 contract and bind it to checkpoint training metadata."""
+    if not isinstance(environment_contract, Mapping):
+        raise CheckpointCompatibilityError(
+            "checkpoint environment contract must be a mapping"
+        )
+    try:
+        validate_checkpoint_binding(
+            environment_contract,
+            periods=metadata.training_periods,
+            policy_spec=build_mappo_policy_spec(asdict(metadata)),
+            intersection_ids=metadata.intersection_ids,
+        )
+    except (TypeError, ValueError) as error:
+        raise CheckpointCompatibilityError(
+            f"checkpoint environment contract is invalid: {error}"
+        ) from error
+
+    metadata_periods = tuple(metadata.training_periods)
+    if metadata_periods != JOINT_PERIODS:
+        raise CheckpointCompatibilityError(
+            "v3 environment contract requires the frozen joint training periods"
+        )
+    supported_periods = tuple(
+        str(value)
+        for value in environment_contract.get("supported_periods", ())
+    )
+    if supported_periods != metadata_periods:
+        raise CheckpointCompatibilityError(
+            "checkpoint environment contract periods do not match metadata"
+        )
+
+    policy_signature = environment_contract.get("policy_space_signature")
+    policy_payload = (
+        policy_signature.get("payload")
+        if isinstance(policy_signature, Mapping)
+        else None
+    )
+    if not isinstance(policy_payload, Mapping):
+        raise CheckpointCompatibilityError(
+            "checkpoint environment contract policy space is malformed"
+        )
+    signed_ids = tuple(
+        str(value) for value in policy_payload.get("intersection_ids", ())
+    )
+    if signed_ids != tuple(metadata.intersection_ids):
+        raise CheckpointCompatibilityError(
+            "checkpoint environment contract intersection order does not "
+            f"match metadata: signed={signed_ids}, "
+            f"metadata={metadata.intersection_ids}"
+        )
+    return deepcopy(dict(environment_contract))
+
+
+def _checkpoint_environment_for_save(
+    metadata: CheckpointMetadata,
+    environment_contract: Mapping[str, Any] | None,
+) -> tuple[int, dict[str, Any] | None]:
+    if environment_contract is None:
+        if tuple(metadata.training_periods) == JOINT_PERIODS:
+            raise CheckpointCompatibilityError(
+                "joint checkpoint requires a complete environment contract"
+            )
+        return LEGACY_CHECKPOINT_FORMAT_VERSION, None
+    return (
+        CHECKPOINT_FORMAT_VERSION,
+        _validated_environment_contract(environment_contract, metadata),
+    )
+
+
 def state_dict_digest(state_dict: Mapping[str, torch.Tensor]) -> str:
     """Return the canonical digest used for immutable policy snapshots."""
 
@@ -392,18 +472,25 @@ def save_checkpoint(
     policy: MAPPOPolicy,
     trainer: MAPPOTrainer,
     metadata: CheckpointMetadata,
+    *,
+    environment_contract: Mapping[str, Any] | None = None,
 ) -> None:
+    format_version, normalized_environment_contract = (
+        _checkpoint_environment_for_save(metadata, environment_contract)
+    )
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f"{target.name}.tmp-{os.getpid()}")
     payload = {
-        "checkpoint_format_version": CHECKPOINT_FORMAT_VERSION,
+        "checkpoint_format_version": format_version,
         "metadata": asdict(metadata),
         "policy_state_dict": policy.state_dict(),
         "actor_optimizer_state_dict": trainer.actor_optimizer.state_dict(),
         "critic_optimizer_state_dict": trainer.critic_optimizer.state_dict(),
         "rng_state": _rng_state(),
     }
+    if normalized_environment_contract is not None:
+        payload["environment_contract"] = normalized_environment_contract
     try:
         with temporary.open("wb") as stream:
             torch.save(payload, stream)
@@ -466,11 +553,14 @@ def _load_payload(path: str | os.PathLike[str]) -> Mapping[str, Any]:
         raise CheckpointCompatibilityError(
             "checkpoint payload must be a mapping"
         )
-    if (
-        payload.get("checkpoint_format_version")
-        not in SUPPORTED_CHECKPOINT_FORMAT_VERSIONS
-    ):
+    format_version = payload.get("checkpoint_format_version")
+    if format_version not in SUPPORTED_CHECKPOINT_FORMAT_VERSIONS:
         raise CheckpointCompatibilityError("checkpoint format version mismatch")
+    if format_version == CHECKPOINT_FORMAT_VERSION:
+        metadata = _metadata_from_payload(payload)
+        _validated_environment_contract(
+            payload.get("environment_contract"), metadata
+        )
     return payload
 
 
@@ -480,6 +570,20 @@ def read_checkpoint_metadata(
     """Read and validate checkpoint metadata without constructing a policy."""
 
     return _metadata_from_payload(_load_payload(path))
+
+
+def read_checkpoint_environment_contract(
+    path: str | os.PathLike[str],
+) -> dict[str, Any] | None:
+    """Read a validated v3 environment contract without model construction."""
+    payload = _load_payload(path)
+    if payload["checkpoint_format_version"] != CHECKPOINT_FORMAT_VERSION:
+        return None
+    metadata = _metadata_from_payload(payload)
+    return _validated_environment_contract(
+        payload.get("environment_contract"),
+        metadata,
+    )
 
 
 def _validate_intersection_scope(
@@ -669,6 +773,7 @@ def load_checkpoint(
     expected_local_observation_schema: str,
     expected_reward_definition: str | None = None,
     expected_metadata: CheckpointMetadata | None = None,
+    expected_environment_contract: Mapping[str, Any] | None = None,
     restore_rng: bool = True,
 ) -> CheckpointMetadata:
     payload = _load_payload(path)
@@ -677,6 +782,28 @@ def load_checkpoint(
         raise CheckpointCompatibilityError(
             "checkpoint metadata changed after resume preflight"
         )
+    format_version = int(payload["checkpoint_format_version"])
+    saved_environment_contract = None
+    if format_version == CHECKPOINT_FORMAT_VERSION:
+        saved_environment_contract = _validated_environment_contract(
+            payload.get("environment_contract"),
+            metadata,
+        )
+    if expected_environment_contract is not None:
+        if saved_environment_contract is None:
+            raise CheckpointCompatibilityError(
+                "checkpoint has no v3 environment contract"
+            )
+        expected_contract = _validated_environment_contract(
+            expected_environment_contract,
+            metadata,
+        )
+        if saved_environment_contract != expected_contract:
+            raise CheckpointCompatibilityError(
+                "checkpoint environment contract changed after resume preflight: "
+                f"saved={saved_environment_contract['sha256']}, "
+                f"expected={expected_contract['sha256']}"
+            )
     _validate_metadata(
         metadata,
         int(payload["checkpoint_format_version"]),

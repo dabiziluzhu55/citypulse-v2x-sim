@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 import random
 
@@ -15,6 +15,7 @@ from algorithms.mappo.checkpoint import (
     _restore_rng_state,
     load_checkpoint,
     policy_digest,
+    read_checkpoint_environment_contract,
     read_checkpoint_metadata,
     save_checkpoint,
 )
@@ -27,6 +28,16 @@ from algorithms.mappo.config import (
 )
 from algorithms.mappo.models import MAPPOPolicy
 from algorithms.mappo.trainer import MAPPOTrainer
+from algorithms.mappo.test_parallel_train import _environment_metadata
+from traffic_control.common.environment_contract import (
+    JOINT_PERIODS,
+    build_environment_contract,
+)
+from traffic_control.mappo.contract import (
+    build_mappo_policy_spec,
+    load_contract as load_deployment_contract,
+    validate_contract as validate_deployment_contract,
+)
 
 
 LOCAL_SCHEMA = "ippo_v8_local_obs_v1"
@@ -77,6 +88,76 @@ def _metadata(config: MAPPOConfig) -> CheckpointMetadata:
         reward_definition=REWARD_DEFINITION,
         training_workers=4,
         episode_duration_s=300.0,
+    )
+
+
+def _joint_metadata(config: MAPPOConfig) -> CheckpointMetadata:
+    return replace(
+        _metadata(config),
+        training_periods=JOINT_PERIODS,
+        training_workers=6,
+    )
+
+
+def _with_demo5(metadata: dict) -> dict:
+    result = copy.deepcopy(metadata)
+    source = result["intersections"]["demo_4"]
+    clone = copy.deepcopy(source)
+    clone["intersection_id"] = "demo_5"
+    clone["incoming_lanes"] = ["demo5_in_0"]
+    clone["outgoing_lanes"] = ["demo5_out_0"]
+    clone["lanes"] = {
+        "demo5_in_0": {
+            **copy.deepcopy(source["lanes"]["in_0"]),
+            "edge_id": "demo5_in",
+        },
+        "demo5_out_0": {
+            **copy.deepcopy(source["lanes"]["out_0"]),
+            "edge_id": "demo5_out",
+        },
+    }
+    clone["connections"] = [
+        {
+            **copy.deepcopy(source["connections"][0]),
+            "connection_id": "demo5_c0",
+            "from_lane": "demo5_in_0",
+            "to_lane": "demo5_out_0",
+        }
+    ]
+    clone["phases"] = {
+        phase_id: {
+            **copy.deepcopy(phase),
+            "connection_priorities": {"demo5_c0": "protected"},
+        }
+        for phase_id, phase in source["phases"].items()
+    }
+    result["intersections"]["demo_5"] = clone
+    return result
+
+
+def _joint_environment_contract(
+    metadata: CheckpointMetadata,
+    *,
+    fixed_speed_mps: float = 13.9,
+    off_peak_green_delta_s: float = 0.0,
+    include_demo5: bool = False,
+) -> dict:
+    metadata_by_period = {}
+    for period, phase_count in zip(JOINT_PERIODS, (4, 3, 4), strict=True):
+        environment = _environment_metadata(period, phase_count=phase_count)
+        environment["intersections"]["demo_4"]["lanes"]["in_0"][
+            "speed_limit_mps"
+        ] = fixed_speed_mps
+        if period == "off_peak":
+            environment["intersections"]["demo_4"]["phases"]["0"][
+                "green_seconds"
+            ] += off_peak_green_delta_s
+        if include_demo5:
+            environment = _with_demo5(environment)
+        metadata_by_period[period] = environment
+    return build_environment_contract(
+        metadata_by_period,
+        policy_spec=build_mappo_policy_spec(asdict(metadata)),
     )
 
 
@@ -645,3 +726,250 @@ def test_vanilla_cooperative_resume_rejects_format_v1_critic_and_optimizers(
     _assert_training_state_unchanged(
         before, cooperative_policy, cooperative_trainer
     )
+
+
+def test_joint_checkpoint_is_saved_as_v3_with_environment_contract(
+    tmp_path: Path,
+) -> None:
+    config = MAPPOConfig(("demo_4",), hidden_dim=8)
+    _, policy, trainer = _objects(config)
+    metadata = _joint_metadata(config)
+    contract = _joint_environment_contract(metadata)
+    path = tmp_path / "joint-mappo.pt"
+
+    save_checkpoint(
+        path,
+        policy,
+        trainer,
+        metadata,
+        environment_contract=contract,
+    )
+
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    assert payload["checkpoint_format_version"] == 3
+    assert payload["environment_contract"] == contract
+    assert read_checkpoint_environment_contract(path) == contract
+
+
+def test_joint_checkpoint_save_requires_complete_v3_contract(
+    tmp_path: Path,
+) -> None:
+    config = MAPPOConfig(("demo_4",), hidden_dim=8)
+    _, policy, trainer = _objects(config)
+    metadata = _joint_metadata(config)
+
+    with pytest.raises(
+        CheckpointCompatibilityError,
+        match="joint.*environment contract|environment contract.*joint",
+    ):
+        save_checkpoint(tmp_path / "missing.pt", policy, trainer, metadata)
+
+    tampered = _joint_environment_contract(metadata)
+    tampered["program_signatures"]["off_peak"]["payload"][
+        "intersections"
+    ][0]["phases"][0]["green_seconds"] = 999.0
+    with pytest.raises(CheckpointCompatibilityError, match="environment contract"):
+        save_checkpoint(
+            tmp_path / "tampered.pt",
+            policy,
+            trainer,
+            metadata,
+            environment_contract=tampered,
+        )
+
+
+@pytest.mark.parametrize(
+    "expected_contract",
+    (
+        "fixed",
+        "program",
+    ),
+)
+def test_v3_resume_rejects_environment_drift_before_state_mutation(
+    tmp_path: Path,
+    expected_contract: str,
+) -> None:
+    config = MAPPOConfig(("demo_4",), hidden_dim=8)
+    _, saved_policy, saved_trainer = _objects(config)
+    metadata = _joint_metadata(config)
+    contract = _joint_environment_contract(metadata)
+    source = tmp_path / "joint.pt"
+    save_checkpoint(
+        source,
+        saved_policy,
+        saved_trainer,
+        metadata,
+        environment_contract=contract,
+    )
+    drifted = (
+        _joint_environment_contract(metadata, fixed_speed_mps=14.0)
+        if expected_contract == "fixed"
+        else _joint_environment_contract(
+            metadata,
+            off_peak_green_delta_s=1.0,
+        )
+    )
+    _, target_policy, target_trainer = _objects(config)
+    _take_optimizer_step(target_trainer)
+    with torch.no_grad():
+        next(target_policy.parameters()).add_(29.0)
+    before = _training_state_snapshot(target_policy, target_trainer)
+
+    with pytest.raises(
+        CheckpointCompatibilityError,
+        match="environment contract",
+    ):
+        load_checkpoint(
+            source,
+            target_policy,
+            target_trainer,
+            expected_config=config,
+            expected_local_observation_schema=LOCAL_SCHEMA,
+            expected_environment_contract=drifted,
+        )
+
+    _assert_training_state_unchanged(
+        before,
+        target_policy,
+        target_trainer,
+    )
+
+
+@pytest.mark.parametrize("period", JOINT_PERIODS)
+def test_v3_deployment_accepts_each_signed_period(
+    tmp_path: Path,
+    period: str,
+) -> None:
+    config = MAPPOConfig(("demo_4",), hidden_dim=8)
+    _, policy, trainer = _objects(config)
+    metadata = _joint_metadata(config)
+    contract = _joint_environment_contract(metadata)
+    path = tmp_path / "joint.pt"
+    save_checkpoint(
+        path,
+        policy,
+        trainer,
+        metadata,
+        environment_contract=contract,
+    )
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    version, view = load_deployment_contract(path, payload)
+
+    validated = validate_deployment_contract(
+        view,
+        intersection_ids=("demo_4",),
+        obs_dim=config.obs_dim,
+        action_interval=config.action_interval_s,
+        max_green_factor=config.max_green_factor,
+        effective_demand_enabled=config.effective_demand_enabled,
+        live_metadata=_environment_metadata(
+            period,
+            phase_count={"morning_peak": 4, "off_peak": 3, "evening_peak": 4}[period],
+        ),
+    )
+
+    assert version == 3
+    assert validated["checkpoint_format_version"] == 3
+
+
+def test_v3_deployment_rejects_unsupported_and_drifted_programs(
+    tmp_path: Path,
+) -> None:
+    config = MAPPOConfig(("demo_4",), hidden_dim=8)
+    _, policy, trainer = _objects(config)
+    metadata = _joint_metadata(config)
+    path = tmp_path / "joint.pt"
+    save_checkpoint(
+        path,
+        policy,
+        trainer,
+        metadata,
+        environment_contract=_joint_environment_contract(metadata),
+    )
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    _, view = load_deployment_contract(path, payload)
+    live = _environment_metadata("off_peak", phase_count=3)
+    live["period"] = "weekend"
+    with pytest.raises(ValueError, match="not supported"):
+        validate_deployment_contract(
+            view,
+            intersection_ids=("demo_4",),
+            obs_dim=config.obs_dim,
+            action_interval=config.action_interval_s,
+            max_green_factor=config.max_green_factor,
+            effective_demand_enabled=config.effective_demand_enabled,
+            live_metadata=live,
+        )
+
+    drifted = _environment_metadata("off_peak", phase_count=3)
+    drifted["intersections"]["demo_4"]["phases"]["0"][
+        "green_seconds"
+    ] += 1.0
+    with pytest.raises(ValueError, match="green_seconds"):
+        validate_deployment_contract(
+            view,
+            intersection_ids=("demo_4",),
+            obs_dim=config.obs_dim,
+            action_interval=config.action_interval_s,
+            max_green_factor=config.max_green_factor,
+            effective_demand_enabled=config.effective_demand_enabled,
+            live_metadata=drifted,
+        )
+
+
+def test_v3_deployment_allows_a_controlled_training_subset(
+    tmp_path: Path,
+) -> None:
+    config = MAPPOConfig(("demo_4", "demo_5"), hidden_dim=8)
+    _, policy, trainer = _objects(config)
+    metadata = _joint_metadata(config)
+    path = tmp_path / "joint-two-intersections.pt"
+    save_checkpoint(
+        path,
+        policy,
+        trainer,
+        metadata,
+        environment_contract=_joint_environment_contract(
+            metadata,
+            include_demo5=True,
+        ),
+    )
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    _, view = load_deployment_contract(path, payload)
+
+    validated = validate_deployment_contract(
+        view,
+        intersection_ids=("demo_4",),
+        obs_dim=config.obs_dim,
+        action_interval=config.action_interval_s,
+        max_green_factor=config.max_green_factor,
+        effective_demand_enabled=config.effective_demand_enabled,
+        live_metadata=_environment_metadata("morning_peak", phase_count=4),
+    )
+
+    assert validated["intersection_ids"] == ("demo_4", "demo_5")
+
+
+def test_joint_checkpoint_rejects_policy_spec_not_bound_to_metadata(
+    tmp_path: Path,
+) -> None:
+    config = MAPPOConfig(("demo_4",), hidden_dim=8)
+    _, policy, trainer = _objects(config)
+    metadata = _joint_metadata(config)
+    differently_shaped_metadata = replace(
+        metadata,
+        hidden_dim=metadata.hidden_dim + 8,
+    )
+    contract = _joint_environment_contract(differently_shaped_metadata)
+
+    with pytest.raises(
+        CheckpointCompatibilityError,
+        match="environment contract.*policy_spec",
+    ):
+        save_checkpoint(
+            tmp_path / "mismatched-policy-spec.pt",
+            policy,
+            trainer,
+            metadata,
+            environment_contract=contract,
+        )

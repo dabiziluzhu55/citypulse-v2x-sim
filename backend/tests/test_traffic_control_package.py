@@ -19,6 +19,7 @@ from backend.app.controllers.registry import (
 from backend.app.core.exceptions import AppError
 from backend.app.scenario.resolver import ResolvedStartSimulation
 from backend.app.services.simulation_service import SimulationService
+from simulation.sumo.engine.ai_control import AIControlConfig
 from simulation.sumo.engine.distributed.codec import dumps_config, loads_config
 from simulation.sumo.engine.session import SimulationConfig
 from traffic_control import max_pressure as tc_max_pressure
@@ -133,6 +134,7 @@ def _make_service(**settings_kwargs: object) -> SimulationService:
         prediction_horizon_seconds=60.0,
         prediction_model_path=None,
         stgcn_root="",
+        ai_control_config=AIControlConfig(),
         **settings_kwargs,
     )
     return SimulationService(
@@ -169,9 +171,19 @@ def _resolved(
     )
 
 
-def test_five_control_modes_registered() -> None:
-    assert list_control_modes() == ["fixed", "max_pressure", "sotl", "ippo", "mappo"]
-    assert list(TC_REGISTRY.keys()) == ["fixed", "max_pressure", "sotl", "ippo", "mappo"]
+def test_control_modes_registered() -> None:
+    expected_modes = [
+        "fixed",
+        "max_pressure",
+        "safe_max_pressure",
+        "strong_b_trace",
+        "sotl",
+        "ippo",
+        "mappo",
+        "cov2x",
+    ]
+    assert list_control_modes() == expected_modes
+    assert list(TC_REGISTRY.keys()) == expected_modes
     assert CONTROL_MODE_REGISTRY is TC_REGISTRY
 
     fixed = require_control_mode("fixed")
@@ -181,8 +193,11 @@ def test_five_control_modes_registered() -> None:
     for name, module in (
         ("sotl", "traffic_control.sotl"),
         ("max_pressure", "traffic_control.max_pressure"),
+        ("safe_max_pressure", "traffic_control.safe_max_pressure"),
+        ("strong_b_trace", "traffic_control.strong_b_trace"),
         ("ippo", "traffic_control.ippo"),
         ("mappo", "traffic_control.mappo"),
+        ("cov2x", "traffic_control.cov2x"),
     ):
         spec = require_control_mode(name)
         assert spec.kernel_mode == "algorithm"
@@ -190,6 +205,9 @@ def test_five_control_modes_registered() -> None:
         assert spec.algorithm_module == module
 
     assert require_control_mode("ippo").supported_presets == (
+        "xiongan_20", "east_dense", "west_dense"
+    )
+    assert require_control_mode("cov2x").supported_presets == (
         "xiongan_20", "east_dense", "west_dense"
     )
 
@@ -224,8 +242,11 @@ def test_simulation_config_local_module_for_algorithms() -> None:
     for mode, module in (
         ("sotl", "traffic_control.sotl"),
         ("max_pressure", "traffic_control.max_pressure"),
+        ("safe_max_pressure", "traffic_control.safe_max_pressure"),
+        ("strong_b_trace", "traffic_control.strong_b_trace"),
         ("ippo", "traffic_control.ippo"),
         ("mappo", "traffic_control.mappo"),
+        ("cov2x", "traffic_control.cov2x"),
     ):
         cfg = service._build_config(_resolved(control_mode=mode))
         assert cfg.control_mode == "algorithm"

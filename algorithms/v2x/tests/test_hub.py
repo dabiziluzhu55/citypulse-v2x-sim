@@ -165,3 +165,21 @@ def test_map_payload_carries_phase_order():
     hub2.advance(1.0)
     assert len(seen) == 1
     assert seen[0].payload["phase_order"] == [1, 2, 3]
+
+def test_delivered_at_is_written_into_message_on_delivery():
+    hub = _hub(default_latency_ms=100.0)
+    _init(hub)
+    delivered = []
+    hub.subscribe("SPaT", lambda msg: delivered.append(msg))
+    hub.publish(MessageDraft(
+        "SPaT", "demo_1", "cloud", 10.0,
+        {"intersection_id": "demo_1", "current_phase": 1, "stage": "GREEN",
+         "stage_elapsed": 5.0, "connection_signal_states": [],
+         "remaining_time_s": 10.0, "next_stage": 2, "next_stage_start_time": 20.0,
+         "schedule_status": "ok"}),
+        frame_id="ep1:step:000002")
+    hub.advance(10.15)
+    assert len(delivered) == 1
+    # 100ms 延迟 → 投递时刻 10.1
+    assert delivered[0].delivered_at == pytest.approx(10.1, abs=1e-9)
+    assert delivered[0].to_dict()["delivered_at"] == pytest.approx(10.1, abs=1e-9)

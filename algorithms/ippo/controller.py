@@ -22,11 +22,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from traffic_control.common.environment_contract import (
+    JOINT_PERIODS,
+    build_environment_contract,
+    validate_balanced_period_batch,
+    validate_checkpoint_environment,
+    validate_contract_integrity,
+)
 from traffic_control.ippo.contract import (
     CHECKPOINT_CONTRACT_VERSION,
     COLLAB_MESSAGE_SCHEMA,
+    MULTIPERIOD_CHECKPOINT_CONTRACT_VERSION,
+    MULTIPERIOD_MAX_ACTION_DIM,
     NORMALIZATION,
     OBSERVATION_SCHEMA,
+    build_ippo_policy_spec,
     fingerprint_sha256,
     intersection_fingerprint_from_index,
     load_contract,
@@ -110,8 +120,20 @@ _collector_policy_state: Optional[Dict[str, torch.Tensor]] = None
 _collector_policy_seed: Optional[int] = None
 _collector_rollout_seed: Optional[int] = None
 _collector_metadata: Optional[dict] = None
+_collector_metadata_by_period: Dict[str, dict] = {}
+_collector_action_dim: Optional[int] = None
+_collector_environment_contract: Optional[dict] = None
+_joint_environment_contract: Optional[dict] = None
 _collected_rollout: Optional[dict] = None
 _evaluation_episode_id = ""
+
+# Pressure shaping (opt-in via env var, default off)
+_pressure_shaping_enabled = False
+_pressure_shapers: "dict[str, PressureShaper]" = {}
+_pressure_alpha_base = 0.10
+_pressure_density_decay = 0.75
+_pressure_density_threshold = 40.0
+_pressure_epsilon = 1e-6
 
 
 def _orthogonal_init(layer: nn.Module, gain: float) -> None:
@@ -127,6 +149,27 @@ def _effective_demand_from_environment() -> bool:
     if value in {"0", "false", "off", "no"}:
         return False
     raise ValueError("IPPO_EFFECTIVE_DEMAND must be 'on' or 'off'.")
+
+
+def _configured_training_periods() -> Tuple[str, ...]:
+    raw = os.environ.get("IPPO_TRAIN_PERIODS", "")
+    return tuple(value.strip() for value in raw.split(",") if value.strip())
+
+
+def _joint_training_enabled() -> bool:
+    return _configured_training_periods() == JOINT_PERIODS
+
+
+def _current_policy_spec() -> dict[str, Any]:
+    return build_ippo_policy_spec(
+        obs_dim=_obs_dim,
+        act_dim=_act_dim,
+        action_interval=_action_interval,
+        max_green_factor=_max_green_factor,
+        phase_feature_schema=PHASE_FEATURE_SCHEMA,
+        effective_demand_enabled=_effective_demand_enabled,
+        model_version=MODEL_VERSION,
+    )
 
 
 class IPPONetwork(nn.Module):
@@ -221,6 +264,7 @@ class _Idx:
         "phase_connections",
         "phase_movements",
         "phase_durations",
+        "_connection_weights",
         "flow_reference_rate",
     )
 
@@ -237,6 +281,7 @@ class _Idx:
         self.phase_connections: List[Tuple[Tuple[str, str], ...]] = []
         self.phase_movements: List[Tuple[Tuple[str, str], ...]] = []
         self.phase_durations: List[float] = []
+        self._connection_weights: dict[tuple[str, str], float] = {}
         self.flow_reference_rate = SATURATION_FLOW_PER_LANE
 
 
@@ -303,6 +348,14 @@ def _build_index(i_meta: Mapping[str, Any]) -> _Idx:
                 )
             )
         )
+        # Populate connection weights for pressure shaping
+        for conn_id, priority in priorities.items():
+            conn = connections_by_id.get(str(conn_id))
+            if conn and conn.get("from_lane") is not None and conn.get("to_lane") is not None:
+                key = (str(conn["from_lane"]), str(conn["to_lane"]))
+                index._connection_weights[key] = (
+                    1.0 if str(priority).lower() != "permissive" else 0.5
+                )
         index.phase_durations.append(
             max(float(phase.get("green_seconds", DEFAULT_GREEN_DURATION)), 1.0)
         )
@@ -384,6 +437,29 @@ class StateBuilder:
     def get_flow_reference_rate(self, intersection_id: str) -> float:
         index = self._indices.get(intersection_id)
         return index.flow_reference_rate if index else SATURATION_FLOW_PER_LANE
+
+    def get_phase_connections(
+        self, intersection_id: str
+    ) -> dict[int, list[tuple[str, str, float]]]:
+        """Return {phase_id: [(from_lane, to_lane, service_weight), ...]}.
+
+        service_weight is 1.0 for protected, 0.5 for permissive connections.
+        """
+        index = self._indices.get(intersection_id)
+        if index is None:
+            return {}
+        weights = getattr(index, '_connection_weights', {})
+        result: dict[int, list[tuple[str, str, float]]] = {}
+        for offset, phase_id in enumerate(index.phase_order):
+            pairs = (
+                index.phase_connections[offset]
+                if offset < len(index.phase_connections)
+                else ()
+            )
+            result[phase_id] = [
+                (fl, tl, weights.get((fl, tl), 1.0)) for fl, tl in pairs
+            ]
+        return result
 
     def build_phase_features(
         self,
@@ -743,11 +819,14 @@ def _validate_checkpoint(
 def _reset_training_model(obs_dim: int, act_dim: int) -> None:
     global _model, _optimizer_actor, _optimizer_critic, _model_intersection_ids
     global _loaded_model_path, _buffer_episodes, _episode
+    global _collector_metadata_by_period, _joint_environment_contract
     _model = IPPONetwork(obs_dim, act_dim)
     _optimizer_actor, _optimizer_critic = _new_optimizers(_model)
     _model_intersection_ids = _intersection_ids
     _loaded_model_path = None
     _buffer_episodes.clear()
+    _collector_metadata_by_period.clear()
+    _joint_environment_contract = None
     _episode = 0
 
 
@@ -767,14 +846,29 @@ def prepare_collector(
     policy_state: Optional[Mapping[str, torch.Tensor]],
     policy_seed: int,
     rollout_seed: int,
+    action_dim: Optional[int] = None,
+    environment_contract: Optional[Mapping[str, Any]] = None,
 ) -> None:
     """Install one immutable policy generation for a worker-process rollout."""
 
     global _collector_policy_state, _collector_policy_seed, _collector_rollout_seed
-    global _collector_metadata, _collected_rollout
+    global _collector_metadata, _collector_action_dim, _collected_rollout
+    global _collector_environment_contract
+    if action_dim is not None and not 0 < int(action_dim) <= MAX_PHASES:
+        raise ValueError(
+            f"collector action_dim must be between 1 and {MAX_PHASES}"
+        )
+    if environment_contract is not None:
+        validate_contract_integrity(environment_contract)
     _collector_policy_state = _copy_policy_state(policy_state)
     _collector_policy_seed = int(policy_seed)
     _collector_rollout_seed = int(rollout_seed)
+    _collector_action_dim = None if action_dim is None else int(action_dim)
+    _collector_environment_contract = (
+        None
+        if environment_contract is None
+        else copy.deepcopy(dict(environment_contract))
+    )
     _collector_metadata = None
     _collected_rollout = None
 
@@ -785,6 +879,16 @@ def export_policy_state() -> Dict[str, torch.Tensor]:
     copied = _copy_policy_state(_model.state_dict())
     assert copied is not None
     return copied
+
+
+def export_environment_contract() -> Optional[dict]:
+    """Return the frozen joint contract after the first balanced batch."""
+
+    return (
+        None
+        if _joint_environment_contract is None
+        else copy.deepcopy(_joint_environment_contract)
+    )
 
 
 def install_parallel_initial_policy(state: Mapping[str, torch.Tensor]) -> None:
@@ -812,6 +916,8 @@ def initialize(payload: dict) -> dict:
     global _effective_demand_enabled
     global _obs_dim, _act_dim
     global _episode, _collector_metadata, _collected_rollout
+    global _collector_metadata_by_period, _joint_environment_contract
+    global _collector_environment_contract
     global _evaluation_episode_id
 
     mode = os.environ.get("IPPO_MODE", "random").strip().lower()
@@ -830,6 +936,26 @@ def initialize(payload: dict) -> dict:
     }
     _obs_dim = _state_builder.max_state_dim
     _act_dim = _state_builder.max_phases
+    if mode == "train" and _joint_training_enabled():
+        _act_dim = MULTIPERIOD_MAX_ACTION_DIM
+    elif mode == "collect" and _collector_action_dim is not None:
+        _act_dim = _collector_action_dim
+
+    # Initialize pressure shapers
+    global _pressure_shaping_enabled, _pressure_shapers
+    _pressure_shaping_enabled = (
+        os.environ.get("IPPO_PRESSURE_SHAPING", "0").strip().lower()
+        in {"1", "true", "on", "yes"}
+    )
+    if _pressure_shaping_enabled:
+        from algorithms.common.pressure_shaping import PressureShaper
+        _pressure_shapers = {}
+        for intersection_id in _intersection_ids:
+            phase_conns = _state_builder.get_phase_connections(intersection_id)
+            _pressure_shapers[intersection_id] = PressureShaper(
+                phase_conns, epsilon=_pressure_epsilon,
+            )
+
     if not _intersection_ids or _obs_dim <= 0 or _act_dim <= 0:
         raise ValueError("IPPO requires at least one intersection with at least one phase.")
     if _act_dim > MAX_PHASES:
@@ -859,6 +985,28 @@ def initialize(payload: dict) -> dict:
     if not math.isfinite(_max_green_factor) or _max_green_factor < 0.0:
         raise ValueError("IPPO_MAX_GREEN_FACTOR must be finite and non-negative.")
 
+    if mode == "collect" and _collector_environment_contract is not None:
+        live_fingerprints = {
+            intersection_id: _state_builder.get_fingerprint(intersection_id)
+            for intersection_id in _intersection_ids
+        }
+        validate_contract(
+            _collector_environment_contract,
+            intersection_ids=_intersection_ids,
+            fingerprints=live_fingerprints,
+            obs_dim=_obs_dim,
+            act_dim=_act_dim,
+            action_interval=_action_interval,
+            max_green_factor=_max_green_factor,
+            phase_feature_schema=PHASE_FEATURE_SCHEMA,
+            effective_demand_enabled=_effective_demand_enabled,
+            model_version=MODEL_VERSION,
+            metadata=payload,
+        )
+        _joint_environment_contract = copy.deepcopy(
+            _collector_environment_contract
+        )
+
     signature_matches = (
         _model is not None
         and _model.obs_dim == _obs_dim
@@ -879,6 +1027,11 @@ def initialize(payload: dict) -> dict:
             checkpoint.get("effective_demand_enabled", True)
         )
         _contract_version, contract_view = load_contract(_model_path, checkpoint)
+        _joint_environment_contract = (
+            copy.deepcopy(contract_view)
+            if _contract_version == MULTIPERIOD_CHECKPOINT_CONTRACT_VERSION
+            else None
+        )
         live_fingerprints = {
             intersection_id: _state_builder.get_fingerprint(intersection_id)
             for intersection_id in _intersection_ids
@@ -894,6 +1047,7 @@ def initialize(payload: dict) -> dict:
             phase_feature_schema=PHASE_FEATURE_SCHEMA,
             effective_demand_enabled=_effective_demand_enabled,
             model_version=MODEL_VERSION,
+            metadata=payload,
         )
         _model = IPPONetwork(_obs_dim, _act_dim)
         _model.load_state_dict(checkpoint["model_state_dict"])
@@ -910,6 +1064,11 @@ def initialize(payload: dict) -> dict:
                 checkpoint.get("effective_demand_enabled", True)
             )
             _contract_version, contract_view = load_contract(resume_path, checkpoint)
+            _joint_environment_contract = (
+                copy.deepcopy(contract_view)
+                if _contract_version == MULTIPERIOD_CHECKPOINT_CONTRACT_VERSION
+                else None
+            )
             live_fingerprints = {
                 intersection_id: _state_builder.get_fingerprint(intersection_id)
                 for intersection_id in _intersection_ids
@@ -925,12 +1084,14 @@ def initialize(payload: dict) -> dict:
                 phase_feature_schema=PHASE_FEATURE_SCHEMA,
                 effective_demand_enabled=_effective_demand_enabled,
                 model_version=MODEL_VERSION,
+                metadata=payload,
             )
             _model = IPPONetwork(_obs_dim, _act_dim)
             _model.load_state_dict(checkpoint["model_state_dict"])
             _model_intersection_ids = _intersection_ids
             _loaded_model_path = resume_path
             _buffer_episodes.clear()
+            _collector_metadata_by_period.clear()
             _optimizer_actor, _optimizer_critic = _new_optimizers(_model)
             reset_optimizer = (
                 os.environ.get("IPPO_RESET_OPTIMIZER", "0").strip().lower()
@@ -1192,6 +1353,10 @@ def _finalize_v5a_reward(intersection_id: str, transition: dict) -> None:
         )
     )
     raw_reward = -0.60 * congestion + 0.20 * safe_flow - 0.15 * spillback + 0.05 * waiting_gain
+    pr = transition.get("pressure_regret")
+    pa = transition.get("pressure_alpha")
+    if pr is not None and pa is not None:
+        raw_reward = float(raw_reward + float(pa) * float(pr))
     transition["reward_components"] = {
         "D": congestion,
         "L": delay,
@@ -1200,6 +1365,8 @@ def _finalize_v5a_reward(intersection_id: str, transition: dict) -> None:
         "F_safe": safe_flow,
         "B": spillback,
         "H": waiting_gain,
+        "MP_regret": float(pr) if pr is not None else 0.0,
+        "MP_alpha": float(pa) if pa is not None else 0.0,
     }
     transition["raw_reward"] = float(raw_reward)
     transition["raw_reward_parts"] = [float(raw_reward)]
@@ -1468,6 +1635,39 @@ def step(payload: dict) -> dict:
         )
         _last_decision_times[intersection_id] = simulation_time
 
+        # Pressure shaping: pre-action snapshot
+        _pressure_regret: float = 0.0
+        _pressure_alpha: float = 0.0
+        if (
+            _pressure_shaping_enabled
+            and _inference_mode in {"train", "collect"}
+            and intersection_id in _pressure_shapers
+        ):
+            shaper = _pressure_shapers[intersection_id]
+            legal_phase_ids = [
+                phase_order[i] for i, m in enumerate(action_mask) if m and i < len(phase_order)
+            ]
+            result = shaper.compute_pressure_regret(
+                intersection.get("lanes", {}),
+                legal_phases=legal_phase_ids,
+                selected_phase=phase_order[action_index] if action_index < len(phase_order) else phase_order[0],
+            )
+            _pressure_regret = result.regret
+            incoming = _state_builder.get_incoming_lanes(intersection_id)
+            lanes = intersection.get("lanes", {})
+            occ_vals = [
+                float(lanes.get(lid, {}).get("occupancy", 0.0))
+                for lid in incoming
+            ]
+            occ_avg = sum(occ_vals) / max(len(occ_vals), 1)
+            from algorithms.common.pressure_shaping import density_gate
+            _density, _pressure_alpha = density_gate(
+                occ_avg,
+                threshold=_pressure_density_threshold,
+                alpha_base=_pressure_alpha_base,
+                density_decay=_pressure_density_decay,
+            )
+
         if _inference_mode in {"train", "collect"}:
             _pending_transitions[intersection_id] = {
                 "obs": state.copy(),
@@ -1491,6 +1691,8 @@ def step(payload: dict) -> dict:
                 "blocked_crossings": 0.0,
                 "waiting_start": total_waiting,
                 "waiting_end": total_waiting,
+                "pressure_regret": _pressure_regret,
+                "pressure_alpha": _pressure_alpha,
             }
 
     response = {
@@ -1662,12 +1864,60 @@ def take_collected_rollout() -> dict:
     return result
 
 
+def _validate_joint_rollout_batch(
+    rollouts: Sequence[Mapping[str, Any]],
+) -> Optional[Tuple[dict[str, int], dict[str, dict], dict]]:
+    if not _joint_training_enabled():
+        return None
+
+    metadata_items: List[Mapping[str, Any]] = []
+    periods: List[str] = []
+    for index, rollout in enumerate(rollouts):
+        metadata = rollout.get("metadata")
+        if not isinstance(metadata, Mapping):
+            raise ValueError(
+                f"joint rollout {index} is missing simulation metadata"
+            )
+        metadata_items.append(metadata)
+        periods.append(str(metadata.get("period", "")))
+
+    counts = validate_balanced_period_batch(periods)
+    metadata_by_period = {
+        period: copy.deepcopy(
+            next(
+                metadata
+                for metadata in metadata_items
+                if str(metadata.get("period", "")) == period
+            )
+        )
+        for period in JOINT_PERIODS
+    }
+    policy_spec = _current_policy_spec()
+    live_contract = build_environment_contract(
+        metadata_by_period,
+        policy_spec=policy_spec,
+    )
+    contract = (
+        live_contract
+        if _joint_environment_contract is None
+        else copy.deepcopy(_joint_environment_contract)
+    )
+    for metadata in metadata_items:
+        validate_checkpoint_environment(
+            contract,
+            metadata,
+            policy_spec=policy_spec,
+            controlled_intersection_ids=_intersection_ids,
+        )
+    return counts, metadata_by_period, contract
+
+
 def ingest_parallel_rollouts(
     rollouts: Sequence[Mapping[str, Any]], *, update: bool = True
 ) -> dict:
     """Update one synchronous batch collected by one policy generation."""
 
-    global _episode
+    global _episode, _joint_environment_contract
     if _inference_mode != "train" or _model is None:
         raise RuntimeError("Parallel rollouts require an initialized training learner.")
     if not rollouts:
@@ -1675,7 +1925,9 @@ def ingest_parallel_rollouts(
     if _buffer_episodes:
         raise RuntimeError("Stale rollout buffer must be empty before a parallel batch.")
 
+    joint_validation = _validate_joint_rollout_batch(rollouts)
     total_samples = 0
+    accepted_episodes: List[Dict[str, List[dict]]] = []
     for rollout in rollouts:
         source = rollout.get("trajectories")
         if not isinstance(source, Mapping) or not source:
@@ -1698,12 +1950,23 @@ def ingest_parallel_rollouts(
             total_samples += len(normalized)
         if not accepted:
             raise ValueError("Parallel rollout has no valid policy samples.")
-        _buffer_episodes.append(accepted)
-        _episode += 1
+        accepted_episodes.append(accepted)
+
+    _buffer_episodes.extend(accepted_episodes)
+    _episode += len(accepted_episodes)
+    period_counts = None
+    if joint_validation is not None:
+        period_counts, metadata_by_period, contract = joint_validation
+        _collector_metadata_by_period.clear()
+        _collector_metadata_by_period.update(metadata_by_period)
+        _joint_environment_contract = copy.deepcopy(contract)
 
     if update:
         _ppo_update(episode_count=len(rollouts))
-    return {"episodes": len(rollouts), "samples": total_samples}
+    summary = {"episodes": len(rollouts), "samples": total_samples}
+    if period_counts is not None:
+        summary["period_counts"] = period_counts
+    return summary
 
 
 def _compute_gae(trajectory: Sequence[Mapping[str, Any]]) -> Tuple[np.ndarray, np.ndarray]:
@@ -1943,11 +2206,40 @@ def save_checkpoint(path: str | os.PathLike[str]) -> Path:
             "start": int(seed_start),
             "end": int(seed_end),
         }
-    training_periods = os.environ.get("IPPO_TRAIN_PERIODS")
+    episode_duration = os.environ.get("IPPO_EPISODE_DURATION_S")
+    if episode_duration is not None:
+        checkpoint["episode_duration_s"] = float(episode_duration)
+    training_periods = _configured_training_periods()
     if training_periods:
-        checkpoint["training_periods"] = [
-            value for value in training_periods.split(",") if value
-        ]
+        checkpoint["training_periods"] = list(training_periods)
+    if training_periods == JOINT_PERIODS:
+        if _model.act_dim != MULTIPERIOD_MAX_ACTION_DIM:
+            raise RuntimeError(
+                "joint IPPO checkpoint requires the fixed four-slot action space"
+            )
+        if set(_collector_metadata_by_period) == set(JOINT_PERIODS):
+            metadata_by_period = {
+                period: _collector_metadata_by_period[period]
+                for period in JOINT_PERIODS
+            }
+            environment_contract = build_environment_contract(
+                metadata_by_period,
+                policy_spec=_current_policy_spec(),
+            )
+        elif _joint_environment_contract is not None:
+            environment_contract = copy.deepcopy(_joint_environment_contract)
+        else:
+            missing = sorted(
+                set(JOINT_PERIODS) - set(_collector_metadata_by_period)
+            )
+            raise RuntimeError(
+                "cannot save joint IPPO checkpoint before a complete balanced "
+                f"batch; missing period metadata: {missing}"
+            )
+        checkpoint["checkpoint_contract_version"] = (
+            MULTIPERIOD_CHECKPOINT_CONTRACT_VERSION
+        )
+        checkpoint["environment_contract"] = environment_contract
     temporary = destination.with_suffix(f"{destination.suffix}.tmp")
     try:
         torch.save(checkpoint, temporary)

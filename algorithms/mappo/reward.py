@@ -168,6 +168,19 @@ class V5ARewardAccumulator:
         self.blocked_crossings = 0.0
         self.observed_seconds = 0.0
         self.observations = 0
+        self._pressure_regret: float | None = None
+        self._pressure_alpha: float = 0.0
+
+    def set_pressure_context(self, regret: float, alpha: float) -> None:
+        """Set pre-computed pressure regret and effective alpha.
+
+        Called at the decision boundary, before any observe() calls.
+        Must be called at most once per accumulator lifetime.
+        """
+        if self._pressure_regret is not None:
+            raise RuntimeError("pressure context already set for this accumulator")
+        self._pressure_regret = float(regret)
+        self._pressure_alpha = float(alpha)
 
     def observe(
         self,
@@ -284,6 +297,8 @@ class V5ARewardAccumulator:
             - 0.15 * spillback
             + 0.05 * waiting_gain
         )
+        if self._pressure_regret is not None:
+            raw_reward = float(raw_reward + self._pressure_alpha * self._pressure_regret)
         return V5ARewardResult(
             reward=normalize_reward(raw_reward),
             raw_reward=float(raw_reward),
@@ -295,6 +310,8 @@ class V5ARewardAccumulator:
                 "F_safe": safe_flow,
                 "B": float(spillback),
                 "H": waiting_gain,
+                "MP_regret": self._pressure_regret if self._pressure_regret is not None else 0.0,
+                "MP_alpha": self._pressure_alpha,
             },
             observations=self.observations,
             observed_seconds=float(self.observed_seconds),

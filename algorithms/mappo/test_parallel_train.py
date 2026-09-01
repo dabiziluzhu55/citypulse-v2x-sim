@@ -14,6 +14,7 @@ from algorithms.mappo.config import (
     TEAM_REWARD_SCHEMA,
 )
 from algorithms.mappo.features import CENTRALIZED_STATE_SCHEMA
+from traffic_control.common.environment_contract import JOINT_PERIODS
 from algorithms.mappo.parallel_train import (
     BatchValidationError,
     _pack_ppo_batch,
@@ -31,6 +32,69 @@ from algorithms.mappo.rollout import Transition
 
 LOCAL_SCHEMA = "ippo_v8_local_obs_v1"
 CONFIG_SIGNATURE = "frozen-v8-config"
+
+
+JOINT_POLICY_SPEC = {
+    "algorithm_family": "mappo_cooperative_ppo",
+    "identity_slots": [f"demo_{index}" for index in range(1, 21)],
+    "obs_dim": 132,
+    "phase_feature_dim": 11,
+    "max_action_dim": 4,
+    "saturation_flow_per_lane": 0.5,
+}
+
+
+def _environment_metadata(period: str, *, phase_count: int = 2) -> dict:
+    intersection_id = "demo_4"
+    return {
+        "protocol_version": "2.0",
+        "period": period,
+        "episode_id": f"episode-{period}",
+        "seed": 100,
+        "decision_interval": 5.0,
+        "minimum_green": 5.0,
+        "intersections": {
+            intersection_id: {
+                "intersection_id": intersection_id,
+                "incoming_lanes": ["in_0"],
+                "outgoing_lanes": ["out_0"],
+                "lanes": {
+                    "in_0": {
+                        "edge_id": "in",
+                        "lane_index": 0,
+                        "role": "incoming",
+                        "length_m": 100.0,
+                        "speed_limit_mps": 13.9,
+                    },
+                    "out_0": {
+                        "edge_id": "out",
+                        "lane_index": 0,
+                        "role": "outgoing",
+                        "length_m": 100.0,
+                        "speed_limit_mps": 13.9,
+                    },
+                },
+                "connections": [
+                    {"connection_id": "c0", "from_lane": "in_0", "to_lane": "out_0"}
+                ],
+                "direct_neighbors": [],
+                "phase_order": list(range(phase_count)),
+                "phases": {
+                    str(index): {
+                        "phase_id": index,
+                        "name": f"{period}-{index}",
+                        "movement": "through" if index % 2 == 0 else "left",
+                        "approaches": ["west"],
+                        "green_seconds": 20.0 + index,
+                        "yellow_seconds": 3.0,
+                        "clearance_seconds": 2.0,
+                        "connection_priorities": {"c0": "protected"},
+                    }
+                    for index in range(phase_count)
+                },
+            }
+        },
+    }
 
 
 def _worker(
@@ -52,6 +116,8 @@ def _worker(
         pending_count=0,
         invalid_reason=None,
         error=None if status == "ok" else "SUMO failed",
+        period="off_peak",
+        metadata={"period": "off_peak"},
     )
 
 
@@ -193,6 +259,142 @@ def test_valid_batch_is_returned_in_expected_seed_order() -> None:
         "sample-93001",
         "sample-93002",
     )
+
+
+def _joint_workers(count: int) -> tuple[list[WorkerRollout], tuple[int, ...], tuple[str, ...]]:
+    seeds = tuple(range(94000, 94000 + count))
+    periods = tuple(JOINT_PERIODS[index % len(JOINT_PERIODS)] for index in range(count))
+    phase_counts = {
+        "morning_peak": 4,
+        "off_peak": 3,
+        "evening_peak": 4,
+    }
+    workers = [
+        replace(
+            _worker(seed),
+            period=period,
+            metadata=_environment_metadata(period, phase_count=phase_counts[period]),
+        )
+        for seed, period in zip(seeds, periods, strict=True)
+    ]
+    return workers, seeds, periods
+
+
+def _validate_joint_workers(
+    workers: list[WorkerRollout],
+    seeds: tuple[int, ...],
+    periods: tuple[str, ...],
+) -> tuple[WorkerRollout, ...]:
+    return validate_worker_batch(
+        workers,
+        expected_generation=0,
+        expected_policy_digest="policy-abc",
+        expected_seeds=seeds,
+        expected_config_signature=CONFIG_SIGNATURE,
+        expected_local_observation_schema=LOCAL_SCHEMA,
+        expected_centralized_state_schema=CENTRALIZED_STATE_SCHEMA,
+        expected_periods=periods,
+        policy_spec=JOINT_POLICY_SPEC,
+    )
+
+
+def test_successful_worker_requires_period_and_metadata() -> None:
+    worker = replace(_worker(93001), period=None, metadata=None)
+
+    with pytest.raises(BatchValidationError, match="period"):
+        _validate([worker, _worker(93002)])
+
+
+def test_failed_worker_can_omit_metadata_but_requires_scheduled_period() -> None:
+    failed = replace(
+        _worker(93002, status="error"),
+        period="off_peak",
+        metadata=None,
+    )
+
+    with pytest.raises(BatchValidationError, match="worker 93002 failed"):
+        _validate([_worker(93001), failed])
+
+    missing_period = replace(failed, period=None)
+    with pytest.raises(BatchValidationError, match="scheduled period"):
+        _validate([_worker(93001), missing_period])
+
+
+@pytest.mark.parametrize("worker_count", [6, 9, 12])
+def test_joint_worker_batch_accepts_strictly_balanced_periods(worker_count: int) -> None:
+    workers, seeds, periods = _joint_workers(worker_count)
+
+    ordered = _validate_joint_workers(workers, seeds, periods)
+
+    assert tuple(worker.period for worker in ordered) == periods
+
+
+def test_joint_worker_batch_rejects_unbalanced_periods() -> None:
+    workers, seeds, periods = _joint_workers(6)
+    workers[-1] = replace(
+        workers[-1],
+        period="morning_peak",
+        metadata=_environment_metadata("morning_peak", phase_count=4),
+    )
+    scheduled = (*periods[:-1], "morning_peak")
+
+    with pytest.raises(BatchValidationError, match="balanced"):
+        _validate_joint_workers(workers, seeds, scheduled)
+
+
+def test_joint_worker_batch_rejects_scheduled_metadata_period_mismatch() -> None:
+    workers, seeds, periods = _joint_workers(6)
+    workers[1] = replace(
+        workers[1],
+        metadata=_environment_metadata("morning_peak", phase_count=4),
+    )
+
+    with pytest.raises(BatchValidationError, match="metadata period mismatch"):
+        _validate_joint_workers(workers, seeds, periods)
+
+
+def test_demo_4_four_three_four_phase_programs_share_one_policy_space() -> None:
+    workers, seeds, periods = _joint_workers(6)
+
+    assert _validate_joint_workers(workers, seeds, periods)
+
+
+def test_environment_mismatch_does_not_build_or_update() -> None:
+    workers, seeds, periods = _joint_workers(6)
+    changed = dict(workers[-1].metadata)
+    changed_intersections = dict(changed["intersections"])
+    changed_demo = dict(changed_intersections["demo_4"])
+    changed_connections = [dict(value) for value in changed_demo["connections"]]
+    changed_connections[0]["to_lane"] = "in_0"
+    changed_demo["connections"] = changed_connections
+    changed_intersections["demo_4"] = changed_demo
+    changed["intersections"] = changed_intersections
+    workers[-1] = replace(workers[-1], metadata=changed)
+
+    trainer = _RecordingTrainer()
+    built: list[tuple[WorkerRollout, ...]] = []
+    coordinator = CentralUpdateCoordinator(
+        trainer=trainer,
+        policy_generation=0,
+        policy_digest="policy-abc",
+        config_signature=CONFIG_SIGNATURE,
+        local_observation_schema=LOCAL_SCHEMA,
+        centralized_state_schema=CENTRALIZED_STATE_SCHEMA,
+        digest_provider=lambda: "updated",
+        batch_builder=lambda values: built.append(tuple(values)) or ("batch",),
+        policy_spec=JOINT_POLICY_SPEC,
+    )
+
+    with pytest.raises(BatchValidationError, match="policy space"):
+        coordinator.update_from_workers(
+            workers,
+            expected_seeds=seeds,
+            expected_periods=periods,
+        )
+
+    assert built == []
+    assert trainer.batches == []
+    assert coordinator.policy_generation == 0
 
 
 class _RecordingTrainer:

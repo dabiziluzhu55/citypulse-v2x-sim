@@ -1,7 +1,14 @@
 # algorithms/v2x/tests/test_config.py
 import math
+import os
+
 import pytest
-from algorithms.v2x.config import V2XConfig, RSUCoverageConfig, V2XConfigError
+from algorithms.v2x.config import (
+    RSUCoverageConfig,
+    V2XConfig,
+    V2XConfigError,
+    v2x_config_from_env,
+)
 
 
 def test_defaults():
@@ -53,3 +60,22 @@ def test_coverage_config_defaults():
     cov = RSUCoverageConfig()
     assert cov.positions == {}
     assert cov.extra_covered_lane_ids == {}
+
+
+def test_v2x_config_from_env_matches_preregistration_defaults():
+    os.environ.update({
+        "COSLIGHT_V2X_PENETRATION": "0.6",
+        "COSLIGHT_V2X_CAPABILITY_SEED": "123",
+        "COSLIGHT_V2X_NETWORK_SEED": "123",
+        "COSLIGHT_V2X_DEFAULT_LATENCY_MS": "100",
+        "COSLIGHT_V2X_LATENCY_JITTER_MS": "50",
+        "COSLIGHT_V2X_DROP_RATE": "0.05",
+        "COSLIGHT_V2X_SPAT_INTERVAL_S": "5",
+    })
+    cfg = v2x_config_from_env()
+    assert cfg.penetration_rate == 0.6
+    assert cfg.capability_seed == 123 and cfg.network_seed == 123
+    assert cfg.default_latency_ms == 100.0
+    assert cfg.latency_jitter_ms == 50.0
+    assert cfg.drop_rate == 0.05
+    assert cfg.spat_interval_s == 5.0
