@@ -1177,3 +1177,79 @@ def diagnostics() -> dict[str, Any]:
         "signal_decision_interval_s": _signal_decision_interval_s,
         "cloud_decision_interval_s": _cloud_decision_interval_s,
     }
+
+# Runtime switch keeps legacy tests/replay available while the training CLI
+# opts into the frozen MVP adapter explicitly.
+_legacy_initialize = initialize
+_legacy_step = step
+_legacy_finish = finish
+_legacy_take_collected_rollout = take_collected_rollout
+_legacy_train_on_rollout = train_on_rollout
+_legacy_diagnostics = diagnostics
+_legacy_save_checkpoint = save_checkpoint
+
+
+def _mvp_enabled() -> bool:
+    return os.environ.get("COV2X_RUNTIME", "legacy").strip().lower() == "mvp"
+
+
+def initialize(payload: Mapping[str, Any]) -> dict[str, Any]:
+    if _mvp_enabled():
+        from algorithms.cov2x import mvp_runtime
+        return mvp_runtime.initialize(payload)
+    return _legacy_initialize(payload)
+
+
+def step(payload: Mapping[str, Any]) -> dict[str, Any]:
+    if _mvp_enabled():
+        from algorithms.cov2x import mvp_runtime
+        return mvp_runtime.step(payload)
+    return _legacy_step(payload)
+
+
+def finish(payload: Mapping[str, Any]) -> None:
+    if _mvp_enabled():
+        from algorithms.cov2x import mvp_runtime
+        return mvp_runtime.finish(payload)
+    return _legacy_finish(payload)
+
+
+def take_collected_rollout() -> Rollout | None:
+    if _mvp_enabled():
+        from algorithms.cov2x import mvp_runtime
+        return mvp_runtime.take_collected_rollout()
+    return _legacy_take_collected_rollout()
+
+
+def train_on_rollout(rollout: Rollout | None) -> dict[str, Any] | None:
+    if _mvp_enabled():
+        from algorithms.cov2x import mvp_runtime
+        return mvp_runtime.train_on_rollout(rollout)
+    return _legacy_train_on_rollout(rollout)
+
+
+def diagnostics() -> dict[str, Any]:
+    if _mvp_enabled():
+        from algorithms.cov2x import mvp_runtime
+        return mvp_runtime.diagnostics()
+    return _legacy_diagnostics()
+
+def train_on_rollouts(rollouts: list[Any]) -> dict[str, Any] | None:
+    if _mvp_enabled():
+        from algorithms.cov2x import mvp_runtime
+        return mvp_runtime.train_on_rollouts(rollouts)
+    return None
+
+
+def train_critic_on_rollouts(rollouts: list[Any]) -> dict[str, Any] | None:
+    if _mvp_enabled():
+        from algorithms.cov2x import mvp_runtime
+        return mvp_runtime.train_critic_on_rollouts(rollouts)
+    return None
+
+
+def save_checkpoint(path: str | Path) -> Path:
+    if _mvp_enabled():
+        from algorithms.cov2x import mvp_runtime
+        return Path(mvp_runtime.save_checkpoint(str(path)))
+    return _legacy_save_checkpoint(path)

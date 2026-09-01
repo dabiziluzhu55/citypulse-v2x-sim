@@ -10,8 +10,6 @@ import shutil
 import subprocess
 import sys
 
-import pytest
-
 from traffic_control.cov2x.aliases import resolve_model
 from traffic_control.cov2x.candidates import temporary_cap_u24
 from traffic_control.cov2x.communication import V2XEventDrain
@@ -106,10 +104,7 @@ def test_deployment_runtime_matches_frozen_training_runtime() -> None:
         if name.startswith("COV2X_")
     }
 
-    training_runtime = pytest.importorskip(
-        "algorithms.cov2x.mvp_runtime",
-        reason="training runtime is not part of traffic_control-only deployment",
-    )
+    from algorithms.cov2x import mvp_runtime as training_runtime
     from traffic_control.cov2x.runtime import mvp_runtime as deploy_runtime
 
     finish_payload = {

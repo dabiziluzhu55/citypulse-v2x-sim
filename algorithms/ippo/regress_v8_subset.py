@@ -40,7 +40,7 @@ from traffic_control.ippo.controller import (  # noqa: E402
     load_checkpoint_metadata,
 )
 from traffic_control.ippo.model import IPPONetwork  # noqa: E402
-from simulation.sumo import SimulationConfig, SimulationManager  # noqa: E402
+from simulation.sumo.engine.session import SimulationConfig, SimulationManager  # noqa: E402
 
 
 GOLDEN_DIR = REPO_ROOT / "algorithms" / "ippo" / "regression_golden"

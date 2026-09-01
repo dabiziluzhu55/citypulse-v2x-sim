@@ -32,8 +32,7 @@ from algorithms.ippo.controller import (  # noqa: E402
     DEFAULT_INTERSECTION_IDS,
     load_checkpoint_metadata,
 )
-from simulation.sumo import SimulationConfig, SimulationManager  # noqa: E402
-from traffic_control.common.environment_contract import JOINT_PERIODS  # noqa: E402
+from simulation.sumo.engine.session import SimulationConfig, SimulationManager  # noqa: E402
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [eval] %(message)s")
@@ -48,11 +47,13 @@ OFFICIAL_METRIC_NAMES = (
     "throughput_veh_per_h",
     "avg_decision_latency_ms",
     "fuel_intensity_L_per_100km",
+    "severe_conflict_exposure_per_10000",
     "emergency_braking_exposure_per_1000",
 )
 OPTIONAL_OFFICIAL_METRIC_NAMES = frozenset(
     {
         "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000",
     }
 )
 
@@ -126,10 +127,7 @@ def evaluate(
     duration: int = DEFAULT_DURATION,
     action_interval: float = DEFAULT_ACTION_INTERVAL,
     step_length: float = 0.1,
-    period: str = "off_peak",
 ) -> dict:
-    if period not in JOINT_PERIODS:
-        raise ValueError(f"unsupported evaluation period: {period!r}")
     checkpoint = Path(model_path).expanduser().resolve()
     metadata = load_checkpoint_metadata(checkpoint)
     seeds = tuple(int(seed) for seed in seeds)
@@ -164,7 +162,7 @@ def evaluate(
         session_id = None
         config = SimulationConfig(
             intersection_ids=list(checkpoint_intersections),
-            period=period,
+            period="off_peak",
             duration_seconds=duration,
             control_mode="algorithm",
             algorithm_transport="local",
@@ -174,9 +172,8 @@ def evaluate(
             seed=seed,
             step_length=step_length,
             ai_observer_module="algorithms.evaluation.observer",
-            # Pre-registration v1.1: all methods observe at 1.0 s; the
-            # observer sampling is decoupled from the 15 s action interval.
-            ai_frame_interval_seconds=1.0,
+            # Safety events need denser observations than queue/fuel metrics.
+            ai_frame_interval_seconds=0.2,
         )
         try:
             session_id = manager.start(config)
@@ -187,15 +184,10 @@ def evaluate(
                 from algorithms.evaluation.metrics import (
                     apply_tripinfo_completed_metrics,
                 )
-                from algorithms.evaluation.tripinfo_diagnostics import (
-                    parse_tripinfo_diagnostics,
-                    residual_mismatch,
-                )
 
-                tripinfo_path = manager.session_root / session_id / "tripinfo.xml"
-                gate_totals = parse_tripinfo_diagnostics(tripinfo_path)
                 official = last_result(session_id)
                 if official is not None:
+                    tripinfo_path = manager.session_root / session_id / "tripinfo.xml"
                     official = apply_tripinfo_completed_metrics(
                         official, str(tripinfo_path)
                     )
@@ -207,27 +199,14 @@ def evaluate(
                 )
                 result = {
                     "seed": seed,
-                    "period": period,
                     "state": (
                         snapshot.state
                         if not required_missing
                         else "INVALID_METRICS"
                     ),
-                    "trip_records": int(gate_totals["trip_records"]),
-                    "completed_trips": int(gate_totals["completed_trips"]),
-                    "unfinished_trips": int(gate_totals["unfinished_trips"]),
-                    "departed": int(gate_totals["trip_records"]),
-                    "arrived": int(gate_totals["completed_trips"]),
-                    "all_waiting_total_s": float(gate_totals["all_waiting_total_s"]),
-                    "all_time_loss_total_s": float(gate_totals["all_time_loss_total_s"]),
+                    "departed": snapshot.metrics.departed_vehicles,
+                    "arrived": snapshot.metrics.arrived_vehicles,
                     "waiting": snapshot.metrics.total_waiting_time,
-                    "snapshot_departed": snapshot.metrics.departed_vehicles,
-                    "snapshot_arrived": snapshot.metrics.arrived_vehicles,
-                    "snapshot_remaining": snapshot.metrics.remaining_vehicles,
-                    "residual_mismatch": residual_mismatch(
-                        int(gate_totals["unfinished_trips"]),
-                        int(snapshot.metrics.remaining_vehicles),
-                    ),
                     "elapsed": round(elapsed, 1),
                     "official_metrics": official_metrics,
                     "missing_official_metrics": optional_missing,
@@ -252,14 +231,14 @@ def evaluate(
                 state = getattr(snapshot, "state", "NO_SNAPSHOT")
                 error = getattr(snapshot, "error", None) or f"terminal state={state}"
                 logger.error("seed=%d FAILED: %s", seed, error)
-                results.append({"seed": seed, "period": period, "state": state, "error": str(error)})
+                results.append({"seed": seed, "state": state, "error": str(error)})
         except TimeoutError as exc:
             _stop_timed_out_session(manager, session_id)
             logger.error("seed=%d TIMEOUT: %s", seed, exc)
-            results.append({"seed": seed, "period": period, "state": "TIMEOUT", "error": str(exc)})
+            results.append({"seed": seed, "state": "TIMEOUT", "error": str(exc)})
         except Exception as exc:  # a failed SUMO run must not become a zero-valued score
             logger.exception("seed=%d evaluation failed", seed)
-            results.append({"seed": seed, "period": period, "state": "EXCEPTION", "error": str(exc)})
+            results.append({"seed": seed, "state": "EXCEPTION", "error": str(exc)})
 
     successes = [
         item
@@ -273,7 +252,6 @@ def evaluate(
         "status": "complete" if failures == 0 else "failed",
         "model": str(checkpoint),
         "checkpoint_version": metadata.get("model_version"),
-        "period": period,
         "effective_demand_enabled": effective_demand_enabled,
         "evaluation_seeds": list(seeds),
         "duration_seconds": duration,
@@ -298,7 +276,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--duration", type=int, default=DEFAULT_DURATION)
     parser.add_argument("--action-interval", type=float, default=DEFAULT_ACTION_INTERVAL)
     parser.add_argument("--step-length", type=float, default=0.1)
-    parser.add_argument("--period", choices=JOINT_PERIODS, default="off_peak")
     parser.add_argument("--seeds", type=int, nargs="+", default=list(EVAL_SEEDS))
     args = parser.parse_args(argv)
     if args.duration <= 0 or args.action_interval <= 0 or args.step_length <= 0:
@@ -312,7 +289,6 @@ def main(argv: list[str] | None = None) -> int:
             duration=args.duration,
             action_interval=args.action_interval,
             step_length=args.step_length,
-            period=args.period,
         )
         output_path = Path(args.output or args.model_path.replace(".pt", "_eval.json"))
         output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -7,7 +7,7 @@ import sys
 import pytest
 
 from algorithms.cov2x import controller as cov2x
-from simulation.sumo.policy_transport import validate_step_response
+from simulation.sumo.algorithm.policy_transport import validate_step_response
 
 
 def _load_lane_state():

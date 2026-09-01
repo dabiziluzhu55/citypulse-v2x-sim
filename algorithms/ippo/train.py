@@ -35,7 +35,7 @@ from algorithms.ippo.controller import (  # noqa: E402
     load_checkpoint_metadata,
     save_checkpoint,
 )
-from simulation.sumo import SimulationConfig, SimulationManager  # noqa: E402
+from simulation.sumo.engine.session import SimulationConfig, SimulationManager  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,

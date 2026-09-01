@@ -33,7 +33,7 @@ import numpy as np
 import torch
 
 from algorithms.cov2x import controller as cov2x
-from simulation.sumo.session import SimulationConfig, SimulationManager
+from simulation.sumo.engine.session import SimulationConfig, SimulationManager
 
 
 logger = logging.getLogger("cov2x.train")
@@ -75,7 +75,7 @@ def _parse_args() -> argparse.Namespace:
         choices=tuple(PRESET_INTERSECTIONS),
         default="xiongan_20",
     )
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=24501)
     parser.add_argument(
         "--signal-mode",
         choices=("max_pressure", "fixed", "learned"),
@@ -143,7 +143,16 @@ def _run_episode(
     args: argparse.Namespace,
     episode: int,
     period: str,
+    episode_seed: int | None = None,
 ) -> dict[str, Any]:
+    effective_seed = int(episode_seed if episode_seed is not None else args.seed + episode)
+    random.seed(effective_seed)
+    np.random.seed(effective_seed)
+    torch.manual_seed(effective_seed)
+    # The generic algorithm initialization payload does not include the configured
+    # horizon.  Publish it explicitly so reward normalization and manifests use the
+    # same episode contract, including the pilot's per-round 900 s override.
+    os.environ["COV2X_EPISODE_DURATION"] = str(args.duration)
     manager = SimulationManager()
     session_id = None
     started = time.monotonic()
@@ -158,7 +167,7 @@ def _run_episode(
                 algorithm_module="algorithms.cov2x.controller",
                 decision_interval=args.decision_interval,
                 minimum_green=5.0,
-                seed=args.seed + episode,
+                seed=effective_seed,
                 step_length=args.step_length,
             )
         )
@@ -170,6 +179,7 @@ def _run_episode(
         if snapshot.state != "COMPLETED" or snapshot.metrics is None:
             return {
                 "episode": episode,
+                "seed": effective_seed,
                 "period": period,
                 "state": snapshot.state,
                 "error": snapshot.error or "missing metrics",
@@ -179,6 +189,7 @@ def _run_episode(
         metrics.update(_tripinfo_metrics(manager, session_id, metrics))
         return {
             "episode": episode,
+            "seed": effective_seed,
             "period": period,
             "state": snapshot.state,
             "elapsed_wall_s": round(elapsed, 1),
@@ -209,12 +220,50 @@ def _tripinfo_metrics(
         waiting_total = sum(
             float(trip.get("waitingTime", 0.0)) for trip in trips
         )
+        time_loss_total = sum(float(trip.get("timeLoss", 0.0)) for trip in trips)
         return {
             "avg_travel_time": travel_total / departed,
             "avg_waiting_time": waiting_total / departed,
+            "time_loss": time_loss_total,
+            "tripinfo_count": len(trips),
         }
     except Exception:
         return {}
+
+
+def _run_fixed_xiongan_pilot(args: argparse.Namespace) -> int:
+    """Run exactly four generations, each with morning/off/evening episodes."""
+    from algorithms.cov2x.seeds import TRAIN_SEEDS
+
+    periods = ("morning_peak", "off_peak", "evening_peak")
+    args.duration = 900
+    completed = 0
+    for round_index in range(1, 5):
+        records = []
+        generation = int(cov2x.diagnostics().get("policy_generation", round_index - 1))
+        for offset, period in enumerate(periods):
+            episode = (round_index - 1) * 3 + offset + 1
+            record = _run_episode(args, episode, period, TRAIN_SEEDS[episode - 1])
+            _append_log(args.log, {"round": round_index, "policy_generation": generation, **record})
+            if record.get("state") != "COMPLETED":
+                logger.error("pilot round %d failed in %s: %s", round_index, period, record.get("error") or record.get("state"))
+                return 1
+            records.append(record)
+            completed += 1
+        rollouts = [cov2x.take_collected_rollout() for _ in records]
+        if any(rollout is None for rollout in rollouts):
+            logger.error("pilot round %d lost one or more episode rollouts", round_index)
+            return 1
+        diagnostics = cov2x.train_on_rollouts(rollouts)
+        if not diagnostics or diagnostics.get("updates") != 1 or diagnostics.get("episodes") != 3:
+            logger.error("pilot round %d did not perform exactly one three-episode update", round_index)
+            return 1
+        _append_log(args.log, {"round": round_index, "episodes": 3, "policy_generation": generation, "training": diagnostics or {}})
+        checkpoint = args.checkpoint_dir / f"cov2x_joint_round{round_index:02d}.pt"
+        cov2x.save_checkpoint(checkpoint)
+    cov2x.save_checkpoint(args.save)
+    logger.info("xiongan_20 pilot complete: %d episodes / 4 updates", completed)
+    return 0
 
 
 def main() -> int:
@@ -279,12 +328,18 @@ def main() -> int:
     if not periods:
         periods = [args.period]
 
+    if args.mode == "train":
+        from algorithms.cov2x.seeds import assert_train_seed
+
+        assert_train_seed(args.seed)
+        os.environ["COV2X_SEED_ROLE"] = "TRAIN"
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     args.save.parent.mkdir(parents=True, exist_ok=True)
     args.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     _set_env(args)
+    os.environ["COV2X_RUNTIME"] = "mvp" if args.signal_mode == "learned" else "legacy"
     logger.info(
         "CoV2X %s: episodes=%d duration=%ds period=%s preset=%s seed=%d "
         "signal=%s cloud=%s vehicle=%s",
@@ -298,6 +353,8 @@ def main() -> int:
         args.cloud_mode,
         args.vehicle_mode,
     )
+    if args.mode == "train" and args.preset == "xiongan_20" and args.signal_mode == "learned":
+        return _run_fixed_xiongan_pilot(args)
 
     completed = 0
     for episode in range(1, args.episodes + 1):

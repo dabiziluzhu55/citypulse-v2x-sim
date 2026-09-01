@@ -38,7 +38,7 @@ from algorithms.ippo.controller import (  # noqa: E402
     DEFAULT_INTERSECTION_IDS,
     load_checkpoint_metadata,
 )
-from simulation.sumo import SimulationConfig, SimulationManager  # noqa: E402
+from simulation.sumo.engine.session import SimulationConfig, SimulationManager  # noqa: E402
 from algorithms.evaluation.tripinfo_diagnostics import (  # noqa: E402
     parse_tripinfo_diagnostics,
     residual_mismatch,
@@ -59,11 +59,13 @@ OFFICIAL_METRIC_NAMES = (
     "throughput_veh_per_h",
     "avg_decision_latency_ms",
     "fuel_intensity_L_per_100km",
+    "severe_conflict_exposure_per_10000",
     "emergency_braking_exposure_per_1000",
 )
 OPTIONAL_OFFICIAL_METRIC_NAMES = frozenset(
     {
         "emergency_braking_exposure_per_1000",
+        "severe_conflict_exposure_per_10000",
     }
 )
 SUMMARY_METRICS = (
@@ -361,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         "--preset",
         choices=("east_dense", "west_dense", "xiongan_20"),
         default=None,
-        help="scenario preset; controlled IDs come from algorithms/presets.py",
+        help="scenario preset; controlled IDs come from algorithms/config/scenario_presets.py",
     )
     parser.add_argument(
         "--seeds",
@@ -391,7 +393,7 @@ def main(argv: list[str] | None = None) -> int:
 
     methods = tuple(dict.fromkeys(args.methods))
     if args.preset is not None:
-        from algorithms.presets import SCENARIO_PRESET_REGISTRY
+        from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY
 
         intersections = SCENARIO_PRESET_REGISTRY[args.preset].intersection_ids
     else:
