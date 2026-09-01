@@ -32,7 +32,7 @@ from algorithms.ippo.controller import (  # noqa: E402
     DEFAULT_INTERSECTION_IDS,
     load_checkpoint_metadata,
 )
-from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
+from simulation.sumo.engine.session import SimulationConfig, SimulationManager  # noqa: E402
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [eval] %(message)s")

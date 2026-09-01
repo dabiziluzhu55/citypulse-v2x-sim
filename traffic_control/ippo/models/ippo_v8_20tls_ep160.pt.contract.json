@@ -57,6 +57,7 @@
   "training_periods": [
     "off_peak"
   ],
+  "topology_compatibility_profile": "candidate_scoring_period_v1",
   "training_seed_range": {
     "start": 88334,
     "end": 88493
