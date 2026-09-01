@@ -20,6 +20,7 @@ from .algorithm import (
 )
 from .building.tls import load_signal_configuration
 from .engine.signal import SafePhaseController, SignalStage
+from .engine.ai_control import AIControlConfig, AIControlPlan, AIControlStatus
 from .engine.events import (
     AccidentEvent,
     LaneClosureEvent,
@@ -32,6 +33,9 @@ from .engine.distributed import RedisSimulationManager, RedisUnavailableError
 
 __all__ = [
     "AccidentEvent",
+    "AIControlConfig",
+    "AIControlPlan",
+    "AIControlStatus",
     "AIFrameObservation",
     "AlgorithmDecision",
     "IntersectionMetadata",

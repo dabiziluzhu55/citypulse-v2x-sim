@@ -7,6 +7,7 @@ import queue
 import time
 from dataclasses import replace
 from pathlib import Path
+from typing import Mapping
 from uuid import uuid4
 
 from ..events import DisturbanceEvent, EventValidationError
@@ -25,6 +26,7 @@ from ..session import (
     _format_clock,
     _normalize_playback_speed,
 )
+from ..ai_control import AIControlStatus
 from .codec import dumps_snapshot, encode_command_payload, loads_snapshot
 from .store import RedisSessionStore, TERMINAL_STATES
 
@@ -130,6 +132,11 @@ class RedisSimulationManager:
                 scenario.official_start_seconds + scenario.window_start_seconds
             ),
             playback_speed=playback_speed,
+            ai_takeover=AIControlStatus(
+                baseline_controller=(
+                    config.baseline_controller or config.control_mode
+                )
+            ),
         )
         try:
             self._store.create(session_id, config, snapshot)
@@ -242,6 +249,10 @@ class RedisSimulationManager:
         )
 
     def add_event(self, session_id: str, event: DisturbanceEvent) -> str:
+        if bool(getattr(event, "ai_control_enabled", False)):
+            raise EventValidationError(
+                "AI-controlled disturbance events must be configured at session start."
+            )
         if not event.event_id:
             event = replace(event, event_id=str(uuid4()))
         self._command(session_id, "add_event", event)
@@ -249,6 +260,21 @@ class RedisSimulationManager:
 
     def cancel_event(self, session_id: str, event_id: str) -> None:
         self._command(session_id, "cancel_event", event_id)
+
+    def install_ai_plan(self, session_id: str, payload: Mapping[str, object]) -> None:
+        if not isinstance(payload, Mapping):
+            raise ValueError("AI plan payload must be an object.")
+        self._command(session_id, "install_ai_plan", dict(payload))
+
+    def fallback_ai_control(
+        self, session_id: str, payload: Mapping[str, object]
+    ) -> None:
+        if not isinstance(payload, Mapping):
+            raise ValueError("AI fallback payload must be an object.")
+        self._command(session_id, "fallback_ai_control", dict(payload))
+
+    def release_ai_control(self, session_id: str, reason: str = "released") -> None:
+        self._command(session_id, "release_ai_control", str(reason))
 
     def _command(self, session_id: str, name: str, payload: object = None) -> None:
         snapshot = self.snapshot(session_id)
@@ -278,7 +304,7 @@ class RedisSimulationManager:
             error_type = result.get("error_type")
             if error_type == "EventValidationError":
                 raise EventValidationError(message)
-            if error_type == "ValueError":
+            if error_type in {"ValueError", "AIControlValidationError"}:
                 raise ValueError(message)
             raise SessionError(message)
 

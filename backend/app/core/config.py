@@ -71,6 +71,46 @@ class Settings(BaseSettings):
     # 已废弃保留兼容旧环境变量NarrowNet推理不再依赖外部STGCN仓库
     stgcn_root: str = ""
 
+    # Traffic Copilot：Qwen 服务只提供模型推理，默认通过本机回环/SSH 隧道访问
+    citypulse_qwen_base_url: str = "http://127.0.0.1:18000/v1"
+    citypulse_qwen_model: str = "Qwen/Qwen2.5-7B-Instruct"
+    citypulse_qwen_api_key: str | None = None
+    citypulse_qwen_timeout_seconds: float = 60.0
+    citypulse_qwen_temperature: float = 0.2
+    citypulse_qwen_max_tokens: int = 512
+    copilot_max_rounds: int = 4
+    copilot_max_tool_calls: int = 8
+    copilot_max_tool_result_chars: int = 20_000
+
+    # Copilot 历史查询边界；历史采样复用 intelligence_sample_seconds
+    history_default_lookback_seconds: float = 300.0
+    history_max_query_seconds: float = 3600.0
+    history_max_points: int = 120
+
+    # Traffic knowledge RAG；索引由 scripts/rag/build_knowledge_index.py 离线构建
+    rag_index_dir: str = "outputs/rag/chroma"
+    rag_knowledge_manifest: str = "traffic_knowledge/manifest.json"
+    rag_embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
+    rag_embedding_model_path: str = ""
+    rag_embedding_device: str = "auto"
+    rag_collection_name: str = "citypulse_traffic_knowledge"
+    rag_query_instruction: str = (
+        "Given a traffic control or traffic engineering question, retrieve "
+        "relevant passages that help answer the question."
+    )
+    rag_top_k: int = 5
+    rag_query_timeout_seconds: float = 30.0
+
+    # Event-scoped Qwen signal control.  These values are serialized into the
+    # SUMO session policy; the feature remains opt-in per disturbance event.
+    ai_control_plan_valid_seconds: float = 30.0
+    ai_control_slot_seconds: float = 5.0
+    ai_control_replan_seconds: float = 30.0
+    ai_control_recovery_seconds: float = 60.0
+    ai_control_recovery_clear_samples: int = 3
+    ai_control_scope_hops: int = 1
+    ai_control_max_plan_failures: int = 2
+
     cesium_ion_token: str | None = None
     tianditu_token: str | None = None
 
@@ -91,6 +131,24 @@ class Settings(BaseSettings):
         return self.project_root / self.sumo_scenario_export_dir
 
     @property
+    def rag_index_path(self) -> Path:
+        path = Path(self.rag_index_dir).expanduser()
+        return path if path.is_absolute() else self.project_root / path
+
+    @property
+    def rag_knowledge_manifest_path(self) -> Path:
+        path = Path(self.rag_knowledge_manifest).expanduser()
+        return path if path.is_absolute() else self.project_root / path
+
+    @property
+    def rag_embedding_model_resolved_path(self) -> Path | None:
+        raw = self.rag_embedding_model_path.strip()
+        if not raw:
+            return None
+        path = Path(raw).expanduser()
+        return path if path.is_absolute() else self.project_root / path
+
+    @property
     def prediction_model_path(self) -> Path | None:
         raw = self.prediction_model_dir.strip()
         if not raw:
@@ -99,6 +157,20 @@ class Settings(BaseSettings):
         if not path.is_absolute():
             path = self.project_root / path
         return path
+
+    @property
+    def ai_control_config(self):
+        from simulation.sumo.engine.ai_control import AIControlConfig
+
+        return AIControlConfig(
+            plan_valid_seconds=self.ai_control_plan_valid_seconds,
+            slot_seconds=self.ai_control_slot_seconds,
+            replan_seconds=self.ai_control_replan_seconds,
+            recovery_seconds=self.ai_control_recovery_seconds,
+            recovery_clear_samples=self.ai_control_recovery_clear_samples,
+            scope_hops=self.ai_control_scope_hops,
+            max_plan_failures=self.ai_control_max_plan_failures,
+        )
 
     @property
     def signals_net_path(self) -> Path:

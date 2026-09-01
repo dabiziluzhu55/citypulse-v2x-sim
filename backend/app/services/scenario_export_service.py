@@ -201,6 +201,7 @@ def _serialize_event(event: EventRequest) -> dict[str, object]:
             "start_seconds": event.start_seconds,
             "end_seconds": event.end_seconds,
             "lane_ids": event.lane_ids,
+            "ai_control_enabled": event.ai_control_enabled,
         }
     if isinstance(event, SpeedLimitRequest):
         return {
@@ -210,6 +211,7 @@ def _serialize_event(event: EventRequest) -> dict[str, object]:
             "end_seconds": event.end_seconds,
             "lane_ids": event.lane_ids,
             "max_speed": float(event.max_speed),
+            "ai_control_enabled": event.ai_control_enabled,
         }
     if isinstance(event, AccidentRequest):
         return {
@@ -219,6 +221,7 @@ def _serialize_event(event: EventRequest) -> dict[str, object]:
             "end_seconds": event.end_seconds,
             "lane_id": event.lane_id,
             "position_ratio": event.position_ratio,
+            "ai_control_enabled": event.ai_control_enabled,
         }
     if isinstance(event, MajorEventOpeningRequest):
         return {
@@ -230,6 +233,7 @@ def _serialize_event(event: EventRequest) -> dict[str, object]:
             "vehicle_count": event.vehicle_count,
             "source_lane_ids": event.source_lane_ids,
             "vehicle_type_id": event.vehicle_type_id,
+            "ai_control_enabled": event.ai_control_enabled,
         }
     if isinstance(event, MajorEventClosingRequest):
         return {
@@ -241,6 +245,7 @@ def _serialize_event(event: EventRequest) -> dict[str, object]:
             "vehicle_count": event.vehicle_count,
             "destination_lane_ids": event.destination_lane_ids,
             "vehicle_type_id": event.vehicle_type_id,
+            "ai_control_enabled": event.ai_control_enabled,
         }
     raise AppError(
         code="INVALID_EVENT",

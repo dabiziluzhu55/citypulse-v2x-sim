@@ -2,7 +2,7 @@
 
 本目录是 `citypulse-v2x-sim` 的 RAG 知识原料库。知识库版本为 `0.4`，代码基线为 `main@1331ba87d6cd77e9052953d894a5dc83e1953009`，外部标准状态核验日期为 2026-08-25，项目事实复核日期为 2026-08-30。
 
-它不是实时交通数据库、控制指令集、微调样本集或已上线的 AI 控制器。本版不生成 embedding、不实现 Qwen API、不修改 Backend / Frontend / SUMO Worker。
+它不是实时交通数据库、控制指令集、微调样本集或已上线的 AI 控制器。Markdown 与 `manifest.json` 是 RAG 原料；Embedding 和 Chroma 索引由仓库内的构建脚本生成，运行时由 Backend 只读加载，不修改 Frontend / SUMO Worker。
 
 ## CityPulse-Qwen 定位
 

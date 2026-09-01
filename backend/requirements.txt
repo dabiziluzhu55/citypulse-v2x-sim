@@ -11,3 +11,7 @@ matplotlib>=3.8.0
 numpy>=1.26.0
 # NarrowNet-TDP在线推理用CPU版torch；镜像可改为对应CPU wheel索引
 torch>=2.2.0
+# RAG：Qwen3-Embedding-0.6B + 持久化 Chroma
+chromadb>=0.5.0
+sentence-transformers>=2.7.0
+transformers>=4.51.0

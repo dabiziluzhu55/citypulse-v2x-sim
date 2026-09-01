@@ -300,6 +300,9 @@ od/
 | 404 | `UNKNOWN_SESSION` | 仿真会话不存在 |
 | 409 | `SIMULATION_BUSY` | local 模式已有仿真在运行 |
 | 409 | `SESSION_QUEUED` | 排队中不允许该命令 |
+| 409 | `AI_EVENT_MUST_BE_CONFIGURED_AT_START` | AI 接管事件必须在启动仿真时配置 |
+| 503 | `COPILOT_LLM_UNAVAILABLE` | Qwen 推理服务不可用 |
+| 502 | `COPILOT_LLM_PROTOCOL_ERROR` | Qwen 返回格式无效 |
 
 ---
 
@@ -490,7 +493,7 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 | `period` | `morning_peak` / `off_peak` / `evening_peak` |
 | `control_mode` | `fixed` / `max_pressure` / `sotl` |
 | `playback_speed` | 可选：1.0 / 1.25 / 1.5 / 2.0 / 3.0 / 5.0 |
-| `disturbance_targets` | 按路口描述的扰动（含大型活动）；后端解析为 lane 级事件。`speed_limit` 须提供 `max_speed`（m/s）或 `speed_kmh`（km/h，用户最大限速）；后端换算后交给 SUMO |
+| `disturbance_targets` | 按路口描述的扰动（含大型活动）；后端解析为 lane 级事件。`speed_limit` 须提供 `max_speed`（m/s）或 `speed_kmh`（km/h，用户最大限速）；后端换算后交给 SUMO。可选 `ai_control_enabled=true` 开启该事件的 AI 信号接管 |
 
 **返回示例：** HTTP 201
 
@@ -521,6 +524,26 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 - `traffic_style.edges`：后端唯一计算的拥堵等级（`occupancy_pct` 为 0～100），供蓝线着色，独立于事件图标
 
 `traffic_state` 展示约定：`localized_blockage`=疑似局部阻塞，`spillback`=排队溢出，`unknown_abnormal`=交通异常
+
+### 6.2.2 查询 AI 接管状态
+
+**接口：** `GET /api/v1/simulations/{session_id}/ai-takeover`
+
+只有启动请求中的事件设置 `ai_control_enabled=true` 才会触发接管；运行中新增 AI 事件会返回 `409 AI_EVENT_MUST_BE_CONFIGURED_AT_START`。AI 计划由 Backend 请求 Qwen 并校验，SUMO worker 会再次校验路口、相位和安全过渡。Qwen 或 RAG 不可用时保持基线，仿真不会停止。
+
+状态字段包括：`state`、`ai_enabled`、`active_event_id`、`allowed_scope`、`controlled_intersections`、`plan_sequence`、`plan_id`、`plan_valid_until`、`baseline_controller`、`last_error`、`fallback_reason` 和 `rag_status`。
+
+事件示例：
+
+```json
+{
+  "event_type": "accident",
+  "intersection_id": "demo_3",
+  "start_seconds": 60,
+  "end_seconds": 300,
+  "ai_control_enabled": true
+}
+```
 
 ### 6.2.1 查询事件识别与短时预测
 
@@ -675,6 +698,115 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 }
 ```
 
+### 6.11 Traffic Copilot 对话
+
+**接口：** `POST /api/v1/simulations/{session_id}/copilot/chat`
+
+请求示例：
+
+```json
+{
+  "message": "这个路口现在为什么拥堵？",
+  "history": [
+    {"role": "user", "content": "刚才哪个路口有事件？"},
+    {"role": "assistant", "content": "可以点击事件卡片查看详情。"}
+  ],
+  "active_event_id": "event-001",
+  "active_scope": "intersection:demo_1"
+}
+```
+
+后端会把 `session_id` 绑定到当前仿真数据源，Qwen 只能调用固定的只读交通工具；
+不能修改信号灯、车辆、事件或仿真状态。模型服务不可用时返回 HTTP 503，模型协议错误返回 HTTP 502。
+
+响应核心字段：
+
+```json
+{
+  "session_id": "session-001",
+  "answer": "系统当前查询结果显示……",
+  "rounds": 2,
+  "tool_calls": [],
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "usage": {},
+  "latency_ms": 1234.5
+}
+```
+
+### 6.12 Copilot 历史交通数据
+
+历史数据由 `SimulationService` 的 intelligence watcher 按现有 5 秒采样口径
+写入。每个仿真 `session_id` 独立保存车道级状态、路口聚合状态、事件关键变化
+和 NarrowNet 预测快照；不保存单车轨迹。
+
+`get_traffic_history` 是 Copilot 的只读工具，支持按路口/车道、时间范围和指标
+查询。默认回看 300 秒，最多返回 120 个采样点，超过上限会自动降采样。事件
+报警不会自动调用 Qwen；用户点击事件后，前端传入 `active_event_id`，Copilot
+再查询事件详情、当前状态和历史趋势生成简报。
+
+Redis 模式下使用独立命名空间：
+
+```text
+citypulse:backend:history:{session_id}:frames
+citypulse:backend:history:{session_id}:events
+citypulse:backend:history:{session_id}:meta
+```
+
+历史 TTL 与 `CITYPULSE_SESSION_TTL_SECONDS` 一致。local 模式使用进程内仓库，
+用于本地开发和测试；生产多进程部署使用 `SIMULATION_MANAGER_MODE=redis`。
+
+### 6.13 Traffic Knowledge RAG
+
+`search_knowledge` 使用 `traffic_knowledge/manifest.json` 注册的 Markdown
+切片和 Chroma 向量索引，不再把实时交通状态混入知识库。先在仓库根目录构建
+可审阅的切片；安装 RAG 依赖后再生成持久化索引：
+
+```bash
+python scripts/rag/build_knowledge_index.py --chunks-only
+python scripts/rag/build_knowledge_index.py \
+  --embedding-model-path /path/to/Qwen3-Embedding-0.6B
+```
+
+默认切片输出为 `traffic_knowledge/build/chunks.jsonl`，Chroma 输出为
+`outputs/rag/chroma`。后者以及模型权重不提交 Git。Backend 通过以下变量
+加载本地 Embedding 模型和索引：
+
+```text
+RAG_INDEX_DIR=outputs/rag/chroma
+RAG_KNOWLEDGE_MANIFEST=traffic_knowledge/manifest.json
+RAG_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
+RAG_EMBEDDING_MODEL_PATH=/path/to/Qwen3-Embedding-0.6B
+RAG_EMBEDDING_DEVICE=auto
+RAG_COLLECTION_NAME=citypulse_traffic_knowledge
+RAG_TOP_K=5
+RAG_QUERY_TIMEOUT_SECONDS=30
+```
+
+`control` profile 只返回交通专业知识和静态项目事实；`general` profile
+还可以返回 baseline 或规划说明，但结果会保留 `information_type`。索引缺失、
+过期或模型不可用时，工具返回明确的知识不可用错误，不静默退回关键词检索。
+
+### 6.14 事件级 AI 信号接管
+
+仅在启动仿真的 `disturbance_targets` 中设置 `ai_control_enabled=true` 才会
+启用该事件的 Qwen 接管；运行中新增 AI 事件会被拒绝。Backend 负责组合当前
+交通状态、历史趋势、预测和 `control` 知识，Qwen 只能返回 30 秒内每 5 秒一个
+目标相位的严格 JSON，SUMO worker 会再次校验路口范围、相位和黄灯/全红安全过渡。
+
+状态接口：`GET /api/v1/simulations/{session_id}/ai-takeover`。Qwen、RAG 或
+网络异常时保持 Fixed/SOTL/Max Pressure/IPPO/MAPPO 基线；事件结束后等待安全
+恢复窗口，再回到原基线。可通过以下配置调整策略边界：
+
+```text
+AI_CONTROL_PLAN_VALID_SECONDS=30
+AI_CONTROL_SLOT_SECONDS=5
+AI_CONTROL_REPLAN_SECONDS=30
+AI_CONTROL_RECOVERY_SECONDS=60
+AI_CONTROL_RECOVERY_CLEAR_SAMPLES=3
+AI_CONTROL_SCOPE_HOPS=1
+AI_CONTROL_MAX_PLAN_FAILURES=2
+```
+
 ---
 
 ## 7. 场景导出 Scenarios
@@ -753,6 +885,7 @@ Worker 应回调 `ALGORITHM_BASE_URL` + `/api/v1/internal/algorithm/{name}/...`
 | 6 Simulations | POST | `/simulations/{id}/events` |
 | 6 Simulations | DELETE | `/simulations/{id}/events/{event_id}` |
 | 6 Simulations | WS | `/simulations/{id}/stream` |
+| 6.11 Copilot | POST | `/simulations/{id}/copilot/chat` |
 | 7 Scenarios | POST | `/scenarios/export` |
 | 8 Internal | POST | `/internal/algorithm/{name}/initialize\|step\|finish` |
 

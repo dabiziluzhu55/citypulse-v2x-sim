@@ -36,6 +36,11 @@ from ..scenario.presets import list_scenario_presets, supported_intersection_ids
 from ..scenario.resolver import ResolvedStartSimulation, resolve_start_simulation
 from ..schemas.simulations import StartSimulationRequest
 from .intelligence_runtime import IntelligenceHub
+from .history import (
+    HistoryRepository,
+    HistoryRecorder,
+    create_history_repository,
+)
 from .session_metadata import (
     SessionMetadata,
     SessionMetadataStore,
@@ -61,6 +66,7 @@ class SimulationService:
         algorithm_store: AlgorithmRuntimeStore,
         metrics_hub: SessionMetricsHub | None = None,
         metadata_store: SessionMetadataStore | None = None,
+        history_repository: HistoryRepository | None = None,
     ) -> None:
         self._manager = manager
         self._serializer = serializer
@@ -86,6 +92,22 @@ class SimulationService:
             / "traffic_manifest.json",
         )
         self._metrics_hub.set_metadata_store(self._metadata)
+        self._history_repository = (
+            history_repository
+            if history_repository is not None
+            else create_history_repository(
+                mode=settings.normalized_manager_mode(),
+                redis_url=settings.citypulse_redis_state_url,
+                key_prefix=settings.backend_redis_key_prefix,
+                terminal_ttl_seconds=settings.citypulse_session_ttl_seconds,
+            )
+        )
+        self._history_recorder = HistoryRecorder(
+            self._history_repository,
+            sample_seconds=float(
+                getattr(settings, "intelligence_sample_seconds", 5.0)
+            ),
+        )
         self._metrics_threads: dict[str, threading.Thread] = {}
         self._watcher_owners: dict[str, str] = {}
         self._watcher_stop: set[str] = set()
@@ -95,14 +117,40 @@ class SimulationService:
             tls_manifest_path=settings.generated_dir
             / "manifests"
             / "tls_manifest.json",
-            sample_seconds=settings.intelligence_sample_seconds,
-            history_frames=settings.intelligence_history_frames,
-            horizon_seconds=settings.prediction_horizon_seconds,
+            sample_seconds=float(
+                getattr(settings, "intelligence_sample_seconds", 5.0)
+            ),
+            history_frames=int(getattr(settings, "intelligence_history_frames", 12)),
+            horizon_seconds=float(
+                getattr(settings, "prediction_horizon_seconds", 60.0)
+            ),
             lane_lonlat=getattr(converter, "lane_center_lonlat", None),
             intersection_lonlat=getattr(converter, "intersection_lonlat", None),
-            prediction_model_dir=settings.prediction_model_path,
-            stgcn_root=settings.stgcn_root or None,
+            prediction_model_dir=getattr(settings, "prediction_model_path", None),
+            stgcn_root=getattr(settings, "stgcn_root", "") or None,
         )
+        from .takeover_orchestrator import TakeoverOrchestrator
+
+        self._takeover_orchestrator = TakeoverOrchestrator(
+            manager=manager,
+            settings=settings,
+            history_repository=self._history_repository,
+        )
+
+    def configure_ai_control(self, *, provider=None, retriever=None, topology=None) -> None:
+        """Inject optional Qwen/RAG dependencies after app startup wiring."""
+
+        self._takeover_orchestrator.configure(
+            provider=provider,
+            retriever=retriever,
+            topology=topology,
+        )
+
+    @property
+    def history_repository(self) -> HistoryRepository:
+        """Copilot 使用的只读历史仓库。"""
+
+        return self._history_repository
 
     # ------------------------------------------------------------------
     # Catalog / list
@@ -177,6 +225,8 @@ class SimulationService:
                 status_code=422,
             )
 
+        self._validate_ai_control_request(resolved)
+
         config = self._build_config(resolved)
         if resolved.model_alias:
             # Celery prefork: 每个 worker 进程同一时刻只跑一个 SUMO 会话，
@@ -212,7 +262,12 @@ class SimulationService:
         self._sync_metadata_from_snapshot(snap)
         return self.serialize_snapshot(snap)
 
-    def serialize_snapshot(self, snapshot: SimulationSnapshot) -> dict[str, Any]:
+    def serialize_snapshot(
+        self,
+        snapshot: SimulationSnapshot,
+        *,
+        intelligence: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         payload = self._serializer.serialize(snapshot)
         evaluation = self.get_metrics(snapshot.session_id)
         if evaluation:
@@ -235,7 +290,8 @@ class SimulationService:
         # Snapshot serialization only reads the latest completed result so
         # REST and WebSocket clients do not repeat prediction work or wait on
         # the intelligence lock while vehicle payloads are being serialized.
-        intelligence = self._intelligence.get(snapshot.session_id)
+        if intelligence is None:
+            intelligence = self._intelligence.get(snapshot.session_id)
         payload["event_detection"] = intelligence["event_detection"]
         payload["prediction"] = intelligence["prediction"]
         payload["traffic_style"] = intelligence["traffic_style"]
@@ -300,6 +356,15 @@ class SimulationService:
 
     def add_event(self, session_id: str, request: EventRequest) -> str:
         self._reject_if_queued(session_id, "add_event")
+        if bool(getattr(request, "ai_control_enabled", False)):
+            raise AppError(
+                code="AI_EVENT_MUST_BE_CONFIGURED_AT_START",
+                message=(
+                    "AI-controlled disturbance events must be configured in the "
+                    "simulation start request in this version."
+                ),
+                status_code=409,
+            )
         event = self._to_disturbance_event(request)
         self._validate_event_lanes(session_id, event)
         event_id = self._manager.add_event(session_id, event)
@@ -510,11 +575,26 @@ class SimulationService:
                     continue
                 self._sync_metadata_from_snapshot(snapshot)
                 # QUEUED/STARTING也可能推送；采集器可安全忽略空车辆帧
+                intelligence: dict[str, Any] | None = None
                 if snapshot.state not in {QUEUED_STATE}:
                     self._metrics_hub.observe(snapshot)
-                    self._intelligence.observe(snapshot)
+                    intelligence = self._intelligence.observe(snapshot)
+                    self._history_recorder.record(snapshot, intelligence)
+                    meta = self._metadata.get(session_id)
+                    try:
+                        self._takeover_orchestrator.observe(
+                            snapshot,
+                            intelligence=intelligence,
+                            preset_id=(meta.scenario_preset_id if meta else None),
+                            baseline_controller=(meta.control_mode if meta else None),
+                        )
+                    except Exception:
+                        logger.exception(
+                            "AI takeover orchestration failed for session %s",
+                            session_id,
+                        )
                 if snapshot.state in TERMINAL_STATES:
-                    self._finalize_session(snapshot)
+                    self._finalize_session(snapshot, intelligence=intelligence)
                     break
         except Exception:
             logger.exception("metrics watcher failed for session %s", session_id)
@@ -538,7 +618,12 @@ class SimulationService:
                 self._watcher_owners.pop(session_id, None)
                 self._watcher_stop.discard(session_id)
 
-    def _finalize_session(self, snapshot: SimulationSnapshot) -> None:
+    def _finalize_session(
+        self,
+        snapshot: SimulationSnapshot,
+        *,
+        intelligence: dict[str, Any] | None = None,
+    ) -> None:
         session_id = snapshot.session_id
         self._algorithm_store.abort_episode(session_id)
         latency = self._algorithm_store.get_decision_latency_ms(session_id)
@@ -552,7 +637,10 @@ class SimulationService:
             self._metrics_hub.abort_without_snapshot(
                 session_id, decision_latency_ms=latency
             )
-        self._intelligence.observe(snapshot)
+        if intelligence is None:
+            intelligence = self._intelligence.observe(snapshot)
+        self._history_recorder.record(snapshot, intelligence)
+        self._history_recorder.finalize(session_id)
         self._sync_metadata_from_snapshot(snapshot)
 
     def _sync_metadata_from_snapshot(self, snapshot: SimulationSnapshot) -> None:
@@ -595,6 +683,36 @@ class SimulationService:
     # ------------------------------------------------------------------
     # 配置构建
     # ------------------------------------------------------------------
+
+    def _validate_ai_control_request(self, request: ResolvedStartSimulation) -> None:
+        ai_events = [
+            event
+            for event in request.initial_events
+            if bool(getattr(event, "ai_control_enabled", False))
+        ]
+        if not ai_events:
+            return
+        policy = self._settings.ai_control_config
+        if request.duration_seconds < policy.plan_valid_seconds:
+            raise AppError(
+                code="INVALID_AI_CONTROL_WINDOW",
+                message=(
+                    "An AI-controlled simulation must last at least "
+                    f"{policy.plan_valid_seconds:g} seconds."
+                ),
+                status_code=422,
+            )
+        ordered = sorted(ai_events, key=lambda event: event.start_seconds)
+        for previous, current in zip(ordered, ordered[1:]):
+            if current.start_seconds < previous.end_seconds:
+                raise AppError(
+                    code="OVERLAPPING_AI_EVENTS",
+                    message=(
+                        "AI-controlled disturbance windows cannot overlap: "
+                        f"{previous.event_id!r} and {current.event_id!r}."
+                    ),
+                    status_code=422,
+                )
 
     def _build_config(self, request: ResolvedStartSimulation) -> SimulationConfig:
         spec = require_control_mode(request.control_mode)
@@ -642,6 +760,8 @@ class SimulationService:
             initial_events=tuple(
                 self._to_disturbance_event(item) for item in request.initial_events
             ),
+            ai_control=self._settings.ai_control_config,
+            baseline_controller=request.control_mode,
         )
 
     def _validate_event_lanes(self, session_id: str, event: DisturbanceEvent) -> None:
@@ -706,6 +826,7 @@ class SimulationService:
                 start_seconds=request.start_seconds,
                 end_seconds=request.end_seconds,
                 lane_ids=tuple(request.lane_ids),
+                ai_control_enabled=request.ai_control_enabled,
             )
         if isinstance(request, SpeedLimitRequest):
             if request.max_speed is None:
@@ -720,6 +841,7 @@ class SimulationService:
                 end_seconds=request.end_seconds,
                 lane_ids=tuple(request.lane_ids),
                 max_speed=float(request.max_speed),
+                ai_control_enabled=request.ai_control_enabled,
             )
         if isinstance(request, AccidentRequest):
             return AccidentEvent(
@@ -728,6 +850,7 @@ class SimulationService:
                 end_seconds=request.end_seconds,
                 lane_id=request.lane_id,
                 position_ratio=request.position_ratio,
+                ai_control_enabled=request.ai_control_enabled,
             )
         if isinstance(request, MajorEventOpeningRequest):
             if request.start_seconds >= request.end_seconds:
@@ -756,6 +879,7 @@ class SimulationService:
                 vehicle_count=int(request.vehicle_count),
                 source_lane_ids=tuple(request.source_lane_ids),
                 vehicle_type_id=request.vehicle_type_id,
+                ai_control_enabled=request.ai_control_enabled,
             )
         if isinstance(request, MajorEventClosingRequest):
             if request.start_seconds >= request.end_seconds:
@@ -784,6 +908,7 @@ class SimulationService:
                 vehicle_count=int(request.vehicle_count),
                 destination_lane_ids=tuple(request.destination_lane_ids),
                 vehicle_type_id=request.vehicle_type_id,
+                ai_control_enabled=request.ai_control_enabled,
             )
         raise AppError(
             code="INVALID_EVENT",

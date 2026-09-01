@@ -32,6 +32,8 @@ from .events import (
     MajorEventOpeningEvent,
     SpeedLimitEvent,
 )
+from .ai_control import AIControlConfig, AIControlStatus
+from .ai_executor import AIPlanExecutor
 from ..algorithm.local_policy import LocalAlgorithmClient
 from ..algorithm.ai_observer import LocalAIObserver, SimulationTimeFrameClock
 from ..algorithm.policy import PROTOCOL_VERSION
@@ -117,6 +119,8 @@ class SimulationConfig:
     ai_frame_interval_seconds: float = 1
     ai_observer_shutdown_timeout: float = 5.0
     initial_events: tuple[DisturbanceEvent, ...] = ()
+    baseline_controller: str = ""
+    ai_control: AIControlConfig = field(default_factory=AIControlConfig)
 
 
 @dataclass(frozen=True)
@@ -256,6 +260,7 @@ class SimulationSnapshot:
     events: tuple[EventSnapshot, ...] = ()
     metrics: SessionMetrics = field(default_factory=SessionMetrics)
     error: str | None = None
+    ai_takeover: AIControlStatus = field(default_factory=AIControlStatus)
 
 
 @dataclass
@@ -277,6 +282,7 @@ class _SessionRecord:
     thread: threading.Thread | None = None
     paused: bool = False
     playback_speed: float | None = None
+    ai_status: AIControlStatus = field(default_factory=AIControlStatus)
 
 
 class SnapshotSubscription:
@@ -537,6 +543,10 @@ class SimulationManager:
         )
 
     def add_event(self, session_id: str, event: DisturbanceEvent) -> str:
+        if bool(getattr(event, "ai_control_enabled", False)):
+            raise EventValidationError(
+                "AI-controlled disturbance events must be configured at session start."
+            )
         if not event.event_id:
             event = replace(event, event_id=str(uuid4()))
         self._command(session_id, "add_event", event)
@@ -544,6 +554,23 @@ class SimulationManager:
 
     def cancel_event(self, session_id: str, event_id: str) -> None:
         self._command(session_id, "cancel_event", event_id)
+
+    def install_ai_plan(self, session_id: str, payload: Mapping[str, object]) -> None:
+        """Install a backend-validated AI plan in the SUMO worker."""
+
+        if not isinstance(payload, Mapping):
+            raise ValueError("AI plan payload must be an object.")
+        self._command(session_id, "install_ai_plan", dict(payload))
+
+    def fallback_ai_control(
+        self, session_id: str, payload: Mapping[str, object]
+    ) -> None:
+        if not isinstance(payload, Mapping):
+            raise ValueError("AI fallback payload must be an object.")
+        self._command(session_id, "fallback_ai_control", dict(payload))
+
+    def release_ai_control(self, session_id: str, reason: str = "released") -> None:
+        self._command(session_id, "release_ai_control", str(reason))
 
     def snapshot(self, session_id: str) -> SimulationSnapshot:
         with self._lock:
@@ -572,6 +599,29 @@ class SimulationManager:
             raise ScenarioCompilationError(f"Unknown intersections: {sorted(unknown)}")
         if config.control_mode not in {"fixed", "algorithm"}:
             raise ScenarioCompilationError("control_mode must be fixed or algorithm.")
+        ai_events = tuple(
+            event
+            for event in config.initial_events
+            if bool(getattr(event, "ai_control_enabled", False))
+        )
+        if ai_events and abs(config.decision_interval - config.ai_control.slot_seconds) > 1e-6:
+            raise ScenarioCompilationError(
+                "AI control slot_seconds must equal the simulation decision_interval."
+            )
+        if ai_events and config.duration_seconds is not None and (
+            config.duration_seconds < config.ai_control.plan_valid_seconds
+        ):
+            raise ScenarioCompilationError(
+                "AI-controlled simulations must last at least one AI plan window."
+            )
+        ordered_ai_events = sorted(ai_events, key=lambda event: event.start_seconds)
+        if any(
+            current.start_seconds < previous.end_seconds
+            for previous, current in zip(ordered_ai_events, ordered_ai_events[1:])
+        ):
+            raise ScenarioCompilationError(
+                "AI-controlled disturbance windows cannot overlap."
+            )
         if config.scenario_scope not in SUPPORTED_TRAFFIC_SCOPE_IDS:
             raise ScenarioCompilationError(
                 f"scenario_scope must be one of {SUPPORTED_TRAFFIC_SCOPE_IDS}."
@@ -711,6 +761,11 @@ class SimulationManager:
             ),
             playback_speed=record.playback_speed,
             error=error,
+            ai_takeover=AIControlStatus(
+                baseline_controller=(
+                    record.config.baseline_controller or record.config.control_mode
+                ),
+            ),
         )
 
     def _run_worker(self, record: _SessionRecord) -> None:
@@ -747,6 +802,8 @@ class SimulationManager:
         ai_observer = None
         scheduler = None
         controllers = {}
+        ai_controllers = {}
+        ai_executor = None
         fixed_tracker = None
         vehicle_tracker = None
         vehicle_action_controller = None
@@ -835,6 +892,12 @@ class SimulationManager:
                         runtime.trafficlight.setProgram(tls_id, program_id)
                 fixed_tracker = _FixedSignalTracker(selected_manifest)
                 fixed_tracker.tick(runtime, 0.0)
+                ai_controllers = _build_controllers(
+                    selected_configs,
+                    selected_manifest,
+                    programs,
+                    minimum_green=config.minimum_green,
+                )
             else:
                 controllers = _build_controllers(
                     selected_configs,
@@ -849,6 +912,36 @@ class SimulationManager:
                     _apply_controller_state(
                         runtime, selected_manifest[intersection_id], controller
                     )
+
+            def restore_fixed_program(intersection_id: str) -> None:
+                if config.control_mode != "fixed":
+                    return
+                program_id = programs[intersection_id].program_id
+                for tls_id in selected_manifest[intersection_id]["tls_ids"]:
+                    runtime.trafficlight.setProgram(tls_id, program_id)
+                if fixed_tracker is not None:
+                    fixed_tracker.tick(
+                        runtime,
+                        float(runtime.simulation.getTime()),
+                        force=True,
+                    )
+
+            runtime_controllers = (
+                controllers if config.control_mode == "algorithm" else ai_controllers
+            )
+            ai_executor = AIPlanExecutor(
+                traci=runtime,
+                selected_manifest=selected_manifest,
+                controllers=runtime_controllers,
+                baseline_mode=config.control_mode,
+                fixed_state_provider=(
+                    fixed_tracker.state if fixed_tracker is not None else None
+                ),
+                config=config.ai_control,
+                baseline_restore=restore_fixed_program,
+                baseline_controller=(config.baseline_controller or config.control_mode),
+            )
+            record.ai_status = ai_executor.status
 
             metadata = _build_metadata(
                 runtime,
@@ -879,6 +972,7 @@ class SimulationManager:
                     record.snapshot,
                     state="PAUSED" if record.paused else "RUNNING",
                     playback_speed=record.playback_speed,
+                    ai_takeover=record.ai_status,
                 ),
             )
             next_decision = 0.0
@@ -901,6 +995,7 @@ class SimulationManager:
                     scheduler,
                     current_time,
                     sequence,
+                    ai_executor=ai_executor,
                     wait_timeout=0.1 if record.paused else 0.0,
                 )
                 if stop_requested:
@@ -914,8 +1009,35 @@ class SimulationManager:
                 runtime.simulationStep()
                 elapsed = float(runtime.simulation.getTime())
                 scheduler.tick(elapsed)
+                if ai_executor is not None:
+                    ai_executor.observe_events(scheduler.snapshots(), elapsed)
                 if fixed_tracker is not None:
-                    fixed_tracker.tick(runtime, elapsed)
+                    fixed_tracker.tick(
+                        runtime,
+                        elapsed,
+                        excluded_intersections=(
+                            ai_executor.override_intersections
+                            if ai_executor is not None
+                            else ()
+                        ),
+                    )
+                if ai_executor is not None:
+                    ai_executor.advance(elapsed)
+                    if ai_executor.plan_expired(elapsed):
+                        expired_event_id = ai_executor.status.active_event_id
+                        if expired_event_id:
+                            ai_executor.mark_fallback(
+                                event_id=expired_event_id,
+                                reason="plan_expired",
+                                current_time=elapsed,
+                                rag_status=ai_executor.status.rag_status,
+                            )
+                            # A fixed-time baseline can often be restored at
+                            # once when the controller is already green.  If
+                            # it is in yellow/clearance, advance() keeps the
+                            # safe override until the next legal green state.
+                            ai_executor.advance(elapsed)
+                    record.ai_status = ai_executor.status
                 departed_ids = tuple(runtime.simulation.getDepartedIDList())
                 arrived_ids = tuple(runtime.simulation.getArrivedIDList())
                 vehicle_tracker.update_vehicle_set(
@@ -957,7 +1079,10 @@ class SimulationManager:
 
                 if config.control_mode == "algorithm":
                     for intersection_id, controller in controllers.items():
-                        if controller.advance(elapsed):
+                        if (
+                            ai_executor is None
+                            or intersection_id not in ai_executor.override_intersections
+                        ) and controller.advance(elapsed):
                             _apply_controller_state(
                                 runtime, selected_manifest[intersection_id], controller
                             )
@@ -1033,10 +1158,29 @@ class SimulationManager:
                             ),
                             vehicle_observations=vehicle_observations,
                         )
-                        pending_decision = decision_executor.submit(
-                            _run_algorithm_decision,
-                            client,
-                            observation,
+                        decision = client.decide(observation)
+                        signal_actions = _validate_actions(
+                            decision.signal_actions, controllers
+                        )
+                        vehicle_actions = vehicle_action_controller.validate(
+                            decision.vehicle_actions
+                        )
+                        for intersection_id, target in signal_actions.items():
+                            if (
+                                ai_executor is not None
+                                and intersection_id in ai_executor.override_intersections
+                            ):
+                                continue
+                            if controllers[intersection_id].request_phase(target, elapsed):
+                                _apply_controller_state(
+                                    runtime,
+                                    selected_manifest[intersection_id],
+                                    controllers[intersection_id],
+                                )
+                        vehicle_action_controller.apply(
+                            decision_step,
+                            vehicle_actions,
+                            config.decision_interval,
                         )
                         pending_decision_step = decision_step
                         pending_decision_elapsed = elapsed
@@ -1049,6 +1193,10 @@ class SimulationManager:
                     while next_decision <= elapsed + 1e-9:
                         next_decision += config.decision_interval
 
+                if ai_executor is not None and (decision_due or fixed_telemetry_due):
+                    ai_executor.apply_slot(elapsed)
+                    record.ai_status = ai_executor.status
+
                 if ai_observer is not None and ai_frame_id is not None:
                     from .run import _observe_ai_frame
 
@@ -1057,7 +1205,7 @@ class SimulationManager:
                         elapsed,
                         ai_frame_id,
                         metadata,
-                        controllers,
+                        ai_executor.snapshot_controllers() if ai_executor is not None else runtime_controllers,
                         fixed_tracker=fixed_tracker,
                         vehicle_tracker=vehicle_tracker,
                         vehicle_action_controller=vehicle_action_controller,
@@ -1081,7 +1229,7 @@ class SimulationManager:
                         record,
                         runtime,
                         selected_manifest,
-                        controllers,
+                        ai_executor.snapshot_controllers() if ai_executor is not None else runtime_controllers,
                         fixed_tracker,
                         scheduler,
                         elapsed,
@@ -1121,7 +1269,7 @@ class SimulationManager:
                 record,
                 runtime,
                 selected_manifest,
-                controllers,
+                ai_executor.snapshot_controllers() if ai_executor is not None else runtime_controllers,
                 fixed_tracker,
                 scheduler,
                 final_elapsed,
@@ -1144,7 +1292,7 @@ class SimulationManager:
                         final_elapsed,
                         ai_frame_clock.reserve(),
                         metadata,
-                        controllers,
+                        ai_executor.snapshot_controllers() if ai_executor is not None else runtime_controllers,
                         fixed_tracker=fixed_tracker,
                         vehicle_tracker=vehicle_tracker,
                         vehicle_action_controller=vehicle_action_controller,
@@ -1262,6 +1410,7 @@ class SimulationManager:
         current_time: float,
         sequence: int,
         *,
+        ai_executor: AIPlanExecutor | None = None,
         wait_timeout: float = 0.0,
     ) -> tuple[bool, int]:
         stop = False
@@ -1346,6 +1495,69 @@ class SimulationManager:
                         replace(
                             record.snapshot,
                             events=scheduler.snapshots(),
+                            sequence=sequence,
+                        ),
+                    )
+                elif command.name == "install_ai_plan":
+                    if ai_executor is None:
+                        raise SessionError("AI control executor is unavailable.")
+                    ai_executor.install_from_payload(
+                        command.payload,
+                        current_time=current_time,
+                        events=scheduler.snapshots(),
+                    )
+                    record.ai_status = ai_executor.status
+                    ai_executor.apply_slot(current_time)
+                    sequence += 1
+                    self._publish(
+                        record,
+                        replace(
+                            record.snapshot,
+                            ai_takeover=record.ai_status,
+                            sequence=sequence,
+                        ),
+                    )
+                elif command.name == "fallback_ai_control":
+                    if ai_executor is None:
+                        raise SessionError("AI control executor is unavailable.")
+                    if not isinstance(command.payload, Mapping):
+                        raise SessionError(
+                            "fallback_ai_control payload must be an object."
+                        )
+                    ai_executor.mark_fallback(
+                        event_id=str(command.payload.get("event_id", "")),
+                        reason=str(command.payload.get("reason", "unknown")),
+                        current_time=current_time,
+                        rag_status=(
+                            None
+                            if command.payload.get("rag_status") is None
+                            else str(command.payload.get("rag_status"))
+                        ),
+                    )
+                    record.ai_status = ai_executor.status
+                    sequence += 1
+                    self._publish(
+                        record,
+                        replace(
+                            record.snapshot,
+                            ai_takeover=record.ai_status,
+                            sequence=sequence,
+                        ),
+                    )
+                elif command.name == "release_ai_control":
+                    if ai_executor is None:
+                        raise SessionError("AI control executor is unavailable.")
+                    ai_executor.release(
+                        reason=str(command.payload or "released"),
+                        current_time=current_time,
+                    )
+                    record.ai_status = ai_executor.status
+                    sequence += 1
+                    self._publish(
+                        record,
+                        replace(
+                            record.snapshot,
+                            ai_takeover=record.ai_status,
                             sequence=sequence,
                         ),
                     )
@@ -1437,11 +1649,21 @@ class _FixedSignalTracker:
         self.selected_manifest = selected_manifest
         self._states = {}
 
-    def tick(self, traci, elapsed: float) -> None:
+    def tick(
+        self,
+        traci,
+        elapsed: float,
+        *,
+        excluded_intersections: Sequence[str] = (),
+        force: bool = False,
+    ) -> None:
+        excluded = {str(item) for item in excluded_intersections}
         for intersection_id, item in self.selected_manifest.items():
+            if intersection_id in excluded:
+                continue
             phase, stage = _decode_fixed_signal(traci, item)
             previous = self._states.get(intersection_id)
-            if previous is None or previous[:2] != (phase, stage):
+            if force or previous is None or previous[:2] != (phase, stage):
                 self._states[intersection_id] = (phase, stage, elapsed)
 
     def state(self, intersection_id: str, elapsed: float):
@@ -1545,7 +1767,7 @@ def _capture_snapshot(
                 ),
                 current_allowed_speed_mps=lane_telemetry["allowed_speed"],
             )
-        if controllers:
+        if intersection_id in controllers:
             controller = controllers[intersection_id]
             signal = (
                 controller.current_phase,
@@ -1670,4 +1892,5 @@ def _capture_snapshot(
             fuel_consumed_ml=fuel_ml,
             hard_braking_events=braking,
         ),
+        ai_takeover=record.ai_status,
     )

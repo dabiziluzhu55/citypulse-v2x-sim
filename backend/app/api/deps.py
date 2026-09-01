@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from fastapi import Request
 
+from ..copilot.llm import LLMProvider
 from ..core.exceptions import (
+    AppError,
     ArtifactsNotReadyError,
     RedisUnavailableAppError,
     SimulationManagerNotReadyError,
@@ -60,3 +62,15 @@ def get_map_service(request: Request) -> MapService:
 def get_scenario_export_service(request: Request) -> ScenarioExportService:
     require_artifacts_ready(request)
     return request.app.state.scenario_export_service
+
+
+def get_copilot_provider(request: Request) -> LLMProvider:
+    provider = getattr(request.app.state, "copilot_provider", None)
+    if provider is None:
+        configuration_error = getattr(request.app.state, "copilot_config_error", None)
+        raise AppError(
+            code="COPILOT_NOT_READY",
+            message=configuration_error or "Copilot model provider is not configured.",
+            status_code=503,
+        )
+    return provider

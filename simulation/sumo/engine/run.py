@@ -724,6 +724,7 @@ def _load_events(path: Path | None):
                 LaneClosureEvent(
                     **common,
                     lane_ids=tuple(str(value) for value in item["lane_ids"]),
+                    ai_control_enabled=bool(item.get("ai_control_enabled", False)),
                 )
             )
         elif event_type == "speed_limit":
@@ -732,6 +733,7 @@ def _load_events(path: Path | None):
                     **common,
                     lane_ids=tuple(str(value) for value in item["lane_ids"]),
                     max_speed=float(item["max_speed"]),
+                    ai_control_enabled=bool(item.get("ai_control_enabled", False)),
                 )
             )
         elif event_type == "accident":
@@ -740,6 +742,7 @@ def _load_events(path: Path | None):
                     **common,
                     lane_id=str(item["lane_id"]),
                     position_ratio=float(item["position_ratio"]),
+                    ai_control_enabled=bool(item.get("ai_control_enabled", False)),
                 )
             )
         elif event_type == "major_event_opening":
@@ -757,6 +760,7 @@ def _load_events(path: Path | None):
                             DEFAULT_ACTIVITY_VEHICLE_TYPE_ID,
                         )
                     ),
+                    ai_control_enabled=bool(item.get("ai_control_enabled", False)),
                 )
             )
         elif event_type == "major_event_closing":
@@ -775,6 +779,7 @@ def _load_events(path: Path | None):
                             DEFAULT_ACTIVITY_VEHICLE_TYPE_ID,
                         )
                     ),
+                    ai_control_enabled=bool(item.get("ai_control_enabled", False)),
                 )
             )
         else:

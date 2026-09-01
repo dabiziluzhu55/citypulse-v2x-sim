@@ -11,6 +11,7 @@ from typing import Mapping
 
 from .semantics import (
     CAUSE_UNKNOWN,
+    TRAFFIC_LOCALIZED_BLOCKAGE,
     TRAFFIC_SPILLBACK,
     cause_for_event_type,
     traffic_state_for_event_type,
@@ -120,6 +121,9 @@ def _reason_to_text(reason: str) -> str:
         "speed_restriction_low_speed_with_flow": "车辆仍在通行，但速度长期偏低",
         "speed_restriction_cusum_threshold": "限速异常分数持续累积达到报警阈值",
         "accident_lane_capacity_drop": "车道通行能力异常下降，疑似事故阻断",
+        "traffic_style_slow": "路线拥堵等级为黄色（slow）",
+        "traffic_style_congested": "路线拥堵等级为橙色（congested）",
+        "traffic_style_severe": "路线拥堵等级为红色（severe）",
         "vehicle_count_high": "车道车辆数偏高",
         "halting_count_high": "停车车辆数偏高",
         "mean_speed_low": "平均速度偏低",
@@ -325,7 +329,11 @@ def _card_key(
     edge_id: str,
     traffic_state: str,
 ) -> tuple[str, str, str, str]:
-    location_key = edge_id if traffic_state == TRAFFIC_SPILLBACK and edge_id else lane_id
+    location_key = (
+        edge_id
+        if traffic_state in {TRAFFIC_LOCALIZED_BLOCKAGE, TRAFFIC_SPILLBACK} and edge_id
+        else lane_id
+    )
     return (session_id, intersection_id, traffic_state, location_key)
 
 

@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Mapping
 
+from .congestion import classify_congestion
 from .state import (
     IntersectionState,
     edge_id_from_lane,
@@ -501,6 +502,12 @@ def detect_states(
     closure_cusum_scores: dict[tuple[str, str], float] = {}
     edge_vehicle_counts: dict[tuple[float, str, str], int] = {}
     edge_speed_sums: dict[tuple[float, str, str], float] = {}
+    congestion_edge_vehicle_counts: dict[tuple[float, str], int] = {}
+    congestion_edge_halting_counts: dict[tuple[float, str], int] = {}
+    congestion_edge_speed_sums: dict[tuple[float, str], float] = {}
+    congestion_edge_occupancy_sums: dict[tuple[float, str], float] = {}
+    congestion_edge_lane_counts: dict[tuple[float, str], int] = {}
+    congestion_edge_levels: dict[tuple[float, str], str] = {}
     lane_by_time: dict[tuple[float, str, str], object] = {}
     lane_records = [
         (state, lane)
@@ -516,6 +523,39 @@ def detect_states(
         edge_speed_sums[edge_key] = edge_speed_sums.get(edge_key, 0.0) + (
             lane.mean_speed * lane.vehicle_count
         )
+        congestion_key = (state.elapsed_seconds, lane.edge_id)
+        congestion_edge_vehicle_counts[congestion_key] = (
+            congestion_edge_vehicle_counts.get(congestion_key, 0) + lane.vehicle_count
+        )
+        congestion_edge_halting_counts[congestion_key] = (
+            congestion_edge_halting_counts.get(congestion_key, 0) + lane.halting_count
+        )
+        congestion_edge_speed_sums[congestion_key] = (
+            congestion_edge_speed_sums.get(congestion_key, 0.0)
+            + lane.mean_speed * lane.vehicle_count
+        )
+        congestion_edge_occupancy_sums[congestion_key] = (
+            congestion_edge_occupancy_sums.get(congestion_key, 0.0) + lane.occupancy
+        )
+        congestion_edge_lane_counts[congestion_key] = (
+            congestion_edge_lane_counts.get(congestion_key, 0) + 1
+        )
+    for congestion_key, vehicle_count in congestion_edge_vehicle_counts.items():
+        mean_speed = (
+            congestion_edge_speed_sums[congestion_key] / vehicle_count
+            if vehicle_count
+            else 0.0
+        )
+        occupancy = (
+            congestion_edge_occupancy_sums[congestion_key]
+            / congestion_edge_lane_counts[congestion_key]
+        )
+        congestion_edge_levels[congestion_key] = classify_congestion(
+            vehicle_count=vehicle_count,
+            halting_count=congestion_edge_halting_counts[congestion_key],
+            mean_speed=mean_speed,
+            occupancy=occupancy,
+        )[0]
     detections = []
 
     for state, lane in lane_records:
@@ -535,6 +575,12 @@ def detect_states(
         previous_waiting[lane_key] = waiting_time
         occupancy = lane.occupancy
         lane_has_green = lane.lane_has_green
+        congestion_level = (
+            congestion_edge_levels.get((elapsed_seconds, lane.edge_id), "free")
+            if not lane.edge_id.startswith(":")
+            else "free"
+        )
+        congestion_suspicious = congestion_level != "free"
         peer_vehicle_count = max(
             0,
             edge_vehicle_counts.get((elapsed_seconds, intersection_id, lane.edge_id), 0)
@@ -675,7 +721,8 @@ def detect_states(
             closure_score = previous_closure_score
         closure_cusum_scores[lane_key] = closure_score
         raw_suspicious = (
-            blockage_suspicious
+            congestion_suspicious
+            or blockage_suspicious
             or closure_suspicious
             or soft_closure_suspicious
             or capacity_closure_suspicious
@@ -700,6 +747,7 @@ def detect_states(
             or closure_suspicious
             or soft_closure_suspicious
             or capacity_closure_suspicious
+            or congestion_suspicious
         ):
             candidate_event_type = EVENT_LANE_BLOCKED
 
@@ -711,6 +759,12 @@ def detect_states(
         elif candidate_event_type == EVENT_ACCIDENT:
             event_cusum_threshold = config.accident_cusum_threshold
 
+        congestion_event_ready = (
+            config.use_cusum
+            and congestion_suspicious
+            and candidate_event_type == EVENT_LANE_BLOCKED
+            and streak >= config.consecutive_points
+        )
         if (
             config.use_cusum
             and closure_residual > 0.0
@@ -718,8 +772,9 @@ def detect_states(
         ):
             active_until[lane_key] = elapsed_seconds + config.confirmed_hold_seconds
             active_event_types[lane_key] = candidate_event_type
-        elif not config.use_cusum and streak >= (
-            1 if capacity_closure_suspicious else config.consecutive_points
+        elif congestion_event_ready or (
+            not config.use_cusum
+            and streak >= (1 if capacity_closure_suspicious else config.consecutive_points)
         ):
             active_until[lane_key] = elapsed_seconds + config.confirmed_hold_seconds
             active_event_types[lane_key] = candidate_event_type
@@ -729,7 +784,16 @@ def detect_states(
             if is_active
             else EVENT_NORMAL
         )
-        if not lane_has_green:
+        if congestion_suspicious and not (
+            closure_suspicious
+            or soft_closure_suspicious
+            or capacity_closure_suspicious
+            or queue_blockage_suspicious
+            or speed_restriction_suspicious
+            or accident_suspicious
+        ):
+            reason = f"traffic_style_{congestion_level}"
+        elif not lane_has_green:
             reason = "no_lane_green"
         elif stage_elapsed < config.startup_loss_seconds:
             reason = "green_startup_loss"
