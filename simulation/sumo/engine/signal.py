@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import Mapping, Sequence, Tuple
@@ -78,6 +79,44 @@ class SafePhaseController:
             stage_started_at=self.stage_started_at,
             pending_phase=self.pending_phase,
         )
+
+    def synchronize(
+        self,
+        *,
+        current_phase: int,
+        stage: SignalStage | str,
+        current_time: float,
+        stage_elapsed: float = 0.0,
+    ) -> None:
+        """Adopt an already-running SUMO signal safely.
+
+        This is used when an event-scoped controller takes over a fixed-time
+        signal.  It does not mutate SUMO; the caller can then use the normal
+        ``request_phase``/``advance`` path and retain yellow/clearance rules.
+        """
+
+        phase = int(current_phase)
+        if phase not in self.phase_order:
+            raise InvalidPhaseAction(
+                f"Official phase {phase} is not one of {self.phase_order}."
+            )
+        try:
+            parsed_stage = stage if isinstance(stage, SignalStage) else SignalStage(str(stage))
+        except ValueError as exc:
+            raise InvalidPhaseAction(f"Unknown signal stage: {stage!r}.") from exc
+        now = float(current_time)
+        elapsed = float(stage_elapsed)
+        self._check_time(now)
+        if not math.isfinite(elapsed) or elapsed < 0:
+            raise InvalidPhaseAction("stage_elapsed must be finite and non-negative.")
+        if elapsed > now + _EPSILON:
+            raise InvalidPhaseAction("stage_elapsed cannot exceed current_time.")
+        self.current_phase = phase
+        self.stage = parsed_stage
+        self.stage_started_at = now - elapsed
+        self.pending_phase = None
+        self._pending_since = None
+        self._last_time = now
 
     def stage_elapsed(self, current_time: float) -> float:
         self._check_time(current_time)

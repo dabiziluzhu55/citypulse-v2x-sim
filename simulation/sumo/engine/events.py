@@ -53,6 +53,7 @@ class LaneClosureEvent:
     end_seconds: float
     lane_ids: tuple[str, ...]
     event_type: str = "lane_closure"
+    ai_control_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ class SpeedLimitEvent:
     lane_ids: tuple[str, ...]
     max_speed: float
     event_type: str = "speed_limit"
+    ai_control_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,7 @@ class AccidentEvent:
     lane_id: str
     position_ratio: float
     event_type: str = "accident"
+    ai_control_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,7 @@ class MajorEventOpeningEvent:
     source_lane_ids: tuple[str, ...] = ()
     vehicle_type_id: str = DEFAULT_ACTIVITY_VEHICLE_TYPE_ID
     event_type: str = "major_event_opening"
+    ai_control_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -97,6 +101,7 @@ class MajorEventClosingEvent:
     destination_lane_ids: tuple[str, ...] = ()
     vehicle_type_id: str = DEFAULT_ACTIVITY_VEHICLE_TYPE_ID
     event_type: str = "major_event_closing"
+    ai_control_enabled: bool = False
 
 
 DisturbanceEvent = (

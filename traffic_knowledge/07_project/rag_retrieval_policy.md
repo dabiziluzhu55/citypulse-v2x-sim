@@ -17,7 +17,7 @@ priority: high
 
 # RAG 检索策略
 
-**【规划功能】** 本文约束一次 AI control retrieval 的文档优先级与禁止项。检索实现尚未接入。
+**【项目事实】** `search_knowledge` 已接入 Backend 的 manifest-aware 向量检索，供只读 Copilot 按 `general` / `control` profile 查询。**【规划功能】** 本文还约束未来 AI control retrieval 的文档优先级与禁止项；AI 控制编排和执行链尚未实现。
 
 可用过滤字段见 `manifest.json` 的 `documents[]`：`information_type`、`status`、`applicable_events`、`applicable_presets`、`code_revision`。
 

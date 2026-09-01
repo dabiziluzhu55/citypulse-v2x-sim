@@ -24,6 +24,7 @@ from ..session import (
     SimulationSnapshot,
     VehicleRuntimeSnapshot,
 )
+from ..ai_control import AIControlConfig, AIControlStatus
 
 SCHEMA_VERSION = 1
 
@@ -70,18 +71,21 @@ def event_from_dict(value: Mapping[str, Any]) -> DisturbanceEvent:
         return LaneClosureEvent(
             **common,
             lane_ids=tuple(str(item) for item in value.get("lane_ids", ())),
+            ai_control_enabled=bool(value.get("ai_control_enabled", False)),
         )
     if event_type == "speed_limit":
         return SpeedLimitEvent(
             **common,
             lane_ids=tuple(str(item) for item in value.get("lane_ids", ())),
             max_speed=float(value["max_speed"]),
+            ai_control_enabled=bool(value.get("ai_control_enabled", False)),
         )
     if event_type == "accident":
         return AccidentEvent(
             **common,
             lane_id=str(value["lane_id"]),
             position_ratio=float(value["position_ratio"]),
+            ai_control_enabled=bool(value.get("ai_control_enabled", False)),
         )
     if event_type == "major_event_opening":
         return MajorEventOpeningEvent(
@@ -92,6 +96,7 @@ def event_from_dict(value: Mapping[str, Any]) -> DisturbanceEvent:
                 str(item) for item in value.get("source_lane_ids", ())
             ),
             vehicle_type_id=str(value.get("vehicle_type_id", "citypulse_event_passenger")),
+            ai_control_enabled=bool(value.get("ai_control_enabled", False)),
         )
     if event_type == "major_event_closing":
         return MajorEventClosingEvent(
@@ -102,6 +107,7 @@ def event_from_dict(value: Mapping[str, Any]) -> DisturbanceEvent:
                 str(item) for item in value.get("destination_lane_ids", ())
             ),
             vehicle_type_id=str(value.get("vehicle_type_id", "citypulse_event_passenger")),
+            ai_control_enabled=bool(value.get("ai_control_enabled", False)),
         )
     raise CodecError(f"Unknown disturbance event type: {event_type!r}.")
 
@@ -129,6 +135,11 @@ def loads_config(raw: str | bytes) -> SimulationConfig:
     data["initial_events"] = tuple(
         event_from_dict(item) for item in data.get("initial_events", ())
     )
+    raw_ai_control = data.get("ai_control")
+    if isinstance(raw_ai_control, Mapping):
+        data["ai_control"] = AIControlConfig(**dict(raw_ai_control))
+    else:
+        data["ai_control"] = AIControlConfig()
     return SimulationConfig(**data)
 
 
@@ -169,6 +180,14 @@ def loads_snapshot(raw: str | bytes) -> SimulationSnapshot:
         )
         for item in data.get("events", ())
     )
+    raw_ai_status = data.get("ai_takeover", {})
+    if not isinstance(raw_ai_status, Mapping):
+        raw_ai_status = {}
+    else:
+        raw_ai_status = dict(raw_ai_status)
+    for key in ("allowed_scope", "controlled_intersections"):
+        value = raw_ai_status.get(key, ())
+        raw_ai_status[key] = tuple(str(item) for item in value) if isinstance(value, (list, tuple)) else ()
     return SimulationSnapshot(
         session_id=str(data["session_id"]),
         state=str(data["state"]),
@@ -187,6 +206,7 @@ def loads_snapshot(raw: str | bytes) -> SimulationSnapshot:
         events=events,
         metrics=SessionMetrics(**data.get("metrics", {})),
         error=None if data.get("error") is None else str(data["error"]),
+        ai_takeover=AIControlStatus(**dict(raw_ai_status)),
     )
 
 
