@@ -29,6 +29,7 @@ interface TwinChannel {
   visibleDisplayElapsedSeconds: number | null
   firstVisibleAtMs: number | null
   hasRenderedVehicles: boolean
+  lastSubmittedVehicleIds: Set<string>
   warmupSamples: VehicleTwinSample[]
   readyListeners: Set<() => void>
 }
@@ -169,6 +170,7 @@ export class VehicleTwinPresenter {
     channel.visibleDisplayElapsedSeconds = null
     channel.firstVisibleAtMs = null
     channel.hasRenderedVehicles = false
+    channel.lastSubmittedVehicleIds.clear()
   }
 
   state(): VehicleTwinVisibleState {
@@ -215,6 +217,7 @@ export class VehicleTwinPresenter {
       visibleDisplayElapsedSeconds: null,
       firstVisibleAtMs: null,
       hasRenderedVehicles: false,
+      lastSubmittedVehicleIds: new Set<string>(),
       warmupSamples: [],
       readyListeners: new Set<() => void>(),
     }
@@ -231,6 +234,28 @@ export class VehicleTwinPresenter {
       channel.frozen = false
     }
     const time = Number(samples[0]?.time)
+    const reenteredSamples = channel.primed
+      ? samples.filter((sample) => !channel.lastSubmittedVehicleIds.has(sample.id))
+      : []
+    if (reenteredSamples.length > 0 && channel.latestSubmittedTime != null) {
+      // MapV does not clamp a newly created entity's interpolation ratio. Give
+      // every re-entering vehicle a zero-distance segment while preserving the
+      // Twin channel's globally increasing timestamps.
+      const primeTime = Math.max(
+        channel.latestSubmittedTime + 1,
+        time - VEHICLE_TWIN_PRIME_SPACING_MS,
+      )
+      if (primeTime < time) {
+        channel.twin.push(reenteredSamples.map((sample) => ({
+          ...sample,
+          point: [...sample.point] as [number, number, number],
+          time: primeTime,
+          sampleQuality: 'held' as const,
+          poseSource: 'held' as const,
+          sourceSpeedMetersPerSecond: 0,
+        })))
+      }
+    }
     if (!channel.primed) {
       const priming = samples.map((sample) => ({
         ...sample,
@@ -244,6 +269,7 @@ export class VehicleTwinPresenter {
     channel.twin.push(samples)
     channel.latestSubmittedTime = time
     channel.submittedCount = samples.length
+    channel.lastSubmittedVehicleIds = new Set(samples.map((sample) => sample.id))
     this.engine.requestRender()
     return samples.length
   }

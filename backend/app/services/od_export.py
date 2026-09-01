@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 
 EXPECTED_ZONE_IDS = tuple(f"zone_{index}" for index in range(1, 10))
 EXPECTED_INTERSECTION_COUNT = 20
-OFFICIAL_DEMANDS_RELATIVE = "data/maps/sumo/official_traffic_demands.json"
+OFFICIAL_DEMANDS_RELATIVE = (
+    "data/maps/sumo/official/traffic/official_traffic_demands.json"
+)
 
 
 @dataclass(frozen=True)
@@ -347,12 +349,23 @@ def render_od_heatmap_png(
     duration_seconds: float,
     unit: str,
 ) -> bytes:
-    import matplotlib
+    try:
+        import matplotlib
 
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib import font_manager
-    import numpy as np
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib import font_manager
+        import numpy as np
+    except (ImportError, OSError) as exc:
+        raise AppError(
+            code="SCENARIO_EXPORT_DEPENDENCY_MISSING",
+            message=(
+                "OD heatmap dependencies are unavailable. Run "
+                "'python -m pip install -r backend/requirements.txt' "
+                "with the backend Python environment."
+            ),
+            status_code=503,
+        ) from exc
 
     values = np.asarray(matrix, dtype=float)
     font_family = _resolve_plot_font_family()

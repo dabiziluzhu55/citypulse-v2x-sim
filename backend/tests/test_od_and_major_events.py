@@ -65,7 +65,10 @@ def _write_od_fixture(project_root: Path, period: str = "morning_peak") -> Path:
         "unit": "pcu",
         "od_zones": ZONE_MAP,
     }
-    demands_path = project_root / "data/maps/sumo/official_traffic_demands.json"
+    demands_path = (
+        project_root
+        / "data/maps/sumo/official/traffic/official_traffic_demands.json"
+    )
     demands_path.parent.mkdir(parents=True, exist_ok=True)
     demands_path.write_text(json.dumps(demands), encoding="utf-8")
 
@@ -144,7 +147,8 @@ def _full_catalog() -> SimulationCatalog:
 def test_validate_taz_no_missing_or_duplicate(tmp_path: Path) -> None:
     generated = _write_od_fixture(tmp_path)
     zones = load_and_validate_od_zones(
-        tmp_path / "data/maps/sumo/official_traffic_demands.json"
+        tmp_path
+        / "data/maps/sumo/official/traffic/official_traffic_demands.json"
     )
     assert list(zones) == list(EXPECTED_ZONE_IDS)
     owned = [item for values in zones.values() for item in values]
@@ -167,7 +171,10 @@ def test_od_csv_is_fixed_9x9_order() -> None:
 
 
 def test_od_missing_report_raises(tmp_path: Path) -> None:
-    demands = tmp_path / "data/maps/sumo/official_traffic_demands.json"
+    demands = (
+        tmp_path
+        / "data/maps/sumo/official/traffic/official_traffic_demands.json"
+    )
     demands.parent.mkdir(parents=True)
     demands.write_text(json.dumps({"od_zones": ZONE_MAP}), encoding="utf-8")
     with pytest.raises(AppError) as exc:

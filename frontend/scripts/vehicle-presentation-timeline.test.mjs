@@ -115,7 +115,7 @@ test('does not mistake a bursty source for permission to accelerate a 1x present
   assert.ok(stats.rateCorrection <= 0.01 + 1e-9)
 })
 
-test('expands the shared delay for 5x Twin lookahead without exceeding six seconds', () => {
+test('expands the shared delay for 5x Twin lookahead without exceeding eight seconds', () => {
   const timeline = new VehiclePresentationTimeline()
   for (let sequence = 0; sequence <= 8; sequence += 1) {
     timeline.push(
@@ -127,16 +127,16 @@ test('expands the shared delay for 5x Twin lookahead without exceeding six secon
     )
   }
   const expandedDelay = timeline.stats().delaySeconds
-  assert.equal(expandedDelay, 6)
+  assert.equal(expandedDelay, 7.5)
 
   timeline.push(trafficView(22.5, [vehicle('five-x', 116.00009)]), 9, 'RUNNING', 1, 5_000)
   const reducedDelay = timeline.stats().delaySeconds
-  assert.equal(reducedDelay, 5.975)
+  assert.equal(reducedDelay, 7.475)
 
   timeline.push(trafficView(25, [vehicle('five-x', 116.0001)]), 10, 'RUNNING', 5, 6_200)
-  assert.equal(timeline.stats().delaySeconds, 6)
+  assert.equal(timeline.stats().delaySeconds, 7.5)
   timeline.push(trafficView(27.5, [vehicle('five-x', 116.00011)]), 11, 'RUNNING', 5, 8_200)
-  assert.equal(timeline.stats().delaySeconds, 6)
+  assert.equal(timeline.stats().delaySeconds, 7.5)
 })
 
 test('retains authority around the display cursor instead of jumping it forward', () => {
@@ -302,7 +302,7 @@ test('consumes the authority buffer through real 1x snapshot bursts without stop
   assert.ok((stats.displayElapsedSeconds ?? 0) <= (arrivals.length - 1) * 0.5)
 })
 
-test('never advances beyond authority and resumes once one second is rebuffered', () => {
+test('never advances beyond authority and resumes once the recovery buffer is rebuilt', () => {
   const timeline = new VehiclePresentationTimeline()
   for (let sequence = 0; sequence <= 10; sequence += 1) {
     timeline.push(
@@ -333,9 +333,12 @@ test('never advances beyond authority and resumes once one second is rebuffered'
   assert.equal(timeline.stats().state, 'starved')
   timeline.push(trafficView(6, [vehicle('starved', 116.00012)]), 12, 'RUNNING', 1, starvationWallTime + 100)
   timeline.tick(starvationWallTime + 100)
+  assert.equal(timeline.stats().state, 'starved')
+  timeline.push(trafficView(6.5, [vehicle('starved', 116.00013)]), 13, 'RUNNING', 1, starvationWallTime + 150)
+  timeline.tick(starvationWallTime + 150)
   assert.equal(timeline.stats().state, 'playing')
   assert.equal(timeline.stats().starvationCount, 1)
-  timeline.tick(starvationWallTime + 200)
+  timeline.tick(starvationWallTime + 250)
   assert.ok((timeline.stats().displayElapsedSeconds ?? 0) > held)
 })
 

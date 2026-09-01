@@ -77,6 +77,7 @@ export const NORMAL_TWIN_OUTPUT_FPS = 30
 export const STABLE_TWIN_OUTPUT_FPS = 24
 const NORMAL_OUTPUT_FRAME_MS = 1_000 / NORMAL_TWIN_OUTPUT_FPS
 const CONSTRAINED_OUTPUT_FRAME_MS = 1_000 / STABLE_TWIN_OUTPUT_FPS
+const TRANSIENT_MOTION_GAP_GRACE_MS = 250
 
 function laneRuntimeRequiresStop(runtime: SimulationLaneRuntime | null | undefined): boolean {
   const signalState = runtime?.signal_state?.toLowerCase() ?? ''
@@ -363,6 +364,8 @@ export class BaiduVehicleRenderer {
   private authoritativeVehicleCount = 0
   private twinOutputVehicleCount = 0
   private waitingTwinResetInterceptCount = 0
+  private motionUnavailableSinceMs: number | null = null
+  private resetTwinOnNextReadyFrame = false
   private sourceVehicleCount = 0
   private viewportVehicleCount = 0
   private selectedVehicleCount = 0
@@ -576,6 +579,22 @@ export class BaiduVehicleRenderer {
     this.syncMotionFrameScheduling()
   }
 
+  bootstrapViewport(
+    intersectionId: string,
+    headingResolver: LaneHeadingResolver,
+    poseResolver: LanePoseResolver,
+  ): void {
+    // Initial scene rendering must not depend on the asynchronous vehicle warmup.
+    // Start empty and let the authoritative history replay populate the Twin.
+    this.headingField.setPreferredIntersection(intersectionId)
+    this.laneHeadingResolver = headingResolver
+    this.lanePoseResolver = poseResolver
+    this.motionBuffer.setMotionPathSampler(poseResolver.motionPathSampler ?? null)
+    this.sceneGeneration += 1
+    this.resetRuntime()
+    this.selectionScopeDirty = true
+  }
+
   update(
     vehicles: TrafficVehicleView[],
     context: VehicleRenderContext,
@@ -780,6 +799,15 @@ export class BaiduVehicleRenderer {
         this.ambiguousIncomingPendingCount += 1
       }
       if (routeTurnResolution.status === 'mismatch') this.connectionMismatchCount += 1
+      const canonicalTransitionResolved = Boolean(
+        vehicle.canonical_motion_resolved === true
+        && vehicle.canonical_segment_id
+        && (
+          vehicle.canonical_route_evidence === 'same_lane'
+          || vehicle.canonical_route_evidence === 'lane_change'
+          || vehicle.canonical_route_evidence === 'unique_connection'
+        )
+      )
       const resolverOptions = {
         speedMetersPerSecond: vehicle.speed,
         expectedHeading: sourceMapHeading,
@@ -843,7 +871,7 @@ export class BaiduVehicleRenderer {
         )
         recoveredLanePose = lanePose !== null
       }
-      if (recoveredLanePose && lanePose) {
+      if (recoveredLanePose && lanePose && !canonicalTransitionResolved) {
         this.laneRecoveryCount += 1
         this.laneRecoveryVehicleIds.add(vehicle.vehicle_id)
         const pending = this.pendingPoseCandidates.get(vehicle.vehicle_id)
@@ -874,7 +902,11 @@ export class BaiduVehicleRenderer {
         && previousPose
         && previousPose.laneId !== vehicle.lane_id,
       )
-      if (!lanePose && (recoveredLanePose || incompatibleTransition)) {
+      if (
+        !lanePose
+        && !canonicalTransitionResolved
+        && (recoveredLanePose || incompatibleTransition)
+      ) {
         if (!recoveredLanePose) {
           this.laneRecoveryCount += 1
           this.laneRecoveryVehicleIds.add(vehicle.vehicle_id)
@@ -902,6 +934,7 @@ export class BaiduVehicleRenderer {
             heldForLaneRecovery: true,
             laneChanging: false,
             rawFallback: false,
+            canonicalFallback: false,
             rejectionReason: recoveredLanePose
               ? 'recovery_pending'
               : 'incompatible_topology_transition',
@@ -911,11 +944,17 @@ export class BaiduVehicleRenderer {
       }
       const rejectedInsideDetailedLane = Boolean(
         !lanePose
+        && !canonicalTransitionResolved
         && this.lanePoseResolver?.hasLane(vehicle.lane_id),
+      )
+      const canonicalFallback = Boolean(
+        !lanePose
+        && canonicalTransitionResolved
       )
       const rawFallback = lanePose === null
         && !laneChanging
         && !rejectedInsideDetailedLane
+        && !canonicalFallback
       if (lanePose) {
         this.maximumRoadMappingErrorMeters = Math.max(
           this.maximumRoadMappingErrorMeters,
@@ -980,6 +1019,7 @@ export class BaiduVehicleRenderer {
         heldForLaneRecovery: false,
         laneChanging,
         rawFallback,
+        canonicalFallback,
         rejectionReason: laneChanging
           ? 'lane_change_in_progress'
           : rawFallback ? 'no_compatible_topology_pose' : undefined,
@@ -1068,9 +1108,16 @@ export class BaiduVehicleRenderer {
       }
       const motionEpoch = previousPose?.motionEpoch ?? 0
       const candidateMotionPathKey = lanePose?.motionPathKey
-        ?? (draft.rawFallback || draft.laneChanging
+        ?? (draft.rawFallback || draft.laneChanging || draft.canonicalFallback
           ? `raw:${vehicle.road_id}:${vehicle.lane_id}`
           : previousPose?.motionPathKey)
+      const canInheritLateralOffset = Boolean(
+        previousPose
+        && previousPose.laneId === vehicle.lane_id
+        && previousPose.motionPathKey === candidateMotionPathKey
+      )
+      const stableSourceLateralOffsetMeters = lanePose?.sourceLateralOffsetMeters
+        ?? (canInheritLateralOffset ? previousPose?.sourceLateralOffsetMeters : 0)
       const candidateTransitionKind = lanePose?.transitionKind
         ?? (draft.rawFallback || draft.laneChanging
           ? 'raw_fallback'
@@ -1228,8 +1275,7 @@ export class BaiduVehicleRenderer {
         sourceArcDistanceMeters: lanePose?.sourceArcDistanceMeters == null
           ? previousPose?.sourceArcDistanceMeters
           : lanePose.sourceArcDistanceMeters - frontToCenterOffsetMeters,
-        sourceLateralOffsetMeters: lanePose?.sourceLateralOffsetMeters
-          ?? previousPose?.sourceLateralOffsetMeters,
+        sourceLateralOffsetMeters: stableSourceLateralOffsetMeters,
         longitude: point.longitude,
         latitude: point.latitude,
         heading,
@@ -1353,8 +1399,7 @@ export class BaiduVehicleRenderer {
             sourceArcDistanceMeters: lanePose?.sourceArcDistanceMeters == null
               ? previousPose?.sourceArcDistanceMeters
               : lanePose.sourceArcDistanceMeters - frontToCenterOffsetMeters,
-            sourceLateralOffsetMeters: lanePose?.sourceLateralOffsetMeters
-              ?? previousPose?.sourceLateralOffsetMeters,
+            sourceLateralOffsetMeters: stableSourceLateralOffsetMeters,
             authoritativeSourceLongitude: draft.sourceLongitude,
             authoritativeSourceLatitude: draft.sourceLatitude,
             poseSource: draft.laneChanging
@@ -1436,7 +1481,10 @@ export class BaiduVehicleRenderer {
     if (this.active === active) return
     this.active = active
     if (active) {
-      if (!this.cameraTransitionHeld) this.twinPresenter.resume()
+      // Keep the frozen channel paused until current authoritative samples have
+      // been rebuilt. Resuming first exposes stale positions from the 2D view.
+      this.twinPresenter.freezeAfterVisible()
+      this.resetTwinOnNextReadyFrame = true
       this.outputPacer.reset()
       this.twinPlaybackBacklogMs = 0
       if (!this.hydrateAuthoritativeHistory(this.sharedDisplayElapsedSeconds)) {
@@ -1448,7 +1496,8 @@ export class BaiduVehicleRenderer {
       )
       this.recordMotionSampleResult(result)
       if (result.status === 'ready' && result.samples.length > 0) {
-        this.presentImmediate(result.samples)
+        this.resetTwinOnNextReadyFrame = false
+        this.presentImmediate(result.samples, 'view_reactivated')
       }
     } else {
       if (this.outputFrameId !== null) cancelAnimationFrame(this.outputFrameId)
@@ -1456,6 +1505,7 @@ export class BaiduVehicleRenderer {
       this.motionBuffer.pause()
       this.outputPacer.reset()
       this.twinPlaybackBacklogMs = 0
+      this.resetTwinOnNextReadyFrame = true
       this.twinPresenter.freezeAfterVisible()
     }
     this.syncMotionFrameScheduling()
@@ -1472,7 +1522,11 @@ export class BaiduVehicleRenderer {
       if (this.outputFrameId !== null) cancelAnimationFrame(this.outputFrameId)
       this.outputFrameId = null
       this.twinPresenter.freezeAfterVisible()
-    } else if (this.active && isVehicleAnimationActive(this.lastContext.state)) {
+    } else if (
+      this.active
+      && !this.resetTwinOnNextReadyFrame
+      && isVehicleAnimationActive(this.lastContext.state)
+    ) {
       this.twinPresenter.resume()
     }
 
@@ -1562,6 +1616,8 @@ export class BaiduVehicleRenderer {
     this.playableVehicleCount = 0
     this.twinOutputVehicleCount = 0
     this.waitingTwinResetInterceptCount = 0
+    this.motionUnavailableSinceMs = null
+    this.resetTwinOnNextReadyFrame = false
     this.sourceVehicleIntersectionCount = 0
     this.visualAddedIntersectionCount = 0
     this.collisionRejectedVehicleIds.clear()
@@ -1647,17 +1703,17 @@ export class BaiduVehicleRenderer {
       this.emptyBufferInterceptCount += 1
       this.waitingTwinResetInterceptCount += 1
       if (this.viewportTransitionActive) this.viewportTwinBlankFrameCount += 1
-      if (this.primed) this.twinPresenter.freezeAfterVisible()
+      this.retainTwinDuringTransientMotionGap(currentWallTimeMs)
       return false
     }
     if (result.status === 'unresolved') {
       this.emptyBufferInterceptCount += 1
-      if (this.primed) this.twinPresenter.freezeAfterVisible()
+      this.retainTwinDuringTransientMotionGap(currentWallTimeMs)
       return false
     }
     if (result.status === 'selection_empty') {
       this.emptyBufferInterceptCount += 1
-      if (this.primed) this.twinPresenter.freezeAfterVisible()
+      this.retainTwinDuringTransientMotionGap(currentWallTimeMs)
       return false
     }
     if (
@@ -1680,6 +1736,12 @@ export class BaiduVehicleRenderer {
       this.emptyBufferInterceptCount += 1
       return false
     }
+    this.motionUnavailableSinceMs = null
+    if (this.resetTwinOnNextReadyFrame) {
+      this.resetTwinOnNextReadyFrame = false
+      this.resetTwinPresentation('view_reactivated_first_ready_frame')
+    }
+    this.twinPresenter.resume()
     const collisionAudit = auditVehicleFrameCollisions(samples)
     this.sourceVehicleIntersectionCount += collisionAudit.sourceIntersectionCount
     this.visualAddedIntersectionCount += collisionAudit.visualAddedIntersectionCount
@@ -1703,6 +1765,15 @@ export class BaiduVehicleRenderer {
     this.primed = true
     this.twinOutputVehicleCount = timedSamples.length
     return true
+  }
+
+  private retainTwinDuringTransientMotionGap(currentWallTimeMs: number): void {
+    this.motionUnavailableSinceMs ??= currentWallTimeMs
+    const gapDurationMs = currentWallTimeMs - this.motionUnavailableSinceMs
+    if (
+      this.primed
+      && gapDurationMs >= TRANSIENT_MOTION_GAP_GRACE_MS
+    ) this.twinPresenter.freezeAfterVisible()
   }
 
   private recordMotionSampleResult(result: VehicleMotionSampleResult): void {
@@ -1757,15 +1828,23 @@ export class BaiduVehicleRenderer {
     return []
   }
 
-  private presentImmediate(samples: VehicleTwinSample[]): void {
+  private resetTwinPresentation(reason: string): void {
+    this.twinPresenter.reset(reason)
+    this.twinResetCount += 1
+    this.twinResetReason = reason
+    this.presentationClock.reset()
+    this.lastTwinPushWallTimeMs = null
+    this.primed = false
+  }
+
+  private presentImmediate(samples: VehicleTwinSample[], resetReason?: string): void {
+    if (resetReason) {
+      this.resetTwinPresentation(resetReason)
+    } else if (!this.primed) {
+      this.resetTwinPresentation('initial_prime')
+    }
     const time = this.presentationClock.next(performance.now())
     const timedSamples = this.prepareTwinSamples(samples, time)
-    if (!this.primed) {
-      this.twinPresenter.reset('initial_prime')
-      this.twinResetCount += 1
-      this.twinResetReason = 'initial_prime'
-      this.primed = false
-    }
     this.twinPresenter.push(timedSamples)
     this.primed = true
     this.twinOutputVehicleCount = timedSamples.length

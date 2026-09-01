@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import {
   fetchSimulationStatus,
   pauseSimulation,
@@ -38,7 +38,7 @@ import type {
   StopSimulationResponse,
 } from '../types/simulation'
 import { TERMINAL_SIMULATION_STATES } from '../types/simulation'
-import type { TrafficSummary } from '../types/traffic'
+import type { TrafficStateView, TrafficSummary } from '../types/traffic'
 import {
   ConfirmedSimulationClock,
   formatOfficialTimeSeconds,
@@ -104,7 +104,9 @@ function isMissingSessionError(message: string): boolean {
 
 const sessionId = ref(localStorage.getItem(ACTIVE_SESSION_ID_KEY) ?? '')
 const storedContext = readStoredSimulationContext()
-const snapshot = ref<SimulationSnapshot | null>(null)
+// Snapshots are immutable payloads replaced as a whole. A shallow ref avoids
+// proxying thousands of vehicle objects on every authoritative update.
+const snapshot = shallowRef<SimulationSnapshot | null>(null)
 const storedRuntimeTargets = parseStoredDisturbanceRuntimeTargets(
   localStorage.getItem(DISTURBANCE_RUNTIME_STORAGE_KEY),
 )
@@ -162,9 +164,9 @@ let lastPresentationPublishMs = 0
 const PRESENTATION_PUBLISH_INTERVAL_MS = 1_000 / 30
 const confirmedClock = new ConfirmedSimulationClock()
 
-const trafficView = computed(() =>
-  snapshot.value ? snapshotToTrafficView(snapshot.value) : null,
-)
+// applySnapshot already creates this view for the presentation coordinator;
+// retain that exact result instead of converting the full snapshot twice.
+const trafficView = shallowRef<TrafficStateView | null>(null)
 const presentationTrafficView = computed(() => {
   void vehiclePresentationRevision.value
   return vehiclePresentationTimeline.sample()?.view ?? null
@@ -263,6 +265,7 @@ function applySnapshot(next: SimulationSnapshot) {
   recordSimulationDiagnosticSnapshot(next, achievedPlaybackSpeed.value)
   const previousState = state.value
   const nextTrafficView = snapshotToTrafficView(next)
+  trafficView.value = nextTrafficView
   const vehicleFrameAccepted = vehiclePresentationTimeline.push(
     nextTrafficView,
     next.sequence,
@@ -314,6 +317,7 @@ function stopPolling() {
 async function pollOnce() {
   if (!sessionId.value) {
     snapshot.value = null
+    trafficView.value = null
     resetPlaybackRateTracking()
     statusError.value = null
     return
@@ -343,6 +347,7 @@ async function pollOnce() {
       connectSimulationStream('')
       sessionId.value = ''
       snapshot.value = null
+      trafficView.value = null
       acceptedState.value = null
       resetPlaybackRateTracking()
       sessionIntersectionId.value = ''
@@ -406,6 +411,7 @@ function bindSession(
     vehicleDisplayElapsedSeconds.value = null
     vehiclePresentationRevision.value += 1
     snapshot.value = null
+    trafficView.value = null
     clearPersistedRuntimeDisturbances()
   }
   const runtimeSessionId = runtimeDisturbanceTargets.value[0]?.sessionId ?? ''
@@ -451,6 +457,7 @@ function bindSession(
     vehiclePresentationRevision.value += 1
   }
   snapshot.value = null
+  trafficView.value = null
   if (nextSessionId && runtimePayload) {
     setRuntimeDisturbanceTargets(nextSessionId, runtimePayload)
   }

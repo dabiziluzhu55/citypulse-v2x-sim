@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import re
 import threading
 import time
 import xml.etree.ElementTree as ET
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -40,6 +42,9 @@ from .scenario import (
     ScenarioCompilationError,
     compile_session_scenario,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class SessionError(RuntimeError):
@@ -79,6 +84,12 @@ def _playback_delay_seconds(
     if playback_speed is None:
         return 0.0
     return max(0.0, step_length / playback_speed - spent_seconds)
+
+
+def _run_algorithm_decision(client, observation):
+    started_at = time.perf_counter()
+    decision = client.decide(observation)
+    return decision, (time.perf_counter() - started_at) * 1000.0
 
 
 @dataclass(frozen=True)
@@ -729,6 +740,10 @@ class SimulationManager:
         runtime = None
         client = None
         client_initialized = False
+        decision_executor: ThreadPoolExecutor | None = None
+        pending_decision: Future | None = None
+        pending_decision_step: int | None = None
+        pending_decision_elapsed: float | None = None
         ai_observer = None
         scheduler = None
         controllers = {}
@@ -850,6 +865,10 @@ class SimulationManager:
                 client = LocalAlgorithmClient(config.algorithm_module)
                 client.initialize(metadata)
                 client_initialized = True
+                decision_executor = ThreadPoolExecutor(
+                    max_workers=1,
+                    thread_name_prefix=f"algorithm-{record.session_id}",
+                )
             if config.ai_observer_module:
                 ai_observer = LocalAIObserver(config.ai_observer_module)
                 ai_observer.initialize(metadata)
@@ -916,6 +935,7 @@ class SimulationManager:
 
                 decision_due = (
                     config.control_mode == "algorithm"
+                    and pending_decision is None
                     and elapsed + 1e-9 >= next_decision
                 )
                 fixed_telemetry_due = (
@@ -941,6 +961,59 @@ class SimulationManager:
                             _apply_controller_state(
                                 runtime, selected_manifest[intersection_id], controller
                             )
+                    if pending_decision is not None and pending_decision.done():
+                        completed_step = pending_decision_step
+                        submitted_elapsed = pending_decision_elapsed
+                        decision, decision_duration_ms = pending_decision.result()
+                        pending_decision = None
+                        pending_decision_step = None
+                        pending_decision_elapsed = None
+                        if decision_duration_ms >= 200.0:
+                            logger.warning(
+                                "Algorithm decision delayed SUMO: "
+                                "session=%s step=%s elapsed=%.1f duration_ms=%.1f",
+                                record.session_id,
+                                completed_step,
+                                elapsed,
+                                decision_duration_ms,
+                            )
+                        decision_age = max(
+                            0.0,
+                            elapsed - (
+                                submitted_elapsed
+                                if submitted_elapsed is not None
+                                else elapsed
+                            ),
+                        )
+                        if decision_age <= config.decision_interval + 1e-9:
+                            signal_actions = _validate_actions(
+                                decision.signal_actions, controllers
+                            )
+                            vehicle_actions = vehicle_action_controller.validate(
+                                decision.vehicle_actions
+                            )
+                            for intersection_id, target in signal_actions.items():
+                                if controllers[intersection_id].request_phase(
+                                    target, elapsed
+                                ):
+                                    _apply_controller_state(
+                                        runtime,
+                                        selected_manifest[intersection_id],
+                                        controllers[intersection_id],
+                                    )
+                            vehicle_action_controller.apply(
+                                completed_step,
+                                vehicle_actions,
+                                config.decision_interval,
+                            )
+                        else:
+                            logger.warning(
+                                "Discard stale algorithm decision: "
+                                "session=%s step=%s age_seconds=%.2f",
+                                record.session_id,
+                                completed_step,
+                                decision_age,
+                            )
                     if decision_due:
                         from .run import _observe
 
@@ -960,25 +1033,13 @@ class SimulationManager:
                             ),
                             vehicle_observations=vehicle_observations,
                         )
-                        decision = client.decide(observation)
-                        signal_actions = _validate_actions(
-                            decision.signal_actions, controllers
+                        pending_decision = decision_executor.submit(
+                            _run_algorithm_decision,
+                            client,
+                            observation,
                         )
-                        vehicle_actions = vehicle_action_controller.validate(
-                            decision.vehicle_actions
-                        )
-                        for intersection_id, target in signal_actions.items():
-                            if controllers[intersection_id].request_phase(target, elapsed):
-                                _apply_controller_state(
-                                    runtime,
-                                    selected_manifest[intersection_id],
-                                    controllers[intersection_id],
-                                )
-                        vehicle_action_controller.apply(
-                            decision_step,
-                            vehicle_actions,
-                            config.decision_interval,
-                        )
+                        pending_decision_step = decision_step
+                        pending_decision_elapsed = elapsed
                         departed_since_decision = 0
                         arrived_since_decision = 0
                         decision_step += 1
@@ -1015,6 +1076,7 @@ class SimulationManager:
 
                 if elapsed + 1e-9 >= next_snapshot:
                     sequence += 1
+                    snapshot_started = time.perf_counter()
                     last_snapshot = _capture_snapshot(
                         record,
                         runtime,
@@ -1029,6 +1091,18 @@ class SimulationManager:
                         vehicle_tracker,
                         vehicle_action_controller,
                     )
+                    snapshot_duration_ms = (
+                        time.perf_counter() - snapshot_started
+                    ) * 1000.0
+                    if snapshot_duration_ms >= 200.0:
+                        logger.warning(
+                            "Snapshot capture delayed SUMO: "
+                            "session=%s sequence=%s vehicles=%s duration_ms=%.1f",
+                            record.session_id,
+                            sequence,
+                            len(last_snapshot.vehicles),
+                            snapshot_duration_ms,
+                        )
                     self._publish(record, last_snapshot)
                     while next_snapshot <= elapsed + 1e-9:
                         next_snapshot += config.snapshot_interval_seconds
@@ -1146,6 +1220,16 @@ class SimulationManager:
                         finish_payload,
                         config.ai_observer_shutdown_timeout,
                     )
+                except BaseException as exc:
+                    if cleanup_error is None:
+                        cleanup_error = exc
+            if pending_decision is not None:
+                pending_decision.cancel()
+            if decision_executor is not None:
+                decision_executor.shutdown(wait=True, cancel_futures=True)
+            if pending_decision is not None and not pending_decision.cancelled():
+                try:
+                    pending_decision.result()
                 except BaseException as exc:
                     if cleanup_error is None:
                         cleanup_error = exc
@@ -1381,6 +1465,7 @@ def _capture_snapshot(
 ) -> SimulationSnapshot:
     intersections = {}
     unique_lanes = set()
+    lane_telemetry_cache = {}
     for intersection_id, item in selected_manifest.items():
         connections_by_lane: dict[str, list[dict]] = {}
         outgoing_lanes = set()
@@ -1400,7 +1485,27 @@ def _capture_snapshot(
         unique_lanes.update(lane_ids)
         lanes = {}
         for lane_id in lane_ids:
-            count = int(traci.lane.getLastStepVehicleNumber(lane_id))
+            lane_telemetry = lane_telemetry_cache.get(lane_id)
+            if lane_telemetry is None:
+                count = int(traci.lane.getLastStepVehicleNumber(lane_id))
+                lane_telemetry = {
+                    "vehicle_count": count,
+                    "halting_count": int(
+                        traci.lane.getLastStepHaltingNumber(lane_id)
+                    ),
+                    "mean_speed": (
+                        float(traci.lane.getLastStepMeanSpeed(lane_id))
+                        if count
+                        else 0.0
+                    ),
+                    "waiting_time": float(traci.lane.getWaitingTime(lane_id)),
+                    "occupancy": float(
+                        traci.lane.getLastStepOccupancy(lane_id)
+                    ),
+                    "allowed_speed": float(traci.lane.getMaxSpeed(lane_id)),
+                }
+                lane_telemetry_cache[lane_id] = lane_telemetry
+            count = lane_telemetry["vehicle_count"]
             lane_connections = connections_by_lane.get(lane_id, [])
             signal_states = []
             for connection in lane_connections:
@@ -1415,10 +1520,10 @@ def _capture_snapshot(
             edge_id, _, lane_index = lane_id.rpartition("_")
             lanes[lane_id] = LaneRuntimeSnapshot(
                 vehicle_count=count,
-                halting_count=int(traci.lane.getLastStepHaltingNumber(lane_id)),
-                mean_speed=float(traci.lane.getLastStepMeanSpeed(lane_id)) if count else 0.0,
-                waiting_time=float(traci.lane.getWaitingTime(lane_id)),
-                occupancy=float(traci.lane.getLastStepOccupancy(lane_id)),
+                halting_count=lane_telemetry["halting_count"],
+                mean_speed=lane_telemetry["mean_speed"],
+                waiting_time=lane_telemetry["waiting_time"],
+                occupancy=lane_telemetry["occupancy"],
                 edge_id=edge_id,
                 lane_index=int(lane_index),
                 role="incoming" if lane_connections else "outgoing" if lane_id in outgoing_lanes else "",
@@ -1438,7 +1543,7 @@ def _capture_snapshot(
                     if len(set(signal_states)) == 1 and signal_states else
                     "mixed" if signal_states else None
                 ),
-                current_allowed_speed_mps=float(traci.lane.getMaxSpeed(lane_id)),
+                current_allowed_speed_mps=lane_telemetry["allowed_speed"],
             )
         if controllers:
             controller = controllers[intersection_id]
@@ -1529,8 +1634,14 @@ def _capture_snapshot(
                 ),
             )
         )
-    halting = sum(int(traci.lane.getLastStepHaltingNumber(lane)) for lane in unique_lanes)
-    waiting = sum(float(traci.lane.getWaitingTime(lane)) for lane in unique_lanes)
+    halting = sum(
+        int(lane_telemetry_cache[lane]["halting_count"])
+        for lane in unique_lanes
+    )
+    waiting = sum(
+        float(lane_telemetry_cache[lane]["waiting_time"])
+        for lane in unique_lanes
+    )
     scenario = record.scenario
     fuel_mg, fuel_ml, braking = vehicle_tracker.totals()
     return SimulationSnapshot(

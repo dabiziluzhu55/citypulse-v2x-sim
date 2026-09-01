@@ -74,6 +74,7 @@ import {
 } from '../src/mapv/vehiclePoseStability.ts'
 import { snapshotToTrafficView } from '../src/utils/trafficStateMerge.ts'
 import {
+  MAX_REPLAYABLE_OUTPUT_GAP_MS,
   MAX_VEHICLE_OUTPUT_CATCH_UP_RATE,
   VehicleOutputPacer,
 } from '../src/mapv/vehicleOutputPacing.ts'
@@ -527,6 +528,20 @@ test('recovers a long frame without advancing the vehicle clock above 110 percen
   const afterLongFrame = clock.next(recovered.sampleWallTimeMs)
   assert.ok(afterLongFrame - beforeLongFrame <= interval * MAX_VEHICLE_OUTPUT_CATCH_UP_RATE + 1e-9)
   assert.match(vehicleRendererSource, /presentationClock\.next\(sampleWallTimeMs\)/)
+})
+
+test('re-anchors output after a suspended tab instead of replaying stale backlog', () => {
+  const pacer = new VehicleOutputPacer()
+  const interval = 1_000 / 30
+  const first = pacer.next(0, interval)
+  const second = pacer.next(interval, interval)
+  const resumedAt = interval + MAX_REPLAYABLE_OUTPUT_GAP_MS + 5_000
+  const resumed = pacer.next(resumedAt, interval)
+
+  assert.ok(first && second && resumed)
+  assert.equal(resumed.sampleWallTimeMs, resumedAt)
+  assert.equal(resumed.backlogMs, 0)
+  assert.equal(resumed.catchingUp, false)
 })
 
 test('does not turn held recovery poses into authoritative motion keyframes', () => {
@@ -1348,7 +1363,11 @@ test('paces Twin output while keeping source, viewport, and selected rosters sep
   assert.match(vehicleRendererSource, /this\.twinPlaybackBacklogMs = pacing\.backlogMs/)
   assert.match(vehicleRendererSource, /this\.pushMotionFrameAt\(pacing\.sampleWallTimeMs, wallTimeMs\)/)
   assert.match(vehicleRendererSource, /recordSourceRoster\(context\.sequence/)
-  assert.match(vehicleRendererSource, /!lanePose\s*&& this\.lanePoseResolver\?\.hasLane\(vehicle\.lane_id\)/)
+  assert.match(vehicleRendererSource, /const canonicalTransitionResolved = Boolean/)
+  assert.match(
+    vehicleRendererSource,
+    /const rejectedInsideDetailedLane = Boolean\([\s\S]{0,180}!canonicalTransitionResolved[\s\S]{0,180}this\.lanePoseResolver\?\.hasLane\(vehicle\.lane_id\)/,
+  )
   assert.match(vehicleRendererSource, /LANE_RECOVERY_HOLD_SECONDS = 1\.5/)
   assert.match(vehicleRendererSource, /heldForLaneRecovery: true/)
   assert.match(
@@ -1360,10 +1379,24 @@ test('paces Twin output while keeping source, viewport, and selected rosters sep
     /if \(rejectedInsideDetailedLane\) \{[\s\S]{0,520}return null/,
   )
   assert.match(vehicleRendererSource, /invalidPoseReentrySnapshots/)
+  assert.match(vehicleRendererSource, /stableSourceLateralOffsetMeters/)
+  assert.match(vehicleMotionBufferSource, /const canonicalMotionResolved = Boolean/)
   assert.match(
     vehicleMotionBufferSource,
     /MAX_LEGAL_POSE_HOLD_SECONDS = MAX_VEHICLE_BUFFER_SECONDS/,
   )
+  assert.match(vehicleRendererSource, /TRANSIENT_MOTION_GAP_GRACE_MS\s*=\s*250/)
+  assert.match(vehicleRendererSource, /motionUnavailableSinceMs/)
+  assert.match(
+    vehicleRendererSource,
+    /gapDurationMs\s*>=\s*TRANSIENT_MOTION_GAP_GRACE_MS/,
+  )
+  assert.match(vehicleRendererSource, /this\.twinPresenter\.resume\(\)/)
+  assert.match(
+    vehicleMotionBufferSource,
+    /reconciledArc\s*=\s*previousArc\s*\+\s*maximumStep/,
+  )
+  assert.match(vehicleMotionBufferSource, /reconciling:\s*true/)
   assert.doesNotMatch(vehicleRendererSource, /rejectedInsideDetailedLane[\s\S]{0,160}coversDetailedArea/)
   assert.doesNotMatch(vehicleRendererSource, /samples = collisionAudit\.acceptedSamples/)
   assert.match(vehicleRendererSource, /sourceVehicleIds,/)
@@ -1375,11 +1408,11 @@ test('paces Twin output while keeping source, viewport, and selected rosters sep
   assert.match(vehicleRendererSource, /!isVehicleAnimationActive\(this\.lastContext\.state\)/)
   assert.match(
     vehicleRendererSource,
-    /result\.status === 'waiting'[\s\S]{0,320}this\.twinPresenter\.freezeAfterVisible\(\)/,
+    /result\.status === 'waiting'[\s\S]{0,320}retainTwinDuringTransientMotionGap/,
   )
   assert.match(
     vehicleRendererSource,
-    /result\.status === 'selection_empty'[\s\S]{0,180}this\.twinPresenter\.freezeAfterVisible\(\)/,
+    /result\.status === 'selection_empty'[\s\S]{0,180}retainTwinDuringTransientMotionGap/,
   )
 })
 
@@ -1517,6 +1550,16 @@ test('uses a speed-aware outlier gate for same-lane positions', () => {
     0,
     11,
   ), true)
+})
+
+test('primes each re-entering Twin vehicle with a zero-distance segment', () => {
+  assert.match(vehicleTwinPresenterSource, /lastSubmittedVehicleIds: Set<string>/)
+  assert.match(vehicleTwinPresenterSource, /const reenteredSamples = channel\.primed/)
+  assert.match(vehicleTwinPresenterSource, /sourceSpeedMetersPerSecond: 0/)
+  assert.match(
+    vehicleTwinPresenterSource,
+    /channel\.lastSubmittedVehicleIds = new Set\(samples\.map\(\(sample\) => sample\.id\)\)/,
+  )
 })
 
 test('keeps stop-boundary state diagnostic-only after a vehicle crosses it', () => {

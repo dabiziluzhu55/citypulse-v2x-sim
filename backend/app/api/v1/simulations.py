@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from queue import Empty
 
@@ -222,6 +223,7 @@ async def simulation_stream(websocket: WebSocket, session_id: str) -> None:
             else service.serialize_snapshot
         )
 
+        serialize_started = time.perf_counter()
         message = await asyncio.to_thread(
             lambda: json.dumps(
                 {
@@ -232,6 +234,18 @@ async def simulation_stream(websocket: WebSocket, session_id: str) -> None:
                 separators=(",", ":"),
             )
         )
+        serialize_duration_ms = (
+            time.perf_counter() - serialize_started
+        ) * 1000.0
+        if serialize_duration_ms >= 200.0:
+            logger.warning(
+                "Slow WebSocket snapshot serialization: "
+                "session=%s sequence=%s vehicles=%s duration_ms=%.1f",
+                snapshot.session_id,
+                snapshot.sequence,
+                len(snapshot.vehicles),
+                serialize_duration_ms,
+            )
 
         await websocket.send_text(message)
         return terminal

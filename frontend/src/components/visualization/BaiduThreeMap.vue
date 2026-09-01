@@ -1126,7 +1126,6 @@ function syncVehicleAuthoritativeHistory(): VehicleRenderStats | null {
         : { kind: 'intersection', intersectionId: renderIntersectionId },
     )
   }
-  vehicleRenderer.setPresentationElapsedSeconds(history.displayElapsedSeconds)
   let latestStats: VehicleRenderStats | null = vehicleRenderer.debugStats()
   for (const frame of history.frames) {
     const historyKey = `${frame.sessionId}:${frame.sequence}:${frame.elapsedSeconds}:${frame.state}`
@@ -1143,6 +1142,7 @@ function syncVehicleAuthoritativeHistory(): VehicleRenderStats | null {
     })
     processedVehicleHistoryKeys.add(historyKey)
   }
+  vehicleRenderer.setPresentationElapsedSeconds(history.displayElapsedSeconds)
   if (latestStats) updateVehicleRenderStats(latestStats)
   return latestStats
 }
@@ -1514,27 +1514,37 @@ async function switchRealisticIntersection(
     }
     const headingResolver = createIntersectionLaneHeadingResolver(manifest)
     const poseResolver = createIntersectionLanePoseResolver(manifest, coordinateProjector)
+    const vehicleStagePromise = waitForViewportVehicleStage(
+      intersectionId,
+      headingResolver,
+      poseResolver,
+      signal,
+    ).catch((cause) => {
+      if (!trackInitialPresentation) throw cause
+      console.warn('[vehicle-stage] initial warmup unavailable; opening scene without vehicles', cause)
+      return null
+    })
     const [vehicleStage, preparedEnvironment] = await Promise.all([
-      waitForViewportVehicleStage(
-        intersectionId,
-        headingResolver,
-        poseResolver,
-        signal,
-      ),
+      vehicleStagePromise,
       prepareIntersectionEnvironment(intersectionId, signal),
     ])
-    if (!vehicleStage) {
+    if (!vehicleStage && !trackInitialPresentation) {
       console.warn('[vehicle-stage] preparation timed out', vehicleRenderer?.viewportStageDiagnostic())
       throw new Error(`Vehicle stage was not ready for ${intersectionId}`)
     }
     if (
-      vehicleStage.presentationGeneration !== simulationPresentationGeneration.value
-      || vehicleStage.intersectionId !== intersectionId
+      vehicleStage
+      && (
+        vehicleStage.presentationGeneration !== simulationPresentationGeneration.value
+        || vehicleStage.intersectionId !== intersectionId
+      )
     ) return false
-    vehicleRenderer?.beginViewportTransition(vehicleStage)
-    const vehicleTwinReadyPromise = vehicleRenderer
-      ?.waitForViewportTransitionReady(signal, VEHICLE_TWIN_VIEWPORT_WARMUP_TIMEOUT_MS)
-      ?? Promise.resolve(true)
+    if (vehicleStage) vehicleRenderer?.beginViewportTransition(vehicleStage)
+    const vehicleTwinReadyPromise = vehicleStage
+      ? vehicleRenderer
+        ?.waitForViewportTransitionReady(signal, VEHICLE_TWIN_VIEWPORT_WARMUP_TIMEOUT_MS)
+        ?? Promise.resolve(true)
+      : Promise.resolve(false)
     const cameraPromise = new Promise<boolean>((resolve) => {
       if (!focusCamera) {
         resolve(true)
@@ -1565,11 +1575,14 @@ async function switchRealisticIntersection(
     ])
     if (
       !cameraReady
-      || !vehicleTwinReady
+      || (!vehicleTwinReady && !trackInitialPresentation)
       || !sceneSwitchCoordinator.isCurrent(transaction)
       || revision !== sceneSwitchRevision
       || activeIntersectionId.value !== intersectionId
-      || vehicleStage.presentationGeneration !== simulationPresentationGeneration.value
+      || (
+        vehicleStage
+        && vehicleStage.presentationGeneration !== simulationPresentationGeneration.value
+      )
     ) {
       if (!cameraReady || !vehicleTwinReady) {
         console.warn('[vehicle-stage] viewport commit gate not ready', JSON.stringify({
@@ -1577,22 +1590,35 @@ async function switchRealisticIntersection(
           cameraReady,
           vehicleTwinReady,
           warmupTimeoutMs: VEHICLE_TWIN_VIEWPORT_WARMUP_TIMEOUT_MS,
-          firstFrameVehicleCount: vehicleStage.firstFrameVehicleCount,
-          readiness: vehicleStage.readiness.status,
-          presentationGeneration: vehicleStage.presentationGeneration,
+          firstFrameVehicleCount: vehicleStage?.firstFrameVehicleCount ?? 0,
+          readiness: vehicleStage?.readiness.status ?? 'deferred',
+          presentationGeneration: vehicleStage?.presentationGeneration ?? null,
         }))
       }
       realisticIntersectionLayer.discard(intersectionId)
       return false
     }
 
-    const vehicleCommitted = vehicleRenderer?.commitViewportTransition(
-      vehicleStage,
-      fullyExcludedSurfaceEdgeIds(manifest),
-      surfaceVisibilityIntervals(manifest),
-    ) ?? true
+    const vehicleCommitted = vehicleStage && vehicleTwinReady
+      ? vehicleRenderer?.commitViewportTransition(
+        vehicleStage,
+        fullyExcludedSurfaceEdgeIds(manifest),
+        surfaceVisibilityIntervals(manifest),
+      ) ?? true
+      : false
     if (!vehicleCommitted) {
-      throw new Error(`Vehicle stage contained no valid first frame for ${intersectionId}`)
+      if (!trackInitialPresentation) {
+        throw new Error(`Vehicle stage contained no valid first frame for ${intersectionId}`)
+      }
+      vehicleRenderer?.cancelViewportTransition()
+      vehicleRenderer?.bootstrapViewport(intersectionId, headingResolver, poseResolver)
+      vehicleHistorySessionId = ''
+      processedVehicleHistoryKeys.clear()
+      console.warn('[vehicle-stage] initial scene committed with deferred vehicle hydration', JSON.stringify({
+        intersectionId,
+        readiness: vehicleStage?.readiness.status ?? 'deferred',
+        twinReady: vehicleTwinReady,
+      }))
     }
     roadsideFacilityRenderer?.setRealisticDetailActive(true)
     realisticIntersectionLayer.activate(intersectionId)
@@ -1615,7 +1641,9 @@ async function switchRealisticIntersection(
       initialIntersectionReady = true
       initialEnvironmentReady = true
     }
-    viewportStageStatus = vehicleStage.readiness.status
+    viewportStageStatus = vehicleCommitted
+      ? vehicleStage?.readiness.status ?? 'deferred'
+      : 'deferred'
     viewportStageRejectionReasons = []
     return true
   } catch (cause) {
@@ -1634,6 +1662,9 @@ async function switchRealisticIntersection(
       }
     } else {
       setSceneError(message)
+      if (trackInitialPresentation) {
+        throw cause instanceof Error ? cause : new Error(message)
+      }
     }
     return false
   } finally {

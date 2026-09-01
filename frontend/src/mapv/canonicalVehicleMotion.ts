@@ -74,6 +74,9 @@ let laneTracks = new Map<string, LaneTrack>()
 let connections: VehicleMotionConnectionIndexEntry[] = []
 let connectionsByLanePair = new Map<string, VehicleMotionConnectionIndexEntry[]>()
 let networkSourceSha256 = ''
+const MAX_COMPILED_SEGMENT_CACHE_SIZE = 20_000
+const MAX_COMPILED_SEGMENT_ID_CACHE_SIZE = 80_000
+const MAX_AUDITED_VEHICLE_COUNT = 20_000
 const compiledSegments = new Map<string, CompiledCanonicalSegment | null>()
 const compiledSegmentsById = new Map<string, CompiledCanonicalSegment>()
 let compiledSegmentCount = 0
@@ -84,7 +87,29 @@ let sourceLaneMismatchCount = 0
 let maximumSourceLaneErrorMeters = 0
 let coordinateConversionMismatchCount = 0
 let maximumCoordinateConversionErrorMeters = 0
-const auditedEndpoints = new Set<string>()
+const auditedEndpointKeyByVehicleId = new Map<string, string>()
+
+function deleteOldestEntry<K, V>(cache: Map<K, V>): void {
+  const oldest = cache.keys().next()
+  if (!oldest.done) cache.delete(oldest.value)
+}
+
+function cacheCompiledSegment(
+  key: string,
+  segment: CompiledCanonicalSegment | null,
+): void {
+  compiledSegments.set(key, segment)
+  while (compiledSegments.size > MAX_COMPILED_SEGMENT_CACHE_SIZE) {
+    deleteOldestEntry(compiledSegments)
+  }
+
+  if (!segment) return
+  compiledSegmentsById.delete(segment.id)
+  compiledSegmentsById.set(segment.id, segment)
+  while (compiledSegmentsById.size > MAX_COMPILED_SEGMENT_ID_CACHE_SIZE) {
+    deleteOldestEntry(compiledSegmentsById)
+  }
+}
 
 function lanePairKey(leftLaneId: string, rightLaneId: string): string {
   return `${leftLaneId}\u0000${rightLaneId}`
@@ -181,7 +206,7 @@ export function registerCanonicalVehicleLaneGeometry(
     }))
   connections = []
   connectionsByLanePair = new Map()
-  compiledSegments.clear()
+  resetCanonicalVehicleMotionDiagnostics()
 }
 
 function projectStation(track: LaneTrack, point: readonly [number, number]): { station: number; error: number } | null {
@@ -230,8 +255,14 @@ function vehicleStation(track: LaneTrack, vehicle: TrafficVehicleView): number |
   const projection = projectStation(track, sourcePoint)
   if (!projection) return null
   const endpointKey = `${track.laneId}:${vehicle.x.toFixed(3)}:${vehicle.y.toFixed(3)}`
-  if (!auditedEndpoints.has(endpointKey)) {
-    auditedEndpoints.add(endpointKey)
+  if (auditedEndpointKeyByVehicleId.get(vehicle.vehicle_id) !== endpointKey) {
+    // The audit needs only the latest endpoint per vehicle. Keeping every
+    // historical x/y key makes memory grow for the entire simulation.
+    auditedEndpointKeyByVehicleId.delete(vehicle.vehicle_id)
+    auditedEndpointKeyByVehicleId.set(vehicle.vehicle_id, endpointKey)
+    while (auditedEndpointKeyByVehicleId.size > MAX_AUDITED_VEHICLE_COUNT) {
+      deleteOldestEntry(auditedEndpointKeyByVehicleId)
+    }
     maximumSourceLaneErrorMeters = Math.max(maximumSourceLaneErrorMeters, projection.error)
     if (projection.error > track.widthMeters / 2 + 1.5) sourceLaneMismatchCount += 1
     if (vehicle.longitude != null && vehicle.latitude != null) {
@@ -365,7 +396,7 @@ function compileSegment(left: TrafficVehicleView, right: TrafficVehicleView): Co
   const rightTrack = laneTracks.get(right.lane_id)
   const reject = () => {
     unresolvedSegmentCount += 1
-    compiledSegments.set(key, null)
+    cacheCompiledSegment(key, null)
     return null
   }
   if (!leftTrack || !rightTrack) return reject()
@@ -424,9 +455,7 @@ function compileSegment(left: TrafficVehicleView, right: TrafficVehicleView): Co
     }
   }
   compiledSegmentCount += 1
-  compiledSegments.set(key, segment)
-  compiledSegmentsById.set(segment.id, segment)
-  if (compiledSegments.size > 20_000) compiledSegments.delete(compiledSegments.keys().next().value as string)
+  cacheCompiledSegment(key, segment)
   return segment
 }
 
@@ -589,7 +618,7 @@ export function resetCanonicalVehicleMotionDiagnostics(): void {
   maximumSourceLaneErrorMeters = 0
   coordinateConversionMismatchCount = 0
   maximumCoordinateConversionErrorMeters = 0
-  auditedEndpoints.clear()
+  auditedEndpointKeyByVehicleId.clear()
 }
 
 export function canonicalGeographicSegmentLength(

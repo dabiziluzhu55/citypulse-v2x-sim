@@ -591,12 +591,17 @@ export function interpolateVehicleTwinSample(
     : null
   const canonicalPoint = !pathSample
     && !constrainedLaneChangePoint
-    && left.detailedCorridorValidation !== true
-    && right.detailedCorridorValidation !== true
     && typeof right.canonicalSegmentId === 'string'
-    && right.canonicalRouteEvidence !== 'authoritative_endpoint'
+    && ['same_lane', 'lane_change', 'unique_connection'].includes(
+      String(right.canonicalRouteEvidence),
+    )
     ? sampleCanonicalVehicleSegment(right.canonicalSegmentId, amount)
     : null
+  const canonicalMotionResolved = Boolean(
+    canonicalPoint?.resolved
+    && canonicalPoint.longitude != null
+    && canonicalPoint.latitude != null
+  )
   const canonicalProjected = canonicalPoint?.longitude != null && canonicalPoint.latitude != null
     ? projectSimulationCoordinateToBaiduMap([
         canonicalPoint.longitude,
@@ -657,20 +662,27 @@ export function interpolateVehicleTwinSample(
   const requiresCorridorValidation = Boolean(
     left.detailedCorridorValidation || right.detailedCorridorValidation
   )
-  const trajectoryResolved = Boolean(pathSample || constrainedLaneChangePoint)
+  const trajectoryResolved = Boolean(
+    pathSample
+    || constrainedLaneChangePoint
+    || canonicalMotionResolved
+  )
     || !requiresCorridorValidation
-  const intermediatePoseValid = trajectoryResolved && (
-    !requiresCorridorValidation
-    || Boolean(
-      motionPathSampler?.containsVehicle?.(
-        corridorMotionPathKeys,
-        [point[0], point[1]],
-        trajectoryHeading ?? interpolatedSourceHeading,
-        Math.max(0, Number(right.vehicleLengthMeters ?? left.vehicleLengthMeters) || 0) / 2,
-        Math.max(0, Number(right.vehicleWidthMeters ?? left.vehicleWidthMeters) || 0) / 2,
-        right.connectionLockStage === 'internal' || right.connectionLockStage === 'exiting',
-      ),
-    ))
+  const intermediatePoseValid = canonicalMotionResolved || (
+    trajectoryResolved && (
+      !requiresCorridorValidation
+      || Boolean(
+        motionPathSampler?.containsVehicle?.(
+          corridorMotionPathKeys,
+          [point[0], point[1]],
+          trajectoryHeading ?? interpolatedSourceHeading,
+          Math.max(0, Number(right.vehicleLengthMeters ?? left.vehicleLengthMeters) || 0) / 2,
+          Math.max(0, Number(right.vehicleWidthMeters ?? left.vehicleWidthMeters) || 0) / 2,
+          right.connectionLockStage === 'internal' || right.connectionLockStage === 'exiting',
+        ),
+      )
+    )
+  )
   return {
     ...(amount < 0.5 ? left : right),
     id: left.id,
@@ -1822,8 +1834,34 @@ export class VehicleMotionBuffer {
           + 0.5 * MAX_SYNTHETIC_ACCELERATION_MPS2 * displayDeltaSeconds * displayDeltaSeconds,
       )
       if (candidateArc - previousArc > maximumStep) {
+        if (!this.motionPathSampler) {
+          timeline.state = 'isolated'
+          return null
+        }
+        const reconciledArc = previousArc + maximumStep
+        const reconciledPose = this.motionPathSampler.sample(
+          candidate.motionPathKey,
+          reconciledArc,
+        )
+        if (!reconciledPose) {
+          timeline.state = 'isolated'
+          return null
+        }
         timeline.state = 'recovering'
-        return null
+        return {
+          ...candidate,
+          point: [
+            reconciledPose.longitude,
+            reconciledPose.latitude,
+            candidate.point[2],
+          ],
+          vehicleHeading: reconciledPose.heading,
+          dir: reconciledPose.heading - candidate.modelForwardAxisAngle,
+          pathArcDistanceMeters: reconciledPose.pathArcDistanceMeters,
+          reconciling: true,
+          sampleQuality: 'held',
+          poseSource: 'held',
+        }
       }
     }
     return candidate
