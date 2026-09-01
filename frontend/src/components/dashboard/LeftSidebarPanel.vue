@@ -80,6 +80,7 @@ import {
   assertSafeLaneClosureEvents,
   laneClosureAvailability,
 } from '../../utils/safeLaneClosures'
+import { applyAiControlToSimulationRequest } from '../../utils/scenarioPayload'
 
 const props = defineProps<{
   sessionId: string
@@ -142,7 +143,6 @@ const {
   controlModes,
 )
 const feedback = ref<string | null>(null)
-// UI-only placeholder. This is intentionally not included in the simulation payload yet.
 const aiControlEnabled = ref(false)
 const multiplierOpen = ref(false)
 const exporting = ref(false)
@@ -412,11 +412,25 @@ function applyConfiguration(next: CompactScenarioConfig, onApplied?: () => void)
   onApplied?.()
 }
 
+function withAiControl(payload: StartSimulationRequest): StartSimulationRequest {
+  return applyAiControlToSimulationRequest(payload, aiControlEnabled.value)
+}
+
+function buildCurrentPayload(): StartSimulationRequest {
+  return withAiControl(buildPayload())
+}
+
+function handleAiControlChange(enabled: boolean): void {
+  feedback.value = enabled
+    ? 'AI管控将在仿真启动时应用到全部已配置扰动事件'
+    : '已关闭事件级 AI 管控，将继续使用所选基线算法'
+}
+
 function requestConfiguration(next: CompactScenarioConfig, onApplied?: () => void): void {
   let fingerprint: string
   try {
     fingerprint = createScenarioFingerprint(
-      buildPayloadFor(next),
+      withAiControl(buildPayloadFor(next)),
       scenarioPresetIntersectionIds(next.scenario_preset_id, scenarioPresets.value),
     )
   } catch (error) {
@@ -723,7 +737,7 @@ async function exportConfig() {
   }
   exporting.value = true
   try {
-    const payload = buildPayload()
+    const payload = buildCurrentPayload()
     const { blob, filename } = await exportScenarioArchive(payload)
     const validation = await validateScenarioArchive(blob, {
       scenarioPresetId: payload.scenario_preset_id,
@@ -756,7 +770,12 @@ function handleStart() {
     return
   }
   try {
-    emit('start', buildPayload())
+    const payload = buildCurrentPayload()
+    if (aiControlEnabled.value && payload.disturbance_targets.length === 0) {
+      feedback.value = 'AI管控仅针对扰动事件生效，请先添加至少一个扰动事件'
+      return
+    }
+    emit('start', payload)
   } catch (error) {
     feedback.value = error instanceof Error ? error.message : '无法构造仿真请求'
   }
@@ -874,6 +893,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
               aria-label="是否开启 AI 管控"
               active-color="#13ce66"
               inactive-color="#526b7d"
+              @change="handleAiControlChange"
             />
           </label>
         </div>

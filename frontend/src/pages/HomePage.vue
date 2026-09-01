@@ -31,6 +31,9 @@ const {
   sceneStatus,
   selectIntersection,
 } = useActiveIntersectionScene()
+const copilotActiveScope = computed(() => (
+  activeIntersectionId.value ? `intersection:${activeIntersectionId.value}` : null
+))
 const { catalog, intersection } = useCatalog(activeIntersectionId)
 const localIntersectionOptions = Array.from({ length: 20 }, (_, index) => ({
   intersection_id: `demo_${index + 1}`,
@@ -368,7 +371,12 @@ async function handleStop() {
           @click="closeAiControlPanel"
         />
         <div class="communication-overlay__panel ai-control-overlay__panel">
-          <AiControlPanel @close="closeAiControlPanel" />
+          <AiControlPanel
+            :session-id="sessionId"
+            :active-scope="copilotActiveScope"
+            :ai-takeover="snapshot?.ai_takeover ?? null"
+            @close="closeAiControlPanel"
+          />
         </div>
       </div>
     </Transition>

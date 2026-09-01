@@ -57,6 +57,7 @@ interface DisturbanceTargetBase {
   event_id?: string
   start_seconds: number
   end_seconds: number
+  ai_control_enabled?: boolean
 }
 
 export interface LaneClosureDisturbanceTarget extends DisturbanceTargetBase {
@@ -235,6 +236,25 @@ export interface SimulationEvent {
   [key: string]: unknown
 }
 
+export interface AIControlStatus {
+  state: string
+  ai_enabled: boolean
+  active_event_id: string | null
+  allowed_scope: string[]
+  controlled_intersections: string[]
+  plan_sequence: number
+  plan_id: string | null
+  plan_started_at: number | null
+  plan_valid_until: number | null
+  recovery_deadline: number | null
+  baseline_controller: string | null
+  last_error: string | null
+  fallback_reason: string | null
+  last_objective: string | null
+  last_reason: string | null
+  rag_status: string | null
+}
+
 export interface SimulationSnapshot {
   session_id: string
   state: SimulationState
@@ -252,6 +272,7 @@ export interface SimulationSnapshot {
   event_detection?: EventDetectionPayload | null
   prediction?: PredictionPayload | null
   traffic_style?: TrafficStylePayload | null
+  ai_takeover?: AIControlStatus | null
   metrics: SimulationMetrics
   evaluation?: SimulationEvaluation | null
   error: string | null

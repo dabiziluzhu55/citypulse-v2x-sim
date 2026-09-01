@@ -20,7 +20,10 @@ import {
   simulationTimeWindow,
 } from '../src/constants/scenarioOptions.ts'
 import { formatIntersectionLabel } from '../src/utils/intersectionLabels.ts'
-import { buildStartSimulationRequest } from '../src/utils/scenarioPayload.ts'
+import {
+  applyAiControlToSimulationRequest,
+  buildStartSimulationRequest,
+} from '../src/utils/scenarioPayload.ts'
 import {
   assertSafeLaneClosureEvents,
   laneClosureAvailability,
@@ -544,6 +547,29 @@ test('uses each configured event time and rejects an event outside the simulatio
     ...input,
     disturbanceEvents: [{ ...input.disturbanceEvents[0], endSeconds: 901 }],
   }), /simulation window/)
+})
+
+test('applies event-scoped AI control to every configured disturbance target', () => {
+  const payload = buildStartSimulationRequest({
+    scenarioPresetId: 'xiongan_20',
+    period: 'morning_peak',
+    windowStartSeconds: 0,
+    durationSeconds: 900,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    disturbanceEvents: [{
+      eventId: 'ai-event',
+      eventType: 'accident',
+      intersectionIds: ['demo_1', 'demo_2'],
+      startSeconds: 120,
+      endSeconds: 480,
+    }],
+    snapshotIntervalSeconds: 1,
+  })
+
+  const enabled = applyAiControlToSimulationRequest(payload, true)
+  assert.ok(enabled.disturbance_targets.every((target) => target.ai_control_enabled === true))
+  assert.ok(payload.disturbance_targets.every((target) => !('ai_control_enabled' in target)))
 })
 
 test('aggregates multiple warnings per intersection and tracks active/completed state', () => {
