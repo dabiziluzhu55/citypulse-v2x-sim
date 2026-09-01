@@ -48,11 +48,12 @@ class ExporterManager:
         """Sensor specs handed to an exporter of ``kind``.
 
         Most kinds consume the config sensors of their own ``type``; ``kitti``
-        is a consumer kind — no sensor has ``type == "kitti"``, it spawns the
-        config's rgb_camera + lidar specs (renamed internally by the
-        exporter, see ``data_export.exporters.kitti``).
+        and ``stream`` are consumer kinds — no sensor has ``type == "kitti"``
+        / ``"stream"``, they spawn the config's rgb_camera + lidar specs
+        (renamed internally by the exporters, see
+        ``data_export.exporters.kitti`` / ``stream``).
         """
-        if kind == "kitti":
+        if kind in ("kitti", "stream"):
             return [s for s in self._config.sensors
                     if s.type in ("rgb_camera", "lidar")]
         return by_type.get(kind, [])
@@ -70,9 +71,9 @@ class ExporterManager:
                 raise ExportConfigError(
                     f"unknown exporter kind '{kind}' "
                     f"(available: {', '.join(sorted(EXPORTER_REGISTRY))})")
-            if kind not in by_type and kind != "kitti":
-                # kitti 是消费型 kind:没有 type=="kitti" 的传感器,它消费
-                # 配置里的相机+lidar specs(见 _sensor_specs_for)。
+            if kind not in by_type and kind not in ("kitti", "stream"):
+                # kitti/stream 是消费型 kind:没有 type==kind 的传感器,它们
+                # 消费配置里的相机+lidar specs(见 _sensor_specs_for)。
                 self._ctx.logger.warning(
                     "[export] kind '%s' selected but the config has no "
                     "sensors of that type — nothing to do for it", kind)
@@ -122,10 +123,59 @@ class ExporterManager:
     # Per-tick dispatch
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Runtime pause / resume (set by the co-simulation control channel)
+    # ------------------------------------------------------------------
+
+    def pause(self) -> None:
+        """Gate sensor capture on every managed sensor (idempotent).
+
+        Also freezes every row that is still incomplete (ticks before the
+        pause with no capture — e.g. fps < 1/step, or the pause itself):
+        missing slots are backfilled ``no_data`` so the manifest can keep
+        streaming.  In-flight frames overwrite their slot with ``written``
+        when consumed (``record_sensor`` is overwrite-safe), so no data is
+        lost.
+        """
+        self._ctx.sensor_farm.pause_all()
+        reg = self._ctx.frame_registry
+        for row in reg.ordered_rows():
+            for name in reg.expected_sensors:
+                if name not in row["sensors"]:
+                    reg.record_sensor(row, name, "no_data")
+
+    def resume(self) -> None:
+        """Re-open sensor capture (idempotent)."""
+        self._ctx.sensor_farm.resume_all()
+
+    def is_paused(self) -> bool:
+        return self._ctx.sensor_farm.any_paused()
+
+    def is_active(self) -> bool:
+        """True while at least one exporter is registered."""
+        return bool(self._exporters)
+
     def on_sim_tick(self, export_frame: int, sim_time: float) -> None:
         """Create the tick's registry row and dispatch to every active
-        exporter; a failing exporter is disabled after repeated errors."""
-        self._ctx.frame_registry.begin_frame(export_frame, sim_time)
+        exporter; a failing exporter is disabled after repeated errors.
+
+        Row keys are derived from simulation time (``round(sim_time /
+        step_length)``), matching ``FileSinkExporter._consume`` — a segment
+        started mid-run (via the control channel) therefore keys its rows at
+        the current sim frame, and its frames land in the right rows.
+        """
+        # 行号必须由 sim 时间推导(与 FileSinkExporter._consume 的
+        # round(sim_ts/step_length) 一致);首段 sim 从 0 起步时与原 tick 计数
+        # 相等,运行中途 start 的新段(如 sim=300s)行号从 6000 起,帧才落对行。
+        sim_frame = round(sim_time / self._ctx.step_length)
+        self._ctx.frame_registry.begin_frame(sim_frame, sim_time)
+        if self._ctx.sensor_farm.any_paused():
+            # 暂停期间行照建、槽位填 no_data:manifest 持续流式输出,
+            # 帧号不跳不重,FrameRegistry 内存有界(与 _common 的 gap-fill 语义一致)
+            row = self._ctx.frame_registry.get(sim_frame)
+            for name in self._ctx.frame_registry.expected_sensors:
+                if name not in row["sensors"]:
+                    self._ctx.frame_registry.record_sensor(row, name, "no_data")
         for exporter in list(self._exporters):
             if exporter.kind in self._disabled:
                 continue

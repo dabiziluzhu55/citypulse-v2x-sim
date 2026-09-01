@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
 
 from .base import Exporter  # noqa: F401  (re-exported for convenience)
+from .config import DEFAULT_WRITE_THREADS
 
 
 @dataclass
@@ -23,7 +24,8 @@ class ExportContext:
     sensor_farm: Any                # data_export.sensors.SensorFarm
     frame_registry: Any             # FrameRegistry
     logger: Any                     # logging.Logger
-    write_threads: int = 2          # parallel encoder workers per sensor
+    write_threads: int = DEFAULT_WRITE_THREADS  # fallback for sensors without sensors[i].write_threads
+    export_config: Any = None       # validated ExportConfig (read by stream etc.)
 
 
 class FrameRegistry:
@@ -59,6 +61,16 @@ class FrameRegistry:
     def get_by_sim_time(self, sim_ts: float) -> Optional[Dict[str, Any]]:
         """The row whose simulation time is nearest ``sim_ts``."""
         return self._rows.get(round(sim_ts / self._step))
+
+    def min_key_above(self, key: int) -> Optional[int]:
+        """Smallest row key strictly greater than ``key`` (None when none
+        exists).  Used by the manifest exporter to skip the gap before a
+        segment that started mid-run."""
+        best = None
+        for k in self._rows:
+            if k > key and (best is None or k < best):
+                best = k
+        return best
 
     def record_sensor(self, row: Dict[str, Any], sensor_name: str,
                       status: str, **extra: Any) -> None:

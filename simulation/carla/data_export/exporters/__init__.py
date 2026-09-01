@@ -9,6 +9,7 @@ codebase needs to change.
 from . import rgb_camera  # noqa: F401  (registers "rgb_camera")
 from . import lidar       # noqa: F401  (registers "lidar")
 from . import kitti       # noqa: F401  (registers "kitti")
+from . import stream      # noqa: F401  (registers "stream")
 from . import manifest    # noqa: F401  (registers "manifest")
 
 # future exporters (once implemented):
