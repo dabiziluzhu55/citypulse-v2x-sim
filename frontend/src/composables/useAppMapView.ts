@@ -5,6 +5,7 @@ import {
   DEFAULT_CESIUM_CAMERA_PRESET_ID,
   DEFAULT_MAP_CENTER,
   DEFAULT_MAP_ZOOM,
+  BAIDU_3D_LOCAL_MAX_RANGE,
   BAIDU_3D_MAX_RANGE,
   BAIDU_3D_MIN_RANGE,
   resolveCesiumCameraPreset,
@@ -68,9 +69,12 @@ export function provideAppMapView() {
     const threeMap = threeMapRef.value
     if (threeMap) {
       const preset = resolveCesiumCameraPreset(cameraPreset.value)
+      const maximumRange = cameraPreset.value === 'overview'
+        ? BAIDU_3D_MAX_RANGE
+        : (preset.maximumZoomDistance ?? BAIDU_3D_LOCAL_MAX_RANGE)
       threeMap.setRangeLimits?.(
-        BAIDU_3D_MIN_RANGE,
-        BAIDU_3D_MAX_RANGE,
+        preset.minimumZoomDistance ?? BAIDU_3D_MIN_RANGE,
+        maximumRange,
       )
       if (viewport.value.kind === 'bounds') {
         const [minLon, minLat, maxLon, maxLat] = viewport.value.bounds
@@ -78,7 +82,7 @@ export function provideAppMapView() {
         const [bdMaxLon, bdMaxLat] = wgs84ToBd09(maxLon, maxLat)
         threeMap.setViewport(
           [[bdMinLon, bdMinLat, 0], [bdMaxLon, bdMaxLat, 0]],
-          { range: BAIDU_3D_MAX_RANGE, force: options.force },
+          { range: maximumRange, force: options.force },
         )
       } else {
         const [bdLon, bdLat] = wgs84ToBd09(viewport.value.center[0], viewport.value.center[1])

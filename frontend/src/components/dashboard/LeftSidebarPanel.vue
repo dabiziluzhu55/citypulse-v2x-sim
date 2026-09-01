@@ -142,6 +142,8 @@ const {
   controlModes,
 )
 const feedback = ref<string | null>(null)
+// UI-only placeholder. This is intentionally not included in the simulation payload yet.
+const aiControlEnabled = ref(false)
 const multiplierOpen = ref(false)
 const exporting = ref(false)
 const disturbanceModalOpen = ref(false)
@@ -860,7 +862,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
           width: `${LEFT_SIDEBAR_REFERENCE_LAYOUT.disturbanceTargets.width}px`,
         }"
       >
-        <span class="left-sidebar__field-label">扰动事件</span>
+        <div class="left-sidebar__disturbance-heading">
+          <span class="left-sidebar__field-label">扰动事件</span>
+
+          <label class="left-sidebar__ai-control">
+            <span>AI管控</span>
+            <el-switch
+              v-model="aiControlEnabled"
+              size="small"
+              :disabled="isSessionActive"
+              aria-label="是否开启 AI 管控"
+              active-color="#13ce66"
+              inactive-color="#526b7d"
+            />
+          </label>
+        </div>
         <button
           type="button"
           class="left-sidebar__disturbance-button"
@@ -1349,6 +1365,32 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+.left-sidebar__disturbance-heading {
+  height: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.left-sidebar__ai-control {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #accde6;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 19px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.left-sidebar__ai-control :deep(.el-switch) { height: 19px; }
+.left-sidebar__ai-control :deep(.el-switch__core) {
+  border-color: rgba(153, 220, 255, .42);
+  box-shadow: 0 0 6px rgba(33, 230, 255, .16);
+}
+.left-sidebar__ai-control :deep(.el-switch.is-checked .el-switch__core) {
+  box-shadow: 0 0 8px rgba(19, 206, 102, .42);
 }
 .left-sidebar__disturbance-button {
   width: 100%;
@@ -1913,6 +1955,60 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
   .disturbance-modal__event-settings { grid-template-columns: 1fr 1fr; }
   .disturbance-modal__event-type > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .disturbance-modal__intersections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Left panel typography: one consistent scale with clear visual hierarchy. */
+.left-sidebar__content {
+  --left-font-section-title: 20px;
+  --left-font-primary: 16px;
+  --left-font-secondary: 14px;
+  --left-font-micro: 11px;
+  --left-font-control-button: 15px;
+
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.left-sidebar__content :deep(.ls-section-header__title) {
+  font-size: var(--left-font-section-title);
+}
+
+.left-sidebar__field-label,
+.left-sidebar__ai-control,
+.left-sidebar__select :deep(.el-select__selected-item),
+.left-sidebar__select :deep(.el-select__placeholder),
+.left-sidebar__disturbance-button,
+.left-sidebar__algorithm-select :deep(.el-select__selected-item),
+.left-sidebar__file-actions button,
+.left-sidebar__speed-badge,
+.left-sidebar__runtime-head,
+.left-sidebar__runtime-head strong {
+  font-size: var(--left-font-primary);
+}
+
+.left-sidebar__controls button {
+  font-size: var(--left-font-control-button);
+}
+
+.left-sidebar__time-stepper-field > span,
+.left-sidebar__config-summary,
+.left-sidebar__runtime dt,
+.left-sidebar__runtime dd {
+  font-size: var(--left-font-secondary);
+}
+
+.left-sidebar__status,
+.left-sidebar__mock-note,
+.left-sidebar__runtime-warning,
+.left-sidebar__runtime-error-button,
+.left-sidebar__speed-badge small {
+  font-size: var(--left-font-micro);
+}
+
+:global(.left-sidebar-select-popper .el-select-dropdown__item),
+:global(.left-sidebar-algorithm-popper .el-select-dropdown__item),
+:global(.left-sidebar-speed-popper .el-dropdown-menu__item) {
+  font-size: 14px;
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
 @media (prefers-reduced-motion: reduce) {

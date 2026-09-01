@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import AiControlPanel from '../components/dashboard/AiControlPanel.vue'
 import CenterCommunicationPanel from '../components/dashboard/CenterCommunicationPanel.vue'
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
@@ -110,8 +111,11 @@ const {
 } = useEvaluationComparison(sessionId, snapshot)
 const {
   communicationPanelOpen,
+  aiControlPanelOpen,
   sidePanelsCollapsed,
   closeCommunicationPanel,
+  closeAiControlPanel,
+  toggleSidePanels,
 } = useDashboardOverlay()
 interface ConfigurationChangeRequest {
   fingerprint: string
@@ -147,6 +151,8 @@ function handleOverlayKeydown(event: KeyboardEvent) {
     event.preventDefault()
     event.stopImmediatePropagation()
     cancelConfigChange()
+  } else if (aiControlPanelOpen.value) {
+    closeAiControlPanel()
   } else if (communicationPanelOpen.value) {
     closeCommunicationPanel()
   }
@@ -167,6 +173,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', guardConfigChangeEscape, true)
   window.removeEventListener('keydown', handleOverlayKeydown)
+  closeAiControlPanel()
   closeCommunicationPanel()
 })
 
@@ -253,6 +260,17 @@ async function handleStop() {
         </button>
       </div>
 
+      <button
+        type="button"
+        class="map-side-panel-toggle"
+        :aria-expanded="!sidePanelsCollapsed"
+        :title="sidePanelsCollapsed ? '展开两侧面板' : '收起两侧面板'"
+        @click="toggleSidePanels"
+      >
+        <span aria-hidden="true">{{ sidePanelsCollapsed ? '»' : '«' }}</span>
+        {{ sidePanelsCollapsed ? '展开面板' : '收起面板' }}
+      </button>
+
       <div v-if="mapDimension === '3d'" class="map-camera-toggle" aria-label="三维地图机位视角">
         <span class="map-dimension-toggle__label">机位</span>
         <button
@@ -333,6 +351,27 @@ async function handleStop() {
         </div>
       </Transition>
     </Teleport>
+
+    <Transition name="communication-overlay">
+      <div
+        v-if="aiControlPanelOpen"
+        id="ai-control-dialog"
+        class="communication-overlay ai-control-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="CityPulse-Qwen交通管控大模型"
+      >
+        <button
+          type="button"
+          class="communication-overlay__backdrop"
+          aria-label="关闭AI管控模型"
+          @click="closeAiControlPanel"
+        />
+        <div class="communication-overlay__panel ai-control-overlay__panel">
+          <AiControlPanel @close="closeAiControlPanel" />
+        </div>
+      </div>
+    </Transition>
 
     <Transition name="communication-overlay">
       <div
@@ -494,6 +533,45 @@ async function handleStop() {
   align-items: center;
   gap: 10px;
   pointer-events: auto;
+}
+
+.map-side-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 42px;
+  padding: 0 15px;
+  border: 1px solid rgba(0, 255, 255, .22);
+  border-radius: 999px;
+  background: rgba(2, 10, 24, .82);
+  backdrop-filter: blur(10px);
+  color: var(--cp-text-secondary);
+  font: 600 12px/1 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color .2s ease, box-shadow .2s ease, color .2s ease, background .2s ease;
+}
+
+.map-side-panel-toggle > span {
+  color: #21e6ff;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.map-side-panel-toggle:hover,
+.map-side-panel-toggle:focus-visible {
+  border-color: var(--cp-accent);
+  background: rgba(33, 230, 255, .08);
+  box-shadow: var(--cp-glow);
+  color: var(--cp-accent);
+  outline: none;
+}
+
+.ai-control-overlay__panel {
+  display: grid;
+  place-items: center;
 }
 
 .map-dimension-toggle,
