@@ -5,6 +5,7 @@ import CenterCommunicationPanel from '../components/dashboard/CenterCommunicatio
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
 import { useDashboardOverlay } from '../composables/useDashboardOverlay'
+import { useCopilotContext } from '../composables/useCopilotContext'
 import { useOptionalAppMapView } from '../composables/useAppMapView'
 import { useSimulationStore } from '../composables/useSimulationStore'
 import { useSnapshotMetrics } from '../composables/useSnapshotMetrics'
@@ -34,6 +35,11 @@ const {
 const copilotActiveScope = computed(() => (
   activeIntersectionId.value ? `intersection:${activeIntersectionId.value}` : null
 ))
+const {
+  activeEventId: copilotActiveEventId,
+  activeEventLabel: copilotActiveEventLabel,
+  clearCopilotEvent,
+} = useCopilotContext()
 const { catalog, intersection } = useCatalog(activeIntersectionId)
 const localIntersectionOptions = Array.from({ length: 20 }, (_, index) => ({
   intersection_id: `demo_${index + 1}`,
@@ -147,6 +153,8 @@ watch([sessionId, state], ([nextSessionId, nextState]) => {
   autoPresentedSessionId.value = nextSessionId
   setMapDimension('3d')
 }, { immediate: true })
+
+watch(sessionId, () => clearCopilotEvent())
 
 function handleOverlayKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
@@ -373,6 +381,8 @@ async function handleStop() {
         <div class="communication-overlay__panel ai-control-overlay__panel">
           <AiControlPanel
             :session-id="sessionId"
+            :active-event-id="copilotActiveEventId"
+            :active-event-label="copilotActiveEventLabel"
             :active-scope="copilotActiveScope"
             :ai-takeover="snapshot?.ai_takeover ?? null"
             @close="closeAiControlPanel"

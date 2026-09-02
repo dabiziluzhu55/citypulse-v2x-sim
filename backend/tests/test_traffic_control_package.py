@@ -19,6 +19,7 @@ from backend.app.controllers.registry import (
 from backend.app.core.exceptions import AppError
 from backend.app.scenario.resolver import ResolvedStartSimulation
 from backend.app.services.simulation_service import SimulationService
+from simulation.sumo.engine.ai_control import AIControlConfig
 from simulation.sumo.engine.distributed.codec import dumps_config, loads_config
 from simulation.sumo.engine.session import SimulationConfig
 from traffic_control import max_pressure as tc_max_pressure
@@ -133,6 +134,7 @@ def _make_service(**settings_kwargs: object) -> SimulationService:
         prediction_horizon_seconds=60.0,
         prediction_model_path=None,
         stgcn_root="",
+        ai_control_config=AIControlConfig(),
         **settings_kwargs,
     )
     return SimulationService(

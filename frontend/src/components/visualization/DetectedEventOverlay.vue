@@ -17,6 +17,7 @@ import {
   layoutDetectedEventIcons,
   type ScreenMarkerInput,
 } from '../../utils/detectedEventIconLayout'
+import { useCopilotContext } from '../../composables/useCopilotContext'
 
 export interface ScreenPoint {
   x: number
@@ -45,6 +46,7 @@ interface MarkerView {
 
 const markers = ref<MarkerView[]>([])
 const hoveredId = ref<string | null>(null)
+const { selectCopilotEvent } = useCopilotContext()
 let frameId: number | null = null
 let cachedLayoutKey = ''
 let cachedOffsets = new Map<string, { offsetX: number; offsetY: number }>()
@@ -159,6 +161,7 @@ onUnmounted(() => {
       @mouseleave="hoveredId = null"
       @focus="hoveredId = marker.card.event_id"
       @blur="hoveredId = null"
+      @click="selectCopilotEvent(marker.card.event_id, marker.typeLabel)"
     >
       <img
         class="detected-event-overlay__icon"

@@ -14,10 +14,12 @@ import type { AIControlStatus } from '../../types/simulation'
 const props = withDefaults(defineProps<{
   sessionId: string
   activeEventId?: string | null
+  activeEventLabel?: string | null
   activeScope?: string | null
   aiTakeover?: AIControlStatus | null
 }>(), {
   activeEventId: null,
+  activeEventLabel: null,
   activeScope: null,
   aiTakeover: null,
 })
@@ -150,50 +152,27 @@ onBeforeUnmount(() => requestController?.abort())
       :src="panelTitle"
       alt="CityPulse-Qwen交通管控大模型"
     />
-    <img
-      class="ai-control-panel__greeting"
-      :src="panelGreeting"
-      alt="上午好，可对交通状态进行提问"
-    />
-
-    <form class="ai-control-panel__question" @submit.prevent="submitQuestion">
-      <img
-        class="ai-control-panel__input-background"
-        :src="panelInput"
-        alt=""
-        aria-hidden="true"
-      />
-      <textarea
-        v-model="question"
-        maxlength="4000"
-        :disabled="submitting"
-        aria-label="请输入交通状态问题"
-        placeholder="请输入需要咨询的交通状态问题"
-        @input="submitHint = ''"
-        @keydown.ctrl.enter.prevent="submitQuestion"
-        @keydown.meta.enter.prevent="submitQuestion"
-      />
-      <button
-        type="submit"
-        class="ai-control-panel__ask-button"
-        :disabled="!canSubmit"
-        :aria-busy="submitting"
-        aria-label="问一问"
-      >
-        <img :src="askButton" alt="问一问" />
-      </button>
-    </form>
 
     <div class="ai-control-panel__runtime-status" :class="{ 'is-active': aiTakeover?.ai_enabled }">
       <i aria-hidden="true" />
       <span>{{ takeoverLabel }}</span>
       <span v-if="aiTakeover?.baseline_controller">基线：{{ aiTakeover.baseline_controller }}</span>
+      <span v-if="activeEventId" class="ai-control-panel__active-event">
+        当前事件：{{ activeEventLabel || activeEventId }}
+      </span>
     </div>
 
     <div ref="conversationRef" class="ai-control-panel__conversation" aria-live="polite">
-      <p v-if="messages.length === 0" class="ai-control-panel__empty">
-        {{ sessionId ? '可询问当前路口、拥堵原因、事件与历史趋势' : '请先启动仿真，再向交通 Copilot 提问' }}
-      </p>
+      <div v-if="messages.length === 0" class="ai-control-panel__empty">
+        <img
+          class="ai-control-panel__greeting"
+          :src="panelGreeting"
+          alt="上午好，可对交通状态进行提问"
+        />
+        <p>
+          {{ sessionId ? '可询问当前路口、拥堵原因、事件与历史趋势' : '请先启动仿真，再向交通 Copilot 提问' }}
+        </p>
+      </div>
       <article
         v-for="message in messages"
         :key="message.id"
@@ -206,12 +185,45 @@ onBeforeUnmount(() => requestController?.abort())
       <p v-if="submitting" class="ai-control-panel__thinking">正在分析当前仿真交通状态…</p>
     </div>
 
-    <p v-if="submitHint" class="ai-control-panel__hint" role="status">{{ submitHint }}</p>
-    <p v-else-if="responseMeta" class="ai-control-panel__hint">
-      {{ responseMeta.model ?? 'Qwen' }} · {{ responseMeta.rounds }}轮 ·
-      {{ responseMeta.tool_calls.length }}次工具调用 ·
-      {{ responseMeta.latency_ms == null ? '--' : Math.round(responseMeta.latency_ms) }}ms
-    </p>
+    <div class="ai-control-panel__composer">
+      <p v-if="submitHint" class="ai-control-panel__hint is-error" role="status">
+        {{ submitHint }}
+      </p>
+      <p v-else-if="responseMeta" class="ai-control-panel__hint">
+        {{ responseMeta.model ?? 'Qwen' }} · {{ responseMeta.rounds }}轮 ·
+        {{ responseMeta.tool_calls.length }}次工具调用 ·
+        {{ responseMeta.latency_ms == null ? '--' : Math.round(responseMeta.latency_ms) }}ms
+      </p>
+      <p v-else class="ai-control-panel__hint is-shortcut">Ctrl + Enter 发送</p>
+
+      <form class="ai-control-panel__question" @submit.prevent="submitQuestion">
+        <img
+          class="ai-control-panel__input-background"
+          :src="panelInput"
+          alt=""
+          aria-hidden="true"
+        />
+        <textarea
+          v-model="question"
+          maxlength="4000"
+          :disabled="submitting"
+          aria-label="请输入交通状态问题"
+          placeholder="请输入需要咨询的交通状态问题"
+          @input="submitHint = ''"
+          @keydown.ctrl.enter.prevent="submitQuestion"
+          @keydown.meta.enter.prevent="submitQuestion"
+        />
+        <button
+          type="submit"
+          class="ai-control-panel__ask-button"
+          :disabled="!canSubmit"
+          :aria-busy="submitting"
+          aria-label="问一问"
+        >
+          <img :src="askButton" alt="问一问" />
+        </button>
+      </form>
+    </div>
   </section>
 </template>
 
@@ -269,22 +281,18 @@ onBeforeUnmount(() => requestController?.abort())
   transform: translateX(-50%);
 }
 
-.ai-control-panel__greeting {
+.ai-control-panel__composer {
   position: absolute;
-  top: 19%;
-  left: 50%;
-  width: 37.96%;
-  height: auto;
-  transform: translateX(-50%);
+  right: 15.5%;
+  bottom: 6.2%;
+  left: 15.5%;
+  z-index: 3;
 }
 
 .ai-control-panel__question {
-  position: absolute;
-  top: 38.8%;
-  left: 50%;
-  width: 69.14%;
-  height: 18.3%;
-  transform: translateX(-50%);
+  position: relative;
+  width: 100%;
+  height: clamp(84px, 17vh, 112px);
 }
 
 .ai-control-panel__input-background {
@@ -304,9 +312,9 @@ onBeforeUnmount(() => requestController?.abort())
   width: 100%;
   height: 100%;
   padding:
-    clamp(12px, 1.8vw, 20px)
+    clamp(13px, 1.6vw, 18px)
     clamp(88px, 12vw, 122px)
-    clamp(40px, 5vw, 50px)
+    clamp(14px, 1.8vw, 20px)
     clamp(16px, 2.2vw, 24px);
   resize: none;
   border: 0;
@@ -353,7 +361,7 @@ onBeforeUnmount(() => requestController?.abort())
 
 .ai-control-panel__runtime-status {
   position: absolute;
-  top: 58.2%;
+  top: 13.6%;
   left: 15.5%;
   right: 15.5%;
   display: flex;
@@ -372,6 +380,13 @@ onBeforeUnmount(() => requestController?.abort())
 }
 
 .ai-control-panel__runtime-status.is-active { color: #75f2b1; }
+.ai-control-panel__active-event {
+  margin-left: auto;
+  overflow: hidden;
+  color: #8fd9f7;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ai-control-panel__runtime-status.is-active i {
   background: #13ce66;
   box-shadow: 0 0 9px rgba(19, 206, 102, .8);
@@ -379,23 +394,39 @@ onBeforeUnmount(() => requestController?.abort())
 
 .ai-control-panel__conversation {
   position: absolute;
-  top: 62%;
+  top: 18.2%;
   left: 15.5%;
   right: 15.5%;
-  bottom: 8%;
+  bottom: 30.5%;
   z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 9px;
   overflow: auto;
-  padding: 4px 8px 10px;
+  padding: 10px 8px 14px;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
   scrollbar-color: rgba(82, 194, 250, .55) transparent;
   scrollbar-width: thin;
 }
 
-.ai-control-panel__empty,
+.ai-control-panel__empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 100%;
+}
+
+.ai-control-panel__greeting {
+  width: min(55%, 360px);
+  height: auto;
+}
+
+.ai-control-panel__empty p,
 .ai-control-panel__thinking {
-  margin: auto;
+  margin: 0;
   color: rgba(198, 225, 239, .7);
   font-size: clamp(11px, 1.15vw, 14px);
   text-align: center;
@@ -443,15 +474,20 @@ onBeforeUnmount(() => requestController?.abort())
 }
 
 .ai-control-panel__hint {
-  position: absolute;
-  top: 54.8%;
-  left: 50%;
-  width: 69%;
-  margin: 0;
-  transform: translateX(-50%);
+  box-sizing: border-box;
+  min-height: 20px;
+  margin: 0 4px 6px;
   color: #8fd9f7;
-  font-size: clamp(11px, 1.2vw, 14px);
-  text-align: center;
+  font-size: clamp(10px, 1vw, 12px);
+  line-height: 1.45;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.ai-control-panel__hint.is-error { color: #ff9f9f; }
+.ai-control-panel__hint.is-shortcut {
+  color: rgba(178, 214, 231, .55);
+  text-align: right;
 }
 
 @media (max-width: 720px) {

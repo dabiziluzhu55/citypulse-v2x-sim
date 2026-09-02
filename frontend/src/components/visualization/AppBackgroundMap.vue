@@ -22,6 +22,7 @@ import { bindMapInstance, useAppMapView } from '../../composables/useAppMapView'
 import { useSimulationMap } from '../../composables/useSimulationMap'
 import { useSimulationStore } from '../../composables/useSimulationStore'
 import { useActiveIntersectionScene } from '../../composables/useActiveIntersectionScene'
+import { useCopilotContext } from '../../composables/useCopilotContext'
 import { TrafficModelRegistry } from '../../cesium/traffic/TrafficModelRegistry'
 import { loadIntersectionTopologyCatalog, type IntersectionTopologyNode } from '../../mapv/intersectionTopology'
 import { loadIntersectionTopologyRoutes } from '../../mapv/intersectionTopologyRoutes'
@@ -86,6 +87,7 @@ const {
   unmappedRuntimeEvents,
 } = useSimulationStore()
 const { disturbanceEvents, simulationStartTime } = useScenarioDraftStore()
+const { activeEventId: copilotActiveEventId, selectCopilotEvent } = useCopilotContext()
 
 const warningPopupRef = ref<HTMLElement | null>(null)
 const warningPopupTitle = ref('')
@@ -606,6 +608,11 @@ function handleMapClick(event: MapBrowserEvent): void {
       && featureSessionId === (snapshot.value?.session_id ?? '')
     ) {
       detectedPopupCards.value = detectedFeature.get('cards') as DetectedEventCard[]
+      const primaryCard = detectedPopupCards.value[0]
+      selectCopilotEvent(
+        primaryCard?.event_id,
+        primaryCard ? detectedEventTypeLabel(primaryCard) : null,
+      )
       detectedOverlay?.setPosition((detectedFeature.getGeometry() as Point).getCoordinates())
       warningOverlay?.setPosition(undefined)
       return
@@ -643,6 +650,9 @@ function handleMapClick(event: MapBrowserEvent): void {
           ?? (item as ScenarioDraftDisturbanceEvent).event_type,
         time: `${(item as ScenarioDraftDisturbanceEvent).start_time}-${(item as ScenarioDraftDisturbanceEvent).end_time}`,
       })
+  if (runtime && warningPopupEvents.value[0]) {
+    selectCopilotEvent(warningPopupEvents.value[0].id, warningPopupEvents.value[0].label)
+  }
   warningOverlay.setPosition((feature.getGeometry() as Point).getCoordinates())
 }
 
@@ -952,12 +962,19 @@ onUnmounted(() => {
         <strong>事件识别</strong>
         <button type="button" title="关闭" aria-label="关闭事件识别详情" @click="closeDetectedPopup">x</button>
       </header>
-      <article v-for="card in detectedPopupCards" :key="card.event_id">
+      <button
+        v-for="card in detectedPopupCards"
+        :key="card.event_id"
+        type="button"
+        class="detected-event-map-popup__event"
+        :class="{ 'is-active': copilotActiveEventId === card.event_id }"
+        @click="selectCopilotEvent(card.event_id, detectedEventTypeLabel(card))"
+      >
         <strong>{{ detectedEventTypeLabel(card) }}</strong>
         <span>{{ detectedEventClockTime(snapshot, card.start_seconds) }}</span>
         <span>持续 {{ formatDetectedEventDuration(detectedEventDurationSeconds(snapshot, card)) }}</span>
         <span>{{ card.intersection_id }} / {{ card.lane_ids.join('、') || '--' }}</span>
-      </article>
+      </button>
     </section>
   </div>
 </template>
@@ -989,9 +1006,10 @@ onUnmounted(() => {
 
 .detected-event-map-popup header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .detected-event-map-popup header button { width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: #eaf8ff; cursor: pointer; }
-.detected-event-map-popup article { display: grid; gap: 3px; padding: 8px 0; border-top: 1px solid rgba(120, 202, 235, 0.18); font-size: 12px; }
-.detected-event-map-popup article:first-of-type { margin-top: 7px; }
-.detected-event-map-popup article span { color: #a8d9ea; }
+.detected-event-map-popup__event { display: grid; width: 100%; gap: 3px; padding: 8px 4px; border: 0; border-top: 1px solid rgba(120, 202, 235, 0.18); background: transparent; color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.detected-event-map-popup__event:first-of-type { margin-top: 7px; }
+.detected-event-map-popup__event span { color: #a8d9ea; }
+.detected-event-map-popup__event.is-active { background: rgba(33, 230, 255, .08); box-shadow: inset 2px 0 #21e6ff; }
 
 .app-background-map__network-status {
   position: absolute;

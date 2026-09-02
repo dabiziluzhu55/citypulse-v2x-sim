@@ -421,9 +421,13 @@ function buildCurrentPayload(): StartSimulationRequest {
 }
 
 function handleAiControlChange(enabled: boolean): void {
-  feedback.value = enabled
+  if (!enabled) {
+    feedback.value = '已关闭事件级 AI 管控，将继续使用所选基线算法'
+    return
+  }
+  feedback.value = config.value.disturbance_events.length > 0
     ? 'AI管控将在仿真启动时应用到全部已配置扰动事件'
-    : '已关闭事件级 AI 管控，将继续使用所选基线算法'
+    : '尚未配置扰动事件；仍可启动基线仿真并使用 AI 问答，事件级接管暂不生效'
 }
 
 function requestConfiguration(next: CompactScenarioConfig, onApplied?: () => void): void {
@@ -772,8 +776,7 @@ function handleStart() {
   try {
     const payload = buildCurrentPayload()
     if (aiControlEnabled.value && payload.disturbance_targets.length === 0) {
-      feedback.value = 'AI管控仅针对扰动事件生效，请先添加至少一个扰动事件'
-      return
+      feedback.value = '未配置扰动事件，已按所选基线算法启动；仿真启动后可正常使用 AI 问答'
     }
     emit('start', payload)
   } catch (error) {

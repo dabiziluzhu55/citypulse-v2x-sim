@@ -14,6 +14,7 @@ import {
   disturbanceRuntimeStateLabel,
   disturbanceRuntimeTypeLabel,
 } from '../../utils/runtimeDisturbances'
+import { useCopilotContext } from '../../composables/useCopilotContext'
 
 interface ScreenPoint { x: number; y: number; cameraVersion?: number }
 interface ProjectedMarker extends SceneEventMarker, ScreenPoint {}
@@ -32,6 +33,7 @@ const props = defineProps<{
 const projected = ref<ProjectedMarker[]>([])
 const selectedId = ref<string | null>(null)
 const selectedDetailIndex = ref(0)
+const { selectCopilotEvent, clearCopilotEvent } = useCopilotContext()
 let frameId: number | null = null
 
 const selected = computed(() => projected.value.find((marker) => marker.id === selectedId.value) ?? null)
@@ -96,10 +98,25 @@ function toggle(marker: ProjectedMarker): void {
   }
   selectedId.value = marker.id
   selectedDetailIndex.value = 0
+  selectDetail(marker.details[0])
 }
 
 function close(): void {
   selectedId.value = null
+}
+
+function detailEventId(detail: SceneEventDetail): string {
+  return detail.kind === 'detected' ? detail.card.event_id : detail.event.eventId
+}
+
+function selectDetail(detail: SceneEventDetail | undefined): void {
+  if (!detail) return
+  selectCopilotEvent(detailEventId(detail), detailTitle(detail))
+}
+
+function selectDetailAt(index: number): void {
+  selectedDetailIndex.value = index
+  selectDetail(selected.value?.details[index])
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -165,6 +182,7 @@ watch(
 watch(
   () => props.sessionRevision,
   () => {
+    clearCopilotEvent()
     selectedId.value = null
     selectedDetailIndex.value = 0
     projected.value = []
@@ -230,7 +248,7 @@ onUnmounted(() => {
           :key="detail.id"
           type="button"
           :class="{ 'is-active': index === selectedDetailIndex }"
-          @click="selectedDetailIndex = index"
+          @click="selectDetailAt(index)"
         >
           {{ detailTitle(detail) }}
         </button>
