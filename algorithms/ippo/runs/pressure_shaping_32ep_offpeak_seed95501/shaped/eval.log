@@ -1,0 +1,101 @@
+2026-08-11 02:22:35,144 [MainProcess:ippo.evaluate_paired] INFO: IPPO paired evaluation: methods=['model'] seeds=[66501, 66502, 66503, 66504, 66505, 66506, 66507, 66508] duration=300s tls=20 workers=8
+2026-08-11 02:22:42,777 [SpawnProcess-3:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:22:42,777 [SpawnProcess-1:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:22:42,804 [SpawnProcess-5:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:22:42,804 [SpawnProcess-2:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:22:42,804 [SpawnProcess-6:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:22:42,805 [SpawnProcess-7:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:22:42,805 [SpawnProcess-8:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+2026-08-11 02:22:42,805 [SpawnProcess-4:simulation.sumo.engine.runtime] INFO: Starting SUMO with libsumo (/usr/share/sumo/bin/sumo)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic '4427', program 'demo_1_off_peak'. Lane '-56371_3' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 6 in tlLogic 'J1', program 'demo_8_off_peak'. Lane '-57125_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '892', program 'demo_14_off_peak'. Lane '-52217_0' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 0 in tlLogic '1117', program 'demo_15_off_peak'. Lane '-52228_2' is targeted by 2 'G'-links. (use 'g' instead)
+Warning: Unsafe green phase 4 in tlLogic '3637', program 'demo_20_off_peak'. Lane '-56093_0' is targeted by 2 'G'-links. (use 'g' instead)
+2026-08-11 02:22:48,276 [SpawnProcess-1:algorithms.ippo.controller] INFO: IPPO v8 推理: /home/ubt/devdata/gsb/citypulse-v2x-sim/algorithms/ippo/runs/pressure_shaping_32ep_offpeak_seed95501/shaped/ippo_shaped_ep32.pt
+2026-08-11 02:22:48,277 [SpawnProcess-5:algorithms.ippo.controller] INFO: IPPO v8 推理: /home/ubt/devdata/gsb/citypulse-v2x-sim/algorithms/ippo/runs/pressure_shaping_32ep_offpeak_seed95501/shaped/ippo_shaped_ep32.pt
+2026-08-11 02:22:48,289 [SpawnProcess-3:algorithms.ippo.controller] INFO: IPPO v8 推理: /home/ubt/devdata/gsb/citypulse-v2x-sim/algorithms/ippo/runs/pressure_shaping_32ep_offpeak_seed95501/shaped/ippo_shaped_ep32.pt
+2026-08-11 02:22:48,302 [SpawnProcess-4:algorithms.ippo.controller] INFO: IPPO v8 推理: /home/ubt/devdata/gsb/citypulse-v2x-sim/algorithms/ippo/runs/pressure_shaping_32ep_offpeak_seed95501/shaped/ippo_shaped_ep32.pt
+2026-08-11 02:22:48,306 [SpawnProcess-2:algorithms.ippo.controller] INFO: IPPO v8 推理: /home/ubt/devdata/gsb/citypulse-v2x-sim/algorithms/ippo/runs/pressure_shaping_32ep_offpeak_seed95501/shaped/ippo_shaped_ep32.pt
+2026-08-11 02:22:48,310 [SpawnProcess-8:algorithms.ippo.controller] INFO: IPPO v8 推理: /home/ubt/devdata/gsb/citypulse-v2x-sim/algorithms/ippo/runs/pressure_shaping_32ep_offpeak_seed95501/shaped/ippo_shaped_ep32.pt
+2026-08-11 02:22:48,314 [SpawnProcess-6:algorithms.ippo.controller] INFO: IPPO v8 推理: /home/ubt/devdata/gsb/citypulse-v2x-sim/algorithms/ippo/runs/pressure_shaping_32ep_offpeak_seed95501/shaped/ippo_shaped_ep32.pt
+2026-08-11 02:22:48,488 [SpawnProcess-7:algorithms.ippo.controller] INFO: IPPO v8 推理: /home/ubt/devdata/gsb/citypulse-v2x-sim/algorithms/ippo/runs/pressure_shaping_32ep_offpeak_seed95501/shaped/ippo_shaped_ep32.pt
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'passenger_0_3921.0' performs emergency braking on lane ':1117_8_0' with decel=9.00, wished=4.50, severity=1.00, time=100.30.
+Warning: Vehicle 'passenger_0_7274.0' performs emergency braking on lane ':4409_31_1' with decel=9.00, wished=4.50, severity=1.00, time=98.00.
+Warning: Vehicle 'bus_0_13821.0' performs emergency braking on lane ':4306_26_0' with decel=7.00, wished=4.50, severity=1.00, time=113.00.
+Warning: Vehicle 'bus_0_13821.0' performs emergency braking on lane ':4306_26_0' with decel=7.00, wished=4.50, severity=1.00, time=113.00.
+Warning: Vehicle 'bus_0_13821.0' performs emergency braking on lane ':4306_26_0' with decel=7.00, wished=4.50, severity=1.00, time=113.00.
+Warning: Vehicle 'bus_0_13821.0' performs emergency braking on lane ':4306_26_0' with decel=7.00, wished=4.50, severity=1.00, time=113.00.
+Warning: Vehicle 'bus_0_13821.0' performs emergency braking on lane ':4306_26_0' with decel=7.00, wished=4.50, severity=1.00, time=113.00.
+Warning: Vehicle 'bus_0_13821.0' performs emergency braking on lane ':4306_26_0' with decel=7.00, wished=4.50, severity=1.00, time=113.00.
+Warning: Vehicle 'bus_0_13821.0' performs emergency braking on lane ':4306_26_0' with decel=7.00, wished=4.50, severity=1.00, time=113.00.
+Warning: Vehicle 'bus_0_13821.0' performs emergency braking on lane ':4306_26_0' with decel=7.00, wished=4.50, severity=1.00, time=113.00.
+Warning: Vehicle 'electric_bicycle_0_193.0' performs emergency braking on lane ':3279_14_0' with decel=7.00, wished=3.00, severity=1.00, time=138.70.
+Warning: Vehicle 'passenger_0_4078.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=233.90.
+Warning: Vehicle 'passenger_0_4078.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=233.90.
+Warning: Vehicle 'passenger_0_4036.0' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=233.90.
+Warning: Vehicle 'passenger_0_4078.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=233.90.
+Warning: Vehicle 'passenger_0_4078.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=233.90.
+Warning: Vehicle 'passenger_0_4078.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=233.90.
+Warning: Vehicle 'passenger_0_4078.0' performs emergency braking on lane ':1117_1_2' with decel=9.00, wished=4.50, severity=1.00, time=233.90.
+Warning: Vehicle 'passenger_0_546.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=238.65.
+Warning: Vehicle 'passenger_0_546.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=238.75.
+Warning: Vehicle 'passenger_0_546.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=238.70.
+Warning: Vehicle 'passenger_0_546.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=238.70.
+Warning: Vehicle 'passenger_0_546.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=238.70.
+Warning: Vehicle 'passenger_0_4036.0' performs emergency braking on lane ':1117_1_3' with decel=9.00, wished=4.50, severity=1.00, time=233.90.
+Warning: Vehicle 'passenger_0_546.0' performs emergency braking on lane '-52227_2' with decel=9.00, wished=4.50, severity=1.00, time=238.75.
+Warning: Vehicle 'passenger_0_4754.0' performs emergency braking on lane 'E14_0' with decel=9.00, wished=4.50, severity=1.00, time=235.00.
+Warning: Vehicle 'electric_bicycle_0_177.0' performs emergency braking on lane '-57333_1' with decel=7.00, wished=3.00, severity=1.00, time=251.20.
+Warning: Vehicle 'passenger_0_9125.0' performs emergency braking on lane ':3689_13_0' with decel=9.00, wished=4.50, severity=1.00, time=288.60.
+2026-08-11 02:25:48,453 [MainProcess:ippo.evaluate_paired] INFO: model seed=66506 arrived=158 remaining=782 waiting=503.2 completed=158 trip=91.7s
+2026-08-11 02:25:49,614 [MainProcess:ippo.evaluate_paired] INFO: model seed=66507 arrived=156 remaining=784 waiting=538.2 completed=156 trip=90.0s
+2026-08-11 02:25:50,495 [MainProcess:ippo.evaluate_paired] INFO: model seed=66501 arrived=158 remaining=782 waiting=510.8 completed=158 trip=91.1s
+2026-08-11 02:25:50,502 [MainProcess:ippo.evaluate_paired] INFO: model seed=66504 arrived=155 remaining=785 waiting=508.9 completed=155 trip=92.6s
+2026-08-11 02:25:50,531 [MainProcess:ippo.evaluate_paired] INFO: model seed=66505 arrived=159 remaining=781 waiting=499.7 completed=159 trip=91.2s
+2026-08-11 02:25:51,618 [MainProcess:ippo.evaluate_paired] INFO: model seed=66508 arrived=159 remaining=781 waiting=502.7 completed=159 trip=91.6s
+2026-08-11 02:25:52,089 [MainProcess:ippo.evaluate_paired] INFO: model seed=66502 arrived=157 remaining=783 waiting=505.5 completed=157 trip=90.1s
+2026-08-11 02:25:53,886 [MainProcess:ippo.evaluate_paired] INFO: model seed=66503 arrived=157 remaining=783 waiting=509.1 completed=157 trip=91.8s
+2026-08-11 02:25:54,783 [MainProcess:ippo.evaluate_paired] INFO: Evaluation report: /home/ubt/devdata/gsb/citypulse-v2x-sim/algorithms/ippo/runs/pressure_shaping_32ep_offpeak_seed95501/shaped/eval_seed66501_66508.json

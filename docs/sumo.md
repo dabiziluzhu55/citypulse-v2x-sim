@@ -660,6 +660,8 @@ def finish(payload: dict) -> object: ...
 - 同车道 connection 灯色不同时，`signal_state="mixed"`；
 - 纯出口车道的信号汇总字段为 `null`；
 - `queue_length_m` 当前为确定性空间估算值，`queue_length_is_estimate=true`；
+  算法 payload 与 `SimulationSnapshot.lanes` 复用同一估算函数，不额外调用 TraCI queue API；
+- 快照同时携带静态 `lane_length_m`（初始化时读取的 SUMO lane length，用作进口车道可用长度近似）；
 - `current_allowed_speed_mps` 是车道当前允许速度，会反映施工限速或封闭；
 - `target_speed_mps` 是算法返回的单车速度目标，两者不是同一字段；
 - 油耗在线值来自 SUMO HBEFA 采样估计，最终汇总由 `tripinfo.xml` 覆盖；

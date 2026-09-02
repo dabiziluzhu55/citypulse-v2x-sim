@@ -73,6 +73,7 @@ class V2XMessage:
     destination: str
     correlation_id: Optional[str]
     payload: Mapping[str, Any]
+    delivered_at: Optional[float] = None
 
     def to_dict(self) -> dict:
         return {
@@ -88,6 +89,7 @@ class V2XMessage:
             "destination": self.destination,
             "correlation_id": self.correlation_id,
             "payload": dict(self.payload),
+            "delivered_at": self.delivered_at,
         }
 
 

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "model_alias": "cov2x_g30_temp_cap_u24",
+  "deployment_candidate_id": "cov2x_temporary_speed_cap_three_scope_train_v1_update_24",
+  "runtime_candidate_id": "cov2x_temporary_speed_cap_final_v1",
+  "checkpoint_filename": "cov2x_g30_temporary_cap_u24.pt",
+  "checkpoint_sha256": "820cf477beb2fd08226038611a4c47f555a746d0f78ddd85f0cabe2092804d7c",
+  "semantic_fingerprint_sha256": "8c55902d740a22480b2a00a58296fc7cdac4ce0330350aa9142eae79b4ea5a64",
+  "format_version": 9,
+  "policy_generation": 24,
+  "actor_update_schedule_id": "temporary_base_relative_three_scope_latin_gain_1_3_2_3_1_x22_v1",
+  "vehicle_action_semantics": "temporary_base_relative_speed_cap_v1",
+  "protocol_config_hash": "276d0a81ce43f0c5de3bcb698bf7f1e0176d4c71f6dafb3be8ec5c6e133b59e3",
+  "parent_checkpoint_sha256": "8f6674465ce44150b83e5e4789ccecdddb7471e39e35a4b9eb40801e44dfe271",
+  "frozen_component_hashes": {
+    "road": "2c9fa72ec242b5ba12d4d60954e59187a311edbf0036be1cf3eda58b64dbdb06",
+    "cloud": "d8e2be5d692956b2f8f3673a782a103cbacb45d03f3dd83d146c65a5311f03fd"
+  },
+  "vehicle_component_sha256": "1ddd6d9c09cbd07eab1b33b97285196400941f738d848775cd3470f72a0adf0f",
+  "critic_component_sha256": "b3c3c564c26b7bc9e2cb52c370568e361377c52f3847c51e1a6e6caa098a843d",
+  "training_source_heads": {
+    "initial": "4c4bcfe1019db86a2c8b4cda86b17cea701e2e61",
+    "recovery": "d6f55f0c026eae3dae60509418d4debd3e357d3d"
+  },
+  "performance_used_for_selection": false,
+  "performance_validation_status": "NOT_RUN"
+}

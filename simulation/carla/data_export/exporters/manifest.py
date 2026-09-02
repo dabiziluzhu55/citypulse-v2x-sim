@@ -60,7 +60,15 @@ class ManifestExporter(Exporter):
         reg = self._ctx.frame_registry
         while True:
             row = reg.get(self._next_to_write)
-            if row is None or not self._row_complete(row):
+            if row is None:
+                # 段从运行中途启动时行号从当前 sim 帧号起(如 6001),游标还停在
+                # 1 → 跳到下一个存在的最小行号(首段行号连续,此处永不触发)。
+                nxt = reg.min_key_above(self._next_to_write)
+                if nxt is None:
+                    break
+                self._next_to_write = nxt
+                continue
+            if not self._row_complete(row):
                 break
             self._write_row(row)
             self._next_to_write += 1

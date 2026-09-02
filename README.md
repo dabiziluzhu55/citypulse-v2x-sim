@@ -90,17 +90,6 @@ pip install -r requirements.txt          # SUMO Worker(含torch等)
 
 ### 3. 启动Backend(local调试)
 
-Windows 本机联调建议在仓库根目录双击 `restart-citypulse.cmd`，或执行：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/restart_citypulse.ps1 -RunSmokeTest
-```
-
-该脚本会校验本地 Qwen、RAG、SUMO/Backend 与前端依赖，按
-Qwen（18000）→ Backend（8000）→ Frontend（5173）的顺序重启，并通过
-前端代理执行一次真实仿真与 Copilot 工具调用。模型放在其他目录时可传入
-`-QwenModelPath`、`-QwenModelName` 和 `-EmbeddingModelPath`。
-
 ```bash
 PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```

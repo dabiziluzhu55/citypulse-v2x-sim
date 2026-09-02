@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import heapq
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping, Optional
 
 from .config import V2XConfig, DOWNSTREAM_TYPES
@@ -333,7 +334,7 @@ class V2XHub:
                                       drop_reason="network_drop")
                 continue
             for handler in self._subscribers.get(p.message.message_type, []):
-                handler(p.message)
+                handler(replace(p.message, delivered_at=p.due))
             latency_ms = round((p.due - p.message.sim_time) * 1000.0, 6)
             self._record_delivery(p.message, status="delivered", delivered_at=p.due,
                                   processed_at=sim_time, actual_latency_ms=latency_ms)
@@ -379,6 +380,8 @@ class V2XHub:
         key = (self._run_id, episode_id, source_id, message_type)
         next_due = self._schedulers.get(key)
         eps = self.config.scheduling_epsilon_s
+        if os.environ.get("COSLIGHT_V2X_PROBE", "0") == "1":
+            print(f"[V2X-SCHED] {message_type} {source_id} sim={sim_time} next_due={next_due} send={next_due is None or sim_time + eps >= next_due}", flush=True)
         return next_due is None or sim_time + eps >= next_due
 
     def mark_sent(self, episode_id: str, source_id: str,

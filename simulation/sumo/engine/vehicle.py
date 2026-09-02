@@ -442,6 +442,30 @@ class VehicleTelemetryTracker:
 
         return self._sampled_fuel_mg, self._sampled_fuel_ml, self._sampled_braking
 
+    def lane_vehicle_samples_by_lane(
+        self,
+    ) -> dict[str, tuple[tuple[float, float, float, float], ...]]:
+        """One in-memory pass over cached telemetry; not a TraCI traversal."""
+
+        grouped: dict[str, list[tuple[float, float, float, float]]] = {}
+        for tracked in self._tracked.values():
+            values = tracked.values
+            if not values:
+                continue
+            lane_id = str(values["lane_id"] or "")
+            if not lane_id:
+                continue
+            metadata = self.vehicle_types[tracked.type_id]
+            grouped.setdefault(lane_id, []).append(
+                (
+                    float(values["lane_position"]),
+                    float(values["speed"]),
+                    metadata.length_m,
+                    metadata.min_gap_m,
+                )
+            )
+        return {lane_id: tuple(items) for lane_id, items in grouped.items()}
+
     def lane_vehicle_samples(
         self, lane_id: str
     ) -> tuple[tuple[float, float, float, float], ...]:

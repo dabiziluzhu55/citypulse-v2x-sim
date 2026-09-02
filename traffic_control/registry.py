@@ -45,6 +45,20 @@ CONTROL_MODE_REGISTRY: dict[str, ControlModeSpec] = {
         algorithm_transport="local",
         algorithm_module="traffic_control.max_pressure",
     ),
+    "safe_max_pressure": ControlModeSpec(
+        name="safe_max_pressure",
+        kernel_mode="algorithm",
+        algorithm_transport="local",
+        algorithm_module="traffic_control.safe_max_pressure",
+        supported_presets=("xiongan_20",),
+    ),
+    "strong_b_trace": ControlModeSpec(
+        name="strong_b_trace",
+        kernel_mode="algorithm",
+        algorithm_transport="local",
+        algorithm_module="traffic_control.strong_b_trace",
+        supported_presets=("xiongan_20",),
+    ),
     "sotl": ControlModeSpec(
         name="sotl",
         kernel_mode="algorithm",
@@ -63,6 +77,13 @@ CONTROL_MODE_REGISTRY: dict[str, ControlModeSpec] = {
         kernel_mode="algorithm",
         algorithm_transport="local",
         algorithm_module="traffic_control.mappo",
+        supported_presets=("xiongan_20", "east_dense", "west_dense"),
+    ),
+    "cov2x": ControlModeSpec(
+        name="cov2x",
+        kernel_mode="algorithm",
+        algorithm_transport="local",
+        algorithm_module="traffic_control.cov2x",
         supported_presets=("xiongan_20", "east_dense", "west_dense"),
     ),
 }

@@ -59,6 +59,13 @@ class MAPPOConfig:
     joint_step_schema: str = JOINT_STEP_SCHEMA
     critic_target_scope: str = "team_return"
 
+    # Pressure shaping (opt-in -- default off for backward compatibility)
+    pressure_shaping_enabled: bool = False
+    pressure_shaping_alpha_base: float = 0.10
+    pressure_shaping_density_decay: float = 0.75
+    pressure_shaping_density_threshold: float = 40.0
+    pressure_shaping_epsilon: float = 1e-6
+
     def __post_init__(self) -> None:
         ids = tuple(str(value) for value in self.intersection_ids)
         object.__setattr__(self, "intersection_ids", ids)
@@ -93,6 +100,13 @@ class MAPPOConfig:
                 raise ValueError(
                     "cooperative model versions require shared_team reward scope"
                 )
+        if self.pressure_shaping_enabled:
+            if not (0.0 < self.pressure_shaping_alpha_base <= 1.0):
+                raise ValueError("pressure_shaping_alpha_base must be in (0, 1]")
+            if not (0.0 <= self.pressure_shaping_density_decay <= 1.0):
+                raise ValueError("pressure_shaping_density_decay must be in [0, 1]")
+            if self.pressure_shaping_density_threshold <= 0.0:
+                raise ValueError("pressure_shaping_density_threshold must be positive")
         expected_actor_variant = MODEL_ACTOR_VARIANTS.get(self.model_version)
         if expected_actor_variant is None:
             raise ValueError(f"unknown MAPPO model version: {self.model_version!r}")

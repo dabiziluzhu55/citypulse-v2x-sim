@@ -53,7 +53,7 @@ def resolve_v2x_enabled(
     if type_v2x is not None:
         return bool(type_v2x)
     if vehicle_class in config.connected_classes:
-        score = stable_hash01(f"{config.capability_seed}|{vehicle_id}")
+        score = stable_hash01(f"{config.capability_seed}|capability|{vehicle_id}")
         return score < config.penetration_rate
     return bool(DEFAULT_V2X_CAPABILITY.get(vehicle_class, False))
 

@@ -65,16 +65,13 @@ class QwenService:
             trust_remote_code=True,
             use_fast=True,
         )
-        model_kwargs: dict[str, Any] = {
-            "torch_dtype": torch.float16 if torch.cuda.is_available() else torch.float32,
-            "low_cpu_mem_usage": True,
-            "trust_remote_code": True,
-        }
-        # ``device_map=auto`` requires Accelerate and is useful for GPU placement,
-        # but it can leave a CPU-only deployment running unsupported fp16 kernels.
-        if torch.cuda.is_available():
-            model_kwargs["device_map"] = "auto"
-        self.model = AutoModelForCausalLM.from_pretrained(str(model_path), **model_kwargs)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            str(model_path),
+            torch_dtype=torch.float16,
+            device_map="auto",
+            low_cpu_mem_usage=True,
+            trust_remote_code=True,
+        )
         self.model.eval()
         self.input_device = next(self.model.parameters()).device
 

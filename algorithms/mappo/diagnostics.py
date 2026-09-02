@@ -13,7 +13,7 @@ from algorithms.mappo.reward import V5ARewardResult
 from algorithms.mappo.rollout import Transition, compute_gae
 
 
-_REWARD_COMPONENTS = ("D", "L", "S", "Qmax", "F_safe", "B", "H")
+_REWARD_COMPONENTS = ("D", "L", "S", "Qmax", "F_safe", "B", "H", "MP_regret", "MP_alpha")
 _REWARD_WEIGHTS = {
     "congestion": ("D", -0.60),
     "safe_flow": ("F_safe", 0.20),

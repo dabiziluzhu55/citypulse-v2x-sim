@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "description": "路口代号与 TotalMap.net.xml 中 junction ID 的映射。junction_id 为 null 表示尚未确认对应关系。scenes 为 RoadRunner 场景到 CARLA 地图的映射（可选）。",
+  "description": "路口代号与 TotalMap.net.xml 中 junction ID 的映射。junction_id 为 null 表示尚未确认对应关系。",
   "source_net": "../../data/maps/sumo/generated/network/TotalMap_20.signals.net.xml",
   "default_distance_m": 200,
   "intersections": [
@@ -24,7 +24,5 @@
     {"name": "demo_18", "junction_id": "4409", "note": "已确认"},
     {"name": "demo_19", "junction_id": "891", "note": "已确认"},
     {"name": "demo_20", "junction_id": "3637", "note": "已确认"}
-  ],
-  "scenes": [
   ]
 }

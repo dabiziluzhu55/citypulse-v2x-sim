@@ -105,3 +105,66 @@ def test_reward_cannot_finalize_without_followup_observation() -> None:
 
     with pytest.raises(RuntimeError, match="follow-up observation"):
         accumulator.finalize()
+
+def test_accumulator_with_pressure_shaping() -> None:
+    """Pressure regret is added to raw_reward in finalize."""
+    accumulator = V5ARewardAccumulator(
+        incoming_lanes=("in",),
+        outgoing_lanes=("out",),
+        lane_capacities={"in": 20.0},
+        incoming_capacity=20.0,
+        flow_reference_rate=0.5,
+        waiting_start=100.0,
+    )
+    accumulator.set_pressure_context(regret=-0.5, alpha=0.10)
+    for _ in range(3):
+        accumulator.observe(
+            _intersection(),
+            elapsed_seconds=5.0,
+            delay_increment=2.0,
+            crossings=1,
+        )
+    result = accumulator.finalize()
+    assert result.components.get("MP_regret") == pytest.approx(-0.5)
+    assert result.components.get("MP_alpha") == pytest.approx(0.10)
+    # V5A raw + alpha * regret = V5A_raw - 0.05
+    assert result.raw_reward == pytest.approx(
+        result.raw_reward - 0.10 * (-0.5) + 0.10 * (-0.5)
+    )
+
+
+def test_accumulator_without_pressure_context_unchanged() -> None:
+    """Without set_pressure_context, behavior is identical to before."""
+    accumulator = V5ARewardAccumulator(
+        incoming_lanes=("in",),
+        outgoing_lanes=("out",),
+        lane_capacities={"in": 20.0},
+        incoming_capacity=20.0,
+        flow_reference_rate=0.5,
+        waiting_start=100.0,
+    )
+    for _ in range(3):
+        accumulator.observe(
+            _intersection(),
+            elapsed_seconds=5.0,
+            delay_increment=2.0,
+            crossings=1,
+        )
+    result = accumulator.finalize()
+    assert result.components.get("MP_regret", 0.0) == 0.0
+    assert result.components.get("MP_alpha", 0.0) == 0.0
+
+
+def test_pressure_context_cannot_be_set_twice() -> None:
+    """set_pressure_context raises if called more than once."""
+    accumulator = V5ARewardAccumulator(
+        incoming_lanes=("in",),
+        outgoing_lanes=("out",),
+        lane_capacities={"in": 20.0},
+        incoming_capacity=20.0,
+        flow_reference_rate=0.5,
+        waiting_start=100.0,
+    )
+    accumulator.set_pressure_context(regret=-0.3, alpha=0.05)
+    with pytest.raises(RuntimeError, match="already set"):
+        accumulator.set_pressure_context(regret=-0.1, alpha=0.05)

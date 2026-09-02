@@ -5,17 +5,21 @@
 指标口径：
 - 行程/等待：全部已出发车辆 duration/waitingTime 总和 ÷ departed；
   终态由TripInfo回填；进行中可为快照临时值（含仍在路上的车）
-- 排队：仅role==incoming 进口车道，先车道均值再时间均值（veh/lane）
-- 通行能力：arrived/evaluation_duration_seconds*3600（全网到达率外推到veh/h）
+- 进口车道平均排队车辆数：仅 role==incoming，每帧先求车道 halting_count 均值，
+  再按仿真时间 Δt 右端点加权（时刻 t_k 的观测代表 (t_{k-1}, t_k]，t_{-1}=0）
+- 网络实际吞吐流率：arrived/evaluation_duration_seconds*3600（单位时间到达量）
 - 决策延迟：由外部注入；无样本为None
 - 燃油强度：终态解析TripInfo emissions；运行中可用快照临时值
 - 急刹车：读取终态快照累计hard_braking_events
+- 路径速度/TTI/DTP/停车次数：终态TripInfo completed车辆
+- 区域最大排队长度 / 溢流率：Snapshot 进口车道queue_length_m与车道长度近似
 """
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional, Sequence
 
 from simulation.sumo.engine.session import SimulationSnapshot
 
@@ -24,11 +28,16 @@ from .powertrain import VehicleTypeFuelMeta
 from .tripinfo import (
     FUEL_POWERTRAINS,
     TRAVEL_WAIT_SOURCE,
-    apply_tripinfo_completed_metrics,
-    apply_tripinfo_fuel_intensity,
+    apply_tripinfo_official_metrics,
 )
 
 HARD_BRAKING_RATE_SOURCE = "final_snapshot_hard_braking_events_per_100_departed"
+QUEUE_SOURCE = "incoming_lane_halting_count"
+REGIONAL_MAX_QUEUE_SOURCE = "simulation_snapshot_incoming_lane_queue_length_m"
+SPILLBACK_SOURCE = "simulation_snapshot_incoming_lane_queue_vs_storage_time_weighted"
+OVERFLOW_EPS_M = 1e-9
+
+IncomingQueueRecord = tuple[str, str, Optional[float], Optional[float]]
 
 
 class TrafficMetricsCollector:
@@ -40,7 +49,14 @@ class TrafficMetricsCollector:
         self._closed: list[dict[str, Any]] = []
         self._provisional_travel: list[float] = []
         self._provisional_waiting: list[float] = []
-        self._queue_samples: list[float] = []
+        self._queue_weighted_sum: float = 0.0
+        self._queue_weighted_time: float = 0.0
+        self._spill_overflow_lane_s: float = 0.0
+        self._spill_exposed_lane_s: float = 0.0
+        self._max_queue_m: Optional[float] = None
+        self._max_queue_intersection_id: Optional[str] = None
+        self._max_queue_lane_id: Optional[str] = None
+        self._max_queue_sim_time_s: Optional[float] = None
         self._fuel_meta_by_type: dict[str, VehicleTypeFuelMeta] = {}
         self._seen_vehicle_ids: set[str] = set()
         self._warnings: list[str] = []
@@ -48,10 +64,12 @@ class TrafficMetricsCollector:
         self._total_arrived: int = 0
         self._final_sim_time: float = 0.0
         self._last_sim_time: float = 0.0
+        self._sample_accepted: bool = False
         self._finished: bool = False
         self._tripinfo_applied: bool = False
         self._has_incoming_lanes: bool = False
         self._missing_incoming_warned: bool = False
+        self._missing_queue_length_warned: bool = False
         self._hard_braking_events: Optional[int] = None
 
     def reset(self, algorithm: str = "") -> None:
@@ -61,7 +79,14 @@ class TrafficMetricsCollector:
         self._closed.clear()
         self._provisional_travel.clear()
         self._provisional_waiting.clear()
-        self._queue_samples.clear()
+        self._queue_weighted_sum = 0.0
+        self._queue_weighted_time = 0.0
+        self._spill_overflow_lane_s = 0.0
+        self._spill_exposed_lane_s = 0.0
+        self._max_queue_m = None
+        self._max_queue_intersection_id = None
+        self._max_queue_lane_id = None
+        self._max_queue_sim_time_s = None
         self._fuel_meta_by_type.clear()
         self._seen_vehicle_ids.clear()
         self._warnings.clear()
@@ -69,10 +94,12 @@ class TrafficMetricsCollector:
         self._total_arrived = 0
         self._final_sim_time = 0.0
         self._last_sim_time = 0.0
+        self._sample_accepted = False
         self._finished = False
         self._tripinfo_applied = False
         self._has_incoming_lanes = False
         self._missing_incoming_warned = False
+        self._missing_queue_length_warned = False
         self._hard_braking_events = None
 
     def set_fuel_meta_by_type(
@@ -137,12 +164,22 @@ class TrafficMetricsCollector:
                 "type_id": str(vehicle.type_id or ""),
             }
         incoming_halting: list[float] = []
+        incoming_queues: list[IncomingQueueRecord] = []
         saw_any_lane = False
-        for i_state in snapshot.intersections.values():
-            for lane in i_state.lanes.values():
+        for intersection_id, i_state in snapshot.intersections.items():
+            for lane_id, lane in i_state.lanes.items():
                 saw_any_lane = True
-                if str(lane.role) == "incoming":
-                    incoming_halting.append(float(lane.halting_count))
+                if str(lane.role) != "incoming":
+                    continue
+                incoming_halting.append(float(lane.halting_count))
+                incoming_queues.append(
+                    (
+                        str(intersection_id),
+                        str(lane_id),
+                        _optional_finite_float(getattr(lane, "queue_length_m", None)),
+                        _optional_finite_float(getattr(lane, "lane_length_m", None)),
+                    )
+                )
         if incoming_halting:
             self._has_incoming_lanes = True
         elif saw_any_lane and not self._missing_incoming_warned:
@@ -153,6 +190,7 @@ class TrafficMetricsCollector:
             sim_time=sim_time,
             vehicles=vehicles,
             incoming_halting=incoming_halting,
+            incoming_queues=incoming_queues,
         )
         self._total_departed = int(snapshot.metrics.departed_vehicles)
         self._total_arrived = int(snapshot.metrics.arrived_vehicles)
@@ -183,19 +221,15 @@ class TrafficMetricsCollector:
                 if self._fuel_meta_by_type
                 else None
             )
-            apply_tripinfo_completed_metrics(
+            apply_tripinfo_official_metrics(
                 result,
                 tripinfo_path,
+                self._fuel_meta_by_type,
                 expected_departed=result.departed,
                 include_vtypes=include_vtypes,
             )
             self._tripinfo_applied = (
                 result.metric_sources.get("avg_travel_time_s") == TRAVEL_WAIT_SOURCE
-            )
-            apply_tripinfo_fuel_intensity(
-                result,
-                tripinfo_path,
-                self._fuel_meta_by_type,
             )
             self._warnings = list(result.warnings)
         else:
@@ -225,21 +259,61 @@ class TrafficMetricsCollector:
         sim_time: float,
         vehicles: Mapping[str, Mapping[str, Any]],
         incoming_halting: list[float],
+        incoming_queues: Sequence[IncomingQueueRecord] = (),
     ) -> None:
-        if self._last_sim_time > 0 and sim_time < self._last_sim_time:
+        if self._sample_accepted and sim_time < self._last_sim_time:
             self._warn("评价帧时间倒退，已忽略该帧")
             return
-        if sim_time == self._last_sim_time and (
-            self._queue_samples or self._active or self._closed
-        ):
+        if self._sample_accepted and sim_time == self._last_sim_time:
             # 与算法侧一致：同一仿真时刻不重复采样
             return
-        self._last_sim_time = sim_time
+
+        dt = 0.0
+        if self._sample_accepted:
+            dt = sim_time - self._last_sim_time
+        elif sim_time > 0:
+            dt = sim_time
+
         if incoming_halting:
             self._has_incoming_lanes = True
-            self._queue_samples.append(
-                sum(incoming_halting) / len(incoming_halting)
+        if dt > 0 and incoming_halting:
+            mean_halting = sum(incoming_halting) / len(incoming_halting)
+            self._queue_weighted_sum += mean_halting * dt
+            self._queue_weighted_time += dt
+        if dt > 0:
+            n_valid = 0
+            n_overflow = 0
+            for _, _, queue_m, length_m in incoming_queues:
+                if queue_m is None or length_m is None or length_m <= 0:
+                    continue
+                n_valid += 1
+                if queue_m + OVERFLOW_EPS_M >= length_m:
+                    n_overflow += 1
+            if n_valid > 0:
+                self._spill_overflow_lane_s += n_overflow * dt
+                self._spill_exposed_lane_s += n_valid * dt
+
+        for intersection_id, lane_id, queue_m, _length_m in incoming_queues:
+            if queue_m is None:
+                continue
+            if self._max_queue_m is None or queue_m > self._max_queue_m:
+                self._max_queue_m = queue_m
+                self._max_queue_intersection_id = intersection_id
+                self._max_queue_lane_id = lane_id
+                self._max_queue_sim_time_s = sim_time
+
+        if (
+            incoming_queues
+            and all(item[2] is None for item in incoming_queues)
+            and not self._missing_queue_length_warned
+        ):
+            self._warn(
+                "进口车道缺少 queue_length_m，区域最大排队长度和溢流率不可计算"
             )
+            self._missing_queue_length_warned = True
+
+        self._last_sim_time = sim_time
+        self._sample_accepted = True
 
         for vid in vehicles:
             if vid not in self._active:
@@ -359,13 +433,32 @@ class TrafficMetricsCollector:
             if use_finish:
                 warnings.append("缺少算法决策耗时样本，平均决策延迟不可用")
 
-        if self._queue_samples and self._has_incoming_lanes:
-            r.avg_queue_length_veh = sum(self._queue_samples) / len(self._queue_samples)
-            r.metric_sources[
-                "avg_queue_length_veh"
-            ] = "incoming_lane_halting_count"
-        elif use_finish and not self._queue_samples:
+        if self._queue_weighted_time > 0 and self._has_incoming_lanes:
+            r.avg_queue_length_veh = (
+                self._queue_weighted_sum / self._queue_weighted_time
+            )
+            r.metric_sources["avg_queue_length_veh"] = QUEUE_SOURCE
+        elif use_finish:
             warnings.append("缺少进口车道排队样本，平均排队长度不可用")
+
+        if self._max_queue_m is not None:
+            r.regional_max_queue_length_m = self._max_queue_m
+            r.regional_max_queue_intersection_id = self._max_queue_intersection_id
+            r.regional_max_queue_lane_id = self._max_queue_lane_id
+            r.regional_max_queue_sim_time_s = self._max_queue_sim_time_s
+            r.metric_sources["regional_max_queue_length_m"] = REGIONAL_MAX_QUEUE_SOURCE
+        elif use_finish and self._has_incoming_lanes:
+            warnings.append("缺少进口车道 queue_length_m，区域最大排队长度不可用")
+
+        if self._spill_exposed_lane_s > 0:
+            r.spillback_rate = (
+                self._spill_overflow_lane_s / self._spill_exposed_lane_s * 100.0
+            )
+            r.metric_sources["spillback_rate"] = SPILLBACK_SOURCE
+        elif use_finish and self._has_incoming_lanes:
+            warnings.append(
+                "缺少进口车道排队长度与储车长度样本，溢流率不可用"
+            )
 
         if sim_time > 0:
             r.throughput_veh_per_h = arrived / sim_time * 3600.0
@@ -373,7 +466,7 @@ class TrafficMetricsCollector:
                 "finish_totals" if use_finish else "snapshot_running_totals"
             )
         elif use_finish:
-            warnings.append("缺少有效评估时长，通行能力不可用")
+            warnings.append("缺少有效评估时长，网络实际吞吐流率不可用")
 
         if not use_finish:
             travel_sum = sum(self._provisional_travel)
@@ -434,3 +527,15 @@ class TrafficMetricsCollector:
 
 # 兼容旧导入名
 MetricsCollector = TrafficMetricsCollector
+
+
+def _optional_finite_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return number

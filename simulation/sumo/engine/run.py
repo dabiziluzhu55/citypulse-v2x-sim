@@ -15,6 +15,7 @@ from ..building.build_traffic import (
     DEFAULT_TRAFFIC_SCOPE_ID,
     SUPPORTED_TRAFFIC_SCOPE_IDS,
 )
+from .queue_estimate import estimate_queue_length_m
 from .signal import SafePhaseController, SignalStage, TransitionTiming
 from ..algorithm.policy import (
     AIFrameObservation,
@@ -410,28 +411,20 @@ def _estimate_queue_length(
     occupancy: float,
     vehicle_tracker,
 ) -> float:
-    if halting_count <= 0:
-        return 0.0
     samples = (
         vehicle_tracker.lane_vehicle_samples(lane_metadata.lane_id)
         if vehicle_tracker
         else ()
     )
-    stopped = [item for item in samples if item[1] <= 0.1]
-    spatial_extent = 0.0
-    if stopped:
-        queue_tail = min(max(0.0, position - length) for position, _, length, _ in stopped)
-        spatial_extent = lane_metadata.length_m - queue_tail
-        average_space = sum(length + gap for _, _, length, gap in stopped) / len(stopped)
-    else:
-        average_space = (
-            vehicle_tracker.default_vehicle_space() if vehicle_tracker else 7.5
-        )
-    count_extent = halting_count * average_space
-    occupancy_extent = lane_metadata.length_m * max(0.0, occupancy) / 100.0
-    return min(
-        lane_metadata.length_m,
-        max(0.0, spatial_extent, count_extent, occupancy_extent),
+    default_space = (
+        vehicle_tracker.default_vehicle_space() if vehicle_tracker else 7.5
+    )
+    return estimate_queue_length_m(
+        lane_length_m=float(lane_metadata.length_m),
+        halting_count=int(halting_count),
+        occupancy=float(occupancy),
+        samples=samples,
+        default_vehicle_space=float(default_space),
     )
 
 

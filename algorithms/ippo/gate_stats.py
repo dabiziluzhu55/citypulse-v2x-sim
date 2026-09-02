@@ -52,12 +52,10 @@ NI_MAX_SEED_VIOLATION_RATIO = 0.30
 QUEUE_ABS_CAP_VEH_PER_LANE = 0.5
 
 SAFETY_ABS: dict[str, float] = {
-    "severe_conflict_exposure_per_10000": 2.0,
     "emergency_braking_exposure_per_1000": 5.0,
 }
 SAFETY_REL: float = 0.20
 SAFETY_K: dict[str, float] = {
-    "severe_conflict_exposure_per_10000": 10000.0,
     "emergency_braking_exposure_per_1000": 1000.0,
 }
 SAFETY_MIN_EXPOSURES = 5000

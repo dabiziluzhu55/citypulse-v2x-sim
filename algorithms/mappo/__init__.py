@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import asdict, dataclass
 from typing import Mapping
 
 import torch
 
 from algorithms.mappo.config import MAPPOConfig
 from algorithms.mappo.controller import MAPPOController
+from algorithms.mappo.features import IPPO_V8_LOCAL_OBSERVATION_SCHEMA
 from algorithms.mappo.models import MAPPOPolicy
 from algorithms.mappo.parallel_train import WorkerRollout
+from traffic_control.common.environment_contract import (
+    validate_checkpoint_environment,
+    validate_contract_integrity,
+)
 from traffic_control.ippo.identity import IDENTITY_SLOT_IDS
+from traffic_control.mappo.contract import build_mappo_policy_spec
 
 
 @dataclass(frozen=True)
@@ -25,6 +32,7 @@ class _PreparedCollector:
     expected_duration_s: float
     mode: str
     record_evaluation: bool
+    environment_contract: dict[str, object] | None
 
 
 _prepared: _PreparedCollector | None = None
@@ -44,12 +52,17 @@ def prepare_collector(
     expected_duration_s: float,
     mode: str = "collect",
     record_evaluation: bool = False,
+    environment_contract: Mapping[str, object] | None = None,
 ) -> None:
     """Install an immutable learner snapshot before SUMO initializes a worker."""
 
     global _prepared, _controller, _collected_rollout, _collected_diagnostics
     if _controller is not None:
         raise RuntimeError("cannot replace policy while a MAPPO episode is active")
+    frozen_environment_contract = None
+    if environment_contract is not None:
+        validate_contract_integrity(environment_contract)
+        frozen_environment_contract = deepcopy(dict(environment_contract))
     _prepared = _PreparedCollector(
         policy_state={
             str(name): tensor.detach().cpu().clone()
@@ -63,6 +76,7 @@ def prepare_collector(
         expected_duration_s=float(expected_duration_s),
         mode=str(mode),
         record_evaluation=bool(record_evaluation),
+        environment_contract=frozen_environment_contract,
     )
     _collected_rollout = None
     _collected_diagnostics = None
@@ -75,6 +89,18 @@ def initialize(metadata: dict) -> dict:
     if _controller is not None:
         raise RuntimeError("MAPPO controller is already initialized")
     prepared = _prepared
+    if prepared.environment_contract is not None:
+        config_metadata = asdict(prepared.config)
+        config_metadata["obs_dim"] = prepared.config.obs_dim
+        config_metadata[
+            "local_observation_schema"
+        ] = IPPO_V8_LOCAL_OBSERVATION_SCHEMA
+        validate_checkpoint_environment(
+            prepared.environment_contract,
+            metadata,
+            policy_spec=build_mappo_policy_spec(config_metadata),
+            controlled_intersection_ids=prepared.config.intersection_ids,
+        )
     policy = MAPPOPolicy(
         obs_dim=prepared.config.obs_dim,
         num_agents=len(IDENTITY_SLOT_IDS),

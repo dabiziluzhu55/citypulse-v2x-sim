@@ -11,6 +11,7 @@ from algorithms.mappo.config import (
     REWARD_SCOPE_SHARED_TEAM,
 )
 from algorithms.mappo.evaluate_checkpoint import (
+    _gate_metrics_from_tripinfo,
     _scenario_preset_intersections,
     _summarize,
     load_evaluation_checkpoint,
@@ -205,3 +206,31 @@ def test_load_evaluation_checkpoint_accepts_zero_shot_subset(
 
     with pytest.raises(ValueError):
         load_evaluation_checkpoint(path, intersection_ids=("demo_9",))
+
+
+def test_gate_metrics_use_tripinfo_for_departed_arrived_and_exposure() -> None:
+    metrics = _gate_metrics_from_tripinfo(
+        {
+            "departed": 999,
+            "arrived": 888,
+            "waiting": 12.0,
+            "remaining": 10,
+        },
+        {
+            "trip_records": 100,
+            "completed_trips": 90,
+            "unfinished_trips": 10,
+            "all_waiting_total_s": 250.5,
+            "all_time_loss_total_s": 400.25,
+        },
+    )
+
+    assert metrics["departed"] == 100
+    assert metrics["arrived"] == 90
+    assert metrics["all_waiting_total_s"] == 250.5
+    assert metrics["all_time_loss_total_s"] == 400.25
+    assert metrics["snapshot_departed"] == 999
+    assert metrics["snapshot_arrived"] == 888
+    assert metrics["waiting"] == 12.0
+    assert metrics["snapshot_remaining"] == 10
+    assert metrics["residual_mismatch"] == 0

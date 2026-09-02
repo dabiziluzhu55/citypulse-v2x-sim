@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- generated on 2026-08-26 12:21:50.872826 by routeSampler.py UNKNOWN
+<!-- generated on 2026-08-25 20:01:36.522407 by routeSampler.py UNKNOWN
 <configuration>
     <begin value="0"/>
     <end value="7200"/>
     <interval value="900"/>
     <minimize-vehicles value="0.1"/>
-    <mismatch-output value="E:\city\citypulse-v2x-sim\data\maps\sumo\generated\traffic\.work_east_dense\mismatch_east_dense_morning_peak_round1_truck_42.xml"/>
+    <mismatch-output value="/home/kemove/devdata1/zrl/citypulse-v2x-sim/data/maps/sumo/generated/traffic/.work_east_dense/mismatch_east_dense_morning_peak_round1_truck_42.xml"/>
     <optimize value="full"/>
-    <output-file value="E:\city\citypulse-v2x-sim\data\maps\sumo\generated\traffic\.work_east_dense\sample_east_dense_morning_peak_round1_truck_42.rou.xml"/>
+    <output-file value="/home/kemove/devdata1/zrl/citypulse-v2x-sim/data/maps/sumo/generated/traffic/.work_east_dense/sample_east_dense_morning_peak_round1_truck_42.rou.xml"/>
     <prefix value="truck_"/>
-    <route-files value="E:\city\citypulse-v2x-sim\data\maps\sumo\generated\traffic\.work_east_dense\candidate_truck.rou.xml"/>
-    <turn-files value="E:\city\citypulse-v2x-sim\data\maps\sumo\generated\traffic\.work_east_dense\counts_east_dense_morning_peak_round1_truck.xml"/>
+    <route-files value="/home/kemove/devdata1/zrl/citypulse-v2x-sim/data/maps/sumo/generated/traffic/.work_east_dense/candidate_truck.rou.xml"/>
+    <turn-files value="/home/kemove/devdata1/zrl/citypulse-v2x-sim/data/maps/sumo/generated/traffic/.work_east_dense/counts_east_dense_morning_peak_round1_truck.xml"/>
     <attributes value="type=&quot;official_truck&quot; departLane=&quot;best&quot; departSpeed=&quot;max&quot;"/>
     <write-flows value="number"/>
 </configuration>

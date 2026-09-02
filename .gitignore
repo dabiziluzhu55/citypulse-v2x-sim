@@ -34,7 +34,6 @@ Thumbs.db
 # Logs, outputs, and local verification artifacts
 *.log
 outputs/
-.tmp-ai/
 
 # Keep official SUMO sources tracked (required at runtime after refactor).
 # Ignore only local scratch under official/, not the committed map/tls/traffic trees.

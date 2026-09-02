@@ -39,7 +39,7 @@ from algorithms.ippo.gate_stats import (  # noqa: E402
     evaluate_primary_gate,
     evaluate_safety,
 )
-from algorithms.config.scenario_presets import SCENARIO_PRESET_REGISTRY  # noqa: E402
+from algorithms.presets import SCENARIO_PRESET_REGISTRY  # noqa: E402
 
 SCENARIOS = ("east_dense", "west_dense")
 
@@ -47,7 +47,6 @@ CONTROLLED_OFFICIAL_KEYS = (
     "controlled_avg_waiting_time_s",
     "avg_queue_length_veh",
     "avg_decision_latency_ms",
-    "severe_conflict_exposure_per_10000",
     "emergency_braking_exposure_per_1000",
 )
 NETWORK_OFFICIAL_KEYS = (
@@ -64,22 +63,14 @@ def _extract(row: dict, key: str):
 
 
 def _safety_rows(rows: list[dict], metric: str) -> list[dict]:
+    # 安全指标仅保留紧急制动暴露率（2026-08-06）；参数 metric 保留以便门禁统一调用。
     out = []
     for row in rows:
         metrics = row.get("official_metrics") or {}
-        availability = metrics.get(
-            "severe_conflict_availability"
-            if metric.startswith("severe_conflict")
-            else "emergency_braking_availability"
-        )
-        events_key = (
-            "severe_conflict_events"
-            if metric.startswith("severe_conflict")
-            else "emergency_braking_events"
-        )
+        availability = metrics.get("emergency_braking_availability")
         out.append(
             {
-                "events": int(metrics.get(events_key, 0) or 0),
+                "events": int(metrics.get("emergency_braking_events", 0) or 0),
                 "exposures": int(metrics.get("controlled_intersection_passages", 0) or 0),
                 "availability": (availability or {}).get("status", "unavailable"),
             }
@@ -176,7 +167,6 @@ def _verdicts(
             metric=metric,
         )
         for metric in (
-            "severe_conflict_exposure_per_10000",
             "emergency_braking_exposure_per_1000",
         )
     }

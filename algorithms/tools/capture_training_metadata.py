@@ -24,7 +24,7 @@ path_entries = [
 ]
 os.environ["PATH"] = os.pathsep.join([*path_entries, sumo_bin])
 
-from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
+from simulation.sumo.engine.session import SimulationConfig, SimulationManager  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:

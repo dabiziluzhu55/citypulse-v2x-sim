@@ -82,7 +82,7 @@ class AccidentRequest(BaseModel):
     start_seconds: float
     end_seconds: float
     lane_id: str
-    position_ratio: float = Field(default=0.5, ge=0.0, le=1.0)
+    position_ratio: float = Field(ge=0.0, le=1.0)
     ai_control_enabled: bool = False
 
 

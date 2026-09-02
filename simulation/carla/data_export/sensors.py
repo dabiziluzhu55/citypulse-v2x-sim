@@ -24,7 +24,8 @@ Correctness invariants:
   up (drop-newest, counters kept for the run meta).
 
 PNG/PLY encoding is pure CPU and embarrassingly parallel across frames, so
-``output.write_threads`` (default 2) scales encode throughput on multi-core
+``sensors[i].write_threads`` (default 2, per-sensor override — the old
+``output.write_threads`` is gone) scales encode throughput on multi-core
 servers — the first knob to turn when the "sensor queue full" warning
 appears.
 """
@@ -38,7 +39,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from .config import SensorSpec
+from .config import DEFAULT_WRITE_THREADS, SensorSpec
 
 logger = logging.getLogger("cosim.export")
 
@@ -64,6 +65,9 @@ class ManagedSensor:
     actor: Any = None
     queue: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=QUEUE_MAXSIZE))
     stop_event: threading.Event = field(default_factory=threading.Event)
+    # 暂停门控(由联仿控制通道设置):置位期间 _on_data 静默丢弃数据,
+    # seq 不递增 → 不写盘、队列/results 不堆积,恢复后捕获序号连续。
+    pause_event: threading.Event = field(default_factory=threading.Event)
     workers: List[threading.Thread] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
     seq: int = 0                    # next capture sequence (callback only)
@@ -155,6 +159,8 @@ def _on_data(ms: ManagedSensor, data: Any) -> None:
         logger.warning("[export] %s: unexpected sensor data %r — ignored",
                        ms.name, type(data).__name__)
         return
+    if ms.pause_event.is_set():
+        return  # 暂停:不分配 seq、不写盘、不产生 results(静默丢弃)
     ms.seq += 1
     seq = ms.seq
     try:
@@ -166,8 +172,9 @@ def _on_data(ms: ManagedSensor, data: Any) -> None:
         if ms.drops <= 5 or ms.drops % 100 == 0:
             logger.warning(
                 "[export] %s: sensor queue full — dropping frame (drops=%d). "
-                "Encoder/disk cannot keep up — increase output.write_threads "
-                "or reduce resolution/fps.", ms.name, ms.drops)
+                "Encoder/disk cannot keep up — increase the sensor's "
+                "write_threads in the export config or reduce "
+                "resolution/fps.", ms.name, ms.drops)
 
 
 class SensorFarm:
@@ -180,7 +187,7 @@ class SensorFarm:
 
     def spawn_all(self, specs: List[SensorSpec],
                   save: Callable[[ManagedSensor, int, float, Any, int], Dict[str, Any]],
-                  workers_per_sensor: int = 1,
+                  workers_per_sensor: int = DEFAULT_WRITE_THREADS,
                   ) -> List[ManagedSensor]:
         """Spawn one actor per spec, attach listeners and start ``workers_per_sensor``
         writer workers each.  Failures are logged and skipped — never fatal."""
@@ -229,7 +236,10 @@ class SensorFarm:
 
         ms = ManagedSensor(name=spec.name, spec=spec, actor=actor)
         actor.listen(lambda data: _on_data(ms, data))
-        for idx in range(max(1, workers_per_sensor)):
+        # Per-sensor write_threads overrides the caller's fallback (the old
+        # global output.write_threads); the spawn log below prints the count.
+        n = spec.write_threads or workers_per_sensor
+        for idx in range(max(1, n)):
             worker = threading.Thread(target=_worker_loop, args=(ms, save),
                                       name=f"export-writer-{ms.name}-{idx}",
                                       daemon=True)
@@ -251,3 +261,19 @@ class SensorFarm:
                     self._logger.debug("[export] %s: destroy error: %s",
                                        ms.name, exc)
                 ms.actor = None
+
+    # -- pause / resume (runtime control, see export_control.py) --------
+
+    def pause_all(self) -> None:
+        """Gate capture on every sensor (idempotent).  In-flight frames
+        finish writing; no new frames are captured or saved."""
+        for ms in self._sensors:
+            ms.pause_event.set()
+
+    def resume_all(self) -> None:
+        """Open the capture gate on every sensor (idempotent)."""
+        for ms in self._sensors:
+            ms.pause_event.clear()
+
+    def any_paused(self) -> bool:
+        return any(ms.pause_event.is_set() for ms in self._sensors)

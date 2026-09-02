@@ -40,7 +40,7 @@ from algorithms.ippo.controller import (  # noqa: E402
     PHASE_FEATURE_SCHEMA,
     load_checkpoint_metadata,
 )
-from simulation.sumo.session import SimulationConfig, SimulationManager  # noqa: E402
+from simulation.sumo.engine.session import SimulationConfig, SimulationManager  # noqa: E402
 
 
 logging.basicConfig(
