@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
-import askButton from '../../assets/design/ai-control/ai-panel-ask-button.svg?url'
-import panelFrame from '../../assets/design/ai-control/ai-panel-frame.svg?url'
-import panelGreeting from '../../assets/design/ai-control/ai-panel-greeting.svg?url'
-import panelInput from '../../assets/design/ai-control/ai-panel-input.svg?url'
-import panelTitle from '../../assets/design/ai-control/ai-panel-title.svg?url'
 import { chatWithCopilot } from '../../api/copilot'
 import { simulationApiErrorMessage } from '../../api/client'
 import type { CopilotChatResponse, CopilotHistoryMessage } from '../../types/copilot'
@@ -24,12 +19,11 @@ const props = withDefaults(defineProps<{
   aiTakeover: null,
 })
 
-const emit = defineEmits<{
-  close: []
-}>()
+const emit = defineEmits<{ close: [] }>()
 
 interface DisplayMessage extends CopilotHistoryMessage {
   id: number
+  createdAt: string
   failed?: boolean
 }
 
@@ -45,6 +39,7 @@ let requestController: AbortController | null = null
 const canSubmit = computed(() => Boolean(
   props.sessionId.trim() && question.value.trim() && !submitting.value,
 ))
+
 const takeoverLabel = computed(() => {
   const status = props.aiTakeover
   if (!status?.ai_enabled) return 'AI接管未启用'
@@ -52,6 +47,15 @@ const takeoverLabel = computed(() => {
   if (status.state === 'RECOVERING') return 'AI接管恢复中'
   return `AI接管：${status.state}`
 })
+
+function messageTime(): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date())
+}
 
 async function scrollConversationToEnd(): Promise<void> {
   await nextTick()
@@ -79,6 +83,7 @@ async function submitQuestion(): Promise<void> {
     id: ++messageSequence,
     role: 'user',
     content: normalizedQuestion,
+    createdAt: messageTime(),
   })
   question.value = ''
   submitHint.value = ''
@@ -100,6 +105,7 @@ async function submitQuestion(): Promise<void> {
       id: ++messageSequence,
       role: 'assistant',
       content: response.answer,
+      createdAt: messageTime(),
     })
     responseMeta.value = response
   } catch (cause) {
@@ -109,6 +115,7 @@ async function submitQuestion(): Promise<void> {
       id: ++messageSequence,
       role: 'assistant',
       content: message,
+      createdAt: messageTime(),
       failed: true,
     })
     submitHint.value = message
@@ -134,24 +141,17 @@ onBeforeUnmount(() => requestController?.abort())
 </script>
 
 <template>
-  <section class="ai-control-panel" aria-label="CityPulse-Qwen交通管控大模型">
-    <img class="ai-control-panel__frame" :src="panelFrame" alt="" aria-hidden="true" />
-
-    <button
-      type="button"
-      class="ai-control-panel__close"
-      aria-label="关闭AI管控模型"
-      title="关闭"
-      @click="emit('close')"
-    >
-      ×
-    </button>
-
-    <img
-      class="ai-control-panel__title"
-      :src="panelTitle"
-      alt="CityPulse-Qwen交通管控大模型"
-    />
+  <section class="ai-control-panel" aria-label="CityPulse-Qwen AI交通助手">
+    <header class="ai-control-panel__header">
+      <span class="ai-control-panel__avatar" aria-hidden="true">AI</span>
+      <div class="ai-control-panel__identity">
+        <strong>CityPulse-Qwen AI助手</strong>
+        <span>基于当前仿真数据，为您提供交通分析与管控建议</span>
+      </div>
+      <button type="button" class="ai-control-panel__close" aria-label="关闭AI交通助手" title="关闭" @click="emit('close')">
+        ×
+      </button>
+    </header>
 
     <div class="ai-control-panel__runtime-status" :class="{ 'is-active': aiTakeover?.ai_enabled }">
       <i aria-hidden="true" />
@@ -163,340 +163,241 @@ onBeforeUnmount(() => requestController?.abort())
     </div>
 
     <div ref="conversationRef" class="ai-control-panel__conversation" aria-live="polite">
-      <div v-if="messages.length === 0" class="ai-control-panel__empty">
-        <img
-          class="ai-control-panel__greeting"
-          :src="panelGreeting"
-          alt="上午好，可对交通状态进行提问"
-        />
-        <p>
-          {{ sessionId ? '可询问当前路口、拥堵原因、事件与历史趋势' : '请先启动仿真，再向交通 Copilot 提问' }}
-        </p>
-      </div>
+      <article v-if="messages.length === 0" class="ai-control-panel__message is-assistant is-welcome">
+        <span class="ai-control-panel__message-avatar" aria-hidden="true">AI</span>
+        <div class="ai-control-panel__message-body">
+          <strong>上午好，有什么可以帮您？</strong>
+          <p>
+            {{ sessionId
+              ? '我可以帮您查询交通状态、分析拥堵原因或提供管控建议。'
+              : '请先启动仿真，再向交通 Copilot 提问。' }}
+          </p>
+        </div>
+      </article>
+
       <article
         v-for="message in messages"
         :key="message.id"
         class="ai-control-panel__message"
         :class="[`is-${message.role}`, { 'is-failed': message.failed }]"
       >
-        <strong>{{ message.role === 'user' ? '我' : 'CityPulse-Qwen' }}</strong>
-        <p>{{ message.content }}</p>
+        <span v-if="message.role === 'assistant'" class="ai-control-panel__message-avatar" aria-hidden="true">AI</span>
+        <div class="ai-control-panel__message-body">
+          <div class="ai-control-panel__message-content"><p>{{ message.content }}</p></div>
+          <time>{{ message.createdAt }}</time>
+        </div>
       </article>
-      <p v-if="submitting" class="ai-control-panel__thinking">正在分析当前仿真交通状态…</p>
+
+      <article v-if="submitting" class="ai-control-panel__message is-assistant">
+        <span class="ai-control-panel__message-avatar" aria-hidden="true">AI</span>
+        <div class="ai-control-panel__message-body">
+          <p class="ai-control-panel__thinking">正在分析当前仿真交通状态……</p>
+        </div>
+      </article>
     </div>
 
     <div class="ai-control-panel__composer">
-      <p v-if="submitHint" class="ai-control-panel__hint is-error" role="status">
-        {{ submitHint }}
-      </p>
+      <p v-if="submitHint" class="ai-control-panel__hint is-error" role="status">{{ submitHint }}</p>
       <p v-else-if="responseMeta" class="ai-control-panel__hint">
         {{ responseMeta.model ?? 'Qwen' }} · {{ responseMeta.rounds }}轮 ·
         {{ responseMeta.tool_calls.length }}次工具调用 ·
         {{ responseMeta.latency_ms == null ? '--' : Math.round(responseMeta.latency_ms) }}ms
       </p>
-      <p v-else class="ai-control-panel__hint is-shortcut">Ctrl + Enter 发送</p>
 
       <form class="ai-control-panel__question" @submit.prevent="submitQuestion">
-        <img
-          class="ai-control-panel__input-background"
-          :src="panelInput"
-          alt=""
-          aria-hidden="true"
-        />
+        <span class="ai-control-panel__attachment" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="m8.8 12.9 5.85-5.85a3.1 3.1 0 0 1 4.38 4.38l-7.38 7.38a5 5 0 1 1-7.07-7.07l7.03-7.03" />
+          </svg>
+        </span>
         <textarea
           v-model="question"
           maxlength="4000"
           :disabled="submitting"
           aria-label="请输入交通状态问题"
-          placeholder="请输入需要咨询的交通状态问题"
+          placeholder="输入您的问题..."
           @input="submitHint = ''"
           @keydown.ctrl.enter.prevent="submitQuestion"
           @keydown.meta.enter.prevent="submitQuestion"
         />
-        <button
-          type="submit"
-          class="ai-control-panel__ask-button"
-          :disabled="!canSubmit"
-          :aria-busy="submitting"
-          aria-label="问一问"
-        >
-          <img :src="askButton" alt="问一问" />
+        <button type="submit" class="ai-control-panel__send" :disabled="!canSubmit" :aria-busy="submitting" aria-label="发送问题">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m4 12 15-7-4.8 14-2.4-5.1L4 12Z" />
+            <path d="m11.8 13.9 3.3-3.4" />
+          </svg>
         </button>
       </form>
+      <p class="ai-control-panel__disclaimer">AI生成内容仅供参考，请结合实际情况决策</p>
     </div>
   </section>
 </template>
 
 <style scoped>
 .ai-control-panel {
-  position: relative;
-  width: min(930px, calc(100vw - 64px), 105vh);
-  aspect-ratio: 930 / 601;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   color: #edf8ff;
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  pointer-events: auto;
-}
-
-.ai-control-panel__frame {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
+  background: transparent;
   pointer-events: none;
 }
+
+.ai-control-panel__header { display: flex; align-items: center; gap: 12px; padding: 4px 8px 12px; }
+.ai-control-panel__avatar,
+.ai-control-panel__message-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(82,194,250,.72);
+  border-radius: 50%;
+  background: linear-gradient(145deg,#10b8ff,#1756ca);
+  box-shadow: 0 0 14px rgba(33,198,255,.5);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: -.04em;
+}
+.ai-control-panel__identity { display: flex; min-width: 0; flex-direction: column; gap: 3px; text-shadow: 0 1px 5px rgba(0,0,0,.82); }
+.ai-control-panel__identity strong { overflow: hidden; color: #f3fbff; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.ai-control-panel__identity span { overflow: hidden; color: rgba(205,228,241,.72); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
 .ai-control-panel__close {
-  position: absolute;
-  top: 4.6%;
-  right: 3.2%;
-  z-index: 5;
   display: grid;
+  flex: 0 0 auto;
   place-items: center;
-  width: clamp(26px, 3.2vw, 34px);
-  height: clamp(26px, 3.2vw, 34px);
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
   padding: 0;
-  border: 1px solid rgba(82, 194, 250, .55);
+  border: 1px solid rgba(82,194,250,.42);
   border-radius: 50%;
-  background: rgba(2, 21, 44, .72);
+  background: rgba(2,21,44,.38);
   color: #d9f5ff;
-  font-size: clamp(18px, 2vw, 24px);
+  font-size: 20px;
   line-height: 1;
   cursor: pointer;
+  pointer-events: auto;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
 }
-
 .ai-control-panel__close:hover,
-.ai-control-panel__close:focus-visible {
-  border-color: #62d8ff;
-  box-shadow: 0 0 12px rgba(33, 230, 255, .55);
-  outline: none;
-}
+.ai-control-panel__close:focus-visible { border-color: #62d8ff; background: rgba(12,61,103,.58); box-shadow: 0 0 12px rgba(33,230,255,.5); outline: none; }
 
-.ai-control-panel__title {
-  position: absolute;
-  top: 4.6%;
-  left: 50%;
-  width: 37.2%;
-  height: auto;
-  transform: translateX(-50%);
+.ai-control-panel__runtime-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  padding: 0 10px 8px 56px;
+  color: rgba(158,200,220,.76);
+  font-size: 11px;
+  text-shadow: 0 1px 4px rgba(0,0,0,.86);
 }
+.ai-control-panel__runtime-status i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: #607d8b; box-shadow: 0 0 7px rgba(96,125,139,.65); }
+.ai-control-panel__runtime-status.is-active { color: #75f2b1; }
+.ai-control-panel__runtime-status.is-active i { background: #13ce66; box-shadow: 0 0 9px rgba(19,206,102,.8); }
+.ai-control-panel__active-event { margin-left: auto; overflow: hidden; color: #8fd9f7; text-overflow: ellipsis; white-space: nowrap; }
 
-.ai-control-panel__composer {
-  position: absolute;
-  right: 15.5%;
-  bottom: 6.2%;
-  left: 15.5%;
-  z-index: 3;
+.ai-control-panel__conversation {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 22px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 14px 10px 26px;
+  mask-image: linear-gradient(to bottom,transparent 0,#000 12px,#000 calc(100% - 10px),transparent 100%);
+  scrollbar-color: rgba(82,194,250,.55) transparent;
+  scrollbar-width: thin;
+  pointer-events: auto;
 }
+.ai-control-panel__message { display: flex; align-items: flex-start; gap: 12px; width: fit-content; max-width: 82%; }
+.ai-control-panel__message.is-welcome { margin-top: 8px; }
+.ai-control-panel__message.is-assistant { align-self: flex-start; }
+.ai-control-panel__message.is-user { align-self: flex-end; flex-direction: row-reverse; }
+.ai-control-panel__message-avatar { width: 32px; height: 32px; margin-top: 2px; font-size: 9px; }
+.ai-control-panel__message-body { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.ai-control-panel__message.is-user .ai-control-panel__message-body { align-items: flex-end; }
+.ai-control-panel__message-body > strong { margin: 0 0 3px; color: #f4fbff; font-size: 14px; text-shadow: 0 1px 5px rgba(0,0,0,.9); }
+.ai-control-panel__message-content { padding: 9px 13px; border-radius: 8px; }
+.ai-control-panel__message.is-assistant .ai-control-panel__message-content { padding-left: 0; border: 0; background: transparent; text-shadow: 0 1px 5px rgba(0,0,0,.9); }
+.ai-control-panel__message.is-user .ai-control-panel__message-content { border: 1px solid rgba(45,142,255,.52); background: linear-gradient(135deg,rgba(6,91,214,.92),rgba(8,67,167,.88)); box-shadow: 0 4px 18px rgba(0,63,162,.25); }
+.ai-control-panel__message p { margin: 0; color: #eef8ff; font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-control-panel__message time { color: rgba(190,216,231,.56); font-size: 10px; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+.ai-control-panel__message.is-user time { text-align: right; }
+.ai-control-panel__message.is-failed p { color: #ffabab; }
+.ai-control-panel__thinking { padding-top: 5px; color: rgba(198,225,239,.76) !important; text-shadow: 0 1px 5px rgba(0,0,0,.9); }
 
+.ai-control-panel__composer { padding: 0 12px 4px; pointer-events: auto; }
+.ai-control-panel__hint { box-sizing: border-box; min-height: 18px; margin: 0 10px 5px; color: #8fd9f7; font-size: 11px; line-height: 1.35; text-shadow: 0 1px 4px rgba(0,0,0,.9); overflow-wrap: anywhere; }
+.ai-control-panel__hint.is-error { color: #ff9f9f; }
 .ai-control-panel__question {
-  position: relative;
-  width: 100%;
-  height: clamp(84px, 17vh, 112px);
+  display: grid;
+  grid-template-columns: 32px minmax(0,1fr) 46px;
+  align-items: center;
+  min-height: 58px;
+  padding: 0 8px 0 10px;
+  border: 1px solid rgba(82,194,250,.72);
+  border-radius: 18px;
+  background: rgba(1,15,31,.38);
+  backdrop-filter: blur(8px);
+  box-shadow: inset 0 0 18px rgba(33,139,255,.08),0 0 14px rgba(33,139,255,.12);
 }
-
-.ai-control-panel__input-background {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
+.ai-control-panel__attachment { display: grid; place-items: center; color: rgba(210,233,245,.76); }
+.ai-control-panel__attachment svg { width: 19px; height: 19px; }
+.ai-control-panel__attachment path,
+.ai-control-panel__send path { stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .ai-control-panel__question textarea {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
   box-sizing: border-box;
   width: 100%;
-  height: 100%;
-  padding:
-    clamp(13px, 1.6vw, 18px)
-    clamp(88px, 12vw, 122px)
-    clamp(14px, 1.8vw, 20px)
-    clamp(16px, 2.2vw, 24px);
+  height: 54px;
+  padding: 16px 10px 10px;
   resize: none;
   border: 0;
   outline: 0;
   background: transparent;
   color: #f1f9ff;
-  font: 600 clamp(13px, 1.5vw, 17px) / 1.65 inherit;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
   caret-color: #21e6ff;
 }
-
-.ai-control-panel__question textarea::placeholder { color: rgba(224, 240, 255, .54); }
-.ai-control-panel__question textarea:focus { filter: drop-shadow(0 0 5px rgba(33, 230, 255, .25)); }
-
-.ai-control-panel__ask-button {
-  position: absolute;
-  right: 2.8%;
-  bottom: 8.5%;
-  z-index: 2;
-  width: 13.69%;
-  aspect-ratio: 88 / 42;
+.ai-control-panel__question textarea::placeholder { color: rgba(211,231,242,.52); }
+.ai-control-panel__send {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-
-.ai-control-panel__ask-button img { display: block; width: 100%; height: 100%; }
-.ai-control-panel__ask-button:disabled {
-  cursor: not-allowed;
-  filter: grayscale(.45) brightness(.7);
-  opacity: .7;
-}
-.ai-control-panel__ask-button:hover,
-.ai-control-panel__ask-button:focus-visible {
-  filter: brightness(1.16) drop-shadow(0 0 8px #21e6ff);
-  outline: none;
-  transform: translateY(-1px);
-}
-
-.ai-control-panel__ask-button:disabled:hover {
-  filter: grayscale(.45) brightness(.7);
-  transform: none;
-}
-
-.ai-control-panel__runtime-status {
-  position: absolute;
-  top: 13.6%;
-  left: 15.5%;
-  right: 15.5%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #8dbbd0;
-  font-size: clamp(10px, 1vw, 12px);
-}
-
-.ai-control-panel__runtime-status i {
-  width: 7px;
-  height: 7px;
   border-radius: 50%;
-  background: #607d8b;
-  box-shadow: 0 0 7px rgba(96, 125, 139, .65);
+  background: linear-gradient(145deg,#2ea6ff,#1556d2);
+  box-shadow: 0 0 14px rgba(33,139,255,.5);
+  color: #fff;
+  cursor: pointer;
+  transition: filter .18s ease, transform .18s ease, opacity .18s ease;
 }
-
-.ai-control-panel__runtime-status.is-active { color: #75f2b1; }
-.ai-control-panel__active-event {
-  margin-left: auto;
-  overflow: hidden;
-  color: #8fd9f7;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ai-control-panel__runtime-status.is-active i {
-  background: #13ce66;
-  box-shadow: 0 0 9px rgba(19, 206, 102, .8);
-}
-
-.ai-control-panel__conversation {
-  position: absolute;
-  top: 18.2%;
-  left: 15.5%;
-  right: 15.5%;
-  bottom: 30.5%;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  overflow: auto;
-  padding: 10px 8px 14px;
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
-  scrollbar-color: rgba(82, 194, 250, .55) transparent;
-  scrollbar-width: thin;
-}
-
-.ai-control-panel__empty {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  min-height: 100%;
-}
-
-.ai-control-panel__greeting {
-  width: min(55%, 360px);
-  height: auto;
-}
-
-.ai-control-panel__empty p,
-.ai-control-panel__thinking {
-  margin: 0;
-  color: rgba(198, 225, 239, .7);
-  font-size: clamp(11px, 1.15vw, 14px);
-  text-align: center;
-}
-
-.ai-control-panel__thinking {
-  margin: 0;
-  padding: 8px 12px;
-  text-align: left;
-}
-
-.ai-control-panel__message {
-  max-width: 82%;
-  padding: 8px 12px;
-  border: 1px solid rgba(82, 194, 250, .24);
-  border-radius: 9px;
-  background: rgba(9, 49, 91, .58);
-  box-shadow: inset 0 0 12px rgba(33, 230, 255, .06);
-}
-
-.ai-control-panel__message.is-user {
-  align-self: flex-end;
-  background: rgba(35, 91, 163, .58);
-}
-
-.ai-control-panel__message.is-failed {
-  border-color: rgba(255, 107, 107, .46);
-  color: #ffb4b4;
-}
-
-.ai-control-panel__message strong {
-  display: block;
-  margin-bottom: 3px;
-  color: #65d9ff;
-  font-size: clamp(10px, 1vw, 12px);
-}
-
-.ai-control-panel__message p {
-  margin: 0;
-  color: inherit;
-  font-size: clamp(11px, 1.15vw, 14px);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.ai-control-panel__hint {
-  box-sizing: border-box;
-  min-height: 20px;
-  margin: 0 4px 6px;
-  color: #8fd9f7;
-  font-size: clamp(10px, 1vw, 12px);
-  line-height: 1.45;
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-
-.ai-control-panel__hint.is-error { color: #ff9f9f; }
-.ai-control-panel__hint.is-shortcut {
-  color: rgba(178, 214, 231, .55);
-  text-align: right;
-}
+.ai-control-panel__send svg { width: 21px; height: 21px; }
+.ai-control-panel__send:hover,
+.ai-control-panel__send:focus-visible { filter: brightness(1.15); transform: translateY(-1px); outline: none; }
+.ai-control-panel__send:disabled { filter: grayscale(.6); opacity: .5; cursor: not-allowed; transform: none; }
+.ai-control-panel__disclaimer { margin: 8px 0 0; color: rgba(178,205,220,.54); font-size: 10px; text-align: center; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
 
 @media (max-width: 720px) {
-  .ai-control-panel { width: calc(100vw - 24px); }
-  .ai-control-panel__close { top: 3%; right: 2%; }
+  .ai-control-panel__identity span,
+  .ai-control-panel__runtime-status > span:not(:first-of-type) { display: none; }
+  .ai-control-panel__runtime-status { padding-left: 10px; }
+  .ai-control-panel__message { max-width: 92%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ai-control-panel__ask-button,
+  .ai-control-panel__send,
   .ai-control-panel__close { transition: none; }
 }
 </style>

@@ -368,16 +368,9 @@ async function handleStop() {
         v-if="aiControlPanelOpen"
         id="ai-control-dialog"
         class="communication-overlay ai-control-overlay"
-        role="dialog"
-        aria-modal="true"
-        aria-label="CityPulse-Qwen交通管控大模型"
+        role="region"
+        aria-label="CityPulse-Qwen AI交通助手"
       >
-        <button
-          type="button"
-          class="communication-overlay__backdrop"
-          aria-label="关闭AI管控模型"
-          @click="closeAiControlPanel"
-        />
         <div class="communication-overlay__panel ai-control-overlay__panel">
           <AiControlPanel
             :session-id="sessionId"
@@ -587,9 +580,28 @@ async function handleStop() {
   outline: none;
 }
 
+.ai-control-overlay {
+  top: calc(var(--dashboard-top-offset) + 54px);
+  right: calc(var(--dashboard-panel-inset-right) + var(--dashboard-right-width) + 18px);
+  bottom: calc(var(--dashboard-bottom-offset) + 34px);
+  left: calc(var(--dashboard-panel-inset-left) + var(--dashboard-left-width) + 18px);
+  padding: 0;
+  place-items: stretch;
+  background: transparent;
+}
+
 .ai-control-overlay__panel {
-  display: grid;
-  place-items: center;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.dashboard-page.is-side-panels-collapsed .ai-control-overlay {
+  right: 48px;
+  left: 48px;
 }
 
 .map-dimension-toggle,
@@ -690,6 +702,15 @@ async function handleStop() {
     inset: var(--dashboard-top-offset) 0 80px;
     padding: 20px;
     place-items: center;
+  }
+
+  .ai-control-overlay {
+    top: calc(var(--dashboard-top-offset) + 72px);
+    right: 20px;
+    bottom: 116px;
+    left: 20px;
+    padding: 0;
+    place-items: stretch;
   }
 }
 
