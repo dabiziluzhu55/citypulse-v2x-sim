@@ -207,6 +207,15 @@ export interface SimulationMetrics {
 export interface SimulationEvaluation {
   episode_id: string
   algorithm: string
+  path_avg_speed_kmh?: number | null
+  travel_time_index?: number | null
+  delay_time_proportion?: number | null
+  traffic_performance_index?: number | null
+  traffic_state?: string | null
+  tpi_method?: string | null
+  avg_stops_per_vehicle?: number | null
+  regional_max_queue_length_m?: number | null
+  spillback_rate?: number | null
   avg_waiting_time: number | null
   avg_travel_time: number | null
   avg_queue_length: number | null

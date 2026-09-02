@@ -9,7 +9,7 @@
 前置：
   1. 已构建SUMO产物（build_tls / build_traffic）
   2. SUMO_HOME已设置，且可import libsumo
-  3. 不需要启动uvicorn/Redis
+  3. 不需要启动uvicorn/Redis等后端服务
 
 """
 
@@ -40,10 +40,18 @@ DEFAULT_SNAPSHOT_INTERVAL = 0.5
 
 METRIC_COLUMNS = (
     ("algorithm", "算法"),
-    ("avg_waiting_time", "平均等待(s)"),
+    ("path_avg_speed_kmh", "路径均速(km/h)"),
+    ("travel_time_index", "TTI"),
+    ("delay_time_proportion", "DTP"),
+    ("traffic_performance_index", "TPI"),
+    ("traffic_state", "运行状态"),
+    ("avg_stops_per_vehicle", "均停车(次/车)"),
+    ("regional_max_queue_length_m", "最大排队(m)"),
+    ("spillback_rate", "溢流率(%)"),
+    ("avg_waiting_time", "平均停车等待(s)"),
     ("avg_travel_time", "平均行程(s)"),
-    ("avg_queue_length", "平均排队(辆)"),
-    ("throughput", "吞吐(辆/h)"),
+    ("avg_queue_length", "进口均排队(辆/车道)"),
+    ("throughput", "吞吐流率(辆/h)"),
     ("fuel_consumption", "油耗强度(L/100km)"),
     ("hard_braking_events", "急刹车事件数"),
     ("hard_braking_rate", "急刹车率(次/100辆)"),

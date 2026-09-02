@@ -191,14 +191,31 @@ python backend/tools/eval.py \
 
 统一口径，结果字段可为 `null`（不可用时不伪造 0；急刹车事件数为 0 时仍返回 0）：
 
+公式只维护在 `traffic_eval`，Backend 不复制 TTI/DTP/TPI。指标按标准思想在微观仿真中构造等效口径，不声称与现场实测国家标准完全等同。
+
+**标准核心指标**
+
 | 指标 | 字段（API） | 终态口径 |
 |------|-------------|----------|
-| 平均行程时间 | `avg_travel_time` | TripInfo 已完成且未 vaporize 车辆的 `duration` 均值 |
-| 平均等待时间 | `avg_waiting_time` | 同上车辆的 `waitingTime` 均值 |
-| 平均排队长度 | `avg_queue_length` | 仅 `role=incoming` 进口道；每帧车道均值再对时间平均（veh/lane） |
-| 通行能力 | `throughput` | `arrived / evaluation_duration_s × 3600` |
-| 决策延迟 | `avg_decision_latency_ms` | `AlgorithmRuntimeStore` 的 perf_counter；Fixed 无样本为 `null` |
+| 路径平均速度 | `path_avg_speed_kmh` | TripInfo 已完成未 vaporize：ΣrouteLength/Σduration×3.6（km/h） |
+| 行程时间比 TTI | `travel_time_index` | Σduration/Σ(duration−timeLoss)；自由流为 SUMO timeLoss 对应的仿真等效时间 |
+| 延误时间比 DTP | `delay_time_proportion` | ΣtimeLoss/Σduration，**0~1 比例** |
+| 城市交通运行指数 TPI | `traffic_performance_index` | 由 DTP 按 GB/T 33171 附录 C 区间映射，档内线性插值为项目约定 |
+| 运行状态 | `traffic_state` | 畅通 / 基本畅通 / 轻度拥堵 / 中度拥堵 / 严重拥堵 |
+| 路径平均停车次数 | `avg_stops_per_vehicle` | TripInfo `waitingCount` 均值（次/车） |
+| 区域最大排队长度 | `regional_max_queue_length_m` | 评价期内进口车道 `queue_length_m` 最大值（m） |
+| 溢流率 | `spillback_rate` | 进口车道-时间暴露率（%）：溢流 lane·s / 有效 lane·s ×100 |
 | 燃油强度 | `fuel_consumption` / `fuel_intensity_L_per_100km` | 见下方「百公里油耗」 |
+
+**辅助诊断指标**（旧字段保留，不删除 JSON key）
+
+| 指标 | 字段（API） | 终态口径 |
+|------|-------------|----------|
+| 平均行程时间 | `avg_travel_time` | TripInfo 已出发车辆 `duration` 总和 ÷ departed |
+| 平均停车等待时间 | `avg_waiting_time` | 同上车辆的 `waitingTime` 总和 ÷ departed；不是完整延误 |
+| 进口车道平均排队车辆数 | `avg_queue_length` | 仅 `role=incoming`；车道 `halting_count` 均值再按仿真 Δt 加权（veh/lane） |
+| 网络实际吞吐流率 | `throughput` | `arrived / evaluation_duration_s × 3600`，不是通行能力 |
+| 决策延迟 | `avg_decision_latency_ms` | `AlgorithmRuntimeStore` 的 perf_counter；Fixed 无样本为 `null` |
 | 急刹车事件数 | `hard_braking_events` | 终态快照 `metrics.hard_braking_events`（单调累计，取终态/历史最大，禁止多帧相加） |
 | 急刹车率 | `hard_braking_rate` | `hard_braking_events / departed × 100`，单位「次/100辆」 |
 

@@ -11,6 +11,7 @@ from traffic_eval import (  # noqa: F401
     VehicleTypeFuelMeta,
     apply_tripinfo_completed_metrics,
     apply_tripinfo_fuel_intensity,
+    apply_tripinfo_official_metrics,
     load_fuel_meta_by_type,
     load_powertrain_by_type,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "VehicleTypeFuelMeta",
     "apply_tripinfo_completed_metrics",
     "apply_tripinfo_fuel_intensity",
+    "apply_tripinfo_official_metrics",
     "load_fuel_meta_by_type",
     "load_powertrain_by_type",
 ]

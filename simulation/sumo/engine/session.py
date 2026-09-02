@@ -32,6 +32,7 @@ from .events import (
     MajorEventOpeningEvent,
     SpeedLimitEvent,
 )
+from .queue_estimate import DEFAULT_VEHICLE_SPACE_M, estimate_queue_length_m
 from .ai_control import AIControlConfig, AIControlStatus
 from .ai_executor import AIPlanExecutor
 from ..algorithm.local_policy import LocalAlgorithmClient
@@ -191,6 +192,12 @@ class LaneRuntimeSnapshot:
     lane_has_green: bool | None = None
     signal_state: str | None = None
     current_allowed_speed_mps: float | None = None
+    # 与算法 payload 同一套确定性空间估算，不是 TraCI queue 检测器读数。
+    queue_length_m: float | None = None
+    queue_length_is_estimate: bool = True
+    # 进口车道可用长度近似：复用初始化时读取的 SUMO lane length，不是每帧 TraCI。
+    # 当前路网没有独立 storage_length_m，评测溢流时用该值作为有效储车长度近似。
+    lane_length_m: float | None = None
 
 
 @dataclass(frozen=True)
@@ -954,6 +961,12 @@ class SimulationManager:
                 episode_id=record.session_id,
                 vehicle_types=vehicle_types,
             )
+            lane_lengths: dict[str, float] = {}
+            for intersection in metadata.intersections.values():
+                for lane_id, lane_meta in intersection.lanes.items():
+                    lane_lengths[str(lane_id)] = float(lane_meta.length_m)
+            for lane_id, target in lane_targets.items():
+                lane_lengths.setdefault(str(lane_id), float(target.length))
             if config.control_mode == "algorithm":
                 client = LocalAlgorithmClient(config.algorithm_module)
                 client.initialize(metadata)
@@ -1238,6 +1251,7 @@ class SimulationManager:
                         sequence,
                         vehicle_tracker,
                         vehicle_action_controller,
+                        lane_lengths=lane_lengths,
                     )
                     snapshot_duration_ms = (
                         time.perf_counter() - snapshot_started
@@ -1278,6 +1292,7 @@ class SimulationManager:
                 sequence,
                 vehicle_tracker,
                 vehicle_action_controller,
+                lane_lengths=lane_lengths,
             )
             self._publish(record, last_snapshot)
             finish_reason = "stopped" if stop_requested else "completed"
@@ -1684,10 +1699,17 @@ def _capture_snapshot(
     sequence,
     vehicle_tracker,
     vehicle_action_controller,
+    lane_lengths: Mapping[str, float] | None = None,
 ) -> SimulationSnapshot:
     intersections = {}
     unique_lanes = set()
     lane_telemetry_cache = {}
+    length_by_lane = dict(lane_lengths or {})
+    samples_by_lane: dict[str, tuple[tuple[float, float, float, float], ...]] = {}
+    default_vehicle_space = DEFAULT_VEHICLE_SPACE_M
+    if vehicle_tracker is not None:
+        samples_by_lane = vehicle_tracker.lane_vehicle_samples_by_lane()
+        default_vehicle_space = float(vehicle_tracker.default_vehicle_space())
     for intersection_id, item in selected_manifest.items():
         connections_by_lane: dict[str, list[dict]] = {}
         outgoing_lanes = set()
@@ -1740,6 +1762,19 @@ def _capture_snapshot(
                 if 0 <= link_index < len(tls_state):
                     signal_states.append(tls_state[link_index])
             edge_id, _, lane_index = lane_id.rpartition("_")
+            lane_length_m = length_by_lane.get(lane_id)
+            if lane_length_m is not None:
+                queue_length_m = estimate_queue_length_m(
+                    lane_length_m=float(lane_length_m),
+                    halting_count=int(lane_telemetry["halting_count"]),
+                    occupancy=float(lane_telemetry["occupancy"]),
+                    samples=samples_by_lane.get(lane_id, ()),
+                    default_vehicle_space=default_vehicle_space,
+                )
+            elif int(lane_telemetry["halting_count"]) <= 0:
+                queue_length_m = 0.0
+            else:
+                queue_length_m = None
             lanes[lane_id] = LaneRuntimeSnapshot(
                 vehicle_count=count,
                 halting_count=lane_telemetry["halting_count"],
@@ -1766,6 +1801,11 @@ def _capture_snapshot(
                     "mixed" if signal_states else None
                 ),
                 current_allowed_speed_mps=lane_telemetry["allowed_speed"],
+                queue_length_m=queue_length_m,
+                queue_length_is_estimate=True,
+                lane_length_m=(
+                    None if lane_length_m is None else float(lane_length_m)
+                ),
             )
         if intersection_id in controllers:
             controller = controllers[intersection_id]

@@ -16,7 +16,7 @@
 
 ## 评估链路
 
-**【项目事实】** `traffic_eval` 是 Backend 与 CLI 共用口径。运行中从 `SimulationSnapshot` 采集排队、到达、急刹；终态用 TripInfo 回填行程、等待和燃油强度。`backend/app/metrics` 只封装，不另建公式。
+**【项目事实】** `traffic_eval` 是 Backend 与 CLI 共用口径。运行中从 `SimulationSnapshot` 采集进口排队车辆数、区域最大排队长度、溢流率、到达、急刹；终态用 TripInfo 回填行程、等待、路径平均速度、TTI、DTP、TPI、停车次数和燃油强度。`backend/app/metrics` 只封装，不另建公式。
 
 ## 智能分析链路
 
@@ -28,7 +28,7 @@
 
 ## 实时快照字段
 
-**【项目事实】** `SimulationSnapshot` 主要字段：`session_id`、`state`、`elapsed_seconds`、`duration_seconds`、`intersections`、`vehicles`、`events`、`metrics`。路口含 `current_phase`、`pending_phase`、`stage`、`stage_elapsed`、`lanes`。车道含 `vehicle_count`、`halting_count`、`mean_speed`、`waiting_time`、`occupancy`、`role`、`approach_id`、`downstream_lane_ids`、`lane_has_green`、`signal_state`、`current_allowed_speed_mps`。状态 API 还附带 `evaluation`、`event_detection`、`prediction`、`traffic_style`。
+**【项目事实】** `SimulationSnapshot` 主要字段：`session_id`、`state`、`elapsed_seconds`、`duration_seconds`、`intersections`、`vehicles`、`events`、`metrics`。路口含 `current_phase`、`pending_phase`、`stage`、`stage_elapsed`、`lanes`。车道含 `vehicle_count`、`halting_count`、`mean_speed`、`waiting_time`、`occupancy`、`role`、`approach_id`、`downstream_lane_ids`、`lane_has_green`、`signal_state`、`current_allowed_speed_mps`、`queue_length_m`、`queue_length_is_estimate`、`lane_length_m`。状态 API 还附带 `evaluation`、`event_detection`、`prediction`、`traffic_style`。
 
 ## 主要 API
 

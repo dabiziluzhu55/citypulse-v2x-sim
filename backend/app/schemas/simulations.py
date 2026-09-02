@@ -119,6 +119,18 @@ class MetricsResponse(BaseModel):
 
     episode_id: str
     algorithm: str
+    path_avg_speed_kmh: float | None = None
+    travel_time_index: float | None = None
+    delay_time_proportion: float | None = None
+    traffic_performance_index: float | None = None
+    traffic_state: str | None = None
+    tpi_method: str | None = None
+    avg_stops_per_vehicle: float | None = None
+    regional_max_queue_length_m: float | None = None
+    regional_max_queue_intersection_id: str | None = None
+    regional_max_queue_lane_id: str | None = None
+    regional_max_queue_sim_time_s: float | None = None
+    spillback_rate: float | None = None
     avg_waiting_time: float | None = None
     avg_travel_time: float | None = None
     avg_queue_length: float | None = None
