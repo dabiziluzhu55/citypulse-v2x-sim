@@ -106,6 +106,19 @@ async function retryThreeMap(): Promise<void> {
   await remountThreeMap(false)
 }
 
+watch(
+  () => props.active,
+  (active, previous) => {
+    if (
+      active
+      && previous === false
+      && state.value !== 'ready'
+    ) {
+      void remountThreeMap(state.value === 'error')
+    }
+  },
+)
+
 function handleFatal(cause: unknown): void {
   const isWebglLoss = cause instanceof Error && cause.name === 'WebGLContextLostError'
   const now = Date.now()

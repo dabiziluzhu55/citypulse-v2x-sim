@@ -210,6 +210,23 @@ def test_resolve_mappo_east_dense_zero_shot(
     assert resolved.model_alias == "mappo_cooperative_20tls_ep160"
 
 
+def test_resolve_cov2x_east_dense_default_candidate(
+    east_dense_catalog: SimulationCatalog,
+) -> None:
+    request = StartSimulationRequest(
+        scenario_preset_id="east_dense",
+        period="morning_peak",
+        duration_seconds=600,
+        control_mode="cov2x",
+    )
+
+    resolved = resolve_start_simulation(request, east_dense_catalog)
+
+    assert resolved.control_mode == "cov2x"
+    assert resolved.intersection_ids == ("demo_3", "demo_5", "demo_6", "demo_9")
+    assert resolved.model_alias == "cov2x_g30_temp_cap_u24"
+
+
 def test_backend_presets_are_self_contained() -> None:
     """backend 场景预设必须独立，不得依赖 algorithms/config。"""
     assert SCENARIO_PRESET_REGISTRY["east_dense"].label == "校园周边场景"

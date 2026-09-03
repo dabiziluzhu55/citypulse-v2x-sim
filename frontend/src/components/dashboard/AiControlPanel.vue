@@ -3,8 +3,12 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { chatWithCopilot } from '../../api/copilot'
 import { simulationApiErrorMessage } from '../../api/client'
-import type { CopilotChatResponse, CopilotHistoryMessage } from '../../types/copilot'
+import type { CopilotHistoryMessage } from '../../types/copilot'
 import type { AIControlStatus } from '../../types/simulation'
+import {
+  formatIntersectionLabel,
+  formatIntersectionReferences,
+} from '../../utils/intersectionLabels'
 
 const props = withDefaults(defineProps<{
   sessionId: string
@@ -32,7 +36,6 @@ const submitHint = ref('')
 const submitting = ref(false)
 const messages = ref<DisplayMessage[]>([])
 const conversationRef = ref<HTMLElement | null>(null)
-const responseMeta = ref<CopilotChatResponse | null>(null)
 let messageSequence = 0
 let requestController: AbortController | null = null
 
@@ -44,7 +47,7 @@ const takeoverLabel = computed(() => {
   const status = props.aiTakeover
   if (!status?.ai_enabled) return 'AI接管未启用'
   if (status.state === 'ACTIVE') return 'AI接管执行中'
-  if (status.state === 'RECOVERING') return 'AI接管恢复中'
+  if (status.state === 'RECOVERY') return 'AI接管恢复中'
   return `AI接管：${status.state}`
 })
 
@@ -87,7 +90,6 @@ async function submitQuestion(): Promise<void> {
   })
   question.value = ''
   submitHint.value = ''
-  responseMeta.value = null
   submitting.value = true
   requestController?.abort()
   const controller = new AbortController()
@@ -104,10 +106,9 @@ async function submitQuestion(): Promise<void> {
     messages.value.push({
       id: ++messageSequence,
       role: 'assistant',
-      content: response.answer,
+      content: formatIntersectionReferences(response.answer),
       createdAt: messageTime(),
     })
-    responseMeta.value = response
   } catch (cause) {
     if (controller.signal.aborted) return
     const message = simulationApiErrorMessage(cause, 'Traffic Copilot 请求失败')
@@ -133,7 +134,6 @@ watch(() => props.sessionId, () => {
   requestController = null
   submitting.value = false
   messages.value = []
-  responseMeta.value = null
   submitHint.value = ''
 })
 
@@ -157,8 +157,15 @@ onBeforeUnmount(() => requestController?.abort())
       <i aria-hidden="true" />
       <span>{{ takeoverLabel }}</span>
       <span v-if="aiTakeover?.baseline_controller">基线：{{ aiTakeover.baseline_controller }}</span>
+      <span v-if="aiTakeover?.plan_sequence">规划轮次：{{ aiTakeover.plan_sequence }}</span>
+      <span v-if="aiTakeover?.controlled_intersections.length">
+        受控路口：{{ aiTakeover.controlled_intersections.map(formatIntersectionLabel).join('、') }}
+      </span>
+      <span v-if="aiTakeover?.last_objective">控制目标：{{ formatIntersectionReferences(aiTakeover.last_objective) }}</span>
+      <span v-if="aiTakeover?.last_reason">规划依据：{{ formatIntersectionReferences(aiTakeover.last_reason) }}</span>
+      <span v-if="aiTakeover?.rag_status">知识库：{{ aiTakeover.rag_status }}</span>
       <span v-if="activeEventId" class="ai-control-panel__active-event">
-        当前事件：{{ activeEventLabel || activeEventId }}
+        当前事件：{{ formatIntersectionReferences(activeEventLabel || activeEventId) }}
       </span>
     </div>
 
@@ -198,11 +205,6 @@ onBeforeUnmount(() => requestController?.abort())
 
     <div class="ai-control-panel__composer">
       <p v-if="submitHint" class="ai-control-panel__hint is-error" role="status">{{ submitHint }}</p>
-      <p v-else-if="responseMeta" class="ai-control-panel__hint">
-        {{ responseMeta.model ?? 'Qwen' }} · {{ responseMeta.rounds }}轮 ·
-        {{ responseMeta.tool_calls.length }}次工具调用 ·
-        {{ responseMeta.latency_ms == null ? '--' : Math.round(responseMeta.latency_ms) }}ms
-      </p>
 
       <form class="ai-control-panel__question" @submit.prevent="submitQuestion">
         <span class="ai-control-panel__attachment" aria-hidden="true">
@@ -242,7 +244,14 @@ onBeforeUnmount(() => requestController?.abort())
   min-height: 0;
   color: #edf8ff;
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  background: transparent;
+  overflow: hidden;
+  border: 1px solid rgba(82, 194, 250, .42);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(8, 48, 94, .70), rgba(3, 29, 66, .70));
+  backdrop-filter: blur(6px);
+  box-shadow:
+    inset 0 0 32px rgba(43, 137, 255, .12),
+    0 10px 34px rgba(0, 12, 35, .25);
   pointer-events: none;
 }
 
@@ -290,18 +299,25 @@ onBeforeUnmount(() => requestController?.abort())
 
 .ai-control-panel__runtime-status {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
-  min-height: 22px;
+  min-height: 28px;
   padding: 0 10px 8px 56px;
+  overflow-x: auto;
+  overflow-y: hidden;
   color: rgba(158,200,220,.76);
   font-size: 11px;
+  white-space: nowrap;
+  scrollbar-width: none;
   text-shadow: 0 1px 4px rgba(0,0,0,.86);
 }
+.ai-control-panel__runtime-status::-webkit-scrollbar { display: none; }
+.ai-control-panel__runtime-status > span { flex: 0 0 auto; }
 .ai-control-panel__runtime-status i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: #607d8b; box-shadow: 0 0 7px rgba(96,125,139,.65); }
 .ai-control-panel__runtime-status.is-active { color: #75f2b1; }
 .ai-control-panel__runtime-status.is-active i { background: #13ce66; box-shadow: 0 0 9px rgba(19,206,102,.8); }
-.ai-control-panel__active-event { margin-left: auto; overflow: hidden; color: #8fd9f7; text-overflow: ellipsis; white-space: nowrap; }
+.ai-control-panel__active-event { margin-left: 0; color: #8fd9f7; white-space: nowrap; }
 
 .ai-control-panel__conversation {
   display: flex;

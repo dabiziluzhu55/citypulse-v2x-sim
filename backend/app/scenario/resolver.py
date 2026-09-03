@@ -74,6 +74,16 @@ def resolve_start_simulation(
         model_alias, _model_path = validate_alias_combo(
             intersection_ids, effective
         )
+    elif request.control_mode == "cov2x":
+        from traffic_control.cov2x.aliases import (
+            default_model_alias_for,
+            validate_alias_combo,
+        )
+
+        effective = request.model_alias or default_model_alias_for(preset.preset_id)
+        model_alias, _model_path = validate_alias_combo(
+            intersection_ids, effective
+        )
     _validate_period(request.period, intersection_ids, catalog)
     _validate_origins(request.origins, intersection_ids, catalog)
     initial_events = tuple(

@@ -116,6 +116,11 @@ def test_qwen_provider_reports_transport_and_protocol_errors() -> None:
             [{"role": "user", "content": "你好"}]
         )
 
+    with pytest.raises(LLMProtocolError):
+        QwenProvider(
+            transport=lambda *args: _qwen_response(content={"answer": "不应展示"})
+        ).complete([{"role": "user", "content": "你好"}])
+
 
 class _SequenceProvider:
     def __init__(self, completions: Sequence[LLMCompletion]) -> None:
@@ -213,6 +218,42 @@ def test_orchestrator_runs_real_provider_protocol_with_read_only_tool() -> None:
     assert assistant_message["tool_calls"][0]["function"]["arguments"] == (
         '{"operation":"sum","values":[2,3]}'
     )
+
+
+def test_orchestrator_retries_placeholder_live_answer_until_tool_is_called() -> None:
+    provider = _SequenceProvider(
+        [
+            LLMCompletion(
+                message=AssistantMessage(content="当前车辆数：[车辆数量]")
+            ),
+            LLMCompletion(
+                message=AssistantMessage(
+                    tool_calls=(
+                        ToolCall(
+                            call_id="call-current",
+                            name="get_current_traffic",
+                            arguments={},
+                        ),
+                    )
+                )
+            ),
+            LLMCompletion(
+                message=AssistantMessage(content="当前仿真中暂无活动车辆。")
+            ),
+        ]
+    )
+
+    response = CopilotOrchestrator(provider, _calculator_service()).run(
+        "当前路口的交通状态怎么样？"
+    )
+
+    assert response.answer == "当前仿真中暂无活动车辆。"
+    assert response.rounds == 3
+    assert {record.name for record in response.tool_calls} == {
+        "get_network_summary",
+        "get_current_traffic",
+    }
+    assert "禁止返回 JSON" in provider.requests[1][-1]["content"]
 
 
 def test_orchestrator_rejects_unknown_write_tool_without_executing_it() -> None:

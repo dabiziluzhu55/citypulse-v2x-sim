@@ -973,7 +973,7 @@ onUnmounted(() => {
         <strong>{{ detectedEventTypeLabel(card) }}</strong>
         <span>{{ detectedEventClockTime(snapshot, card.start_seconds) }}</span>
         <span>持续 {{ formatDetectedEventDuration(detectedEventDurationSeconds(snapshot, card)) }}</span>
-        <span>{{ card.intersection_id }} / {{ card.lane_ids.join('、') || '--' }}</span>
+        <span>{{ formatIntersectionLabel(card.intersection_id) }}</span>
       </button>
     </section>
   </div>

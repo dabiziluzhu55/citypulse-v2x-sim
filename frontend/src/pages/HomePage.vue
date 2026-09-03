@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AiControlPanel from '../components/dashboard/AiControlPanel.vue'
 import CenterCommunicationPanel from '../components/dashboard/CenterCommunicationPanel.vue'
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
+import RoadsideDevicesPanel from '../components/dashboard/RoadsideDevicesPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
 import { useDashboardOverlay } from '../composables/useDashboardOverlay'
 import { useCopilotContext } from '../composables/useCopilotContext'
@@ -121,9 +122,11 @@ const {
 const {
   communicationPanelOpen,
   aiControlPanelOpen,
+  roadsideDevicePanelOpen,
   sidePanelsCollapsed,
   closeCommunicationPanel,
   closeAiControlPanel,
+  closeRoadsideDevicePanel,
   toggleSidePanels,
 } = useDashboardOverlay()
 interface ConfigurationChangeRequest {
@@ -166,6 +169,8 @@ function handleOverlayKeydown(event: KeyboardEvent) {
     closeAiControlPanel()
   } else if (communicationPanelOpen.value) {
     closeCommunicationPanel()
+  } else if (roadsideDevicePanelOpen.value) {
+    closeRoadsideDevicePanel()
   }
 }
 
@@ -186,6 +191,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleOverlayKeydown)
   closeAiControlPanel()
   closeCommunicationPanel()
+  closeRoadsideDevicePanel()
 })
 
 async function handleStart(payload: StartSimulationRequest) {
@@ -399,13 +405,38 @@ async function handleStop() {
           aria-label="关闭车路云通信记录"
           @click="closeCommunicationPanel"
         />
-        <div class="communication-overlay__panel">
+        <div class="communication-overlay__panel communication-overlay__panel--communication">
           <CenterCommunicationPanel
             :log-entries="logEntries"
             :loading="false"
             :error="null"
             :connected="wsConnected"
             @close="closeCommunicationPanel"
+          />
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="communication-overlay">
+      <div
+        v-if="roadsideDevicePanelOpen"
+        id="roadside-device-dialog"
+        class="communication-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="路侧设备"
+      >
+        <button
+          type="button"
+          class="communication-overlay__backdrop"
+          aria-label="关闭路侧设备"
+          @click="closeRoadsideDevicePanel"
+        />
+        <div class="communication-overlay__panel">
+          <RoadsideDevicesPanel
+            :intersection-id="activeIntersectionId"
+            :runtime="snapshot?.intersections?.[activeIntersectionId] ?? null"
+            @close="closeRoadsideDevicePanel"
           />
         </div>
       </div>
@@ -513,6 +544,10 @@ async function handleStop() {
   pointer-events: auto;
 }
 
+.communication-overlay__panel--communication {
+  width: min(1490px, 100%);
+}
+
 .communication-overlay-enter-active,
 .communication-overlay-leave-active {
   transition: opacity 0.22s ease;
@@ -581,7 +616,8 @@ async function handleStop() {
 }
 
 .ai-control-overlay {
-  top: calc(var(--dashboard-top-offset) + 54px);
+  /* 10px toolbar offset + 42px control height + 20px visual clearance. */
+  top: calc(var(--dashboard-top-offset) + 72px);
   right: calc(var(--dashboard-panel-inset-right) + var(--dashboard-right-width) + 18px);
   bottom: calc(var(--dashboard-bottom-offset) + 34px);
   left: calc(var(--dashboard-panel-inset-left) + var(--dashboard-left-width) + 18px);

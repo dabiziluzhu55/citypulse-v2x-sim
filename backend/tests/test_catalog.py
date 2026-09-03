@@ -13,8 +13,6 @@ def test_catalog_returns_scenario_presets(client: TestClient) -> None:
     assert payload["control_modes"] == [
         "fixed",
         "max_pressure",
-        "safe_max_pressure",
-        "strong_b_trace",
         "sotl",
         "ippo",
         "mappo",

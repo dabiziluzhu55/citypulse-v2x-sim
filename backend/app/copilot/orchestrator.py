@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
@@ -34,7 +35,68 @@ DEFAULT_SYSTEM_PROMPT = """你是 CityPulse 车路云交通 Copilot，负责解�
 5. 你只能查询和计算，不能启动、停止、暂停仿真，不能修改信号灯、车辆、事件或任何系统状态。用户要求控制操作时，说明当前 Copilot 只支持只读分析。
 6. 查询事故、施工占道、限速、大型活动、回溢或多路口协同的处置原则时，优先调用 search_knowledge，并使用 profile="control"；普通算法说明或项目规划问题才使用 profile="general"。RAG 返回的 planning 内容表示规划，不是已经上线的能力。
 7. 最终用简洁、清楚的中文回答；涉及多个数据来源时说明各自的范围和时间。
+8. 最终回答只能是面向用户的自然中文，禁止返回 JSON、工具参数、字段定义、Schema 或 Python 字典。
+9. 当前状态、车辆、速度、排队、拥堵等问题必须先调用工具；禁止使用“[车辆数量]”之类的占位符。
+10. 工具调用结束后，只提炼用户关心的结论，不逐字段复述工具原始结果。
 """
+
+_PLACEHOLDER_PATTERN = re.compile(r"\[[^\[\]\n]{1,40}\]")
+_PROTOCOL_FIELD_PATTERN = re.compile(
+    r'"(?:name|arguments|properties|required|type|description)"\s*:'
+)
+_UNHELPFUL_LIVE_ANSWER_PATTERN = re.compile(
+    r"(?:请.{0,12}提供.{0,12}(?:信息|路口)|输入有误|"
+    r"可以.{0,12}(?:使用|调用).{0,24}get_current_traffic)",
+    re.IGNORECASE,
+)
+_LIVE_CONTEXT_KEYWORDS = (
+    "当前",
+    "实时",
+    "现在",
+    "本路口",
+    "这个路口",
+)
+_LIVE_METRIC_KEYWORDS = (
+    "车辆",
+    "速度",
+    "排队",
+    "等待",
+    "拥堵",
+    "信号灯",
+    "交通状态",
+)
+_LIVE_QUERY_INTENTS = ("多少", "几辆", "状态", "情况", "趋势", "是否", "多长")
+
+
+def _invalid_visible_answer(answer: str) -> bool:
+    normalized = answer.strip()
+    if not normalized:
+        return True
+    if normalized.startswith("{") or normalized.startswith("["):
+        return True
+    if "<tool_call>" in normalized:
+        return True
+    if _PROTOCOL_FIELD_PATTERN.search(normalized):
+        return True
+    return _PLACEHOLDER_PATTERN.search(normalized) is not None
+
+
+def _requires_live_data(question: str) -> bool:
+    if any(keyword in question for keyword in _LIVE_CONTEXT_KEYWORDS):
+        return True
+    return (
+        any(keyword in question for keyword in _LIVE_METRIC_KEYWORDS)
+        and any(keyword in question for keyword in _LIVE_QUERY_INTENTS)
+    )
+
+
+def _intersection_from_scope(active_scope: str | None) -> str | None:
+    normalized = str(active_scope or "").strip()
+    prefix = "intersection:"
+    if not normalized.startswith(prefix):
+        return None
+    intersection_id = normalized[len(prefix) :].strip()
+    return intersection_id or None
 
 
 class CopilotError(RuntimeError):
@@ -156,6 +218,53 @@ class CopilotOrchestrator:
         total_latency_ms = 0.0
         model: str | None = None
 
+        # The compact Qwen smoke service is not guaranteed to honor
+        # tool_choice="auto".  Current-state questions nevertheless require
+        # authoritative data, so bind one read-only observation before asking
+        # the model to write the user-facing summary.
+        if _requires_live_data(question):
+            intersection_id = _intersection_from_scope(active_scope)
+            call = ToolCall(
+                call_id="prefetch_current_traffic",
+                name=(
+                    "get_current_traffic"
+                    if intersection_id
+                    else "get_network_summary"
+                ),
+                arguments=(
+                    {"intersection_id": intersection_id}
+                    if intersection_id
+                    else {}
+                ),
+            )
+            result, error = self._execute_tool(call)
+            records.append(
+                ToolCallRecord(
+                    call_id=call.call_id,
+                    name=call.name,
+                    arguments=call.arguments,
+                    result=result,
+                    error=error,
+                )
+            )
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [call.as_dict()],
+                }
+            )
+            messages.append(self._tool_message(call, result=result, error=error))
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "请根据上面的只读工具结果回答最初的问题。"
+                        "只输出简洁自然的中文结论，不要复述字段名。"
+                    ),
+                }
+            )
+
         for round_number in range(1, self.max_rounds + 1):
             try:
                 completion = self._provider.complete(
@@ -180,10 +289,31 @@ class CopilotOrchestrator:
             assistant = completion.message
             if not assistant.tool_calls:
                 answer = (assistant.content or "").strip()
-                if not answer:
+                missing_required_tool = _requires_live_data(question) and not records
+                invalid_answer = _invalid_visible_answer(answer) or (
+                    _requires_live_data(question)
+                    and _UNHELPFUL_LIVE_ANSWER_PATTERN.search(answer) is not None
+                )
+                if (
+                    (missing_required_tool or invalid_answer)
+                    and round_number < self.max_rounds
+                ):
+                    messages.append(assistant.as_dict())
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "刚才的回答不符合要求。如果问题涉及当前仿真数据，"
+                                "请先调用合适的只读工具；最终只输出简洁自然的中文结论，"
+                                "禁止返回 JSON、字段定义和占位符。"
+                            ),
+                        }
+                    )
+                    continue
+                if missing_required_tool or invalid_answer:
                     raise CopilotModelError(
-                        "大模型没有返回可用的文字回答。",
-                        code="COPILOT_EMPTY_ANSWER",
+                        "大模型未能生成有效的交通分析文字，请重新提问。",
+                        code="COPILOT_INVALID_VISIBLE_ANSWER",
                     )
                 return CopilotResponse(
                     answer=answer,

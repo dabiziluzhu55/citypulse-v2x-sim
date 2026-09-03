@@ -175,8 +175,6 @@ def test_control_modes_registered() -> None:
     expected_modes = [
         "fixed",
         "max_pressure",
-        "safe_max_pressure",
-        "strong_b_trace",
         "sotl",
         "ippo",
         "mappo",
@@ -193,8 +191,6 @@ def test_control_modes_registered() -> None:
     for name, module in (
         ("sotl", "traffic_control.sotl"),
         ("max_pressure", "traffic_control.max_pressure"),
-        ("safe_max_pressure", "traffic_control.safe_max_pressure"),
-        ("strong_b_trace", "traffic_control.strong_b_trace"),
         ("ippo", "traffic_control.ippo"),
         ("mappo", "traffic_control.mappo"),
         ("cov2x", "traffic_control.cov2x"),
@@ -242,8 +238,6 @@ def test_simulation_config_local_module_for_algorithms() -> None:
     for mode, module in (
         ("sotl", "traffic_control.sotl"),
         ("max_pressure", "traffic_control.max_pressure"),
-        ("safe_max_pressure", "traffic_control.safe_max_pressure"),
-        ("strong_b_trace", "traffic_control.strong_b_trace"),
         ("ippo", "traffic_control.ippo"),
         ("mappo", "traffic_control.mappo"),
         ("cov2x", "traffic_control.cov2x"),

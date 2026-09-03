@@ -184,12 +184,13 @@ test('uses the main backend catalog contract while the catalog is offline', () =
   assert.deepEqual(resolveCatalogPlaybackSpeeds([1, 2]), [1, 2])
 })
 
-test('exposes all five control modes from the latest backend contract', () => {
+test('exposes all six control modes from the latest backend contract', () => {
   assert.deepEqual(DASHBOARD_CONTROL_MODES.map((item) => item.value), [
-    'fixed', 'max_pressure', 'sotl', 'ippo', 'mappo',
+    'fixed', 'max_pressure', 'sotl', 'ippo', 'mappo', 'cov2x',
   ])
   assert.equal(DASHBOARD_CONTROL_MODES.find((item) => item.value === 'mappo').backendSupported, true)
   assert.equal(SUPPORTED_BACKEND_CONTROL_MODES.includes('mappo'), true)
+  assert.equal(SUPPORTED_BACKEND_CONTROL_MODES.includes('cov2x'), true)
 })
 
 test('requires major-event vehicle counts between twenty and two hundred', () => {
@@ -240,23 +241,22 @@ test('validates disturbance targets against the selected scene instead of the in
   ), ['demo_2'])
 })
 
-test('allows IPPO and MAPPO in all three backend scene presets', () => {
+test('allows IPPO, MAPPO, and CoV2X in all three backend scene presets', () => {
   assert.equal(controlModeSupportsScenario('ippo', 'xiongan_20'), true)
   assert.equal(controlModeSupportsScenario('ippo', 'east_dense'), true)
   assert.equal(controlModeSupportsScenario('mappo', 'west_dense'), true)
+  assert.equal(controlModeSupportsScenario('cov2x', 'east_dense'), true)
   assert.equal(controlModeSupportsScenario('fixed', 'east_dense'), true)
   assert.equal(controlModeSupportsScenario('unknown', 'east_dense'), false)
 })
 
-test('limits the current IPPO checkpoint to off-peak without restricting MAPPO', () => {
+test('accepts all deployed algorithms in every catalog period', () => {
   assert.equal(controlModePeriodCompatibility('ippo', 'off_peak').compatible, true)
-  assert.equal(controlModePeriodCompatibility('ippo', 'morning_peak').compatible, false)
-  assert.equal(controlModePeriodCompatibility('ippo', 'evening_peak').compatible, false)
+  assert.equal(controlModePeriodCompatibility('ippo', 'morning_peak').compatible, true)
+  assert.equal(controlModePeriodCompatibility('ippo', 'evening_peak').compatible, true)
   assert.equal(controlModePeriodCompatibility('mappo', 'morning_peak').compatible, true)
-  assert.throws(
-    () => requirePeriodCompatibleControlMode('ippo', 'morning_peak'),
-    /IPPO.*平峰/,
-  )
+  assert.equal(controlModePeriodCompatibility('cov2x', 'evening_peak').compatible, true)
+  assert.equal(requirePeriodCompatibleControlMode('ippo', 'morning_peak'), 'ippo')
 })
 
 test('builds the backend v2 preset request without removed legacy fields', () => {

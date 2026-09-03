@@ -30,8 +30,26 @@ class MapService:
             net = self._load_net()
             lon, lat = net.convertXY2LonLat(float(x), float(y))
             return round(float(lon), 7), round(float(lat), 7)
+        except ModuleNotFoundError as exc:
+            logger.exception("SUMO coordinate projection dependency is unavailable")
+            raise RuntimeError(
+                "SUMO coordinate projection is unavailable. "
+                "Install backend requirements, especially pyproj."
+            ) from exc
         except Exception:
+            logger.exception("Failed to convert SUMO XY coordinates: x=%s y=%s", x, y)
             return None, None
+
+    def validate_coordinate_projection(self) -> None:
+        """Fail startup clearly when SUMO's projection dependency is unavailable."""
+        try:
+            net = self._load_net()
+            net.convertXY2LonLat(0.0, 0.0)
+        except Exception as exc:
+            raise RuntimeError(
+                "SUMO coordinate projection is unavailable. "
+                "Run: python -m pip install -r backend/requirements.txt"
+            ) from exc
 
     def lane_center_lonlat(self, lane_id: str) -> tuple[float | None, float | None]:
         net = self._load_net()

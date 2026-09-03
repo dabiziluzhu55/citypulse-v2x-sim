@@ -108,6 +108,7 @@ export interface StartSimulationRequest {
   window_start_seconds: number
   duration_seconds: number
   control_mode: BackendControlMode
+  model_alias?: string | null
   seed: number
   step_length: number
   realtime: boolean
@@ -208,6 +209,18 @@ export interface SimulationMetrics {
 export interface SimulationEvaluation {
   episode_id: string
   algorithm: string
+  path_avg_speed_kmh?: number | null
+  travel_time_index?: number | null
+  delay_time_proportion?: number | null
+  traffic_performance_index?: number | null
+  traffic_state?: string | null
+  tpi_method?: string | null
+  avg_stops_per_vehicle?: number | null
+  regional_max_queue_length_m?: number | null
+  regional_max_queue_intersection_id?: string | null
+  regional_max_queue_lane_id?: string | null
+  regional_max_queue_sim_time_s?: number | null
+  spillback_rate?: number | null
   avg_waiting_time: number | null
   avg_travel_time: number | null
   avg_queue_length: number | null
@@ -234,6 +247,38 @@ export interface SimulationEvent {
   error?: string | null
   details?: Record<string, unknown> | null
   [key: string]: unknown
+}
+
+export type V2XEventState = 'SEND' | 'DELIVER' | 'CONSUME' | 'TTL_EXPIRED'
+export type V2XRole = 'vehicle' | 'road' | 'cloud'
+
+export interface V2XCommunicationEvent {
+  schema: 'cov2x.v2x.event'
+  schema_version: '1.0'
+  sequence: number
+  event: V2XEventState
+  message_type:
+    | 'VehicleStateV1'
+    | 'IntersectionSummaryV1'
+    | 'RegionalPriorityV1'
+    | 'SPaTV2'
+    | 'MAPV1'
+  message_id: string
+  episode_id: string
+  snapshot_id: string
+  source_role: V2XRole
+  source_id: string
+  destination_role: V2XRole
+  destination_id: string
+  logical_phase: string
+  event_time_s: number
+  sent_time_s: number
+  message_age_s: number
+  ttl_s: number
+  expires_at_s: number
+  causal_parent_ids: string[]
+  payload_fields: string[]
+  drop_reason: string | null
 }
 
 export interface AIControlStatus {
@@ -268,6 +313,8 @@ export interface SimulationSnapshot {
   vehicles: SimulationVehicle[]
   /** 用户扰动事件，与算法识别无关 */
   events: SimulationEvent[]
+  /** CoV2X 算法产生的真实车-路-云通信事件滚动窗口。 */
+  v2x_events?: V2XCommunicationEvent[]
   /** 算法事件识别结果，与用户扰动events无关 */
   event_detection?: EventDetectionPayload | null
   prediction?: PredictionPayload | null

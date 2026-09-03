@@ -14,6 +14,10 @@ import {
   disturbanceRuntimeStateLabel,
   disturbanceRuntimeTypeLabel,
 } from '../../utils/runtimeDisturbances'
+import {
+  formatIntersectionLabel,
+  formatIntersectionReferences,
+} from '../../utils/intersectionLabels'
 import { useCopilotContext } from '../../composables/useCopilotContext'
 
 interface ScreenPoint { x: number; y: number; cameraVersion?: number }
@@ -139,34 +143,21 @@ function detailRows(detail: SceneEventDetail): Array<[string, string]> {
   if (detail.kind === 'detected') {
     const card = detail.card
     return [
-      ['识别类型', detailTitle(detail)],
       ['发生时间', detectedEventClockTime(props.snapshot, card.start_seconds)],
       ['持续时间', formatDetectedEventDuration(detectedEventDurationSeconds(props.snapshot, card))],
-      ['路口', card.intersection_id],
-      ['车道', card.lane_ids.join('、') || '--'],
+      ['路口', formatIntersectionLabel(card.intersection_id)],
       ['严重程度', card.severity || '--'],
-      ['置信度', Number.isFinite(card.confidence) ? `${Math.round(card.confidence * 100)}%` : '--'],
-      ['原因', card.cause || '--'],
-      ['证据', card.evidence.join('；') || '--'],
-      ['处置建议', card.suggestion || '--'],
-      ['短时预测', detectedEventFlowSummary(card)],
+      ['原因', formatIntersectionReferences(card.cause || '原因未确认')],
+      ['处置建议', formatIntersectionReferences(card.suggestion || '--')],
+      ['短时预测', formatIntersectionReferences(detectedEventFlowSummary(card))],
     ]
   }
   const event = detail.event
-  const lanes = [event.details.lane_id, event.details.venue_lane_id, event.details.lane_ids]
-    .flatMap((value) => Array.isArray(value) ? value : value ? [value] : [])
-    .filter((value): value is string => typeof value === 'string')
-  const position = Number(event.details.position_ratio)
   const vehicleCount = Number(event.details.vehicle_count)
   return [
-    ['事件类型', detailTitle(detail)],
     ['运行状态', disturbanceRuntimeStateLabel(event.state)],
-    ['路口', event.intersectionId],
+    ['路口', formatIntersectionLabel(event.intersectionId)],
     ['起止时间', `${event.startSeconds}s - ${event.endSeconds}s`],
-    ['影响车道', lanes.join('、') || '--'],
-    ...(event.eventType === 'accident' && Number.isFinite(position)
-      ? [['事故位置', `车道全长的 ${Math.round(position * 100)}%`] as [string, string]]
-      : []),
     ...(event.eventType.startsWith('major_event_') && Number.isFinite(vehicleCount)
       ? [['活动车辆', `${Math.round(vehicleCount)} 辆`] as [string, string]]
       : []),

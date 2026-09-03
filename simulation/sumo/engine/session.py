@@ -9,6 +9,7 @@ import re
 import threading
 import time
 import xml.etree.ElementTree as ET
+from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -265,6 +266,7 @@ class SimulationSnapshot:
     intersections: Mapping[str, IntersectionRuntimeSnapshot] = field(default_factory=dict)
     vehicles: tuple[VehicleRuntimeSnapshot, ...] = ()
     events: tuple[EventSnapshot, ...] = ()
+    v2x_events: tuple[Mapping[str, object], ...] = ()
     metrics: SessionMetrics = field(default_factory=SessionMetrics)
     error: str | None = None
     ai_takeover: AIControlStatus = field(default_factory=AIControlStatus)
@@ -290,6 +292,9 @@ class _SessionRecord:
     paused: bool = False
     playback_speed: float | None = None
     ai_status: AIControlStatus = field(default_factory=AIControlStatus)
+    v2x_events: deque[dict[str, object]] = field(
+        default_factory=lambda: deque(maxlen=500)
+    )
 
 
 class SnapshotSubscription:
@@ -1103,6 +1108,9 @@ class SimulationManager:
                         completed_step = pending_decision_step
                         submitted_elapsed = pending_decision_elapsed
                         decision, decision_duration_ms = pending_decision.result()
+                        record.v2x_events.extend(
+                            dict(event) for event in decision.v2x_events
+                        )
                         pending_decision = None
                         pending_decision_step = None
                         pending_decision_elapsed = None
@@ -1172,6 +1180,9 @@ class SimulationManager:
                             vehicle_observations=vehicle_observations,
                         )
                         decision = client.decide(observation)
+                        record.v2x_events.extend(
+                            dict(event) for event in decision.v2x_events
+                        )
                         signal_actions = _validate_actions(
                             decision.signal_actions, controllers
                         )
@@ -1920,6 +1931,7 @@ def _capture_snapshot(
         intersections=intersections,
         vehicles=tuple(vehicle_values),
         events=scheduler.snapshots(),
+        v2x_events=tuple(record.v2x_events),
         metrics=SessionMetrics(
             active_vehicles=len(vehicle_values),
             departed_vehicles=total_departed,

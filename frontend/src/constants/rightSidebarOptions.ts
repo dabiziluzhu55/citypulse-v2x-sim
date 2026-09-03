@@ -1,15 +1,26 @@
 import type { CollaborationLogEntry } from '../types/collaboration'
 
-export type CommunicationFlow = 'vehicle_cloud' | 'road_cloud' | 'cloud_road' | 'cloud_vehicle'
+export type CommunicationFlow =
+  | 'vehicle_cloud'
+  | 'road_cloud'
+  | 'cloud_road'
+  | 'cloud_vehicle'
+  | 'road_vehicle'
+  | 'vehicle_road'
 
 export const COMMUNICATION_FLOW_PARTS: Record<CommunicationFlow, [string, string]> = {
   vehicle_cloud: ['车', '云'],
   road_cloud: ['路', '云'],
   cloud_road: ['云', '路'],
   cloud_vehicle: ['云', '车'],
+  road_vehicle: ['路', '车'],
+  vehicle_road: ['车', '路'],
 }
 
 export function resolveCommunicationFlow(entry: CollaborationLogEntry): CommunicationFlow {
+  if (entry.sourceRole && entry.destinationRole) {
+    return `${entry.sourceRole}_${entry.destinationRole}` as CommunicationFlow
+  }
   const source = entry.source.toLowerCase()
   const message = entry.message
 

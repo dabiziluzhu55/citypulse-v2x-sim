@@ -5,8 +5,10 @@ import { useDashboardOverlay } from '../../../composables/useDashboardOverlay'
 const {
   aiControlPanelOpen,
   communicationPanelOpen,
+  roadsideDevicePanelOpen,
   toggleAiControlPanel,
   toggleCommunicationPanel,
+  toggleRoadsideDevicePanel,
 } = useDashboardOverlay()
 </script>
 
@@ -41,6 +43,18 @@ const {
       @click="toggleCommunicationPanel"
     >
       <span class="dashboard-bottom-icons__sr-only">车路云通信记录</span>
+    </button>
+
+    <button
+      type="button"
+      class="dashboard-bottom-icons__hit dashboard-bottom-icons__hit--roadside"
+      :class="{ 'is-active': roadsideDevicePanelOpen }"
+      :aria-pressed="roadsideDevicePanelOpen"
+      aria-label="打开路侧设备面板"
+      title="路侧设备"
+      @click="toggleRoadsideDevicePanel"
+    >
+      <span class="dashboard-bottom-icons__sr-only">路侧设备</span>
     </button>
   </nav>
 </template>
@@ -107,6 +121,13 @@ const {
   top: 0;
   width: 140px;
   height: 123px;
+}
+
+.dashboard-bottom-icons__hit--roadside {
+  left: 357px;
+  bottom: 0;
+  width: 154px;
+  height: 46px;
 }
 
 .dashboard-bottom-icons__sr-only {

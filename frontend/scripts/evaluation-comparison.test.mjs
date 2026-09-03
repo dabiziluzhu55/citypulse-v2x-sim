@@ -37,7 +37,7 @@ const homePageSource = await readFile(new URL('../src/pages/HomePage.vue', impor
 test('uses concrete algorithm names in the evaluation legend', () => {
   assert.deepEqual(
     METRICS_ALGORITHMS.map((item) => item.shortLabel),
-    ['固定配时', 'Max Pressure', 'SOTL', 'IPPO', 'MAPPO'],
+    ['固定配时', 'Max Pressure', 'SOTL', 'IPPO', 'MAPPO', 'CoV2X'],
   )
 })
 

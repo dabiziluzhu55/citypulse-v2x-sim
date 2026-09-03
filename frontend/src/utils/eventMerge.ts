@@ -1,4 +1,5 @@
 import type { EventDetectedWsMessage, TrafficEvent } from '../types/events'
+import { formatIntersectionLabel } from './intersectionLabels'
 
 export function mergeDetectedEvent(
   events: TrafficEvent[],
@@ -11,7 +12,9 @@ export function mergeDetectedEvent(
     type: incoming.type,
     level: incoming.level,
     location: incoming.location,
-    description: incoming.description ?? `${incoming.type} detected at ${incoming.location.intersection_id ?? 'unknown'}`,
+    description: incoming.description ?? `在${formatIntersectionLabel(
+      incoming.location.intersection_id ?? '未知路口',
+    )}识别到${incoming.type}`,
     evidence: incoming.evidence,
     suggestion: incoming.suggestion,
   }

@@ -398,7 +398,7 @@ def _message_content(value: Any) -> str | None:
             elif isinstance(item, str):
                 chunks.append(item)
         return "".join(chunks) or None
-    return str(value)
+    raise LLMProtocolError("大模型返回的 message.content 不是合法文本。")
 
 
 def _temperature(value: Any, *, field_name: str) -> float:

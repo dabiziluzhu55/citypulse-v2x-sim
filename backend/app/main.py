@@ -122,6 +122,8 @@ async def lifespan(app: FastAPI):
             logger.error("%s", redis_error)
 
     map_service = MapService(settings, manager) if manager is not None else None
+    if map_service is not None:
+        map_service.validate_coordinate_projection()
     serializer = (
         SnapshotSerializer(map_service)
         if map_service is not None

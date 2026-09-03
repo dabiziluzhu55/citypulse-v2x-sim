@@ -419,7 +419,10 @@ const showBaiduRoads = import.meta.env.VITE_BAIDU_ROADS !== 'false'
 const roadRendererMode = import.meta.env.VITE_BAIDU_ROAD_RENDERER?.trim() || 'detailed'
 const enableShowcaseLayers = import.meta.env.VITE_ENABLE_SHOWCASE_LAYERS !== 'false'
 const enableJunctionMarkers = import.meta.env.VITE_ENABLE_JUNCTION_MARKERS === 'true'
-const enableRoadsideFacilities = import.meta.env.VITE_ENABLE_ROADSIDE_FACILITIES === 'true'
+// Roadside facilities are part of the product scene. Keep an explicit false
+// escape hatch for constrained machines instead of silently disabling them
+// in production builds that do not load .env.development.local.
+const enableRoadsideFacilities = import.meta.env.VITE_ENABLE_ROADSIDE_FACILITIES !== 'false'
 const enableVegetation = import.meta.env.VITE_ENABLE_VEGETATION === 'true'
 const enableIntersectionTopology = import.meta.env.VITE_ENABLE_INTERSECTION_TOPOLOGY !== 'false'
 
@@ -1870,7 +1873,10 @@ function createBuildingTileset(url: string): mapvthree.Default3DTiles {
     foveatedConeSize: 0.3,
     foveatedMinimumScreenSpaceErrorRelaxation: 8,
     progressiveResolutionHeightFraction: 0.3,
-    cullRequestsWhileMoving: true,
+    // The presentation camera is still moving during initial bootstrap.  Do
+    // not suppress those first building requests; culling is enabled again
+    // after the presentation gate opens.
+    cullRequestsWhileMoving: false,
     cullRequestsWhileMovingMultiplier: 60,
     cacheBytes: stableRenderMode.value ? RECOVERY_BUILDING_CACHE_BYTES : BUILDING_CACHE_BYTES,
   })

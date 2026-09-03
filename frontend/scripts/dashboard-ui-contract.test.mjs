@@ -57,14 +57,16 @@ test('uses four immediate dark hour-minute steppers and one five-mode algorithm 
   assert.doesNotMatch(sidebarSource, /后端暂未提供MAPPO算法|IPPO 仅支持雄安20路口场景/)
 })
 
-test('toggles both side panels without unmounting them and labels the roadside device', () => {
+test('toggles both side panels from the top toolbar and opens the roadside device panel', () => {
   assert.match(overlaySource, /const sidePanelsCollapsed = ref\(false\)/)
   assert.match(overlaySource, /function toggleSidePanels\(\)/)
   assert.match(homeSource, /'is-side-panels-collapsed': sidePanelsCollapsed/)
-  assert.match(bottomIconsSource, /toggleSidePanels/)
-  assert.match(bottomIconsSource, /aria-pressed="sidePanelsCollapsed"/)
-  assert.match(bottomIconsSource, /收起两侧面板/)
-  assert.match(bottomIconsSource, /展开两侧面板/)
+  assert.match(homeSource, /@click="toggleSidePanels"/)
+  assert.match(overlaySource, /const roadsideDevicePanelOpen = ref\(false\)/)
+  assert.match(overlaySource, /function toggleRoadsideDevicePanel\(\)/)
+  assert.match(bottomIconsSource, /toggleRoadsideDevicePanel/)
+  assert.match(bottomIconsSource, /aria-pressed="roadsideDevicePanelOpen"/)
+  assert.match(homeSource, /<RoadsideDevicesPanel/)
   assert.match(bottomIconsSource, />路侧设备</)
 })
 
@@ -77,15 +79,11 @@ test('matches the communication-dialog chrome and removes the English event eyeb
   assert.match(sidebarSource, /background: #092846/)
 })
 
-test('docks every bottom navigation layer on the viewport edge', () => {
-  for (const variable of [
-    '--dashboard-bottom-dock-offset-y',
-    '--dashboard-bottom-center-offset-y',
-    '--dashboard-bottom-icons-offset-y',
-  ]) {
-    assert.match(dashboardCss, new RegExp(`${variable}: 0px`))
-  }
-  assert.match(bottomIconsSource, /bottom: var\(--dashboard-bottom-icons-offset-y, 0px\)/)
+test('keeps every bottom navigation layer aligned with the decorative rails', () => {
+  assert.match(dashboardCss, /--dashboard-bottom-dock-offset-y: 12px/)
+  assert.match(dashboardCss, /--dashboard-bottom-center-offset-y: 12px/)
+  assert.match(dashboardCss, /--dashboard-bottom-icons-offset-y: 20px/)
+  assert.match(bottomIconsSource, /bottom: var\(--dashboard-bottom-icons-offset-y, 20px\)/)
 })
 
 test('keeps the viewing-intersection selector available while a session is active', () => {

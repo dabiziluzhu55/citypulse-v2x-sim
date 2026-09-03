@@ -16,7 +16,10 @@ from backend.app.copilot.rag import (
 from backend.app.copilot.traffic_tools import RoadTopology
 from backend.app.core.exceptions import AppError
 from backend.app.services.history import InMemoryHistoryRepository
-from backend.app.services.takeover_orchestrator import TakeoverOrchestrator
+from backend.app.services.takeover_orchestrator import (
+    TakeoverOrchestrator,
+    _parse_control_plan_content,
+)
 from backend.app.schemas.events import AccidentRequest
 from backend.app.services.simulation_service import SimulationService
 from simulation.sumo.engine.ai_control import (
@@ -46,6 +49,19 @@ def _plan(intersection_id: str = "j1") -> dict:
         "reason": "keep the affected junction safe while reducing queue growth",
         "fallback_to_baseline": False,
     }
+
+
+@pytest.mark.parametrize(
+    "content",
+    (
+        lambda value: f"```json\n{value}\n```",
+        lambda value: f"控制方案如下：\n{value}\n请按安全约束执行。",
+    ),
+)
+def test_parse_control_plan_accepts_model_wrapping(content) -> None:
+    encoded = __import__("json").dumps(_plan(), ensure_ascii=False)
+
+    assert _parse_control_plan_content(content(encoded)) == _plan()
 
 
 def _active_event(event_id: str = "event-1") -> EventSnapshot:
@@ -484,6 +500,7 @@ def test_runtime_ai_event_is_rejected_until_next_session_start(
         start_seconds=10.0,
         end_seconds=30.0,
         lane_id="edge_a_0",
+        position_ratio=0.5,
         ai_control_enabled=True,
     )
 
