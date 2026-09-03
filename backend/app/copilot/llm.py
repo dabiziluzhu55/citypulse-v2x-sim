@@ -213,7 +213,14 @@ class QwenProvider:
     ) -> LLMCompletion:
         if not messages:
             raise LLMInputError("messages must contain at least one message.")
-        normalized_messages = _messages_payload(messages)
+        # Qwen2.5's Transformers chat template expects the arguments inside a
+        # previous assistant tool call to be a JSON object.  The external
+        # OpenAI-compatible response format returns them as a JSON string, so
+        # normalize that one representation at the provider boundary.
+        normalized_messages = _messages_payload(
+            messages,
+            normalize_tool_call_arguments=True,
+        )
         normalized_tools = _tools_payload(tools)
         selected_temperature = (
             self.default_temperature
@@ -364,7 +371,11 @@ def _parse_completion(
     )
 
 
-def _messages_payload(messages: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _messages_payload(
+    messages: Sequence[Mapping[str, Any]],
+    *,
+    normalize_tool_call_arguments: bool = False,
+) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for index, message in enumerate(messages):
         if not isinstance(message, Mapping):
@@ -372,8 +383,40 @@ def _messages_payload(messages: Sequence[Mapping[str, Any]]) -> list[dict[str, A
         role = message.get("role")
         if not isinstance(role, str) or not role.strip():
             raise LLMInputError(f"messages[{index}].role must be a non-empty string.")
-        result.append(dict(message))
+        payload = dict(message)
+        if normalize_tool_call_arguments and role == "assistant":
+            payload["tool_calls"] = _normalize_tool_calls_for_qwen(
+                payload.get("tool_calls")
+            )
+        result.append(payload)
     return result
+
+
+def _normalize_tool_calls_for_qwen(value: Any) -> Any:
+    """Use object arguments for Qwen's native Transformers chat template."""
+
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return value
+    normalized: list[Any] = []
+    for raw_call in value:
+        if not isinstance(raw_call, Mapping):
+            normalized.append(raw_call)
+            continue
+        call = dict(raw_call)
+        function = call.get("function")
+        if isinstance(function, Mapping):
+            normalized_function = dict(function)
+            arguments = normalized_function.get("arguments")
+            if isinstance(arguments, str):
+                try:
+                    decoded = json.loads(arguments)
+                except json.JSONDecodeError:
+                    decoded = None
+                if isinstance(decoded, Mapping):
+                    normalized_function["arguments"] = dict(decoded)
+            call["function"] = normalized_function
+        normalized.append(call)
+    return normalized
 
 
 def _tools_payload(tools: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:

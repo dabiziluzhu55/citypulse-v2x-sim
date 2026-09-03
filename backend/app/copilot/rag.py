@@ -37,6 +37,16 @@ DEFAULT_BATCH_SIZE = 16
 CONTROL_PROFILE = "control"
 GENERAL_PROFILE = "general"
 SUPPORTED_PROFILES = frozenset({CONTROL_PROFILE, GENERAL_PROFILE})
+TRAFFIC_KNOWLEDGE_SOURCE = "traffic"
+STANDARDS_KNOWLEDGE_SOURCE = "standards"
+POLICY_KNOWLEDGE_SOURCE = "policy"
+SUPPORTED_KNOWLEDGE_SOURCES = frozenset(
+    {
+        TRAFFIC_KNOWLEDGE_SOURCE,
+        STANDARDS_KNOWLEDGE_SOURCE,
+        POLICY_KNOWLEDGE_SOURCE,
+    }
+)
 
 _LABEL_TO_INFORMATION_TYPE = {
     "项目事实": "project_fact",
@@ -84,6 +94,7 @@ class KnowledgeQuery:
     event_type: str | None = None
     preset_id: str | None = None
     information_types: tuple[str, ...] = ()
+    knowledge_sources: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         normalized_query = str(self.query).strip()
@@ -113,12 +124,36 @@ class KnowledgeQuery:
         if len(normalized_types) > 4:
             raise ValueError("information_types must contain at most 4 items")
 
+        raw_sources = self.knowledge_sources
+        if isinstance(raw_sources, str):
+            raw_sources = (raw_sources,)
+        normalized_sources = tuple(
+            dict.fromkeys(
+                str(item).strip().lower()
+                for item in (raw_sources or ())
+                if str(item).strip()
+            )
+        )
+        unknown_sources = sorted(
+            set(normalized_sources) - SUPPORTED_KNOWLEDGE_SOURCES
+        )
+        if unknown_sources:
+            raise ValueError(
+                "knowledge_sources must be drawn from "
+                f"{sorted(SUPPORTED_KNOWLEDGE_SOURCES)}; got {unknown_sources}"
+            )
+        if len(normalized_sources) > len(SUPPORTED_KNOWLEDGE_SOURCES):
+            raise ValueError("knowledge_sources must contain at most 3 items")
+        if normalized_profile == CONTROL_PROFILE and POLICY_KNOWLEDGE_SOURCE in normalized_sources:
+            raise ValueError("policy knowledge source requires profile='general'")
+
         object.__setattr__(self, "query", normalized_query)
         object.__setattr__(self, "limit", normalized_limit)
         object.__setattr__(self, "profile", normalized_profile)
         object.__setattr__(self, "event_type", _optional_text(self.event_type))
         object.__setattr__(self, "preset_id", _optional_text(self.preset_id))
         object.__setattr__(self, "information_types", normalized_types)
+        object.__setattr__(self, "knowledge_sources", normalized_sources)
 
 
 @dataclass(frozen=True)
@@ -142,6 +177,7 @@ class KnowledgeResult:
             "source_path",
             "title",
             "section",
+            "knowledge_source",
             "information_type",
             "document_information_type",
             "status",
@@ -152,6 +188,24 @@ class KnowledgeResult:
             "code_revision",
             "knowledge_version",
             "retrieval_profiles",
+            "profile",
+            "standard_number",
+            "document_number",
+            "authority",
+            "chapter",
+            "clause",
+            "section_path",
+            "document_status",
+            "chunk_type",
+            "source_pdf",
+            "source_json",
+            "source_page",
+            "source_pages",
+            "printed_page",
+            "printed_pages",
+            "page_mapping_status",
+            "page_mapping_method",
+            "page_mapping_confidence",
         ):
             if key in self.metadata:
                 payload[key] = self.metadata[key]
@@ -434,6 +488,7 @@ class ChromaKnowledgeRetriever:
         collection_name: str = DEFAULT_COLLECTION_NAME,
         query_instruction: str = DEFAULT_QUERY_INSTRUCTION,
         query_timeout_seconds: float = 30.0,
+        index_kind: str = TRAFFIC_KNOWLEDGE_SOURCE,
     ) -> None:
         self.index_dir = Path(index_dir).expanduser().resolve()
         self.knowledge_manifest_path = Path(knowledge_manifest_path).expanduser().resolve()
@@ -449,6 +504,11 @@ class ChromaKnowledgeRetriever:
         self.query_timeout_seconds = float(query_timeout_seconds)
         if self.query_timeout_seconds <= 0:
             raise ValueError("query_timeout_seconds must be positive")
+        self.index_kind = str(index_kind).strip().lower() or TRAFFIC_KNOWLEDGE_SOURCE
+        if self.index_kind not in {TRAFFIC_KNOWLEDGE_SOURCE, STANDARDS_KNOWLEDGE_SOURCE}:
+            raise ValueError(
+                "index_kind must be 'traffic' or 'standards'"
+            )
         self._collection: Any = None
         self._model: Any = None
         self._index_metadata: dict[str, Any] | None = None
@@ -457,6 +517,20 @@ class ChromaKnowledgeRetriever:
     def search(self, request: KnowledgeQuery) -> KnowledgeSearchResponse:
         if not isinstance(request, KnowledgeQuery):
             raise KnowledgeUnavailableError("Knowledge query must be a KnowledgeQuery")
+        requested_sources = set(request.knowledge_sources)
+        if self.index_kind == TRAFFIC_KNOWLEDGE_SOURCE and requested_sources - {
+            TRAFFIC_KNOWLEDGE_SOURCE
+        }:
+            raise KnowledgeUnavailableError(
+                "Standards/policy knowledge index is not configured for this retriever."
+            )
+        if self.index_kind == STANDARDS_KNOWLEDGE_SOURCE and requested_sources - {
+            STANDARDS_KNOWLEDGE_SOURCE,
+            POLICY_KNOWLEDGE_SOURCE,
+        }:
+            raise KnowledgeUnavailableError(
+                "Traffic knowledge index is not configured for this retriever."
+            )
         collection, model, index_metadata = self._ensure_ready()
         started_at = time.monotonic()
         query_text = f"Instruct: {self.query_instruction}\nQuery: {request.query}"
@@ -468,18 +542,16 @@ class ChromaKnowledgeRetriever:
             raise KnowledgeUnavailableError("Embedding model failed to encode the query") from exc
         _check_query_timeout(started_at, self.query_timeout_seconds)
         candidate_count = min(max(request.limit * 2, request.limit), 50)
-        where = _profile_where(request)
-        if request.information_types:
-            where = _add_where_contains(where, "information_type", request.information_types)
-        filtered_where = where
-        if request.event_type:
-            filtered_where = _add_where_contains(
-                filtered_where, "applicable_events", (request.event_type,)
-            )
-        if request.preset_id:
-            filtered_where = _add_where_contains(
-                filtered_where, "applicable_presets", (request.preset_id,)
-            )
+        filtered_where = self._where_for_request(request)
+        if self.index_kind == TRAFFIC_KNOWLEDGE_SOURCE:
+            if request.event_type:
+                filtered_where = _add_where_contains(
+                    filtered_where, "applicable_events", (request.event_type,)
+                )
+            if request.preset_id:
+                filtered_where = _add_where_contains(
+                    filtered_where, "applicable_presets", (request.preset_id,)
+                )
 
         raw = _query_collection(
             collection,
@@ -494,6 +566,16 @@ class ChromaKnowledgeRetriever:
             search_mode="vector",
             index_metadata=dict(index_metadata),
         )
+
+    def _where_for_request(self, request: KnowledgeQuery) -> Mapping[str, Any]:
+        if self.index_kind == STANDARDS_KNOWLEDGE_SOURCE:
+            return _standards_where(request)
+        where = _profile_where(request)
+        if request.information_types:
+            return _add_where_contains(
+                where, "information_type", request.information_types
+            )
+        return where
 
     def _ensure_ready(self) -> tuple[Any, Any, Mapping[str, Any]]:
         if self._collection is not None and self._model is not None and self._index_metadata is not None:
@@ -516,13 +598,12 @@ class ChromaKnowledgeRetriever:
                 raise KnowledgeUnavailableError("RAG index manifest must be an object")
 
             source_manifest = load_knowledge_manifest(self.knowledge_manifest_path)
+            source_revision = _manifest_revision(source_manifest)
             if str(index_metadata.get("knowledge_version", "")) != str(
                 source_manifest.get("version", "")
-            ) or str(index_metadata.get("code_revision", "")) != str(
-                source_manifest.get("project_revision", "")
-            ):
+            ) or str(index_metadata.get("code_revision", "")) != source_revision:
                 raise KnowledgeUnavailableError(
-                    "RAG index is stale; rebuild it from the current traffic_knowledge manifest."
+                    "RAG index is stale; rebuild it from the current knowledge manifest."
                 )
             if str(index_metadata.get("embedding_model", "")) != self.embedding_model:
                 raise KnowledgeUnavailableError(
@@ -572,6 +653,95 @@ class ChromaKnowledgeRetriever:
             self._model = model
             self._index_metadata = dict(index_metadata)
             return collection, model, self._index_metadata
+
+
+class CompositeKnowledgeRetriever:
+    """Merge the project traffic index with the optional standards index.
+
+    The two indexes intentionally keep separate source contracts.  The
+    project index uses ``control``/``general`` eligibility flags, while the
+    standards index uses ``standards``/``policy`` profiles and published
+    status values.  This adapter gives Copilot one retriever without mixing
+    those metadata rules or silently falling back when an explicitly
+    requested source is unavailable.
+    """
+
+    def __init__(
+        self,
+        traffic_retriever: KnowledgeRetriever,
+        standards_retriever: KnowledgeRetriever | None = None,
+    ) -> None:
+        self.traffic_retriever = traffic_retriever
+        self.standards_retriever = standards_retriever
+
+    def search(self, request: KnowledgeQuery) -> KnowledgeSearchResponse:
+        if not isinstance(request, KnowledgeQuery):
+            raise KnowledgeUnavailableError("Knowledge query must be a KnowledgeQuery")
+
+        requested_sources = set(request.knowledge_sources)
+        if requested_sources:
+            use_traffic = TRAFFIC_KNOWLEDGE_SOURCE in requested_sources
+            use_standards = bool(
+                requested_sources
+                & {STANDARDS_KNOWLEDGE_SOURCE, POLICY_KNOWLEDGE_SOURCE}
+            )
+        else:
+            use_traffic = True
+            use_standards = self.standards_retriever is not None
+
+        responses: list[tuple[str, KnowledgeSearchResponse]] = []
+        if use_traffic:
+            response = self.traffic_retriever.search(request)
+            responses.append(
+                (TRAFFIC_KNOWLEDGE_SOURCE, _mark_knowledge_source(response, TRAFFIC_KNOWLEDGE_SOURCE))
+            )
+
+        if use_standards:
+            if self.standards_retriever is None:
+                raise KnowledgeUnavailableError(
+                    "Standards/policy knowledge index is not configured."
+                )
+            response = self.standards_retriever.search(request)
+            responses.append(
+                (
+                    STANDARDS_KNOWLEDGE_SOURCE,
+                    _mark_knowledge_source(response, STANDARDS_KNOWLEDGE_SOURCE),
+                )
+            )
+
+        if not responses:
+            raise KnowledgeUnavailableError(
+                "No configured knowledge source matches the request."
+            )
+
+        merged: list[KnowledgeResult] = []
+        seen_ids: set[str] = set()
+        for _, response in responses:
+            for result in response.results:
+                if result.chunk_id in seen_ids:
+                    continue
+                seen_ids.add(result.chunk_id)
+                merged.append(result)
+        merged.sort(
+            key=lambda item: (
+                item.distance is None,
+                float(item.distance) if item.distance is not None else float("inf"),
+                item.chunk_id,
+            )
+        )
+
+        index_metadata = {
+            "knowledge_sources": [source for source, _ in responses],
+            "indexes": {
+                source: dict(response.index_metadata)
+                for source, response in responses
+            },
+        }
+        return KnowledgeSearchResponse(
+            results=tuple(merged[: request.limit]),
+            search_mode=("vector_multi" if len(responses) > 1 else responses[0][1].search_mode),
+            index_metadata=index_metadata,
+        )
 
 
 def resolve_embedding_device(device: str) -> str:
@@ -672,6 +842,78 @@ def _profile_where(request: KnowledgeQuery) -> dict[str, Any]:
         {"profile_general" if request.profile == GENERAL_PROFILE else "profile_control": True},
     ]
     return conditions[0] if len(conditions) == 1 else {"$and": conditions}
+
+
+def _manifest_revision(manifest: Mapping[str, Any]) -> str:
+    """Return the revision field used by either supported manifest format."""
+
+    return str(
+        manifest.get("project_revision")
+        or manifest.get("code_revision")
+        or ""
+    )
+
+
+def _standards_where(request: KnowledgeQuery) -> dict[str, Any]:
+    requested = set(request.knowledge_sources) & {
+        STANDARDS_KNOWLEDGE_SOURCE,
+        POLICY_KNOWLEDGE_SOURCE,
+    }
+    if not requested:
+        requested = {STANDARDS_KNOWLEDGE_SOURCE, POLICY_KNOWLEDGE_SOURCE}
+    if request.profile == CONTROL_PROFILE:
+        requested.discard(POLICY_KNOWLEDGE_SOURCE)
+    if not requested:
+        return {"profile": "__no_matching_knowledge_source__"}
+
+    conditions: list[dict[str, Any]] = [
+        _where_any("profile", sorted(requested)),
+        _where_any(
+            "status",
+            ["published", "draft_for_approval", "planning_reference"],
+        ),
+    ]
+    if request.information_types:
+        conditions.append(_where_any("information_type", request.information_types))
+    return conditions[0] if len(conditions) == 1 else {"$and": conditions}
+
+
+def _where_any(field: str, values: Sequence[str]) -> dict[str, Any]:
+    normalized = [str(value) for value in values if str(value)]
+    if len(normalized) == 1:
+        return {field: normalized[0]}
+    return {"$or": [{field: value} for value in normalized]}
+
+
+def _mark_knowledge_source(
+    response: KnowledgeSearchResponse,
+    source: str,
+) -> KnowledgeSearchResponse:
+    results: list[KnowledgeResult] = []
+    for result in response.results:
+        metadata = dict(result.metadata)
+        if source == STANDARDS_KNOWLEDGE_SOURCE:
+            profile = str(metadata.get("profile", "")).strip().lower()
+            metadata["knowledge_source"] = (
+                profile
+                if profile in {STANDARDS_KNOWLEDGE_SOURCE, POLICY_KNOWLEDGE_SOURCE}
+                else source
+            )
+        else:
+            metadata["knowledge_source"] = source
+        results.append(
+            KnowledgeResult(
+                chunk_id=result.chunk_id,
+                text=result.text,
+                metadata=metadata,
+                distance=result.distance,
+            )
+        )
+    return KnowledgeSearchResponse(
+        results=tuple(results),
+        search_mode=response.search_mode,
+        index_metadata=response.index_metadata,
+    )
 
 
 def _add_where_contains(
@@ -881,7 +1123,10 @@ def _chunk_metadata(
         "applicable_events": _string_values(document.get("applicable_events", ())),
         "applicable_presets": _string_values(document.get("applicable_presets", ())),
         "sources": _string_values(document.get("sources", ())),
-        "code_revision": str(document.get("code_revision", manifest_revision)),
+        # The top-level manifest revision is the source snapshot used for the
+        # index.  Per-document revisions can lag behind after a knowledge
+        # update and must not make a freshly rebuilt index look stale.
+        "code_revision": manifest_revision,
         "knowledge_version": manifest_version,
         "retrieval_profiles": list(profiles),
         "profile_control": CONTROL_PROFILE in profiles,
@@ -1174,12 +1419,17 @@ def _optional_text(value: Any) -> str | None:
 
 __all__ = [
     "ChromaKnowledgeRetriever",
+    "CompositeKnowledgeRetriever",
     "CONTROL_PROFILE",
     "DEFAULT_COLLECTION_NAME",
     "DEFAULT_EMBEDDING_DIMENSION",
     "DEFAULT_EMBEDDING_MODEL",
     "DEFAULT_QUERY_INSTRUCTION",
     "GENERAL_PROFILE",
+    "POLICY_KNOWLEDGE_SOURCE",
+    "STANDARDS_KNOWLEDGE_SOURCE",
+    "SUPPORTED_KNOWLEDGE_SOURCES",
+    "TRAFFIC_KNOWLEDGE_SOURCE",
     "KnowledgeBuildError",
     "KnowledgeError",
     "KnowledgeQuery",

@@ -96,6 +96,36 @@ def test_qwen_provider_normalizes_openai_tool_call_and_request() -> None:
     assert completion.message.tool_calls[0].arguments == '{"intersection_id":"demo_1"}'
     assert completion.latency_ms == 12.5
 
+    provider.complete(
+        [
+            {"role": "user", "content": "现在交通怎么样？"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "get_current_traffic",
+                            "arguments": '{"intersection_id":"demo_1"}',
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "name": "get_current_traffic",
+                "content": '{"ok":true}',
+            },
+        ],
+        tools=TOOL_DEFINITIONS,
+    )
+    assert captured["payload"]["messages"][1]["tool_calls"][0]["function"][
+        "arguments"
+    ] == {"intersection_id": "demo_1"}
+
 
 def test_qwen_provider_reports_transport_and_protocol_errors() -> None:
     def unavailable(

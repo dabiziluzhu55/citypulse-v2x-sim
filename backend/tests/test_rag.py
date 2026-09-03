@@ -10,10 +10,13 @@ import pytest
 
 from backend.app.copilot.rag import (
     ChromaKnowledgeRetriever,
+    CompositeKnowledgeRetriever,
     CONTROL_PROFILE,
+    POLICY_KNOWLEDGE_SOURCE,
     KnowledgeQuery,
     KnowledgeResult,
     KnowledgeSearchResponse,
+    STANDARDS_KNOWLEDGE_SOURCE,
     KnowledgeUnavailableError,
     build_knowledge_chunks,
 )
@@ -257,6 +260,16 @@ class _Retriever:
         )
 
 
+class _StaticRetriever:
+    def __init__(self, response: KnowledgeSearchResponse) -> None:
+        self.response = response
+        self.requests: list[KnowledgeQuery] = []
+
+    def search(self, request: KnowledgeQuery) -> KnowledgeSearchResponse:
+        self.requests.append(request)
+        return self.response
+
+
 class _FakeEmbeddingModel:
     def encode(self, values: list[str], **_: Any) -> list[list[float]]:
         return [[0.0] * 1024 for _ in values]
@@ -284,6 +297,41 @@ class _FakeCollection:
                 ]
             ],
             "distances": [[0.12]],
+        }
+
+
+class _FakeStandardsCollection:
+    def __init__(self) -> None:
+        self.queries: list[dict[str, Any]] = []
+
+    def query(self, **kwargs: Any) -> dict[str, Any]:
+        self.queries.append(kwargs)
+        return {
+            "ids": [["standard-metric-1"]],
+            "documents": [["交通运行评价指标定义与计算方法"]],
+            "metadatas": [
+                [
+                    {
+                        "document_id": "gb-t-33171-2016",
+                        "source_path": "standards/gb_t_33171_2016.md",
+                        "source_pdf": "standards/gb_t_33171_2016.pdf",
+                        "title": "城市交通运行状况评价规范",
+                        "profile": "standards",
+                        "standard_number": "GB/T 33171-2016",
+                        "authority": "国家标准",
+                        "status": "published",
+                        "document_status": "现行",
+                        "information_type": "evaluation_metric",
+                        "chapter": "第5章 评价指标",
+                        "clause": "5.2",
+                        "source_page": 18,
+                        "printed_page": 16,
+                        "page_mapping_status": "verified",
+                        "knowledge_version": "standards-v1",
+                    }
+                ]
+            ],
+            "distances": [[0.08]],
         }
 
 
@@ -402,6 +450,136 @@ def test_chroma_retriever_applies_all_metadata_filters_and_returns_version() -> 
     assert result["similarity"] == 0.88
 
 
+def test_knowledge_query_validates_and_normalizes_knowledge_sources() -> None:
+    request = KnowledgeQuery(
+        "正式评价指标",
+        knowledge_sources=("STANDARDS", "standards", ""),
+    )
+    assert request.knowledge_sources == ("standards",)
+
+    with pytest.raises(ValueError, match="profile='general'"):
+        KnowledgeQuery(
+            "雄安规划",
+            profile=CONTROL_PROFILE,
+            knowledge_sources=(POLICY_KNOWLEDGE_SOURCE,),
+        )
+
+
+def test_standards_retriever_applies_filters_and_returns_provenance() -> None:
+    collection = _FakeStandardsCollection()
+    retriever = ChromaKnowledgeRetriever(
+        index_dir="outputs/rag/standards_policy_chroma",
+        knowledge_manifest_path="outputs/rag/standards/rag_manifest.json",
+        collection_name="citypulse_standards_policy",
+        index_kind=STANDARDS_KNOWLEDGE_SOURCE,
+    )
+    retriever._collection = collection
+    retriever._model = _FakeEmbeddingModel()
+    retriever._index_metadata = {
+        "knowledge_version": "standards-v1",
+        "code_revision": "rev-standards",
+        "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
+        "embedding_dimension": 1024,
+        "collection_name": "citypulse_standards_policy",
+    }
+
+    response = retriever.search(
+        KnowledgeQuery(
+            "正式评价指标的定义",
+            limit=2,
+            profile="general",
+            information_types=("evaluation_metric",),
+            knowledge_sources=(STANDARDS_KNOWLEDGE_SOURCE,),
+        )
+    )
+
+    assert collection.queries[0]["where"] == {
+        "$and": [
+            {"profile": "standards"},
+            {
+                "$or": [
+                    {"status": "published"},
+                    {"status": "draft_for_approval"},
+                    {"status": "planning_reference"},
+                ]
+            },
+            {"information_type": "evaluation_metric"},
+        ]
+    }
+    result = response.results[0].as_dict()
+    assert result["standard_number"] == "GB/T 33171-2016"
+    assert result["source_page"] == 18
+    assert result["printed_page"] == 16
+    assert result["profile"] == "standards"
+
+
+def test_standalone_retriever_rejects_an_unconfigured_knowledge_source() -> None:
+    retriever = ChromaKnowledgeRetriever(
+        index_dir="outputs/rag/traffic_knowledge_chroma",
+        knowledge_manifest_path="traffic_knowledge/manifest.json",
+    )
+
+    with pytest.raises(KnowledgeUnavailableError, match="Standards/policy"):
+        retriever.search(
+            KnowledgeQuery(
+                "正式评价指标",
+                knowledge_sources=(STANDARDS_KNOWLEDGE_SOURCE,),
+            )
+        )
+
+
+def test_composite_retriever_merges_sources_and_preserves_index_metadata() -> None:
+    traffic = _StaticRetriever(
+        KnowledgeSearchResponse(
+            results=(
+                KnowledgeResult(
+                    chunk_id="traffic-1",
+                    text="交通知识",
+                    metadata={"source_path": "traffic/event.md"},
+                    distance=0.30,
+                ),
+            ),
+            index_metadata={"knowledge_version": "traffic-v1"},
+        )
+    )
+    standards = _StaticRetriever(
+        KnowledgeSearchResponse(
+            results=(
+                KnowledgeResult(
+                    chunk_id="standard-1",
+                    text="国家标准",
+                    metadata={
+                        "profile": "standards",
+                        "standard_number": "GB/T 33171-2016",
+                    },
+                    distance=0.10,
+                ),
+            ),
+            index_metadata={"knowledge_version": "standards-v1"},
+        )
+    )
+    retriever = CompositeKnowledgeRetriever(traffic, standards)
+
+    response = retriever.search(KnowledgeQuery("交通评价指标", limit=2))
+
+    assert [item.chunk_id for item in response.results] == [
+        "standard-1",
+        "traffic-1",
+    ]
+    assert response.results[0].metadata["knowledge_source"] == "standards"
+    assert response.results[1].metadata["knowledge_source"] == "traffic"
+    assert response.search_mode == "vector_multi"
+    assert response.index_metadata["knowledge_sources"] == ["traffic", "standards"]
+    assert set(response.index_metadata["indexes"]) == {"traffic", "standards"}
+
+    traffic_only = retriever.search(
+        KnowledgeQuery("交通处置", knowledge_sources=("traffic",))
+    )
+    assert [item.chunk_id for item in traffic_only.results] == ["traffic-1"]
+    assert len(traffic.requests) == 2
+    assert len(standards.requests) == 1
+
+
 def test_missing_vector_index_is_explicitly_unavailable(tmp_path: Path) -> None:
     retriever = ChromaKnowledgeRetriever(
         index_dir=tmp_path / "missing-index",
@@ -446,4 +624,5 @@ def test_knowledge_tool_definition_exposes_metadata_filters() -> None:
         "event_type",
         "preset_id",
         "information_types",
+        "knowledge_sources",
     } <= set(definition["parameters"]["properties"])

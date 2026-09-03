@@ -80,7 +80,9 @@ class Settings(BaseSettings):
     citypulse_qwen_max_tokens: int = 512
     copilot_max_rounds: int = 4
     copilot_max_tool_calls: int = 8
-    copilot_max_tool_result_chars: int = 20_000
+    # The bundled school-server Qwen Transformers service accepts 4096 input
+    # tokens; keep enough room for the system prompt and tool definitions.
+    copilot_max_tool_result_chars: int = 4_000
 
     # Copilot 历史查询边界；历史采样复用 intelligence_sample_seconds
     history_default_lookback_seconds: float = 300.0
@@ -88,7 +90,7 @@ class Settings(BaseSettings):
     history_max_points: int = 120
 
     # Traffic knowledge RAG；索引由 scripts/rag/build_knowledge_index.py 离线构建
-    rag_index_dir: str = "outputs/rag/chroma"
+    rag_index_dir: str = "outputs/rag/traffic_knowledge_chroma"
     rag_knowledge_manifest: str = "traffic_knowledge/manifest.json"
     rag_embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
     rag_embedding_model_path: str = ""
@@ -100,6 +102,12 @@ class Settings(BaseSettings):
     )
     rag_top_k: int = 5
     rag_query_timeout_seconds: float = 30.0
+    # Optional second index for the normalized national/industry standards
+    # and Xiongan planning documents.  Empty values keep the original
+    # project-only RAG behavior for local development.
+    rag_standards_index_dir: str = ""
+    rag_standards_manifest: str = ""
+    rag_standards_collection_name: str = "citypulse_standards_policy"
 
     # Event-scoped Qwen signal control.  These values are serialized into the
     # SUMO session policy; the feature remains opt-in per disturbance event.
@@ -143,6 +151,22 @@ class Settings(BaseSettings):
     @property
     def rag_embedding_model_resolved_path(self) -> Path | None:
         raw = self.rag_embedding_model_path.strip()
+        if not raw:
+            return None
+        path = Path(raw).expanduser()
+        return path if path.is_absolute() else self.project_root / path
+
+    @property
+    def rag_standards_index_path(self) -> Path | None:
+        raw = self.rag_standards_index_dir.strip()
+        if not raw:
+            return None
+        path = Path(raw).expanduser()
+        return path if path.is_absolute() else self.project_root / path
+
+    @property
+    def rag_standards_manifest_path(self) -> Path | None:
+        raw = self.rag_standards_manifest.strip()
         if not raw:
             return None
         path = Path(raw).expanduser()

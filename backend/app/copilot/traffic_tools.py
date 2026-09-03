@@ -1222,6 +1222,7 @@ class TrafficToolService:
                 "event_type",
                 "preset_id",
                 "information_types",
+                "knowledge_sources",
             },
         )
         query = str(args.get("query", "")).strip()
@@ -1247,6 +1248,11 @@ class TrafficToolService:
                 "information_types",
                 max_items=4,
             )
+            knowledge_sources = _string_list(
+                args.get("knowledge_sources"),
+                "knowledge_sources",
+                max_items=3,
+            )
             try:
                 request = KnowledgeQuery(
                     query=query,
@@ -1255,6 +1261,7 @@ class TrafficToolService:
                     event_type=event_type,
                     preset_id=preset_id,
                     information_types=tuple(information_types),
+                    knowledge_sources=tuple(knowledge_sources),
                 )
                 response = self._knowledge_retriever.search(request)
             except ValueError as exc:
@@ -1268,6 +1275,7 @@ class TrafficToolService:
                 {
                     "query": query,
                     "profile": request.profile,
+                    "knowledge_sources": list(request.knowledge_sources),
                     "results": [item.as_dict() for item in response.results],
                     "matched_count": len(response.results),
                     "search_mode": response.search_mode,
@@ -1663,7 +1671,7 @@ TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "type": "function",
         "function": {
             "name": "search_knowledge",
-            "description": "使用交通知识库查询处置原则、项目规则或一般交通知识；不用于实时交通事实。可按 AI 管控或普通问答 profile、事件和场景过滤。",
+            "description": "使用交通知识库查询处置原则、项目规则、国家/行业标准或一般交通知识；不用于实时交通事实。可按 profile、事件、场景、信息类型和知识来源过滤。一般查询不要填写 information_types；如需筛选，只使用索引已有类别。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1681,6 +1689,16 @@ TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
                         "items": {"type": "string"},
                         "maxItems": 4,
                         "uniqueItems": True,
+                    },
+                    "knowledge_sources": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["traffic", "standards", "policy"],
+                        },
+                        "maxItems": 3,
+                        "uniqueItems": True,
+                        "description": "可选知识来源；默认使用已配置的交通索引，标准和政策索引按 profile 合并。",
                     },
                 },
                 "required": ["query"],

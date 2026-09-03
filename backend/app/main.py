@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from simulation.sumo.engine.distributed import RedisUnavailableError
 
 from .copilot.llm import LLMError, QwenProvider
-from .copilot.rag import ChromaKnowledgeRetriever
+from .copilot.rag import ChromaKnowledgeRetriever, CompositeKnowledgeRetriever
 from .copilot.traffic_tools import RoadTopology, ToolDataUnavailableError
 from .api.router import api_router
 from .controllers.runtime import AlgorithmRuntimeStore
@@ -166,7 +166,7 @@ async def lifespan(app: FastAPI):
         except ToolDataUnavailableError as exc:
             logger.warning("Copilot topology is unavailable: %s", exc)
 
-    knowledge_retriever = ChromaKnowledgeRetriever(
+    traffic_knowledge_retriever = ChromaKnowledgeRetriever(
         index_dir=settings.rag_index_path,
         knowledge_manifest_path=settings.rag_knowledge_manifest_path,
         embedding_model=settings.rag_embedding_model,
@@ -176,6 +176,37 @@ async def lifespan(app: FastAPI):
         query_instruction=settings.rag_query_instruction,
         query_timeout_seconds=settings.rag_query_timeout_seconds,
     )
+    standards_knowledge_retriever = None
+    standards_index_path = settings.rag_standards_index_path
+    standards_manifest_path = settings.rag_standards_manifest_path
+    if standards_index_path is not None and standards_manifest_path is not None:
+        standards_knowledge_retriever = ChromaKnowledgeRetriever(
+            index_dir=standards_index_path,
+            knowledge_manifest_path=standards_manifest_path,
+            embedding_model=settings.rag_embedding_model,
+            embedding_model_path=settings.rag_embedding_model_resolved_path,
+            device=settings.rag_embedding_device,
+            collection_name=settings.rag_standards_collection_name,
+            query_instruction=settings.rag_query_instruction,
+            query_timeout_seconds=settings.rag_query_timeout_seconds,
+            index_kind="standards",
+        )
+        knowledge_retriever = CompositeKnowledgeRetriever(
+            traffic_knowledge_retriever,
+            standards_knowledge_retriever,
+        )
+        logger.info(
+            "Standards/policy RAG configured: index=%s manifest=%s collection=%s",
+            standards_index_path,
+            standards_manifest_path,
+            settings.rag_standards_collection_name,
+        )
+    else:
+        knowledge_retriever = traffic_knowledge_retriever
+        if standards_index_path is not None or standards_manifest_path is not None:
+            logger.warning(
+                "Standards/policy RAG is partially configured; both index and manifest are required."
+            )
     logger.info(
         "Traffic knowledge RAG configured: index=%s model=%s collection=%s",
         settings.rag_index_path,
@@ -196,6 +227,8 @@ async def lifespan(app: FastAPI):
     app.state.copilot_config_error = copilot_config_error
     app.state.copilot_topology = copilot_topology
     app.state.knowledge_retriever = knowledge_retriever
+    app.state.traffic_knowledge_retriever = traffic_knowledge_retriever
+    app.state.standards_knowledge_retriever = standards_knowledge_retriever
     if simulation_service is not None:
         simulation_service.configure_ai_control(
             provider=copilot_provider,

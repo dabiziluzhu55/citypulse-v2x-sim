@@ -784,12 +784,12 @@ python scripts/rag/build_knowledge_index.py \
   --embedding-model-path /path/to/Qwen3-Embedding-0.6B
 ```
 
-默认切片输出为 `traffic_knowledge/build/chunks.jsonl`，Chroma 输出为
-`outputs/rag/chroma`。后者以及模型权重不提交 Git。Backend 通过以下变量
+默认切片输出为 `traffic_knowledge/build/chunks.jsonl`，交通知识 Chroma 输出为
+`outputs/rag/traffic_knowledge_chroma`。后者以及模型权重不提交 Git。Backend 通过以下变量
 加载本地 Embedding 模型和索引：
 
 ```text
-RAG_INDEX_DIR=outputs/rag/chroma
+RAG_INDEX_DIR=outputs/rag/traffic_knowledge_chroma
 RAG_KNOWLEDGE_MANIFEST=traffic_knowledge/manifest.json
 RAG_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
 RAG_EMBEDDING_MODEL_PATH=/path/to/Qwen3-Embedding-0.6B
@@ -797,11 +797,17 @@ RAG_EMBEDDING_DEVICE=auto
 RAG_COLLECTION_NAME=citypulse_traffic_knowledge
 RAG_TOP_K=5
 RAG_QUERY_TIMEOUT_SECONDS=30
+RAG_STANDARDS_INDEX_DIR=/path/to/outputs/rag/standards_policy_chroma
+RAG_STANDARDS_MANIFEST=/path/to/standards/rag_manifest.json
+RAG_STANDARDS_COLLECTION_NAME=citypulse_standards_policy
 ```
 
 `control` profile 只返回交通专业知识和静态项目事实；`general` profile
 还可以返回 baseline 或规划说明，但结果会保留 `information_type`。索引缺失、
 过期或模型不可用时，工具返回明确的知识不可用错误，不静默退回关键词检索。
+配置标准索引后，`search_knowledge` 会自动合并交通知识与国家/行业标准；
+标准结果保留 `standard_number`、章节、页码和 `document_status`。`control`
+不会返回雄安规划政策，规划问题应使用 `profile="general"`。
 
 ### 6.14 事件级 AI 信号接管
 
