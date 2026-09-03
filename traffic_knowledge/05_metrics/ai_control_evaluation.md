@@ -1,7 +1,7 @@
 ---
 information_type: mixed
 status: current
-code_revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
+code_revision: 8efb0c5acc3aaac326e9b5dbf8d2106fa4fb220d
 applicable_events:
   - accident
   - lane_closure
@@ -51,20 +51,22 @@ priority: high
 
 ### 当前正式指标（项目事实）
 
-`traffic_eval.EvalResult`：
+交通效果评价以最新版 `traffic_eval.EvalResult` 和对应的专项指标口径为准。通行效率的标准核心指标为：
 
 | 字段 | 含义 |
 | --- | --- |
-| `avg_travel_time_s` | 平均行程时间 |
-| `avg_waiting_time_s` | 平均等待时间 |
-| `avg_queue_length_veh` | 进口车道平均排队 |
-| `throughput_veh_per_h` | 小时化到达率 |
-| `fuel_intensity_L_per_100km` | 燃油强度 |
-| `hard_braking_events` / `hard_braking_rate` | 急刹次数与率 |
-| `departed` / `arrived` / `completion_rate` | 出发、到达、完成率 |
-| `avg_decision_latency_ms` | 算法决策延迟；无样本为 null，不是 0 |
+| `path_avg_speed_kmh` | 路径平均速度 |
+| `travel_time_index` | 行程时间比 |
+| `delay_time_proportion` | 延误时间比，范围为 0~1 |
+| `traffic_performance_index` | 城市交通运行指数 |
+| `traffic_state` | 交通运行状态 |
+| `avg_stops_per_vehicle` | 路径平均停车次数 |
+| `regional_max_queue_length_m` | 区域最大排队长度，单位为 m |
+| `spillback_rate` | 溢流率，单位为 % |
 
-口径见 `efficiency_metrics.md`、`safety_metrics.md`、`emission_energy_metrics.md`。同条件下行程/等待/排队/急刹通常越低越好；通行量和完成率通常越高越好。高通行量伴随急刹或燃油明显恶化时，不得单独判优。
+安全和能源专项指标按对应专项口径纳入评估：`hard_braking_events`、`hard_braking_rate` 和 `fuel_intensity_L_per_100km`。它们分别反映急刹行为和燃油强度，不替代通行效率核心指标。
+
+口径见 `efficiency_metrics.md`、`safety_metrics.md`、`emission_energy_metrics.md`。同条件下，行程时间比、延误时间比、交通运行指数、排队、溢流率、停车、急刹和燃油强度通常越低越好；路径平均速度以及完成交通任务的能力通常越高越好；运行状态越接近“畅通”越好。单一指标改善不能替代综合判断。
 
 ### 规划型局部指标（尚未计算）
 
@@ -102,7 +104,7 @@ priority: high
 1. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
+   - revision: 8efb0c5acc3aaac326e9b5dbf8d2106fa4fb220d
    - file: traffic_eval/models.py; traffic_eval/collector.py; traffic_eval/tripinfo.py
    - 用于支持：当前正式指标字段。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim
