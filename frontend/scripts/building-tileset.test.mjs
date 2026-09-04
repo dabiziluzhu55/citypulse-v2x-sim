@@ -21,6 +21,14 @@ const baiduThreeMapSource = readFileSync(
   new URL('../src/components/visualization/BaiduThreeMap.vue', import.meta.url),
   'utf8',
 )
+const mapDefaultsSource = readFileSync(
+  new URL('../src/constants/mapDefaults.ts', import.meta.url),
+  'utf8',
+)
+const appMapViewSource = readFileSync(
+  new URL('../src/composables/useAppMapView.ts', import.meta.url),
+  'utf8',
+)
 
 test('keeps Baidu roads and base landcover while native buildings stay disabled', () => {
   assert.deepEqual(createBaiduBaseDisplayOptions(true), {
@@ -38,9 +46,16 @@ test('keeps one global local building source while intersection roads use bounde
   assert.doesNotMatch(baiduThreeMapSource, /switchBuildingTileset/)
   assert.match(baiduThreeMapSource, /prepareOverview\(intersectionIds\)/)
   assert.match(baiduThreeMapSource, /validateGlobalBuildingSource/)
-  assert.match(baiduThreeMapSource, /BUILDING_CACHE_BYTES = 128 \* 1024 \* 1024/)
-  assert.match(baiduThreeMapSource, /RECOVERY_BUILDING_CACHE_BYTES = 64 \* 1024 \* 1024/)
+  assert.match(baiduThreeMapSource, /BUILDING_CACHE_BYTES = 96 \* 1024 \* 1024/)
+  assert.match(baiduThreeMapSource, /BUILDING_CACHE_OVERFLOW_BYTES = 32 \* 1024 \* 1024/)
+  assert.match(baiduThreeMapSource, /RECOVERY_BUILDING_CACHE_BYTES = 48 \* 1024 \* 1024/)
+  assert.match(baiduThreeMapSource, /RECOVERY_BUILDING_CACHE_OVERFLOW_BYTES = 16 \* 1024 \* 1024/)
   assert.match(baiduThreeMapSource, /cacheBytes: stableRenderMode\.value \? RECOVERY_BUILDING_CACHE_BYTES : BUILDING_CACHE_BYTES/)
+  assert.match(baiduThreeMapSource, /dynamicScreenSpaceError: true/)
+  assert.match(baiduThreeMapSource, /foveatedScreenSpaceError: true/)
+  assert.match(mapDefaultsSource, /BAIDU_3D_LOCAL_MAX_RANGE = 6_000/)
+  assert.match(appMapViewSource, /cameraPreset\.value === 'overview'/)
+  assert.match(appMapViewSource, /preset\.maximumZoomDistance \?\? BAIDU_3D_LOCAL_MAX_RANGE/)
 })
 
 test('building projection maps the ECEF root to a local BD-09 WebMercator origin', () => {

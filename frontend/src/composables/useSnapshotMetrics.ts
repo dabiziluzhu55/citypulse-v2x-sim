@@ -1,60 +1,84 @@
 import { ref, watch, type Ref } from 'vue'
 import type { MetricsTimeseriesResponse } from '../types/metrics'
-import type { CollaborationLogEntry } from '../types/collaboration'
-import type { SimulationSnapshot } from '../types/simulation'
+import type {
+  CollaborationLogEntry,
+  V2XLinkType,
+  V2XLogStatus,
+  V2XRole,
+} from '../types/collaboration'
+import type { SimulationSnapshot, V2XEventState } from '../types/simulation'
+import { formatIntersectionReferences } from '../utils/intersectionLabels.ts'
 import { simulationFuelIntensity } from '../utils/simulationEvaluation.ts'
 
 const MAX_POINTS = 120
 const MAX_LOG_ENTRIES = 180
-const SNAPSHOT_LOG_INTERVAL = 25
+const MAX_SEEN_V2X_EVENTS = 2_000
 
-function formatClock(seconds: number): string {
-  const value = Math.max(0, Math.floor(seconds))
-  const mm = String(Math.floor(value / 60)).padStart(2, '0')
-  const ss = String(value % 60).padStart(2, '0')
-  return `${mm}:${ss}`
+const V2X_MESSAGE_META: Record<string, { tag: string; title: string }> = {
+  VehicleStateV1: { tag: 'CV Status', title: '车辆状态上报' },
+  IntersectionSummaryV1: { tag: 'MAP Update', title: '路口状态汇总上传' },
+  RegionalPriorityV1: { tag: 'Coordination', title: '协调策略下发' },
+  SPaTV2: { tag: 'SPaT', title: '信号相位与配时广播' },
+  MAPV1: { tag: 'MAP', title: '路口拓扑信息广播' },
 }
 
-function formatWallClock(): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-  }).format(new Date())
+function resolveLinkType(source: V2XRole, destination: V2XRole): V2XLinkType {
+  const links: Record<string, V2XLinkType> = {
+    'vehicle->road': 'V2I',
+    'vehicle->cloud': 'V2I',
+    'road->vehicle': 'I2V',
+    'cloud->vehicle': 'I2V',
+    'road->cloud': 'I2C',
+    'cloud->road': 'C2I',
+    'vehicle->vehicle': 'V2V',
+    'cloud->cloud': 'C2C',
+  }
+  return links[`${source}->${destination}`] ?? 'UNKNOWN'
 }
 
-function snapshotClock(snapshot: SimulationSnapshot): string {
-  const official = snapshot.official_time?.includes('T')
-    ? snapshot.official_time.split('T')[1]?.slice(0, 8)
-    : snapshot.official_time?.slice(0, 8)
-  return /^\d{2}:\d{2}:\d{2}$/.test(official ?? '')
-    ? official as string
-    : `00:${formatClock(snapshot.elapsed_seconds)}`.slice(-8)
+function resolveStatus(event: V2XEventState): V2XLogStatus {
+  if (event === 'TTL_EXPIRED') return 'failed'
+  if (event === 'DELIVER' || event === 'CONSUME') return 'success'
+  return 'sending'
+}
+
+function parseClockSeconds(value: string): number {
+  const [hour = 0, minute = 0, second = 0] = value.split(':').map(Number)
+  return hour * 3_600 + minute * 60 + second
+}
+
+function formatCommunicationClock(
+  eventSeconds: number,
+  officialTime: string,
+  elapsedSeconds: number,
+): string {
+  const startSeconds = parseClockSeconds(officialTime) - elapsedSeconds
+  const normalized = ((startSeconds + eventSeconds) % 86_400 + 86_400) % 86_400
+  const wholeSeconds = Math.floor(normalized)
+  const milliseconds = Math.round((normalized - wholeSeconds) * 1_000)
+  const hour = Math.floor(wholeSeconds / 3_600)
+  const minute = Math.floor((wholeSeconds % 3_600) / 60)
+  const second = wholeSeconds % 60
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`
 }
 
 export function useSnapshotMetrics(
   sessionId: Ref<string>,
   snapshot: Ref<SimulationSnapshot | null>,
-  wsConnected?: Ref<boolean>,
+  _wsConnected?: Ref<boolean>,
 ) {
   const timeseries = ref<MetricsTimeseriesResponse>({ run_id: '', series: [] })
   const logEntries = ref<CollaborationLogEntry[]>([])
-  const seenEventStates = new Map<string, string>()
-  const seenIntersectionPhases = new Map<string, number>()
-  let lastLoggedSnapshotSequence = Number.NEGATIVE_INFINITY
+  const seenV2xEventKeys = new Set<string>()
+  const seenV2xEventOrder: string[] = []
+  const messagesById = new Map<string, CollaborationLogEntry>()
 
   function reset() {
     timeseries.value = { run_id: sessionId.value, series: [] }
     logEntries.value = []
-    seenEventStates.clear()
-    seenIntersectionPhases.clear()
-    lastLoggedSnapshotSequence = Number.NEGATIVE_INFINITY
-    if (sessionId.value) {
-      logEntries.value = [{
-        id: `session-${sessionId.value}`,
-        timeLabel: formatWallClock(),
-        source: '系统',
-        message: `仿真会话 ${sessionId.value.slice(0, 8)} 已建立`,
-      }]
-    }
+    seenV2xEventKeys.clear()
+    seenV2xEventOrder.length = 0
+    messagesById.clear()
   }
 
   watch(sessionId, reset)
@@ -70,6 +94,18 @@ export function useSnapshotMetrics(
       const point = {
         time: next.elapsed_seconds,
         algorithm: evaluation.algorithm,
+        path_avg_speed_kmh: evaluation.path_avg_speed_kmh ?? null,
+        travel_time_index: evaluation.travel_time_index ?? null,
+        delay_time_proportion: evaluation.delay_time_proportion ?? null,
+        traffic_performance_index: evaluation.traffic_performance_index ?? null,
+        traffic_state: evaluation.traffic_state ?? null,
+        tpi_method: evaluation.tpi_method ?? null,
+        avg_stops_per_vehicle: evaluation.avg_stops_per_vehicle ?? null,
+        regional_max_queue_length_m: evaluation.regional_max_queue_length_m ?? null,
+        regional_max_queue_intersection_id: evaluation.regional_max_queue_intersection_id ?? null,
+        regional_max_queue_lane_id: evaluation.regional_max_queue_lane_id ?? null,
+        regional_max_queue_sim_time_s: evaluation.regional_max_queue_sim_time_s ?? null,
+        spillback_rate: evaluation.spillback_rate ?? null,
         avg_waiting_time: evaluation.avg_waiting_time,
         avg_travel_time: evaluation.avg_travel_time,
         avg_queue_length: evaluation.avg_queue_length,
@@ -89,62 +125,54 @@ export function useSnapshotMetrics(
       }
     }
 
-    const timeLabel = snapshotClock(next)
-    const newEntries: CollaborationLogEntry[] = []
-    if (
-      !Number.isFinite(lastLoggedSnapshotSequence)
-      || next.sequence - lastLoggedSnapshotSequence >= SNAPSHOT_LOG_INTERVAL
-    ) {
-      lastLoggedSnapshotSequence = next.sequence
-      newEntries.push({
-        id: `snapshot-${next.session_id}-${next.sequence}`,
-        timeLabel,
-        source: 'SUMO',
-        message: `快照 #${next.sequence}：${next.metrics.active_vehicles} 辆车，平均速度 ${next.metrics.mean_speed.toFixed(1)} m/s`,
-      })
-    }
-    for (const [intersectionId, runtime] of Object.entries(next.intersections)) {
-      const previousPhase = seenIntersectionPhases.get(intersectionId)
-      if (previousPhase !== undefined && previousPhase !== runtime.current_phase) {
-        newEntries.push({
-          id: `phase-${intersectionId}-${runtime.current_phase}-${next.sequence}`,
-          timeLabel,
-          source: '路侧',
-          message: `${intersectionId} 信号相位 ${previousPhase} → ${runtime.current_phase}（${runtime.stage}）`,
-        })
+    for (const event of next.v2x_events ?? []) {
+      const key = `${event.sequence}:${event.event}:${event.message_id}`
+      if (seenV2xEventKeys.has(key)) continue
+      seenV2xEventKeys.add(key)
+      seenV2xEventOrder.push(key)
+      if (seenV2xEventOrder.length > MAX_SEEN_V2X_EVENTS) {
+        const expiredKey = seenV2xEventOrder.shift()
+        if (expiredKey) seenV2xEventKeys.delete(expiredKey)
       }
-      seenIntersectionPhases.set(intersectionId, runtime.current_phase)
-    }
-    for (const event of next.events ?? []) {
-      const key = String(event.event_id ?? event.event_type)
-      const currentState = String(event.state ?? 'active')
-      if (seenEventStates.get(key) === currentState) {
-        continue
+      const meta = V2X_MESSAGE_META[event.message_type] ?? {
+        tag: event.message_type,
+        title: event.message_type,
       }
-      seenEventStates.set(key, currentState)
-      newEntries.push({
-        id: `${key}-${currentState}-${next.sequence}`,
-        timeLabel,
-        source: '扰动',
-        message: `${event.event_type} · ${currentState}`,
-      })
+      const existing = messagesById.get(event.message_id)
+      const isNewerLifecycle = existing?.sequence == null || event.sequence >= existing.sequence
+      const entry: CollaborationLogEntry = {
+        id: `v2x-${event.message_id}`,
+        messageId: event.message_id,
+        sequence: Math.max(existing?.sequence ?? 0, event.sequence),
+        dateLabel: new Date().toLocaleDateString('sv-SE'),
+        timeLabel: formatCommunicationClock(
+          event.event_time_s,
+          next.official_time,
+          next.elapsed_seconds,
+        ),
+        eventTimeSeconds: event.event_time_s,
+        source: formatIntersectionReferences(event.source_id),
+        sourceRole: event.source_role,
+        destination: formatIntersectionReferences(event.destination_id),
+        destinationRole: event.destination_role,
+        linkType: resolveLinkType(event.source_role, event.destination_role),
+        eventState: isNewerLifecycle ? event.event : existing?.eventState,
+        messageType: event.message_type,
+        messageTag: meta.tag,
+        message: formatIntersectionReferences(meta.title),
+        detail: undefined,
+        latencyMs: Math.max(
+          existing?.latencyMs ?? 0,
+          Math.round((event.message_age_s ?? 0) * 1_000),
+        ),
+        status: isNewerLifecycle ? resolveStatus(event.event) : existing?.status,
+      }
+      messagesById.set(event.message_id, entry)
     }
-    if (newEntries.length > 0) {
-      logEntries.value = [...newEntries, ...logEntries.value].slice(0, MAX_LOG_ENTRIES)
-    }
+    logEntries.value = [...messagesById.values()]
+      .sort((left, right) => (right.sequence ?? 0) - (left.sequence ?? 0))
+      .slice(0, MAX_LOG_ENTRIES)
   })
-
-  if (wsConnected) {
-    watch(wsConnected, (connected, previous) => {
-      if (!sessionId.value || connected === previous) return
-      logEntries.value = [{
-        id: `connection-${sessionId.value}-${connected}-${Date.now()}`,
-        timeLabel: formatWallClock(),
-        source: '系统',
-        message: connected ? '实时快照通道已连接' : '实时通道已断开，已切换轮询同步',
-      }, ...logEntries.value].slice(0, MAX_LOG_ENTRIES)
-    })
-  }
 
   return {
     timeseries,

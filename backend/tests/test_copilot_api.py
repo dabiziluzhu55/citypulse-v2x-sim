@@ -64,7 +64,7 @@ def test_copilot_route_returns_answer_and_binds_session() -> None:
     response = chat(
         "session-001",
         CopilotChatRequest(
-            message="现在交通怎么样？",
+            message="你支持查询哪些内容？",
             active_event_id="event-001",
             active_scope="intersection:demo_1",
         ),

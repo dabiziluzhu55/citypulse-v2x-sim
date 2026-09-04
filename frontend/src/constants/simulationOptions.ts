@@ -15,23 +15,16 @@ export const SUPPORTED_BACKEND_CONTROL_MODES = [
   'sotl',
   'ippo',
   'mappo',
+  'cov2x',
 ] as const
 
 export type BackendControlMode = typeof SUPPORTED_BACKEND_CONTROL_MODES[number]
 
-export const IPPO_SUPPORTED_PERIODS = ['off_peak'] as const
-
 export function controlModePeriodCompatibility(
-  mode: string,
-  period: string,
+  _mode: string,
+  _period: string,
 ): { compatible: boolean; reason: string } {
-  if (mode !== 'ippo' || IPPO_SUPPORTED_PERIODS.includes(period as 'off_peak')) {
-    return { compatible: true, reason: '' }
-  }
-  return {
-    compatible: false,
-    reason: '当前 IPPO 模型仅兼容平峰拓扑，请选择平峰或改用其他算法',
-  }
+  return { compatible: true, reason: '' }
 }
 
 export const CONTROL_MODE_LABELS: Record<string, string> = {
@@ -40,6 +33,7 @@ export const CONTROL_MODE_LABELS: Record<string, string> = {
   sotl: 'SOTL',
   ippo: 'IPPO',
   mappo: 'MAPPO',
+  cov2x: 'CoV2X 车路云协同',
 }
 
 export const DASHBOARD_CONTROL_MODES = [
@@ -48,6 +42,7 @@ export const DASHBOARD_CONTROL_MODES = [
   { value: 'sotl', label: CONTROL_MODE_LABELS.sotl, backendSupported: true },
   { value: 'ippo', label: CONTROL_MODE_LABELS.ippo, backendSupported: true },
   { value: 'mappo', label: CONTROL_MODE_LABELS.mappo, backendSupported: true },
+  { value: 'cov2x', label: CONTROL_MODE_LABELS.cov2x, backendSupported: true },
 ] as const
 
 export function resolveCatalogControlModes(controlModes: string[] | null | undefined): string[] {

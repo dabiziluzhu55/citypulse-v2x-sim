@@ -3,6 +3,7 @@ export { fetchHealth } from './health'
 export { fetchCatalog } from './catalog'
 export { fetchMapGeoJson } from './maps'
 export { fetchMapConfig } from './mapConfig'
+export { chatWithCopilot } from './copilot'
 export {
   startSimulation,
   fetchSimulationStatus,

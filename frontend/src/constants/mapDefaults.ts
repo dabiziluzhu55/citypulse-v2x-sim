@@ -22,6 +22,8 @@ export const DEFAULT_MAP_ZOOM = 14
 export const DEFAULT_CESIUM_CAMERA_HEIGHT = 1800
 export const BAIDU_3D_MIN_RANGE = 80
 export const BAIDU_3D_MAX_RANGE = 48_000
+/** Keep local camera presets from expanding into the full 20-intersection tileset. */
+export const BAIDU_3D_LOCAL_MAX_RANGE = 6_000
 
 export const DEFAULT_CESIUM_CAMERA_PRESET_ID: CesiumCameraPresetId = 'overview'
 
@@ -68,7 +70,7 @@ export const CESIUM_CAMERA_PRESETS: CesiumCameraPreset[] = [
     maxCameraHeight: 1100,
     localViewRadiusMeters: 1200,
     minimumZoomDistance: BAIDU_3D_MIN_RANGE,
-    maximumZoomDistance: BAIDU_3D_MAX_RANGE,
+    maximumZoomDistance: BAIDU_3D_LOCAL_MAX_RANGE,
   },
   {
     id: 'intersection',
@@ -81,7 +83,7 @@ export const CESIUM_CAMERA_PRESETS: CesiumCameraPreset[] = [
     rangeMultiplier: 0.45,
     localViewRadiusMeters: 750,
     minimumZoomDistance: BAIDU_3D_MIN_RANGE,
-    maximumZoomDistance: BAIDU_3D_MAX_RANGE,
+    maximumZoomDistance: BAIDU_3D_LOCAL_MAX_RANGE,
   },
 ]
 

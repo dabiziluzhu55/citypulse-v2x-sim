@@ -10,6 +10,7 @@ export const METRICS_ALGORITHMS = [
   { id: 'sotl', shortLabel: 'SOTL', label: 'SOTL自组织信号算法', color: '#FFD665' },
   { id: 'ippo', shortLabel: 'IPPO', label: 'IPPO强化学习算法', color: '#FF7CCB' },
   { id: 'mappo', shortLabel: 'MAPPO', label: 'MAPPO强化学习算法', color: '#B98CFF' },
+  { id: 'cov2x', shortLabel: 'CoV2X', label: 'CoV2X车路云协同算法', color: '#FF8B38' },
 ] as const
 
 export type EvaluationMetricKey = 'queue' | 'waiting' | 'fuel'

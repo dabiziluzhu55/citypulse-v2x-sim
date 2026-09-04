@@ -41,6 +41,19 @@ export interface ScenarioDisturbanceInput {
   speedLimitKmh?: number
 }
 
+export function applyAiControlToSimulationRequest(
+  payload: StartSimulationRequest,
+  enabled: boolean,
+): StartSimulationRequest {
+  return {
+    ...payload,
+    disturbance_targets: payload.disturbance_targets.map((target) => ({
+      ...target,
+      ai_control_enabled: enabled,
+    })),
+  }
+}
+
 export function buildDisturbanceTargets(input: ScenarioPayloadInput): DisturbanceTargetPayload[] {
   const events = input.disturbanceEvents ?? (
     !input.disturbance || input.disturbance === 'none'

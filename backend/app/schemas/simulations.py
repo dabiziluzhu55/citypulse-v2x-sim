@@ -22,7 +22,10 @@ class StartSimulationRequest(BaseModel):
     control_mode: str = "fixed"
     model_alias: str | None = Field(
         default=None,
-        description="模型别名；缺省按场景默认通用模型。仅 control_mode=ippo/mappo 时生效。",
+        description=(
+            "模型别名；缺省按场景选择兼容模型。"
+            "仅 control_mode=ippo/mappo/cov2x 时生效。"
+        ),
     )
     seed: int = Field(default=42, ge=0)
     step_length: float = Field(default=0.1, gt=0.0)
@@ -105,6 +108,7 @@ class SimulationStatusResponse(BaseModel):
     intersections: dict[str, Any]
     vehicles: list[dict[str, Any]]
     events: list[dict[str, Any]]
+    v2x_events: list[dict[str, Any]] = Field(default_factory=list)
     metrics: dict[str, Any]
     evaluation: dict[str, Any] | None = None
     event_detection: dict[str, Any] | None = None

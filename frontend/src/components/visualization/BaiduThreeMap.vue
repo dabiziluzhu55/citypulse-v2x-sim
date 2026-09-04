@@ -68,9 +68,11 @@ import {
   createBaiduBaseDisplayOptions,
 } from '../../mapv/baiduDarkStyle'
 import {
+  BAIDU_3D_LOCAL_MAX_RANGE,
   BAIDU_3D_MAX_RANGE,
   BAIDU_3D_MIN_RANGE,
   DEFAULT_CESIUM_CAMERA_HEIGHT,
+  resolveCesiumCameraPreset,
 } from '../../constants/mapDefaults'
 import {
   DEMO_2_SOURCE_CENTER_BD09,
@@ -417,14 +419,29 @@ const showBaiduRoads = import.meta.env.VITE_BAIDU_ROADS !== 'false'
 const roadRendererMode = import.meta.env.VITE_BAIDU_ROAD_RENDERER?.trim() || 'detailed'
 const enableShowcaseLayers = import.meta.env.VITE_ENABLE_SHOWCASE_LAYERS !== 'false'
 const enableJunctionMarkers = import.meta.env.VITE_ENABLE_JUNCTION_MARKERS === 'true'
-const enableRoadsideFacilities = import.meta.env.VITE_ENABLE_ROADSIDE_FACILITIES === 'true'
+// Roadside facilities are part of the product scene. Keep an explicit false
+// escape hatch for constrained machines instead of silently disabling them
+// in production builds that do not load .env.development.local.
+const enableRoadsideFacilities = import.meta.env.VITE_ENABLE_ROADSIDE_FACILITIES !== 'false'
 const enableVegetation = import.meta.env.VITE_ENABLE_VEGETATION === 'true'
 const enableIntersectionTopology = import.meta.env.VITE_ENABLE_INTERSECTION_TOPOLOGY !== 'false'
 
-const BUILDING_IDLE_ERROR_TARGET = 8
-const BUILDING_MOVING_ERROR_TARGET = 24
-const BUILDING_CACHE_BYTES = 128 * 1024 * 1024
-const RECOVERY_BUILDING_CACHE_BYTES = 64 * 1024 * 1024
+type BuildingTilesetRuntime = mapvthree.Default3DTiles & {
+  cacheBytes: number
+  maximumCacheOverflowBytes: number
+  totalMemoryUsageInBytes: number
+  statistics: mapvthree.Default3DTiles['statistics'] & {
+    selected?: number
+    visited?: number
+  }
+}
+
+const BUILDING_IDLE_ERROR_TARGET = 16
+const BUILDING_MOVING_ERROR_TARGET = 48
+const BUILDING_CACHE_BYTES = 96 * 1024 * 1024
+const BUILDING_CACHE_OVERFLOW_BYTES = 32 * 1024 * 1024
+const RECOVERY_BUILDING_CACHE_BYTES = 48 * 1024 * 1024
+const RECOVERY_BUILDING_CACHE_OVERFLOW_BYTES = 16 * 1024 * 1024
 const LANDCOVER_CACHE_LIMIT = 4
 const buildingZOffsetMeters = Number(import.meta.env.VITE_XIONGAN_BUILDING_Z_OFFSET_METERS ?? 0)
 const enableBuildingContactShadows = import.meta.env.VITE_XIONGAN_BUILDING_CONTACT_SHADOWS === 'true'
@@ -1167,11 +1184,12 @@ function applyStableRenderingBudget(reason: string): void {
     syncAnimationLoop()
   }
   if (buildingTileset) {
-    buildingTileset.errorTarget = interacting.value
+    const runtimeTileset = buildingTileset as BuildingTilesetRuntime
+    runtimeTileset.errorTarget = interacting.value
       ? buildingMovingErrorTarget()
       : buildingIdleErrorTarget()
-    const cacheControlled = buildingTileset as mapvthree.Default3DTiles & { cacheBytes?: number }
-    cacheControlled.cacheBytes = RECOVERY_BUILDING_CACHE_BYTES
+    runtimeTileset.cacheBytes = RECOVERY_BUILDING_CACHE_BYTES
+    runtimeTileset.maximumCacheOverflowBytes = RECOVERY_BUILDING_CACHE_OVERFLOW_BYTES
   }
   if (showRenderDiagnostics) {
     const diagnosticsWindow = window as Window & {
@@ -1286,7 +1304,8 @@ function updateTilesStatus(): void {
     syncRoadRendering(geojson.value)
   }
   if (buildingTileset) {
-    const statistics = buildingTileset.statistics as typeof buildingTileset.statistics & {
+    const runtimeTileset = buildingTileset as BuildingTilesetRuntime
+    const statistics = runtimeTileset.statistics as typeof runtimeTileset.statistics & {
       numberOfAttemptedRequests?: number
     }
     buildingLoadTracker = advanceBuildingLoadTracker(buildingLoadTracker, {
@@ -1298,6 +1317,21 @@ function updateTilesStatus(): void {
       cameraRevision: buildingCameraRevision,
       nowMs: performance.now(),
     }, renderQuality)
+    const diagnosticsWindow = window as Window & {
+      __CITYPULSE_MAP3D_TILES__?: Record<string, unknown>
+    }
+    diagnosticsWindow.__CITYPULSE_MAP3D_TILES__ = {
+      rangeMeters: engine?.map.getRange() ?? null,
+      memoryMB: Number((runtimeTileset.totalMemoryUsageInBytes / 1024 / 1024).toFixed(1)),
+      selectedTiles: statistics.selected ?? 0,
+      visitedTiles: statistics.visited ?? 0,
+      readyTiles: statistics.numberOfTilesWithContentReady,
+      pendingRequests: statistics.numberOfPendingRequests,
+      processingTiles: statistics.numberOfTilesProcessing,
+      loadedTiles: statistics.numberOfLoadedTilesTotal,
+      totalTiles: statistics.numberOfTilesTotal,
+      capturedAt: new Date().toISOString(),
+    }
   }
   const nextBuildingTilesReady = buildingPresentationUsable(buildingLoadTracker)
   if (nextBuildingTilesReady !== buildingTilesReady) {
@@ -1693,7 +1727,12 @@ function applyGlobalNavigationBounds(nodes: IntersectionTopologyNode[]): void {
   const aspectRatio = containerRef.value
     ? containerRef.value.clientWidth / Math.max(1, containerRef.value.clientHeight)
     : 16 / 9
-  engine.map.setMaxRange(intersectionTopologyMaxRange(nodes, aspectRatio))
+  const topologyMaximum = intersectionTopologyMaxRange(nodes, aspectRatio)
+  const preset = resolveCesiumCameraPreset(mapView.cameraPreset.value)
+  const presetMaximum = preset.id === 'overview'
+    ? BAIDU_3D_MAX_RANGE
+    : (preset.maximumZoomDistance ?? BAIDU_3D_LOCAL_MAX_RANGE)
+  engine.map.setMaxRange(Math.min(topologyMaximum, presetMaximum))
 }
 
 function handleDocumentVisibility(): void {
@@ -1821,21 +1860,31 @@ function commitIntersectionEnvironment(
 
 function createBuildingTileset(url: string): mapvthree.Default3DTiles {
   if (!engine) throw new Error('3D map engine is unavailable')
-  const tileset = engine.add(new mapvthree.Default3DTiles({
+  const tileset = new mapvthree.Default3DTiles({
     url,
     errorTarget: interacting.value
       ? buildingMovingErrorTarget()
       : buildingIdleErrorTarget(),
     forceUnlit: false,
-    dynamicScreenSpaceError: false,
-    foveatedScreenSpaceError: false,
+    dynamicScreenSpaceError: true,
+    dynamicScreenSpaceErrorDensity: 0.0028,
+    dynamicScreenSpaceErrorFactor: 8,
+    foveatedScreenSpaceError: true,
+    foveatedConeSize: 0.3,
+    foveatedMinimumScreenSpaceErrorRelaxation: 8,
     progressiveResolutionHeightFraction: 0.3,
-      // Keep the first batch alive while the overview camera and providers settle.
-      // Request culling is restored as soon as the black presentation gate opens.
-      cullRequestsWhileMoving: false,
+    // The presentation camera is still moving during initial bootstrap.  Do
+    // not suppress those first building requests; culling is enabled again
+    // after the presentation gate opens.
+    cullRequestsWhileMoving: false,
     cullRequestsWhileMovingMultiplier: 60,
     cacheBytes: stableRenderMode.value ? RECOVERY_BUILDING_CACHE_BYTES : BUILDING_CACHE_BYTES,
-  })) as mapvthree.Default3DTiles
+  })
+  const runtimeTileset = tileset as BuildingTilesetRuntime
+  runtimeTileset.maximumCacheOverflowBytes = stableRenderMode.value
+    ? RECOVERY_BUILDING_CACHE_OVERFLOW_BYTES
+    : BUILDING_CACHE_OVERFLOW_BYTES
+  engine.add(tileset)
   if (Number.isFinite(buildingZOffsetMeters)) tileset.position.z = buildingZOffsetMeters
   tileset.releaseCameraViewport()
   return tileset

@@ -3,6 +3,8 @@
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 from backend.app.schemas.maps import MapGeoJsonResponse
 from backend.app.services.map_service import MapService
 from backend.tests.conftest import build_demo_catalog
@@ -42,6 +44,30 @@ class FakeNet:
             FakeEdge(":internal", [(100.0, 200.0), (101.0, 201.0)]),
             FakeEdge("road-far", [(1000.0, 2000.0), (1001.0, 2001.0)]),
         ]
+
+
+class MissingProjectionNet:
+    def convertXY2LonLat(self, _x: float, _y: float) -> tuple[float, float]:
+        raise ModuleNotFoundError("No module named 'pyproj'")
+
+
+def test_projection_validation_fails_with_an_actionable_error(monkeypatch) -> None:
+    from backend.app.core.config import get_settings
+
+    service = MapService(get_settings(), MagicMock())
+    monkeypatch.setattr(service, "_load_net", lambda: MissingProjectionNet())
+
+    with pytest.raises(RuntimeError, match="pip install -r backend/requirements.txt"):
+        service.validate_coordinate_projection()
+
+
+def test_projection_validation_accepts_a_working_network(monkeypatch) -> None:
+    from backend.app.core.config import get_settings
+
+    service = MapService(get_settings(), MagicMock())
+    monkeypatch.setattr(service, "_load_net", lambda: FakeNet())
+
+    service.validate_coordinate_projection()
 
 
 def test_geojson_format(monkeypatch) -> None:

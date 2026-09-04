@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import AiControlPanel from '../components/dashboard/AiControlPanel.vue'
 import CenterCommunicationPanel from '../components/dashboard/CenterCommunicationPanel.vue'
 import LeftSidebarPanel from '../components/dashboard/LeftSidebarPanel.vue'
+import RoadsideDevicesPanel from '../components/dashboard/RoadsideDevicesPanel.vue'
 import RightSidebarPanel from '../components/dashboard/RightSidebarPanel.vue'
 import { useDashboardOverlay } from '../composables/useDashboardOverlay'
+import { useCopilotContext } from '../composables/useCopilotContext'
 import { useOptionalAppMapView } from '../composables/useAppMapView'
 import { useSimulationStore } from '../composables/useSimulationStore'
 import { useSnapshotMetrics } from '../composables/useSnapshotMetrics'
@@ -30,6 +33,14 @@ const {
   sceneStatus,
   selectIntersection,
 } = useActiveIntersectionScene()
+const copilotActiveScope = computed(() => (
+  activeIntersectionId.value ? `intersection:${activeIntersectionId.value}` : null
+))
+const {
+  activeEventId: copilotActiveEventId,
+  activeEventLabel: copilotActiveEventLabel,
+  clearCopilotEvent,
+} = useCopilotContext()
 const { catalog, intersection } = useCatalog(activeIntersectionId)
 const localIntersectionOptions = Array.from({ length: 20 }, (_, index) => ({
   intersection_id: `demo_${index + 1}`,
@@ -110,8 +121,13 @@ const {
 } = useEvaluationComparison(sessionId, snapshot)
 const {
   communicationPanelOpen,
+  aiControlPanelOpen,
+  roadsideDevicePanelOpen,
   sidePanelsCollapsed,
   closeCommunicationPanel,
+  closeAiControlPanel,
+  closeRoadsideDevicePanel,
+  toggleSidePanels,
 } = useDashboardOverlay()
 interface ConfigurationChangeRequest {
   fingerprint: string
@@ -141,14 +157,20 @@ watch([sessionId, state], ([nextSessionId, nextState]) => {
   setMapDimension('3d')
 }, { immediate: true })
 
+watch(sessionId, () => clearCopilotEvent())
+
 function handleOverlayKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
   if (pendingConfigChange.value) {
     event.preventDefault()
     event.stopImmediatePropagation()
     cancelConfigChange()
+  } else if (aiControlPanelOpen.value) {
+    closeAiControlPanel()
   } else if (communicationPanelOpen.value) {
     closeCommunicationPanel()
+  } else if (roadsideDevicePanelOpen.value) {
+    closeRoadsideDevicePanel()
   }
 }
 
@@ -167,7 +189,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', guardConfigChangeEscape, true)
   window.removeEventListener('keydown', handleOverlayKeydown)
+  closeAiControlPanel()
   closeCommunicationPanel()
+  closeRoadsideDevicePanel()
 })
 
 async function handleStart(payload: StartSimulationRequest) {
@@ -253,6 +277,17 @@ async function handleStop() {
         </button>
       </div>
 
+      <button
+        type="button"
+        class="map-side-panel-toggle"
+        :aria-expanded="!sidePanelsCollapsed"
+        :title="sidePanelsCollapsed ? '展开两侧面板' : '收起两侧面板'"
+        @click="toggleSidePanels"
+      >
+        <span aria-hidden="true">{{ sidePanelsCollapsed ? '»' : '«' }}</span>
+        {{ sidePanelsCollapsed ? '展开面板' : '收起面板' }}
+      </button>
+
       <div v-if="mapDimension === '3d'" class="map-camera-toggle" aria-label="三维地图机位视角">
         <span class="map-dimension-toggle__label">机位</span>
         <button
@@ -336,6 +371,27 @@ async function handleStop() {
 
     <Transition name="communication-overlay">
       <div
+        v-if="aiControlPanelOpen"
+        id="ai-control-dialog"
+        class="communication-overlay ai-control-overlay"
+        role="region"
+        aria-label="CityPulse-Qwen AI交通助手"
+      >
+        <div class="communication-overlay__panel ai-control-overlay__panel">
+          <AiControlPanel
+            :session-id="sessionId"
+            :active-event-id="copilotActiveEventId"
+            :active-event-label="copilotActiveEventLabel"
+            :active-scope="copilotActiveScope"
+            :ai-takeover="snapshot?.ai_takeover ?? null"
+            @close="closeAiControlPanel"
+          />
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="communication-overlay">
+      <div
         v-if="communicationPanelOpen"
         id="center-communication-dialog"
         class="communication-overlay"
@@ -349,13 +405,38 @@ async function handleStop() {
           aria-label="关闭车路云通信记录"
           @click="closeCommunicationPanel"
         />
-        <div class="communication-overlay__panel">
+        <div class="communication-overlay__panel communication-overlay__panel--communication">
           <CenterCommunicationPanel
             :log-entries="logEntries"
             :loading="false"
             :error="null"
             :connected="wsConnected"
             @close="closeCommunicationPanel"
+          />
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="communication-overlay">
+      <div
+        v-if="roadsideDevicePanelOpen"
+        id="roadside-device-dialog"
+        class="communication-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="路侧设备"
+      >
+        <button
+          type="button"
+          class="communication-overlay__backdrop"
+          aria-label="关闭路侧设备"
+          @click="closeRoadsideDevicePanel"
+        />
+        <div class="communication-overlay__panel">
+          <RoadsideDevicesPanel
+            :intersection-id="activeIntersectionId"
+            :runtime="snapshot?.intersections?.[activeIntersectionId] ?? null"
+            @close="closeRoadsideDevicePanel"
           />
         </div>
       </div>
@@ -463,6 +544,10 @@ async function handleStop() {
   pointer-events: auto;
 }
 
+.communication-overlay__panel--communication {
+  width: min(1490px, 100%);
+}
+
 .communication-overlay-enter-active,
 .communication-overlay-leave-active {
   transition: opacity 0.22s ease;
@@ -494,6 +579,65 @@ async function handleStop() {
   align-items: center;
   gap: 10px;
   pointer-events: auto;
+}
+
+.map-side-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 42px;
+  padding: 0 15px;
+  border: 1px solid rgba(0, 255, 255, .22);
+  border-radius: 999px;
+  background: rgba(2, 10, 24, .82);
+  backdrop-filter: blur(10px);
+  color: var(--cp-text-secondary);
+  font: 600 12px/1 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color .2s ease, box-shadow .2s ease, color .2s ease, background .2s ease;
+}
+
+.map-side-panel-toggle > span {
+  color: #21e6ff;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.map-side-panel-toggle:hover,
+.map-side-panel-toggle:focus-visible {
+  border-color: var(--cp-accent);
+  background: rgba(33, 230, 255, .08);
+  box-shadow: var(--cp-glow);
+  color: var(--cp-accent);
+  outline: none;
+}
+
+.ai-control-overlay {
+  /* 10px toolbar offset + 42px control height + 20px visual clearance. */
+  top: calc(var(--dashboard-top-offset) + 72px);
+  right: calc(var(--dashboard-panel-inset-right) + var(--dashboard-right-width) + 18px);
+  bottom: calc(var(--dashboard-bottom-offset) + 34px);
+  left: calc(var(--dashboard-panel-inset-left) + var(--dashboard-left-width) + 18px);
+  padding: 0;
+  place-items: stretch;
+  background: transparent;
+}
+
+.ai-control-overlay__panel {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.dashboard-page.is-side-panels-collapsed .ai-control-overlay {
+  right: 48px;
+  left: 48px;
 }
 
 .map-dimension-toggle,
@@ -594,6 +738,15 @@ async function handleStop() {
     inset: var(--dashboard-top-offset) 0 80px;
     padding: 20px;
     place-items: center;
+  }
+
+  .ai-control-overlay {
+    top: calc(var(--dashboard-top-offset) + 72px);
+    right: 20px;
+    bottom: 116px;
+    left: 20px;
+    padding: 0;
+    place-items: stretch;
   }
 }
 

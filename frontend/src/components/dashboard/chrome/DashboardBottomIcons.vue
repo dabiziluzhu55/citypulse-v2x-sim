@@ -1,113 +1,157 @@
 <script setup lang="ts">
-import bottomIconsBg from '../../../assets/design/chrome/bottom-icons.svg?url'
+import bottomNavigation from '../../../assets/design/ai-control/bottom-navigation.svg?url'
 import { useDashboardOverlay } from '../../../composables/useDashboardOverlay'
 
 const {
-  sidePanelsCollapsed,
+  aiControlPanelOpen,
+  communicationPanelOpen,
+  roadsideDevicePanelOpen,
+  toggleAiControlPanel,
   toggleCommunicationPanel,
-  toggleSidePanels,
+  toggleRoadsideDevicePanel,
 } = useDashboardOverlay()
 </script>
 
 <template>
-  <div class="dashboard-bottom-icons">
+  <nav class="dashboard-bottom-icons" aria-label="底部功能导航">
+    <img
+      class="dashboard-bottom-icons__art"
+      :src="bottomNavigation"
+      alt=""
+      aria-hidden="true"
+    />
+
     <button
       type="button"
-      class="dashboard-bottom-icons__side-toggle"
-      :aria-label="sidePanelsCollapsed ? '展开两侧面板' : '收起两侧面板'"
-      :aria-pressed="sidePanelsCollapsed"
-      :title="sidePanelsCollapsed ? '展开两侧面板' : '收起两侧面板'"
-      @click="toggleSidePanels"
-    >{{ sidePanelsCollapsed ? '展开两侧面板' : '收起两侧面板' }}</button>
+      class="dashboard-bottom-icons__hit dashboard-bottom-icons__hit--ai"
+      :class="{ 'is-active': aiControlPanelOpen }"
+      :aria-pressed="aiControlPanelOpen"
+      aria-label="打开AI管控模型"
+      title="AI管控模型"
+      @click="toggleAiControlPanel"
+    >
+      <span class="dashboard-bottom-icons__sr-only">AI管控模型</span>
+    </button>
+
     <button
       type="button"
-      class="dashboard-bottom-icons__communication"
-      title="车路云通信记录"
+      class="dashboard-bottom-icons__hit dashboard-bottom-icons__hit--communication"
+      :class="{ 'is-active': communicationPanelOpen }"
+      :aria-pressed="communicationPanelOpen"
       aria-label="打开车路云通信记录"
+      title="车路云通信记录"
       @click="toggleCommunicationPanel"
     >
-      <span class="dashboard-bottom-icons__crop" aria-hidden="true"><img :src="bottomIconsBg" alt="" /></span>
-      <strong>车路云通信记录</strong>
+      <span class="dashboard-bottom-icons__sr-only">车路云通信记录</span>
     </button>
-    <span class="dashboard-bottom-icons__label dashboard-bottom-icons__label--right">路侧设备</span>
-  </div>
+
+    <button
+      type="button"
+      class="dashboard-bottom-icons__hit dashboard-bottom-icons__hit--roadside"
+      :class="{ 'is-active': roadsideDevicePanelOpen }"
+      :aria-pressed="roadsideDevicePanelOpen"
+      aria-label="打开路侧设备面板"
+      title="路侧设备"
+      @click="toggleRoadsideDevicePanel"
+    >
+      <span class="dashboard-bottom-icons__sr-only">路侧设备</span>
+    </button>
+  </nav>
 </template>
 
 <style scoped>
 .dashboard-bottom-icons {
   position: fixed;
   left: 50%;
-  bottom: var(--dashboard-bottom-icons-offset-y, 0px);
+  bottom: var(--dashboard-bottom-icons-offset-y, 0);
   z-index: 8;
-  width: 421px;
-  height: 94px;
+  width: 571px;
+  height: 123px;
   transform: translateX(-50%);
-  color: #d9f5ff;
-  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  transform-origin: center bottom;
   pointer-events: none;
 }
-.dashboard-bottom-icons__communication {
+
+.dashboard-bottom-icons__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.dashboard-bottom-icons__hit {
   position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 176px;
-  height: 94px;
+  z-index: 2;
   padding: 0;
   border: 0;
   background: transparent;
-  color: #e8f9ff;
   cursor: pointer;
-  transform: translateX(-50%);
   pointer-events: auto;
 }
-.dashboard-bottom-icons__crop {
+
+.dashboard-bottom-icons__hit::after {
+  content: '';
   position: absolute;
   left: 50%;
-  top: 0;
-  width: 70px;
-  height: 70px;
-  overflow: hidden;
+  bottom: 4px;
+  width: calc(100% - 14px);
+  height: 34px;
+  border-radius: 17px;
+  opacity: 0;
   transform: translateX(-50%);
-  transition: transform .2s ease, filter .2s ease;
+  background: rgba(16, 111, 214, .1);
+  box-shadow:
+    inset 0 0 10px rgba(82, 194, 250, .22),
+    0 0 16px rgba(33, 230, 255, .62);
+  transition: opacity .2s ease;
+  pointer-events: none;
 }
-.dashboard-bottom-icons__crop img { position: absolute; left: -351px; top: -8px; width: 421px; height: 82px; max-width: none; }
-.dashboard-bottom-icons__communication strong,
-.dashboard-bottom-icons__side-toggle,
-.dashboard-bottom-icons__label {
-  position: absolute;
+
+.dashboard-bottom-icons__hit:hover::after,
+.dashboard-bottom-icons__hit:focus-visible::after,
+.dashboard-bottom-icons__hit.is-active::after { opacity: 1; }
+
+.dashboard-bottom-icons__hit:focus-visible {
+  outline: 1px solid rgba(82, 194, 250, .72);
+  outline-offset: -4px;
+}
+
+.dashboard-bottom-icons__hit--ai {
+  left: 62px;
   bottom: 0;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-shadow: 0 0 8px rgba(33, 230, 255, .72);
+  width: 168px;
+  height: 46px;
+}
+
+.dashboard-bottom-icons__hit--communication {
+  left: 217px;
+  top: 0;
+  width: 140px;
+  height: 123px;
+}
+
+.dashboard-bottom-icons__hit--roadside {
+  left: 357px;
+  bottom: 0;
+  width: 154px;
+  height: 46px;
+}
+
+.dashboard-bottom-icons__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
-.dashboard-bottom-icons__side-toggle {
-  left: 4px;
-  bottom: 12px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-family: inherit;
-  cursor: pointer;
-  pointer-events: auto;
-}
-.dashboard-bottom-icons__side-toggle:hover,
-.dashboard-bottom-icons__side-toggle:focus-visible {
-  color: #fff;
-  text-shadow: 0 0 12px #21e6ff;
-  outline: none;
-}
-.dashboard-bottom-icons__communication strong { left: 50%; transform: translateX(-50%); }
-.dashboard-bottom-icons__communication:hover .dashboard-bottom-icons__crop,
-.dashboard-bottom-icons__communication:focus-visible .dashboard-bottom-icons__crop { transform: translateX(-50%) translateY(-2px); filter: drop-shadow(0 0 9px #21e6ff); }
-.dashboard-bottom-icons__communication:focus-visible { outline: none; }
-.dashboard-bottom-icons__label--right {
-  right: 12px;
-  bottom: 12px;
-}
+
 @media (max-width: 1320px) {
-  .dashboard-bottom-icons { transform: translateX(-50%) scale(.9); transform-origin: center bottom; }
+  .dashboard-bottom-icons { transform: translateX(-50%) scale(.9); }
+}
+
+@media (max-width: 620px) {
+  .dashboard-bottom-icons { transform: translateX(-50%) scale(.78); }
 }
 </style>

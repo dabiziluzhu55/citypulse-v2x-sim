@@ -204,6 +204,11 @@ def loads_snapshot(raw: str | bytes) -> SimulationSnapshot:
         intersections=intersections,
         vehicles=tuple(VehicleRuntimeSnapshot(**item) for item in data.get("vehicles", ())),
         events=events,
+        v2x_events=tuple(
+            dict(item)
+            for item in data.get("v2x_events", ())
+            if isinstance(item, Mapping)
+        ),
         metrics=SessionMetrics(**data.get("metrics", {})),
         error=None if data.get("error") is None else str(data["error"]),
         ai_takeover=AIControlStatus(**dict(raw_ai_status)),

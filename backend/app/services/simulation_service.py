@@ -233,6 +233,8 @@ class SimulationService:
             # 进程级环境变量不会串到其他会话。
             if resolved.control_mode == "mappo":
                 os.environ["MAPPO_MODEL_ALIAS"] = resolved.model_alias
+            elif resolved.control_mode == "cov2x":
+                os.environ["COV2X_MODEL_ALIAS"] = resolved.model_alias
             else:
                 os.environ["IPPO_MODEL_ALIAS"] = resolved.model_alias
         logger.info(

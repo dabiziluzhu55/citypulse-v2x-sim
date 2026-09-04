@@ -27,22 +27,35 @@ app = FastAPI(title="CityPulse Qwen Smoke Service", version="0.1.0")
 _service: "QwenService | None" = None
 
 
-def _tool_call_from_text(text: str) -> dict[str, Any] | None:
-    """Parse the common Qwen ``<tool_call>{...}</tool_call>`` form."""
+def _tool_call_from_text(
+    text: str,
+    allowed_names: set[str],
+) -> dict[str, Any] | None:
+    """Parse tagged or bare-JSON Qwen tool calls from tool-enabled requests."""
 
-    match = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.DOTALL)
-    if not match:
+    # AI takeover planning deliberately returns plain JSON without tools.  An
+    # empty allow-list therefore must never be interpreted as a tool call.
+    if not allowed_names:
         return None
+
+    cleaned = text.strip()
+    match = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", cleaned, re.DOTALL)
+    candidate = match.group(1) if match else cleaned
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate)
+        candidate = re.sub(r"\s*```$", "", candidate)
     try:
-        payload = json.loads(match.group(1))
+        payload = json.loads(candidate)
     except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
         return None
     name = payload.get("name")
     arguments = payload.get("arguments", {})
-    if not isinstance(name, str) or not name:
+    if not isinstance(name, str) or name not in allowed_names:
         return None
     if not isinstance(arguments, dict):
-        arguments = {"value": arguments}
+        return None
     return {
         "id": f"call_{uuid4().hex}",
         "type": "function",
@@ -148,7 +161,12 @@ class QwenService:
         new_ids = output_ids[0, input_tokens:]
         raw_text = self.tokenizer.decode(new_ids, skip_special_tokens=False).strip()
         visible_text = self.tokenizer.decode(new_ids, skip_special_tokens=True).strip()
-        tool_call = _tool_call_from_text(raw_text)
+        allowed_names = {
+            str(tool.get("function", {}).get("name", ""))
+            for tool in tools
+            if isinstance(tool, dict)
+        }
+        tool_call = _tool_call_from_text(visible_text, allowed_names)
         return visible_text, tool_call, input_tokens, int(new_ids.shape[-1])
 
 

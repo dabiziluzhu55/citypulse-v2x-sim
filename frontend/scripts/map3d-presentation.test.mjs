@@ -16,6 +16,7 @@ import {
   buildingPresentationUsable,
   createBuildingLoadTracker,
   FINAL_RENDER_FRAME_COUNT,
+  MAP3D_BUILDING_SOFT_TIMEOUT_MS,
   MAP3D_MODULE_LOAD_TIMEOUT_MS,
   MAP3D_PRESENTATION_HARD_TIMEOUT_MS,
   MAP3D_STALL_WINDOW_MS,
@@ -285,6 +286,43 @@ test('uses the scene deadline as a partial-building fallback without hiding core
   )
 })
 
+test('presents a usable core scene after the soft building deadline', () => {
+  const signals = {
+    providerReady: true,
+    cameraReady: true,
+    overviewReady: true,
+    intersectionReady: true,
+    environmentReady: true,
+    buildingRequired: true,
+    buildingUsable: false,
+    buildingReadyTiles: 1,
+    buildingCoverage: 0.01,
+  }
+  const tracker = {
+    ...createBuildingLoadTracker(0, 1),
+    readyTiles: 1,
+  }
+
+  assert.equal(
+    resolveMap3dPresentationDecision(
+      signals,
+      tracker,
+      MAP3D_BUILDING_SOFT_TIMEOUT_MS - 1,
+      MAP3D_BUILDING_SOFT_TIMEOUT_MS - 1,
+    ),
+    'wait',
+  )
+  assert.equal(
+    resolveMap3dPresentationDecision(
+      signals,
+      tracker,
+      MAP3D_BUILDING_SOFT_TIMEOUT_MS,
+      MAP3D_BUILDING_SOFT_TIMEOUT_MS,
+    ),
+    'present',
+  )
+})
+
 test('opens the 3D presentation only after every core stage is ready', () => {
   const signals = {
     providerReady: true,
@@ -392,6 +430,10 @@ test('mounts 3D lazily, preserves its engine, and releases the hidden 2D map', (
   assert.match(baiduThreeMapSource, /props\.active && documentVisible/)
   assert.match(backgroundMapSource, /const vehicleFeatures = new globalThis\.Map/)
   assert.match(appSource, /threeMapState\.value === 'ready'[\s\S]*map2dMounted\.value = false/)
+  assert.match(
+    appThreeMapLoaderSource,
+    /active[\s\S]*previous === false[\s\S]*state\.value !== 'ready'[\s\S]*remountThreeMap/,
+  )
   assert.match(backgroundMapSource, /releaseFullRoadNetwork\(\)/)
   assert.doesNotMatch(backgroundMapSource, /function renderVehicles\(\) \{\s*vehicleSource\.clear\(\)/)
 })

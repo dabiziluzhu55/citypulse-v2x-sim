@@ -175,8 +175,6 @@ def test_control_modes_registered() -> None:
     expected_modes = [
         "fixed",
         "max_pressure",
-        "safe_max_pressure",
-        "strong_b_trace",
         "sotl",
         "ippo",
         "mappo",

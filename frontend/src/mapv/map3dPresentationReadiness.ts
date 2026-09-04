@@ -1,10 +1,11 @@
 export const MAP3D_MODULE_LOAD_TIMEOUT_MS = 60_000
+export const MAP3D_BUILDING_SOFT_TIMEOUT_MS = 15_000
 export const MAP3D_PRESENTATION_HARD_TIMEOUT_MS = 90_000
 export const MAP3D_STALL_WINDOW_MS = 30_000
 export const BUILDING_STABLE_SAMPLE_COUNT = 3
 export const BUILDING_STABLE_SAMPLE_INTERVAL_MS = 250
 export const FINAL_RENDER_FRAME_COUNT = 2
-export const BUILDING_MIN_READY_TILES = 128
+export const BUILDING_MIN_READY_TILES = 32
 
 export type Map3dRenderQuality = 'full' | 'reduced'
 export type Map3dPresentationDecision = 'wait' | 'present' | 'stalled' | 'hard-timeout'
@@ -153,6 +154,11 @@ export function resolveMap3dPresentationDecision(
   nowMs: number,
 ): Map3dPresentationDecision {
   if (map3dPresentationReady(signals)) return 'present'
+  if (
+    elapsedMs >= MAP3D_BUILDING_SOFT_TIMEOUT_MS
+    && corePresentationReady(signals)
+    && (!signals.buildingRequired || tracker.readyTiles > 0)
+  ) return 'present'
   if (
     elapsedMs >= MAP3D_PRESENTATION_HARD_TIMEOUT_MS
     && corePresentationReady(signals)

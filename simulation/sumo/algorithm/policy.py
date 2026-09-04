@@ -281,6 +281,7 @@ class AIFrameObservation:
 class AlgorithmDecision:
     signal_actions: Mapping[str, object]
     vehicle_actions: Mapping[str, object]
+    v2x_events: tuple[Mapping[str, object], ...] = ()
 
 
 @dataclass(frozen=True)

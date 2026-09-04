@@ -39,6 +39,30 @@ class TakeoverPlanningError(RuntimeError):
         self.rag_status = rag_status
 
 
+def _parse_control_plan_content(raw_content: str) -> Mapping[str, Any]:
+    """Extract the first JSON object from a Qwen control-plan response.
+
+    Chat models occasionally wrap an otherwise valid object in a Markdown
+    fence or a short explanation.  ``json.loads`` rejects that harmless
+    decoration with ``Extra data``; ``raw_decode`` lets us accept the object
+    while the existing AIControlPlan validation still enforces every safety
+    and runtime constraint.
+    """
+
+    content = raw_content.strip()
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(content):
+        if character != "{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(content, index)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, Mapping):
+            return payload
+    raise json.JSONDecodeError("No JSON control-plan object found", content, 0)
+
+
 @dataclass
 class _PlanningState:
     event_id: str | None = None
@@ -244,7 +268,7 @@ class TakeoverOrchestrator:
                 raise TakeoverPlanningError("Qwen returned an empty control plan.")
             try:
                 plan = AIControlPlan.from_mapping(
-                    json.loads(raw_content),
+                    _parse_control_plan_content(raw_content),
                     config=self._settings.ai_control_config,
                 )
             except (json.JSONDecodeError, AIControlValidationError) as exc:

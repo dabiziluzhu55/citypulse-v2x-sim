@@ -63,9 +63,36 @@ export interface CollaborationStateWsMessage {
   }
 }
 
+export type V2XRole = 'vehicle' | 'road' | 'cloud'
+
+export type V2XLinkType =
+  | 'V2I'
+  | 'I2V'
+  | 'I2C'
+  | 'C2I'
+  | 'V2V'
+  | 'C2C'
+  | 'UNKNOWN'
+
+export type V2XLogStatus = 'sending' | 'success' | 'failed'
+
 export interface CollaborationLogEntry {
   id: string
+  messageId?: string
+  sequence?: number
+  dateLabel?: string
   timeLabel: string
+  eventTimeSeconds?: number
   source: string
+  sourceRole?: V2XRole
+  destination?: string
+  destinationRole?: V2XRole
+  linkType?: V2XLinkType
+  eventState?: 'SEND' | 'DELIVER' | 'CONSUME' | 'TTL_EXPIRED'
+  messageType?: string
+  messageTag?: string
   message: string
+  detail?: string
+  latencyMs?: number
+  status?: V2XLogStatus
 }
