@@ -1,11 +1,11 @@
-"""Traffic Copilot 的大模型 Provider 抽象与 Qwen HTTP 实现。
+"""Traffic Copilot的大模型Provider抽象与Qwen HTTP实现
 
-本模块只负责和 OpenAI 兼容的聊天补全接口通信，不知道 SUMO、TraCI 或
-具体交通业务。Qwen 服务部署在独立 GPU 机器上时，后端只需要把
-``base_url`` 指向内网地址或 SSH 隧道；模型不会被加载进 FastAPI 进程。
+本模块只负责和OpenAI兼容的聊天补全接口通信，不知道SUMO、TraCI 或
+具体交通业务。Qwen服务部署在独立GPU机器上时，后端只需要把
+``base_url`` 指向内网地址或SSH隧道
 
-Provider 返回经过校验的轻量消息对象，避免编排层依赖某个 SDK 的响应
-对象格式。测试时可以注入一个确定性的 transport，不需要启动真实模型。
+Provider返回经过校验的轻量消息对象，避免编排层依赖某个SDK的响应
+对象格式。测试时可以注入一个确定性的transport，不需要启动真实模型
 """
 
 from __future__ import annotations
