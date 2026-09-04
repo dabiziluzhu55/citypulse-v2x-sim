@@ -1,11 +1,9 @@
-"""Traffic Copilot 的只读交通查询工具。
+"""Traffic Copilot的只读交通查询工具
 
-本模块故意不依赖 Qwen、FastAPI 或 TraCI。工具只接收一个受控的数据源，
-数据源可以来自现有 ``SimulationService``，也可以是测试用的内存快照。
-这样可以先验证工具的业务口径，再在后续步骤接入模型和 HTTP API。
+本模块不依赖 Qwen、FastAPI或TraCI。工具只接收一个受控的数据源，
+数据源可以来自现有 ``SimulationService``，也可以是测试用的内存快照
 
-所有工具都返回统一的 ``source / scope / timestamp / data`` 外壳，且没有
-任何会修改仿真、信号控制或车辆状态的入口。
+所有工具都返回统一的 ``source / scope / timestamp / data`` 
 """
 
 from __future__ import annotations

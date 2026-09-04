@@ -1,6 +1,6 @@
-"""Backend 指标层：薄封装，转发至部署侧公共包 traffic_eval。
+"""Backend 指标层：薄封装，转发至公共包traffic_eval
 
-产品指标公式的唯一实现在仓库根目录 traffic_eval/；本包仅保持既有导入路径兼容。
+产品指标公式的唯一实现在traffic_eval/；本包仅保持既有导入路径兼容
 """
 
 from traffic_eval import (  # noqa: F401

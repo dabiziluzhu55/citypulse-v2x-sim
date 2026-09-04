@@ -1,4 +1,4 @@
-"""CityPulse Traffic Copilot：只读交通工具与 Qwen 编排。"""
+"""CityPulse Traffic Copilot：只读交通工具与Qwen编排"""
 
 from .llm import (
     AssistantMessage,

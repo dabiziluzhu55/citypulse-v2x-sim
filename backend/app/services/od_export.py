@@ -1,4 +1,4 @@
-"""九区域OD导出：读取官方TAZ与已生成OD报告，输出CSV/JSON/热力图"""
+"""九区域OD导出：读取TAZ与已生成OD报告，输出CSV/JSON/热力图"""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from ..core.exceptions import AppError
 logger = logging.getLogger(__name__)
 
 EXPECTED_ZONE_IDS = tuple(f"zone_{index}" for index in range(1, 10))
+HEATMAP_ZONE_LABELS = tuple(f"TAZ {index}" for index in range(1, 10))
 EXPECTED_INTERSECTION_COUNT = 20
 OFFICIAL_DEMANDS_RELATIVE = (
     "data/maps/sumo/official/traffic/official_traffic_demands.json"
@@ -374,18 +375,18 @@ def render_od_heatmap_png(
         plt.rcParams["axes.unicode_minus"] = False
 
     fig_height = 10.5
-    fig, ax = plt.subplots(figsize=(9.5, fig_height))
+    fig, ax = plt.subplots(figsize=(11.0, fig_height))
     image = ax.imshow(values, cmap="YlOrRd", aspect="equal")
-    ax.set_xticks(range(len(EXPECTED_ZONE_IDS)))
-    ax.set_yticks(range(len(EXPECTED_ZONE_IDS)))
-    ax.set_xticklabels(EXPECTED_ZONE_IDS, rotation=45, ha="right")
-    ax.set_yticklabels(EXPECTED_ZONE_IDS)
-    ax.set_xlabel("Destination TAZ")
-    ax.set_ylabel("Origin TAZ")
-    ax.set_title(f"OD Heatmap · {period} · unit={unit}")
+    ax.set_xticks(range(len(HEATMAP_ZONE_LABELS)))
+    ax.set_yticks(range(len(HEATMAP_ZONE_LABELS)))
+    ax.set_xticklabels(HEATMAP_ZONE_LABELS, rotation=45, ha="right")
+    ax.set_yticklabels(HEATMAP_ZONE_LABELS)
+    ax.set_xlabel("终点交通分析区")
+    ax.set_ylabel("起点交通分析区")
 
-    colorbar = fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
-    colorbar.set_label(f"PCU ({unit})")
+    fig.subplots_adjust(left=0.12, right=0.78, top=0.92, bottom=0.28)
+    colorbar = fig.colorbar(image, ax=ax, fraction=0.046, pad=0.06)
+    colorbar.set_label(f"PCU ({unit})", labelpad=12)
 
     max_value = float(values.max()) if values.size else 0.0
     threshold = max_value * 0.55 if max_value > 0 else 0.0
@@ -405,8 +406,8 @@ def render_od_heatmap_png(
     caption = (
         "典型出行需求（OD矩阵说明）\n"
         "1) 单元格(i,j)表示从起点交通分析区（TAZ） i到终点交通分析区（TAZ） j的典型出行量\n"
-        "2) Y轴 = 起点TAZ，X轴 = 终点TAZ；区域顺序为1-9\n"
-        "3) 数值单位为PCU（客运车辆单位）\n"
+        "2) Y轴=起点TAZ，X轴=终点TAZ；区域顺序为1-9\n"
+        "3) 数值单位为PCU\n"
         "4) 时间范围：所选交通时段的全时段OD\n"
         "说明：OD矩阵表示起点TAZ到终点TAZ的典型出行量；同区域行程不计入矩阵（对角线为0）"
     )
@@ -420,11 +421,9 @@ def render_od_heatmap_png(
         wrap=True,
         fontproperties=font_manager.FontProperties(family=font_family or "DejaVu Sans"),
     )
-    fig.subplots_adjust(left=0.12, right=0.95, top=0.92, bottom=0.28)
-
     buffer = io.BytesIO()
     try:
-        fig.savefig(buffer, format="png", dpi=140)
+        fig.savefig(buffer, format="png", dpi=140, bbox_inches="tight", pad_inches=0.4)
     finally:
         plt.close(fig)
     return buffer.getvalue()

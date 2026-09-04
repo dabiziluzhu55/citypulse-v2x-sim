@@ -1,11 +1,10 @@
-"""Traffic Copilot 的受控工具调用编排器。
+"""Traffic Copilot的受控工具调用编排器
 
 编排器把用户问题、当前事件上下文和历史对话交给模型；模型只能从固定
 的只读交通工具中选择。每次工具调用都会在后端白名单和工具自身参数
-校验后执行，结果再以 ``role=tool`` 消息回传给 Qwen。
+校验后执行，结果再以 ``role=tool`` 消息回传给Qwen
 
-这里不放 FastAPI 路由，也不直接接触 SimulationService。这样可以先用
-固定数据验证真实 Qwen 的多轮协议，下一步再把同一编排器挂到 HTTP API。
+先用固定数据验证真实Qwen的多轮协议，下一步再把同一编排器挂到HTTP API
 """
 
 from __future__ import annotations
