@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     citypulse_qwen_timeout_seconds: float = 60.0
     citypulse_qwen_temperature: float = 0.2
     citypulse_qwen_max_tokens: int = 512
+    # AI 控制规划上下文字符上限；避免 Qwen tokenizer 截断最终生成标记
+    citypulse_qwen_control_context_max_chars: int = 6_000
     copilot_max_rounds: int = 4
     copilot_max_tool_calls: int = 8
     # The bundled school-server Qwen Transformers service accepts 4096 input

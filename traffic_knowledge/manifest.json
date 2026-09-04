@@ -980,6 +980,7 @@
       ],
       "information_type": "project_fact",
       "status": "current",
+      "document_role": "canonical_metric_definition",
       "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
       "applicable_presets": [
         "xiongan_20",
@@ -993,7 +994,7 @@
         "major_event_opening",
         "major_event_closing"
       ],
-      "priority": "normal"
+      "priority": "high"
     },
     {
       "id": "metrics_safety",
@@ -1112,6 +1113,7 @@
       ],
       "information_type": "mixed",
       "status": "current",
+      "document_role": "evaluation_protocol",
       "code_revision": "8efb0c5acc3aaac326e9b5dbf8d2106fa4fb220d",
       "applicable_presets": [
         "xiongan_20",

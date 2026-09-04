@@ -273,6 +273,7 @@ def test_tool_definitions_are_fixed_read_only_tools() -> None:
     names = [item["function"]["name"] for item in TOOL_DEFINITIONS]
     assert names == [
         "get_event_details",
+        "get_ai_takeover_status",
         "get_current_traffic",
         "get_traffic_history",
         "get_prediction",
@@ -282,6 +283,112 @@ def test_tool_definitions_are_fixed_read_only_tools() -> None:
         "calculator",
     ]
     assert all("write" not in name and "control" not in name for name in names)
+
+
+def test_ai_takeover_status_exposes_effective_state_and_installed_plan() -> None:
+    snapshot = _snapshot(10.0, worsening=True)
+    snapshot["ai_takeover"] = {
+        "state": "ACTIVE",
+        "ai_enabled": True,
+        "active_event_id": "event-1",
+        "allowed_scope": ["demo_1", "demo_2"],
+        "controlled_intersections": ["demo_1"],
+        "plan_sequence": 1,
+        "plan_id": "session-1:event-1:1",
+        "plan_started_at": 5.0,
+        "plan_valid_until": 35.0,
+        "baseline_controller": "sotl",
+        "last_error": None,
+        "fallback_reason": None,
+        "last_objective": "reduce queue growth",
+        "last_reason": "protect the affected approach",
+        "rag_status": "ready",
+        "last_plan": {
+            "event_id": "event-1",
+            "plan_id": "session-1:event-1:1",
+            "sequence": 1,
+            "plan_started_at": 5.0,
+            "plan_valid_until": 35.0,
+            "controlled_intersections": ["demo_1"],
+            "target_phase_sequence": {"demo_1": [1, 0, 1, 0, 1, 0]},
+            "objective": "reduce queue growth",
+            "reason": "protect the affected approach",
+        },
+    }
+    source = InMemoryTrafficDataSource({"session-1": [snapshot]})
+    service = TrafficToolService(source, session_id="session-1")
+
+    result = service.execute("get_ai_takeover_status", {})
+
+    assert result["source"] == "get_ai_takeover_status"
+    assert result["scope"] == "session:session-1"
+    assert result["data"]["control_active"] is True
+    assert result["data"]["installed_plan_active"] is True
+    assert result["data"]["takeover_state"] == "ACTIVE"
+    assert result["data"]["installed_plan"]["target_phase_sequence"] == {
+        "demo_1": [1, 0, 1, 0, 1, 0]
+    }
+    assert result["data"]["installed_plan"]["plan_id"] == (
+        "session-1:event-1:1"
+    )
+
+
+def test_ai_takeover_status_does_not_report_fallback_as_active() -> None:
+    snapshot = _snapshot(10.0, worsening=True)
+    snapshot["ai_takeover"] = {
+        "state": "FALLBACK",
+        "ai_enabled": True,
+        "active_event_id": "event-1",
+        "controlled_intersections": [],
+        "plan_sequence": 0,
+        "fallback_reason": "qwen_timeout",
+    }
+    service = TrafficToolService(
+        InMemoryTrafficDataSource({"session-1": [snapshot]}),
+        session_id="session-1",
+    )
+
+    result = service.execute("get_ai_takeover_status", {})
+
+    assert result["data"]["control_active"] is False
+    assert result["data"]["installed_plan_active"] is False
+    assert result["data"]["installed_plan"] is None
+    assert result["data"]["fallback_reason"] == "qwen_timeout"
+
+
+def test_ai_takeover_status_ignores_stale_active_state_after_terminal_session() -> None:
+    snapshot = _snapshot(10.0, worsening=True)
+    snapshot["state"] = "FAILED"
+    snapshot["ai_takeover"] = {
+        "state": "ACTIVE",
+        "ai_enabled": True,
+        "active_event_id": "event-1",
+        "controlled_intersections": ["demo_1"],
+        "plan_sequence": 1,
+        "plan_id": "plan-1",
+        "last_plan": {
+            "event_id": "event-1",
+            "plan_id": "plan-1",
+            "sequence": 1,
+            "plan_started_at": 0.0,
+            "plan_valid_until": 30.0,
+            "controlled_intersections": ["demo_1"],
+            "target_phase_sequence": {"demo_1": [1, 0, 1, 0, 1, 0]},
+            "objective": "protect the blocked approach",
+            "reason": "keep the affected junction safe",
+        },
+    }
+    service = TrafficToolService(
+        InMemoryTrafficDataSource({"session-1": [snapshot]}),
+        session_id="session-1",
+    )
+
+    result = service.execute("get_ai_takeover_status", {})
+
+    assert result["data"]["simulation_state"] == "FAILED"
+    assert result["data"]["control_active"] is False
+    assert result["data"]["installed_plan_active"] is False
+    assert result["data"]["installed_plan"]["plan_id"] == "plan-1"
 
 
 def test_current_traffic_uses_existing_snapshot_shape(service: TrafficToolService) -> None:
@@ -294,6 +401,11 @@ def test_current_traffic_uses_existing_snapshot_shape(service: TrafficToolServic
     assert intersection["totals"]["halting_count"] == 4
     assert intersection["totals"]["congestion_level"] == "congested"
     assert result["data"]["lanes"][0]["mean_speed_kmh"] > 0
+    compact = result["data"]["model_summary"]["intersections"][0]
+    assert compact["totals"]["vehicle_count"] == 9
+    assert compact["lanes"][0]["lane_id"] == "L1_0"
+    assert compact["lanes"][0]["vehicle_count"] == 6
+    assert compact["lanes"][0]["halting_count"] == 3
 
 
 def test_event_details_merges_detection_and_injected_event(service: TrafficToolService) -> None:
@@ -368,6 +480,9 @@ def test_history_rejects_mixed_window_and_invalid_metric(
 def test_prediction_and_network_summary_are_read_only(service: TrafficToolService) -> None:
     prediction = service.execute("get_prediction", {"intersection_id": "demo_1"})
     assert prediction["data"]["model"] == "NarrowNet-TDP"
+    assert prediction["data"]["supported_horizon_seconds"] == 60.0
+    assert prediction["data"]["top_increases"][0]["intersection_id"] == "demo_1"
+    assert prediction["data"]["top_increases"][0]["delta"] == 4.0
     assert prediction["data"]["intersections"][0]["trend"] == "increasing"
     assert prediction["data"]["intersections"][0]["risk"] == "medium"
 

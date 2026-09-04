@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
@@ -48,7 +50,11 @@ def chat(
 
     # 先校验会话存在，再调用模型；否则模型可能只调用 calculator/search
     # 而绕过当前会话的有效性检查。
-    service.snapshot(session_id)
+    snapshot = service.snapshot(session_id)
+    resolved_event_id = _resolve_event_context(
+        snapshot,
+        request_body.active_event_id,
+    )
     data_source = SimulationServiceTrafficDataSource(
         service,
         history_repository=getattr(service, "history_repository", None),
@@ -80,7 +86,7 @@ def chat(
         result = orchestrator.run(
             request_body.message,
             history=[item.model_dump() for item in request_body.history],
-            active_event_id=request_body.active_event_id,
+            active_event_id=resolved_event_id,
             active_scope=request_body.active_scope,
         )
     except LLMUnavailableError as exc:
@@ -147,3 +153,81 @@ def chat(
         usage=dict(result.usage),
         latency_ms=result.latency_ms,
     )
+
+
+def _resolve_event_context(
+    snapshot: Mapping[str, Any] | Any,
+    explicit_event_id: str | None = None,
+) -> str | None:
+    """Resolve a safe event context for conversational references.
+
+    The UI can provide an exact event ID and that value always wins. When it
+    does not, infer an ID only when the snapshot contains one unambiguous
+    active event, or one event in total. Event type words such as ``accident``
+    are never converted into IDs here, and multiple events remain ambiguous.
+    """
+
+    if isinstance(explicit_event_id, str) and explicit_event_id.strip():
+        return explicit_event_id.strip()
+
+    event_ids: set[str] = set()
+    active_event_ids: set[str] = set()
+    configured_event_ids: set[str] = set()
+    configured_active_event_ids: set[str] = set()
+    active_states = {"active", "running", "armed", "triggered"}
+
+    def collect(items: Any, *, state_field: str) -> None:
+        if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
+            return
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            raw_event_id = item.get("event_id")
+            if not isinstance(raw_event_id, str) or not raw_event_id.strip():
+                continue
+            event_id = raw_event_id.strip()
+            event_ids.add(event_id)
+            state = str(item.get(state_field, "")).strip().lower()
+            if state in active_states:
+                active_event_ids.add(event_id)
+
+    configured_events = (
+        snapshot.get("events", ()) if isinstance(snapshot, Mapping) else ()
+    )
+    collect(configured_events, state_field="state")
+    if isinstance(configured_events, Sequence) and not isinstance(
+        configured_events, (str, bytes)
+    ):
+        for item in configured_events:
+            if not isinstance(item, Mapping):
+                continue
+            raw_event_id = item.get("event_id")
+            if not isinstance(raw_event_id, str) or not raw_event_id.strip():
+                continue
+            event_id = raw_event_id.strip()
+            configured_event_ids.add(event_id)
+            state = str(item.get("state", "")).strip().lower()
+            if state in active_states:
+                configured_active_event_ids.add(event_id)
+    detection = (
+        snapshot.get("event_detection", {})
+        if isinstance(snapshot, Mapping)
+        else {}
+    )
+    collect(
+        detection.get("cards", ()) if isinstance(detection, Mapping) else (),
+        state_field="status",
+    )
+
+    # Configured disturbances are the authoritative event context. Detection
+    # cards may describe the same physical disturbance with a generated ID;
+    # do not let that derived card replace the one configured by the user.
+    if len(configured_active_event_ids) == 1:
+        return next(iter(configured_active_event_ids))
+    if len(configured_event_ids) == 1:
+        return next(iter(configured_event_ids))
+    if len(active_event_ids) == 1:
+        return next(iter(active_event_ids))
+    if len(event_ids) == 1:
+        return next(iter(event_ids))
+    return None

@@ -69,6 +69,45 @@ def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _phase_mapping(
+    value: object, field_name: str
+) -> dict[str, tuple[int, ...]]:
+    """Normalize a serialized intersection -> phase-sequence mapping."""
+
+    if not isinstance(value, Mapping):
+        raise AIControlValidationError(f"{field_name} must be an object.")
+    result: dict[str, tuple[int, ...]] = {}
+    for raw_intersection_id, raw_phases in value.items():
+        if not isinstance(raw_intersection_id, str):
+            raise AIControlValidationError(
+                f"{field_name} keys must be non-empty strings."
+            )
+        intersection_id = raw_intersection_id.strip()
+        if not intersection_id:
+            raise AIControlValidationError(
+                f"{field_name} keys must be non-empty strings."
+            )
+        if intersection_id in result:
+            raise AIControlValidationError(
+                f"{field_name} keys must be unique after trimming."
+            )
+        if not isinstance(raw_phases, Sequence) or isinstance(
+            raw_phases, (str, bytes)
+        ):
+            raise AIControlValidationError(
+                f"{field_name}[{intersection_id!r}] must be an array."
+            )
+        phases: list[int] = []
+        for phase in raw_phases:
+            if isinstance(phase, bool) or not isinstance(phase, int):
+                raise AIControlValidationError(
+                    f"{field_name}[{intersection_id!r}] must contain integer phases."
+                )
+            phases.append(int(phase))
+        result[intersection_id] = tuple(phases)
+    return result
+
+
 @dataclass(frozen=True)
 class AIControlConfig:
     """Runtime policy serialized with a simulation session."""
@@ -274,6 +313,117 @@ class AIControlPlan:
 
 
 @dataclass(frozen=True)
+class AIControlPlanSummary:
+    """The last successfully installed plan, retained for read-only Copilot Q&A."""
+
+    event_id: str
+    plan_id: str
+    sequence: int
+    plan_started_at: float
+    plan_valid_until: float
+    controlled_intersections: tuple[str, ...]
+    target_phase_sequence: Mapping[str, tuple[int, ...]]
+    objective: str
+    reason: str
+
+    @classmethod
+    def from_plan(
+        cls,
+        *,
+        event_id: str,
+        plan_id: str,
+        sequence: int,
+        plan_started_at: float,
+        plan: AIControlPlan,
+    ) -> "AIControlPlanSummary":
+        return cls(
+            event_id=event_id,
+            plan_id=plan_id,
+            sequence=sequence,
+            plan_started_at=plan_started_at,
+            plan_valid_until=plan_started_at + plan.valid_seconds,
+            controlled_intersections=plan.controlled_intersections,
+            target_phase_sequence=plan.signal_plan,
+            objective=plan.objective,
+            reason=plan.reason,
+        )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "AIControlPlanSummary":
+        return cls(**dict(value))
+
+    def __post_init__(self) -> None:
+        event_id = _text(self.event_id, "event_id", max_length=256)
+        plan_id = _text(self.plan_id, "plan_id", max_length=512)
+        object.__setattr__(self, "event_id", event_id)
+        object.__setattr__(self, "plan_id", plan_id)
+        try:
+            sequence = int(self.sequence)
+        except (TypeError, ValueError) as exc:
+            raise AIControlValidationError(
+                "AI control plan summary sequence must be an integer."
+            ) from exc
+        if isinstance(self.sequence, float) and not self.sequence.is_integer():
+            raise AIControlValidationError(
+                "AI control plan summary sequence must be an integer."
+            )
+        if sequence < 1:
+            raise AIControlValidationError(
+                "AI control plan summary sequence must be positive."
+            )
+        object.__setattr__(self, "sequence", sequence)
+        for name in ("plan_started_at", "plan_valid_until"):
+            value = getattr(self, name)
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError) as exc:
+                raise AIControlValidationError(
+                    f"{name} must be numeric."
+                ) from exc
+            if not math.isfinite(parsed):
+                raise AIControlValidationError(f"{name} must be finite.")
+            object.__setattr__(self, name, parsed)
+        controlled = _string_tuple(
+            self.controlled_intersections, "controlled_intersections"
+        )
+        target_phase_sequence = _phase_mapping(
+            self.target_phase_sequence, "target_phase_sequence"
+        )
+        if set(target_phase_sequence) != set(controlled):
+            raise AIControlValidationError(
+                "target_phase_sequence keys must exactly match controlled_intersections."
+            )
+        if self.plan_valid_until < self.plan_started_at:
+            raise AIControlValidationError(
+                "plan_valid_until cannot be before plan_started_at."
+            )
+        object.__setattr__(self, "controlled_intersections", controlled)
+        object.__setattr__(self, "target_phase_sequence", target_phase_sequence)
+        object.__setattr__(
+            self, "objective", _text(self.objective, "objective", max_length=200)
+        )
+        object.__setattr__(
+            self, "reason", _text(self.reason, "reason", max_length=1_000)
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "event_id": self.event_id,
+            "plan_id": self.plan_id,
+            "sequence": self.sequence,
+            "plan_started_at": self.plan_started_at,
+            "plan_valid_until": self.plan_valid_until,
+            "controlled_intersections": list(self.controlled_intersections),
+            "target_phase_sequence": {
+                intersection_id: list(phases)
+                for intersection_id, phases in self.target_phase_sequence.items()
+            },
+            "objective": self.objective,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
 class AIControlStatus:
     """Serializable AI takeover status embedded in every simulation snapshot."""
 
@@ -293,6 +443,7 @@ class AIControlStatus:
     last_objective: str | None = None
     last_reason: str | None = None
     rag_status: str | None = None
+    last_plan: AIControlPlanSummary | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.state, str):
@@ -320,6 +471,12 @@ class AIControlStatus:
                 self.controlled_intersections, "controlled_intersections"
             ),
         )
+        last_plan = self.last_plan
+        if last_plan is not None and not isinstance(last_plan, AIControlPlanSummary):
+            if not isinstance(last_plan, Mapping):
+                raise AIControlValidationError("last_plan must be an object.")
+            last_plan = AIControlPlanSummary.from_mapping(last_plan)
+        object.__setattr__(self, "last_plan", last_plan)
         for name in (
             "plan_started_at",
             "plan_valid_until",
@@ -355,6 +512,7 @@ class AIControlStatus:
             "last_objective": self.last_objective,
             "last_reason": self.last_reason,
             "rag_status": self.rag_status,
+            "last_plan": self.last_plan.to_dict() if self.last_plan else None,
         }
 
 
@@ -379,6 +537,7 @@ __all__ = [
     "AI_CONTROL_STATES",
     "AIControlConfig",
     "AIControlPlan",
+    "AIControlPlanSummary",
     "AIControlStatus",
     "AIControlValidationError",
     "plan_from_json",

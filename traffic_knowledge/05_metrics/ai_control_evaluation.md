@@ -1,6 +1,7 @@
 ---
 information_type: mixed
 status: current
+document_role: evaluation_protocol
 code_revision: 8efb0c5acc3aaac326e9b5dbf8d2106fa4fb220d
 applicable_events:
   - accident
@@ -47,26 +48,16 @@ priority: high
 
 这类设计无法分离 AI 独立效果。
 
-## A. 交通效果
+## A. 交通效果评估
 
-### 当前正式指标（项目事实）
+本文只规定 AI 管控实验如何选择、组织和报告交通效果指标，不重复维护
+指标名称、公式、阈值或当前实现字段。通行效率指标的唯一项目权威来源是
+`efficiency_metrics.md`；安全和能源专项指标分别以 `safety_metrics.md` 与
+`emission_energy_metrics.md` 为准。
 
-交通效果评价以最新版 `traffic_eval.EvalResult` 和对应的专项指标口径为准。通行效率的标准核心指标为：
-
-| 字段 | 含义 |
-| --- | --- |
-| `path_avg_speed_kmh` | 路径平均速度 |
-| `travel_time_index` | 行程时间比 |
-| `delay_time_proportion` | 延误时间比，范围为 0~1 |
-| `traffic_performance_index` | 城市交通运行指数 |
-| `traffic_state` | 交通运行状态 |
-| `avg_stops_per_vehicle` | 路径平均停车次数 |
-| `regional_max_queue_length_m` | 区域最大排队长度，单位为 m |
-| `spillback_rate` | 溢流率，单位为 % |
-
-安全和能源专项指标按对应专项口径纳入评估：`hard_braking_events`、`hard_braking_rate` 和 `fuel_intensity_L_per_100km`。它们分别反映急刹行为和燃油强度，不替代通行效率核心指标。
-
-口径见 `efficiency_metrics.md`、`safety_metrics.md`、`emission_energy_metrics.md`。同条件下，行程时间比、延误时间比、交通运行指数、排队、溢流率、停车、急刹和燃油强度通常越低越好；路径平均速度以及完成交通任务的能力通常越高越好；运行状态越接近“畅通”越好。单一指标改善不能替代综合判断。
+因此，评估报告应从上述当前指标文档和终态 `traffic_eval.EvalResult` 读取实际
+字段，并在指标缺失或尚未实现时保留 `null` / warning，不得用本文的规划指标
+替代正式结算指标。
 
 ### 规划型局部指标（尚未计算）
 

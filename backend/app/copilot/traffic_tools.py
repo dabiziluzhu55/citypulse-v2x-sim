@@ -33,6 +33,7 @@ from .rag import (
     KnowledgeError,
     KnowledgeQuery,
     KnowledgeRetriever,
+    route_knowledge_query,
 )
 
 
@@ -539,6 +540,10 @@ class TrafficToolService:
             timestamp,
             {
                 "as_of_seconds": timestamp,
+                # Keep a compact, deterministic prefix for the LLM. The
+                # detailed fields below remain part of the existing tool
+                # contract, but can be truncated by the Qwen input limit.
+                "model_summary": _model_traffic_summary(timestamp, intersections),
                 "intersections": intersections,
                 "lanes": lane_rows,
             },
@@ -591,6 +596,72 @@ class TrafficToolService:
                 "count": len(events),
                 "include_ended": include_ended,
             },
+        )
+
+    def get_ai_takeover_status(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        """查询当前 AI 接管是否真正生效及最近一次有效控制计划。"""
+
+        _prepare_arguments(arguments, set())
+        snapshot = self._require_snapshot()
+        raw_status = _field(snapshot, "ai_takeover", None)
+        status = _ai_takeover_status_payload(raw_status)
+        if status is None:
+            return _result(
+                "get_ai_takeover_status",
+                f"session:{self._require_session_id()}",
+                _snapshot_timestamp(snapshot),
+                {
+                    "available": False,
+                    "reason": "ai_takeover_status_not_in_snapshot",
+                    "simulation_state": str(_field(snapshot, "state", "unknown")),
+                },
+            )
+
+        simulation_state = str(_field(snapshot, "state", "unknown"))
+        takeover_state = str(status.get("state", "INACTIVE"))
+        ai_enabled = bool(status.get("ai_enabled", False))
+        terminal_simulation_states = {"STOPPED", "COMPLETED", "FAILED"}
+        installed_plan_active = (
+            takeover_state == "ACTIVE"
+            and ai_enabled
+            and simulation_state not in terminal_simulation_states
+        )
+        # An ACTIVE worker plan is only being executed while the simulation is
+        # RUNNING.  This prevents a stale worker status in a terminal snapshot
+        # from being presented as live control.
+        control_active = installed_plan_active and simulation_state == "RUNNING"
+        last_plan = status.get("last_plan")
+        data: dict[str, Any] = {
+            "available": True,
+            "as_of_seconds": _snapshot_timestamp(snapshot),
+            "simulation_state": simulation_state,
+            "takeover_state": takeover_state,
+            "ai_enabled": ai_enabled,
+            "control_active": control_active,
+            "installed_plan_active": installed_plan_active,
+            "active_event_id": status.get("active_event_id"),
+            "allowed_scope": status.get("allowed_scope", []),
+            "controlled_intersections": status.get("controlled_intersections", []),
+            "plan_sequence": status.get("plan_sequence", 0),
+            "plan_id": status.get("plan_id"),
+            "plan_started_at": status.get("plan_started_at"),
+            "plan_valid_until": status.get("plan_valid_until"),
+            "baseline_controller": status.get("baseline_controller"),
+            "last_objective": status.get("last_objective"),
+            "last_reason": status.get("last_reason"),
+            "last_error": status.get("last_error"),
+            "fallback_reason": status.get("fallback_reason"),
+            "rag_status": status.get("rag_status"),
+            # The plan is a requested target-phase sequence.  It is not a
+            # measurement of the phase currently displayed by SUMO; callers
+            # should combine this tool with get_current_traffic for that fact.
+            "installed_plan": last_plan,
+        }
+        return _result(
+            "get_ai_takeover_status",
+            f"session:{self._require_session_id()}",
+            _snapshot_timestamp(snapshot),
+            data,
         )
 
     def get_traffic_history(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
@@ -931,6 +1002,11 @@ class TrafficToolService:
                 }
             )
 
+        top_increases = sorted(
+            (row for row in rows if float(row["delta"]) > 0),
+            key=lambda row: (-float(row["delta"]), str(row["intersection_id"])),
+        )[:5]
+
         return _result(
             "get_prediction",
             _prediction_scope(intersection_ids),
@@ -939,6 +1015,10 @@ class TrafficToolService:
             {
                 "available": True,
                 "as_of_seconds": _field(prediction, "as_of_seconds"),
+                # The model currently exposes one short-term horizon. Make
+                # that boundary explicit so the Copilot does not infer a
+                # longer horizon from the per-intersection rows.
+                "supported_horizon_seconds": _field(prediction, "horizon_seconds"),
                 "horizon_seconds": _field(prediction, "horizon_seconds"),
                 "model": _field(prediction, "model", ""),
                 "model_version": _field(prediction, "model_version", ""),
@@ -946,6 +1026,7 @@ class TrafficToolService:
                 "fallback": bool(_field(prediction, "fallback", False)),
                 "fallback_reason": str(_field(prediction, "fallback_reason", "") or ""),
                 "inference_latency_ms": _field(prediction, "inference_latency_ms"),
+                "top_increases": top_increases,
                 "intersections": rows,
                 "not_found": missing,
                 "predicted_affected_intersections": list(
@@ -1254,14 +1335,29 @@ class TrafficToolService:
                 max_items=3,
             )
             try:
+                routing = route_knowledge_query(
+                    query,
+                    profile=profile,
+                    knowledge_sources=knowledge_sources,
+                    information_types=information_types,
+                )
                 request = KnowledgeQuery(
                     query=query,
                     limit=limit,
-                    profile=profile,
+                    profile=routing.profile,
                     event_type=event_type,
                     preset_id=preset_id,
-                    information_types=tuple(information_types),
-                    knowledge_sources=tuple(knowledge_sources),
+                    # Document routing is backend-owned.  In particular, a
+                    # normal project metric query cannot retrieve the AI
+                    # evaluation protocol merely because both contain the
+                    # word “指标”.
+                    information_types=(
+                        tuple(information_types)
+                        if not routing.document_ids
+                        else ()
+                    ),
+                    knowledge_sources=routing.knowledge_sources,
+                    document_ids=routing.document_ids,
                 )
                 response = self._knowledge_retriever.search(request)
             except ValueError as exc:
@@ -1276,6 +1372,7 @@ class TrafficToolService:
                     "query": query,
                     "profile": request.profile,
                     "knowledge_sources": list(request.knowledge_sources),
+                    "routing": routing.as_dict(),
                     "results": [item.as_dict() for item in response.results],
                     "matched_count": len(response.results),
                     "search_mode": response.search_mode,
@@ -1522,6 +1619,7 @@ class TrafficToolService:
 
 TOOL_HANDLERS: dict[str, str] = {
     "get_event_details": "get_event_details",
+    "get_ai_takeover_status": "get_ai_takeover_status",
     "get_current_traffic": "get_current_traffic",
     "get_traffic_history": "get_traffic_history",
     "get_prediction": "get_prediction",
@@ -1551,6 +1649,18 @@ TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
                     "include_ended": {"type": "boolean", "default": True},
                 },
                 "required": ["event_ids"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_ai_takeover_status",
+            "description": "查询当前或最近一次 AI 信号接管是否真正生效、当前事件、控制范围、已安装的目标相位计划、失败/回退原因和 RAG 状态。ai_control_enabled 只是事件配置，不代表接管已经成功；目标相位计划也不是 SUMO 当前实测相位。关于管控后车流变化，先调用本工具，再调用 get_traffic_history。",
+            "parameters": {
+                "type": "object",
+                "properties": {},
                 "additionalProperties": False,
             },
         },
@@ -1629,7 +1739,7 @@ TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "type": "function",
         "function": {
             "name": "get_prediction",
-            "description": "查询 NarrowNet-TDP 最新短时预测、变化趋势和风险摘要。",
+            "description": "查询 NarrowNet-TDP 最新短时预测、变化趋势和风险摘要。不填写 intersection_id 或 intersection_ids 时查询全网；结果中的 top_increases 已按 delta 从大到小排序，可直接用于回答哪些路口车流增加。当前只提供工具返回的 horizon_seconds（通常约 60 秒），不支持把该结果外推为 5 分钟等更长预测。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1648,7 +1758,7 @@ TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "type": "function",
         "function": {
             "name": "get_network_summary",
-            "description": "查询全网当前事件、风险、交通等级、热点路口和网络趋势。",
+            "description": "查询全网当前事件、风险、交通等级、热点路口、车辆数、停车数、平均速度和网络趋势。用户未指定路口或车道却询问当前车流、全网交通或整体拥堵时，必须调用本工具。",
             "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
         },
     },
@@ -1656,7 +1766,7 @@ TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "type": "function",
         "function": {
             "name": "get_road_context",
-            "description": "查询路口或车道的上游、下游、相邻路口及车道连接关系。",
+            "description": "查询当前 TLS manifest 能证明的直接路口或车道连接关系。回答直接相连路口时只使用返回的列表；同一路口同时出现在上游和下游表示双向直接连接，不要重复计数，也不要扩展到其他走廊或路径邻居。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1671,7 +1781,7 @@ TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "type": "function",
         "function": {
             "name": "search_knowledge",
-            "description": "使用交通知识库查询处置原则、项目规则、国家/行业标准或一般交通知识；不用于实时交通事实。可按 profile、事件、场景、信息类型和知识来源过滤。一般查询不要填写 information_types；如需筛选，只使用索引已有类别。",
+            "description": "使用交通知识库查询处置原则、项目规则、国家/行业标准或一般交通知识；不用于实时交通事实。后端会根据用户问题自动限制知识来源和当前正式指标文档；模型通常不要填写 knowledge_sources 或 information_types，只有用户明确要求来源或类别时才填写。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1698,7 +1808,7 @@ TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
                         },
                         "maxItems": 3,
                         "uniqueItems": True,
-                        "description": "可选知识来源；默认使用已配置的交通索引，标准和政策索引按 profile 合并。",
+                        "description": "可选来源提示；后端会根据用户问题校正。普通项目知识用 traffic，国家/行业标准用 standards，雄安规划用 policy；不要因不确定而同时选择多个来源。",
                     },
                 },
                 "required": ["query"],
@@ -1779,6 +1889,21 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         return None
     return value
+
+
+def _ai_takeover_status_payload(value: Any) -> dict[str, Any] | None:
+    """Convert runtime or serialized AI status to a JSON-safe mapping."""
+
+    if value is None:
+        return None
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        payload = to_dict()
+        return dict(_json_safe(payload)) if isinstance(payload, Mapping) else None
+    if isinstance(value, Mapping):
+        payload = _json_safe(value)
+        return dict(payload) if isinstance(payload, Mapping) else None
+    return None
 
 
 def _parse_arguments(arguments: Mapping[str, Any] | str | None) -> dict[str, Any]:
@@ -1992,6 +2117,51 @@ def _lane_payload(
 
 def _aggregate_lane_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     return _shared_aggregate_lane_rows(rows)
+
+
+def _model_traffic_summary(
+    timestamp: float | None,
+    intersections: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Return the compact current-traffic view placed before verbose data.
+
+    ``CopilotOrchestrator`` may trim a large tool response before sending it
+    to Qwen. Keeping the exact lane values in this small prefix prevents a
+    model from having to infer them from a duplicated, truncated payload.
+    """
+
+    lane_fields = (
+        "lane_id",
+        "edge_id",
+        "approach_id",
+        "vehicle_count",
+        "halting_count",
+        "mean_speed_kmh",
+        "waiting_time_seconds",
+        "occupancy_pct",
+        "congestion_level",
+        "signal_state",
+    )
+    compact_intersections = []
+    for intersection in intersections:
+        compact_intersections.append(
+            {
+                "intersection_id": intersection.get("intersection_id"),
+                "current_phase": intersection.get("current_phase"),
+                "stage": intersection.get("stage", ""),
+                "totals": intersection.get("totals", {}),
+                "lanes": [
+                    {
+                        field: lane[field]
+                        for field in lane_fields
+                        if field in lane
+                    }
+                    for lane in intersection.get("lanes", ())
+                    if isinstance(lane, Mapping)
+                ],
+            }
+        )
+    return {"as_of_seconds": timestamp, "intersections": compact_intersections}
 
 
 def _select_lane_rows(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -16,12 +17,17 @@ from backend.app.copilot.rag import (
 from backend.app.copilot.traffic_tools import RoadTopology
 from backend.app.core.exceptions import AppError
 from backend.app.services.history import InMemoryHistoryRepository
-from backend.app.services.takeover_orchestrator import TakeoverOrchestrator
+from backend.app.services.takeover_orchestrator import (
+    TakeoverOrchestrator,
+    _compact_control_context,
+    _decode_control_plan_json,
+)
 from backend.app.schemas.events import AccidentRequest
 from backend.app.services.simulation_service import SimulationService
 from simulation.sumo.engine.ai_control import (
     AIControlConfig,
     AIControlPlan,
+    AIControlPlanSummary,
     AIControlStatus,
     AIControlValidationError,
 )
@@ -185,6 +191,15 @@ def test_executor_enforces_safe_transition_and_delayed_recovery(monkeypatch) -> 
 
     assert executor.observe_events((), 8.0)
     assert executor.status.state == "RECOVERY"
+    assert executor.status.last_plan is not None
+    assert executor.status.last_plan.target_phase_sequence["j1"] == (
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+    )
     executor.advance(13.0)
     assert executor.status.state == "RECOVERY"
     executor.advance(23.0)
@@ -357,6 +372,21 @@ class _FakeProvider:
         )
 
 
+class _SequenceProvider:
+    def __init__(self, contents: list[object]) -> None:
+        self.contents = list(contents)
+        self.messages = []
+
+    def complete(self, messages, **kwargs):
+        self.messages.append((messages, kwargs))
+        content = self.contents.pop(0)
+        return LLMCompletion(
+            message=AssistantMessage(
+                content=content if isinstance(content, str) else None
+            )
+        )
+
+
 class _FakeManager:
     def __init__(self, snapshot: SimulationSnapshot) -> None:
         self.current = snapshot
@@ -411,6 +441,133 @@ def test_orchestrator_queries_vector_rag_and_installs_plan() -> None:
     assert manager.installed[0][1]["allowed_scope"] == ["j1"]
 
 
+def test_control_plan_decoder_accepts_known_transport_wrappers() -> None:
+    expected = _plan()
+
+    assert _decode_control_plan_json(json.dumps(expected)) == expected
+    assert _decode_control_plan_json(
+        "<think>先检查约束</think>\n```json\n"
+        + json.dumps(expected)
+        + "\n```"
+    ) == expected
+
+
+def test_control_context_is_bounded_without_cutting_the_json_object() -> None:
+    context = {
+        "session_id": "session-1",
+        "simulation_time": 10.0,
+        "scenario_preset_id": "west_dense",
+        "baseline_controller": "fixed",
+        "event": {
+            "event_id": "event-1",
+            "event_type": "accident",
+            "details": {"lane_id": "edge_a_0", "notes": "x" * 5_000},
+        },
+        "allowed_scope": ["j1"],
+        "intersections": {
+            "j1": {
+                "current_phase": 0,
+                "pending_phase": None,
+                "stage": "GREEN",
+                "stage_elapsed": 3.0,
+                "allowed_phase_ids": [0, 1, 2],
+                "lanes": {
+                    f"lane-{index}": {
+                        "vehicle_count": index,
+                        "halting_count": index,
+                        "mean_speed": 1.0,
+                        "waiting_time": 2.0,
+                        "occupancy": 30.0,
+                        "signal_state": "r",
+                        "irrelevant": "x" * 100,
+                    }
+                    for index in range(20)
+                },
+            }
+        },
+        "event_detection": {"cards": [{"text": "x" * 10_000}]},
+        "prediction": {"intersections": {"j1": {"text": "x" * 10_000}}},
+        "history": {"frames": [{"text": "x" * 10_000}]},
+        "knowledge": [
+            {
+                "chunk_id": f"chunk-{index}",
+                "text": "x" * 10_000,
+                "metadata": {"source_path": "knowledge.md"},
+                "distance": 0.1,
+            }
+            for index in range(10)
+        ],
+    }
+
+    compact = _compact_control_context(context, max_chars=6_000)
+    encoded = json.dumps(compact, ensure_ascii=False, separators=(",", ":"))
+
+    assert len(encoded) <= 6_000
+    assert compact["session_id"] == "session-1"
+    assert compact["allowed_scope"] == ["j1"]
+    assert compact["intersections"]["j1"]["allowed_phase_ids"] == [0, 1, 2]
+
+
+def test_orchestrator_retries_invalid_format_once_then_installs_plan() -> None:
+    event = _active_event()
+    snapshot = _snapshot(events=(event,))
+    manager = _FakeManager(snapshot)
+    settings = SimpleNamespace(
+        ai_control_config=AIControlConfig(),
+        citypulse_qwen_max_tokens=512,
+    )
+    provider = _SequenceProvider(
+        [
+            "我将根据当前情况生成控制计划：",
+            "```json\n" + json.dumps(_plan()) + "\n```",
+        ]
+    )
+    orchestrator = TakeoverOrchestrator(
+        manager=manager,
+        settings=settings,
+        history_repository=InMemoryHistoryRepository(),
+    )
+    orchestrator.configure(
+        provider=provider,
+        retriever=_FakeRetriever(),
+        topology=RoadTopology(lane_to_intersection={"edge_a_0": "j1"}),
+    )
+
+    orchestrator.observe(snapshot, intelligence={"event_detection": {}})
+
+    assert len(provider.messages) == 2
+    assert "这是最后一次输出机会" in provider.messages[1][0][0]["content"]
+    assert len(manager.installed) == 1
+
+
+def test_orchestrator_falls_back_after_two_invalid_control_plan_outputs() -> None:
+    event = _active_event()
+    snapshot = _snapshot(events=(event,))
+    manager = _FakeManager(snapshot)
+    settings = SimpleNamespace(
+        ai_control_config=AIControlConfig(),
+        citypulse_qwen_max_tokens=512,
+    )
+    provider = _SequenceProvider(["不是 JSON", "仍然不是 JSON"])
+    orchestrator = TakeoverOrchestrator(
+        manager=manager,
+        settings=settings,
+        history_repository=InMemoryHistoryRepository(),
+    )
+    orchestrator.configure(
+        provider=provider,
+        retriever=_FakeRetriever(),
+        topology=RoadTopology(lane_to_intersection={"edge_a_0": "j1"}),
+    )
+
+    orchestrator.observe(snapshot, intelligence={"event_detection": {}})
+
+    assert len(provider.messages) == 2
+    assert manager.installed == []
+    assert len(manager.fallbacks) == 1
+    assert "after 2 attempts" in manager.fallbacks[0][1]["reason"]
+
+
 def test_config_and_snapshot_codec_roundtrip_ai_fields() -> None:
     from simulation.sumo.engine.distributed.codec import dumps_config, dumps_snapshot, loads_config, loads_snapshot
     from simulation.sumo.engine.events import LaneClosureEvent
@@ -443,6 +600,17 @@ def test_config_and_snapshot_codec_roundtrip_ai_fields() -> None:
         controlled_intersections=("j1",),
         plan_sequence=1,
         plan_id="plan-1",
+        last_plan=AIControlPlanSummary(
+            event_id="event-1",
+            plan_id="plan-1",
+            sequence=1,
+            plan_started_at=0.0,
+            plan_valid_until=30.0,
+            controlled_intersections=("j1",),
+            target_phase_sequence={"j1": (1, 0, 1, 0, 1, 0)},
+            objective="protect the blocked approach",
+            reason="keep the affected junction safe",
+        ),
     )
     restored_snapshot = loads_snapshot(
         dumps_snapshot(_snapshot(ai_takeover=status))
@@ -461,6 +629,17 @@ def test_ai_takeover_status_endpoint_returns_snapshot_state(
         controlled_intersections=("j1",),
         plan_sequence=1,
         baseline_controller="sotl",
+        last_plan=AIControlPlanSummary(
+            event_id="event-1",
+            plan_id="plan-1",
+            sequence=1,
+            plan_started_at=0.0,
+            plan_valid_until=30.0,
+            controlled_intersections=("j1",),
+            target_phase_sequence={"j1": (1, 0, 1, 0, 1, 0)},
+            objective="protect the blocked approach",
+            reason="keep the affected junction safe",
+        ),
     )
     monkeypatch.setattr(
         simulation_service,
@@ -473,6 +652,14 @@ def test_ai_takeover_status_endpoint_returns_snapshot_state(
     assert response.status_code == 200
     assert response.json()["state"] == "ACTIVE"
     assert response.json()["baseline_controller"] == "sotl"
+    assert response.json()["last_plan"]["target_phase_sequence"]["j1"] == [
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+    ]
 
 
 def test_runtime_ai_event_is_rejected_until_next_session_start(

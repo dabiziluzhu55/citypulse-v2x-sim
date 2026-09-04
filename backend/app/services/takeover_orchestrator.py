@@ -16,7 +16,6 @@ from typing import Any, Mapping, Sequence
 
 from simulation.sumo.engine.ai_control import (
     AIControlPlan,
-    AIControlValidationError,
 )
 from simulation.sumo.engine.session import SimulationSnapshot
 
@@ -29,6 +28,9 @@ from ..copilot.rag import (
 from .history import HistoryQuery, HistoryRepository, HistoryUnavailableError
 
 logger = logging.getLogger(__name__)
+
+CONTROL_PLAN_MAX_ATTEMPTS = 2
+CONTROL_CONTEXT_MAX_CHARS = 6_000
 
 
 class TakeoverPlanningError(RuntimeError):
@@ -219,52 +221,11 @@ class TakeoverOrchestrator:
                 baseline_controller=baseline_controller,
                 phase_orders=phase_orders,
             )
-            completion = self._provider.complete(
-                [
-                    {
-                        "role": "system",
-                        "content": _CONTROL_SYSTEM_PROMPT,
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            context,
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                        ),
-                    },
-                ],
-                tools=(),
-                tool_choice=None,
-                temperature=0.0,
-                max_tokens=max(700, int(getattr(self._settings, "citypulse_qwen_max_tokens", 512))),
+            plan = self._request_valid_plan(
+                context,
+                allowed_scope=allowed_scope,
+                phase_orders=phase_orders,
             )
-            raw_content = completion.message.content
-            if not isinstance(raw_content, str) or not raw_content.strip():
-                raise TakeoverPlanningError("Qwen returned an empty control plan.")
-            try:
-                plan = AIControlPlan.from_mapping(
-                    json.loads(raw_content),
-                    config=self._settings.ai_control_config,
-                )
-            except (json.JSONDecodeError, AIControlValidationError) as exc:
-                raise TakeoverPlanningError(
-                    f"Qwen returned an invalid control plan: {exc}"
-                ) from exc
-            if not set(plan.controlled_intersections) <= set(allowed_scope):
-                raise TakeoverPlanningError(
-                    "Qwen selected an intersection outside the allowed scope."
-                )
-            if phase_orders:
-                try:
-                    plan.validate_runtime(
-                        allowed_scope=allowed_scope,
-                        phase_orders=phase_orders,
-                    )
-                except AIControlValidationError as exc:
-                    raise TakeoverPlanningError(
-                        f"Qwen returned phases outside the runtime phase order: {exc}"
-                    ) from exc
             latest = self._manager.snapshot(snapshot.session_id)
             if latest.state not in {"PAUSED", "RUNNING"}:
                 raise TakeoverPlanningError(
@@ -296,6 +257,114 @@ class TakeoverOrchestrator:
                         "Failed to resume session after AI planning: %s",
                         snapshot.session_id,
                     )
+
+    def _request_valid_plan(
+        self,
+        context: Mapping[str, Any],
+        *,
+        allowed_scope: Sequence[str],
+        phase_orders: Mapping[str, Sequence[int]],
+    ) -> AIControlPlan:
+        """Request a plan and validate it before returning it to the worker.
+
+        The model server is a normal Transformers generation endpoint and does
+        not provide grammar-constrained decoding.  Keep the safety boundary in
+        the backend: accept only a JSON object (with a small amount of
+        transport cleanup for a Markdown fence or a leading ``<think>`` block),
+        then run the same schema and runtime validation used by the worker.
+        A single corrective retry handles transient formatting mistakes; it
+        never bypasses validation and ultimately falls back through the normal
+        failure path.
+        """
+
+        if self._provider is None:
+            raise TakeoverPlanningError("Qwen provider is unavailable.")
+
+        context_for_prompt = _compact_control_context(
+            context,
+            max_chars=_control_context_max_chars(self._settings),
+        )
+        context_message = json.dumps(
+            context_for_prompt,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        logger.debug(
+            "AI control context prepared: session=%s chars=%s intersections=%s "
+            "knowledge=%s",
+            context.get("session_id"),
+            len(context_message),
+            len(context_for_prompt.get("intersections", {})),
+            len(context_for_prompt.get("knowledge", ())),
+        )
+        max_tokens = max(
+            900,
+            int(getattr(self._settings, "citypulse_qwen_max_tokens", 512)),
+        )
+        last_error: ValueError | None = None
+
+        for attempt in range(1, CONTROL_PLAN_MAX_ATTEMPTS + 1):
+            system_prompt = _CONTROL_SYSTEM_PROMPT
+            if attempt > 1:
+                system_prompt += _CONTROL_RETRY_PROMPT
+            completion = self._provider.complete(
+                [
+                    {
+                        "role": "system",
+                        "content": system_prompt,
+                    },
+                    {
+                        "role": "user",
+                        "content": context_message,
+                    },
+                ],
+                tools=(),
+                tool_choice=None,
+                temperature=0.0,
+                max_tokens=max_tokens,
+            )
+            raw_content = completion.message.content
+            try:
+                if completion.message.tool_calls:
+                    raise ValueError(
+                        "control planner must return JSON content, not tool calls"
+                    )
+                payload = _decode_control_plan_json(raw_content)
+                plan = AIControlPlan.from_mapping(
+                    payload,
+                    config=self._settings.ai_control_config,
+                )
+                if not set(plan.controlled_intersections) <= set(allowed_scope):
+                    raise ValueError(
+                        "Qwen selected an intersection outside the allowed scope."
+                    )
+                if phase_orders:
+                    plan.validate_runtime(
+                        allowed_scope=allowed_scope,
+                        phase_orders=phase_orders,
+                    )
+                return plan
+            except (TypeError, ValueError) as exc:
+                last_error = exc
+                preview = (
+                    raw_content[:300]
+                    if isinstance(raw_content, str)
+                    else repr(raw_content)
+                )
+                logger.warning(
+                    "Rejected Qwen AI control plan attempt %s/%s: "
+                    "finish_reason=%s error=%s content_prefix=%r",
+                    attempt,
+                    CONTROL_PLAN_MAX_ATTEMPTS,
+                    completion.finish_reason,
+                    exc,
+                    preview,
+                )
+
+        raise TakeoverPlanningError(
+            "Qwen returned an invalid control plan after "
+            f"{CONTROL_PLAN_MAX_ATTEMPTS} attempts: {last_error}"
+        )
 
     def _handle_failure(
         self,
@@ -671,6 +740,268 @@ objective (string), reason (string), fallback_to_baseline (boolean)。
 只要 signal_plan 非空，fallback_to_baseline 必须为 false；只要 fallback_to_baseline 为 true，controlled_intersections 必须为 [] 且 signal_plan 必须为 {}。
 如果无法安全规划，返回 controlled_intersections=[]、signal_plan={}、fallback_to_baseline=true，并说明原因。
 """
+
+
+_CONTROL_RETRY_PROMPT = """
+
+这是最后一次输出机会。上一轮结果没有通过后端的 JSON 或安全校验。
+请不要输出任何思考过程、前后缀说明、Markdown 代码块或工具调用；只输出一个可被
+JSON.parse 直接解析的 JSON 对象。若无法安全规划，严格返回合法的回退 JSON 对象，
+不要用自然语言代替字段。
+"""
+
+
+def _decode_control_plan_json(raw_content: object) -> Mapping[str, Any]:
+    """Decode the model's JSON while removing only known transport wrappers.
+
+    The control contract remains strict.  We intentionally do not search for
+    an arbitrary ``{...}`` substring in prose, because that could silently
+    accept an incomplete or unrelated object.  Only a complete Markdown JSON
+    fence and a leading, complete ``<think>...</think>`` block are normalized.
+    """
+
+    if not isinstance(raw_content, str) or not raw_content.strip():
+        raise ValueError("Qwen returned an empty control plan.")
+
+    text = raw_content.strip()
+    if text.startswith("<think>"):
+        closing = text.find("</think>")
+        if closing < 0:
+            raise ValueError("Qwen returned an unterminated think block.")
+        text = text[closing + len("</think>") :].strip()
+
+    if text.startswith("```"):
+        lines = text.splitlines()
+        language = lines[0].strip().lower()
+        if len(lines) < 3 or language not in {"```", "```json"}:
+            raise ValueError("Qwen returned an invalid JSON code fence.")
+        if lines[-1].strip() != "```":
+            raise ValueError("Qwen returned an unterminated JSON code fence.")
+        text = "\n".join(lines[1:-1]).strip()
+
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Qwen response content is not valid JSON.") from exc
+    if not isinstance(payload, Mapping):
+        raise ValueError("Qwen control plan must be a JSON object.")
+    return payload
+
+
+def _control_context_max_chars(settings: Any) -> int:
+    try:
+        configured = int(
+            getattr(settings, "citypulse_qwen_control_context_max_chars", CONTROL_CONTEXT_MAX_CHARS)
+        )
+    except (TypeError, ValueError):
+        configured = CONTROL_CONTEXT_MAX_CHARS
+    # Keep enough room for the system prompt and generation marker.  The
+    # Keep the default compatible with both the 4096-token smoke-service
+    # default and the current 8192-token school-server configuration.
+    return max(6_000, min(configured, 20_000))
+
+
+def _compact_control_context(
+    context: Mapping[str, Any],
+    *,
+    max_chars: int = CONTROL_CONTEXT_MAX_CHARS,
+) -> dict[str, Any]:
+    """Build a bounded, valid JSON context for the control planner.
+
+    The Qwen smoke service uses tokenizer truncation.  Sending an oversized
+    JSON user message can truncate the final chat-template generation marker;
+    the model then continues the cut-off context instead of starting a new
+    JSON answer.  Keep runtime-critical fields and progressively reduce only
+    optional evidence until the complete user message fits the budget.
+    """
+
+    source = dict(context)
+    event = source.get("event", {})
+    if isinstance(event, Mapping):
+        event_payload = dict(event)
+        if "details" in event_payload:
+            event_payload["details"] = _bounded(
+                event_payload.get("details", {}),
+                max_chars=800,
+            )
+    else:
+        event_payload = {}
+
+    payload: dict[str, Any] = {
+        "session_id": source.get("session_id"),
+        "simulation_time": source.get("simulation_time"),
+        "scenario_preset_id": source.get("scenario_preset_id"),
+        "baseline_controller": source.get("baseline_controller"),
+        "event": event_payload,
+        "allowed_scope": list(source.get("allowed_scope", ())),
+        "intersections": _compact_control_intersections(
+            source.get("intersections", {})
+        ),
+        "event_detection": _bounded(
+            source.get("event_detection", {}),
+            max_chars=1_600,
+        ),
+        "prediction": _bounded(
+            source.get("prediction", {}),
+            max_chars=1_600,
+        ),
+        "history": _bounded(
+            source.get("history", {}),
+            max_chars=2_200,
+        ),
+        "knowledge": _compact_control_knowledge(
+            source.get("knowledge", ()),
+            max_items=3,
+            max_text_chars=700,
+        ),
+    }
+
+    if _json_chars(payload) <= max_chars:
+        return payload
+
+    # Preserve current phase, allowed phases and current lane metrics before
+    # reducing historical/knowledge evidence.
+    payload["history"] = {
+        "status": "omitted",
+        "reason": "control_context_budget",
+    }
+    payload["knowledge"] = _compact_control_knowledge(
+        source.get("knowledge", ()),
+        max_items=2,
+        max_text_chars=500,
+    )
+    payload["prediction"] = _bounded(
+        source.get("prediction", {}),
+        max_chars=1_000,
+    )
+    payload["event_detection"] = _bounded(
+        source.get("event_detection", {}),
+        max_chars=1_000,
+    )
+    if _json_chars(payload) <= max_chars:
+        return payload
+
+    payload["intersections"] = _compact_control_intersections(
+        source.get("intersections", {}),
+        lane_limit=4,
+    )
+    if _json_chars(payload) <= max_chars:
+        return payload
+
+    payload["intersections"] = _compact_control_intersections(
+        source.get("intersections", {}),
+        lane_limit=2,
+    )
+    if _json_chars(payload) <= max_chars:
+        return payload
+
+    # This final form still includes all information needed to choose a valid
+    # phase and explicitly marks the optional evidence as unavailable.
+    payload["event"] = {
+        key: value
+        for key, value in event_payload.items()
+        if key != "details"
+    }
+    payload["event_detection"] = {"status": "omitted", "reason": "context_budget"}
+    payload["prediction"] = {"status": "omitted", "reason": "context_budget"}
+    payload["history"] = {"status": "omitted", "reason": "context_budget"}
+    payload["knowledge"] = []
+    payload["intersections"] = _compact_control_intersections(
+        source.get("intersections", {}),
+        lane_limit=0,
+    )
+    return payload
+
+
+def _compact_control_intersections(
+    value: Any,
+    *,
+    lane_limit: int | None = None,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    result: dict[str, Any] = {}
+    for raw_intersection_id, raw_intersection in value.items():
+        if not isinstance(raw_intersection, Mapping):
+            continue
+        row: dict[str, Any] = {}
+        for key in (
+            "current_phase",
+            "pending_phase",
+            "stage",
+            "stage_elapsed",
+            "allowed_phase_ids",
+        ):
+            if key in raw_intersection:
+                row[key] = raw_intersection[key]
+        raw_lanes = raw_intersection.get("lanes", {})
+        lanes: dict[str, Any] = {}
+        if isinstance(raw_lanes, Mapping):
+            lane_items = sorted(raw_lanes.items(), key=lambda item: str(item[0]))
+            if lane_limit is not None:
+                lane_items = lane_items[: max(0, lane_limit)]
+            for raw_lane_id, raw_lane in lane_items:
+                if not isinstance(raw_lane, Mapping):
+                    continue
+                lanes[str(raw_lane_id)] = {
+                    key: raw_lane[key]
+                    for key in (
+                        "vehicle_count",
+                        "halting_count",
+                        "mean_speed",
+                        "waiting_time",
+                        "occupancy",
+                        "signal_state",
+                    )
+                    if key in raw_lane
+                }
+        row["lanes"] = lanes
+        result[str(raw_intersection_id)] = row
+    return result
+
+
+def _compact_control_knowledge(
+    value: Any,
+    *,
+    max_items: int,
+    max_text_chars: int,
+) -> list[dict[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    result: list[dict[str, Any]] = []
+    for raw_item in value:
+        if not isinstance(raw_item, Mapping):
+            continue
+        metadata = raw_item.get("metadata", {})
+        metadata_payload = {}
+        if isinstance(metadata, Mapping):
+            metadata_payload = {
+                key: metadata[key]
+                for key in (
+                    "source_path",
+                    "section",
+                    "information_type",
+                    "status",
+                    "priority",
+                    "knowledge_version",
+                )
+                if key in metadata
+            }
+        result.append(
+            {
+                "chunk_id": raw_item.get("chunk_id"),
+                "text": str(raw_item.get("text", ""))[:max_text_chars],
+                "metadata": metadata_payload,
+                "distance": raw_item.get("distance"),
+            }
+        )
+        if len(result) >= max_items:
+            break
+    return result
+
+
+def _json_chars(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str))
 
 
 __all__ = ["TakeoverOrchestrator", "TakeoverPlanningError"]

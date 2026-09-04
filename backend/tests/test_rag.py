@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 
 from backend.app.copilot.rag import (
+    AI_EVALUATION_DOCUMENT_ID,
+    CANONICAL_EFFICIENCY_DOCUMENT_ID,
     ChromaKnowledgeRetriever,
     CompositeKnowledgeRetriever,
     CONTROL_PROFILE,
@@ -16,9 +18,11 @@ from backend.app.copilot.rag import (
     KnowledgeQuery,
     KnowledgeResult,
     KnowledgeSearchResponse,
+    SAFETY_METRIC_DOCUMENT_ID,
     STANDARDS_KNOWLEDGE_SOURCE,
     KnowledgeUnavailableError,
     build_knowledge_chunks,
+    route_knowledge_query,
 )
 from backend.app.copilot.llm import AssistantMessage, LLMCompletion, ToolCall
 from backend.app.copilot.orchestrator import CopilotOrchestrator
@@ -80,6 +84,76 @@ def test_repository_chunks_are_manifest_aware_and_profiles_are_separated() -> No
         or item["source_path"] == "07_project/rag_retrieval_policy.md"
         for item in control_chunks
     )
+
+    efficiency_chunks = [
+        item for item in chunks if item["document_id"] == CANONICAL_EFFICIENCY_DOCUMENT_ID
+    ]
+    assert efficiency_chunks
+    assert all(
+        item["document_role"] == "canonical_metric_definition"
+        and item["status"] == "current"
+        and item["profile_control"]
+        for item in efficiency_chunks
+    )
+
+    evaluation_chunks = [
+        item for item in chunks if item["document_id"] == AI_EVALUATION_DOCUMENT_ID
+    ]
+    assert evaluation_chunks
+    assert all(
+        item["document_role"] == "evaluation_protocol"
+        and not item["profile_control"]
+        and item["profile_general"]
+        for item in evaluation_chunks
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "sources", "document_ids", "reason"),
+    [
+        (
+            "当前正式指标 TTI 怎么计算",
+            ("traffic",),
+            (CANONICAL_EFFICIENCY_DOCUMENT_ID,),
+            "project_metric",
+        ),
+        (
+            "国家标准中的交通运行状态如何分级",
+            (STANDARDS_KNOWLEDGE_SOURCE,),
+            (),
+            "standards",
+        ),
+        (
+            "项目当前指标和国家标准是否一致",
+            ("traffic", STANDARDS_KNOWLEDGE_SOURCE),
+            (CANONICAL_EFFICIENCY_DOCUMENT_ID,),
+            "project_vs_standard",
+        ),
+        (
+            "AI 管控如何进行公平对照实验",
+            ("traffic",),
+            (AI_EVALUATION_DOCUMENT_ID,),
+            "ai_evaluation",
+        ),
+        (
+            "急刹率的项目定义",
+            ("traffic",),
+            (SAFETY_METRIC_DOCUMENT_ID,),
+            "project_metric",
+        ),
+    ],
+)
+def test_knowledge_routing_separates_metric_standard_and_ai_evaluation(
+    query: str,
+    sources: tuple[str, ...],
+    document_ids: tuple[str, ...],
+    reason: str,
+) -> None:
+    routing = route_knowledge_query(query, profile=CONTROL_PROFILE)
+
+    assert routing.knowledge_sources == sources
+    assert routing.document_ids == document_ids
+    assert routing.reason == reason
 
 
 def test_document_without_h2_or_h3_is_kept_under_document_title(tmp_path: Path) -> None:
@@ -408,6 +482,74 @@ def test_search_knowledge_uses_injected_vector_retriever() -> None:
     assert retriever.requests[0].information_types == ("traffic_expertise",)
 
 
+@pytest.mark.parametrize(
+    ("query", "model_sources", "expected_sources", "expected_documents", "expected_profile"),
+    [
+        (
+            "当前正式指标 TTI 怎么计算",
+            [STANDARDS_KNOWLEDGE_SOURCE],
+            ("traffic",),
+            (CANONICAL_EFFICIENCY_DOCUMENT_ID,),
+            CONTROL_PROFILE,
+        ),
+        (
+            "国家标准中的交通运行状态如何分级",
+            ["traffic"],
+            (STANDARDS_KNOWLEDGE_SOURCE,),
+            (),
+            CONTROL_PROFILE,
+        ),
+        (
+            "项目指标和国家标准是否一致",
+            [],
+            ("traffic", STANDARDS_KNOWLEDGE_SOURCE),
+            (CANONICAL_EFFICIENCY_DOCUMENT_ID,),
+            CONTROL_PROFILE,
+        ),
+        (
+            "AI 管控如何进行公平对照实验",
+            [],
+            ("traffic",),
+            (AI_EVALUATION_DOCUMENT_ID,),
+            "general",
+        ),
+    ],
+)
+def test_search_knowledge_backend_overrides_model_source_hint(
+    query: str,
+    model_sources: list[str],
+    expected_sources: tuple[str, ...],
+    expected_documents: tuple[str, ...],
+    expected_profile: str,
+) -> None:
+    retriever = _Retriever()
+    service = TrafficToolService(
+        InMemoryTrafficDataSource({"session-1": [_snapshot()]}),
+        session_id="session-1",
+        knowledge_retriever=retriever,
+    )
+
+    result = service.execute(
+        "search_knowledge",
+        {
+            "query": query,
+            "profile": CONTROL_PROFILE,
+            "knowledge_sources": model_sources,
+        },
+    )
+
+    request = retriever.requests[0]
+    assert request.knowledge_sources == expected_sources
+    assert request.document_ids == expected_documents
+    assert request.profile == expected_profile
+    assert result["data"]["routing"]["reason"] in {
+        "project_metric",
+        "standards",
+        "project_vs_standard",
+        "ai_evaluation",
+    }
+
+
 def test_chroma_retriever_applies_all_metadata_filters_and_returns_version() -> None:
     collection = _FakeCollection()
     retriever = ChromaKnowledgeRetriever(
@@ -448,6 +590,39 @@ def test_chroma_retriever_applies_all_metadata_filters_and_returns_version() -> 
     assert result["source_path"].endswith("traffic_accident.md")
     assert result["knowledge_version"] == "0.4"
     assert result["similarity"] == 0.88
+
+
+def test_chroma_retriever_can_restrict_to_canonical_document() -> None:
+    collection = _FakeCollection()
+    retriever = ChromaKnowledgeRetriever(
+        index_dir="outputs/rag/chroma",
+        knowledge_manifest_path="traffic_knowledge/manifest.json",
+    )
+    retriever._collection = collection
+    retriever._model = _FakeEmbeddingModel()
+    retriever._index_metadata = {
+        "knowledge_version": "0.4",
+        "code_revision": "rev-test",
+        "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
+        "embedding_dimension": 1024,
+        "collection_name": "citypulse_traffic_knowledge",
+    }
+
+    retriever.search(
+        KnowledgeQuery(
+            "当前正式指标",
+            profile=CONTROL_PROFILE,
+            knowledge_sources=("traffic",),
+            document_ids=(CANONICAL_EFFICIENCY_DOCUMENT_ID,),
+        )
+    )
+
+    where = collection.queries[0]["where"]
+    assert where["$and"] == [
+        {"status": "current"},
+        {"profile_control": True},
+        {"document_id": CANONICAL_EFFICIENCY_DOCUMENT_ID},
+    ]
 
 
 def test_knowledge_query_validates_and_normalizes_knowledge_sources() -> None:
@@ -560,7 +735,13 @@ def test_composite_retriever_merges_sources_and_preserves_index_metadata() -> No
     )
     retriever = CompositeKnowledgeRetriever(traffic, standards)
 
-    response = retriever.search(KnowledgeQuery("交通评价指标", limit=2))
+    response = retriever.search(
+        KnowledgeQuery(
+            "交通评价指标",
+            limit=2,
+            knowledge_sources=("traffic", STANDARDS_KNOWLEDGE_SOURCE),
+        )
+    )
 
     assert [item.chunk_id for item in response.results] == [
         "standard-1",
@@ -571,6 +752,8 @@ def test_composite_retriever_merges_sources_and_preserves_index_metadata() -> No
     assert response.search_mode == "vector_multi"
     assert response.index_metadata["knowledge_sources"] == ["traffic", "standards"]
     assert set(response.index_metadata["indexes"]) == {"traffic", "standards"}
+    assert traffic.requests[0].knowledge_sources == ("traffic",)
+    assert standards.requests[0].knowledge_sources == (STANDARDS_KNOWLEDGE_SOURCE,)
 
     traffic_only = retriever.search(
         KnowledgeQuery("交通处置", knowledge_sources=("traffic",))
@@ -578,6 +761,125 @@ def test_composite_retriever_merges_sources_and_preserves_index_metadata() -> No
     assert [item.chunk_id for item in traffic_only.results] == ["traffic-1"]
     assert len(traffic.requests) == 2
     assert len(standards.requests) == 1
+
+
+def test_composite_comparison_preserves_each_requested_source() -> None:
+    traffic = _StaticRetriever(
+        KnowledgeSearchResponse(
+            results=(
+                KnowledgeResult(
+                    chunk_id="traffic-metric",
+                    text="项目当前指标定义",
+                    metadata={"knowledge_source": "traffic"},
+                    distance=0.40,
+                ),
+            ),
+            index_metadata={"knowledge_version": "traffic-v1"},
+        )
+    )
+    standards = _StaticRetriever(
+        KnowledgeSearchResponse(
+            results=tuple(
+                KnowledgeResult(
+                    chunk_id=f"standard-{index}",
+                    text="国家标准指标定义",
+                    metadata={"knowledge_source": "standards"},
+                    distance=0.01 * index,
+                )
+                for index in range(1, 6)
+            ),
+            index_metadata={"knowledge_version": "standards-v1"},
+        )
+    )
+
+    response = CompositeKnowledgeRetriever(traffic, standards).search(
+        KnowledgeQuery(
+            "项目指标与国家标准比较",
+            limit=3,
+            knowledge_sources=("traffic", STANDARDS_KNOWLEDGE_SOURCE),
+        )
+    )
+
+    assert len(response.results) == 3
+    assert {item.metadata["knowledge_source"] for item in response.results} == {
+        "traffic",
+        "standards",
+    }
+    assert response.results[0].chunk_id == "standard-1"
+    assert response.results[-1].chunk_id == "traffic-metric"
+
+
+def test_composite_canonical_metric_comparison_puts_project_definition_first() -> None:
+    traffic = _StaticRetriever(
+        KnowledgeSearchResponse(
+            results=(
+                KnowledgeResult(
+                    chunk_id="traffic-metric",
+                    text="项目当前正式指标定义",
+                    metadata={"knowledge_source": "traffic"},
+                    distance=0.40,
+                ),
+            ),
+            index_metadata={"knowledge_version": "traffic-v1"},
+        )
+    )
+    standards = _StaticRetriever(
+        KnowledgeSearchResponse(
+            results=(
+                KnowledgeResult(
+                    chunk_id="standard-metric",
+                    text="国家标准指标定义",
+                    metadata={"knowledge_source": "standards"},
+                    distance=0.01,
+                ),
+            ),
+            index_metadata={"knowledge_version": "standards-v1"},
+        )
+    )
+
+    response = CompositeKnowledgeRetriever(traffic, standards).search(
+        KnowledgeQuery(
+            "项目当前正式指标与国家标准的对应关系",
+            limit=2,
+            knowledge_sources=("traffic", STANDARDS_KNOWLEDGE_SOURCE),
+            document_ids=(CANONICAL_EFFICIENCY_DOCUMENT_ID,),
+        )
+    )
+
+    assert [item.chunk_id for item in response.results] == [
+        "traffic-metric",
+        "standard-metric",
+    ]
+
+
+def test_composite_retriever_defaults_to_project_knowledge_only() -> None:
+    traffic = _StaticRetriever(
+        KnowledgeSearchResponse(
+            results=(
+                KnowledgeResult(
+                    chunk_id="traffic-1",
+                    text="交通知识",
+                    metadata={},
+                    distance=0.1,
+                ),
+            ),
+            index_metadata={"knowledge_version": "traffic-v1"},
+        )
+    )
+    standards = _StaticRetriever(
+        KnowledgeSearchResponse(
+            results=(),
+            index_metadata={"knowledge_version": "standards-v1"},
+        )
+    )
+
+    response = CompositeKnowledgeRetriever(traffic, standards).search(
+        KnowledgeQuery("普通交通知识")
+    )
+
+    assert [item.chunk_id for item in response.results] == ["traffic-1"]
+    assert len(traffic.requests) == 1
+    assert not standards.requests
 
 
 def test_missing_vector_index_is_explicitly_unavailable(tmp_path: Path) -> None:
