@@ -9,6 +9,7 @@ import {
   formatIntersectionLabel,
   formatIntersectionReferences,
 } from '../../utils/intersectionLabels'
+import AiOutlineIcon from './AiOutlineIcon.vue'
 
 const props = withDefaults(defineProps<{
   sessionId: string
@@ -143,7 +144,9 @@ onBeforeUnmount(() => requestController?.abort())
 <template>
   <section class="ai-control-panel" aria-label="CityPulse-Qwen AI交通助手">
     <header class="ai-control-panel__header">
-      <span class="ai-control-panel__avatar" aria-hidden="true">AI</span>
+      <span class="ai-control-panel__avatar" aria-hidden="true">
+        <AiOutlineIcon />
+      </span>
       <div class="ai-control-panel__identity">
         <strong>CityPulse-Qwen AI助手</strong>
         <span>基于当前仿真数据，为您提供交通分析与管控建议</span>
@@ -171,7 +174,9 @@ onBeforeUnmount(() => requestController?.abort())
 
     <div ref="conversationRef" class="ai-control-panel__conversation" aria-live="polite">
       <article v-if="messages.length === 0" class="ai-control-panel__message is-assistant is-welcome">
-        <span class="ai-control-panel__message-avatar" aria-hidden="true">AI</span>
+        <span class="ai-control-panel__message-avatar" aria-hidden="true">
+          <AiOutlineIcon />
+        </span>
         <div class="ai-control-panel__message-body">
           <strong>上午好，有什么可以帮您？</strong>
           <p>
@@ -188,7 +193,9 @@ onBeforeUnmount(() => requestController?.abort())
         class="ai-control-panel__message"
         :class="[`is-${message.role}`, { 'is-failed': message.failed }]"
       >
-        <span v-if="message.role === 'assistant'" class="ai-control-panel__message-avatar" aria-hidden="true">AI</span>
+        <span v-if="message.role === 'assistant'" class="ai-control-panel__message-avatar" aria-hidden="true">
+          <AiOutlineIcon />
+        </span>
         <div class="ai-control-panel__message-body">
           <div class="ai-control-panel__message-content"><p>{{ message.content }}</p></div>
           <time>{{ message.createdAt }}</time>
@@ -196,7 +203,9 @@ onBeforeUnmount(() => requestController?.abort())
       </article>
 
       <article v-if="submitting" class="ai-control-panel__message is-assistant">
-        <span class="ai-control-panel__message-avatar" aria-hidden="true">AI</span>
+        <span class="ai-control-panel__message-avatar" aria-hidden="true">
+          <AiOutlineIcon />
+        </span>
         <div class="ai-control-panel__message-body">
           <p class="ai-control-panel__thinking">正在分析当前仿真交通状态……</p>
         </div>
@@ -263,14 +272,11 @@ onBeforeUnmount(() => requestController?.abort())
   place-items: center;
   width: 36px;
   height: 36px;
-  border: 1px solid rgba(82,194,250,.72);
-  border-radius: 50%;
-  background: linear-gradient(145deg,#10b8ff,#1756ca);
-  box-shadow: 0 0 14px rgba(33,198,255,.5);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: -.04em;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #55ddff;
 }
 .ai-control-panel__identity { display: flex; min-width: 0; flex-direction: column; gap: 3px; text-shadow: 0 1px 5px rgba(0,0,0,.82); }
 .ai-control-panel__identity strong { overflow: hidden; color: #f3fbff; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
@@ -299,25 +305,28 @@ onBeforeUnmount(() => requestController?.abort())
 
 .ai-control-panel__runtime-status {
   display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 4px 10px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 28px;
-  padding: 0 10px 8px 56px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  padding: 0 14px 8px 56px;
+  overflow: hidden;
   color: rgba(158,200,220,.76);
   font-size: 11px;
-  white-space: nowrap;
-  scrollbar-width: none;
+  line-height: 1.45;
+  white-space: normal;
   text-shadow: 0 1px 4px rgba(0,0,0,.86);
 }
-.ai-control-panel__runtime-status::-webkit-scrollbar { display: none; }
-.ai-control-panel__runtime-status > span { flex: 0 0 auto; }
-.ai-control-panel__runtime-status i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: #607d8b; box-shadow: 0 0 7px rgba(96,125,139,.65); }
+.ai-control-panel__runtime-status > span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+.ai-control-panel__runtime-status i { flex: 0 0 auto; width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: #607d8b; box-shadow: 0 0 7px rgba(96,125,139,.65); }
 .ai-control-panel__runtime-status.is-active { color: #75f2b1; }
 .ai-control-panel__runtime-status.is-active i { background: #13ce66; box-shadow: 0 0 9px rgba(19,206,102,.8); }
-.ai-control-panel__active-event { margin-left: 0; color: #8fd9f7; white-space: nowrap; }
+.ai-control-panel__active-event { margin-left: 0; max-width: 100%; color: #8fd9f7; white-space: normal; overflow-wrap: anywhere; }
 
 .ai-control-panel__conversation {
   display: flex;
@@ -336,7 +345,7 @@ onBeforeUnmount(() => requestController?.abort())
 .ai-control-panel__message.is-welcome { margin-top: 8px; }
 .ai-control-panel__message.is-assistant { align-self: flex-start; }
 .ai-control-panel__message.is-user { align-self: flex-end; flex-direction: row-reverse; }
-.ai-control-panel__message-avatar { width: 32px; height: 32px; margin-top: 2px; font-size: 9px; }
+.ai-control-panel__message-avatar { width: 32px; height: 32px; margin-top: 2px; padding: 2px; }
 .ai-control-panel__message-body { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
 .ai-control-panel__message.is-user .ai-control-panel__message-body { align-items: flex-end; }
 .ai-control-panel__message-body > strong { margin: 0 0 3px; color: #f4fbff; font-size: 14px; text-shadow: 0 1px 5px rgba(0,0,0,.9); }

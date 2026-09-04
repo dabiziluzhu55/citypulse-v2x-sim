@@ -93,11 +93,19 @@ const {
 .dashboard-bottom-icons__hit::after {
   content: '';
   position: absolute;
-  inset: 5px;
-  border-radius: 16px;
+  left: 50%;
+  bottom: 4px;
+  width: calc(100% - 14px);
+  height: 34px;
+  border-radius: 17px;
   opacity: 0;
-  box-shadow: 0 0 18px rgba(33, 230, 255, .72);
+  transform: translateX(-50%);
+  background: rgba(16, 111, 214, .1);
+  box-shadow:
+    inset 0 0 10px rgba(82, 194, 250, .22),
+    0 0 16px rgba(33, 230, 255, .62);
   transition: opacity .2s ease;
+  pointer-events: none;
 }
 
 .dashboard-bottom-icons__hit:hover::after,

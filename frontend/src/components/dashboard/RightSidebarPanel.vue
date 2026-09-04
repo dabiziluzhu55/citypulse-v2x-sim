@@ -26,6 +26,7 @@ const charts = new Map<EvaluationMetricKey, echarts.ECharts>()
 const layout = RIGHT_SIDEBAR_METRICS_LAYOUT
 const points = computed(() => props.timeseries?.series ?? [])
 const hasRealData = computed(() => points.value.length > 0)
+const canExport = computed(() => Boolean(props.runId.trim() && hasRealData.value))
 const hasProvisionalData = computed(() => points.value.some((point) => point.finished === false))
 const comparison = computed(() => Object.fromEntries(EVALUATION_METRICS.map((metric) => [metric.key, buildAlgorithmMetricSeries(points.value, metric.key)])) as Record<EvaluationMetricKey, ReturnType<typeof buildAlgorithmMetricSeries>>)
 function algorithmHasData(algorithmId: string): boolean {
@@ -129,6 +130,8 @@ function scheduleChartRender(immediate = false) {
 function resizeCharts() { charts.forEach((chart) => chart.resize()) }
 function disposeCharts() { charts.forEach((chart) => chart.dispose()); charts.clear() }
 function handleExport() {
+  if (!canExport.value) return
+
   const payload = {
     run_id: props.runId || 'unassigned',
     exported_at: new Date().toISOString(),
@@ -154,9 +157,11 @@ function handleExport() {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `control-evaluation-${props.runId || 'demo'}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+  anchor.download = `control-evaluation-${props.runId}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+  document.body.appendChild(anchor)
   anchor.click()
-  URL.revokeObjectURL(url)
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 onMounted(() => { renderCharts(); window.addEventListener('resize', resizeCharts) })
@@ -239,6 +244,8 @@ watch(() => props.timeseries, () => {
                 width: `${layout.exportButton.width}px`,
                 height: `${layout.exportButton.height}px`,
               }"
+              :disabled="!canExport"
+              :title="canExport ? '导出当前场景真实评估数据' : '请先启动仿真并等待评估数据返回'"
               @click="handleExport"
             >导出当前场景管控评估结果</button>
           </div>
@@ -273,5 +280,7 @@ watch(() => props.timeseries, () => {
 .right-sidebar__source-note { position: absolute; z-index: 5; top: 770px; color: rgba(141,190,220,.65); font-size: 9px; text-align: center; }
 .right-sidebar__export { position: absolute; z-index: 6; border: 1px solid #52c2fa; clip-path: polygon(6px 0,100% 0,100% 100%,0 100%,0 7px); background: linear-gradient(180deg,#2e519e,#3c8de7); box-shadow: inset 0 1px 0 rgba(173,235,255,.55); color: #eefaff; font: 800 17px/1 'PingFang SC','Microsoft YaHei',sans-serif; text-shadow: 0 1px 3px rgba(0,25,64,.65); cursor: pointer; pointer-events: auto; transition: filter .2s ease,transform .2s ease; }
 .right-sidebar__export:hover, .right-sidebar__export:focus-visible { filter: brightness(1.14) drop-shadow(0 0 6px #52c2fa); outline: none; transform: translateY(-1px); }
+.right-sidebar__export:disabled { opacity: .45; filter: grayscale(.45); box-shadow: none; cursor: not-allowed; transform: none; }
+.right-sidebar__export:disabled:hover, .right-sidebar__export:disabled:focus-visible { filter: grayscale(.45); transform: none; }
 @media (prefers-reduced-motion: reduce) { .right-sidebar__export { transition: none; } }
 </style>

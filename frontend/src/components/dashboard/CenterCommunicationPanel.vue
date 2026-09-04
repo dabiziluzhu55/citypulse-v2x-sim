@@ -19,7 +19,6 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 
 const currentPage = ref(1)
-const selectedDate = ref(new Date().toLocaleDateString('sv-SE'))
 const selectedTimeRange = ref<[string, string] | null>(null)
 const directionFilter = ref('all')
 const linkFilter = ref('all')
@@ -43,7 +42,6 @@ const filteredRows = computed(() => {
   return displayedEntries.value.filter((row) => {
     const direction = `${row.sourceRole ?? 'unknown'}->${row.destinationRole ?? 'unknown'}`
     const clock = row.timeLabel.slice(0, 8)
-    const matchesDate = !selectedDate.value || !row.dateLabel || row.dateLabel === selectedDate.value
     const matchesTime = !selectedTimeRange.value
       || (clock >= selectedTimeRange.value[0] && clock <= selectedTimeRange.value[1])
     const matchesDirection = directionFilter.value === 'all' || direction === directionFilter.value
@@ -55,8 +53,7 @@ const filteredRows = computed(() => {
       row.message,
       row.messageTag,
     ].filter(Boolean).join(' ').toLowerCase()
-    return matchesDate
-      && matchesTime
+    return matchesTime
       && matchesDirection
       && matchesLink
       && matchesMessage
@@ -100,6 +97,11 @@ function csvCell(value: unknown): string {
   return `"${String(value ?? '').replaceAll('"', '""')}"`
 }
 
+function communicationExportDate(): string {
+  return filteredRows.value.find((row) => row.dateLabel)?.dateLabel
+    ?? new Date().toLocaleDateString('sv-SE')
+}
+
 function exportCommunicationLog(): void {
   const header = ['时间', '来源', '来源角色', '目标', '目标角色', '链路类型', '消息类型', '内容摘要', '延迟(ms)', '状态']
   const rows = filteredRows.value.map((row) => [
@@ -118,14 +120,16 @@ function exportCommunicationLog(): void {
   const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' }))
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `citypulse-v2x-${selectedDate.value || 'all'}.csv`
+  anchor.download = `citypulse-v2x-${communicationExportDate()}.csv`
+  document.body.appendChild(anchor)
   anchor.click()
-  URL.revokeObjectURL(url)
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 watch([autoRefresh, refreshIntervalSeconds], restartAutoRefresh, { immediate: true })
 watch(
-  [selectedDate, selectedTimeRange, directionFilter, linkFilter, messageFilter, keyword],
+  [selectedTimeRange, directionFilter, linkFilter, messageFilter, keyword],
   () => { currentPage.value = 1 },
 )
 watch(filteredRows, () => {
@@ -148,8 +152,7 @@ onBeforeUnmount(() => {
     </header>
 
     <div class="communication-panel__toolbar">
-      <el-date-picker v-model="selectedDate" class="filter-date" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="选择日期" :clearable="true" />
-      <el-time-picker v-model="selectedTimeRange" class="filter-time" is-range value-format="HH:mm:ss" range-separator="~" start-placeholder="开始时间" end-placeholder="结束时间" :clearable="true" />
+      <el-time-picker v-model="selectedTimeRange" class="filter-time" is-range format="HH:mm:ss" value-format="HH:mm:ss" range-separator="～" start-placeholder="开始时间" end-placeholder="结束时间" :clearable="true" />
       <el-select v-model="directionFilter" class="filter-direction" aria-label="通信方向">
         <el-option label="全部方向" value="all" />
         <el-option label="车辆 → 路口" value="vehicle->road" />
@@ -246,8 +249,9 @@ onBeforeUnmount(() => {
 }
 .communication-panel__close { position: absolute; top: -2px; right: -2px; z-index: 3; width: 28px; height: 28px; padding: 0; border: 1px solid rgba(98,216,255,.42); background: rgba(3,29,61,.9); color: #dff6ff; font-size: 20px; cursor: pointer; }
 .communication-panel__section-head { display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; margin: 0; padding-right: 30px; background: linear-gradient(180deg, rgba(29,89,147,.9), rgba(19,69,123,.82)); color: #fff; font-size: 22px; letter-spacing: .08em; text-align: center; }
-.communication-panel__toolbar { display: grid; grid-template-columns: minmax(150px,.8fr) minmax(220px,1.1fr) repeat(3,minmax(118px,.65fr)) minmax(220px,1.4fr) 112px; gap: 10px; align-items: center; min-width: 0; padding: 14px 20px; border-bottom: 1px solid rgba(69,162,226,.22); }
+.communication-panel__toolbar { display: grid; grid-template-columns: minmax(230px,1.3fr) repeat(3,minmax(120px,.72fr)) minmax(240px,1.45fr) 112px; gap: 10px; align-items: center; min-width: 0; padding: 14px 20px; border-bottom: 1px solid rgba(69,162,226,.22); }
 .communication-panel__toolbar > * { min-width: 0; }
+.filter-time { width: 100%; min-width: 0; }
 .communication-panel__toolbar :deep(.el-input__wrapper),
 .communication-panel__toolbar :deep(.el-select__wrapper) { background: rgba(3,35,68,.78); box-shadow: 0 0 0 1px rgba(72,163,225,.36) inset; }
 .communication-panel__toolbar :deep(.el-input__inner),
@@ -289,12 +293,11 @@ onBeforeUnmount(() => {
   .communication-panel__toolbar {
     grid-template-columns: repeat(6,minmax(0,1fr));
     grid-template-areas:
-      "date date time time time time"
+      "time time time time time time"
       "direction link message search search export";
     gap: 8px;
     padding: 10px 14px;
   }
-  .filter-date { grid-area: date; }
   .filter-time { grid-area: time; }
   .filter-direction { grid-area: direction; }
   .filter-link { grid-area: link; }
