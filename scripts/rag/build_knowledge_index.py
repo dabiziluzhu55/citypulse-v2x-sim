@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--index-dir",
         type=Path,
-        default=REPOSITORY_ROOT / "outputs" / "rag" / "chroma",
+        default=REPOSITORY_ROOT / "outputs" / "rag" / "traffic_knowledge_chroma",
         help="Persistent Chroma directory",
     )
     parser.add_argument(

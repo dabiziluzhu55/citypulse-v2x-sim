@@ -68,6 +68,22 @@ class AIControlPlan(BaseModel):
         )
 
 
+class AIControlPlanSummary(BaseModel):
+    """The last valid plan installed by the SUMO worker."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    plan_id: str
+    sequence: int
+    plan_started_at: float
+    plan_valid_until: float
+    controlled_intersections: list[str] = Field(default_factory=list)
+    target_phase_sequence: dict[str, list[int]] = Field(default_factory=dict)
+    objective: str
+    reason: str
+
+
 class AIControlStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -87,6 +103,7 @@ class AIControlStatus(BaseModel):
     last_objective: str | None = None
     last_reason: str | None = None
     rag_status: str | None = None
+    last_plan: AIControlPlanSummary | None = None
 
 
 class AIControlPlanRequest(BaseModel):
@@ -101,4 +118,9 @@ class AIControlPlanRequest(BaseModel):
     plan_started_at: float
 
 
-__all__ = ["AIControlPlan", "AIControlPlanRequest", "AIControlStatus"]
+__all__ = [
+    "AIControlPlan",
+    "AIControlPlanRequest",
+    "AIControlPlanSummary",
+    "AIControlStatus",
+]

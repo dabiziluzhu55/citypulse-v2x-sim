@@ -27,16 +27,20 @@ from .traffic_tools import (
 DEFAULT_SYSTEM_PROMPT = """你是 CityPulse 车路云交通 Copilot，负责解释当前仿真中的交通状态。
 
 必须遵守：
-1. 当前车辆数、停车数、速度、事件状态、历史趋势和预测等事实，必须先调用只读交通工具获得；没有工具结果就明确说无法确认，不得编造实时数据。
-2. 工具结果中的 timestamp、scope、source 代表数据口径。回答时区分观测事实、预测结果、基于证据的推断和未知原因。
-3. 事件的具体成因如果工具没有确认，就说“原因未确认”；不要把前端注入事件直接当成识别结论。
+1. 当前车辆数、停车数、速度、事件状态、历史趋势和预测等事实，必须先调用只读交通工具获得；没有工具结果就明确说无法确认，不得编造实时数据。凡是需要交通工程知识、处置原则或标准依据的问题，也必须先调用 search_knowledge，不得凭模型记忆直接回答。
+2. 工具结果中的 timestamp、scope、source 代表数据口径。回答时区分观测事实、预测结果、基于证据的推断和未知原因。`get_current_traffic` 返回的 `model_summary` 是逐车道精确摘要，以其中的车道值为准，不要把路口总量分摊或推算到单条车道。用户未指定路口或车道，却询问“当前车流”“全网交通”“整体拥堵”等范围问题时，必须调用 `get_network_summary`，不要先反问路口 ID；只有用户明确指定路口或车道时才调用 `get_current_traffic`。没有指定路口的全网预测问题，调用 `get_prediction` 时不要填写任何路口 ID，直接依据工具返回的 `top_increases` 排序结果回答。预测只能使用工具返回的 horizon_seconds（当前运行配置通常约为 60 秒）；用户要求超过该范围（例如 5 分钟）时，直接说明当前不支持，不要虚构路口 ID 重试，也不要把短时预测外推成更长预测。
+3. 事件的具体成因如果工具没有确认，就说“原因未确认”；不要把前端注入事件直接当成识别结论。事件类型（例如“事故”“施工”）不是事件 ID；如果当前会话上下文已经提供唯一事件 ID，使用该 ID 查询，不要把事件类型当作 ID。
 4. 如果用户是在查看前端选中的事件并请求事件简报，必须先查询该事件详情；同时查询相关路口当前状态和历史趋势，再生成简报。只有用户点击/主动提问时才生成简报，不要因为事件写入历史就主动调用模型。
 5. 你只能查询和计算，不能启动、停止、暂停仿真，不能修改信号灯、车辆、事件或任何系统状态。用户要求控制操作时，说明当前 Copilot 只支持只读分析。
-6. 查询事故、施工占道、限速、大型活动、回溢或多路口协同的处置原则时，优先调用 search_knowledge，并使用 profile="control"；普通算法说明或项目规划问题才使用 profile="general"。RAG 返回的 planning 内容表示规划，不是已经上线的能力。
+6. 查询事故、施工占道、限速、大型活动、回溢或多路口协同的一般处置原则时，search_knowledge 是必需的第一步，使用 profile="control" 和 knowledge_sources=["traffic"]；如果用户只问处置原则而没有提供具体路口/车道 ID，不要索要 ID。一般交通原则查询不要自行填写 information_types，除非用户明确要求按已知类别筛选；不要创造 `disposal_principle` 等不存在的类别。知识来源最终由后端按用户原问题再次约束：普通项目指标/公式问题只检索当前正式指标文档；明确的国家/行业标准问题只检索标准索引；只有用户明确要求比较项目口径与国家/行业标准时才同时检索两者；AI 管控评估问题检索 AI 评估规范。不要为了猜测而同时选择多个知识来源。不得引用检索结果中没有明确出现的标准编号、条款或数值；没有直接标准条款时明确说明没有直接条款。比较项目口径和标准时，只有公式、对象、时间窗口以及边界/统计处理都明确一致才说“一致”，否则说“部分对应”；没有直接条款就明确写“没有直接条款”。查询雄安规划时，使用 profile="general" 和 knowledge_sources=["policy"]。普通算法说明或项目规划问题才使用 profile="general"。RAG 返回的 planning/policy 内容表示规划，不是已经上线的能力；回答时保留标准编号、章节、页码和文档状态。
 7. 最终用简洁、清楚的中文回答；涉及多个数据来源时说明各自的范围和时间。
+<<<<<<< HEAD
 8. 最终回答只能是面向用户的自然中文，禁止返回 JSON、工具参数、字段定义、Schema 或 Python 字典。
 9. 当前状态、车辆、速度、排队、拥堵等问题必须先调用工具；禁止使用“[车辆数量]”之类的占位符。
 10. 工具调用结束后，只提炼用户关心的结论，不逐字段复述工具原始结果。
+=======
+8. 关于当前或最近一次 AI 接管的问题（是否真正生效、当前状态、接管事件、控制范围、已安装计划、目标相位、失败或回退原因），必须先调用 get_ai_takeover_status；不要根据事件的 ai_control_enabled 字段自行推断接管成功。回答“当前正在管控吗”时，以工具返回的 `is_currently_executing` 和 `execution_state` 为准：只有 `is_currently_executing=true` 或 `execution_state=EXECUTING` 才能说当前管控正在执行；`PLANNING_PAUSED` 只能说仿真正在暂停并进行规划，不能说信号控制动作正在执行；终态仿真（FAILED/STOPPED/COMPLETED）不能说仍在管控。`installed_plan_active` 表示计划仍安装在非终态会话中，不等于当前正在执行。get_ai_takeover_status 返回的目标相位序列是已安装的控制请求，不是 SUMO 当前实测相位；要回答当前实际相位，另调 get_current_traffic。询问“管控后车流如何变化”时，先调用 get_ai_takeover_status，再调用 get_traffic_history，将管控动作与实际交通指标分开说明。AI 接管状态和计划信息是运行时事实，不要调用 search_knowledge 替代。
+>>>>>>> origin/feature/perception
 """
 
 _PLACEHOLDER_PATTERN = re.compile(r"\[[^\[\]\n]{1,40}\]")
@@ -366,7 +370,9 @@ class CopilotOrchestrator:
             "后端已经把当前仿真会话绑定到交通工具；工具参数中不要自行添加 session_id。"
         ]
         if active_event_id and str(active_event_id).strip():
-            context_lines.append(f"当前前端选中的活动事件 ID：{str(active_event_id).strip()}")
+            context_lines.append(
+                f"当前查询上下文中的事件 ID（前端传入或后端在单一事件会话中推断）：{str(active_event_id).strip()}"
+            )
         if active_scope and str(active_scope).strip():
             context_lines.append(f"当前前端选中的分析范围：{str(active_scope).strip()}")
         context = "\n\n当前会话上下文（只用于确定查询范围，不是实时事实）：\n" + "\n".join(
@@ -428,7 +434,10 @@ class CopilotOrchestrator:
         if error is not None:
             payload = {"ok": False, "error": dict(error)}
         else:
-            payload = {"ok": True, "result": result}
+            payload = {
+                "ok": True,
+                "result": _model_facing_tool_result(call.name, result),
+            }
         content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         if len(content) > self.max_tool_result_chars:
             preview_limit = max(100, self.max_tool_result_chars - 160)
@@ -449,6 +458,145 @@ class CopilotOrchestrator:
             "name": call.name,
             "content": content,
         }
+
+
+def _model_facing_tool_result(
+    tool_name: str,
+    result: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    """Reduce verbose read-only results before sending them to Qwen.
+
+    The complete result is still retained in ``ToolCallRecord`` for the API
+    caller.  Qwen only needs the authoritative compact view for current
+    traffic and the deterministic ranking for a network prediction; sending
+    the duplicated lane/all-intersection payload makes small local models
+    more likely to confuse adjacent rows.
+    """
+
+    if not isinstance(result, Mapping):
+        return result
+    data = result.get("data")
+    if not isinstance(data, Mapping):
+        return result
+
+    envelope = {
+        key: result[key]
+        for key in ("source", "scope", "timestamp")
+        if key in result
+    }
+    if tool_name == "get_current_traffic":
+        summary = data.get("model_summary")
+        if isinstance(summary, Mapping):
+            envelope["data"] = {
+                "as_of_seconds": data.get("as_of_seconds"),
+                "model_summary": summary,
+                "model_view": "compact_current_traffic",
+            }
+            return envelope
+
+    if tool_name == "get_ai_takeover_status":
+        execution_state, execution_note = _ai_execution_view(data)
+        envelope["data"] = {
+            "available": data.get("available", False),
+            "as_of_seconds": data.get("as_of_seconds"),
+            "simulation_state": data.get("simulation_state"),
+            "takeover_state": data.get("takeover_state"),
+            "execution_state": execution_state,
+            "is_currently_executing": execution_state == "EXECUTING",
+            "execution_note": execution_note,
+            "ai_enabled": data.get("ai_enabled", False),
+            "active_event_id": data.get("active_event_id"),
+            "allowed_scope": data.get("allowed_scope", []),
+            "controlled_intersections": data.get("controlled_intersections", []),
+            "plan_sequence": data.get("plan_sequence", 0),
+            "installed_plan_active": data.get("installed_plan_active", False),
+            "installed_plan": data.get("installed_plan"),
+            "last_error": data.get("last_error"),
+            "fallback_reason": data.get("fallback_reason"),
+            "rag_status": data.get("rag_status"),
+        }
+        return envelope
+
+    if tool_name == "get_road_context":
+        upstream = data.get("upstream_intersections", [])
+        downstream = data.get("downstream_intersections", [])
+        upstream_values = (
+            list(upstream)
+            if isinstance(upstream, Sequence) and not isinstance(upstream, (str, bytes))
+            else []
+        )
+        downstream_values = (
+            list(downstream)
+            if isinstance(downstream, Sequence) and not isinstance(downstream, (str, bytes))
+            else []
+        )
+        direct_values = sorted(
+            {
+                str(value)
+                for value in [*upstream_values, *downstream_values]
+                if str(value).strip()
+            }
+        )
+        envelope["data"] = {
+            "target": data.get("target"),
+            "topology_available": data.get("topology_available", False),
+            "upstream_intersections": upstream_values,
+            "downstream_intersections": downstream_values,
+            "directly_connected_intersections": direct_values,
+            "connection_note": (
+                "只回答当前 TLS manifest 能证明的直接相连路口；同一路口同时出现在上游和下游时，"
+                "表示双向直接连接，不要重复计数，也不要扩展到其他走廊或路径邻居。"
+            ),
+        }
+        return envelope
+
+    if tool_name == "get_prediction" and "top_increases" in data:
+        compact_keys = (
+            "available",
+            "as_of_seconds",
+            "supported_horizon_seconds",
+            "horizon_seconds",
+            "model",
+            "model_version",
+            "ready",
+            "fallback",
+            "fallback_reason",
+            "top_increases",
+            "not_found",
+            "predicted_affected_intersections",
+        )
+        compact_data = {
+            key: data[key] for key in compact_keys if key in data
+        }
+        rows = data.get("intersections")
+        # A scoped prediction is already small and should retain the exact
+        # requested row. A network prediction uses top_increases instead of
+        # forwarding all rows for the model to sort itself.
+        if isinstance(rows, Sequence) and not isinstance(rows, (str, bytes)):
+            if len(rows) <= 5:
+                compact_data["intersections"] = rows
+            else:
+                compact_data["model_view"] = "network_prediction_summary"
+        envelope["data"] = compact_data
+        return envelope
+
+    return result
+
+
+def _ai_execution_view(data: Mapping[str, Any]) -> tuple[str, str]:
+    """Return one unambiguous execution state for the model-facing payload."""
+
+    simulation_state = str(data.get("simulation_state", "")).upper()
+    takeover_state = str(data.get("takeover_state", "")).upper()
+    if simulation_state in {"STOPPED", "COMPLETED", "FAILED"}:
+        return "FINISHED", "仿真已经结束，AI 信号控制当前没有执行。"
+    if bool(data.get("control_active", False)):
+        return "EXECUTING", "仿真正在运行，AI 信号控制计划当前正在执行。"
+    if simulation_state == "PAUSED" and takeover_state == "ACTIVE":
+        return "PLANNING_PAUSED", "仿真当前暂停，AI 正在规划或安装计划，信号控制动作尚未执行。"
+    if takeover_state in {"RECOVERY", "FALLBACK"}:
+        return "RECOVERY", "AI 接管正在恢复或回退到基线，当前不能视为正常 AI 计划执行。"
+    return "BASELINE", "当前没有正在执行的 AI 信号控制计划，仿真使用基线控制。"
 
 
 def _positive_int(value: Any, field_name: str) -> int:

@@ -9,6 +9,7 @@ from typing import Callable, Mapping, Sequence
 from .ai_control import (
     AIControlConfig,
     AIControlPlan,
+    AIControlPlanSummary,
     AIControlStatus,
     AIControlValidationError,
 )
@@ -276,6 +277,17 @@ class AIPlanExecutor:
                 None
                 if payload.get("rag_status") is None
                 else str(payload.get("rag_status"))
+            ),
+            last_plan=(
+                self._status.last_plan
+                if plan.fallback_to_baseline
+                else AIControlPlanSummary.from_plan(
+                    event_id=event_id,
+                    plan_id=raw_plan_id,
+                    sequence=sequence,
+                    plan_started_at=plan_started_at,
+                    plan=plan,
+                )
             ),
         )
         if plan.fallback_to_baseline:

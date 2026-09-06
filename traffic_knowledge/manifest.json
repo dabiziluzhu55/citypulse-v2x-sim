@@ -1,7 +1,7 @@
 {
   "version": "0.4",
-  "generated_at": "2026-08-30",
-  "project_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+  "generated_at": "2026-09-03",
+  "project_revision": "8efb0c5acc3aaac326e9b5dbf8d2106fa4fb220d",
   "source_summary": {
     "unique_sources": 41,
     "official_docs_and_repositories": 26,
@@ -980,6 +980,7 @@
       ],
       "information_type": "project_fact",
       "status": "current",
+      "document_role": "canonical_metric_definition",
       "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
       "applicable_presets": [
         "xiongan_20",
@@ -993,7 +994,7 @@
         "major_event_opening",
         "major_event_closing"
       ],
-      "priority": "normal"
+      "priority": "high"
     },
     {
       "id": "metrics_safety",
@@ -1112,7 +1113,8 @@
       ],
       "information_type": "mixed",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "document_role": "evaluation_protocol",
+      "code_revision": "8efb0c5acc3aaac326e9b5dbf8d2106fa4fb220d",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",

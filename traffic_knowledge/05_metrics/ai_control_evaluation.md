@@ -1,7 +1,8 @@
 ---
 information_type: mixed
 status: current
-code_revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
+document_role: evaluation_protocol
+code_revision: 8efb0c5acc3aaac326e9b5dbf8d2106fa4fb220d
 applicable_events:
   - accident
   - lane_closure
@@ -47,24 +48,16 @@ priority: high
 
 这类设计无法分离 AI 独立效果。
 
-## A. 交通效果
+## A. 交通效果评估
 
-### 当前正式指标（项目事实）
+本文只规定 AI 管控实验如何选择、组织和报告交通效果指标，不重复维护
+指标名称、公式、阈值或当前实现字段。通行效率指标的唯一项目权威来源是
+`efficiency_metrics.md`；安全和能源专项指标分别以 `safety_metrics.md` 与
+`emission_energy_metrics.md` 为准。
 
-`traffic_eval.EvalResult`：
-
-| 字段 | 含义 |
-| --- | --- |
-| `avg_travel_time_s` | 平均行程时间 |
-| `avg_waiting_time_s` | 平均等待时间 |
-| `avg_queue_length_veh` | 进口车道平均排队 |
-| `throughput_veh_per_h` | 小时化到达率 |
-| `fuel_intensity_L_per_100km` | 燃油强度 |
-| `hard_braking_events` / `hard_braking_rate` | 急刹次数与率 |
-| `departed` / `arrived` / `completion_rate` | 出发、到达、完成率 |
-| `avg_decision_latency_ms` | 算法决策延迟；无样本为 null，不是 0 |
-
-口径见 `efficiency_metrics.md`、`safety_metrics.md`、`emission_energy_metrics.md`。同条件下行程/等待/排队/急刹通常越低越好；通行量和完成率通常越高越好。高通行量伴随急刹或燃油明显恶化时，不得单独判优。
+因此，评估报告应从上述当前指标文档和终态 `traffic_eval.EvalResult` 读取实际
+字段，并在指标缺失或尚未实现时保留 `null` / warning，不得用本文的规划指标
+替代正式结算指标。
 
 ### 规划型局部指标（尚未计算）
 
@@ -102,7 +95,7 @@ priority: high
 1. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
+   - revision: 8efb0c5acc3aaac326e9b5dbf8d2106fa4fb220d
    - file: traffic_eval/models.py; traffic_eval/collector.py; traffic_eval/tripinfo.py
    - 用于支持：当前正式指标字段。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim
