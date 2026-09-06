@@ -233,14 +233,17 @@ def render_od_heatmap_png(
     image = ax.imshow(values, cmap="YlOrRd", aspect="equal")
     ax.set_xticks(range(len(HEATMAP_ZONE_LABELS)))
     ax.set_yticks(range(len(HEATMAP_ZONE_LABELS)))
-    ax.set_xticklabels(HEATMAP_ZONE_LABELS, rotation=45, ha="right")
-    ax.set_yticklabels(HEATMAP_ZONE_LABELS)
-    ax.set_xlabel("终点交通分析区")
-    ax.set_ylabel("起点交通分析区")
+    ax.set_xticklabels(HEATMAP_ZONE_LABELS, rotation=45, ha="right", fontsize=14)
+    ax.set_yticklabels(HEATMAP_ZONE_LABELS, fontsize=14)
+    ax.tick_params(axis="x", pad=12)
+    ax.tick_params(axis="y", pad=10)
+    ax.set_xlabel("终点交通分析区", fontsize=16, labelpad=32)
+    ax.set_ylabel("起点交通分析区", fontsize=16, labelpad=32)
 
-    fig.subplots_adjust(left=0.12, right=0.78, top=0.92, bottom=0.28)
+    fig.subplots_adjust(left=0.18, right=0.78, top=0.92, bottom=0.36)
     colorbar = fig.colorbar(image, ax=ax, fraction=0.046, pad=0.06)
-    colorbar.set_label(f"PCU ({unit})", labelpad=12)
+    colorbar.ax.tick_params(labelsize=13)
+    colorbar.set_label("PCU", labelpad=12, fontsize=14)
 
     max_value = float(values.max()) if values.size else 0.0
     threshold = max_value * 0.55 if max_value > 0 else 0.0
@@ -253,7 +256,7 @@ def render_od_heatmap_png(
                 _format_pcu(value),
                 ha="center",
                 va="center",
-                fontsize=7,
+                fontsize=16,
                 color="white" if value >= threshold and value > 0 else "black",
             )
 
@@ -271,7 +274,7 @@ def render_od_heatmap_png(
         caption,
         ha="left",
         va="bottom",
-        fontsize=7.5,
+        fontsize=13,
         wrap=True,
         fontproperties=font_manager.FontProperties(family=font_family or "DejaVu Sans"),
     )
