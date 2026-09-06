@@ -8,6 +8,7 @@ from .v1 import (
     catalog,
     config,
     copilot,
+    evaluation_reports,
     health,
     internal_algorithm,
     maps,
@@ -23,6 +24,7 @@ api_router.include_router(catalog.router, tags=["catalog"])
 api_router.include_router(maps.router, tags=["maps"])
 api_router.include_router(tiles.router, tags=["tiles"])
 api_router.include_router(simulations.router, tags=["simulations"])
+api_router.include_router(evaluation_reports.router, tags=["evaluation-reports"])
 api_router.include_router(copilot.router, tags=["copilot"])
 api_router.include_router(scenarios.router, tags=["scenarios"])
 api_router.include_router(internal_algorithm.router, tags=["internal-algorithm"])

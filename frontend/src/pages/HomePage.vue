@@ -115,6 +115,8 @@ const {
   timeseries,
   activeFingerprint,
   hasActiveComparisonData,
+  activeComparisonRuns,
+  activeComparisonContract,
   finalizationWarning,
   beginRun: beginComparisonRun,
   resetForConfiguration,
@@ -453,6 +455,8 @@ async function handleStop() {
         :timeseries="timeseries"
         :timeseries-loading="false"
         :timeseries-error="finalizationWarning"
+        :comparison-runs="activeComparisonRuns"
+        :comparison-contract="activeComparisonContract"
       />
     </div>
   </section>

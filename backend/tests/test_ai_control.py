@@ -19,12 +19,9 @@ from backend.app.core.exceptions import AppError
 from backend.app.services.history import InMemoryHistoryRepository
 from backend.app.services.takeover_orchestrator import (
     TakeoverOrchestrator,
-<<<<<<< HEAD
-    _parse_control_plan_content,
-=======
     _compact_control_context,
     _decode_control_plan_json,
->>>>>>> origin/feature/perception
+    _parse_control_plan_content,
 )
 from backend.app.schemas.events import AccidentRequest
 from backend.app.services.simulation_service import SimulationService

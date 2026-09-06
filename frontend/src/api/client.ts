@@ -7,6 +7,7 @@ export interface ApiRequestConfig {
   params?: Record<string, string | number | boolean | null | undefined>
   timeoutMs?: number
   signal?: AbortSignal
+  accept?: string
 }
 
 export interface ApiBlobResponse {
@@ -153,7 +154,7 @@ async function requestBlob(
       ...init,
       signal: controller.signal,
       headers: {
-        Accept: 'application/zip',
+        Accept: config?.accept ?? 'application/zip',
         'Content-Type': 'application/json',
         ...init.headers,
       },

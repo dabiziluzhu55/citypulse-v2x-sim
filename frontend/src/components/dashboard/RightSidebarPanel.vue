@@ -17,25 +17,50 @@ import {
 import { EVALUATION_AXIS, EVALUATION_METRICS, METRICS_ALGORITHMS, buildAlgorithmMetricSeries, evaluationTimes, type EvaluationMetricKey } from '../../constants/metricsEvaluation'
 import RightSidebarFrameSvg from './RightSidebarFrameSvg.vue'
 import RightSidebarSectionHeader from './RightSidebarSectionHeader.vue'
+import { exportEvaluationReportPdf } from '../../api/evaluationReport.ts'
+import { ApiError } from '../../api/client.ts'
+import type { EvaluationComparisonRun, ScenarioComparisonContractV3 } from '../../composables/useEvaluationComparison.ts'
 import type { CollaborationLogEntry } from '../../types/collaboration'
 import type { MetricsTimeseriesResponse } from '../../types/metrics'
+import {
+  buildEvaluationReportFilename,
+  buildEvaluationReportRequest,
+  hasFinishedComparisonRun,
+} from '../../utils/evaluationReport.ts'
 
-const props = defineProps<{ runId: string; activeAlgorithm: string; logEntries: CollaborationLogEntry[]; collaborationLoading: boolean; collaborationError: string | null; wsConnected: boolean; timeseries: MetricsTimeseriesResponse | null; timeseriesLoading: boolean; timeseriesError: string | null }>()
+const props = defineProps<{
+  runId: string
+  activeAlgorithm: string
+  logEntries: CollaborationLogEntry[]
+  collaborationLoading: boolean
+  collaborationError: string | null
+  wsConnected: boolean
+  timeseries: MetricsTimeseriesResponse | null
+  timeseriesLoading: boolean
+  timeseriesError: string | null
+  comparisonRuns: EvaluationComparisonRun[]
+  comparisonContract: ScenarioComparisonContractV3 | null
+}>()
 const chartRefs = ref<Record<EvaluationMetricKey, HTMLElement | null>>({ queue: null, waiting: null, fuel: null })
 const charts = new Map<EvaluationMetricKey, echarts.ECharts>()
 const layout = RIGHT_SIDEBAR_METRICS_LAYOUT
 const points = computed(() => props.timeseries?.series ?? [])
 const hasRealData = computed(() => points.value.length > 0)
-const canExport = computed(() => Boolean(props.runId.trim() && hasRealData.value))
+const canExport = computed(() => hasFinishedComparisonRun(props.comparisonRuns))
+const exporting = ref(false)
+const exportError = ref<string | null>(null)
+const exportTitle = computed(() => (
+  exporting.value
+    ? '正在生成评估报告...'
+    : canExport.value
+      ? '导出当前场景已完成算法的终态评估报告'
+      : '当前场景暂无已完成的终态评估结果'
+))
 const hasProvisionalData = computed(() => points.value.some((point) => point.finished === false))
 const comparison = computed(() => Object.fromEntries(EVALUATION_METRICS.map((metric) => [metric.key, buildAlgorithmMetricSeries(points.value, metric.key)])) as Record<EvaluationMetricKey, ReturnType<typeof buildAlgorithmMetricSeries>>)
 function algorithmHasData(algorithmId: string): boolean {
   return points.value.some((point) => point.algorithm === algorithmId)
 }
-
-const backendWarnings = computed(() => points.value
-  .flatMap((point) => point.warnings ?? [])
-  .filter((warning, index, values) => values.indexOf(warning) === index))
 
 const currentAlgorithmId = computed(() => props.activeAlgorithm
   || points.value.at(-1)?.algorithm
@@ -129,39 +154,36 @@ function scheduleChartRender(immediate = false) {
 }
 function resizeCharts() { charts.forEach((chart) => chart.resize()) }
 function disposeCharts() { charts.forEach((chart) => chart.dispose()); charts.clear() }
-function handleExport() {
-  if (!canExport.value) return
-
-  const payload = {
-    run_id: props.runId || 'unassigned',
-    exported_at: new Date().toISOString(),
-    contains_real_data: hasRealData.value,
-    contains_provisional_data: hasProvisionalData.value,
-    finished: points.value.some((point) => point.finished === true),
-    x_axis: {
-      min_minutes: EVALUATION_AXIS.minMinutes,
-      max_minutes: EVALUATION_AXIS.maxMinutes,
-      interval_minutes: EVALUATION_AXIS.intervalMinutes,
-    },
-    metrics: EVALUATION_METRICS.map((metric) => ({
-      ...metric,
-      times_seconds: evaluationTimes(points.value),
-      algorithms: comparison.value[metric.key],
-    })),
-    backend_points: points.value,
-    warnings: backendWarnings.value,
-    algorithms: METRICS_ALGORITHMS,
-    source_notice: '仅包含相同配置下由后端仿真实际返回的算法评估数据；pending、provisional、final、unavailable 分别表示等待回填、实时临时值、TripInfo 最终值和后端不可用。',
-  }
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+function downloadPdfBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `control-evaluation-${props.runId}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+  anchor.download = filename
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+async function handleExport() {
+  if (!canExport.value || exporting.value) return
+  exporting.value = true
+  exportError.value = null
+  try {
+    const { blob, filename } = await exportEvaluationReportPdf(
+      buildEvaluationReportRequest(props.comparisonContract, props.comparisonRuns),
+    )
+    if (blob.size === 0 || blob.type.includes('json')) {
+      throw new Error('empty-or-invalid-pdf')
+    }
+    downloadPdfBlob(blob, filename || buildEvaluationReportFilename(props.comparisonContract))
+  } catch (cause) {
+    exportError.value = cause instanceof ApiError && cause.code === 'NO_FINAL_EVALUATION_AVAILABLE'
+      ? '当前场景暂无已完成的终态评估结果'
+      : '评估报告生成失败，请稍后重试'
+  } finally {
+    exporting.value = false
+  }
 }
 
 onMounted(() => { renderCharts(); window.addEventListener('resize', resizeCharts) })
@@ -216,7 +238,12 @@ watch(() => props.timeseries, () => {
             </div>
 
             <div
-              v-if="timeseriesLoading && !hasRealData"
+              v-if="exportError"
+              class="right-sidebar__export-error"
+              :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px` }"
+            >{{ exportError }}</div>
+            <div
+              v-else-if="timeseriesLoading && !hasRealData"
               class="right-sidebar__source-note"
               :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px` }"
             >等待真实仿真评估时序</div>
@@ -244,10 +271,10 @@ watch(() => props.timeseries, () => {
                 width: `${layout.exportButton.width}px`,
                 height: `${layout.exportButton.height}px`,
               }"
-              :disabled="!canExport"
-              :title="canExport ? '导出当前场景真实评估数据' : '请先启动仿真并等待评估数据返回'"
+              :disabled="!canExport || exporting"
+              :title="exportTitle"
               @click="handleExport"
-            >导出当前场景管控评估结果</button>
+            >{{ exporting ? '正在生成评估报告...' : '导出当前场景管控评估结果' }}</button>
           </div>
         </div>
       </div>
@@ -278,6 +305,7 @@ watch(() => props.timeseries, () => {
 .right-sidebar__metric-status.has-comparison-data { left: auto; right: 10px; top: 34px; bottom: auto; width: 170px; min-height: 34px; padding: 5px 8px; border: 1px solid rgba(82,194,250,.24); background: rgba(5,18,39,.88); align-items: flex-end; }
 .right-sidebar__metric-status.has-comparison-data strong { display: none; }
 .right-sidebar__source-note { position: absolute; z-index: 5; top: 770px; color: rgba(141,190,220,.65); font-size: 9px; text-align: center; }
+.right-sidebar__export-error { position: absolute; z-index: 6; top: 768px; color: #ffb458; font-size: 9px; text-align: center; pointer-events: none; }
 .right-sidebar__export { position: absolute; z-index: 6; border: 1px solid #52c2fa; clip-path: polygon(6px 0,100% 0,100% 100%,0 100%,0 7px); background: linear-gradient(180deg,#2e519e,#3c8de7); box-shadow: inset 0 1px 0 rgba(173,235,255,.55); color: #eefaff; font: 800 17px/1 'PingFang SC','Microsoft YaHei',sans-serif; text-shadow: 0 1px 3px rgba(0,25,64,.65); cursor: pointer; pointer-events: auto; transition: filter .2s ease,transform .2s ease; }
 .right-sidebar__export:hover, .right-sidebar__export:focus-visible { filter: brightness(1.14) drop-shadow(0 0 6px #52c2fa); outline: none; transform: translateY(-1px); }
 .right-sidebar__export:disabled { opacity: .45; filter: grayscale(.45); box-shadow: none; cursor: not-allowed; transform: none; }

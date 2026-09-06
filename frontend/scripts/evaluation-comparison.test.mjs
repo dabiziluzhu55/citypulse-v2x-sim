@@ -8,6 +8,7 @@ import {
   comparisonChangeRequiresConfirmation,
   createScenarioFingerprint,
   evaluationPoint,
+  parseComparisonContract,
   requiresFinalEvaluationRecovery,
   updateStoredRunFromSnapshot,
 } from '../src/composables/useEvaluationComparison.ts'
@@ -189,6 +190,12 @@ test('binds the accepted presentation generation before registering comparison s
   assert.match(evaluationSource, /readOnly: true/)
   assert.match(evaluationSource, /citypulse\.evaluation_comparison\.v3/)
   assert.match(evaluationSource, /citypulse\.evaluation_comparison\.v2/)
+  assert.match(evaluationSource, /activeComparisonRuns/)
+  assert.match(evaluationSource, /activeComparisonContract/)
+  assert.match(evaluationSource, /point\.finished === true/)
+  assert.doesNotMatch(evaluationSource, /run\.state === 'COMPLETED'/)
+  assert.match(homePageSource, /:comparison-runs="activeComparisonRuns"/)
+  assert.match(homePageSource, /:comparison-contract="activeComparisonContract"/)
 })
 
 test('tracks each algorithm run independently and records terminal failure metadata', () => {
@@ -366,6 +373,17 @@ test('rejects unfinished terminal metrics and records the TripInfo-completed fin
   assert.deepEqual(point.warnings, ['fuel unavailable'])
   assert.equal(point.metric_status.waiting, 'final')
   assert.equal(point.metric_status.fuel, 'unavailable')
+})
+
+test('parses standard comparison fingerprints and rejects unverified sessions', () => {
+  const fingerprint = createScenarioFingerprint(payload(), ['demo_2'])
+  const contract = parseComparisonContract(fingerprint)
+  assert.equal(contract?.scenario_preset_id, 'xiongan_20')
+  assert.equal(contract?.period, 'morning_peak')
+  assert.equal(contract?.window_start_seconds, 0)
+  assert.equal(contract?.duration_seconds, 900)
+  assert.equal(parseComparisonContract('unverified-session:abc'), null)
+  assert.equal(parseComparisonContract('{not-json'), null)
 })
 
 test('a final TripInfo point replaces a provisional point in the same five-second bucket', () => {

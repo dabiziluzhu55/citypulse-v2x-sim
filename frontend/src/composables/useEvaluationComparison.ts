@@ -90,6 +90,37 @@ export interface ScenarioComparisonContractV3 {
   step_length: number
 }
 
+export interface EvaluationComparisonRun {
+  algorithm: string
+  sessionId: string
+  finished: boolean
+}
+
+export function parseComparisonContract(
+  fingerprint: string,
+): ScenarioComparisonContractV3 | null {
+  if (!fingerprint || fingerprint.startsWith('unverified-session:')) return null
+  try {
+    const parsed = JSON.parse(fingerprint) as Partial<ScenarioComparisonContractV3>
+    if (
+      parsed.version === STORAGE_VERSION
+      && typeof parsed.scenario_preset_id === 'string'
+      && parsed.scenario_preset_id.trim()
+      && typeof parsed.period === 'string'
+      && parsed.period.trim()
+      && typeof parsed.window_start_seconds === 'number'
+      && Number.isFinite(parsed.window_start_seconds)
+      && typeof parsed.duration_seconds === 'number'
+      && Number.isFinite(parsed.duration_seconds)
+    ) {
+      return parsed as ScenarioComparisonContractV3
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
 function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     const unique = new Map<string, unknown>()
@@ -513,6 +544,16 @@ export function useEvaluationComparison(
   )))
   const hasActiveComparisonData = computed(() => Object.values(activeGroup.value?.runs ?? {})
     .some((run) => run.points.length > 0))
+  const activeComparisonRuns = computed<EvaluationComparisonRun[]>(() => (
+    Object.values(activeGroup.value?.runs ?? {}).map((run) => ({
+      algorithm: run.algorithm,
+      sessionId: run.sessionId,
+      finished: run.points.some((point) => point.finished === true),
+    }))
+  ))
+  const activeComparisonContract = computed(() => (
+    parseComparisonContract(activeFingerprint.value)
+  ))
 
   function resetForConfiguration(fingerprint: string): void {
     const now = Date.now()
@@ -559,6 +600,8 @@ export function useEvaluationComparison(
     activeFingerprint,
     hasComparisonData,
     hasActiveComparisonData,
+    activeComparisonRuns,
+    activeComparisonContract,
     finalizationWarning,
     beginRun,
     resetForConfiguration,

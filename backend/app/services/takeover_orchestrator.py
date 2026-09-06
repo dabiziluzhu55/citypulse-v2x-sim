@@ -250,35 +250,6 @@ class TakeoverOrchestrator:
                 allowed_scope=allowed_scope,
                 phase_orders=phase_orders,
             )
-<<<<<<< HEAD
-            raw_content = completion.message.content
-            if not isinstance(raw_content, str) or not raw_content.strip():
-                raise TakeoverPlanningError("Qwen returned an empty control plan.")
-            try:
-                plan = AIControlPlan.from_mapping(
-                    _parse_control_plan_content(raw_content),
-                    config=self._settings.ai_control_config,
-                )
-            except (json.JSONDecodeError, AIControlValidationError) as exc:
-                raise TakeoverPlanningError(
-                    f"Qwen returned an invalid control plan: {exc}"
-                ) from exc
-            if not set(plan.controlled_intersections) <= set(allowed_scope):
-                raise TakeoverPlanningError(
-                    "Qwen selected an intersection outside the allowed scope."
-                )
-            if phase_orders:
-                try:
-                    plan.validate_runtime(
-                        allowed_scope=allowed_scope,
-                        phase_orders=phase_orders,
-                    )
-                except AIControlValidationError as exc:
-                    raise TakeoverPlanningError(
-                        f"Qwen returned phases outside the runtime phase order: {exc}"
-                    ) from exc
-=======
->>>>>>> origin/feature/perception
             latest = self._manager.snapshot(snapshot.session_id)
             if latest.state not in {"PAUSED", "RUNNING"}:
                 raise TakeoverPlanningError(

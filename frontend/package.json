@@ -37,6 +37,7 @@
     "test:vegetation": "node --test scripts/vegetation.test.mjs",
     "test:vehicles": "node --test scripts/vehicle-visibility.test.mjs scripts/vehicle-authoritative-routes.test.mjs scripts/vehicle-model-dimensions.test.mjs scripts/vehicle-presentation-timeline.test.mjs scripts/vehicle-frame-collision.test.mjs scripts/vehicle-motion-index.test.mjs",
     "test:evaluation-comparison": "node --test scripts/evaluation-comparison.test.mjs",
+    "test:evaluation-report": "node --test scripts/evaluation-report.test.mjs",
     "test:playback-rate": "node --test scripts/playback-rate.test.mjs",
     "test:roads": "node --test scripts/road-geometry.test.mjs scripts/road-tileset.test.mjs scripts/road-joints.test.mjs",
     "test:intersection-demo": "node --test scripts/realistic-intersection.test.mjs",
