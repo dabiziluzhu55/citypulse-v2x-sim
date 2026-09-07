@@ -72,8 +72,8 @@ const exportTitle = computed(() => (
   exporting.value
     ? '正在生成评估报告...'
     : canExport.value
-      ? '导出当前场景已完成算法的评估报告'
-      : '当前场景暂无已完成的评估结果'
+      ? '导出当前场景已完成算法的终态评估报告'
+      : '当前场景暂无已完成的终态评估结果'
 ))
 const hasProvisionalData = computed(() => points.value.some((point) => point.finished === false))
 const activeMetric = computed(() => EVALUATION_METRICS[activeMetricIndex.value] ?? EVALUATION_METRICS[0])
@@ -102,9 +102,12 @@ const trafficStateLabel = computed(() => props.trafficState?.trim() || '—')
 const trafficStateStyle = computed(() => {
   const color = trafficStateColor(props.trafficState)
   return color
-    ? { color, textShadow: `0 0 6px ${color}66` }
+    ? { color, textShadow: `0 0 5px ${color}, 0 0 12px ${color}88` }
     : { color: 'rgba(188,219,241,.55)' }
 })
+const trafficStateHud = computed(() => (
+  trafficStateColor(props.trafficState) || 'rgba(33,160,255,.55)'
+))
 const vehicleCountLabel = computed(() => formatActiveVehicleCount(props.activeVehicleCount))
 
 function metricHasAnyValue(metric: EvaluationMetricKey): boolean {
@@ -148,7 +151,7 @@ function chartOption() {
   return {
     animationDuration: 450,
     backgroundColor: 'transparent',
-    grid: { left: 38, right: 10, top: 8, bottom: 25 },
+    grid: { left: 38, right: 9, top: 10, bottom: 25 },
     tooltip: {
       trigger: 'axis',
       backgroundColor: 'rgba(2,16,31,.96)',
@@ -253,7 +256,7 @@ async function handleExport() {
     downloadPdfBlob(blob, filename || buildEvaluationReportFilename(props.comparisonContract))
   } catch (cause) {
     exportError.value = cause instanceof ApiError && cause.code === 'NO_FINAL_EVALUATION_AVAILABLE'
-      ? '当前场景暂无已完成的评估结果'
+      ? '当前场景暂无已完成的终态评估结果'
       : '评估报告生成失败，请稍后重试'
   } finally {
     exporting.value = false
@@ -285,7 +288,7 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
               class="right-sidebar__advantage"
               :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.advantage.top}px`, height: `${layout.advantage.height}px` }"
             >
-              <h3>相对固定配时提升</h3>
+              <div class="right-sidebar__subsection-title">交通效能提升</div>
               <div class="right-sidebar__advantage-grid">
                 <div v-for="item in advantageMetrics" :key="item.key" class="right-sidebar__advantage-cell">
                   <span>{{ item.label }}</span>
@@ -309,21 +312,24 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
               class="right-sidebar__overview"
               :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.trafficOverview.top}px`, height: `${layout.trafficOverview.height}px` }"
             >
-              <div>
+              <div class="right-sidebar__overview-pane is-state" :style="{ '--rs-hud': trafficStateHud }">
                 <span>实时交通状态</span>
                 <strong :style="trafficStateStyle">{{ trafficStateLabel }}</strong>
               </div>
-              <div>
+              <div class="right-sidebar__overview-pane is-count">
                 <span>路网车辆数</span>
                 <strong>{{ vehicleCountLabel }}</strong>
               </div>
             </div>
 
             <div
-              class="right-sidebar__legend"
-              :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.legend.top}px` }"
+              class="right-sidebar__legend-block"
+              :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.legend.top}px`, height: `${layout.legend.height}px` }"
             >
-              <span v-for="algorithm in METRICS_ALGORITHMS" :key="algorithm.id" :class="{ 'is-pending': !algorithmHasData(algorithm.id) }" :title="algorithm.label"><i :style="{ background: algorithm.color }" />{{ algorithm.shortLabel }}<em v-if="!algorithmHasData(algorithm.id)">待运行</em></span>
+              <div class="right-sidebar__subsection-title">算法对比</div>
+              <div class="right-sidebar__legend">
+                <span v-for="algorithm in METRICS_ALGORITHMS" :key="algorithm.id" :class="{ 'is-pending': !algorithmHasData(algorithm.id) }" :title="algorithm.label"><i :style="{ background: algorithm.color }" />{{ algorithm.shortLabel }}<em v-if="!algorithmHasData(algorithm.id)">待运行</em></span>
+              </div>
             </div>
 
             <div
@@ -399,48 +405,368 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
 </template>
 
 <style scoped>
-.right-sidebar { container-type: size; display: flex; justify-content: flex-end; align-items: flex-start; width: 100%; height: 100%; padding-right: 4px; overflow: hidden; pointer-events: none; }
+.right-sidebar {
+  --rs-cyan: #21e6ff;
+  --rs-cyan-soft: rgba(33, 230, 255, .55);
+  --rs-panel-blue: rgba(12, 48, 84, .32);
+  --rs-text-primary: #f2fbff;
+  --rs-card-clip: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  container-type: size;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  width: 100%;
+  height: 100%;
+  padding-right: 4px;
+  overflow: hidden;
+  pointer-events: none;
+}
 .right-sidebar__scaler { transform-origin: top right; transform: scale(min(1,100cqw / var(--dashboard-right-sidebar-design-width,600px),100cqh / var(--dashboard-sidebar-design-height,990px))); pointer-events: auto; }
 .right-sidebar__canvas { position: relative; flex-shrink: 0; overflow: hidden; color: #d8f4ff; font-family: 'PingFang SC','Microsoft YaHei',sans-serif; }
 .right-sidebar__frame { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .right-sidebar__clip { position: absolute; z-index: 1; overflow: hidden; pointer-events: none; }
 .right-sidebar__content { position: absolute; left: calc(var(--rs-offset-x) * 1px); top: calc(var(--rs-offset-y) * 1px); width: 465px; height: 870px; transform: scale(var(--rs-content-scale)); transform-origin: top left; pointer-events: none; }
 .right-sidebar__status { position: absolute; z-index: 8; top: 48px; right: 36px; width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: #ffb458; box-shadow: 0 0 8px #ffb458; pointer-events: auto; cursor: help; }
-.right-sidebar__advantage { position: absolute; display: grid; grid-template-columns: 78px 1fr; gap: 8px; align-items: stretch; }
-.right-sidebar__advantage h3 { margin: 10px 0 0; color: rgba(210,236,255,.78); font-size: 13px; font-weight: 700; line-height: 1.35; letter-spacing: .04em; }
-.right-sidebar__advantage-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 6px 8px; min-width: 0; }
-.right-sidebar__advantage-cell { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
-.right-sidebar__advantage-cell span { color: rgba(176,208,230,.72); font-size: 11px; }
-.right-sidebar__advantage-cell strong { display: flex; align-items: baseline; gap: 4px; min-height: 30px; color: #dff7ff; font-size: 25px; font-weight: 800; letter-spacing: .01em; text-shadow: 0 0 4px rgba(33,230,255,.8), 0 0 10px rgba(33,130,255,.45); }
-.right-sidebar__advantage-cell strong em { font-style: normal; font-size: 20px; }
-.right-sidebar__advantage-cell strong.is-improved em { color: #55E69A; text-shadow: none; }
-.right-sidebar__advantage-cell strong.is-worse em { color: #FF5B64; text-shadow: none; }
+
+.right-sidebar__subsection-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 22px;
+  color: var(--rs-text-primary);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-shadow: 0 0 8px rgba(33, 230, 255, .25);
+  white-space: nowrap;
+}
+.right-sidebar__subsection-title::before {
+  content: '';
+  flex: 0 0 4px;
+  width: 4px;
+  height: 16px;
+  margin-right: 8px;
+  background: var(--rs-cyan);
+  box-shadow: 0 0 6px rgba(33, 230, 255, .75);
+}
+.right-sidebar__subsection-title::after {
+  content: '';
+  flex: 1 1 auto;
+  min-width: 28px;
+  height: 12px;
+  margin-left: 10px;
+  background-image:
+    repeating-linear-gradient(-52deg, transparent 0 2.5px, rgba(90, 214, 255, .88) 2.5px 4.5px, transparent 4.5px 7.5px),
+    linear-gradient(90deg, rgba(90, 214, 255, .72), rgba(33, 230, 255, 0));
+  background-size: 44px 8px, calc(100% - 50px) 1px;
+  background-position: left center, 50px center;
+  background-repeat: no-repeat;
+}
+
+.right-sidebar__advantage {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.right-sidebar__advantage-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 9px 10px;
+  min-width: 0;
+  min-height: 0;
+}
+.right-sidebar__advantage-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 10px 8px;
+  text-align: center;
+  clip-path: var(--rs-card-clip);
+  background:
+    linear-gradient(135deg, rgba(21, 65, 112, .34), rgba(4, 24, 48, .22)) padding-box,
+    linear-gradient(135deg, rgba(82, 210, 255, .62), rgba(46, 160, 220, .28)) border-box;
+  border: 1px solid transparent;
+  box-shadow: inset 0 0 18px rgba(26, 118, 214, .10), 0 0 5px rgba(33, 230, 255, .08);
+}
+.right-sidebar__advantage-cell span {
+  color: rgba(215, 235, 248, .84);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .02em;
+}
+.right-sidebar__advantage-cell strong {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  color: #f1fcff;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  line-height: 1;
+  text-shadow: 0 0 2px #ffffff, 0 0 5px rgba(33, 230, 255, .72), 0 0 12px rgba(40, 118, 255, .35);
+}
+.right-sidebar__advantage-cell strong em {
+  position: absolute;
+  right: calc(100% + 5px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-style: normal;
+  font-size: 21px;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+.right-sidebar__advantage-cell strong.is-improved em { color: #55E69A; }
+.right-sidebar__advantage-cell strong.is-worse em { color: #FF5B64; }
 .right-sidebar__advantage-cell strong.is-neutral { color: #8fb8d2; text-shadow: none; }
-.right-sidebar__advantage-cell strong.is-empty { color: rgba(188,219,241,.42); text-shadow: none; font-size: 22px; }
-.right-sidebar__overview { position: absolute; display: grid; grid-template-columns: 1fr 1fr; align-items: center; }
-.right-sidebar__overview div { display: flex; flex-direction: column; gap: 4px; }
-.right-sidebar__overview span { color: rgba(176,208,230,.7); font-size: 11px; }
-.right-sidebar__overview strong { color: #e8f7ff; font-size: 20px; font-weight: 800; }
-.right-sidebar__legend { position: absolute; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, auto); align-items: center; gap: 6px 8px; }
-.right-sidebar__legend span { display: flex; align-items: center; min-width: 0; gap: 5px; color: rgba(190,216,233,.75); font-size: 10px; white-space: nowrap; overflow: hidden; }
-.right-sidebar__legend i { flex: 0 0 14px; width: 14px; height: 3px; border-radius: 2px; box-shadow: 0 0 5px currentColor; }
+.right-sidebar__advantage-cell strong.is-empty {
+  color: rgba(188, 219, 241, .42);
+  font-size: 24px;
+  text-shadow: none;
+}
+
+.right-sidebar__overview {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-width: 0;
+  clip-path: var(--rs-card-clip);
+  background:
+    linear-gradient(180deg, rgba(8, 36, 64, .28), rgba(6, 31, 57, .18)) padding-box,
+    linear-gradient(135deg, rgba(33, 230, 255, .52), rgba(33, 180, 255, .28)) border-box;
+  border: 1px solid transparent;
+  box-shadow: inset 0 0 16px rgba(26, 118, 214, .12);
+}
+.right-sidebar__overview::after {
+  content: '';
+  position: absolute;
+  top: 16%;
+  left: 50%;
+  z-index: 1;
+  width: 1px;
+  height: 68%;
+  transform: translateX(-50%);
+  background: linear-gradient(transparent, rgba(33, 230, 255, .65), transparent);
+  pointer-events: none;
+}
+.right-sidebar__overview-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 12px 16px;
+  text-align: center;
+}
+.right-sidebar__overview-pane.is-state::before,
+.right-sidebar__overview-pane.is-count::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 16px;
+  transform: translateY(-50%);
+  background: var(--rs-cyan);
+  box-shadow: 0 0 6px rgba(33, 230, 255, .45);
+  opacity: .7;
+}
+.right-sidebar__overview-pane.is-state::before { left: 8px; }
+.right-sidebar__overview-pane.is-count::before { right: 8px; }
+.right-sidebar__overview-pane span {
+  color: #f0faff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.right-sidebar__overview-pane strong {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  color: #f4fcff;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  line-height: 1.1;
+}
+.right-sidebar__overview-pane.is-state strong { font-weight: 900; }
+.right-sidebar__overview-pane.is-count strong { text-shadow: 0 0 8px rgba(33, 190, 255, .40); }
+.right-sidebar__overview-pane strong::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -11px;
+  width: 70%;
+  height: 14px;
+  border: 1px solid rgba(33, 160, 255, .45);
+  border-radius: 50%;
+  transform: translateX(-50%) scaleY(.4);
+  box-shadow: 0 0 8px rgba(33, 160, 255, .28);
+  pointer-events: none;
+}
+.right-sidebar__overview-pane.is-state strong::after {
+  border-color: color-mix(in srgb, var(--rs-hud) 55%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--rs-hud) 38%, transparent);
+}
+
+.right-sidebar__legend-block {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.right-sidebar__legend {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, auto);
+  align-items: center;
+  justify-items: stretch;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.right-sidebar__legend span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  gap: 5px;
+  color: rgba(214, 232, 246, .82);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.right-sidebar__legend i {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 3px;
+  border-radius: 3px;
+  box-shadow: 0 0 5px currentColor;
+}
 .right-sidebar__legend span.is-pending { opacity: .48; }
-.right-sidebar__legend em { color: #7e9bb0; font-size: 8px; font-style: normal; }
+.right-sidebar__legend em {
+  color: #7e9bb0;
+  font-size: 8px;
+  font-style: normal;
+  opacity: .45;
+}
+
 .right-sidebar__metric { position: absolute; }
-.right-sidebar__metric-title { height: 28px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.right-sidebar__metric h3 { margin: 0; display: flex; align-items: center; color: #fff; font-size: 16px; font-weight: 800; letter-spacing: .04em; text-shadow: 0 0 8px rgba(33,230,255,.25); }
-.right-sidebar__metric h3::before { content: ''; width: 4px; height: 14px; margin-right: 8px; background: #21e6ff; box-shadow: 0 0 8px #21e6ff; }
-.right-sidebar__metric h3 small { margin-left: 8px; color: rgba(188,219,241,.72); font-size: 10px; font-weight: 600; }
-.right-sidebar__metric-switch { pointer-events: auto; }
-.right-sidebar__metric-switch :deep(.el-button) { width: 28px; height: 22px; padding: 0; border-color: rgba(82,194,250,.45); background: rgba(8,28,52,.72); color: #d8f4ff; }
+.right-sidebar__metric-title {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.right-sidebar__metric h3 {
+  margin: 0;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  color: var(--rs-text-primary);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-shadow: 0 0 8px rgba(33, 230, 255, .25);
+  white-space: nowrap;
+}
+.right-sidebar__metric h3::before {
+  content: '';
+  flex: 0 0 4px;
+  width: 4px;
+  height: 16px;
+  margin-right: 8px;
+  background: var(--rs-cyan);
+  box-shadow: 0 0 6px rgba(33, 230, 255, .75);
+}
+.right-sidebar__metric h3::after {
+  content: '';
+  flex: 1 1 auto;
+  min-width: 16px;
+  height: 1px;
+  margin: 0 8px 0 10px;
+  background: linear-gradient(90deg, rgba(90, 214, 255, .7), rgba(33, 230, 255, 0));
+}
+.right-sidebar__metric h3 small {
+  margin-left: 8px;
+  color: rgba(188, 219, 241, .72);
+  font-size: 10px;
+  font-weight: 600;
+}
+.right-sidebar__metric-switch { flex: 0 0 auto; pointer-events: auto; }
+.right-sidebar__metric-switch :deep(.el-button) {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border-color: rgba(33, 195, 255, .55);
+  background: rgba(5, 28, 52, .65);
+  color: #dff9ff;
+}
+.right-sidebar__metric-switch :deep(.el-button:hover),
+.right-sidebar__metric-switch :deep(.el-button:focus-visible) {
+  background: rgba(20, 93, 150, .45);
+  box-shadow: 0 0 6px rgba(33, 230, 255, .28);
+  color: #f4fcff;
+}
 .right-sidebar__chart { width: 100%; pointer-events: auto; }
-.right-sidebar__metric-status { position: absolute; left: 38px; right: 10px; top: 52px; bottom: 30px; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; background: rgba(5,18,39,.68); color: rgba(188,219,241,.82); font-size: 10px; text-align: center; pointer-events: auto; }
+.right-sidebar__metric-status {
+  position: absolute;
+  left: 38px;
+  right: 10px;
+  top: 52px;
+  bottom: 30px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: rgba(5, 18, 39, .68);
+  color: rgba(188, 219, 241, .82);
+  font-size: 10px;
+  text-align: center;
+  pointer-events: auto;
+}
 .right-sidebar__metric-status strong { color: #d8f4ff; font-size: 18px; letter-spacing: 0; }
-.right-sidebar__metric-status.has-comparison-data { left: auto; right: 10px; top: 34px; bottom: auto; width: 170px; min-height: 34px; padding: 5px 8px; border: 1px solid rgba(82,194,250,.24); background: rgba(5,18,39,.88); align-items: flex-end; }
+.right-sidebar__metric-status.has-comparison-data {
+  left: auto;
+  right: 10px;
+  top: 34px;
+  bottom: auto;
+  width: 170px;
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 1px solid rgba(82, 194, 250, .24);
+  background: rgba(5, 18, 39, .88);
+  align-items: flex-end;
+}
 .right-sidebar__metric-status.has-comparison-data strong { display: none; }
-.right-sidebar__source-note { position: absolute; z-index: 5; color: rgba(141,190,220,.65); font-size: 9px; text-align: center; }
+.right-sidebar__source-note { position: absolute; z-index: 5; color: rgba(141, 190, 220, .65); font-size: 9px; text-align: center; }
 .right-sidebar__export-error { position: absolute; z-index: 6; color: #ffb458; font-size: 9px; text-align: center; pointer-events: none; }
-.right-sidebar__export { position: absolute; z-index: 6; border: 1px solid #52c2fa; clip-path: polygon(6px 0,100% 0,100% 100%,0 100%,0 7px); background: linear-gradient(180deg,#2e519e,#3c8de7); box-shadow: inset 0 1px 0 rgba(173,235,255,.55); color: #eefaff; font: 800 17px/1 'PingFang SC','Microsoft YaHei',sans-serif; text-shadow: 0 1px 3px rgba(0,25,64,.65); cursor: pointer; pointer-events: auto; transition: filter .2s ease,transform .2s ease; }
+.right-sidebar__export {
+  position: absolute;
+  z-index: 6;
+  border: 1px solid #52c2fa;
+  clip-path: polygon(6px 0, 100% 0, 100% 100%, 0 100%, 0 7px);
+  background: linear-gradient(180deg, #2e519e, #3c8de7);
+  box-shadow: inset 0 1px 0 rgba(173, 235, 255, .55);
+  color: #eefaff;
+  font: 800 17px/1 'PingFang SC','Microsoft YaHei',sans-serif;
+  text-shadow: 0 1px 3px rgba(0, 25, 64, .65);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: filter .2s ease, transform .2s ease;
+}
 .right-sidebar__export:hover, .right-sidebar__export:focus-visible { filter: brightness(1.14) drop-shadow(0 0 6px #52c2fa); outline: none; transform: translateY(-1px); }
 .right-sidebar__export:disabled { opacity: .45; filter: grayscale(.45); box-shadow: none; cursor: not-allowed; transform: none; }
 .right-sidebar__export:disabled:hover, .right-sidebar__export:disabled:focus-visible { filter: grayscale(.45); transform: none; }
