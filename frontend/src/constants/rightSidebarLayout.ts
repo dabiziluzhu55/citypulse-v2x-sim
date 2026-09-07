@@ -167,15 +167,15 @@ export const RIGHT_SIDEBAR_SECTION_HEADERS = {
 } as const
 
 export const RIGHT_SIDEBAR_METRICS_LAYOUT = {
-  metrics: [
-    { key: 'queue', titleTop: 112, chartTop: 139, chartHeight: 174 },
-    { key: 'waiting', titleTop: 330, chartTop: 357, chartHeight: 174 },
-    { key: 'fuel', titleTop: 548, chartTop: 575, chartHeight: 174 },
-  ],
   column: {
     left: RIGHT_SIDEBAR_METRICS_COLUMN_LEFT,
     width: RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH,
   },
+  advantage: { top: 78, height: 188 },
+  trafficOverview: { top: 274, height: 56 },
+  legend: { top: 338, height: 52 },
+  chart: { top: 398, titleHeight: 28, height: 300 },
+  sourceNote: { top: 736 },
   exportButton: {
     left: RIGHT_SIDEBAR_METRICS_COLUMN_LEFT,
     top: 786,

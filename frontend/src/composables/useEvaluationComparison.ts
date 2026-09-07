@@ -313,11 +313,17 @@ function evaluationMetricStatuses(
       && /不可用|无法|缺少|不足|unavailable|missing|invalid/i.test(warning)
     ))
   return {
-    queue: metricStatus(evaluation.avg_queue_length, evaluation.finished),
-    waiting: contradictoryWaitingZero
+    path_speed: metricStatus(evaluation.path_avg_speed_kmh, evaluation.finished),
+    stops: metricStatus(evaluation.avg_stops_per_vehicle, evaluation.finished),
+    max_queue: metricStatus(evaluation.regional_max_queue_length_m, evaluation.finished),
+    travel_time: metricStatus(evaluation.avg_travel_time, evaluation.finished),
+    waiting_time: contradictoryWaitingZero
       ? 'pending'
       : metricStatus(evaluation.avg_waiting_time, evaluation.finished),
-    fuel: fuelExplicitlyUnavailable
+    throughput: metricStatus(evaluation.throughput, evaluation.finished),
+    spillback: metricStatus(evaluation.spillback_rate, evaluation.finished),
+    hard_braking: metricStatus(evaluation.hard_braking_rate, evaluation.finished),
+    fuel_intensity: fuelExplicitlyUnavailable
       ? 'unavailable'
       : metricStatus(fuelIntensity, evaluation.finished),
   }
@@ -343,7 +349,19 @@ export function evaluationPoint(
   return {
     time,
     algorithm: evaluation.algorithm,
-    avg_waiting_time: metricStatuses.waiting === 'pending'
+    path_avg_speed_kmh: evaluation.path_avg_speed_kmh ?? null,
+    travel_time_index: evaluation.travel_time_index ?? null,
+    delay_time_proportion: evaluation.delay_time_proportion ?? null,
+    traffic_performance_index: evaluation.traffic_performance_index ?? null,
+    traffic_state: evaluation.traffic_state ?? null,
+    tpi_method: evaluation.tpi_method ?? null,
+    avg_stops_per_vehicle: evaluation.avg_stops_per_vehicle ?? null,
+    regional_max_queue_length_m: evaluation.regional_max_queue_length_m ?? null,
+    regional_max_queue_intersection_id: evaluation.regional_max_queue_intersection_id ?? null,
+    regional_max_queue_lane_id: evaluation.regional_max_queue_lane_id ?? null,
+    regional_max_queue_sim_time_s: evaluation.regional_max_queue_sim_time_s ?? null,
+    spillback_rate: evaluation.spillback_rate ?? null,
+    avg_waiting_time: metricStatuses.waiting_time === 'pending'
       ? null
       : evaluation.avg_waiting_time,
     avg_travel_time: evaluation.avg_travel_time,

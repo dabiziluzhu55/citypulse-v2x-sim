@@ -457,6 +457,9 @@ async function handleStop() {
         :timeseries-error="finalizationWarning"
         :comparison-runs="activeComparisonRuns"
         :comparison-contract="activeComparisonContract"
+        :simulation-state="state"
+        :active-vehicle-count="snapshot?.metrics.active_vehicles ?? null"
+        :traffic-state="snapshot?.evaluation?.traffic_state ?? snapshot?.metrics.evaluation?.traffic_state ?? null"
       />
     </div>
   </section>

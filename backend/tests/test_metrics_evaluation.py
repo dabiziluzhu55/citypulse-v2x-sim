@@ -1164,3 +1164,200 @@ def test_metrics_response_schema_accepts_new_fields() -> None:
     )
     assert model.hard_braking_events == 0
     assert model.hard_braking_rate == 0.0
+
+
+def test_provisional_dtp_uses_time_loss_over_duration() -> None:
+    from traffic_eval.collector import (
+        PROVISIONAL_DTP_SOURCE,
+        PROVISIONAL_PATH_SPEED_SOURCE,
+        PROVISIONAL_TPI_SOURCE,
+    )
+    from traffic_eval.tpi import TPI_METHOD, tpi_from_optional_dtp
+
+    collector = TrafficMetricsCollector("cov2x")
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=0.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("a", time_loss=30.0, distance=0.0, speed=8.0),),
+        )
+    )
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=100.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("a", time_loss=30.0, distance=1000.0, speed=8.0),),
+        )
+    )
+    result = collector.result(finished=False)
+    assert result.delay_time_proportion == pytest.approx(0.3)
+    expected_tpi, expected_state, expected_method = tpi_from_optional_dtp(0.3)
+    assert result.traffic_performance_index == pytest.approx(expected_tpi)
+    assert result.traffic_state == expected_state
+    assert result.tpi_method == expected_method == TPI_METHOD
+    assert result.path_avg_speed_kmh == pytest.approx(36.0)
+    assert result.metric_sources["delay_time_proportion"] == PROVISIONAL_DTP_SOURCE
+    assert result.metric_sources["traffic_performance_index"] == PROVISIONAL_TPI_SOURCE
+    assert result.metric_sources["path_avg_speed_kmh"] == PROVISIONAL_PATH_SPEED_SOURCE
+
+
+def test_provisional_path_metrics_are_replaced_by_tripinfo(tmp_path: Path) -> None:
+    from traffic_eval.tpi import TPI_METHOD, TPI_SOURCE
+    from traffic_eval.tripinfo import (
+        DTP_SOURCE,
+        PATH_AVG_SPEED_SOURCE,
+        STOPS_SOURCE,
+    )
+
+    collector = TrafficMetricsCollector("fixed")
+    collector.set_fuel_meta_by_type(_fuel_meta())
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=0.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("a", time_loss=30.0, distance=10.0, speed=1.0),),
+        )
+    )
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=100.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("a", time_loss=30.0, distance=1000.0, speed=1.0),),
+        )
+    )
+    live = collector.result(finished=False)
+    assert live.delay_time_proportion == pytest.approx(0.3)
+    assert "snapshot_provisional" in live.metric_sources["delay_time_proportion"]
+
+    tripinfo = _write_tripinfo(
+        tmp_path / "tripinfo.xml",
+        "<tripinfo id='a' vType='passenger' depart='0' arrival='10' "
+        "duration='10' waitingTime='1' waitingCount='4' routeLength='100' "
+        "timeLoss='1'>"
+        "<emissions fuel_abs='74500'/></tripinfo>",
+    )
+    final = collector.finalize_from_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=120.0,
+            metrics=_Metrics(departed_vehicles=1, arrived_vehicles=1),
+            state="COMPLETED",
+            vehicles=(),
+        ),
+        decision_latency_ms=1.0,
+        tripinfo_path=tripinfo,
+    )
+    assert final.delay_time_proportion == pytest.approx(0.1)
+    assert final.path_avg_speed_kmh == pytest.approx(36.0)
+    assert final.avg_stops_per_vehicle == pytest.approx(4.0)
+    assert final.metric_sources["delay_time_proportion"] == DTP_SOURCE
+    assert final.metric_sources["path_avg_speed_kmh"] == PATH_AVG_SPEED_SOURCE
+    assert final.metric_sources["avg_stops_per_vehicle"] == STOPS_SOURCE
+    assert final.metric_sources["traffic_performance_index"] == TPI_SOURCE
+    assert final.tpi_method == TPI_METHOD
+    assert "snapshot_provisional" not in final.metric_sources["delay_time_proportion"]
+    assert "snapshot_provisional" not in final.metric_sources["path_avg_speed_kmh"]
+    assert "snapshot_provisional" not in final.metric_sources["avg_stops_per_vehicle"]
+
+
+def test_provisional_stops_count_moving_to_stopped_transitions() -> None:
+    from traffic_eval.collector import PROVISIONAL_STOPS_SOURCE
+
+    collector = TrafficMetricsCollector("mappo")
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=1.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("a", speed=1.0),),
+        )
+    )
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=2.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("a", speed=0.05),),
+        )
+    )
+    first_stop = collector.result(finished=False)
+    assert first_stop.avg_stops_per_vehicle == pytest.approx(1.0)
+
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=3.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("a", speed=0.0),),
+        )
+    )
+    still_stopped = collector.result(finished=False)
+    assert still_stopped.avg_stops_per_vehicle == pytest.approx(1.0)
+
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=4.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("a", speed=1.2),),
+        )
+    )
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=5.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("a", speed=0.0),),
+        )
+    )
+    second_stop = collector.result(finished=False)
+    assert second_stop.avg_stops_per_vehicle == pytest.approx(2.0)
+    assert second_stop.metric_sources["avg_stops_per_vehicle"] == PROVISIONAL_STOPS_SOURCE
+
+
+def test_provisional_stops_ignore_first_seen_halted_vehicle() -> None:
+    collector = TrafficMetricsCollector("ippo")
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=1.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("spawned", speed=0.0),),
+        )
+    )
+    spawned = collector.result(finished=False)
+    assert spawned.avg_stops_per_vehicle == pytest.approx(0.0)
+
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=2.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("spawned", speed=0.0),),
+        )
+    )
+    still_halted = collector.result(finished=False)
+    assert still_halted.avg_stops_per_vehicle == pytest.approx(0.0)
+
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=3.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("spawned", speed=2.0),),
+        )
+    )
+    collector.observe_snapshot(
+        _Snapshot(
+            session_id="s1",
+            elapsed_seconds=4.0,
+            metrics=_Metrics(departed_vehicles=1, active_vehicles=1),
+            vehicles=(_Vehicle("spawned", speed=0.0),),
+        )
+    )
+    after_first_real_stop = collector.result(finished=False)
+    assert after_first_real_stop.avg_stops_per_vehicle == pytest.approx(1.0)

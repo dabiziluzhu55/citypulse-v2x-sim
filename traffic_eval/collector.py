@@ -11,7 +11,7 @@
 - 决策延迟：由外部注入；无样本为None
 - 燃油强度：终态解析TripInfo emissions；运行中可用快照临时值
 - 急刹车：读取终态快照累计hard_braking_events
-- 路径速度/TTI/DTP/停车次数：终态TripInfo completed车辆
+- 路径速度/TTI/DTP/停车次数：终态TripInfo completed车辆；运行中可发布 snapshot provisional
 - 区域最大排队长度 / 溢流率：Snapshot 进口车道queue_length_m与车道长度近似
 """
 
@@ -25,6 +25,7 @@ from simulation.sumo.engine.session import SimulationSnapshot
 
 from .models import EvalResult
 from .powertrain import VehicleTypeFuelMeta
+from .tpi import tpi_from_optional_dtp
 from .tripinfo import (
     FUEL_POWERTRAINS,
     TRAVEL_WAIT_SOURCE,
@@ -35,7 +36,14 @@ HARD_BRAKING_RATE_SOURCE = "final_snapshot_hard_braking_events_per_100_departed"
 QUEUE_SOURCE = "incoming_lane_halting_count"
 REGIONAL_MAX_QUEUE_SOURCE = "simulation_snapshot_incoming_lane_queue_length_m"
 SPILLBACK_SOURCE = "simulation_snapshot_incoming_lane_queue_vs_storage_time_weighted"
+PROVISIONAL_DTP_SOURCE = "snapshot_provisional_timeLoss_over_duration"
+PROVISIONAL_TPI_SOURCE = (
+    "GB/T33171-2016_Annex_C_DTP_piecewise_linear_snapshot_provisional"
+)
+PROVISIONAL_PATH_SPEED_SOURCE = "snapshot_provisional_distance_over_duration"
+PROVISIONAL_STOPS_SOURCE = "snapshot_provisional_stop_transitions"
 OVERFLOW_EPS_M = 1e-9
+HALTING_SPEED_MPS = 0.1
 
 IncomingQueueRecord = tuple[str, str, Optional[float], Optional[float]]
 
@@ -162,6 +170,8 @@ class TrafficMetricsCollector:
                 "distance": float(vehicle.distance),
                 "fuel_ml": float(vehicle.fuel_total_ml),
                 "type_id": str(vehicle.type_id or ""),
+                "speed": float(vehicle.speed),
+                "time_loss": float(vehicle.time_loss),
             }
         incoming_halting: list[float] = []
         incoming_queues: list[IncomingQueueRecord] = []
@@ -317,18 +327,25 @@ class TrafficMetricsCollector:
 
         for vid in vehicles:
             if vid not in self._active:
+                first_speed = float(vehicles[vid].get("speed", 0.0))
                 self._active[vid] = {
                     "first_seen_s": sim_time,
                     "type_id": str(vehicles[vid].get("type_id", "")),
                     "last_waiting": 0.0,
                     "last_distance": 0.0,
                     "last_fuel_ml": 0.0,
+                    "last_time_loss": float(vehicles[vid].get("time_loss", 0.0)),
+                    "last_speed": first_speed,
+                    "last_duration": 0.0,
+                    "stop_count": 0,
+                    "was_stopped": first_speed < HALTING_SPEED_MPS,
                 }
 
         arrived_vids = set(self._active.keys()) - set(vehicles.keys())
         for vid in arrived_vids:
             rec = self._active.pop(vid)
             travel = max(0.0, sim_time - float(rec["first_seen_s"]))
+            rec["last_duration"] = travel
             self._provisional_travel.append(travel)
             self._provisional_waiting.append(float(rec["last_waiting"]))
             self._closed.append(rec)
@@ -336,12 +353,22 @@ class TrafficMetricsCollector:
         for vid, vdata in vehicles.items():
             if vid not in self._active:
                 continue
-            self._active[vid].update(
+            rec = self._active[vid]
+            speed = float(vdata.get("speed", 0.0))
+            stop_count = int(rec.get("stop_count", 0))
+            if not bool(rec.get("was_stopped")) and speed < HALTING_SPEED_MPS:
+                stop_count += 1
+            rec.update(
                 {
-                    "type_id": str(vdata.get("type_id", self._active[vid]["type_id"])),
+                    "type_id": str(vdata.get("type_id", rec["type_id"])),
                     "last_waiting": float(vdata.get("waiting", 0.0)),
                     "last_distance": float(vdata.get("distance", 0.0)),
                     "last_fuel_ml": float(vdata.get("fuel_ml", 0.0)),
+                    "last_time_loss": float(vdata.get("time_loss", 0.0)),
+                    "last_speed": speed,
+                    "last_duration": max(0.0, sim_time - float(rec["first_seen_s"])),
+                    "stop_count": stop_count,
+                    "was_stopped": speed < HALTING_SPEED_MPS,
                 }
             )
             self._seen_vehicle_ids.add(vid)
@@ -378,6 +405,48 @@ class TrafficMetricsCollector:
             self._warn("没有可用的燃油车辆行驶里程，燃油强度记为不可用")
             return None
         return (total_fuel_ml / 1000.0) / (total_distance_m / 100000.0)
+
+    def _provisional_duration_records(self, sim_time: float) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = [dict(record) for record in self._closed]
+        for record in self._active.values():
+            current = dict(record)
+            current["last_duration"] = max(
+                0.0, sim_time - float(record["first_seen_s"])
+            )
+            records.append(current)
+        return records
+
+    def _apply_provisional_path_metrics(
+        self, result: EvalResult, sim_time: float
+    ) -> None:
+        records = self._provisional_duration_records(sim_time)
+        duration_sum = 0.0
+        time_loss_sum = 0.0
+        distance_sum = 0.0
+        for record in records:
+            duration = float(record.get("last_duration", 0.0))
+            time_loss = float(record.get("last_time_loss", 0.0))
+            if duration <= 0 or time_loss < 0:
+                continue
+            duration_sum += duration
+            time_loss_sum += time_loss
+            distance_sum += max(0.0, float(record.get("last_distance", 0.0)))
+        if duration_sum > 0:
+            dtp = min(1.0, max(0.0, time_loss_sum / duration_sum))
+            result.delay_time_proportion = dtp
+            result.metric_sources["delay_time_proportion"] = PROVISIONAL_DTP_SOURCE
+            tpi, state, method = tpi_from_optional_dtp(dtp)
+            result.traffic_performance_index = tpi
+            result.traffic_state = state
+            result.tpi_method = method
+            result.metric_sources["traffic_performance_index"] = PROVISIONAL_TPI_SOURCE
+            result.path_avg_speed_kmh = (distance_sum / duration_sum) * 3.6
+            result.metric_sources["path_avg_speed_kmh"] = PROVISIONAL_PATH_SPEED_SOURCE
+        if records:
+            result.avg_stops_per_vehicle = sum(
+                int(record.get("stop_count", 0)) for record in records
+            ) / float(len(records))
+            result.metric_sources["avg_stops_per_vehicle"] = PROVISIONAL_STOPS_SOURCE
 
     def _hard_braking_metrics(
         self, *, departed: int, use_finish: bool
@@ -502,6 +571,9 @@ class TrafficMetricsCollector:
                 warnings.append(
                     "终态平均行程时间和等待时间等待TripInfo回填"
                 )
+
+        if not use_finish:
+            self._apply_provisional_path_metrics(r, sim_time)
 
         events, rate, braking_warning = self._hard_braking_metrics(
             departed=departed, use_finish=use_finish

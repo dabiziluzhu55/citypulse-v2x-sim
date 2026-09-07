@@ -61,7 +61,16 @@ export interface MetricsTimeseriesPoint {
 
 export type MetricSeriesSource = 'backend' | 'missing'
 export type MetricPresentationStatus = 'pending' | 'provisional' | 'final' | 'unavailable'
-export type EvaluationMetricKey = 'queue' | 'waiting' | 'fuel'
+export type EvaluationMetricKey =
+  | 'path_speed'
+  | 'stops'
+  | 'max_queue'
+  | 'travel_time'
+  | 'waiting_time'
+  | 'throughput'
+  | 'spillback'
+  | 'hard_braking'
+  | 'fuel_intensity'
 
 export interface AlgorithmMetricSeries {
   id: string

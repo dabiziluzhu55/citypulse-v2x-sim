@@ -42,10 +42,32 @@ test('uses concrete algorithm names in the evaluation legend', () => {
   )
 })
 
-test('uses one fixed zero-to-fifteen-minute axis and backend metric units', () => {
+test('uses one fixed zero-to-fifteen-minute axis and nine backend metric units', () => {
   assert.deepEqual(EVALUATION_AXIS, { minMinutes: 0, maxMinutes: 15, intervalMinutes: 3 })
+  assert.deepEqual(EVALUATION_METRICS.map((item) => item.key), [
+    'path_speed',
+    'stops',
+    'max_queue',
+    'travel_time',
+    'waiting_time',
+    'throughput',
+    'spillback',
+    'hard_braking',
+    'fuel_intensity',
+  ])
   assert.deepEqual(EVALUATION_METRICS.map((item) => item.unit), [
-    '辆/进口车道', '秒', 'L/100km',
+    'km/h', '次/车', 'm', 's', 's', 'veh/h', '%', '次/100辆', 'L/100km',
+  ])
+  assert.deepEqual(EVALUATION_METRICS.map((item) => item.title), [
+    '平均行程速度',
+    '平均停车次数',
+    '最大排队长度',
+    '平均行程时间',
+    '平均等待时间',
+    '吞吐流率',
+    '溢流率',
+    '急刹车率',
+    '百公里油耗强度',
   ])
 })
 
@@ -196,6 +218,9 @@ test('binds the accepted presentation generation before registering comparison s
   assert.doesNotMatch(evaluationSource, /run\.state === 'COMPLETED'/)
   assert.match(homePageSource, /:comparison-runs="activeComparisonRuns"/)
   assert.match(homePageSource, /:comparison-contract="activeComparisonContract"/)
+  assert.match(homePageSource, /:simulation-state="state"/)
+  assert.match(homePageSource, /:active-vehicle-count="[\s\S]*snapshot\?\.metrics\.active_vehicles/)
+  assert.match(homePageSource, /:traffic-state="[\s\S]*snapshot\?\.evaluation\?\.traffic_state/)
 })
 
 test('tracks each algorithm run independently and records terminal failure metadata', () => {
@@ -235,11 +260,11 @@ test('tracks each algorithm run independently and records terminal failure metad
 
 test('keeps only real algorithm values and leaves unrun algorithms empty', () => {
   const points = [
-    { time: 0, algorithm: 'fixed', avg_waiting_time: 2, avg_queue_length: 3, throughput: 4, fuel_consumption: 5 },
-    { time: 1, algorithm: 'sotl', avg_waiting_time: 1, avg_queue_length: 2, throughput: 5, fuel_consumption: 4 },
+    { time: 0, algorithm: 'fixed', avg_waiting_time: 2, regional_max_queue_length_m: 3, throughput: 4, fuel_consumption: 5 },
+    { time: 1, algorithm: 'sotl', avg_waiting_time: 1, regional_max_queue_length_m: 2, throughput: 5, fuel_consumption: 4 },
   ]
   assert.deepEqual(evaluationTimes(points), [0, 1])
-  const series = buildAlgorithmMetricSeries(points, 'queue')
+  const series = buildAlgorithmMetricSeries(points, 'max_queue')
   assert.deepEqual(series.find((item) => item.id === 'fixed').values, [3, null])
   assert.deepEqual(series.find((item) => item.id === 'sotl').values, [null, 2])
   assert.equal(series.find((item) => item.id === 'max_pressure').source, 'missing')
@@ -288,9 +313,15 @@ test('buckets provisional samples every five seconds and preserves null values',
   assert.equal(point.fuel_consumption, null)
   assert.equal(point.finished, false)
   assert.deepEqual(point.metric_status, {
-    queue: 'provisional',
-    waiting: 'provisional',
-    fuel: 'pending',
+    path_speed: 'pending',
+    stops: 'pending',
+    max_queue: 'pending',
+    travel_time: 'provisional',
+    waiting_time: 'provisional',
+    throughput: 'provisional',
+    spillback: 'pending',
+    hard_braking: 'pending',
+    fuel_intensity: 'pending',
   })
 })
 
@@ -302,7 +333,7 @@ test('does not plot a contradictory real-time waiting zero as a confirmed value'
   running.metrics.halting_vehicles = 3
   const point = evaluationPoint(running)
   assert.equal(point.avg_waiting_time, null)
-  assert.equal(point.metric_status.waiting, 'pending')
+  assert.equal(point.metric_status.waiting_time, 'pending')
 })
 
 test('preserves a genuine real-time waiting zero when no vehicle is waiting', () => {
@@ -311,7 +342,7 @@ test('preserves a genuine real-time waiting zero when no vehicle is waiting', ()
   running.metrics.evaluation.avg_waiting_time = 0
   const point = evaluationPoint(running)
   assert.equal(point.avg_waiting_time, 0)
-  assert.equal(point.metric_status.waiting, 'provisional')
+  assert.equal(point.metric_status.waiting_time, 'provisional')
 })
 
 test('keeps running null fuel pending even when the backend explains the temporary gap', () => {
@@ -320,7 +351,7 @@ test('keeps running null fuel pending even when the backend explains the tempora
   running.metrics.evaluation.warnings = [...running.evaluation.warnings]
   const point = evaluationPoint(running)
   assert.equal(point.fuel_consumption, null)
-  assert.equal(point.metric_status.fuel, 'pending')
+  assert.equal(point.metric_status.fuel_intensity, 'pending')
 })
 
 test('marks null fuel unavailable only after the TripInfo final frame', () => {
@@ -329,7 +360,7 @@ test('marks null fuel unavailable only after the TripInfo final frame', () => {
   completed.metrics.evaluation = completed.evaluation
   const point = evaluationPoint(completed)
   assert.equal(point.fuel_consumption, null)
-  assert.equal(point.metric_status.fuel, 'unavailable')
+  assert.equal(point.metric_status.fuel_intensity, 'unavailable')
 })
 
 test('keeps a completed MAPPO TripInfo fuel intensity as a final value', () => {
@@ -341,7 +372,7 @@ test('keeps a completed MAPPO TripInfo fuel intensity as a final value', () => {
   completed.metrics.evaluation = completed.evaluation
   const point = evaluationPoint(completed)
   assert.equal(point.fuel_consumption, 15.45)
-  assert.equal(point.metric_status.fuel, 'final')
+  assert.equal(point.metric_status.fuel_intensity, 'final')
   assert.equal(point.metric_sources.fuel_intensity_L_per_100km, 'tripinfo_completed_fuel_vehicles')
 })
 
@@ -356,7 +387,7 @@ test('normalizes the new fuel alias and preserves optional hard-braking diagnost
   assert.equal(point.fuel_intensity_L_per_100km, 7.25)
   assert.equal(point.hard_braking_events, 4)
   assert.equal(point.hard_braking_rate, 1.5)
-  assert.equal(point.metric_status.fuel, 'provisional')
+  assert.equal(point.metric_status.fuel_intensity, 'provisional')
 })
 
 test('rejects unfinished terminal metrics and records the TripInfo-completed final frame', () => {
@@ -371,8 +402,8 @@ test('rejects unfinished terminal metrics and records the TripInfo-completed fin
   assert.equal(point.avg_waiting_time, 7)
   assert.equal(point.metric_sources.avg_waiting_time_s, 'tripinfo_completed')
   assert.deepEqual(point.warnings, ['fuel unavailable'])
-  assert.equal(point.metric_status.waiting, 'final')
-  assert.equal(point.metric_status.fuel, 'unavailable')
+  assert.equal(point.metric_status.waiting_time, 'final')
+  assert.equal(point.metric_status.fuel_intensity, 'unavailable')
 })
 
 test('parses standard comparison fingerprints and rejects unverified sessions', () => {
@@ -384,6 +415,39 @@ test('parses standard comparison fingerprints and rejects unverified sessions', 
   assert.equal(contract?.duration_seconds, 900)
   assert.equal(parseComparisonContract('unverified-session:abc'), null)
   assert.equal(parseComparisonContract('{not-json'), null)
+})
+
+test('evaluationPoint persists the full official and provisional metric set', () => {
+  const running = snapshot('RUNNING', 30, false)
+  running.evaluation = {
+    ...running.evaluation,
+    path_avg_speed_kmh: 32.5,
+    avg_stops_per_vehicle: 1.2,
+    regional_max_queue_length_m: 88,
+    spillback_rate: 4.5,
+    delay_time_proportion: 0.3,
+    traffic_performance_index: 2,
+    traffic_state: '基本畅通',
+    tpi_method: 'GB/T33171-2016 Annex C / DTP / piecewise-linear',
+    metric_sources: {
+      path_avg_speed_kmh: 'snapshot_provisional_distance_over_duration',
+      delay_time_proportion: 'snapshot_provisional_timeLoss_over_duration',
+    },
+  }
+  running.metrics.evaluation = running.evaluation
+  const point = evaluationPoint(running)
+  assert.equal(point.path_avg_speed_kmh, 32.5)
+  assert.equal(point.avg_stops_per_vehicle, 1.2)
+  assert.equal(point.regional_max_queue_length_m, 88)
+  assert.equal(point.spillback_rate, 4.5)
+  assert.equal(point.delay_time_proportion, 0.3)
+  assert.equal(point.traffic_performance_index, 2)
+  assert.equal(point.traffic_state, '基本畅通')
+  assert.equal(point.tpi_method, 'GB/T33171-2016 Annex C / DTP / piecewise-linear')
+  assert.equal(point.metric_status.path_speed, 'provisional')
+  assert.equal(point.metric_status.stops, 'provisional')
+  assert.equal(point.metric_status.max_queue, 'provisional')
+  assert.equal(point.metric_status.spillback, 'provisional')
 })
 
 test('a final TripInfo point replaces a provisional point in the same five-second bucket', () => {

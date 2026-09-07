@@ -56,7 +56,7 @@ test('the running backend algorithm owns the real metric series', () => {
     fuel_consumption: 6.2,
   }]
 
-  const series = buildAlgorithmMetricSeries(points, 'waiting')
+  const series = buildAlgorithmMetricSeries(points, 'waiting_time')
 
   assert.equal(series.find((item) => item.id === 'max_pressure')?.source, 'backend')
   assert.equal(series.find((item) => item.id === 'fixed')?.source, 'missing')
