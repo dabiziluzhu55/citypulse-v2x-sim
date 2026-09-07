@@ -204,6 +204,27 @@ def test_heatmap_png_non_empty() -> None:
     assert len(png) > 1000
 
 
+def test_heatmap_png_falls_back_without_matplotlib(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(**_kwargs):
+        raise ImportError("matplotlib blocked for test")
+
+    monkeypatch.setattr(
+        "backend.app.services.od_export._render_od_heatmap_with_matplotlib",
+        boom,
+    )
+    png = render_od_heatmap_png(
+        matrix=_matrix_pcu(),
+        zones=ZONE_MAP,
+        period="morning_peak",
+        diagonal_policy="excluded_and_written_as_zero",
+        window_start_seconds=0.0,
+        duration_seconds=600.0,
+        unit="pcu",
+    )
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert len(png) > 1000
+
+
 def test_export_zip_contains_od_artifacts(
     mock_manager: MagicMock,
     tmp_path: Path,

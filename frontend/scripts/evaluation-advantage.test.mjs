@@ -7,11 +7,16 @@ import {
   ADVANTAGE_METRIC_SPECS,
   buildAdvantageMetrics,
   calculateImprovement,
+  createEmptyPositiveAdvantageCache,
   findComparableBaselinePoint,
   formatActiveVehicleCount,
   formatAdvantagePercent,
+  isPositiveAdvantage,
+  positiveAdvantageCacheScope,
+  resolveDisplayedAdvantageMetric,
   TRAFFIC_STATE_COLORS,
   trafficStateColor,
+  updatePositiveAdvantageCache,
 } from '../src/utils/evaluationComparisonMetrics.ts'
 
 const rightSidebarSource = await readFile(
@@ -81,7 +86,7 @@ test('fixed unfinished leaves all advantage cells empty', () => {
       regional_max_queue_length_m: 100,
       avg_waiting_time: 30,
       throughput: 1000,
-      fuel_intensity_L_per_100km: 8,
+      path_avg_speed_kmh: 30,
       finished: false,
     }),
     point({
@@ -90,7 +95,7 @@ test('fixed unfinished leaves all advantage cells empty', () => {
       regional_max_queue_length_m: 70,
       avg_waiting_time: 20,
       throughput: 1200,
-      fuel_intensity_L_per_100km: 7,
+      path_avg_speed_kmh: 36,
       finished: false,
     }),
   ], 'cov2x', 'RUNNING')
@@ -163,6 +168,18 @@ test('throughput improvement is a green up 20 percent', () => {
   assert.equal(throughput.improved, true)
 })
 
+test('path speed improvement is a green up 20 percent', () => {
+  const metrics = buildAdvantageMetrics([
+    point({ algorithm: 'fixed', time: 300, path_avg_speed_kmh: 30, finished: true }),
+    point({ algorithm: 'cov2x', time: 300, path_avg_speed_kmh: 36, finished: false }),
+  ], 'cov2x', 'RUNNING')
+  const speed = metrics.find((item) => item.key === 'path_speed')
+  assert.equal(speed.label, '平均行程速度')
+  assert.equal(speed.value.toFixed(1), '20.0')
+  assert.equal(speed.direction, 'up')
+  assert.equal(speed.improved, true)
+})
+
 test('worse waiting time is a red up 20 percent', () => {
   const metrics = buildAdvantageMetrics([
     point({ algorithm: 'fixed', time: 300, avg_waiting_time: 30, finished: true }),
@@ -217,7 +234,15 @@ test('right sidebar uses one switchable chart and the new layout blocks', () => 
   assert.match(rightSidebarSource, /交通效能提升/)
   assert.match(rightSidebarSource, /算法对比/)
   assert.match(rightSidebarSource, /实时交通状态/)
-  assert.match(rightSidebarSource, /路网车辆数/)
+  assert.match(rightSidebarSource, /实时车辆数/)
+  assert.match(rightSidebarSource, /displayedAdvantageMetrics/)
+  assert.match(rightSidebarSource, /lastPositiveCov2xMetrics/)
+  assert.doesNotMatch(rightSidebarSource, /trafficStateColor/)
+  assert.doesNotMatch(rightSidebarSource, /trafficStateStyle/)
+  assert.doesNotMatch(rightSidebarSource, /:style="trafficStateStyle"/)
+  for (const color of ['#008000', '#99CC00', '#FFFF00', '#FF9900', '#FF0000']) {
+    assert.doesNotMatch(rightSidebarSource, new RegExp(`style="color:${color}"`))
+  }
   assert.match(rightSidebarSource, /grid-template-columns: repeat\(3, 1fr\)/)
   assert.match(rightSidebarSource, /el-button-group/)
   assert.match(layoutSource, /height: 188/)
@@ -226,6 +251,119 @@ test('right sidebar uses one switchable chart and the new layout blocks', () => 
     'regional_max_queue_length_m',
     'avg_waiting_time',
     'throughput',
-    'fuel_intensity_L_per_100km',
+    'path_avg_speed_kmh',
   ])
+})
+
+function metricAt(value, extras = {}) {
+  const improved = typeof value === 'number' ? (value > 0 ? true : value < 0 ? false : null) : null
+  return {
+    key: extras.key ?? 'max_queue',
+    label: extras.label ?? '最大排队长度',
+    value,
+    direction: extras.direction ?? (typeof value === 'number' && value !== 0 ? 'down' : null),
+    improved,
+  }
+}
+
+function playPositiveHold(steps, algorithmId = 'cov2x') {
+  let cache = createEmptyPositiveAdvantageCache()
+  let displayed = null
+  for (const step of steps) {
+    const finished = step.finished === true
+    cache = updatePositiveAdvantageCache(cache, [step.metric], { algorithmId, finished })
+    displayed = resolveDisplayedAdvantageMetric(step.metric, cache[step.metric.key], {
+      algorithmId,
+      finished,
+    })
+  }
+  return { cache, displayed }
+}
+
+test('CoV2X positive hold keeps the last meaningful positive live value', () => {
+  const down = { direction: 'down' }
+  const case1 = playPositiveHold([
+    { metric: metricAt(10, down) },
+    { metric: metricAt(-5, { direction: 'up' }) },
+  ])
+  assert.equal(case1.displayed.value, 10)
+
+  const case2 = playPositiveHold([
+    { metric: metricAt(10, down) },
+    { metric: metricAt(7, down) },
+  ])
+  assert.equal(case2.displayed.value, 7)
+
+  const case3 = playPositiveHold([
+    { metric: metricAt(10, down) },
+    { metric: metricAt(0, { direction: null }) },
+  ])
+  assert.equal(case3.displayed.value, 10)
+
+  const case4 = playPositiveHold([{ metric: metricAt(-5, { direction: 'up' }) }])
+  assert.equal(case4.displayed.value, null)
+  assert.equal(formatAdvantagePercent(case4.displayed.value), '—')
+
+  const case5 = playPositiveHold([{ metric: metricAt(null) }])
+  assert.equal(case5.displayed.value, null)
+
+  const case6 = playPositiveHold([
+    { metric: metricAt(10, down) },
+    { metric: metricAt(null) },
+  ])
+  assert.equal(case6.displayed.value, 10)
+
+  const case7 = playPositiveHold([
+    { metric: metricAt(10, down) },
+    { metric: metricAt(18, down), finished: true },
+  ])
+  assert.equal(case7.displayed.value, 18)
+
+  const case8 = playPositiveHold([
+    { metric: metricAt(10, down) },
+    { metric: metricAt(-3, { direction: 'up' }), finished: true },
+  ])
+  assert.equal(case8.displayed.value, -3)
+  assert.equal(case8.displayed.improved, false)
+})
+
+test('CoV2X positive hold is not a historical maximum and ignores sub-epsilon noise', () => {
+  assert.equal(isPositiveAdvantage(metricAt(0.04)), false)
+  assert.equal(isPositiveAdvantage(metricAt(0.05)), true)
+  const played = playPositiveHold([
+    { metric: metricAt(12) },
+    { metric: metricAt(18) },
+    { metric: metricAt(14) },
+    { metric: metricAt(-3, { direction: 'up' }) },
+    { metric: metricAt(10) },
+  ])
+  assert.equal(played.displayed.value, 10)
+})
+
+test('positive hold does not apply to Max Pressure and clears across comparison groups', () => {
+  const played = playPositiveHold([
+    { metric: metricAt(10) },
+    { metric: metricAt(-5, { direction: 'up' }) },
+  ], 'max_pressure')
+  assert.equal(played.displayed.value, -5)
+  assert.equal(played.displayed.improved, false)
+
+  const sameGroup = positiveAdvantageCacheScope({
+    runId: 'run-a',
+    algorithmId: 'cov2x',
+    contractFingerprint: 'group-1',
+    cov2xSessionId: 'cov-1',
+    fixedSessionId: 'fixed-1',
+    timeseriesEmpty: false,
+  })
+  const nextGroup = positiveAdvantageCacheScope({
+    runId: 'run-a',
+    algorithmId: 'cov2x',
+    contractFingerprint: 'group-2',
+    cov2xSessionId: 'cov-2',
+    fixedSessionId: 'fixed-2',
+    timeseriesEmpty: false,
+  })
+  assert.notEqual(sameGroup, nextGroup)
+  assert.match(rightSidebarSource, /positiveHoldScopeKey/)
 })

@@ -17,6 +17,7 @@ import {
   EVALUATION_METRICS,
   METRICS_ALGORITHMS,
   buildAlgorithmMetricSeries,
+  evaluationAxisFromDurationSeconds,
   evaluationTimes,
 } from '../src/constants/metricsEvaluation.ts'
 import {
@@ -42,8 +43,35 @@ test('uses concrete algorithm names in the evaluation legend', () => {
   )
 })
 
-test('uses one fixed zero-to-fifteen-minute axis and nine backend metric units', () => {
+test('evaluation axis follows configured simulation duration', async () => {
   assert.deepEqual(EVALUATION_AXIS, { minMinutes: 0, maxMinutes: 15, intervalMinutes: 3 })
+  assert.deepEqual(evaluationAxisFromDurationSeconds(900), {
+    minMinutes: 0,
+    maxMinutes: 15,
+    intervalMinutes: 3,
+  })
+  assert.deepEqual(evaluationAxisFromDurationSeconds(60), {
+    minMinutes: 0,
+    maxMinutes: 1,
+    intervalMinutes: 0.2,
+  })
+  assert.deepEqual(evaluationAxisFromDurationSeconds(120), {
+    minMinutes: 0,
+    maxMinutes: 2,
+    intervalMinutes: 0.5,
+  })
+  assert.deepEqual(evaluationAxisFromDurationSeconds(null), {
+    minMinutes: 0,
+    maxMinutes: 15,
+    intervalMinutes: 3,
+  })
+  assert.match(
+    await readFile(new URL('../src/components/dashboard/RightSidebarPanel.vue', import.meta.url), 'utf8'),
+    /evaluationAxisFromDurationSeconds/,
+  )
+})
+
+test('uses nine backend metric units', () => {
   assert.deepEqual(EVALUATION_METRICS.map((item) => item.key), [
     'path_speed',
     'stops',

@@ -32,10 +32,10 @@ export const ADVANTAGE_METRIC_SPECS = [
     lowerBetter: false,
   },
   {
-    key: 'fuel_intensity',
-    label: '油耗强度',
-    field: 'fuel_intensity_L_per_100km',
-    lowerBetter: true,
+    key: 'path_speed',
+    label: '平均行程速度',
+    field: 'path_avg_speed_kmh',
+    lowerBetter: false,
   },
 ] as const
 
@@ -53,10 +53,6 @@ function pointField(
 ): number | null {
   if (!point) return null
   const value = point[field]
-  if (field === 'fuel_intensity_L_per_100km') {
-    if (typeof point.fuel_intensity_L_per_100km === 'number') return point.fuel_intensity_L_per_100km
-    if (typeof point.fuel_consumption === 'number') return point.fuel_consumption
-  }
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
@@ -189,4 +185,84 @@ export function formatActiveVehicleCount(count: number | null | undefined): stri
 
 export function formatAdvantagePercent(value: number | null): string {
   return typeof value === 'number' ? `${Math.abs(value).toFixed(1)}%` : '—'
+}
+
+/** CoV2X live presentation only: values below this round to 0.0% and are not held. */
+export const POSITIVE_DISPLAY_EPSILON = 0.05
+
+export type PositiveAdvantageCache = Record<string, AdvantageMetric | null>
+
+export function createEmptyPositiveAdvantageCache(): PositiveAdvantageCache {
+  return Object.fromEntries(
+    ADVANTAGE_METRIC_SPECS.map((spec) => [spec.key, null]),
+  ) as PositiveAdvantageCache
+}
+
+export function isPositiveAdvantage(
+  metric: Pick<AdvantageMetric, 'value' | 'improved'> | null | undefined,
+  epsilon = POSITIVE_DISPLAY_EPSILON,
+): boolean {
+  return (
+    !!metric
+    && typeof metric.value === 'number'
+    && Number.isFinite(metric.value)
+    && metric.value >= epsilon
+    && metric.improved === true
+  )
+}
+
+export function positiveAdvantageCacheScope(input: {
+  runId: string
+  algorithmId: string
+  contractFingerprint: string
+  cov2xSessionId: string
+  fixedSessionId: string
+  timeseriesEmpty: boolean
+}): string {
+  return [
+    input.runId,
+    input.algorithmId,
+    input.contractFingerprint,
+    input.cov2xSessionId,
+    input.fixedSessionId,
+    input.timeseriesEmpty ? 'empty' : 'data',
+  ].join('|')
+}
+
+export function updatePositiveAdvantageCache(
+  cache: PositiveAdvantageCache,
+  metrics: readonly AdvantageMetric[],
+  options: { algorithmId: string; finished: boolean },
+): PositiveAdvantageCache {
+  if (options.algorithmId !== 'cov2x') return createEmptyPositiveAdvantageCache()
+  const next: PositiveAdvantageCache = { ...cache }
+  for (const metric of metrics) {
+    if (options.finished) {
+      next[metric.key] = isPositiveAdvantage(metric) ? { ...metric } : null
+      continue
+    }
+    if (isPositiveAdvantage(metric)) next[metric.key] = { ...metric }
+  }
+  return next
+}
+
+export function resolveDisplayedAdvantageMetric(
+  current: AdvantageMetric,
+  previousPositive: AdvantageMetric | null | undefined,
+  options: { algorithmId: string; finished: boolean },
+): AdvantageMetric {
+  if (options.algorithmId !== 'cov2x' || options.finished) return current
+  if (isPositiveAdvantage(current)) return current
+  if (isPositiveAdvantage(previousPositive)) return previousPositive as AdvantageMetric
+  return { ...current, value: null, direction: null, improved: null }
+}
+
+export function resolveDisplayedAdvantageMetrics(
+  metrics: readonly AdvantageMetric[],
+  cache: PositiveAdvantageCache,
+  options: { algorithmId: string; finished: boolean },
+): AdvantageMetric[] {
+  return metrics.map((metric) => (
+    resolveDisplayedAdvantageMetric(metric, cache[metric.key], options)
+  ))
 }

@@ -15,10 +15,10 @@ import {
   RIGHT_SIDEBAR_METRICS_LAYOUT,
 } from '../../constants/rightSidebarLayout'
 import {
-  EVALUATION_AXIS,
   EVALUATION_METRICS,
   METRICS_ALGORITHMS,
   buildAlgorithmMetricSeries,
+  evaluationAxisFromDurationSeconds,
   evaluationTimes,
   metricValue,
 } from '../../constants/metricsEvaluation'
@@ -32,9 +32,13 @@ import type { EvaluationMetricKey, MetricsTimeseriesResponse } from '../../types
 import type { SimulationState } from '../../types/simulation.ts'
 import {
   buildAdvantageMetrics,
+  createEmptyPositiveAdvantageCache,
   formatActiveVehicleCount,
   formatAdvantagePercent,
-  trafficStateColor,
+  positiveAdvantageCacheScope,
+  resolveDisplayedAdvantageMetrics,
+  updatePositiveAdvantageCache,
+  type AdvantageMetric,
 } from '../../utils/evaluationComparisonMetrics.ts'
 import {
   buildEvaluationReportFilename,
@@ -58,6 +62,7 @@ const props = defineProps<{
   comparisonRuns: EvaluationComparisonRun[]
   comparisonContract: ScenarioComparisonContractV3 | null
   simulationState: SimulationState | string | null
+  simulationDurationSeconds?: number | null
   activeVehicleCount: number | null
   trafficState: string | null
 }>()
@@ -67,6 +72,15 @@ let chart: echarts.ECharts | null = null
 const layout = RIGHT_SIDEBAR_METRICS_LAYOUT
 const activeMetricIndex = ref(0)
 const points = computed(() => props.timeseries?.series ?? [])
+const chartAxis = computed(() => {
+  const fromContract = props.comparisonContract?.duration_seconds
+  const fromSnapshot = props.simulationDurationSeconds
+  const fromSeries = evaluationTimes(points.value).at(-1)
+  const durationSeconds = [fromContract, fromSnapshot, fromSeries].find((value) => (
+    typeof value === 'number' && Number.isFinite(value) && value > 0
+  ))
+  return evaluationAxisFromDurationSeconds(durationSeconds)
+})
 const hasRealData = computed(() => points.value.length > 0)
 const canExport = computed(() => hasFinishedComparisonRun(props.comparisonRuns))
 const exporting = ref(false)
@@ -96,16 +110,55 @@ const currentAlgorithmLabel = computed(() => METRICS_ALGORITHMS.find(
 const latestCurrentPoint = computed(() => points.value
   .filter((point) => point.algorithm === currentAlgorithmId.value)
   .at(-1) ?? null)
-const advantageMetrics = computed(() => buildAdvantageMetrics(
+const rawAdvantageMetrics = computed(() => buildAdvantageMetrics(
   points.value,
   currentAlgorithmId.value,
   props.simulationState,
 ))
-const trafficStateLabel = computed(() => props.trafficState?.trim() || '—')
-const trafficStateStyle = computed(() => {
-  const color = trafficStateColor(props.trafficState)
-  return { color: color ?? 'rgba(188, 219, 241, .42)' }
+// CoV2X live presentation only:
+// keep the latest positive provisional improvement;
+// final values always use the raw terminal evaluation.
+const lastPositiveCov2xMetrics = ref(createEmptyPositiveAdvantageCache())
+const positiveHoldScopeKey = computed(() => positiveAdvantageCacheScope({
+  runId: props.runId,
+  algorithmId: currentAlgorithmId.value,
+  contractFingerprint: props.comparisonContract ? JSON.stringify(props.comparisonContract) : '',
+  cov2xSessionId: props.comparisonRuns.find((run) => run.algorithm === 'cov2x')?.sessionId ?? '',
+  fixedSessionId: props.comparisonRuns.find((run) => run.algorithm === 'fixed')?.sessionId ?? '',
+  timeseriesEmpty: points.value.length === 0,
+}))
+function clearPositiveAdvantageCache() {
+  lastPositiveCov2xMetrics.value = createEmptyPositiveAdvantageCache()
+}
+watch(positiveHoldScopeKey, () => {
+  clearPositiveAdvantageCache()
 })
+watch(
+  rawAdvantageMetrics,
+  (metrics) => {
+    if (currentAlgorithmId.value !== 'cov2x') return
+    lastPositiveCov2xMetrics.value = updatePositiveAdvantageCache(
+      lastPositiveCov2xMetrics.value,
+      metrics,
+      {
+        algorithmId: 'cov2x',
+        finished: latestCurrentPoint.value?.finished === true,
+      },
+    )
+  },
+  { deep: true, immediate: true },
+)
+const displayedAdvantageMetrics = computed((): AdvantageMetric[] => {
+  if (currentAlgorithmId.value !== 'cov2x' || latestCurrentPoint.value?.finished === true) {
+    return rawAdvantageMetrics.value
+  }
+  return resolveDisplayedAdvantageMetrics(
+    rawAdvantageMetrics.value,
+    lastPositiveCov2xMetrics.value,
+    { algorithmId: 'cov2x', finished: false },
+  )
+})
+const trafficStateLabel = computed(() => props.trafficState?.trim() || '—')
 const vehicleCountLabel = computed(() => formatActiveVehicleCount(props.activeVehicleCount))
 
 function metricHasAnyValue(metric: EvaluationMetricKey): boolean {
@@ -159,14 +212,18 @@ function chartOption() {
     },
     xAxis: {
       type: 'value',
-      min: EVALUATION_AXIS.minMinutes,
-      max: EVALUATION_AXIS.maxMinutes,
-      interval: EVALUATION_AXIS.intervalMinutes,
+      min: chartAxis.value.minMinutes,
+      max: chartAxis.value.maxMinutes,
+      interval: chartAxis.value.intervalMinutes,
       name: '分钟',
       nameTextStyle: { color: 'rgba(188,219,241,.72)', fontSize: 9 },
       axisLine: { lineStyle: { color: 'rgba(141,202,242,.28)' } },
       axisTick: { show: false },
-      axisLabel: { color: 'rgba(188,219,241,.72)', fontSize: 10 },
+      axisLabel: {
+        color: 'rgba(188,219,241,.72)',
+        fontSize: 10,
+        formatter: (value: number) => `${Number(value.toFixed(2))}`,
+      },
     },
     yAxis: {
       type: 'value',
@@ -267,7 +324,12 @@ onUnmounted(() => {
   window.removeEventListener('resize', resizeChart)
   disposeChart()
 })
-watch(() => [props.timeseries, activeMetricIndex.value], () => {
+watch(() => [
+  props.timeseries,
+  activeMetricIndex.value,
+  chartAxis.value.maxMinutes,
+  chartAxis.value.intervalMinutes,
+], () => {
   scheduleChartRender(latestCurrentPoint.value?.finished === true)
 }, { deep: true })
 </script>
@@ -288,7 +350,7 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
             >
               <div class="right-sidebar__subsection-title">交通效能提升</div>
               <div class="right-sidebar__advantage-grid">
-                <div v-for="item in advantageMetrics" :key="item.key" class="right-sidebar__advantage-cell">
+                <div v-for="item in displayedAdvantageMetrics" :key="item.key" class="right-sidebar__advantage-cell">
                   <img
                     :src="borderSvg"
                     class="right-sidebar__advantage-frame"
@@ -316,7 +378,7 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
                     >
                       <em v-if="item.direction === 'up'">↑</em>
                       <em v-else-if="item.direction === 'down'">↓</em>
-                      {{ formatAdvantagePercent(item.value) }}
+                      <span class="right-sidebar__hud-number">{{ formatAdvantagePercent(item.value) }}</span>
                     </strong>
                   </div>
                 </div>
@@ -330,7 +392,7 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
               <div class="right-sidebar__overview-pane is-state">
                 <span>实时交通状态</span>
                 <div class="right-sidebar__overview-value">
-                  <strong :style="trafficStateStyle">{{ trafficStateLabel }}</strong>
+                  <strong class="right-sidebar__overview-number">{{ trafficStateLabel }}</strong>
                   <img
                     :src="baseSvg"
                     class="right-sidebar__overview-base"
@@ -343,7 +405,7 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
               <div class="right-sidebar__overview-pane is-count">
                 <span>实时车辆数</span>
                 <div class="right-sidebar__overview-value">
-                  <strong>{{ vehicleCountLabel }}</strong>
+                  <strong class="right-sidebar__overview-number">{{ vehicleCountLabel }}</strong>
                   <img
                     :src="baseSvg"
                     class="right-sidebar__overview-base"
@@ -436,6 +498,10 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
 .right-sidebar {
   --rs-cyan: #21e6ff;
   --rs-text-primary: #f2fbff;
+  --rs-number-top: #ffffff;
+  --rs-number-mid: #bff6ff;
+  --rs-number-bottom: #4fc8ff;
+  --rs-number-glow: rgba(42, 202, 255, .55);
   container-type: size;
   display: flex;
   justify-content: flex-end;
@@ -542,13 +608,14 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
   grid-row: 1;
   height: 19px;
   color: #accde6;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 19px;
   letter-spacing: 0;
   white-space: nowrap;
 }
 .right-sidebar__advantage-value {
+  position: relative;
   grid-column: 2;
   grid-row: 2;
   display: flex;
@@ -556,25 +623,68 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
   justify-content: flex-start;
   gap: 4px;
   min-height: 28px;
-  color: #f1fcff;
-  font-size: 25px;
+  font-size: 30px;
   font-weight: 800;
   letter-spacing: .01em;
   line-height: 1;
-  text-shadow: 0 0 2px #ffffff, 0 0 5px rgba(33, 230, 255, .72), 0 0 12px rgba(40, 118, 255, .35);
+}
+.right-sidebar__advantage-value::after,
+.right-sidebar__overview-number::after {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 45%;
+  z-index: 2;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .18), transparent);
+  opacity: .35;
+  pointer-events: none;
+}
+.right-sidebar__hud-number,
+.right-sidebar__overview-number {
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(180deg, #ffffff 0%, #dffaff 28%, #9aeaff 62%, #56cfff 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: .25px rgba(221, 250, 255, .70);
+  color: var(--rs-number-mid);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-family: 'Arial Narrow', 'Roboto Condensed', 'DIN Alternate', Bahnschrift, 'Microsoft YaHei', sans-serif;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .28);
+  filter:
+    drop-shadow(0 0 2px rgba(255, 255, 255, .55))
+    drop-shadow(0 0 5px rgba(56, 218, 255, .45))
+    drop-shadow(0 0 10px rgba(33, 121, 255, .22));
 }
 .right-sidebar__advantage-value em {
+  position: relative;
+  z-index: 1;
   font-style: normal;
   font-size: 20px;
+  -webkit-text-fill-color: currentColor;
+  -webkit-text-stroke: 0;
+  background: none;
   filter: drop-shadow(0 0 4px currentColor);
 }
 .right-sidebar__advantage-value.is-improved em { color: #55E69A; }
 .right-sidebar__advantage-value.is-worse em { color: #FF5B64; }
-.right-sidebar__advantage-value.is-neutral { color: #8fb8d2; text-shadow: none; }
-.right-sidebar__advantage-value.is-empty {
+.right-sidebar__advantage-value.is-neutral .right-sidebar__hud-number,
+.right-sidebar__advantage-value.is-empty .right-sidebar__hud-number {
+  background: none;
+  -webkit-text-fill-color: rgba(188, 219, 241, .42);
+  -webkit-text-stroke: 0;
   color: rgba(188, 219, 241, .42);
-  font-size: 22px;
+  filter: none;
   text-shadow: none;
+  font-size: 22px;
+}
+.right-sidebar__advantage-value.is-neutral::after,
+.right-sidebar__advantage-value.is-empty::after {
+  content: none;
 }
 
 .right-sidebar__overview {
@@ -621,12 +731,16 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
   justify-content: center;
   min-height: 30px;
   max-width: 100%;
-  color: #f1fcff;
-  font-size: 25px;
+  font-size: 28px;
   font-weight: 800;
   letter-spacing: .01em;
   line-height: 1;
-  text-shadow: 0 0 2px #ffffff, 0 0 5px rgba(33, 230, 255, .72), 0 0 12px rgba(40, 118, 255, .35);
+}
+.right-sidebar__overview-pane.is-state .right-sidebar__overview-number {
+  font-family: 'Microsoft YaHei', 'PingFang SC', Bahnschrift, sans-serif;
+}
+.right-sidebar__overview-pane.is-count .right-sidebar__overview-number {
+  font-family: Bahnschrift, 'Arial Narrow', 'Roboto Condensed', 'DIN Alternate', 'Microsoft YaHei', sans-serif;
 }
 .right-sidebar__overview-base {
   position: relative;

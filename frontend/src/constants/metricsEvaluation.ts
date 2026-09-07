@@ -22,6 +22,27 @@ export const EVALUATION_AXIS = {
   intervalMinutes: 3,
 } as const
 
+const EVALUATION_AXIS_NICE_INTERVALS = [0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 3, 5, 10, 15] as const
+
+export function evaluationAxisFromDurationSeconds(
+  durationSeconds: number | null | undefined,
+): { minMinutes: number; maxMinutes: number; intervalMinutes: number } {
+  const seconds = typeof durationSeconds === 'number'
+    && Number.isFinite(durationSeconds)
+    && durationSeconds > 0
+    ? durationSeconds
+    : EVALUATION_AXIS.maxMinutes * 60
+  const maxMinutes = seconds / 60
+  const target = maxMinutes / 5
+  const intervalMinutes = EVALUATION_AXIS_NICE_INTERVALS.find((value) => value + 1e-9 >= target)
+    ?? Math.max(target, 0.1)
+  return {
+    minMinutes: 0,
+    maxMinutes,
+    intervalMinutes,
+  }
+}
+
 export const EVALUATION_METRICS = [
   { key: 'path_speed', title: '平均行程速度', unit: 'km/h', field: 'path_avg_speed_kmh' },
   { key: 'stops', title: '平均停车次数', unit: '次/车', field: 'avg_stops_per_vehicle' },

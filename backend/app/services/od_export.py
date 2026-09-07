@@ -351,24 +351,51 @@ def render_od_heatmap_png(
     unit: str,
 ) -> bytes:
     try:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from matplotlib import font_manager
         import numpy as np
-    except (ImportError, OSError) as exc:
+    except ImportError as exc:
         raise AppError(
             code="SCENARIO_EXPORT_DEPENDENCY_MISSING",
             message=(
                 "OD heatmap dependencies are unavailable. Run "
                 "'python -m pip install -r backend/requirements.txt' "
-                "with the backend Python environment."
+                f"with the backend Python environment. ({exc})"
             ),
             status_code=503,
         ) from exc
 
     values = np.asarray(matrix, dtype=float)
+    try:
+        return _render_od_heatmap_with_matplotlib(
+            values=values,
+            unit=unit,
+        )
+    except Exception as exc:
+        logger.warning(
+            "matplotlib OD heatmap unavailable (%s); falling back to Pillow",
+            exc,
+        )
+        try:
+            return _render_od_heatmap_with_pillow(values=values, unit=unit)
+        except (ImportError, OSError, ValueError) as fallback_exc:
+            raise AppError(
+                code="SCENARIO_EXPORT_DEPENDENCY_MISSING",
+                message=(
+                    "OD heatmap dependencies are unavailable. Run "
+                    "'python -m pip install -r backend/requirements.txt' "
+                    "with the backend Python environment. "
+                    f"(matplotlib: {exc}; pillow: {fallback_exc})"
+                ),
+                status_code=503,
+            ) from fallback_exc
+
+
+def _render_od_heatmap_with_matplotlib(*, values, unit: str) -> bytes:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib import font_manager
+
     font_family = _resolve_plot_font_family()
     if font_family:
         plt.rcParams["font.sans-serif"] = [font_family, "DejaVu Sans"]
@@ -430,6 +457,142 @@ def render_od_heatmap_png(
     finally:
         plt.close(fig)
     return buffer.getvalue()
+
+
+def _render_od_heatmap_with_pillow(*, values, unit: str) -> bytes:
+    """matplotlib 不可用时用 Pillow 生成同样必需的 OD 热力图 PNG。"""
+
+    from PIL import Image, ImageDraw
+
+    rows, cols = int(values.shape[0]), int(values.shape[1])
+    max_value = float(values.max()) if values.size else 0.0
+    threshold = max_value * 0.55 if max_value > 0 else 0.0
+    font_path = _resolve_pillow_font_path()
+    title_font = _load_pillow_font(font_path, 28)
+    label_font = _load_pillow_font(font_path, 16)
+    cell_font = _load_pillow_font(font_path, 18)
+    caption_font = _load_pillow_font(font_path, 16)
+
+    left, top, right, bottom = 150, 80, 160, 220
+    cell = 72
+    width = left + cols * cell + right
+    height = top + rows * cell + bottom
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+
+    draw.text((left, 24), "典型出行需求（OD矩阵）", fill=(20, 20, 20), font=title_font)
+    for row_index in range(rows):
+        for col_index in range(cols):
+            value = float(values[row_index, col_index])
+            color = _ylorrd_color(value, max_value)
+            x0 = left + col_index * cell
+            y0 = top + row_index * cell
+            draw.rectangle((x0, y0, x0 + cell, y0 + cell), fill=color, outline=(255, 255, 255))
+            text = _format_pcu(value)
+            text_color = (255, 255, 255) if value >= threshold and value > 0 else (20, 20, 20)
+            tx, ty = _center_text(draw, text, cell_font, x0, y0, cell, cell)
+            draw.text((tx, ty), text, fill=text_color, font=cell_font)
+
+    for index, label in enumerate(HEATMAP_ZONE_LABELS):
+        x0 = left + index * cell
+        y0 = top + rows * cell
+        tx, ty = _center_text(draw, label, label_font, x0, y0, cell, 36)
+        draw.text((tx, ty + 4), label, fill=(40, 40, 40), font=label_font)
+        y1 = top + index * cell
+        bbox = draw.textbbox((0, 0), label, font=label_font)
+        draw.text(
+            (left - 12 - (bbox[2] - bbox[0]), y1 + (cell - (bbox[3] - bbox[1])) / 2),
+            label,
+            fill=(40, 40, 40),
+            font=label_font,
+        )
+
+    draw.text(
+        (left, top + rows * cell + 44),
+        "终点交通分析区",
+        fill=(40, 40, 40),
+        font=label_font,
+    )
+    draw.text((24, top - 8), "起点交通分析区", fill=(40, 40, 40), font=label_font)
+
+    bar_x = left + cols * cell + 24
+    bar_y = top
+    bar_h = rows * cell
+    for pixel in range(bar_h):
+        ratio = 1.0 - (pixel / max(bar_h - 1, 1))
+        color = _ylorrd_color(ratio * max_value, max_value)
+        draw.line((bar_x, bar_y + pixel, bar_x + 18, bar_y + pixel), fill=color)
+    draw.text((bar_x, bar_y + bar_h + 8), f"PCU ({unit})", fill=(40, 40, 40), font=label_font)
+    draw.text((bar_x + 24, bar_y - 4), _format_pcu(max_value), fill=(40, 40, 40), font=label_font)
+    draw.text((bar_x + 24, bar_y + bar_h - 18), "0", fill=(40, 40, 40), font=label_font)
+
+    caption = (
+        "1) 单元格(i,j)表示从起点TAZ i到终点TAZ j的典型出行量；单位为PCU\n"
+        "2) Y轴=起点TAZ，X轴=终点TAZ；区域顺序为1-9；同区域行程不计入（对角线为0）"
+    )
+    draw.multiline_text(
+        (24, height - 96),
+        caption,
+        fill=(50, 50, 50),
+        font=caption_font,
+        spacing=6,
+    )
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _ylorrd_color(value: float, max_value: float) -> tuple[int, int, int]:
+    if max_value <= 0:
+        return (255, 255, 204)
+    ratio = max(0.0, min(1.0, float(value) / max_value))
+    stops = (
+        (255, 255, 204),
+        (254, 217, 118),
+        (254, 153, 41),
+        (217, 95, 14),
+        (153, 52, 4),
+    )
+    scaled = ratio * (len(stops) - 1)
+    index = min(int(scaled), len(stops) - 2)
+    frac = scaled - index
+    start, end = stops[index], stops[index + 1]
+    return (
+        int(start[0] + (end[0] - start[0]) * frac),
+        int(start[1] + (end[1] - start[1]) * frac),
+        int(start[2] + (end[2] - start[2]) * frac),
+    )
+
+
+def _center_text(draw, text: str, font, x0: int, y0: int, width: int, height: int):
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    return x0 + (width - text_w) / 2, y0 + (height - text_h) / 2
+
+
+def _resolve_pillow_font_path() -> Path | None:
+    candidates = (
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
+        Path("/usr/share/fonts/truetype/arphic/uming.ttc"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    )
+    return next((path for path in candidates if path.is_file()), None)
+
+
+def _load_pillow_font(font_path: Path | None, size: int):
+    from PIL import ImageFont
+
+    if font_path is None:
+        return ImageFont.load_default()
+    try:
+        return ImageFont.truetype(str(font_path), size=size, index=2)
+    except OSError:
+        try:
+            return ImageFont.truetype(str(font_path), size=size)
+        except OSError:
+            return ImageFont.load_default()
 
 
 def _resolve_plot_font_family() -> str | None:

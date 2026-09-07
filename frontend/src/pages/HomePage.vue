@@ -458,6 +458,7 @@ async function handleStop() {
         :comparison-runs="activeComparisonRuns"
         :comparison-contract="activeComparisonContract"
         :simulation-state="state"
+        :simulation-duration-seconds="snapshot?.duration_seconds ?? activeComparisonContract?.duration_seconds ?? null"
         :active-vehicle-count="snapshot?.metrics.active_vehicles ?? null"
         :traffic-state="snapshot?.evaluation?.traffic_state ?? snapshot?.metrics.evaluation?.traffic_state ?? null"
       />
