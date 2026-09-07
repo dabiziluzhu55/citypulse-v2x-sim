@@ -7,7 +7,7 @@ import {
   LEFT_SIDEBAR_SECTION_HEADERS,
 } from './leftSidebarLayout'
 
-/** 原稿外壳宽度（扩展前，用于固定右侧与边框的锚点） */
+/** 原稿外壳宽度 */
 export const RIGHT_SIDEBAR_DESIGN_WIDTH_BASE = 560
 /** 外壳画布（略宽于左侧，向左延伸） */
 export const RIGHT_SIDEBAR_DESIGN_WIDTH = RIGHT_SIDEBAR_DESIGN_WIDTH_BASE + CHROME_SIDEBAR_CENTER_EXPAND
@@ -45,16 +45,9 @@ export const RIGHT_SIDEBAR_SHELL = {
 
 const rsInner = RIGHT_SIDEBAR_SHELL.innerScreen
 
-/** 主内容列宽度（图例 / 图表 / 导出按钮共用，在 465 内容画布内水平居中） */
-export const RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH = 355
-export const RIGHT_SIDEBAR_METRICS_COLUMN_LEFT = Math.round(
-  (RIGHT_SIDEBAR_CONTENT_WIDTH - RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH) / 2,
-)
-
 /**
  * 裁剪区：贴合内屏。
- * frame SVG 为 viewBox 560 + xMaxYMid，外侧贴右，向中心（左）空出 EXPAND，
- * 因此左右 inset 需计入该偏移，才能让内容在可视面板内居中。
+ * frame SVG 为 viewBox 560 + xMaxYMid，外侧贴右，向中心（左）空出 EXPAND
  */
 export const RIGHT_SIDEBAR_CLIP_INSET_LEFT = Math.round(
   CHROME_SIDEBAR_CENTER_EXPAND +
@@ -139,6 +132,10 @@ export const RIGHT_SIDEBAR_SECTION_HEADER_LEFT = round1(
   (RIGHT_SIDEBAR_CONTENT_WIDTH - RIGHT_SIDEBAR_SECTION_HEADER_WIDTH) / 2,
 )
 
+/** 主内容列与「量化评估结果」标题左右对齐，向两侧对称吃掉留白 */
+export const RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH = RIGHT_SIDEBAR_SECTION_HEADER_WIDTH
+export const RIGHT_SIDEBAR_METRICS_COLUMN_LEFT = RIGHT_SIDEBAR_SECTION_HEADER_LEFT
+
 /** 内容区（相对 465×870 内容画布，水平居中） */
 export const RIGHT_SIDEBAR_CONTENT_BLOCK = {
   left: RIGHT_SIDEBAR_SECTION_HEADER_LEFT,
@@ -171,11 +168,11 @@ export const RIGHT_SIDEBAR_METRICS_LAYOUT = {
     left: RIGHT_SIDEBAR_METRICS_COLUMN_LEFT,
     width: RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH,
   },
-  advantage: { top: 76, height: 208 },
-  trafficOverview: { top: 292, height: 92 },
-  legend: { top: 396, height: 76 },
-  chart: { top: 482, titleHeight: 28, height: 220 },
-  sourceNote: { top: 732 },
+  advantage: { top: 76, height: 216 },
+  trafficOverview: { top: 305, height: 105 },
+  legend: { top: 436, height: 76 },
+  chart: { top: 528, titleHeight: 28, height: 188 },
+  sourceNote: { top: 748 },
   exportButton: {
     left: RIGHT_SIDEBAR_METRICS_COLUMN_LEFT,
     top: 786,

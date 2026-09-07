@@ -220,7 +220,7 @@ test('right sidebar uses one switchable chart and the new layout blocks', () => 
   assert.match(rightSidebarSource, /路网车辆数/)
   assert.match(rightSidebarSource, /grid-template-columns: repeat\(3, 1fr\)/)
   assert.match(rightSidebarSource, /el-button-group/)
-  assert.match(layoutSource, /height: 220/)
+  assert.match(layoutSource, /height: 188/)
   assert.doesNotMatch(rightSidebarSource, /@element-plus\/icons-vue/)
   assert.deepEqual(ADVANTAGE_METRIC_SPECS.map((item) => item.field), [
     'regional_max_queue_length_m',

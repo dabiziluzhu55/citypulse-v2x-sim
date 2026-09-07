@@ -41,6 +41,9 @@ import {
   buildEvaluationReportRequest,
   hasFinishedComparisonRun,
 } from '../../utils/evaluationReport.ts'
+import borderSvg from '../../assets/design/dashboard/border.svg?url'
+import improveIconSvg from '../../assets/design/dashboard/improve_icon.svg?url'
+import baseSvg from '../../assets/design/dashboard/base.svg?url'
 
 const props = defineProps<{
   runId: string
@@ -101,13 +104,8 @@ const advantageMetrics = computed(() => buildAdvantageMetrics(
 const trafficStateLabel = computed(() => props.trafficState?.trim() || '—')
 const trafficStateStyle = computed(() => {
   const color = trafficStateColor(props.trafficState)
-  return color
-    ? { color, textShadow: `0 0 5px ${color}, 0 0 12px ${color}88` }
-    : { color: 'rgba(188,219,241,.55)' }
+  return { color: color ?? 'rgba(188, 219, 241, .42)' }
 })
-const trafficStateHud = computed(() => (
-  trafficStateColor(props.trafficState) || 'rgba(33,160,255,.55)'
-))
 const vehicleCountLabel = computed(() => formatActiveVehicleCount(props.activeVehicleCount))
 
 function metricHasAnyValue(metric: EvaluationMetricKey): boolean {
@@ -291,19 +289,36 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
               <div class="right-sidebar__subsection-title">交通效能提升</div>
               <div class="right-sidebar__advantage-grid">
                 <div v-for="item in advantageMetrics" :key="item.key" class="right-sidebar__advantage-cell">
-                  <span>{{ item.label }}</span>
-                  <strong
-                    :class="{
-                      'is-improved': item.improved === true,
-                      'is-worse': item.improved === false,
-                      'is-neutral': item.value === 0,
-                      'is-empty': item.value == null,
-                    }"
-                  >
-                    <em v-if="item.direction === 'up'">↑</em>
-                    <em v-else-if="item.direction === 'down'">↓</em>
-                    {{ formatAdvantagePercent(item.value) }}
-                  </strong>
+                  <img
+                    :src="borderSvg"
+                    class="right-sidebar__advantage-frame"
+                    alt=""
+                    aria-hidden="true"
+                    draggable="false"
+                  />
+                  <div class="right-sidebar__advantage-content">
+                    <img
+                      :src="improveIconSvg"
+                      class="right-sidebar__improve-icon"
+                      alt=""
+                      aria-hidden="true"
+                      draggable="false"
+                    />
+                    <span class="right-sidebar__advantage-label">{{ item.label }}</span>
+                    <strong
+                      class="right-sidebar__advantage-value"
+                      :class="{
+                        'is-improved': item.improved === true,
+                        'is-worse': item.improved === false,
+                        'is-neutral': item.value === 0,
+                        'is-empty': item.value == null,
+                      }"
+                    >
+                      <em v-if="item.direction === 'up'">↑</em>
+                      <em v-else-if="item.direction === 'down'">↓</em>
+                      {{ formatAdvantagePercent(item.value) }}
+                    </strong>
+                  </div>
                 </div>
               </div>
             </div>
@@ -312,13 +327,31 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
               class="right-sidebar__overview"
               :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.trafficOverview.top}px`, height: `${layout.trafficOverview.height}px` }"
             >
-              <div class="right-sidebar__overview-pane is-state" :style="{ '--rs-hud': trafficStateHud }">
+              <div class="right-sidebar__overview-pane is-state">
                 <span>实时交通状态</span>
-                <strong :style="trafficStateStyle">{{ trafficStateLabel }}</strong>
+                <div class="right-sidebar__overview-value">
+                  <strong :style="trafficStateStyle">{{ trafficStateLabel }}</strong>
+                  <img
+                    :src="baseSvg"
+                    class="right-sidebar__overview-base"
+                    alt=""
+                    aria-hidden="true"
+                    draggable="false"
+                  />
+                </div>
               </div>
               <div class="right-sidebar__overview-pane is-count">
-                <span>路网车辆数</span>
-                <strong>{{ vehicleCountLabel }}</strong>
+                <span>实时车辆数</span>
+                <div class="right-sidebar__overview-value">
+                  <strong>{{ vehicleCountLabel }}</strong>
+                  <img
+                    :src="baseSvg"
+                    class="right-sidebar__overview-base"
+                    alt=""
+                    aria-hidden="true"
+                    draggable="false"
+                  />
+                </div>
               </div>
             </div>
 
@@ -375,12 +408,7 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
               :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.sourceNote.top}px` }"
             >尚无相同配置的真实算法结果</div>
             <div
-              v-else-if="hasProvisionalData"
-              class="right-sidebar__source-note"
-              :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.sourceNote.top}px` }"
-            >虚线为实时数值</div>
-            <div
-              v-else
+              v-else-if="!hasProvisionalData"
               class="right-sidebar__source-note"
               :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.sourceNote.top}px` }"
             >仅显示相同配置的真实后端最终结果</div>
@@ -407,10 +435,7 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
 <style scoped>
 .right-sidebar {
   --rs-cyan: #21e6ff;
-  --rs-cyan-soft: rgba(33, 230, 255, .55);
-  --rs-panel-blue: rgba(12, 48, 84, .32);
   --rs-text-primary: #f2fbff;
-  --rs-card-clip: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
   container-type: size;
   display: flex;
   justify-content: flex-end;
@@ -449,87 +474,106 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
   background: var(--rs-cyan);
   box-shadow: 0 0 6px rgba(33, 230, 255, .75);
 }
-.right-sidebar__subsection-title::after {
-  content: '';
-  flex: 1 1 auto;
-  min-width: 28px;
-  height: 12px;
-  margin-left: 10px;
-  background-image:
-    repeating-linear-gradient(-52deg, transparent 0 2.5px, rgba(90, 214, 255, .88) 2.5px 4.5px, transparent 4.5px 7.5px),
-    linear-gradient(90deg, rgba(90, 214, 255, .72), rgba(33, 230, 255, 0));
-  background-size: 44px 8px, calc(100% - 50px) 1px;
-  background-position: left center, 50px center;
-  background-repeat: no-repeat;
-}
 
 .right-sidebar__advantage {
   position: absolute;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
   min-width: 0;
 }
 .right-sidebar__advantage-grid {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: repeat(2, 1fr);
-  gap: 9px 10px;
+  grid-template-rows: repeat(2, auto);
+  gap: 14px 10px;
+  align-content: start;
   min-width: 0;
   min-height: 0;
 }
 .right-sidebar__advantage-cell {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
+  overflow: visible;
+  width: 100%;
+  aspect-ratio: 173 / 73;
   min-width: 0;
-  padding: 6px 10px 8px;
-  text-align: center;
-  clip-path: var(--rs-card-clip);
-  background:
-    linear-gradient(135deg, rgba(21, 65, 112, .34), rgba(4, 24, 48, .22)) padding-box,
-    linear-gradient(135deg, rgba(82, 210, 255, .62), rgba(46, 160, 220, .28)) border-box;
-  border: 1px solid transparent;
-  box-shadow: inset 0 0 18px rgba(26, 118, 214, .10), 0 0 5px rgba(33, 230, 255, .08);
 }
-.right-sidebar__advantage-cell span {
-  color: rgba(215, 235, 248, .84);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: .02em;
+.right-sidebar__advantage-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
 }
-.right-sidebar__advantage-cell strong {
+.right-sidebar__advantage-content {
   position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: start;
+  align-items: center;
+  justify-content: start;
+  column-gap: 6px;
+  row-gap: 5px;
+  width: 100%;
+  height: 100%;
+  padding: 6px 10px 6px 10px;
+  text-align: left;
+}
+.right-sidebar__improve-icon {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
+  display: block;
+  width: auto;
+  height: calc(19px + 5px + 28px);
+  object-fit: contain;
+  object-position: left center;
+  pointer-events: none;
+  user-select: none;
+}
+.right-sidebar__advantage-label {
+  grid-column: 2;
+  grid-row: 1;
+  height: 19px;
+  color: #accde6;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 19px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.right-sidebar__advantage-value {
+  grid-column: 2;
+  grid-row: 2;
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 32px;
+  justify-content: flex-start;
+  gap: 4px;
+  min-height: 28px;
   color: #f1fcff;
-  font-size: 27px;
+  font-size: 25px;
   font-weight: 800;
   letter-spacing: .01em;
   line-height: 1;
   text-shadow: 0 0 2px #ffffff, 0 0 5px rgba(33, 230, 255, .72), 0 0 12px rgba(40, 118, 255, .35);
 }
-.right-sidebar__advantage-cell strong em {
-  position: absolute;
-  right: calc(100% + 5px);
-  top: 50%;
-  transform: translateY(-50%);
+.right-sidebar__advantage-value em {
   font-style: normal;
-  font-size: 21px;
+  font-size: 20px;
   filter: drop-shadow(0 0 4px currentColor);
 }
-.right-sidebar__advantage-cell strong.is-improved em { color: #55E69A; }
-.right-sidebar__advantage-cell strong.is-worse em { color: #FF5B64; }
-.right-sidebar__advantage-cell strong.is-neutral { color: #8fb8d2; text-shadow: none; }
-.right-sidebar__advantage-cell strong.is-empty {
+.right-sidebar__advantage-value.is-improved em { color: #55E69A; }
+.right-sidebar__advantage-value.is-worse em { color: #FF5B64; }
+.right-sidebar__advantage-value.is-neutral { color: #8fb8d2; text-shadow: none; }
+.right-sidebar__advantage-value.is-empty {
   color: rgba(188, 219, 241, .42);
-  font-size: 24px;
+  font-size: 22px;
   text-shadow: none;
 }
 
@@ -537,25 +581,8 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
   position: absolute;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: center;
   min-width: 0;
-  clip-path: var(--rs-card-clip);
-  background:
-    linear-gradient(180deg, rgba(8, 36, 64, .28), rgba(6, 31, 57, .18)) padding-box,
-    linear-gradient(135deg, rgba(33, 230, 255, .52), rgba(33, 180, 255, .28)) border-box;
-  border: 1px solid transparent;
-  box-shadow: inset 0 0 16px rgba(26, 118, 214, .12);
-}
-.right-sidebar__overview::after {
-  content: '';
-  position: absolute;
-  top: 16%;
-  left: 50%;
-  z-index: 1;
-  width: 1px;
-  height: 68%;
-  transform: translateX(-50%);
-  background: linear-gradient(transparent, rgba(33, 230, 255, .65), transparent);
-  pointer-events: none;
 }
 .right-sidebar__overview-pane {
   position: relative;
@@ -563,59 +590,53 @@ watch(() => [props.timeseries, activeMetricIndex.value], () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
-  padding: 8px 12px 16px;
+  padding: 2px 8px 0;
   text-align: center;
 }
-.right-sidebar__overview-pane.is-state::before,
-.right-sidebar__overview-pane.is-count::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 2px;
-  height: 16px;
-  transform: translateY(-50%);
-  background: var(--rs-cyan);
-  box-shadow: 0 0 6px rgba(33, 230, 255, .45);
-  opacity: .7;
-}
-.right-sidebar__overview-pane.is-state::before { left: 8px; }
-.right-sidebar__overview-pane.is-count::before { right: 8px; }
 .right-sidebar__overview-pane span {
-  color: #f0faff;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .04em;
-}
-.right-sidebar__overview-pane strong {
-  position: relative;
-  display: block;
-  max-width: 100%;
-  color: #f4fcff;
-  font-size: 28px;
+  height: 30px;
+  color: var(--rs-text-primary);
+  font-size: 18px;
   font-weight: 800;
-  letter-spacing: .02em;
-  line-height: 1.1;
+  letter-spacing: .04em;
+  line-height: 22px;
+  text-shadow: 0 0 8px rgba(33, 230, 255, .25);
+  white-space: nowrap;
 }
-.right-sidebar__overview-pane.is-state strong { font-weight: 900; }
-.right-sidebar__overview-pane.is-count strong { text-shadow: 0 0 8px rgba(33, 190, 255, .40); }
-.right-sidebar__overview-pane strong::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -11px;
-  width: 70%;
-  height: 14px;
-  border: 1px solid rgba(33, 160, 255, .45);
-  border-radius: 50%;
-  transform: translateX(-50%) scaleY(.4);
-  box-shadow: 0 0 8px rgba(33, 160, 255, .28);
+.right-sidebar__overview-value {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+}
+.right-sidebar__overview-value strong {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  max-width: 100%;
+  color: #f1fcff;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  line-height: 1;
+  text-shadow: 0 0 2px #ffffff, 0 0 5px rgba(33, 230, 255, .72), 0 0 12px rgba(40, 118, 255, .35);
+}
+.right-sidebar__overview-base {
+  position: relative;
+  z-index: 0;
+  display: block;
+  width: 118px;
+  height: auto;
+  margin-top: -28px;
   pointer-events: none;
-}
-.right-sidebar__overview-pane.is-state strong::after {
-  border-color: color-mix(in srgb, var(--rs-hud) 55%, transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--rs-hud) 38%, transparent);
+  user-select: none;
 }
 
 .right-sidebar__legend-block {
