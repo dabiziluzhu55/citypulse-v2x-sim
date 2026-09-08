@@ -57,6 +57,15 @@ export interface MetricsTimeseriesPoint {
   metric_sources?: Record<string, string>
   warnings?: string[]
   metric_status?: Partial<Record<EvaluationMetricKey, MetricPresentationStatus>>
+  evaluation_scope?: {
+    preset_id?: string
+    intersection_ids?: string[]
+    lane_ids?: string[]
+    edge_ids?: string[]
+    covers_full_network?: boolean
+  } | null
+  sample_sizes?: Record<string, number | string | null> | null
+  network_metrics?: Record<string, unknown> | null
 }
 
 export type MetricSeriesSource = 'backend' | 'missing'

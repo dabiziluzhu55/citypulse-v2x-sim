@@ -236,6 +236,19 @@ export interface SimulationEvaluation {
   metric_sources: Record<string, string>
   warnings: string[]
   finished: boolean
+  evaluation_scope?: EvaluationScopePayload | null
+  sample_sizes?: Record<string, number | string | null> | null
+  scene_metrics?: Record<string, unknown> | null
+  network_metrics?: Record<string, unknown> | null
+  scene_affected_trip_metrics?: Record<string, unknown> | null
+}
+
+export interface EvaluationScopePayload {
+  preset_id: string
+  intersection_ids: string[]
+  lane_ids?: string[]
+  edge_ids?: string[]
+  covers_full_network?: boolean
 }
 
 export interface SimulationEvent {

@@ -307,6 +307,20 @@ class SessionMetricsHub:
         hard_events = payload.get("hard_braking_events")
         return EvalResult(
             algorithm=str(payload.get("algorithm", "")),
+            path_avg_speed_kmh=payload.get("path_avg_speed_kmh"),
+            travel_time_index=payload.get("travel_time_index"),
+            delay_time_proportion=payload.get("delay_time_proportion"),
+            traffic_performance_index=payload.get("traffic_performance_index"),
+            traffic_state=payload.get("traffic_state"),
+            tpi_method=payload.get("tpi_method"),
+            avg_stops_per_vehicle=payload.get("avg_stops_per_vehicle"),
+            regional_max_queue_length_m=payload.get("regional_max_queue_length_m"),
+            regional_max_queue_intersection_id=payload.get(
+                "regional_max_queue_intersection_id"
+            ),
+            regional_max_queue_lane_id=payload.get("regional_max_queue_lane_id"),
+            regional_max_queue_sim_time_s=payload.get("regional_max_queue_sim_time_s"),
+            spillback_rate=payload.get("spillback_rate"),
             avg_travel_time_s=payload.get("avg_travel_time"),
             avg_waiting_time_s=payload.get("avg_waiting_time"),
             avg_queue_length_veh=payload.get("avg_queue_length"),
@@ -322,6 +336,31 @@ class SessionMetricsHub:
             completion_rate=payload.get("completion_rate"),
             metric_sources=dict(payload.get("metric_sources") or {}),
             warnings=list(payload.get("warnings") or []),
+            evaluation_scope=(
+                dict(payload["evaluation_scope"])
+                if isinstance(payload.get("evaluation_scope"), dict)
+                else None
+            ),
+            sample_sizes=(
+                dict(payload["sample_sizes"])
+                if isinstance(payload.get("sample_sizes"), dict)
+                else None
+            ),
+            scene_metrics=(
+                dict(payload["scene_metrics"])
+                if isinstance(payload.get("scene_metrics"), dict)
+                else None
+            ),
+            network_metrics=(
+                dict(payload["network_metrics"])
+                if isinstance(payload.get("network_metrics"), dict)
+                else None
+            ),
+            scene_affected_trip_metrics=(
+                dict(payload["scene_affected_trip_metrics"])
+                if isinstance(payload.get("scene_affected_trip_metrics"), dict)
+                else None
+            ),
         )
 
     def _load_persisted_payload(self, session_id: str) -> dict[str, Any] | None:

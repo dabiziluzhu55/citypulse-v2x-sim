@@ -71,19 +71,22 @@ def _departed_from_root(
 
 def parse_completed_tripinfo(
     tripinfo_path: str | Path,
+    *,
+    vehicle_ids: Optional[Sequence[str]] = None,
 ) -> tuple[list[ET.Element], Optional[str]]:
     """返回已完成且未vaporize的tripinfo节点；失败时返回 ([], warning)"""
 
     root, warning = _parse_tripinfo_root(tripinfo_path)
     if root is None:
         return [], warning
-    return _completed_from_root(root), None
+    return _filter_trips_by_vehicle_ids(_completed_from_root(root), vehicle_ids), None
 
 
 def parse_departed_tripinfo(
     tripinfo_path: str | Path,
     *,
     include_vtypes: Optional[Sequence[str]] = None,
+    vehicle_ids: Optional[Sequence[str]] = None,
 ) -> tuple[list[ET.Element], Optional[str]]:
     """返回已出发车辆的tripinfo节点（含未完成 / vaporize）
 
@@ -94,7 +97,10 @@ def parse_departed_tripinfo(
     root, warning = _parse_tripinfo_root(tripinfo_path)
     if root is None:
         return [], warning
-    return _departed_from_root(root, include_vtypes=include_vtypes), None
+    return _filter_trips_by_vehicle_ids(
+        _departed_from_root(root, include_vtypes=include_vtypes),
+        vehicle_ids,
+    ), None
 
 
 def wait_for_readable_tripinfo(
@@ -125,6 +131,16 @@ def wait_for_readable_tripinfo(
 
 def _trip_id(trip: ET.Element) -> str:
     return str(trip.get("id") or "")
+
+
+def _filter_trips_by_vehicle_ids(
+    trips: Sequence[ET.Element],
+    vehicle_ids: Sequence[str] | None,
+) -> list[ET.Element]:
+    if vehicle_ids is None:
+        return list(trips)
+    allow = {str(vehicle_id) for vehicle_id in vehicle_ids if str(vehicle_id)}
+    return [trip for trip in trips if _trip_id(trip) in allow]
 
 
 def _parse_required_number(
@@ -160,12 +176,13 @@ def apply_tripinfo_completed_metrics(
     expected_departed: Optional[int] = None,
     expected_arrived: Optional[int] = None,
     include_vtypes: Optional[Sequence[str]] = None,
+    vehicle_ids: Optional[Sequence[str]] = None,
     retries: int = TRIPINFO_READY_RETRIES,
     delay_s: float = TRIPINFO_READY_DELAY_S,
 ) -> EvalResult:
     """用TripInfo覆盖平均行程时间与平均等待时间"""
 
-    del expected_arrived  
+    del expected_arrived
 
     departed_expected = (
         result.departed if expected_departed is None else int(expected_departed)
@@ -181,12 +198,14 @@ def apply_tripinfo_completed_metrics(
         return result
 
     departed_trips, parse_warning = parse_departed_tripinfo(
-        path, include_vtypes=include_vtypes
+        path, include_vtypes=include_vtypes, vehicle_ids=vehicle_ids
     )
     if parse_warning is not None:
         _clear_travel_wait_metric(result)
         _append_warning(result, parse_warning)
         return result
+    if vehicle_ids is not None and expected_departed is None:
+        departed_expected = len(departed_trips)
 
     _fill_travel_wait_from_departed(
         result,
@@ -320,6 +339,7 @@ def apply_tripinfo_official_metrics(
     *,
     expected_departed: Optional[int] = None,
     include_vtypes: Optional[Sequence[str]] = None,
+    vehicle_ids: Optional[Sequence[str]] = None,
     retries: int = TRIPINFO_READY_RETRIES,
     delay_s: float = TRIPINFO_READY_DELAY_S,
 ) -> EvalResult:
@@ -348,8 +368,28 @@ def apply_tripinfo_official_metrics(
         _append_warning(result, parse_warning or "TripInfo 解析失败")
         return result
 
-    departed_trips = _departed_from_root(root, include_vtypes=include_vtypes)
-    completed_trips = _completed_from_root(root)
+    departed_trips = _filter_trips_by_vehicle_ids(
+        _departed_from_root(root, include_vtypes=include_vtypes),
+        vehicle_ids,
+    )
+    completed_trips = _filter_trips_by_vehicle_ids(
+        _completed_from_root(root),
+        vehicle_ids,
+    )
+    if vehicle_ids is not None and expected_departed is None:
+        departed_expected = len(departed_trips)
+        present_ids = {_trip_id(trip) for trip in departed_trips}
+        missing = [
+            vehicle_id
+            for vehicle_id in vehicle_ids
+            if str(vehicle_id) and str(vehicle_id) not in present_ids
+        ]
+        if missing:
+            _append_warning(
+                result,
+                "部分曾进入场景的车辆缺少 TripInfo，"
+                f"已按 {len(departed_trips)} 条记录回填 scene_affected_trip_metrics",
+            )
     _fill_travel_wait_from_departed(
         result,
         departed_trips,

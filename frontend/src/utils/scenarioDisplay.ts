@@ -40,6 +40,26 @@ export function formatIntersectionLabels(values: readonly string[]): string {
     .join('、') || '无'
 }
 
+export function formatEvaluationScopeNote(input: {
+  presetId?: string | null
+  intersectionIds?: readonly string[] | null
+  coversFullNetwork?: boolean | null
+  hasNetworkMetrics?: boolean
+}): string {
+  const presetId = String(input.presetId || '').trim()
+  const ids = [...new Set((input.intersectionIds ?? []).map((item) => String(item)).filter(Boolean))]
+  if (!presetId && ids.length === 0) return ''
+  const label = presetId ? formatScenarioPresetLabel(presetId) : '当前场景'
+  const covers = input.coversFullNetwork === true || presetId === 'xiongan_20'
+  const kind = covers ? '全网' : '典型场景'
+  const idText = ids.length > 0 ? formatIntersectionLabels(ids) : '未标注路口'
+  let text = `评估口径：${label}（${kind}，${idText}）`
+  if (!covers && input.hasNetworkMetrics) {
+    text += '；全网影响已单独记录，不替代场景主指标'
+  }
+  return text
+}
+
 export function formatSimulationClock(totalSeconds: number): string {
   const normalized = Math.max(0, Math.round(totalSeconds))
   const hours = Math.floor(normalized / 3600) % 24

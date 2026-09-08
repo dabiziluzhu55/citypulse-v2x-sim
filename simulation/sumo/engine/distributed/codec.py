@@ -114,6 +114,7 @@ def event_from_dict(value: Mapping[str, Any]) -> DisturbanceEvent:
 
 def dumps_config(config: SimulationConfig) -> str:
     data = asdict(config)
+    data.pop("algorithm_decision_observer", None)
     data["intersection_ids"] = list(config.intersection_ids)
     data["origins"] = {
         str(key): list(values) for key, values in config.origins.items()
@@ -127,6 +128,7 @@ def loads_config(raw: str | bytes) -> SimulationConfig:
     data.pop("algorithm_endpoint", None)
     data.pop("algorithm_timeout", None)
     data.setdefault("scenario_scope", DEFAULT_TRAFFIC_SCOPE_ID)
+    data.setdefault("scenario_preset_id", "")
     data["intersection_ids"] = tuple(str(item) for item in data["intersection_ids"])
     data["origins"] = {
         str(key): tuple(str(item) for item in values)
@@ -135,6 +137,7 @@ def loads_config(raw: str | bytes) -> SimulationConfig:
     data["initial_events"] = tuple(
         event_from_dict(item) for item in data.get("initial_events", ())
     )
+    data.pop("algorithm_decision_observer", None)
     raw_ai_control = data.get("ai_control")
     if isinstance(raw_ai_control, Mapping):
         data["ai_control"] = AIControlConfig(**dict(raw_ai_control))
@@ -212,6 +215,11 @@ def loads_snapshot(raw: str | bytes) -> SimulationSnapshot:
         metrics=SessionMetrics(**data.get("metrics", {})),
         error=None if data.get("error") is None else str(data["error"]),
         ai_takeover=AIControlStatus(**dict(raw_ai_status)),
+        evaluation_scope=(
+            dict(data["evaluation_scope"])
+            if isinstance(data.get("evaluation_scope"), Mapping)
+            else None
+        ),
     )
 
 

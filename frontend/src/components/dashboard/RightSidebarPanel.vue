@@ -45,6 +45,7 @@ import {
   buildEvaluationReportRequest,
   hasFinishedComparisonRun,
 } from '../../utils/evaluationReport.ts'
+import { formatEvaluationScopeNote } from '../../utils/scenarioDisplay.ts'
 import borderSvg from '../../assets/design/dashboard/border.svg?url'
 import improveIconSvg from '../../assets/design/dashboard/improve_icon.svg?url'
 import baseSvg from '../../assets/design/dashboard/base.svg?url'
@@ -107,6 +108,19 @@ const currentAlgorithmLabel = computed(() => METRICS_ALGORITHMS.find(
 const latestCurrentPoint = computed(() => points.value
   .filter((point) => point.algorithm === currentAlgorithmId.value)
   .at(-1) ?? null)
+const evaluationScopeNote = computed(() => {
+  const point = latestCurrentPoint.value
+  const scope = point?.evaluation_scope
+  const contract = props.comparisonContract
+  return formatEvaluationScopeNote({
+    presetId: scope?.preset_id || contract?.scenario_preset_id,
+    intersectionIds: scope?.intersection_ids?.length
+      ? scope.intersection_ids
+      : contract?.controlled_intersection_ids,
+    coversFullNetwork: scope?.covers_full_network,
+    hasNetworkMetrics: Boolean(point?.network_metrics),
+  })
+})
 const rawAdvantageMetrics = computed(() => buildAdvantageMetrics(
   points.value,
   currentAlgorithmId.value,
@@ -472,7 +486,12 @@ watch(() => [
               v-else-if="!hasProvisionalData"
               class="right-sidebar__source-note"
               :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.sourceNote.top}px` }"
-            >仅显示相同配置的真实后端最终结果</div>
+            >{{ evaluationScopeNote ? `仅显示相同配置的真实后端最终结果；${evaluationScopeNote}` : '仅显示相同配置的真实后端最终结果' }}</div>
+            <div
+              v-else-if="evaluationScopeNote"
+              class="right-sidebar__source-note"
+              :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.sourceNote.top}px` }"
+            >{{ evaluationScopeNote }}</div>
             <button
               type="button"
               class="right-sidebar__export"

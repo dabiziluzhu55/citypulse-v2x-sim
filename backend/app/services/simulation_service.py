@@ -434,6 +434,11 @@ class SimulationService:
             "metric_sources": {},
             "warnings": [],
             "finished": False,
+            "evaluation_scope": None,
+            "sample_sizes": None,
+            "scene_metrics": None,
+            "network_metrics": None,
+            "scene_affected_trip_metrics": None,
         }
 
     def recover_sessions(self) -> int:
@@ -776,6 +781,7 @@ class SimulationService:
             ),
             ai_control=self._settings.ai_control_config,
             baseline_controller=request.control_mode,
+            scenario_preset_id=request.scenario_preset_id,
         )
 
     def _validate_event_lanes(self, session_id: str, event: DisturbanceEvent) -> None:

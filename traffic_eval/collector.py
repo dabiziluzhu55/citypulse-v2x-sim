@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
@@ -25,6 +26,7 @@ from simulation.sumo.engine.session import SimulationSnapshot
 
 from .models import EvalResult
 from .powertrain import VehicleTypeFuelMeta
+from .scope import EvaluationScope, snapshot_evaluation_scope
 from .tpi import tpi_from_optional_dtp
 from .tripinfo import (
     FUEL_POWERTRAINS,
@@ -32,6 +34,8 @@ from .tripinfo import (
     apply_tripinfo_official_metrics,
 )
 
+SCENE_AFFECTED_TRIP_SOURCE_PREFIX = "scene_affected_trip_metrics:"
+SCENE_IN_SCOPE_SOURCE = "scene_in_scope_snapshot"
 HARD_BRAKING_RATE_SOURCE = "final_snapshot_hard_braking_events_per_100_departed"
 QUEUE_SOURCE = "incoming_lane_halting_count"
 REGIONAL_MAX_QUEUE_SOURCE = "simulation_snapshot_incoming_lane_queue_length_m"
@@ -48,7 +52,7 @@ HALTING_SPEED_MPS = 0.1
 IncomingQueueRecord = tuple[str, str, Optional[float], Optional[float]]
 
 
-class TrafficMetricsCollector:
+class _CoreMetricsCollector:
     """按session生命周期采集交通运行指标"""
 
     def __init__(self, algorithm: str = "") -> None:
@@ -212,6 +216,8 @@ class TrafficMetricsCollector:
         *,
         decision_latency_ms: Optional[float] = None,
         tripinfo_path: str | Path | None = None,
+        tripinfo_vehicle_ids: Sequence[str] | None = None,
+        snapshot_finish: bool = False,
     ) -> EvalResult:
         """会话结束时结算最终交通指标，并可选TripInfo回填"""
         self.observe_snapshot(snapshot)
@@ -224,7 +230,11 @@ class TrafficMetricsCollector:
         result = self.result(
             finished=True,
             decision_latency_ms=decision_latency_ms,
+            snapshot_finish=snapshot_finish,
         )
+        if snapshot_finish:
+            self._warnings = list(result.warnings)
+            return result
         if tripinfo_path is not None:
             include_vtypes = (
                 list(self._fuel_meta_by_type.keys())
@@ -235,11 +245,14 @@ class TrafficMetricsCollector:
                 result,
                 tripinfo_path,
                 self._fuel_meta_by_type,
-                expected_departed=result.departed,
+                expected_departed=result.departed if tripinfo_vehicle_ids is None else None,
                 include_vtypes=include_vtypes,
+                vehicle_ids=tripinfo_vehicle_ids,
             )
-            self._tripinfo_applied = (
-                result.metric_sources.get("avg_travel_time_s") == TRAVEL_WAIT_SOURCE
+            if tripinfo_vehicle_ids is not None:
+                _mark_scene_affected_trip_sources(result)
+            self._tripinfo_applied = TRAVEL_WAIT_SOURCE in str(
+                result.metric_sources.get("avg_travel_time_s") or ""
             )
             self._warnings = list(result.warnings)
         else:
@@ -468,6 +481,7 @@ class TrafficMetricsCollector:
         *,
         finished: bool = False,
         decision_latency_ms: Optional[float] = None,
+        snapshot_finish: bool = False,
     ) -> EvalResult:
         r = EvalResult(algorithm=self._algorithm)
         use_finish = finished or self._finished
@@ -493,6 +507,8 @@ class TrafficMetricsCollector:
             r.completion_rate = arrived / departed
         else:
             r.completion_rate = None
+
+        publish_snapshot_vehicle_metrics = (not use_finish) or snapshot_finish
 
         if decision_latency_ms is not None:
             r.avg_decision_latency_ms = float(decision_latency_ms)
@@ -537,7 +553,7 @@ class TrafficMetricsCollector:
         elif use_finish:
             warnings.append("缺少有效评估时长，网络实际吞吐流率不可用")
 
-        if not use_finish:
+        if publish_snapshot_vehicle_metrics:
             travel_sum = sum(self._provisional_travel)
             waiting_sum = sum(self._provisional_waiting)
             for rec in self._active.values():
@@ -547,22 +563,37 @@ class TrafficMetricsCollector:
             if departed > 0 and seen > 0:
                 r.avg_travel_time_s = travel_sum / float(departed)
                 r.avg_waiting_time_s = waiting_sum / float(departed)
-                r.metric_sources["avg_travel_time_s"] = "snapshot_provisional"
-                r.metric_sources["avg_waiting_time_s"] = "snapshot_provisional"
-                warnings.append(
-                    "平均行程时间/等待时间为快照临时值（含未到达车），"
-                    "终态将等待TripInfo回填"
+                travel_source = (
+                    SCENE_IN_SCOPE_SOURCE if snapshot_finish else "snapshot_provisional"
                 )
+                r.metric_sources["avg_travel_time_s"] = travel_source
+                r.metric_sources["avg_waiting_time_s"] = travel_source
+                if snapshot_finish:
+                    warnings.append(
+                        "平均行程时间/等待时间为场景内累计（车辆位于评价范围内时），"
+                        "不是 TripInfo 整段行程"
+                    )
+                else:
+                    warnings.append(
+                        "平均行程时间/等待时间为快照临时值（含未到达车），"
+                        "终态将等待TripInfo回填"
+                    )
             fuel = self._provisional_fuel_metric()
             r.fuel_intensity_L_per_100km = fuel
             if fuel is not None:
-                r.metric_sources[
-                    "fuel_intensity_L_per_100km"
-                ] = "snapshot_provisional"
-                warnings.append(
-                    "燃油强度为快照临时值，终态将由TripInfo正式回填"
+                r.metric_sources["fuel_intensity_L_per_100km"] = (
+                    SCENE_IN_SCOPE_SOURCE if snapshot_finish else "snapshot_provisional"
                 )
-        else:
+                if snapshot_finish:
+                    warnings.append(
+                        "燃油强度为场景内累计，不是 TripInfo 整段行程 fuel_abs"
+                    )
+                else:
+                    warnings.append(
+                        "燃油强度为快照临时值，终态将由TripInfo正式回填"
+                    )
+            self._apply_provisional_path_metrics(r, sim_time)
+        elif use_finish:
             # 终态默认不发布快照近似值；由TripInfo回填覆盖
             r.avg_travel_time_s = None
             r.avg_waiting_time_s = None
@@ -571,9 +602,6 @@ class TrafficMetricsCollector:
                 warnings.append(
                     "终态平均行程时间和等待时间等待TripInfo回填"
                 )
-
-        if not use_finish:
-            self._apply_provisional_path_metrics(r, sim_time)
 
         events, rate, braking_warning = self._hard_braking_metrics(
             departed=departed, use_finish=use_finish
@@ -595,6 +623,484 @@ class TrafficMetricsCollector:
     @property
     def finished(self) -> bool:
         return self._finished
+
+
+@dataclass
+class _ScopedVehicleView:
+    vehicle_id: str
+    waiting_time: float
+    distance: float
+    fuel_total_ml: float
+    type_id: str
+    speed: float
+    time_loss: float
+    hard_braking_events: int = 0
+
+
+class _SceneMembershipTracker:
+    """跟踪车辆进入/离开 evaluation_scope，并累计场景内增量。"""
+
+    def __init__(self) -> None:
+        self.ever_entered: set[str] = set()
+        self.ever_exited: set[str] = set()
+        self.in_scope: set[str] = set()
+        self.scene_hard_braking_events: int = 0
+        self.last_scene_vehicles: tuple[Any, ...] = ()
+        self.last_covers_all: bool = True
+        self._last: dict[str, dict[str, float]] = {}
+        self._accum: dict[str, dict[str, Any]] = {}
+
+    def reset(self) -> None:
+        self.ever_entered.clear()
+        self.ever_exited.clear()
+        self.in_scope.clear()
+        self.scene_hard_braking_events = 0
+        self.last_scene_vehicles = ()
+        self.last_covers_all = True
+        self._last.clear()
+        self._accum.clear()
+
+    def update(
+        self,
+        snapshot: SimulationSnapshot,
+        scope: EvaluationScope | None,
+    ) -> tuple[tuple[Any, ...], int, int, int, bool]:
+        covers_all = scope is None or scope.covers_full_network
+        present_ids = {str(vehicle.vehicle_id) for vehicle in snapshot.vehicles}
+        current_in_scope: set[str] = set()
+        scene_vehicles: list[Any] = []
+
+        for vehicle in snapshot.vehicles:
+            vid = str(vehicle.vehicle_id)
+            lane_id = str(getattr(vehicle, "lane_id", "") or "")
+            road_id = str(getattr(vehicle, "road_id", "") or "")
+            in_scope = covers_all or (
+                scope is not None and scope.contains_vehicle(lane_id, road_id)
+            )
+            waiting = float(getattr(vehicle, "waiting_time", 0.0) or 0.0)
+            distance = float(getattr(vehicle, "distance", 0.0) or 0.0)
+            fuel = float(getattr(vehicle, "fuel_total_ml", 0.0) or 0.0)
+            time_loss = float(getattr(vehicle, "time_loss", 0.0) or 0.0)
+            braking = int(getattr(vehicle, "hard_braking_events", 0) or 0)
+            last = self._last.get(vid)
+            acc = self._accum.setdefault(
+                vid,
+                {
+                    "waiting": 0.0,
+                    "distance": 0.0,
+                    "fuel": 0.0,
+                    "time_loss": 0.0,
+                    "braking": 0,
+                    "type_id": str(getattr(vehicle, "type_id", "") or ""),
+                },
+            )
+            acc["type_id"] = str(getattr(vehicle, "type_id", acc["type_id"]) or "")
+            was_in = vid in self.in_scope
+            if last is not None and in_scope and was_in:
+                dw = max(0.0, waiting - last["waiting"])
+                dd = max(0.0, distance - last["distance"])
+                df = max(0.0, fuel - last["fuel"])
+                dt = max(0.0, time_loss - last["time_loss"])
+                db = max(0, braking - int(last["braking"]))
+                acc["waiting"] += dw
+                acc["distance"] += dd
+                acc["fuel"] += df
+                acc["time_loss"] += dt
+                acc["braking"] += db
+                self.scene_hard_braking_events += db
+            self._last[vid] = {
+                "waiting": waiting,
+                "distance": distance,
+                "fuel": fuel,
+                "time_loss": time_loss,
+                "braking": float(braking),
+            }
+            if not in_scope:
+                if vid in self.in_scope:
+                    self.ever_exited.add(vid)
+                continue
+            current_in_scope.add(vid)
+            if vid not in self.ever_entered:
+                self.ever_entered.add(vid)
+            if covers_all:
+                scene_vehicles.append(vehicle)
+            else:
+                scene_vehicles.append(
+                    _ScopedVehicleView(
+                        vehicle_id=vid,
+                        waiting_time=float(acc["waiting"]),
+                        distance=float(acc["distance"]),
+                        fuel_total_ml=float(acc["fuel"]),
+                        type_id=str(acc["type_id"]),
+                        speed=float(getattr(vehicle, "speed", 0.0) or 0.0),
+                        time_loss=float(acc["time_loss"]),
+                        hard_braking_events=int(acc["braking"]),
+                    )
+                )
+
+        for vid in self.in_scope - current_in_scope:
+            self.ever_exited.add(vid)
+        for vid in self.in_scope - present_ids:
+            self.ever_exited.add(vid)
+        self.in_scope = current_in_scope
+        self.last_scene_vehicles = tuple(scene_vehicles)
+        self.last_covers_all = covers_all
+        return (
+            tuple(scene_vehicles),
+            len(self.ever_entered),
+            len(self.ever_exited),
+            int(self.scene_hard_braking_events),
+            covers_all,
+        )
+
+
+class _ScopedSnapshot:
+    def __init__(
+        self,
+        snapshot: SimulationSnapshot,
+        *,
+        vehicles: tuple[Any, ...],
+        departed: int,
+        arrived: int,
+        hard_braking_events: int,
+    ) -> None:
+        self.session_id = snapshot.session_id
+        self.elapsed_seconds = snapshot.elapsed_seconds
+        self.vehicles = vehicles
+        self.intersections = snapshot.intersections
+        self.metrics = type(
+            "_ScopedMetrics",
+            (),
+            {
+                "departed_vehicles": int(departed),
+                "arrived_vehicles": int(arrived),
+                "hard_braking_events": int(hard_braking_events),
+            },
+        )()
+
+
+class TrafficMetricsCollector:
+    """对外采集器：同时维护场景口径与全网口径。"""
+
+    def __init__(self, algorithm: str = "") -> None:
+        self._algorithm = algorithm
+        self._network = _CoreMetricsCollector(algorithm)
+        self._scene = _CoreMetricsCollector(algorithm)
+        self._tracker = _SceneMembershipTracker()
+        self._scope: EvaluationScope | None = None
+        self._last_scene: EvalResult | None = None
+        self._last_network: EvalResult | None = None
+        self._tripinfo_applied = False
+
+    def reset(self, algorithm: str = "") -> None:
+        if algorithm:
+            self._algorithm = algorithm
+        self._network.reset(algorithm=algorithm)
+        self._scene.reset(algorithm=algorithm)
+        self._tracker.reset()
+        self._scope = None
+        self._last_scene = None
+        self._last_network = None
+        self._tripinfo_applied = False
+
+    def set_fuel_meta_by_type(
+        self, mapping: Mapping[str, VehicleTypeFuelMeta]
+    ) -> None:
+        self._network.set_fuel_meta_by_type(mapping)
+        self._scene.set_fuel_meta_by_type(mapping)
+
+    def update_fuel_meta_by_type(
+        self, mapping: Mapping[str, VehicleTypeFuelMeta]
+    ) -> None:
+        self._network.update_fuel_meta_by_type(mapping)
+        self._scene.update_fuel_meta_by_type(mapping)
+
+    def missing_fuel_meta_type_ids(self, type_ids: Iterable[str]) -> list[str]:
+        return self._network.missing_fuel_meta_type_ids(type_ids)
+
+    def set_powertrain_by_type(self, mapping: Mapping[str, str]) -> None:
+        self._network.set_powertrain_by_type(mapping)
+        self._scene.set_powertrain_by_type(mapping)
+
+    def extend_warnings(self, messages: list[str]) -> None:
+        self._network.extend_warnings(messages)
+        self._scene.extend_warnings(messages)
+
+    def observe_snapshot(self, snapshot: SimulationSnapshot) -> None:
+        scope = snapshot_evaluation_scope(snapshot)
+        if scope is not None:
+            self._scope = scope
+        self._network.observe_snapshot(snapshot)
+        scene_vehicles, entered, exited, scene_braking, covers_all = self._tracker.update(
+            snapshot, self._scope
+        )
+        if covers_all:
+            self._scene.observe_snapshot(snapshot)
+            return
+        self._scene.observe_snapshot(
+            _ScopedSnapshot(
+                snapshot,
+                vehicles=scene_vehicles,
+                departed=entered,
+                arrived=exited,
+                hard_braking_events=scene_braking,
+            )
+        )
+
+    def finalize_from_snapshot(
+        self,
+        snapshot: SimulationSnapshot,
+        *,
+        decision_latency_ms: Optional[float] = None,
+        tripinfo_path: str | Path | None = None,
+    ) -> EvalResult:
+        self.observe_snapshot(snapshot)
+        network = self._network.finalize_from_snapshot(
+            snapshot,
+            decision_latency_ms=decision_latency_ms,
+            tripinfo_path=tripinfo_path,
+        )
+        scope = self._scope
+        covers_all = scope is None or scope.covers_full_network
+        if covers_all:
+            scene = network
+            self._tripinfo_applied = self._network._tripinfo_applied
+            affected = _scene_affected_trip_payload(network, int(network.departed))
+        else:
+            scene = self._scene.finalize_from_snapshot(
+                _ScopedSnapshot(
+                    snapshot,
+                    vehicles=self._tracker.last_scene_vehicles,
+                    departed=len(self._tracker.ever_entered),
+                    arrived=len(self._tracker.ever_exited),
+                    hard_braking_events=int(self._tracker.scene_hard_braking_events),
+                ),
+                decision_latency_ms=decision_latency_ms,
+                tripinfo_path=None,
+                snapshot_finish=True,
+            )
+            self._tripinfo_applied = False
+            affected = None
+            if tripinfo_path is not None:
+                affected_result = EvalResult(algorithm=self._algorithm)
+                apply_tripinfo_official_metrics(
+                    affected_result,
+                    tripinfo_path,
+                    self._network._fuel_meta_by_type,
+                    vehicle_ids=tuple(sorted(self._tracker.ever_entered)),
+                )
+                _mark_scene_affected_trip_sources(affected_result)
+                affected = _scene_affected_trip_payload(
+                    affected_result, len(self._tracker.ever_entered)
+                )
+        return self._bind_results(scene, network, affected=affected)
+
+    def result(
+        self,
+        *,
+        finished: bool = False,
+        decision_latency_ms: Optional[float] = None,
+    ) -> EvalResult:
+        network = self._network.result(
+            finished=finished,
+            decision_latency_ms=decision_latency_ms,
+        )
+        scope = self._scope
+        covers_all = scope is None or scope.covers_full_network
+        if covers_all:
+            scene = network
+        else:
+            scene = self._scene.result(
+                finished=finished,
+                decision_latency_ms=decision_latency_ms,
+                snapshot_finish=finished,
+            )
+        return self._bind_results(scene, network)
+
+    def _bind_results(
+        self,
+        scene: EvalResult,
+        network: EvalResult,
+        *,
+        affected: dict[str, Any] | None = None,
+    ) -> EvalResult:
+        scene.algorithm = self._algorithm or scene.algorithm
+        network.algorithm = self._algorithm or network.algorithm
+        if self._scope is not None:
+            scene.evaluation_scope = self._scope.to_dict()
+            network.evaluation_scope = self._scope.to_dict()
+        covers_all = self._scope is None or self._scope.covers_full_network
+        if covers_all:
+            sample_sizes = {
+                "scene_entered_vehicles": int(network.departed),
+                "scene_exited_vehicles": int(network.arrived),
+                "scene_active_vehicles": int(network.departed - network.arrived)
+                if network.departed >= network.arrived
+                else 0,
+                "scene_affected_trip_vehicles": int(network.departed),
+                "network_departed": int(network.departed),
+                "network_arrived": int(network.arrived),
+                "scene_departed": int(scene.departed),
+                "scene_arrived": int(scene.arrived),
+            }
+        else:
+            sample_sizes = {
+                "scene_entered_vehicles": len(self._tracker.ever_entered),
+                "scene_exited_vehicles": len(self._tracker.ever_exited),
+                "scene_active_vehicles": len(self._tracker.in_scope),
+                "scene_affected_trip_vehicles": len(self._tracker.ever_entered),
+                "network_departed": int(network.departed),
+                "network_arrived": int(network.arrived),
+                "scene_departed": int(scene.departed),
+                "scene_arrived": int(scene.arrived),
+            }
+        if self._scope is not None:
+            sample_sizes["intersection_count"] = len(self._scope.intersection_ids)
+        scene.sample_sizes = dict(sample_sizes)
+        network.sample_sizes = dict(sample_sizes)
+        scene_payload = _flat_frontend_metrics(scene)
+        network_payload = (
+            scene_payload if scene is network else _flat_frontend_metrics(network)
+        )
+        scene.scene_metrics = dict(scene_payload)
+        scene.network_metrics = dict(network_payload)
+        if scene is not network:
+            network.scene_metrics = dict(scene_payload)
+            network.network_metrics = dict(network_payload)
+        if affected is None:
+            scene.scene_affected_trip_metrics = None
+            if scene is not network:
+                network.scene_affected_trip_metrics = None
+        else:
+            scene.scene_affected_trip_metrics = affected
+            if scene is not network:
+                network.scene_affected_trip_metrics = affected
+        self._last_scene = scene
+        self._last_network = network
+        return scene
+
+    def _observe(self, *args: Any, **kwargs: Any) -> None:
+        self._network._observe(*args, **kwargs)
+        self._scene._observe(*args, **kwargs)
+
+    @property
+    def _total_arrived(self) -> int:
+        return int(self._network._total_arrived)
+
+    @_total_arrived.setter
+    def _total_arrived(self, value: int) -> None:
+        self._network._total_arrived = int(value)
+        self._scene._total_arrived = int(value)
+
+    @property
+    def _total_departed(self) -> int:
+        return int(self._network._total_departed)
+
+    @_total_departed.setter
+    def _total_departed(self, value: int) -> None:
+        self._network._total_departed = int(value)
+        self._scene._total_departed = int(value)
+
+    @property
+    def _final_sim_time(self) -> float:
+        return float(self._network._final_sim_time)
+
+    @_final_sim_time.setter
+    def _final_sim_time(self, value: float) -> None:
+        self._network._final_sim_time = float(value)
+        self._scene._final_sim_time = float(value)
+
+    @property
+    def _finished(self) -> bool:
+        return self._network.finished or self._scene.finished
+
+    @_finished.setter
+    def _finished(self, value: bool) -> None:
+        self._network._finished = bool(value)
+        self._scene._finished = bool(value)
+
+    @property
+    def finished(self) -> bool:
+        return self._network.finished or self._scene.finished
+
+
+def _flat_frontend_metrics(result: EvalResult) -> dict[str, Any]:
+    nested_scene = result.scene_metrics
+    nested_network = result.network_metrics
+    nested_affected = result.scene_affected_trip_metrics
+    result.scene_metrics = None
+    result.network_metrics = None
+    result.scene_affected_trip_metrics = None
+    try:
+        payload = result.to_frontend_metrics()
+    finally:
+        result.scene_metrics = nested_scene
+        result.network_metrics = nested_network
+        result.scene_affected_trip_metrics = nested_affected
+    for key in (
+        "scene_metrics",
+        "network_metrics",
+        "scene_affected_trip_metrics",
+    ):
+        payload.pop(key, None)
+    return payload
+
+
+def _mark_scene_affected_trip_sources(result: EvalResult) -> None:
+    keys = {
+        "path_avg_speed_kmh",
+        "travel_time_index",
+        "delay_time_proportion",
+        "traffic_performance_index",
+        "avg_stops_per_vehicle",
+        "avg_travel_time_s",
+        "avg_waiting_time_s",
+        "fuel_intensity_L_per_100km",
+    }
+    for key in keys:
+        value = result.metric_sources.get(key)
+        if not value:
+            continue
+        text = str(value)
+        if not text.startswith(SCENE_AFFECTED_TRIP_SOURCE_PREFIX):
+            result.metric_sources[key] = SCENE_AFFECTED_TRIP_SOURCE_PREFIX + text
+
+
+def _scene_affected_trip_payload(
+    result: EvalResult, sample_vehicle_count: int
+) -> dict[str, Any]:
+    payload = {
+        "metric_kind": "scene_affected_trip_metrics",
+        "note": (
+            "TripInfo 记录整段行程（duration/routeLength/timeLoss/fuel），"
+            "不是纯场景内累计"
+        ),
+        "sample_vehicle_count": int(sample_vehicle_count),
+        "path_avg_speed_kmh": result.path_avg_speed_kmh,
+        "travel_time_index": result.travel_time_index,
+        "delay_time_proportion": result.delay_time_proportion,
+        "traffic_performance_index": result.traffic_performance_index,
+        "traffic_state": result.traffic_state,
+        "avg_stops_per_vehicle": result.avg_stops_per_vehicle,
+        "avg_travel_time": result.avg_travel_time_s,
+        "avg_waiting_time": result.avg_waiting_time_s,
+        "fuel_intensity_L_per_100km": result.fuel_intensity_L_per_100km,
+        "metric_sources": {
+            key: value
+            for key, value in result.metric_sources.items()
+            if key in {
+                "path_avg_speed_kmh",
+                "travel_time_index",
+                "delay_time_proportion",
+                "traffic_performance_index",
+                "avg_stops_per_vehicle",
+                "avg_travel_time_s",
+                "avg_waiting_time_s",
+                "fuel_intensity_L_per_100km",
+            }
+        },
+    }
+    return payload
 
 
 # 兼容旧导入名

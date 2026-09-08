@@ -13,7 +13,7 @@ from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 from uuid import uuid4
 
 from ..building.artifacts import GeneratedArtifactLayout
@@ -34,6 +34,7 @@ from .events import (
     SpeedLimitEvent,
 )
 from .queue_estimate import DEFAULT_VEHICLE_SPACE_M, estimate_queue_length_m
+from .evaluation_scope import build_evaluation_scope_payload
 from .ai_control import AIControlConfig, AIControlStatus
 from .ai_executor import AIPlanExecutor
 from ..algorithm.local_policy import LocalAlgorithmClient
@@ -101,10 +102,84 @@ def _run_algorithm_decision(client, observation):
     return decision, (time.perf_counter() - started_at) * 1000.0
 
 
+def _executed_signal_state(controllers: Mapping[str, Any], elapsed: float) -> dict[str, dict[str, Any]]:
+    executed: dict[str, dict[str, Any]] = {}
+    for intersection_id, controller in controllers.items():
+        snapshot = controller.snapshot()
+        executed[str(intersection_id)] = {
+            "current_phase": int(snapshot.current_phase),
+            "pending_phase": (
+                None if snapshot.pending_phase is None else int(snapshot.pending_phase)
+            ),
+            "stage": snapshot.stage.value if hasattr(snapshot.stage, "value") else str(snapshot.stage),
+            "stage_elapsed": float(controller.stage_elapsed(elapsed)),
+        }
+    return executed
+
+
+def _event_state_payload(scheduler) -> list[dict[str, Any]]:
+    if scheduler is None:
+        return []
+    payload: list[dict[str, Any]] = []
+    for item in scheduler.snapshots():
+        payload.append(
+            {
+                "event_id": item.event_id,
+                "event_type": item.event_type,
+                "state": item.state,
+                "start_seconds": item.start_seconds,
+                "end_seconds": item.end_seconds,
+                "error": item.error,
+                "details": dict(item.details),
+            }
+        )
+    return payload
+
+
+def _notify_algorithm_decision_observer(
+    observer: Callable[[Mapping[str, Any]], None] | None,
+    *,
+    simulation_time: float,
+    step_id: Any,
+    observation: Any,
+    decision: Any,
+    executed_signal_state: Mapping[str, Any],
+    decision_latency_ms: float,
+    event_state: Sequence[Mapping[str, Any]],
+) -> None:
+    """Default-off Protocol 2.0 decision hook. Does not mutate SUMO state."""
+
+    if observer is None:
+        return
+    from ..algorithm.policy_transport import to_protocol_payload
+
+    requested_signals = dict(getattr(decision, "signal_actions", {}) or {})
+    requested_vehicles = dict(getattr(decision, "vehicle_actions", {}) or {})
+    observer(
+        {
+            "simulation_time": float(simulation_time),
+            "step_id": step_id,
+            "observation": to_protocol_payload(observation),
+            "actions": {
+                "signals": requested_signals,
+                "vehicles": requested_vehicles,
+            },
+            "requested_action": {
+                "signals": requested_signals,
+                "vehicles": requested_vehicles,
+            },
+            "executed_signal_state": dict(executed_signal_state),
+            "decision_latency_ms": float(decision_latency_ms),
+            "event_state": [dict(item) for item in event_state],
+        }
+    )
+
+
 @dataclass(frozen=True)
 class SimulationConfig:
     intersection_ids: tuple[str, ...]
     period: str = "morning_peak"
+    scenario_preset_id: str = ""
     scenario_scope: str = DEFAULT_TRAFFIC_SCOPE_ID
     origins: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     window_start_seconds: float = 0.0
@@ -128,6 +203,13 @@ class SimulationConfig:
     initial_events: tuple[DisturbanceEvent, ...] = ()
     baseline_controller: str = ""
     ai_control: AIControlConfig = field(default_factory=AIControlConfig)
+    # Optional, default-off observer. Never serialized across Redis/Celery.
+    # Signature: callback(payload: Mapping) -> None. Must not mutate SUMO state.
+    algorithm_decision_observer: Callable[[Mapping[str, Any]], None] | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -275,6 +357,7 @@ class SimulationSnapshot:
     metrics: SessionMetrics = field(default_factory=SessionMetrics)
     error: str | None = None
     ai_takeover: AIControlStatus = field(default_factory=AIControlStatus)
+    evaluation_scope: Mapping[str, object] | None = None
 
 
 @dataclass
@@ -300,6 +383,7 @@ class _SessionRecord:
     v2x_events: deque[dict[str, object]] = field(
         default_factory=lambda: deque(maxlen=V2X_EVENT_WINDOW_SIZE)
     )
+    evaluation_scope: Mapping[str, object] | None = None
 
 
 class SnapshotSubscription:
@@ -525,6 +609,10 @@ class SimulationManager:
                     else (1.0 if config.realtime or config.start_paused else None)
                 ),
             )
+            record.evaluation_scope = _build_record_evaluation_scope(
+                config, catalog=self.catalog()
+            )
+            _persist_evaluation_scope(scenario.directory, record.evaluation_scope)
             record.snapshot = self._empty_snapshot(record, "STARTING")
             self._sessions[session_id] = record
             self._active_session_id = session_id
@@ -783,6 +871,7 @@ class SimulationManager:
                     record.config.baseline_controller or record.config.control_mode
                 ),
             ),
+            evaluation_scope=record.evaluation_scope,
         )
 
     def _run_worker(self, record: _SessionRecord) -> None:
@@ -847,6 +936,12 @@ class SimulationManager:
             selected_manifest = _select_program_manifests(
                 selected_manifest, programs
             )
+            record.evaluation_scope = _build_record_evaluation_scope(
+                config,
+                catalog=self.catalog(),
+                selected_manifest=selected_manifest,
+            )
+            _persist_evaluation_scope(scenario.directory, record.evaluation_scope)
             traffic_manifest = _read_json(
                 GeneratedArtifactLayout(self.generated_dir).traffic_manifest
             )
@@ -1184,7 +1279,13 @@ class SimulationManager:
                             ),
                             vehicle_observations=vehicle_observations,
                         )
-                        decision = client.decide(observation)
+                        if config.algorithm_decision_observer is None:
+                            decision = client.decide(observation)
+                            decision_latency_ms = 0.0
+                        else:
+                            decision, decision_latency_ms = _run_algorithm_decision(
+                                client, observation
+                            )
                         record.v2x_events.extend(
                             dict(event) for event in decision.v2x_events
                         )
@@ -1210,6 +1311,18 @@ class SimulationManager:
                             decision_step,
                             vehicle_actions,
                             config.decision_interval,
+                        )
+                        _notify_algorithm_decision_observer(
+                            config.algorithm_decision_observer,
+                            simulation_time=elapsed,
+                            step_id=decision_step,
+                            observation=observation,
+                            decision=decision,
+                            executed_signal_state=_executed_signal_state(
+                                controllers, elapsed
+                            ),
+                            decision_latency_ms=decision_latency_ms,
+                            event_state=_event_state_payload(scheduler),
                         )
                         pending_decision_step = decision_step
                         pending_decision_elapsed = elapsed
@@ -1662,6 +1775,44 @@ def _format_clock(seconds: float) -> str:
     return f"{value // 3600:02d}:{value % 3600 // 60:02d}:{value % 60:02d}"
 
 
+def _build_record_evaluation_scope(
+    config: SimulationConfig,
+    *,
+    catalog: SimulationCatalog | None = None,
+    selected_manifest: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    catalog_intersections = catalog.intersections if catalog is not None else None
+    return build_evaluation_scope_payload(
+        preset_id=config.scenario_preset_id,
+        intersection_ids=config.intersection_ids,
+        selected_manifest=selected_manifest,
+        catalog_intersections=catalog_intersections,
+    )
+
+
+def _persist_evaluation_scope(
+    session_dir: Path,
+    evaluation_scope: Mapping[str, object] | None,
+) -> None:
+    if not evaluation_scope:
+        return
+    manifest_path = session_dir / "session_manifest.json"
+    payload: dict[str, object] = {}
+    if manifest_path.is_file():
+        try:
+            loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            loaded = {}
+        if isinstance(loaded, dict):
+            payload = loaded
+    payload["scenario_preset_id"] = str(evaluation_scope.get("preset_id") or "")
+    payload["evaluation_scope"] = dict(evaluation_scope)
+    manifest_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _decode_fixed_signal(traci, item) -> tuple[int, str]:
     values = []
     for tls_id in item["tls_ids"]:
@@ -1950,4 +2101,5 @@ def _capture_snapshot(
             hard_braking_events=braking,
         ),
         ai_takeover=record.ai_status,
+        evaluation_scope=record.evaluation_scope,
     )

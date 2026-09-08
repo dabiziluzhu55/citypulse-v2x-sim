@@ -85,6 +85,9 @@ export function useSnapshotMetrics(
         finished: evaluation.finished,
         metric_sources: { ...(evaluation.metric_sources ?? {}) },
         warnings: [...(evaluation.warnings ?? [])],
+        evaluation_scope: evaluation.evaluation_scope ?? null,
+        sample_sizes: evaluation.sample_sizes ?? null,
+        network_metrics: evaluation.network_metrics ?? null,
       }
       const series = [...timeseries.value.series, point]
       timeseries.value = {

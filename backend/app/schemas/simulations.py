@@ -150,6 +150,11 @@ class MetricsResponse(BaseModel):
     metric_sources: dict[str, str] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     finished: bool = False
+    evaluation_scope: dict[str, Any] | None = None
+    sample_sizes: dict[str, Any] | None = None
+    scene_metrics: dict[str, Any] | None = None
+    network_metrics: dict[str, Any] | None = None
+    scene_affected_trip_metrics: dict[str, Any] | None = None
 
 
 class SimulationSessionSummary(BaseModel):

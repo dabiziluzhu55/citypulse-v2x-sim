@@ -295,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
             model_alias=args.model_alias,
             wall_timeout_s=wall_timeout,
             on_progress=print_progress,
+            scenario_preset_id=args.preset,
         )
         # 进度行在 stderr 用 \\r 刷新；结束后换行再打摘要
         print(file=sys.stderr, flush=True)

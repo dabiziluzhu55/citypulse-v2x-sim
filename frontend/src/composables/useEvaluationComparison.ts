@@ -375,6 +375,9 @@ export function evaluationPoint(
     metric_sources: { ...(evaluation.metric_sources ?? {}) },
     warnings: [...(evaluation.warnings ?? [])],
     metric_status: metricStatuses,
+    evaluation_scope: evaluation.evaluation_scope ?? null,
+    sample_sizes: evaluation.sample_sizes ?? null,
+    network_metrics: evaluation.network_metrics ?? null,
   }
 }
 

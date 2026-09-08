@@ -36,7 +36,11 @@ from .simulation_service import SimulationService
 logger = logging.getLogger(__name__)
 
 MISSING_CELL = "—"
-FOOTNOTE_TEXT = "— 表示该算法尚未完成本场景仿真与评估。"
+FOOTNOTE_TEXT = (
+    "主表为当前典型场景 scene_metrics；全网影响见 network_metrics，不替代场景主指标。"
+    "TripInfo 行程/TTI/DTP/油耗为整段行程（scene_affected_trip_metrics），不是纯场景内累计。"
+    "— 表示该算法尚未完成本场景仿真与评估。"
+)
 ASCII_FALLBACK_FILENAME = "control-evaluation.pdf"
 
 REPORT_ALGORITHM_LABELS: dict[str, str] = {
@@ -163,6 +167,52 @@ def build_report_title(
         scenario.duration_seconds,
     )
     return f"表 {table_index} {scene}{period} {window} {suffix}"
+
+
+def build_evaluation_scope_caption(
+    scenario: EvaluationReportScenario | None,
+    metrics: dict[str, Any] | None,
+) -> str:
+    scope = metrics.get("evaluation_scope") if isinstance(metrics, dict) else None
+    samples = metrics.get("sample_sizes") if isinstance(metrics, dict) else None
+    if not isinstance(scope, dict):
+        scope = {}
+    if not isinstance(samples, dict):
+        samples = {}
+    preset_id = str(
+        scope.get("preset_id")
+        or (scenario.scenario_preset_id if scenario is not None else "")
+        or ""
+    )
+    intersections = [
+        str(item) for item in (scope.get("intersection_ids") or ()) if str(item)
+    ]
+    if not intersections and preset_id:
+        preset = SCENARIO_PRESET_REGISTRY.get(preset_id)
+        if preset is not None:
+            intersections = list(preset.intersection_ids)
+    label = format_scenario_label(preset_id) if preset_id else "当前场景"
+    covers = bool(scope.get("covers_full_network")) or preset_id == "xiongan_20"
+    kind = "全网" if covers else "典型场景"
+    ids = "、".join(intersections) if intersections else "未标注"
+    parts: list[str] = []
+    entered = samples.get("scene_entered_vehicles")
+    exited = samples.get("scene_exited_vehicles")
+    departed = samples.get("network_departed")
+    arrived = samples.get("network_arrived")
+    if entered is not None:
+        parts.append(f"场景进入 {entered} 辆")
+    if exited is not None:
+        parts.append(f"场景离开 {exited} 辆")
+    if departed is not None:
+        parts.append(f"全网出发 {departed} 辆")
+    if arrived is not None:
+        parts.append(f"全网到达 {arrived} 辆")
+    sample_text = "；".join(str(item) for item in parts) if parts else "样本量见各算法指标"
+    return (
+        f"评价对象：{label}（{kind}）；路口范围：{ids}；{sample_text}。"
+        "主表读取 scene_metrics，全网影响见 network_metrics。"
+    )
 
 
 def format_metric_value(value: object, digits: int) -> str:
@@ -365,6 +415,7 @@ def generate_evaluation_report_pdf(
     title1: str,
     title2: str,
     rows: list[ReportAlgorithmRow],
+    caption: str | None = None,
 ) -> bytes:
     font_name = _ensure_cid_fonts()
     header_style = _cell_style(font_name, 7.5, 10)
@@ -402,9 +453,12 @@ def generate_evaluation_report_pdf(
     table1.setStyle(_table_style(font_name))
     table2 = Table(table2_data, colWidths=table2_widths, repeatRows=0)
     table2.setStyle(_table_style(font_name))
-    document.build(
+    story: list[Any] = [Paragraph(title1, _title_style(font_name))]
+    if caption:
+        story.append(Paragraph(caption, _footnote_style(font_name)))
+        story.append(Spacer(1, 4 * mm))
+    story.extend(
         [
-            Paragraph(title1, _title_style(font_name)),
             table1,
             Spacer(1, 14 * mm),
             Paragraph(title2, _title_style(font_name)),
@@ -413,6 +467,7 @@ def generate_evaluation_report_pdf(
             Paragraph(FOOTNOTE_TEXT, _footnote_style(font_name)),
         ]
     )
+    document.build(story)
     return buffer.getvalue()
 
 
@@ -450,8 +505,21 @@ class EvaluationReportService:
         return build_report_rows(request, metrics_by_algorithm)
 
     def build_pdf(self, request: EvaluationReportRequest) -> tuple[str, bytes]:
-        rows = self.build_report_rows(request)
+        metrics_by_algorithm = {
+            algorithm: self._read_metrics(algorithm, session_id)
+            for algorithm, session_id in _session_map(request).items()
+        }
+        rows = build_report_rows(request, metrics_by_algorithm)
         title1 = build_report_title(1, request.scenario, "管控算法通行效率对比")
         title2 = build_report_title(2, request.scenario, "管控算法其他指标对比")
-        pdf_bytes = generate_evaluation_report_pdf(title1, title2, rows)
+        caption_source = next(
+            (
+                metrics
+                for metrics in metrics_by_algorithm.values()
+                if isinstance(metrics, dict) and metrics.get("finished") is True
+            ),
+            None,
+        )
+        caption = build_evaluation_scope_caption(request.scenario, caption_source)
+        pdf_bytes = generate_evaluation_report_pdf(title1, title2, rows, caption)
         return build_download_filename(request.scenario), pdf_bytes

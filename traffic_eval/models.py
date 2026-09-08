@@ -53,6 +53,11 @@ class EvalResult:
     completion_rate: Optional[float] = None  # 0~1
     metric_sources: dict[str, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    evaluation_scope: dict[str, Any] | None = None
+    sample_sizes: dict[str, Any] | None = None
+    scene_metrics: dict[str, Any] | None = None
+    network_metrics: dict[str, Any] | None = None
+    scene_affected_trip_metrics: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -92,6 +97,7 @@ class EvalResult:
             "completion_rate": _rounded(self.completion_rate, 4),
             "metric_sources": dict(self.metric_sources),
             "warnings": list(self.warnings),
+            **self._scope_payload(),
         }
 
     def to_frontend_metrics(self) -> dict[str, Any]:
@@ -134,4 +140,21 @@ class EvalResult:
             "completion_rate": _rounded(self.completion_rate, 4),
             "metric_sources": dict(self.metric_sources),
             "warnings": list(self.warnings),
+            **self._scope_payload(),
         }
+
+    def _scope_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if self.evaluation_scope is not None:
+            payload["evaluation_scope"] = dict(self.evaluation_scope)
+        if self.sample_sizes is not None:
+            payload["sample_sizes"] = dict(self.sample_sizes)
+        if self.scene_metrics is not None:
+            payload["scene_metrics"] = dict(self.scene_metrics)
+        if self.network_metrics is not None:
+            payload["network_metrics"] = dict(self.network_metrics)
+        if self.scene_affected_trip_metrics is not None:
+            payload["scene_affected_trip_metrics"] = dict(
+                self.scene_affected_trip_metrics
+            )
+        return payload

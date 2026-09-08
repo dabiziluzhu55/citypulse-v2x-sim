@@ -64,6 +64,7 @@ def build_simulation_config(
     step_length: float,
     snapshot_interval_seconds: float,
     decision_interval: float = 5.0,
+    scenario_preset_id: str = "",
 ) -> SimulationConfig:
     spec = require_control_mode(control_mode)
     if not spec.allows_preset:  # pragma: no cover - always true for registry entries
@@ -71,6 +72,7 @@ def build_simulation_config(
     return SimulationConfig(
         intersection_ids=intersection_ids,
         period=period,
+        scenario_preset_id=scenario_preset_id,
         window_start_seconds=0.0,
         duration_seconds=float(duration_seconds),
         flow_multiplier=1.0,
@@ -136,6 +138,7 @@ def run_local_episode(
     wall_timeout_s: float | None = None,
     on_progress: ProgressCallback | None = None,
     progress_interval_s: float = 0.5,
+    scenario_preset_id: str = "",
 ) -> LocalEvalRunResult:
     """跑一轮仿真并用traffic_eval结算指标（不启FastAPI/Redis）"""
 
@@ -176,6 +179,7 @@ def run_local_episode(
         step_length=step_length,
         snapshot_interval_seconds=snapshot_interval_seconds,
         decision_interval=decision_interval,
+        scenario_preset_id=scenario_preset_id,
     )
 
     t0 = time.perf_counter()
