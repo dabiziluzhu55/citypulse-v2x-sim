@@ -1,6 +1,20 @@
 import type { DetectedEventCard } from '../types/intelligence.ts'
 import type { SceneEventDetail, SceneEventMarker, SceneEventMarkerColor } from './sceneEventMarkers.ts'
 
+export function shouldShowDetectedEventMarkers(cameraPreset: string): boolean {
+  return cameraPreset !== 'overview'
+}
+
+export function filterDetectedEventCardsForScene<T extends { intersection_id: string }>(
+  cards: readonly T[],
+  options: { cameraPreset: string; intersectionId: string | null | undefined },
+): T[] {
+  if (!shouldShowDetectedEventMarkers(options.cameraPreset)) return []
+  const intersectionId = options.intersectionId
+  if (!intersectionId) return []
+  return cards.filter((card) => card.intersection_id === intersectionId)
+}
+
 export function detectedMarkerColor(card: DetectedEventCard): SceneEventMarkerColor {
   return String(card.event_type ?? '').toLowerCase() === 'accident' ? 'red' : 'yellow'
 }

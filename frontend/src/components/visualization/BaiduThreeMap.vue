@@ -8,7 +8,9 @@ import { REALISTIC_INTERSECTION_SURFACE_Z } from '../../mapv/sceneElevation'
 import {
   SceneEventMarkerLayer,
   detectedMarkerColor,
+  filterDetectedEventCardsForScene,
   mergeSceneEventMarkers,
+  shouldShowDetectedEventMarkers,
   type EventMarkerPosition,
   type SceneEventMarker,
 } from '../../mapv/sceneEventMarkers'
@@ -214,6 +216,9 @@ let eventProjectionCameraVersion = 0
 
 const detectedEventCards = computed(() => (
   snapshot.value?.event_detection?.cards?.filter((card) => card.status === 'active') ?? []
+))
+const showDetectedEventMarkers = computed(() => (
+  shouldShowDetectedEventMarkers(mapView.cameraPreset.value)
 ))
 const sceneEventMarkers = ref<SceneEventMarker[]>([])
 const debugSceneEventMarkers = ref<SceneEventMarker[]>([])
@@ -823,7 +828,11 @@ function runtimeEventPosition(
 }
 
 function syncSceneEventMarkers(): void {
-  const detectedMarkers = detectedEventCards.value.flatMap((card): SceneEventMarker[] => {
+  const visibleDetectedCards = filterDetectedEventCardsForScene(detectedEventCards.value, {
+    cameraPreset: mapView.cameraPreset.value,
+    intersectionId: displayedIntersectionId.value,
+  })
+  const detectedMarkers = visibleDetectedCards.flatMap((card): SceneEventMarker[] => {
     const position = detectedEventPosition(card)
     return position ? [{
       id: `detected:${simulationPresentationGeneration.value}:${card.event_id}`,
@@ -2325,6 +2334,7 @@ async function initMap(): Promise<void> {
     mapView.cameraPreset,
     () => {
       refreshVehicleViewportAfterCameraPlacement()
+      syncSceneEventMarkers()
     },
     { immediate: true },
   ))
@@ -2372,7 +2382,15 @@ async function initMap(): Promise<void> {
     immediate: true,
   }))
   asyncWatchStops.push(watch(
-    [detectedEventCards, runtimeDisturbances, topologyNodes, eventLanePositionIndex, simulationPresentationGeneration],
+    [
+      detectedEventCards,
+      runtimeDisturbances,
+      topologyNodes,
+      eventLanePositionIndex,
+      simulationPresentationGeneration,
+      showDetectedEventMarkers,
+      displayedIntersectionId,
+    ],
     syncSceneEventMarkers,
     { deep: true, immediate: true },
   ))
@@ -2563,6 +2581,7 @@ onUnmounted(() => {
       :continuous="true"
       :view-token="overlayViewToken"
       :session-revision="renderSessionRevision"
+      :camera-preset="mapView.cameraPreset.value"
     />
     <RuntimeDisturbanceOverlay
       :events="runtimeDisturbanceMarkers"

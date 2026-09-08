@@ -76,6 +76,15 @@ algorithms/mappo/runs/
 data/maps/carla/*
 data/maps/xodr/*
 
+# CARLA roadside camera frames and encoded MP4s (local media, never commit)
+roadside_media/demo_*/
+roadside_media/encoded/*.mp4
+roadside_media/encoded/*.concat.txt
+roadside_media/*.json
+roadside_media/*.jsonl
+roadside_media/**/manifest.jsonl
+!roadside_media/README.md
+
 # vibe coding
 .claude
 

@@ -32,6 +32,7 @@ const props = defineProps<{
   continuous?: boolean
   viewToken?: string | number
   sessionRevision?: number
+  cameraPreset?: string
 }>()
 
 const projected = ref<ProjectedMarker[]>([])
@@ -146,8 +147,6 @@ function detailRows(detail: SceneEventDetail): Array<[string, string]> {
       ['发生时间', detectedEventClockTime(props.snapshot, card.start_seconds)],
       ['持续时间', formatDetectedEventDuration(detectedEventDurationSeconds(props.snapshot, card))],
       ['路口', formatIntersectionLabel(card.intersection_id)],
-      ['严重程度', card.severity || '--'],
-      ['原因', formatIntersectionReferences(card.cause || '原因未确认')],
       ['处置建议', formatIntersectionReferences(card.suggestion || '--')],
       ['短时预测', formatIntersectionReferences(detectedEventFlowSummary(card))],
     ]
@@ -179,6 +178,15 @@ watch(
     projected.value = []
   },
   { flush: 'sync' },
+)
+
+watch(
+  () => props.cameraPreset,
+  (preset) => {
+    if (preset !== 'overview' || !selectedId.value) return
+    selectedId.value = null
+    selectedDetailIndex.value = 0
+  },
 )
 
 onMounted(() => {
@@ -267,7 +275,7 @@ onUnmounted(() => {
 .scene-event-overlay__card nav { display: flex; gap: 6px; margin: 10px 0; overflow-x: auto; }
 .scene-event-overlay__card nav button { flex: 0 0 auto; padding: 4px 8px; border: 1px solid rgba(130, 205, 236, .35); border-radius: 4px; background: rgba(16, 61, 78, .55); color: #a8d9ea; font-size: 11px; cursor: pointer; }
 .scene-event-overlay__card nav button.is-active { border-color: #4cdbff; color: #fff; }
-.scene-event-overlay__card dl { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 7px 10px; margin: 12px 0 0; font-size: 12px; line-height: 1.45; }
+.scene-event-overlay__card dl { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 6px 10px; margin: 10px 0 0; font-size: 12px; line-height: 1.45; }
 .scene-event-overlay__card dt { color: #86cce5; }
 .scene-event-overlay__card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #f2fbff; }
 </style>

@@ -1,8 +1,13 @@
-import { defineConfig, loadEnv, type Plugin, type ProxyOptions } from 'vite'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { defineConfig, loadEnv, searchForWorkspaceRoot, type Plugin, type ProxyOptions } from 'vite'
 
 import vue from '@vitejs/plugin-vue'
 
 import cesium from 'vite-plugin-cesium'
+
+import { createRoadsideMediaPlugin } from './vite.roadside-media'
 
 function createApiProxy(target: string): ProxyOptions {
   let lastBackendWarnAt = 0
@@ -54,14 +59,22 @@ function createDevSourceNoStorePlugin(): Plugin {
   }
 }
 
+const frontendRoot = path.dirname(fileURLToPath(import.meta.url))
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const backendTarget = env.VITE_BACKEND_PROXY_TARGET?.trim() || 'http://127.0.0.1:8000'
   const usePolling = env.VITE_DEV_USE_POLLING === '1'
+  const roadsideMediaDir = path.resolve(
+    process.env.ROADSIDE_MEDIA_ENCODED_DIR?.trim()
+      || env.ROADSIDE_MEDIA_ENCODED_DIR?.trim()
+      || path.join(frontendRoot, '../roadside_media/encoded'),
+  )
 
   return {
     plugins: [
       createDevSourceNoStorePlugin(),
+      createRoadsideMediaPlugin(roadsideMediaDir),
       vue(),
       cesium(),
     ],
@@ -81,12 +94,16 @@ export default defineConfig(({ mode }) => {
           './src/components/visualization/BaiduThreeMap.vue',
         ],
       },
+      fs: {
+        allow: [searchForWorkspaceRoot(process.cwd()), frontendRoot, roadsideMediaDir],
+      },
       watch: {
         ignored: [
           '**/node_modules/**',
           '**/.git/**',
           '**/public/3dtiles/**',
           '**/dist/**',
+          '**/roadside_media/**',
         ],
         ...(usePolling ? { usePolling: true, interval: 1000 } : {}),
       },

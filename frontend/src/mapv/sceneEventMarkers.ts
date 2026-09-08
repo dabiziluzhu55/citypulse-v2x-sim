@@ -9,7 +9,12 @@ import {
   mergeSceneEventMarkers,
 } from './sceneEventMarkerRules.ts'
 
-export { detectedMarkerColor, mergeSceneEventMarkers } from './sceneEventMarkerRules.ts'
+export {
+  detectedMarkerColor,
+  filterDetectedEventCardsForScene,
+  mergeSceneEventMarkers,
+  shouldShowDetectedEventMarkers,
+} from './sceneEventMarkerRules.ts'
 
 export type SceneEventMarkerColor = 'yellow' | 'red'
 export type EventMarkerPositionSource =

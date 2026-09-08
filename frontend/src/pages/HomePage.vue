@@ -424,21 +424,19 @@ async function handleStop() {
       <div
         v-if="roadsideDevicePanelOpen"
         id="roadside-device-dialog"
-        class="communication-overlay"
+        class="communication-overlay communication-overlay--roadside"
         role="dialog"
         aria-modal="true"
-        aria-label="路侧设备"
+        aria-label="路侧设备画面"
       >
         <button
           type="button"
           class="communication-overlay__backdrop"
-          aria-label="关闭路侧设备"
+          aria-label="关闭路侧设备画面"
           @click="closeRoadsideDevicePanel"
         />
-        <div class="communication-overlay__panel">
+        <div class="communication-overlay__panel communication-overlay__panel--roadside">
           <RoadsideDevicesPanel
-            :intersection-id="activeIntersectionId"
-            :runtime="snapshot?.intersections?.[activeIntersectionId] ?? null"
             @close="closeRoadsideDevicePanel"
           />
         </div>
@@ -555,6 +553,29 @@ async function handleStop() {
 
 .communication-overlay__panel--communication {
   width: min(1490px, 100%);
+}
+
+.communication-overlay--roadside {
+  top: auto;
+  left: calc(var(--dashboard-panel-inset-left) + var(--dashboard-left-width) + 18px);
+  right: calc(var(--dashboard-panel-inset-right) + var(--dashboard-right-width) + 18px);
+  bottom: var(--dashboard-bottom-offset);
+  height: auto;
+  place-items: end center;
+  padding: 0 8px 6px;
+}
+
+.communication-overlay--roadside .communication-overlay__backdrop {
+  display: none;
+}
+
+.communication-overlay__panel--roadside {
+  width: 100%;
+}
+
+.dashboard-page.is-side-panels-collapsed .communication-overlay--roadside {
+  left: 48px;
+  right: 48px;
 }
 
 .communication-overlay-enter-active,
@@ -747,6 +768,15 @@ async function handleStop() {
     inset: var(--dashboard-top-offset) 0 80px;
     padding: 20px;
     place-items: center;
+  }
+
+  .communication-overlay--roadside {
+    top: auto;
+    left: calc(var(--dashboard-panel-inset-left) + var(--dashboard-left-width) + 10px);
+    right: calc(var(--dashboard-panel-inset-right) + var(--dashboard-right-width) + 10px);
+    bottom: 80px;
+    place-items: end center;
+    padding: 0 8px 4px;
   }
 
   .ai-control-overlay {

@@ -158,6 +158,14 @@ Worker使用prefork，一子进程同时只跑一个SUMO会话;与后端Backend�
 
 `traffic_control`由仿真的Worker进程内加载
 
+当前仓库只有 `compose.redis.yml`，没有正式 frontend compose。frontend 镜像由 `frontend/Dockerfile` 构建静态资源，**不要把 `roadside_media/` 打进镜像**。路侧 MP4 以只读 volume 挂载：
+
+```text
+./roadside_media/encoded  →  /usr/share/nginx/html/roadside-media:ro
+```
+
+浏览器通过 `/roadside-media/demo_14.mp4` 等相对路径访问。转码与挂载说明见 [roadside_media/README.md](roadside_media/README.md)。
+
 ## 文档
 
 - 后端接口与配置:[backend/README.md](backend/README.md)

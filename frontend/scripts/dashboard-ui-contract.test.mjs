@@ -22,6 +22,10 @@ const overlaySource = readFileSync(
   new URL('../src/composables/useDashboardOverlay.ts', import.meta.url),
   'utf8',
 )
+const roadsideSource = readFileSync(
+  new URL('../src/components/dashboard/RoadsideDevicesPanel.vue', import.meta.url),
+  'utf8',
+)
 const homeSource = readFileSync(
   new URL('../src/pages/HomePage.vue', import.meta.url),
   'utf8',
@@ -67,7 +71,19 @@ test('toggles both side panels from the top toolbar and opens the roadside devic
   assert.match(bottomIconsSource, /toggleRoadsideDevicePanel/)
   assert.match(bottomIconsSource, /aria-pressed="roadsideDevicePanelOpen"/)
   assert.match(homeSource, /<RoadsideDevicesPanel/)
+  assert.match(homeSource, /communication-overlay--roadside/)
   assert.match(bottomIconsSource, />路侧设备画面</)
+  assert.match(roadsideSource, /\/roadside-media\/demo_14\.mp4/)
+  assert.match(roadsideSource, /\/roadside-media\/demo_15\.mp4/)
+  assert.match(roadsideSource, /\/roadside-media\/demo_19\.mp4/)
+  assert.match(roadsideSource, /preload="metadata"/)
+  assert.match(roadsideSource, /autoplay/)
+  assert.match(roadsideSource, /\bmuted\b/)
+  assert.match(roadsideSource, /\bloop\b/)
+  assert.match(roadsideSource, /playsinline/)
+  assert.match(roadsideSource, /video\.pause\(\)/)
+  assert.doesNotMatch(roadsideSource, /LIVE|实时监控/)
+  assert.doesNotMatch(roadsideSource, /https?:\/\/192\.|\/home\/kemove/)
 })
 
 test('matches the communication-dialog chrome and removes the English event eyebrow', () => {
