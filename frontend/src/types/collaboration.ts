@@ -68,10 +68,10 @@ export type V2XRole = 'vehicle' | 'road' | 'cloud'
 export type V2XLinkType =
   | 'V2I'
   | 'I2V'
+  | 'V2C'
+  | 'C2V'
   | 'I2C'
   | 'C2I'
-  | 'V2V'
-  | 'C2C'
   | 'UNKNOWN'
 
 export type V2XLogStatus = 'sending' | 'success' | 'failed'
@@ -95,4 +95,5 @@ export interface CollaborationLogEntry {
   detail?: string
   latencyMs?: number
   status?: V2XLogStatus
+  causalParentIds?: string[]
 }

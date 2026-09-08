@@ -110,7 +110,7 @@ const {
 } = useSimulationStore()
 const { ready: healthReady, statusLabel: healthLabel } = useHealth()
 
-const { logEntries } = useSnapshotMetrics(sessionId, snapshot, wsConnected)
+const { logEntries } = useSnapshotMetrics(sessionId, snapshot, wsConnected, activeControlMode)
 const {
   timeseries,
   activeFingerprint,
@@ -413,6 +413,7 @@ async function handleStop() {
             :loading="false"
             :error="null"
             :connected="wsConnected"
+            :control-mode="activeControlMode"
             @close="closeCommunicationPanel"
           />
         </div>

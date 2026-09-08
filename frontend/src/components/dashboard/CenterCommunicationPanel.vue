@@ -6,6 +6,11 @@ import type {
   V2XLogStatus,
   V2XRole,
 } from '../../types/collaboration'
+import {
+  V2X_DIRECTION_FILTERS,
+  V2X_LINK_FILTERS,
+  v2xCommunicationEmptyText,
+} from '../../utils/v2xCommunication.ts'
 
 const PAGE_SIZE = 8
 
@@ -14,6 +19,7 @@ const props = defineProps<{
   loading: boolean
   error: string | null
   connected: boolean
+  controlMode?: string
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -28,6 +34,8 @@ const autoRefresh = ref(true)
 const refreshIntervalSeconds = ref(5)
 const displayedEntries = ref<CollaborationLogEntry[]>([...props.logEntries])
 let refreshTimer: ReturnType<typeof setInterval> | null = null
+
+const emptyText = computed(() => v2xCommunicationEmptyText(props.controlMode))
 
 const messageOptions = computed(() => {
   const values = new Map<string, string>()
@@ -103,7 +111,7 @@ function communicationExportDate(): string {
 }
 
 function exportCommunicationLog(): void {
-  const header = ['时间', '来源', '来源角色', '目标', '目标角色', '链路类型', '消息类型', '内容摘要', '延迟(ms)', '状态']
+  const header = ['时间', '来源', '来源角色', '目标', '目标角色', '链路类型', '消息类型', '内容摘要', '状态']
   const rows = filteredRows.value.map((row) => [
     `${row.dateLabel ?? ''} ${row.timeLabel}`.trim(),
     row.source,
@@ -113,7 +121,6 @@ function exportCommunicationLog(): void {
     row.linkType ?? 'UNKNOWN',
     row.messageTag ?? row.messageType ?? '',
     row.message,
-    row.latencyMs ?? 0,
     statusLabel(row.status),
   ])
   const csv = [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n')
@@ -154,17 +161,16 @@ onBeforeUnmount(() => {
     <div class="communication-panel__toolbar">
       <el-time-picker v-model="selectedTimeRange" class="filter-time" is-range format="HH:mm:ss" value-format="HH:mm:ss" range-separator="～" start-placeholder="开始时间" end-placeholder="结束时间" :clearable="true" />
       <el-select v-model="directionFilter" class="filter-direction" aria-label="通信方向">
-        <el-option label="全部方向" value="all" />
-        <el-option label="车辆 → 路口" value="vehicle->road" />
-        <el-option label="路口 → 车辆" value="road->vehicle" />
-        <el-option label="路口 → 云端" value="road->cloud" />
-        <el-option label="云端 → 路口" value="cloud->road" />
-        <el-option label="车辆 → 车辆" value="vehicle->vehicle" />
-        <el-option label="云端 → 云端" value="cloud->cloud" />
+        <el-option
+          v-for="item in V2X_DIRECTION_FILTERS"
+          :key="item.value"
+          :label="item.label"
+          :value="item.value"
+        />
       </el-select>
       <el-select v-model="linkFilter" class="filter-link" aria-label="链路类型">
         <el-option label="全部链路" value="all" />
-        <el-option v-for="item in ['V2I', 'I2V', 'I2C', 'C2I', 'V2V', 'C2C']" :key="item" :label="item" :value="item" />
+        <el-option v-for="item in V2X_LINK_FILTERS" :key="item" :label="item" :value="item" />
       </el-select>
       <el-select v-model="messageFilter" class="filter-message" aria-label="消息类型">
         <el-option label="全部类型" value="all" />
@@ -177,32 +183,41 @@ onBeforeUnmount(() => {
     <div class="communication-panel__table">
       <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
       <el-skeleton v-if="loading && displayedEntries.length === 0" animated :rows="8" />
-      <el-table v-else :data="pageRows" stripe height="100%" table-layout="fixed" empty-text="暂无可验证的通信记录" row-key="id">
-        <el-table-column prop="timeLabel" label="时间" width="136" />
-        <el-table-column label="来源" min-width="130">
+      <el-table v-else :data="pageRows" stripe height="100%" table-layout="fixed" :empty-text="emptyText" row-key="id">
+        <el-table-column prop="timeLabel" label="时间" width="108" />
+        <el-table-column label="来源" min-width="200">
           <template #default="{ row }: { row: CollaborationLogEntry }">
-            <div class="endpoint-cell"><strong>{{ row.source }}</strong><span>{{ roleLabel(row.sourceRole) }}</span></div>
+            <div class="endpoint-cell">{{ row.source }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="" width="42" align="center"><template #default><span class="flow-arrow">→</span></template></el-table-column>
-        <el-table-column label="目标" min-width="130">
-          <template #default="{ row }: { row: CollaborationLogEntry }">
-            <div class="endpoint-cell"><strong>{{ row.destination || '--' }}</strong><span>{{ roleLabel(row.destinationRole) }}</span></div>
+        <el-table-column
+          class-name="flow-arrow-column"
+          label-class-name="flow-arrow-header"
+          width="56"
+          align="center"
+        >
+          <template #header><span /></template>
+          <template #default>
+            <span class="flow-arrow" aria-hidden="true">→</span>
           </template>
         </el-table-column>
-        <el-table-column prop="linkType" label="链路类型" width="105" align="center" />
-        <el-table-column label="消息类型" width="140" align="center">
+        <el-table-column label="目标" min-width="200">
           <template #default="{ row }: { row: CollaborationLogEntry }">
-            <span class="message-tag" :data-type="row.messageTag">{{ row.messageTag || row.messageType || '--' }}</span>
+            <div class="endpoint-cell">{{ row.destination || '--' }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="内容摘要" min-width="275">
+        <el-table-column prop="linkType" label="链路类型" width="96" align="center" />
+        <el-table-column label="消息类型" width="120" align="center">
           <template #default="{ row }: { row: CollaborationLogEntry }">
-            <div class="summary-cell"><strong>{{ row.message }}</strong></div>
+            <span class="message-tag" :data-type="row.messageType">{{ row.messageTag || row.messageType || '--' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="latencyMs" label="延迟（ms）" width="112" align="center" />
-        <el-table-column label="状态" width="100" align="center">
+        <el-table-column label="内容摘要" min-width="160">
+          <template #default="{ row }: { row: CollaborationLogEntry }">
+            <div class="summary-cell">{{ row.message }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="96" align="center">
           <template #default="{ row }: { row: CollaborationLogEntry }">
             <span class="status-cell" :class="`is-${row.status ?? 'success'}`"><i />{{ statusLabel(row.status) }}</span>
           </template>
@@ -265,14 +280,32 @@ onBeforeUnmount(() => {
 .communication-panel__table :deep(th.el-table__cell) { height: 50px; padding: 0; background: rgba(8,55,96,.94); color: #bfe6fb; font-weight: 600; }
 .communication-panel__table :deep(td.el-table__cell) { height: 62px; padding: 0; border-bottom: 1px solid rgba(68,151,211,.18); background: transparent; }
 .communication-panel__table :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: rgba(15,69,116,.18); }
-.endpoint-cell, .summary-cell { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.endpoint-cell strong, .summary-cell strong { overflow: hidden; color: #eaf8ff; text-overflow: ellipsis; white-space: nowrap; }
-.endpoint-cell span { overflow: hidden; color: #83aac2; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.flow-arrow { color: #28baf6; font-size: 24px; text-shadow: 0 0 8px rgba(40,186,246,.5); }
-.message-tag { display: inline-block; max-width: 120px; padding: 4px 9px; overflow: hidden; border: 1px solid rgba(43,172,255,.35); border-radius: 4px; background: rgba(18,93,177,.58); color: #dff6ff; text-overflow: ellipsis; white-space: nowrap; }
-.message-tag[data-type='SPaT'] { border-color: rgba(30,214,154,.38); background: rgba(8,126,91,.55); }
-.message-tag[data-type='Coordination'] { border-color: rgba(255,190,52,.42); background: rgba(142,93,12,.62); }
-.message-tag[data-type='MAP Update'] { border-color: rgba(168,119,255,.42); background: rgba(83,56,151,.62); }
+.communication-panel__table :deep(.flow-arrow-header .cell) { padding: 0; visibility: hidden; }
+.communication-panel__table :deep(td.flow-arrow-column .cell) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0;
+}
+.endpoint-cell, .summary-cell {
+  overflow: hidden;
+  color: #eaf8ff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flow-arrow {
+  display: block;
+  color: #28baf6;
+  font-size: 22px;
+  line-height: 1;
+  text-shadow: 0 0 8px rgba(40,186,246,.5);
+}
+.message-tag { display: inline-block; max-width: 112px; padding: 4px 9px; overflow: hidden; border: 1px solid rgba(43,172,255,.35); border-radius: 4px; background: rgba(18,93,177,.58); color: #dff6ff; text-overflow: ellipsis; white-space: nowrap; }
+.message-tag[data-type='SPaTV2'] { border-color: rgba(30,214,154,.38); background: rgba(8,126,91,.55); }
+.message-tag[data-type='RegionalPriorityV1'] { border-color: rgba(255,190,52,.42); background: rgba(142,93,12,.62); }
+.message-tag[data-type='IntersectionSummaryV1'] { border-color: rgba(168,119,255,.42); background: rgba(83,56,151,.62); }
+.message-tag[data-type='MAPV1'] { border-color: rgba(120,196,255,.42); background: rgba(18,86,148,.62); }
 .status-cell { display: inline-flex; align-items: center; gap: 8px; color: #8de0a1; }
 .status-cell i { width: 8px; height: 8px; border-radius: 50%; background: #62d776; box-shadow: 0 0 7px rgba(98,215,118,.62); }
 .status-cell.is-failed { color: #ff9d9d; }

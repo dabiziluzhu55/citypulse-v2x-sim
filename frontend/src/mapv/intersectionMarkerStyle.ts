@@ -1,19 +1,22 @@
 import * as THREE from 'three'
 
 export const INTERSECTION_MARKER_MODEL_URL = '/models/yizhuang_cross_1.glb'
-export const INTERSECTION_MARKER_SIZE_METERS = 30
+export const INTERSECTION_MARKER_SIZE_PIXELS = 36
 export const ACTIVE_INTERSECTION_MARKER_SIZE_PIXELS = 54
 export const ACTIVE_INTERSECTION_MARKER_WAVE_SIZE_PIXELS = 68
 export const INTERSECTION_MARKER_ROTATION_PERIOD_MS = 8_000
 export const INTERSECTION_MARKER_SURFACE_OFFSET_METERS = 0.1
 export const INTERSECTION_MARKER_LABEL_HEIGHT_METERS = 32
 export const INTERSECTION_MARKER_LABEL_MAX_RANGE_METERS = 3_000
+export const INTERSECTION_MARKER_RENDER_ORDER = 998
+export const ACTIVE_INTERSECTION_MARKER_WAVE_RENDER_ORDER = 999
+export const ACTIVE_INTERSECTION_MARKER_RENDER_ORDER = 1_000
 
 export const INTERSECTION_MARKER_EFFECT_OPTIONS = Object.freeze({
   normalize: false,
   rotateToZUp: false,
-  keepSize: false,
-  size: INTERSECTION_MARKER_SIZE_METERS,
+  keepSize: true,
+  size: INTERSECTION_MARKER_SIZE_PIXELS,
   height: 0,
   animationJump: false,
   animationRotate: true,
@@ -76,13 +79,6 @@ export function shouldShowIntersectionMarkerLabel(
     && rangeMeters <= INTERSECTION_MARKER_LABEL_MAX_RANGE_METERS
 }
 
-export function markerWorldProjectionRatio(
-  rangeMeters: number,
-  sizeMeters = INTERSECTION_MARKER_SIZE_METERS,
-): number {
-  return sizeMeters / Math.max(1, rangeMeters)
-}
-
 export function anchorIntersectionMarkerModel<T extends THREE.Object3D>(model: T): T {
   if (model.userData.intersectionMarkerBottomAnchored === true) return model
   model.rotation.x += Math.PI / 2
@@ -104,14 +100,14 @@ export function anchorIntersectionMarkerModel<T extends THREE.Object3D>(model: T
   return model
 }
 
-export const ACTIVE_INTERSECTION_MARKER_RENDER_ORDER = 1_000
-export const ACTIVE_INTERSECTION_MARKER_WAVE_RENDER_ORDER = 999
-
-export function configureSelectedIntersectionMarkerModel<T extends THREE.Object3D>(model: T): T {
-  model.renderOrder = ACTIVE_INTERSECTION_MARKER_RENDER_ORDER
+function configureForegroundIntersectionMarkerModel<T extends THREE.Object3D>(
+  model: T,
+  renderOrder: number,
+): T {
+  model.renderOrder = renderOrder
   model.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
-    child.renderOrder = ACTIVE_INTERSECTION_MARKER_RENDER_ORDER
+    child.renderOrder = renderOrder
     child.frustumCulled = false
     const materials = Array.isArray(child.material) ? child.material : [child.material]
     for (const material of materials) {
@@ -124,6 +120,14 @@ export function configureSelectedIntersectionMarkerModel<T extends THREE.Object3
   return model
 }
 
+export function configureNormalIntersectionMarkerModel<T extends THREE.Object3D>(model: T): T {
+  return configureForegroundIntersectionMarkerModel(model, INTERSECTION_MARKER_RENDER_ORDER)
+}
+
+export function configureSelectedIntersectionMarkerModel<T extends THREE.Object3D>(model: T): T {
+  return configureForegroundIntersectionMarkerModel(model, ACTIVE_INTERSECTION_MARKER_RENDER_ORDER)
+}
+
 export function createFallbackIntersectionMarkerModel(active: boolean): THREE.Group {
   const group = new THREE.Group()
   group.name = active ? 'active-teardrop-marker-fallback' : 'teardrop-marker-fallback'
@@ -133,7 +137,9 @@ export function createFallbackIntersectionMarkerModel(active: boolean): THREE.Gr
     emissiveIntensity: active ? 3.2 : 2.2,
     metalness: 0.12,
     roughness: 0.28,
-    depthWrite: !active,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
   })
   const profile = [
     new THREE.Vector2(0, -1.42),
@@ -145,5 +151,7 @@ export function createFallbackIntersectionMarkerModel(active: boolean): THREE.Gr
   ]
   group.add(new THREE.Mesh(new THREE.LatheGeometry(profile, 24), material))
   const anchored = anchorIntersectionMarkerModel(group)
-  return active ? configureSelectedIntersectionMarkerModel(anchored) : anchored
+  return active
+    ? configureSelectedIntersectionMarkerModel(anchored)
+    : configureNormalIntersectionMarkerModel(anchored)
 }

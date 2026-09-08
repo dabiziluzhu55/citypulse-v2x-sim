@@ -64,6 +64,11 @@ class UnknownSessionError(SessionError):
 
 
 PLAYBACK_SPEEDS = (1.0, 1.25, 1.5, 2.0, 3.0, 5.0)
+# CoV2X emits SEND/DELIVER/CONSUME per typed envelope each decision step.
+# A 20-intersection snapshot with a few hundred vehicles can exceed 1k
+# lifecycle events; keep a bounded session window without dropping the
+# current step's batch.
+V2X_EVENT_WINDOW_SIZE = 4_000
 
 
 def _normalize_playback_speed(value: object) -> float:
@@ -293,7 +298,7 @@ class _SessionRecord:
     playback_speed: float | None = None
     ai_status: AIControlStatus = field(default_factory=AIControlStatus)
     v2x_events: deque[dict[str, object]] = field(
-        default_factory=lambda: deque(maxlen=500)
+        default_factory=lambda: deque(maxlen=V2X_EVENT_WINDOW_SIZE)
     )
 
 

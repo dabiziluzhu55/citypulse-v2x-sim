@@ -23,8 +23,10 @@ import {
   INTERSECTION_MARKER_LABEL_HEIGHT_METERS,
   INTERSECTION_MARKER_EFFECT_OPTIONS,
   INTERSECTION_MARKER_MODEL_URL,
+  INTERSECTION_MARKER_RENDER_ORDER,
   INTERSECTION_MARKER_SURFACE_OFFSET_METERS,
   anchorIntersectionMarkerModel,
+  configureNormalIntersectionMarkerModel,
   configureSelectedIntersectionMarkerModel,
   createFallbackIntersectionMarkerModel,
   partitionIntersectionMarkerFeatures,
@@ -80,13 +82,14 @@ function cloneMarkerModel(source: THREE.Object3D, active: boolean): THREE.Object
       if (styled.emissiveIntensity != null) styled.emissiveIntensity = active ? 2.8 : 1.55
       if (styled.metalness != null) styled.metalness = Math.min(styled.metalness, 0.3)
       if (styled.roughness != null) styled.roughness = Math.min(styled.roughness, 0.42)
-      if (active) styled.depthWrite = false
       return material
     })
     child.material = Array.isArray(child.material) ? materials : materials[0]
   })
   const anchored = anchorIntersectionMarkerModel(clone)
-  return active ? configureSelectedIntersectionMarkerModel(anchored) : anchored
+  return active
+    ? configureSelectedIntersectionMarkerModel(anchored)
+    : configureNormalIntersectionMarkerModel(anchored)
 }
 
 function disposeMarkerModels(models: THREE.Object3D[]): void {
@@ -200,6 +203,7 @@ export class IntersectionTopologyLayer {
     this.markers = engine.add(new mapvthree.EffectModelPoint(INTERSECTION_MARKER_EFFECT_OPTIONS))
     this.markers.model = this.markerModel
     this.markers.position.z = 0
+    configureForegroundLayer(this.markers, INTERSECTION_MARKER_RENDER_ORDER)
 
     this.activeMarker = engine.add(new mapvthree.EffectModelPoint(ACTIVE_INTERSECTION_MARKER_EFFECT_OPTIONS))
     this.activeMarker.model = this.activeMarkerModel

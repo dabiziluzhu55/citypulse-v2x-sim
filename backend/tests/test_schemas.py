@@ -92,7 +92,10 @@ def test_reject_unknown_scenario_preset() -> None:
         )
 
 
-@pytest.mark.parametrize("control_mode", ["algorithm", "unknown"])
+@pytest.mark.parametrize(
+    "control_mode",
+    ["algorithm", "unknown", "safe_max_pressure", "strong_b_trace"],
+)
 def test_reject_unsupported_control_mode(control_mode: str) -> None:
     with pytest.raises(ValidationError):
         StartSimulationRequest(

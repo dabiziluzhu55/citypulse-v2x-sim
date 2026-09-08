@@ -97,9 +97,6 @@ const activeMetric = computed(() => EVALUATION_METRICS[activeMetricIndex.value] 
 const comparison = computed(() => (
   buildAlgorithmMetricSeries(points.value, activeMetric.value.key)
 ))
-function algorithmHasData(algorithmId: string): boolean {
-  return points.value.some((point) => point.algorithm === algorithmId)
-}
 
 const currentAlgorithmId = computed(() => props.activeAlgorithm
   || points.value.at(-1)?.algorithm
@@ -423,7 +420,9 @@ watch(() => [
             >
               <div class="right-sidebar__subsection-title">算法对比</div>
               <div class="right-sidebar__legend">
-                <span v-for="algorithm in METRICS_ALGORITHMS" :key="algorithm.id" :class="{ 'is-pending': !algorithmHasData(algorithm.id) }" :title="algorithm.label"><i :style="{ background: algorithm.color }" />{{ algorithm.shortLabel }}<em v-if="!algorithmHasData(algorithm.id)">待运行</em></span>
+                <span v-for="algorithm in METRICS_ALGORITHMS" :key="algorithm.id" :title="algorithm.label">
+                  <i :style="{ background: algorithm.color }" />{{ algorithm.shortLabel }}<em v-if="algorithm.id === 'cov2x'">（所提出算法）</em>
+                </span>
               </div>
             </div>
 
@@ -773,9 +772,9 @@ watch(() => [
 .right-sidebar__legend span {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 0;
-  gap: 5px;
+  gap: 6px;
   color: rgba(214, 232, 246, .82);
   font-size: 10px;
   white-space: nowrap;
@@ -787,12 +786,12 @@ watch(() => [
   border-radius: 3px;
   box-shadow: 0 0 5px currentColor;
 }
-.right-sidebar__legend span.is-pending { opacity: .48; }
 .right-sidebar__legend em {
-  color: #7e9bb0;
-  font-size: 8px;
+  margin-left: 1px;
+  color: rgba(188, 219, 241, .62);
+  font-size: 13px;
   font-style: normal;
-  opacity: .45;
+  font-weight: 500;
 }
 
 .right-sidebar__metric { position: absolute; }

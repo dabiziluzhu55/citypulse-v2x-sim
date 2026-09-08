@@ -1,71 +1,39 @@
 import { ref, watch, type Ref } from 'vue'
 import type { MetricsTimeseriesResponse } from '../types/metrics'
-import type {
-  CollaborationLogEntry,
-  V2XLinkType,
-  V2XLogStatus,
-  V2XRole,
-} from '../types/collaboration'
-import type { SimulationSnapshot, V2XEventState } from '../types/simulation'
-import { formatIntersectionReferences } from '../utils/intersectionLabels.ts'
+import type { CollaborationLogEntry } from '../types/collaboration'
+import type { SimulationSnapshot } from '../types/simulation'
 import { simulationFuelIntensity } from '../utils/simulationEvaluation.ts'
+import {
+  formatCommunicationClock,
+  formatV2XEndpoint,
+  isCov2xControlMode,
+  latencyMsFromMessageAge,
+  resolveV2XLinkType,
+  resolveV2XMessageMeta,
+  resolveV2XStatus,
+} from '../utils/v2xCommunication.ts'
 
 const MAX_POINTS = 120
 const MAX_LOG_ENTRIES = 180
 const MAX_SEEN_V2X_EVENTS = 2_000
 
-const V2X_MESSAGE_META: Record<string, { tag: string; title: string }> = {
-  VehicleStateV1: { tag: 'CV Status', title: '车辆状态上报' },
-  IntersectionSummaryV1: { tag: 'MAP Update', title: '路口状态汇总上传' },
-  RegionalPriorityV1: { tag: 'Coordination', title: '协调策略下发' },
-  SPaTV2: { tag: 'SPaT', title: '信号相位与配时广播' },
-  MAPV1: { tag: 'MAP', title: '路口拓扑信息广播' },
-}
-
-function resolveLinkType(source: V2XRole, destination: V2XRole): V2XLinkType {
-  const links: Record<string, V2XLinkType> = {
-    'vehicle->road': 'V2I',
-    'vehicle->cloud': 'V2I',
-    'road->vehicle': 'I2V',
-    'cloud->vehicle': 'I2V',
-    'road->cloud': 'I2C',
-    'cloud->road': 'C2I',
-    'vehicle->vehicle': 'V2V',
-    'cloud->cloud': 'C2C',
-  }
-  return links[`${source}->${destination}`] ?? 'UNKNOWN'
-}
-
-function resolveStatus(event: V2XEventState): V2XLogStatus {
-  if (event === 'TTL_EXPIRED') return 'failed'
-  if (event === 'DELIVER' || event === 'CONSUME') return 'success'
-  return 'sending'
-}
-
-function parseClockSeconds(value: string): number {
-  const [hour = 0, minute = 0, second = 0] = value.split(':').map(Number)
-  return hour * 3_600 + minute * 60 + second
-}
-
-function formatCommunicationClock(
-  eventSeconds: number,
-  officialTime: string,
-  elapsedSeconds: number,
+function snapshotControlMode(
+  snapshot: SimulationSnapshot,
+  fallback?: string,
 ): string {
-  const startSeconds = parseClockSeconds(officialTime) - elapsedSeconds
-  const normalized = ((startSeconds + eventSeconds) % 86_400 + 86_400) % 86_400
-  const wholeSeconds = Math.floor(normalized)
-  const milliseconds = Math.round((normalized - wholeSeconds) * 1_000)
-  const hour = Math.floor(wholeSeconds / 3_600)
-  const minute = Math.floor((wholeSeconds % 3_600) / 60)
-  const second = wholeSeconds % 60
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`
+  return (
+    snapshot.evaluation?.algorithm
+    ?? snapshot.metrics.evaluation?.algorithm
+    ?? fallback
+    ?? ''
+  )
 }
 
 export function useSnapshotMetrics(
   sessionId: Ref<string>,
   snapshot: Ref<SimulationSnapshot | null>,
   _wsConnected?: Ref<boolean>,
+  controlMode?: Ref<string>,
 ) {
   const timeseries = ref<MetricsTimeseriesResponse>({ run_id: '', series: [] })
   const logEntries = ref<CollaborationLogEntry[]>([])
@@ -125,6 +93,14 @@ export function useSnapshotMetrics(
       }
     }
 
+    if (!isCov2xControlMode(snapshotControlMode(next, controlMode?.value))) {
+      logEntries.value = []
+      seenV2xEventKeys.clear()
+      seenV2xEventOrder.length = 0
+      messagesById.clear()
+      return
+    }
+
     for (const event of next.v2x_events ?? []) {
       const key = `${event.sequence}:${event.event}:${event.message_id}`
       if (seenV2xEventKeys.has(key)) continue
@@ -134,10 +110,7 @@ export function useSnapshotMetrics(
         const expiredKey = seenV2xEventOrder.shift()
         if (expiredKey) seenV2xEventKeys.delete(expiredKey)
       }
-      const meta = V2X_MESSAGE_META[event.message_type] ?? {
-        tag: event.message_type,
-        title: event.message_type,
-      }
+      const meta = resolveV2XMessageMeta(event.message_type, event.destination_role)
       const existing = messagesById.get(event.message_id)
       const isNewerLifecycle = existing?.sequence == null || event.sequence >= existing.sequence
       const entry: CollaborationLogEntry = {
@@ -151,21 +124,23 @@ export function useSnapshotMetrics(
           next.elapsed_seconds,
         ),
         eventTimeSeconds: event.event_time_s,
-        source: formatIntersectionReferences(event.source_id),
+        source: formatV2XEndpoint(event.source_role, event.source_id),
         sourceRole: event.source_role,
-        destination: formatIntersectionReferences(event.destination_id),
+        destination: formatV2XEndpoint(event.destination_role, event.destination_id),
         destinationRole: event.destination_role,
-        linkType: resolveLinkType(event.source_role, event.destination_role),
+        linkType: resolveV2XLinkType(event.source_role, event.destination_role),
         eventState: isNewerLifecycle ? event.event : existing?.eventState,
         messageType: event.message_type,
         messageTag: meta.tag,
-        message: formatIntersectionReferences(meta.title),
+        message: meta.title,
         detail: undefined,
-        latencyMs: Math.max(
-          existing?.latencyMs ?? 0,
-          Math.round((event.message_age_s ?? 0) * 1_000),
-        ),
-        status: isNewerLifecycle ? resolveStatus(event.event) : existing?.status,
+        latencyMs: isNewerLifecycle
+          ? latencyMsFromMessageAge(event.message_age_s)
+          : existing?.latencyMs,
+        status: isNewerLifecycle ? resolveV2XStatus(event.event) : existing?.status,
+        causalParentIds: isNewerLifecycle
+          ? [...(event.causal_parent_ids ?? [])]
+          : existing?.causalParentIds,
       }
       messagesById.set(event.message_id, entry)
     }

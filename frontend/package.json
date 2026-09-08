@@ -52,7 +52,7 @@
     "test:scenario-archive": "node --test scripts/scenario-archive.test.mjs",
     "test:simulation-queue": "node --test scripts/simulation-queue.test.mjs",
     "test:simulation-contract": "node --test scripts/simulation-contract.test.mjs",
-    "test:backend-alignment": "node --test scripts/backend-alignment.test.mjs scripts/websocket-url.test.mjs",
+    "test:backend-alignment": "node --test scripts/backend-alignment.test.mjs scripts/websocket-url.test.mjs scripts/v2x-communication.test.mjs",
     "test:snapshot-ordering": "node --test scripts/snapshot-ordering.test.mjs scripts/session-presentation-generation.test.mjs",
     "test:signal-timeline": "node --test scripts/signal-display-timeline.test.mjs",
     "test:topology-congestion": "node --test scripts/topology-congestion.test.mjs scripts/lane-congestion-flow.test.mjs",

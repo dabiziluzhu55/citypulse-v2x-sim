@@ -14,12 +14,12 @@ import {
   INTERSECTION_MARKER_EFFECT_OPTIONS,
   INTERSECTION_MARKER_LABEL_MAX_RANGE_METERS,
   INTERSECTION_MARKER_MODEL_URL,
+  INTERSECTION_MARKER_RENDER_ORDER,
   INTERSECTION_MARKER_ROTATION_PERIOD_MS,
-  INTERSECTION_MARKER_SIZE_METERS,
+  INTERSECTION_MARKER_SIZE_PIXELS,
   INTERSECTION_MARKER_WAVE_OPTIONS,
   anchorIntersectionMarkerModel,
   createFallbackIntersectionMarkerModel,
-  markerWorldProjectionRatio,
   partitionIntersectionMarkerFeatures,
   shouldShowIntersectionMarkerLabel,
 } from '../src/mapv/intersectionMarkerStyle.ts'
@@ -34,11 +34,11 @@ test('vendors the exact Yizhuang marker model with local runtime loading', async
   )
 })
 
-test('keeps normal markers world-sized and the selected marker fixed on screen', () => {
-  assert.equal(INTERSECTION_MARKER_SIZE_METERS, 30)
+test('keeps normal and selected markers at a fixed screen size', () => {
+  assert.equal(INTERSECTION_MARKER_SIZE_PIXELS, 36)
   assert.equal(INTERSECTION_MARKER_ROTATION_PERIOD_MS, 8_000)
-  assert.equal(INTERSECTION_MARKER_EFFECT_OPTIONS.keepSize, false)
-  assert.equal(INTERSECTION_MARKER_EFFECT_OPTIONS.size, 30)
+  assert.equal(INTERSECTION_MARKER_EFFECT_OPTIONS.keepSize, true)
+  assert.equal(INTERSECTION_MARKER_EFFECT_OPTIONS.size, INTERSECTION_MARKER_SIZE_PIXELS)
   assert.equal(INTERSECTION_MARKER_EFFECT_OPTIONS.animationJump, false)
   assert.equal(INTERSECTION_MARKER_EFFECT_OPTIONS.animationRotate, true)
   assert.equal(INTERSECTION_MARKER_EFFECT_OPTIONS.animationRotatePeriod, 8_000)
@@ -47,14 +47,15 @@ test('keeps normal markers world-sized and the selected marker fixed on screen',
   assert.equal(INTERSECTION_MARKER_WAVE_OPTIONS.keepSize, false)
   assert.equal(ACTIVE_INTERSECTION_MARKER_SIZE_PIXELS, 54)
   assert.equal(ACTIVE_INTERSECTION_MARKER_EFFECT_OPTIONS.keepSize, true)
-  assert.equal(ACTIVE_INTERSECTION_MARKER_EFFECT_OPTIONS.size, 54)
+  assert.equal(ACTIVE_INTERSECTION_MARKER_EFFECT_OPTIONS.size, ACTIVE_INTERSECTION_MARKER_SIZE_PIXELS)
   assert.equal(ACTIVE_INTERSECTION_MARKER_EFFECT_OPTIONS.animationRotate, true)
   assert.equal(ACTIVE_INTERSECTION_MARKER_WAVE_SIZE_PIXELS, 68)
   assert.equal(ACTIVE_INTERSECTION_MARKER_WAVE_OPTIONS.keepSize, true)
   assert.equal(ACTIVE_INTERSECTION_MARKER_WAVE_OPTIONS.size, 68)
+  assert.ok(INTERSECTION_MARKER_EFFECT_OPTIONS.size < ACTIVE_INTERSECTION_MARKER_EFFECT_OPTIONS.size)
 })
 
-test('normal and selected marker sources are mutually exclusive', () => {
+test('partitioning twenty markers never duplicates or drops the selected intersection', () => {
   const features = Array.from({ length: 20 }, (_, index) => ({
     type: 'Feature',
     geometry: { type: 'Point', coordinates: [index, index, 0] },
@@ -63,17 +64,9 @@ test('normal and selected marker sources are mutually exclusive', () => {
   const partition = partitionIntersectionMarkerFeatures(features, 'demo_7')
   assert.equal(partition.normal.length, 19)
   assert.equal(partition.active.length, 1)
+  assert.equal(partition.normal.length + partition.active.length, 20)
   assert.equal(partition.active[0].properties.intersection_id, 'demo_7')
   assert.ok(!partition.normal.some((feature) => feature.properties.intersection_id === 'demo_7'))
-})
-
-test('world-size marker projection changes monotonically with camera range', () => {
-  const near = markerWorldProjectionRatio(250)
-  const middle = markerWorldProjectionRatio(3_000)
-  const overview = markerWorldProjectionRatio(40_000)
-  assert.ok(near > middle)
-  assert.ok(middle > overview)
-  assert.equal(near / overview, 160)
 })
 
 test('selected labels disappear outside the readable near-range window', () => {
@@ -83,7 +76,7 @@ test('selected labels disappear outside the readable near-range window', () => {
   assert.equal(shouldShowIntersectionMarkerLabel(250, false), false)
 })
 
-test('model failure fallback is a lightweight teardrop and preserves world scaling', () => {
+test('model failure fallback is a lightweight teardrop', () => {
   const fallback = createFallbackIntersectionMarkerModel(false)
   const meshes = []
   fallback.traverse((child) => {
@@ -121,6 +114,19 @@ test('places the selected marker and wave at the same layer elevation', async ()
   assert.match(source, /this\.waves\.position\.z = 0/)
 })
 
+test('normal marker fallback stays in the foreground without writing depth', () => {
+  const fallback = createFallbackIntersectionMarkerModel(false)
+  const mesh = fallback.children.find((child) => child instanceof Mesh)
+  assert.ok(mesh instanceof Mesh)
+  assert.equal(mesh.material.depthWrite, false)
+  assert.equal(mesh.material.depthTest, false)
+  assert.equal(mesh.material.transparent, true)
+  assert.equal(mesh.renderOrder, INTERSECTION_MARKER_RENDER_ORDER)
+  assert.equal(mesh.frustumCulled, false)
+  mesh.geometry.dispose()
+  mesh.material.dispose()
+})
+
 test('selected marker fallback does not write depth over the overview scene', () => {
   const fallback = createFallbackIntersectionMarkerModel(true)
   const mesh = fallback.children.find((child) => child instanceof Mesh)
@@ -134,13 +140,15 @@ test('selected marker fallback does not write depth over the overview scene', ()
   mesh.material.dispose()
 })
 
-test('keeps the selected marker and wave above every depth-tested scene layer', async () => {
+test('keeps normal markers below the selected wave and marker, and all above scene geometry', async () => {
   assert.ok(ACTIVE_INTERSECTION_MARKER_RENDER_ORDER > ACTIVE_INTERSECTION_MARKER_WAVE_RENDER_ORDER)
-  assert.ok(ACTIVE_INTERSECTION_MARKER_WAVE_RENDER_ORDER > 100)
+  assert.ok(ACTIVE_INTERSECTION_MARKER_WAVE_RENDER_ORDER > INTERSECTION_MARKER_RENDER_ORDER)
+  assert.ok(INTERSECTION_MARKER_RENDER_ORDER > 100)
   const source = await readFile(
     new URL('../src/mapv/IntersectionTopologyLayer.ts', import.meta.url),
     'utf8',
   )
+  assert.match(source, /configureForegroundLayer\(this\.markers, INTERSECTION_MARKER_RENDER_ORDER\)/)
   assert.match(source, /configureForegroundLayer\(this\.activeMarker, ACTIVE_INTERSECTION_MARKER_RENDER_ORDER\)/)
   assert.match(source, /configureForegroundLayer\(this\.waves, ACTIVE_INTERSECTION_MARKER_WAVE_RENDER_ORDER\)/)
   assert.match(source, /owner\.material\.depthTest = false/)

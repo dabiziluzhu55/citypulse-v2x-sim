@@ -140,7 +140,8 @@ test('snapshot metrics use backend evaluation values without local estimation', 
 test('communication log consumes real V2X send events and ignores delivery duplicates', async () => {
   const sessionId = ref('session-v2x')
   const snapshot = ref(null)
-  const { logEntries } = useSnapshotMetrics(sessionId, snapshot)
+  const controlMode = ref('cov2x')
+  const { logEntries } = useSnapshotMetrics(sessionId, snapshot, undefined, controlMode)
   const common = {
     schema: 'cov2x.v2x.event',
     schema_version: '1.0',
@@ -169,16 +170,17 @@ test('communication log consumes real V2X send events and ignores delivery dupli
     official_time: '07:00:05', intersections: {}, vehicles: [], events: [],
     v2x_events: [{ ...common, event: 'SEND' }, { ...common, event: 'DELIVER' }],
     metrics: {}, error: null,
+    evaluation: { episode_id: 'session-v2x', algorithm: 'cov2x' },
   }
   await nextTick()
 
   assert.equal(logEntries.value.length, 1)
-  assert.equal(logEntries.value[0].message, '车辆状态上报')
+  assert.equal(logEntries.value[0].message, '车辆向云端上报行驶状态')
   assert.equal(logEntries.value[0].sourceRole, 'vehicle')
   assert.equal(logEntries.value[0].destinationRole, 'cloud')
-  assert.equal(logEntries.value[0].destination, 'cloud')
-  assert.equal(logEntries.value[0].linkType, 'V2I')
-  assert.equal(logEntries.value[0].messageTag, 'CV Status')
+  assert.equal(logEntries.value[0].destination, '云端控制中心')
+  assert.equal(logEntries.value[0].linkType, 'V2C')
+  assert.equal(logEntries.value[0].messageTag, '车辆状态')
   assert.equal(logEntries.value[0].status, 'success')
   assert.equal(logEntries.value[0].latencyMs, 0)
 })
