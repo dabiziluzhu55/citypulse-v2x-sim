@@ -67,7 +67,7 @@ test('toggles both side panels from the top toolbar and opens the roadside devic
   assert.match(bottomIconsSource, /toggleRoadsideDevicePanel/)
   assert.match(bottomIconsSource, /aria-pressed="roadsideDevicePanelOpen"/)
   assert.match(homeSource, /<RoadsideDevicesPanel/)
-  assert.match(bottomIconsSource, />路侧设备</)
+  assert.match(bottomIconsSource, />路侧设备画面</)
 })
 
 test('matches the communication-dialog chrome and removes the English event eyebrow', () => {

@@ -265,8 +265,14 @@ test('communication panel filters follow the real CoV2X topology', async () => {
   assert.match(panel, /V2X_DIRECTION_FILTERS/)
   assert.match(panel, /V2X_LINK_FILTERS/)
   assert.match(panel, /v2xCommunicationEmptyText/)
+  assert.match(panel, /车路云通信记录/)
+  assert.equal(panel.includes('通信流'), false)
+  assert.equal(panel.includes('发送信息'), false)
   assert.equal(panel.includes('延迟'), false)
   assert.equal(panel.includes('formatLatencyLabel'), false)
+  assert.match(panel, /width="220"/)
+  assert.match(panel, /endpoint-source/)
+  assert.match(panel, /endpoint-target/)
   assert.equal(
     V2X_DIRECTION_FILTERS.map((item) => item.value).join(','),
     'all,vehicle->cloud,road->cloud,cloud->road,cloud->vehicle,road->vehicle,vehicle->road',

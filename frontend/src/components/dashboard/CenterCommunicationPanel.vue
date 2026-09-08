@@ -150,12 +150,15 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="communication-panel" aria-label="车路云通信记录">
-    <button type="button" class="communication-panel__close" title="关闭" aria-label="关闭车路云通信记录" @click="emit('close')">×</button>
-
-    <header class="communication-panel__section-head" aria-hidden="true">
-      <strong>时间</strong>
-      <strong>通信流</strong>
-      <strong>发送信息</strong>
+    <header class="communication-panel__header">
+      <h2 class="communication-panel__title">车路云通信记录</h2>
+      <button
+        type="button"
+        class="communication-panel__close"
+        title="关闭"
+        aria-label="关闭车路云通信记录"
+        @click="emit('close')"
+      >×</button>
     </header>
 
     <div class="communication-panel__toolbar">
@@ -184,40 +187,55 @@ onBeforeUnmount(() => {
       <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
       <el-skeleton v-if="loading && displayedEntries.length === 0" animated :rows="8" />
       <el-table v-else :data="pageRows" stripe height="100%" table-layout="fixed" :empty-text="emptyText" row-key="id">
-        <el-table-column prop="timeLabel" label="时间" width="108" />
-        <el-table-column label="来源" min-width="200">
+        <el-table-column prop="timeLabel" label="时间" width="110" />
+        <el-table-column
+          label="来源"
+          width="220"
+          align="right"
+          header-align="right"
+          class-name="endpoint-source"
+          label-class-name="endpoint-source"
+        >
           <template #default="{ row }: { row: CollaborationLogEntry }">
-            <div class="endpoint-cell">{{ row.source }}</div>
+            <div class="endpoint-cell is-source">{{ row.source }}</div>
           </template>
         </el-table-column>
         <el-table-column
           class-name="flow-arrow-column"
           label-class-name="flow-arrow-header"
-          width="56"
+          width="52"
           align="center"
+          header-align="center"
         >
           <template #header><span /></template>
           <template #default>
             <span class="flow-arrow" aria-hidden="true">→</span>
           </template>
         </el-table-column>
-        <el-table-column label="目标" min-width="200">
+        <el-table-column
+          label="目标"
+          width="220"
+          align="left"
+          header-align="left"
+          class-name="endpoint-target"
+          label-class-name="endpoint-target"
+        >
           <template #default="{ row }: { row: CollaborationLogEntry }">
-            <div class="endpoint-cell">{{ row.destination || '--' }}</div>
+            <div class="endpoint-cell is-target">{{ row.destination || '--' }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="linkType" label="链路类型" width="96" align="center" />
-        <el-table-column label="消息类型" width="120" align="center">
+        <el-table-column prop="linkType" label="链路类型" width="104" align="center" />
+        <el-table-column label="消息类型" width="128" align="center">
           <template #default="{ row }: { row: CollaborationLogEntry }">
             <span class="message-tag" :data-type="row.messageType">{{ row.messageTag || row.messageType || '--' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="内容摘要" min-width="160">
+        <el-table-column label="内容摘要" min-width="280">
           <template #default="{ row }: { row: CollaborationLogEntry }">
             <div class="summary-cell">{{ row.message }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="96" align="center">
+        <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }: { row: CollaborationLogEntry }">
             <span class="status-cell" :class="`is-${row.status ?? 'success'}`"><i />{{ statusLabel(row.status) }}</span>
           </template>
@@ -226,9 +244,11 @@ onBeforeUnmount(() => {
     </div>
 
     <footer class="communication-panel__footer">
-      <span>共 {{ filteredRows.length }} 条记录</span>
-      <el-pagination v-model:current-page="currentPage" :page-size="PAGE_SIZE" :pager-count="7" :total="filteredRows.length" layout="prev, pager, next" background />
-      <em>共 {{ totalPages }} 页</em>
+      <div class="communication-panel__pager">
+        <span>共 {{ filteredRows.length }} 条记录</span>
+        <el-pagination v-model:current-page="currentPage" :page-size="PAGE_SIZE" :pager-count="7" :total="filteredRows.length" layout="prev, pager, next" background />
+        <em>共 {{ totalPages }} 页</em>
+      </div>
       <div class="communication-panel__refresh">
         <span :class="{ 'is-online': connected }">{{ connected ? '实时连接' : '连接中断' }}</span>
         <label>自动刷新 <el-switch v-model="autoRefresh" /></label>
@@ -248,11 +268,11 @@ onBeforeUnmount(() => {
 .communication-panel {
   position: relative;
   display: grid;
-  grid-template-rows: 68px 74px minmax(0, 1fr) 64px;
+  grid-template-rows: 48px auto minmax(0, 1fr) 56px;
   width: min(1490px, calc(100vw - 48px));
   height: min(820px, calc(100vh - 64px));
   min-height: 620px;
-  padding: 0 22px 12px;
+  padding: 0;
   box-sizing: border-box;
   border: 1px solid rgba(46, 151, 225, .55);
   background: linear-gradient(180deg, rgba(7, 46, 86, .97), rgba(3, 30, 62, .98));
@@ -262,9 +282,54 @@ onBeforeUnmount(() => {
   overflow: hidden;
   pointer-events: auto;
 }
-.communication-panel__close { position: absolute; top: -2px; right: -2px; z-index: 3; width: 28px; height: 28px; padding: 0; border: 1px solid rgba(98,216,255,.42); background: rgba(3,29,61,.9); color: #dff6ff; font-size: 20px; cursor: pointer; }
-.communication-panel__section-head { display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; margin: 0; padding-right: 30px; background: linear-gradient(180deg, rgba(29,89,147,.9), rgba(19,69,123,.82)); color: #fff; font-size: 22px; letter-spacing: .08em; text-align: center; }
-.communication-panel__toolbar { display: grid; grid-template-columns: minmax(230px,1.3fr) repeat(3,minmax(120px,.72fr)) minmax(240px,1.45fr) 112px; gap: 10px; align-items: center; min-width: 0; padding: 14px 20px; border-bottom: 1px solid rgba(69,162,226,.22); }
+.communication-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  height: 48px;
+  padding: 0 14px 0 22px;
+  border-bottom: 1px solid rgba(98, 176, 228, .22);
+  background: linear-gradient(180deg, rgba(12, 62, 108, .96), rgba(8, 48, 86, .94));
+}
+.communication-panel__title {
+  margin: 0;
+  color: #f3fbff;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  line-height: 1;
+}
+.communication-panel__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(98, 216, 255, .38);
+  background: rgba(3, 29, 61, .78);
+  color: #dff6ff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.communication-panel__toolbar,
+.communication-panel__table,
+.communication-panel__footer {
+  min-width: 0;
+  padding-right: 22px;
+  padding-left: 22px;
+}
+.communication-panel__toolbar {
+  display: grid;
+  grid-template-columns: minmax(230px, 1.3fr) repeat(3, minmax(120px, .72fr)) minmax(240px, 1.45fr) 112px;
+  gap: 10px;
+  align-items: center;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(69, 162, 226, .22);
+}
 .communication-panel__toolbar > * { min-width: 0; }
 .filter-time { width: 100%; min-width: 0; }
 .communication-panel__toolbar :deep(.el-input__wrapper),
@@ -275,25 +340,49 @@ onBeforeUnmount(() => {
 .communication-panel__toolbar :deep(.el-range-separator) { color: #dff5ff; }
 .communication-panel__export { border-color: rgba(72,163,225,.48); background: rgba(6,47,89,.84); color: #dff5ff; }
 .communication-panel__table { min-height: 0; }
-.communication-panel__table :deep(.el-table) { --el-table-border-color: rgba(68,151,211,.18); --el-table-bg-color: transparent; --el-table-tr-bg-color: transparent; --el-fill-color-lighter: rgba(31,93,148,.2); --el-table-row-hover-bg-color: rgba(33,230,255,.08); background: transparent; color: #eef9ff; font-size: 14px; }
-.communication-panel__table :deep(.el-table::before), .communication-panel__table :deep(.el-table__inner-wrapper::before) { display: none; }
+.communication-panel__table :deep(.el-table) {
+  --el-table-border-color: rgba(68,151,211,.18);
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-fill-color-lighter: rgba(31,93,148,.2);
+  --el-table-row-hover-bg-color: rgba(33,230,255,.08);
+  background: transparent;
+  color: #eef9ff;
+  font-size: 14px;
+}
+.communication-panel__table :deep(.el-table::before),
+.communication-panel__table :deep(.el-table__inner-wrapper::before) { display: none; }
 .communication-panel__table :deep(th.el-table__cell) { height: 50px; padding: 0; background: rgba(8,55,96,.94); color: #bfe6fb; font-weight: 600; }
 .communication-panel__table :deep(td.el-table__cell) { height: 62px; padding: 0; border-bottom: 1px solid rgba(68,151,211,.18); background: transparent; }
 .communication-panel__table :deep(.el-table__body tr.el-table__row--striped td.el-table__cell) { background: rgba(15,69,116,.18); }
-.communication-panel__table :deep(.flow-arrow-header .cell) { padding: 0; visibility: hidden; }
-.communication-panel__table :deep(td.flow-arrow-column .cell) {
+.communication-panel__table :deep(.flow-arrow-header .cell) { padding: 0; }
+.communication-panel__table :deep(th.endpoint-source .cell),
+.communication-panel__table :deep(td.endpoint-source .cell) {
+  padding-right: 4px;
+  padding-left: 12px;
+}
+.communication-panel__table :deep(th.endpoint-target .cell),
+.communication-panel__table :deep(td.endpoint-target .cell) {
+  padding-right: 12px;
+  padding-left: 4px;
+}
+.communication-panel__table :deep(td.flow-arrow-column .cell),
+.communication-panel__table :deep(th.flow-arrow-header .cell) {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
   padding: 0;
 }
-.endpoint-cell, .summary-cell {
+.endpoint-cell,
+.summary-cell {
   overflow: hidden;
   color: #eaf8ff;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.endpoint-cell.is-source { text-align: right; }
+.endpoint-cell.is-target { text-align: left; }
 .flow-arrow {
   display: block;
   color: #28baf6;
@@ -312,24 +401,79 @@ onBeforeUnmount(() => {
 .status-cell.is-failed i { background: #ff6464; }
 .status-cell.is-sending { color: #ffd47b; }
 .status-cell.is-sending i { background: #ffbd3f; }
-.communication-panel__footer { display: grid; grid-template-columns: 180px minmax(300px,auto) 100px 1fr; gap: 16px; align-items: center; color: #a7cce1; font-size: 13px; }
-.communication-panel__footer em { font-style: normal; }
-.communication-panel__footer :deep(.el-pagination) { --el-pagination-bg-color: rgba(5,51,92,.88); --el-pagination-button-color: #eefaff; --el-pagination-hover-color: #21e6ff; justify-content: center; }
-.communication-panel__refresh { display: flex; align-items: center; justify-content: flex-end; gap: 18px; }
+.communication-panel__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 56px;
+  color: #a7cce1;
+  font-size: 13px;
+}
+.communication-panel__pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.communication-panel__pager em { font-style: normal; white-space: nowrap; }
+.communication-panel__pager > span { white-space: nowrap; }
+.communication-panel__footer :deep(.el-pagination) {
+  --el-pagination-bg-color: transparent;
+  --el-pagination-button-bg-color: rgba(5, 47, 86, .92);
+  --el-pagination-button-color: #d5ebf8;
+  --el-pagination-hover-color: #9be7ff;
+  --el-disabled-bg-color: rgba(5, 47, 86, .72);
+  --el-fill-color-blank: rgba(5, 47, 86, .92);
+  justify-content: center;
+}
+.communication-panel__footer :deep(.el-pagination.is-background .btn-prev),
+.communication-panel__footer :deep(.el-pagination.is-background .btn-next),
+.communication-panel__footer :deep(.el-pagination.is-background button),
+.communication-panel__footer :deep(.el-pagination.is-background .el-pager li) {
+  min-width: 30px;
+  background: rgba(5, 47, 86, .92);
+  color: #c8e3f4;
+  border: 1px solid rgba(72, 163, 225, .28);
+  box-shadow: none;
+}
+.communication-panel__footer :deep(.el-pagination.is-background .btn-prev:hover),
+.communication-panel__footer :deep(.el-pagination.is-background .btn-next:hover),
+.communication-panel__footer :deep(.el-pagination.is-background button:hover),
+.communication-panel__footer :deep(.el-pagination.is-background .el-pager li:hover) {
+  background: rgba(18, 86, 148, .88);
+  color: #9be7ff;
+  border-color: rgba(125, 211, 255, .42);
+}
+.communication-panel__footer :deep(.el-pagination.is-background .el-pager li.is-active) {
+  background: #1b74c4;
+  color: #fff;
+  border-color: rgba(125, 211, 255, .4);
+}
+.communication-panel__footer :deep(.el-pagination.is-background .btn-prev:disabled),
+.communication-panel__footer :deep(.el-pagination.is-background .btn-next:disabled),
+.communication-panel__footer :deep(.el-pagination.is-background button:disabled) {
+  background: rgba(5, 47, 86, .72);
+  color: #7f9eb5;
+  border-color: rgba(72, 163, 225, .16);
+  opacity: .55;
+}
+.communication-panel__refresh { display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
 .communication-panel__refresh > span::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #ff6969; }
 .communication-panel__refresh > span.is-online::before { background: #62d776; }
 .communication-panel__refresh label { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .communication-panel__refresh :deep(.el-select) { width: 82px; }
 
 @media (max-width: 1380px) {
-  .communication-panel { grid-template-rows: 58px 126px minmax(0,1fr) 64px; min-height: 560px; }
+  .communication-panel { min-height: 560px; }
   .communication-panel__toolbar {
-    grid-template-columns: repeat(6,minmax(0,1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     grid-template-areas:
       "time time time time time time"
       "direction link message search search export";
     gap: 8px;
-    padding: 10px 14px;
+    padding-top: 10px;
+    padding-bottom: 10px;
   }
   .filter-time { grid-area: time; }
   .filter-direction { grid-area: direction; }
@@ -337,7 +481,14 @@ onBeforeUnmount(() => {
   .filter-message { grid-area: message; }
   .filter-search { grid-area: search; }
   .communication-panel__export { grid-area: export; }
-  .communication-panel__footer { grid-template-columns: 120px 1fr 80px; }
-  .communication-panel__refresh { display: none; }
+  .communication-panel__footer {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 56px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    row-gap: 8px;
+  }
+  .communication-panel__refresh { margin-left: auto; }
 }
 </style>
