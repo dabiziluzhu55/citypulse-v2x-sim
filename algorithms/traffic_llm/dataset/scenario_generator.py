@@ -306,6 +306,14 @@ def generate_scenarios(
             continue
         if float(start) + float(event_duration) > duration_seconds + 1e-9:
             continue
+        required_horizon = float(
+            sim.get("required_post_event_horizon_s")
+            or grid.get("required_post_event_horizon_s")
+            or 0.0
+        )
+        event_end = float(start) + float(event_duration)
+        if event_end > duration_seconds - required_horizon + 1e-9:
+            continue
         for severity in _severity_axis(str(event_type), severity_cfg):
             group_id = _canonical_group_id(
                 period=str(period),

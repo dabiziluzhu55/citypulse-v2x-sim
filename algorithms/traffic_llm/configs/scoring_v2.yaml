@@ -1,0 +1,148 @@
+selection_version: scoring_v2
+baseline_mode: fixed
+
+# Composite score 差值阈值，不是真实交通“提升 3%”。
+# 同一 scenario 全部候选统一 min-max 后的 composite 之差。
+min_composite_score_margin_over_baseline: 0.03
+ambiguous_margin: 0.02
+baseline_gain_mode: unified_composite
+ambiguity_compare: best_pareto_front
+
+min_episode_seconds: 60
+missing_metric: ignore
+relative_range_epsilon: 0.05
+
+# TripInfo 低完成率时不删除 episode，只是不把截尾敏感指标用于 expert selection。
+trip_metric_reliability:
+  enabled: true
+  min_completion_rate: 0.30
+  unreliable_metrics:
+    - traffic_performance_index
+    - path_avg_speed_kmh
+    - fuel_intensity_L_per_100km
+    - avg_travel_time_s
+    - delay_time_proportion
+    - travel_time_index
+    - avg_stops_per_vehicle
+    - avg_waiting_time_s
+    - throughput_veh_per_h
+
+# TPI 0~10 越高越拥堵，必须 minimize。
+# 扰动响应用 local event-window；全网 traffic_eval 只评价整体副作用与长期效果。
+groups:
+  efficiency:
+    weight: 0.18
+    metrics:
+      - id: traffic_performance_index
+        direction: minimize
+        weight: 1.0
+        source: traffic_eval
+      - id: throughput_veh_per_h
+        direction: maximize
+        weight: 0.45
+        source: traffic_eval
+      - id: path_avg_speed_kmh
+        direction: maximize
+        weight: 0.35
+        source: traffic_eval
+  congestion_safety:
+    weight: 0.18
+    metrics:
+      - id: spillback_rate
+        direction: minimize
+        weight: 0.55
+        source: traffic_eval
+      - id: regional_max_queue_length_m
+        direction: minimize
+        weight: 0.35
+        source: traffic_eval
+      - id: hard_braking_rate
+        direction: minimize
+        weight: 0.35
+        source: traffic_eval
+  disturbance_response:
+    weight: 0.26
+    metrics:
+      - id: local_avg_queue_veh
+        direction: minimize
+        weight: 0.45
+        source: local_event_window
+      - id: local_max_queue_m
+        direction: minimize
+        weight: 0.30
+        source: local_event_window
+      - id: local_spillback_pct
+        direction: minimize
+        weight: 0.25
+        source: local_event_window
+      - id: local_mean_speed_mps
+        direction: maximize
+        weight: 0.20
+        source: local_event_window
+      - id: local_throughput_delta
+        direction: maximize
+        weight: 0.20
+        source: local_event_window
+      - id: local_waiting_time_delta
+        direction: minimize
+        weight: 0.25
+        source: local_event_window
+      - id: local_hard_braking_delta
+        direction: minimize
+        weight: 0.20
+        source: local_event_window
+  green:
+    weight: 0.10
+    metrics:
+      - id: fuel_intensity_L_per_100km
+        direction: minimize
+        weight: 1.0
+        source: traffic_eval
+  completeness:
+    weight: 0.10
+    metrics:
+      - id: completion_rate
+        direction: maximize
+        weight: 1.0
+        source: traffic_eval
+  realtime:
+    weight: 0.04
+    metrics:
+      - id: avg_decision_latency_ms
+        direction: minimize
+        weight: 1.0
+        source: traffic_eval
+  recovery:
+    weight: 0.14
+    metrics:
+      - id: recovery_time_s
+        direction: minimize
+        weight: 0.70
+        source: recovery
+      - id: post_event_avg_queue
+        direction: minimize
+        weight: 0.30
+        source: recovery
+
+recovery:
+  version: recovery_v1
+  reference_window_before_event_s: 20.0
+  consecutive_clear_samples: 3
+  sample_interval_s: 1.0
+  min_post_event_horizon_s: 90.0
+  tolerance:
+    avg_queue_rel: 0.15
+    max_queue_rel: 0.20
+    spillback_abs: 2.0
+
+event_windows:
+  version: event_window_v1
+  offsets_seconds: [30, 60]
+  include_active_event_span: true
+
+local_event_windows:
+  version: local_event_window_v1
+  hops: 1
+  small_preset_max_intersections: 6
+  offsets_seconds: [30, 60]
+  include_active_event_span: true

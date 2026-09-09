@@ -15,6 +15,7 @@ LANE_FIELDS = (
     "occupancy",
     "queue_length_m",
     "lane_length_m",
+    "waiting_time",
     "role",
 )
 

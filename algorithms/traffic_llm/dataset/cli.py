@@ -34,19 +34,21 @@ def _parser() -> argparse.ArgumentParser:
     gen.add_argument("--modes", default="")
     gen.add_argument("--smoke", action="store_true")
     gen.add_argument("--workers", type=int, default=None)
+    gen.add_argument("--resume", action="store_true", help="Skip COMPLETED runs; do not overwrite valid results")
+    gen.add_argument("--retry-failed", action="store_true", help="Re-run FAILED pairs; default leaves them in place")
 
     score = sub.add_parser("score", help="Re-score / re-select from existing runs")
     score.add_argument("--dataset", required=True)
-    score.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v1.yaml")
+    score.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v2.yaml")
 
     select = sub.add_parser("select", help="Re-run teacher selection")
     select.add_argument("--dataset", required=True)
-    select.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v1.yaml")
+    select.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v2.yaml")
 
     sft = sub.add_parser("build-sft", help="Rebuild SFT JSONL from existing runs")
     sft.add_argument("--dataset", required=True)
     sft.add_argument("--config", default="algorithms/traffic_llm/configs/dataset_v1.yaml")
-    sft.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v1.yaml")
+    sft.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v2.yaml")
     return parser
 
 
@@ -94,6 +96,19 @@ def main(argv: list[str] | None = None) -> int:
             modes=_modes(args.modes),
             limit_scenarios=args.limit_scenarios,
             workers=args.workers,
+            resume=True,
+            retry_failed=bool(getattr(args, "retry_failed", False)),
+        )
+        print(
+            "\n".join(
+                [
+                    f"completed: {result.get('completed')}",
+                    f"skipped_completed: {result.get('skipped_completed')}",
+                    f"skipped_failed: {result.get('skipped_failed')}",
+                    f"failed: {result.get('failed')}",
+                    f"remaining: {result.get('remaining')}",
+                ]
+            )
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

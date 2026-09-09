@@ -54,6 +54,25 @@ def hard_validate(
     return True, None
 
 
+def _selection_policy(scoring: Mapping[str, Any]) -> tuple[str, str]:
+    version = str(scoring.get("selection_version") or "scoring_v1")
+    gain_mode = str(
+        scoring.get("baseline_gain_mode")
+        or ("pairwise_renorm" if version.startswith("scoring_v1") else "unified_composite")
+    )
+    ambiguity = str(
+        scoring.get("ambiguity_compare")
+        or ("all_candidates" if version.startswith("scoring_v1") else "best_pareto_front")
+    )
+    return gain_mode, ambiguity
+
+
+def _margin_threshold(scoring: Mapping[str, Any]) -> float:
+    if "min_composite_score_margin_over_baseline" in scoring:
+        return float(scoring["min_composite_score_margin_over_baseline"])
+    return float(scoring.get("minimum_improvement_over_baseline", 0.03))
+
+
 def select_expert(
     candidates: Sequence[Mapping[str, Any]],
     scoring: Mapping[str, Any],
@@ -61,9 +80,10 @@ def select_expert(
     baseline_mode: str | None = None,
 ) -> dict[str, Any]:
     baseline_mode = baseline_mode or str(scoring.get("baseline_mode") or "fixed")
-    min_improve = float(scoring.get("minimum_improvement_over_baseline", 0.03))
+    min_improve = _margin_threshold(scoring)
     ambiguous_margin = float(scoring.get("ambiguous_margin", 0.02))
     selection_version = str(scoring.get("selection_version") or "scoring_v1")
+    gain_mode, ambiguity_compare = _selection_policy(scoring)
 
     rejected: list[dict[str, Any]] = []
     valid: list[Mapping[str, Any]] = []
@@ -86,6 +106,8 @@ def select_expert(
         "winner_score": None,
         "second_score": None,
         "score_margin": None,
+        "composite_score_margin": None,
+        "composite_score_margin_over_baseline": None,
         "expert_confidence": 0.0,
         "ambiguous": False,
         "fallback_to_baseline": True,
@@ -93,6 +115,7 @@ def select_expert(
         "candidate_scores": {},
         "raw_metrics": {},
         "normalized_metrics": {},
+        "ignored_trip_metrics": {},
         "rejected": rejected,
         "reason": "no valid candidates",
     }
@@ -113,33 +136,61 @@ def select_expert(
         ),
     )
     winner = ordered[0]
-    second = ordered[1] if len(ordered) > 1 else None
+    best_rank = by_mode[winner["control_mode"]]["pareto_rank"]
+    if ambiguity_compare == "best_pareto_front":
+        front = [
+            item
+            for item in ordered
+            if by_mode[item["control_mode"]]["pareto_rank"] == best_rank
+        ]
+        second = front[1] if len(front) > 1 else None
+    else:
+        second = ordered[1] if len(ordered) > 1 else None
     winner_score = float(winner["composite_score"] or 0.0)
     second_score = float(second["composite_score"] or 0.0) if second else None
     margin = None if second_score is None else winner_score - second_score
     ambiguous = bool(margin is not None and margin < ambiguous_margin)
 
     baseline_score = None
+    if baseline_mode in by_mode and by_mode[baseline_mode]["composite_score"] is not None:
+        baseline_score = float(by_mode[baseline_mode]["composite_score"])
+    unified_gain = None
+    if baseline_score is not None:
+        unified_gain = winner_score - baseline_score
+
     pairwise_gain = None
-    if baseline_mode in {item.get("control_mode") for item in valid}:
-        pair = [item for item in valid if item.get("control_mode") in {winner["control_mode"], baseline_mode}]
+    if gain_mode == "pairwise_renorm" and baseline_mode in {
+        item.get("control_mode") for item in valid
+    }:
+        pair = [
+            item
+            for item in valid
+            if item.get("control_mode") in {winner["control_mode"], baseline_mode}
+        ]
         if len(pair) >= 1:
             pair_scored = {
-                item["control_mode"]: item
-                for item in score_candidates(pair, scoring)
+                item["control_mode"]: item for item in score_candidates(pair, scoring)
             }
-            if baseline_mode in pair_scored and pair_scored[baseline_mode]["composite_score"] is not None:
-                baseline_score = float(pair_scored[baseline_mode]["composite_score"])
-            if winner["control_mode"] in pair_scored and pair_scored[winner["control_mode"]]["composite_score"] is not None:
-                pairwise_gain = float(pair_scored[winner["control_mode"]]["composite_score"]) - (
+            pair_base = pair_scored.get(baseline_mode)
+            pair_win = pair_scored.get(winner["control_mode"])
+            if pair_base and pair_base["composite_score"] is not None:
+                baseline_score = float(pair_base["composite_score"])
+            if pair_win and pair_win["composite_score"] is not None:
+                pairwise_gain = float(pair_win["composite_score"]) - (
                     baseline_score if baseline_score is not None else 0.0
                 )
+
+    gain_for_fallback = pairwise_gain if gain_mode == "pairwise_renorm" else unified_gain
     fallback = False
     if winner["control_mode"] == baseline_mode:
         fallback = True
-    elif pairwise_gain is not None:
-        fallback = pairwise_gain < min_improve
+    elif gain_for_fallback is not None:
+        fallback = gain_for_fallback < min_improve
 
+    ignored = {
+        item["control_mode"]: list(item.get("ignored_trip_metrics") or [])
+        for item in scored
+    }
     return {
         "selection_version": selection_version,
         "winner": winner["control_mode"],
@@ -147,13 +198,18 @@ def select_expert(
         "second": None if second is None else second["control_mode"],
         "second_score": second_score,
         "score_margin": margin,
+        "composite_score_margin": margin,
         "expert_confidence": 0.0 if margin is None else max(0.0, float(margin)),
         "ambiguous": ambiguous,
         "fallback_to_baseline": fallback,
         "baseline_mode": baseline_mode,
         "baseline_score": baseline_score,
+        "composite_score_margin_over_baseline": unified_gain,
         "pairwise_gain_over_baseline": pairwise_gain,
+        "min_composite_score_margin_over_baseline": min_improve,
         "minimum_improvement_over_baseline": min_improve,
+        "baseline_gain_mode": gain_mode,
+        "ambiguity_compare": ambiguity_compare,
         "ambiguous_margin": ambiguous_margin,
         "pareto_rank": {
             item["control_mode"]: by_mode[item["control_mode"]]["pareto_rank"]
@@ -169,6 +225,10 @@ def select_expert(
         "normalized_metrics": {
             item["control_mode"]: item["normalized_metrics"] for item in scored
         },
+        "ignored_trip_metrics": ignored,
+        "trip_reliability_gated_modes": [
+            mode for mode, metrics in ignored.items() if metrics
+        ],
         "winner_action_space": next(
             (
                 str(item.get("teacher_action_space") or ACTION_SPACE_SIGNAL_ONLY)

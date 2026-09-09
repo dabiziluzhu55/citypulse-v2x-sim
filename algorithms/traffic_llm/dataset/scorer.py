@@ -5,6 +5,19 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 
+DEFAULT_UNRELIABLE_TRIP_METRICS = (
+    "traffic_performance_index",
+    "path_avg_speed_kmh",
+    "fuel_intensity_L_per_100km",
+    "avg_travel_time_s",
+    "delay_time_proportion",
+    "travel_time_index",
+    "avg_stops_per_vehicle",
+    "avg_waiting_time_s",
+    "throughput_veh_per_h",
+)
+
+
 def _finite(value: Any) -> float | None:
     if value is None:
         return None
@@ -17,14 +30,49 @@ def _finite(value: Any) -> float | None:
     return number
 
 
-def _lookup_metric(candidate: Mapping[str, Any], metric_id: str, source: str) -> float | None:
+def trip_reliability_config(scoring: Mapping[str, Any]) -> dict[str, Any]:
+    raw = dict(scoring.get("trip_metric_reliability") or {})
+    metrics = tuple(raw.get("unreliable_metrics") or DEFAULT_UNRELIABLE_TRIP_METRICS)
+    return {
+        "enabled": bool(raw.get("enabled", False)),
+        "min_completion_rate": float(raw.get("min_completion_rate", 0.30)),
+        "unreliable_metrics": metrics,
+    }
+
+
+def ignored_trip_metrics_for(
+    candidate: Mapping[str, Any],
+    scoring: Mapping[str, Any],
+) -> tuple[str, ...]:
+    cfg = trip_reliability_config(scoring)
+    if not cfg["enabled"]:
+        return ()
+    rate = _finite((candidate.get("traffic_eval") or {}).get("completion_rate"))
+    threshold = float(cfg["min_completion_rate"])
+    if rate is not None and rate + 1e-12 >= threshold:
+        return ()
+    return tuple(str(item) for item in cfg["unreliable_metrics"])
+
+
+def _lookup_metric(
+    candidate: Mapping[str, Any],
+    metric_id: str,
+    source: str,
+    *,
+    ignored: set[str] | frozenset[str] = frozenset(),
+) -> float | None:
+    if metric_id in ignored:
+        return None
     traffic_eval = dict(candidate.get("traffic_eval") or {})
     event_window = dict(candidate.get("event_window") or {})
+    local_event_window = dict(candidate.get("local_event_window") or {})
     recovery = dict(candidate.get("recovery") or {})
     if source == "traffic_eval":
         return _finite(traffic_eval.get(metric_id))
     if source == "event_window":
         return _finite(event_window.get(metric_id))
+    if source == "local_event_window":
+        return _finite(local_event_window.get(metric_id))
     if source == "recovery":
         return _finite(recovery.get(metric_id))
     return _finite(candidate.get(metric_id))
@@ -70,6 +118,7 @@ def score_candidates(
         raise ValueError("scoring config must declare groups")
     relative_eps = float(scoring.get("relative_range_epsilon", 0.05))
     names = [str(item.get("control_mode") or item.get("name") or idx) for idx, item in enumerate(candidates)]
+    ignored_by_idx = [set(ignored_trip_metrics_for(item, scoring)) for item in candidates]
     raw_by_metric: dict[tuple[str, str, str], list[float | None]] = {}
     metric_meta: dict[tuple[str, str, str], dict[str, Any]] = {}
     for group_name, group in groups.items():
@@ -82,8 +131,13 @@ def score_candidates(
                 "group": str(group_name),
             }
             raw_by_metric[key] = [
-                _lookup_metric(candidate, str(metric["id"]), str(metric["source"]))
-                for candidate in candidates
+                _lookup_metric(
+                    candidate,
+                    str(metric["id"]),
+                    str(metric["source"]),
+                    ignored=ignored_by_idx[idx],
+                )
+                for idx, candidate in enumerate(candidates)
             ]
 
     normalized: dict[tuple[str, str, str], list[float | None]] = {}
@@ -135,6 +189,9 @@ def score_candidates(
                 "normalized_metrics": norm_metrics,
                 "group_scores": group_scores,
                 "composite_score": composite_score,
+                "ignored_trip_metrics": sorted(ignored_by_idx[idx]),
+                "trip_reliability_gated": bool(ignored_by_idx[idx]),
+                "completion_rate": _finite((candidate.get("traffic_eval") or {}).get("completion_rate")),
             }
         )
     return results

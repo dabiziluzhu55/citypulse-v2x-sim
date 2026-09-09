@@ -6,7 +6,7 @@ import os
 import queue
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from simulation.sumo.building.artifacts import DEFAULT_GENERATED_DIR
 from simulation.sumo.engine.scenario import DEFAULT_SESSION_ROOT
@@ -15,8 +15,13 @@ from traffic_control.registry import CONTROL_MODE_REGISTRY, require_control_mode
 from traffic_eval.session_hub import SessionMetricsHub
 
 from .action_parser import parse_target_phases, validate_phases_against_allowed
-from .catalog import apply_model_alias_env, make_provenance, probe_control_mode, tls_phase_orders
-from .event_window import compute_event_window_metrics, compute_recovery_metrics
+from .catalog import apply_model_alias_env, make_provenance, neighbor_map, probe_control_mode, tls_phase_orders
+from .event_window import (
+    compute_event_window_metrics,
+    compute_local_event_window_metrics,
+    compute_recovery_metrics,
+    resolve_local_intersection_ids,
+)
 from .io_utils import dump_json, write_jsonl_gz
 from .scenario_generator import event_spec_to_disturbance
 from .schema import ScenarioSpec
@@ -78,6 +83,9 @@ def run_episode(
     session_root: Path | None = None,
     store_full_vehicles: bool = False,
     wall_timeout_s: float | None = None,
+    retention_mode: str = "audit",
+    anchor_offsets_seconds: Sequence[float] | None = None,
+    neighbors: Mapping[str, Sequence[str]] | None = None,
 ) -> dict[str, Any]:
     _ensure_sumo_env()
     run_id = run_id_for(spec.scenario_id, control_mode)
@@ -109,7 +117,9 @@ def run_episode(
         "session_id": "",
         "traffic_eval": {},
         "event_window": {},
+        "local_event_window": {},
         "recovery": {},
+        "retention_mode": retention_mode,
         "teacher_action_space": "signal_only",
         "has_vehicle_actions": False,
         "has_valid_action": False,
@@ -196,6 +206,7 @@ def run_episode(
                 if any("control range" in item for item in errors):
                     result["control_range_error"] = True
         event_cfg = dict(scoring.get("event_windows") or {})
+        local_cfg = dict(scoring.get("local_event_windows") or {})
         recovery_cfg = dict(scoring.get("recovery") or {})
         event_window = compute_event_window_metrics(
             snapshots,
@@ -203,6 +214,32 @@ def run_episode(
             event_end=spec.event.end_seconds,
             offsets_seconds=tuple(event_cfg.get("offsets_seconds") or (30, 60)),
             include_active_span=bool(event_cfg.get("include_active_event_span", True)),
+        )
+        local_ids = resolve_local_intersection_ids(
+            spec.intersection_ids,
+            spec.event.intersection_id,
+            neighbors if neighbors is not None else neighbor_map(gen_dir),
+            hops=int(local_cfg.get("hops", 1)),
+            small_preset_max_intersections=int(
+                local_cfg.get("small_preset_max_intersections", 6)
+            ),
+        )
+        local_event_window = compute_local_event_window_metrics(
+            snapshots,
+            event_start=spec.event.start_seconds,
+            event_end=spec.event.end_seconds,
+            offsets_seconds=tuple(
+                local_cfg.get("offsets_seconds")
+                or event_cfg.get("offsets_seconds")
+                or (30, 60)
+            ),
+            include_active_span=bool(
+                local_cfg.get(
+                    "include_active_event_span",
+                    event_cfg.get("include_active_event_span", True),
+                )
+            ),
+            intersection_ids=local_ids,
         )
         recovery = compute_recovery_metrics(
             snapshots,
@@ -218,6 +255,7 @@ def run_episode(
                 "elapsed_wall_s": time.perf_counter() - t0,
                 "traffic_eval": traffic_eval,
                 "event_window": event_window,
+                "local_event_window": local_event_window,
                 "recovery": recovery,
                 "teacher_action_space": trace_summary["teacher_action_space"],
                 "has_vehicle_actions": trace_summary["has_vehicle_actions"],
@@ -227,13 +265,29 @@ def run_episode(
         )
         if result["state"] != "COMPLETED":
             result["state"] = str(final_snap.state) if final_snap is not None else "FAILED"
-        _persist_run(output_dir, spec, result, collector, snapshots)
+        _persist_run(
+            output_dir,
+            spec,
+            result,
+            collector,
+            snapshots,
+            retention_mode=retention_mode,
+            anchor_offsets_seconds=anchor_offsets_seconds,
+        )
         return result
     except Exception as exc:
         result["state"] = "FAILED"
         result["error"] = str(exc)
         result["elapsed_wall_s"] = time.perf_counter() - t0
-        _persist_run(output_dir, spec, result, collector, snapshots)
+        _persist_run(
+            output_dir,
+            spec,
+            result,
+            collector,
+            snapshots,
+            retention_mode=retention_mode,
+            anchor_offsets_seconds=anchor_offsets_seconds,
+        )
         return result
     finally:
         if subscription is not None:
@@ -243,12 +297,42 @@ def run_episode(
                 pass
 
 
+def _select_snapshots_for_retention(
+    snapshots: list[SimulationSnapshot],
+    spec: ScenarioSpec,
+    *,
+    retention_mode: str,
+    anchor_offsets_seconds: Sequence[float] | None,
+) -> list[SimulationSnapshot]:
+    if str(retention_mode or "audit") != "compact" or not snapshots:
+        return snapshots
+    offsets = [float(item) for item in (anchor_offsets_seconds or (0, 30, 60))]
+    targets = [float(spec.event.start_seconds) + offset for offset in offsets]
+    selected: list[SimulationSnapshot] = []
+    used: set[int] = set()
+    for target in targets:
+        best_idx = min(
+            range(len(snapshots)),
+            key=lambda idx: abs(float(snapshots[idx].elapsed_seconds) - target),
+        )
+        if best_idx in used:
+            continue
+        if abs(float(snapshots[best_idx].elapsed_seconds) - target) > 1.5:
+            continue
+        used.add(best_idx)
+        selected.append(snapshots[best_idx])
+    return selected or snapshots[:1]
+
+
 def _persist_run(
     output_dir: Path,
     spec: ScenarioSpec,
     result: dict[str, Any],
     collector: TraceCollector,
     snapshots: list[SimulationSnapshot],
+    *,
+    retention_mode: str = "audit",
+    anchor_offsets_seconds: Sequence[float] | None = None,
 ) -> None:
     run_id = result["run_id"]
     dump_json(output_dir / "runs" / f"{run_id}.json", {**result, "scenario": spec.to_dict()})
@@ -258,6 +342,7 @@ def _persist_run(
             "run_id": run_id,
             "traffic_eval": result.get("traffic_eval") or {},
             "event_window": result.get("event_window") or {},
+            "local_event_window": result.get("local_event_window") or {},
             "recovery": result.get("recovery") or {},
             "state": result.get("state"),
         },
@@ -266,12 +351,19 @@ def _persist_run(
         output_dir / "traces" / f"{run_id}.jsonl.gz",
         collector.records,
     )
+    kept = _select_snapshots_for_retention(
+        snapshots,
+        spec,
+        retention_mode=retention_mode,
+        anchor_offsets_seconds=anchor_offsets_seconds,
+    )
     compact_snaps = [
         {
             "elapsed_seconds": snap.elapsed_seconds,
             "state": snap.state,
             "summary": compact_snapshot_summary(snap),
+            "retention": retention_mode,
         }
-        for snap in snapshots
+        for snap in kept
     ]
     write_jsonl_gz(output_dir / "traces" / f"{run_id}.snapshots.jsonl.gz", compact_snaps)

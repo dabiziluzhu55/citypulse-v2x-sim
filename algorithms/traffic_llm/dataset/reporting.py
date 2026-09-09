@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 
@@ -38,6 +39,95 @@ def _mean(values: Sequence[Any]) -> float | None:
     if not present:
         return None
     return sum(present) / len(present)
+
+
+def _percentile(values: Sequence[float], pct: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(float(item) for item in values)
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = (len(ordered) - 1) * (pct / 100.0)
+    lo = int(rank)
+    hi = min(lo + 1, len(ordered) - 1)
+    frac = rank - lo
+    return ordered[lo] * (1.0 - frac) + ordered[hi] * frac
+
+
+def _stats(values: Sequence[Any]) -> dict[str, float | None]:
+    present = []
+    for item in values:
+        if item is None:
+            continue
+        try:
+            present.append(float(item))
+        except (TypeError, ValueError):
+            continue
+    return {
+        "n": len(present),
+        "mean": _mean(present),
+        "median": _percentile(present, 50),
+        "p95": _percentile(present, 95),
+        "min": min(present) if present else None,
+        "max": max(present) if present else None,
+    }
+
+
+def file_size(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    return int(path.stat().st_size)
+
+
+def dir_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        return int(path.stat().st_size)
+    total = 0
+    for item in path.rglob("*"):
+        if item.is_file():
+            total += item.stat().st_size
+    return total
+
+
+def _local_vs_global_conflict(run: Mapping[str, Any]) -> bool | None:
+    local = dict(run.get("local_event_window") or {})
+    global_w = dict(run.get("event_window") or {})
+    pairs = (
+        ("local_avg_queue_veh", "window_avg_queue_veh", True),
+        ("local_spillback_pct", "window_spillback_pct", True),
+        ("local_mean_speed_mps", "window_mean_speed_mps", False),
+    )
+    signs = []
+    for local_key, global_key, higher_worse in pairs:
+        a = local.get(local_key)
+        b = global_w.get(global_key)
+        try:
+            if a is None or b is None:
+                continue
+            fa = float(a)
+            fb = float(b)
+        except (TypeError, ValueError):
+            continue
+        if abs(fa) + abs(fb) < 1e-9:
+            continue
+        # conflict: local looks worse while global looks better, or vice versa,
+        # using relative gap of 25% when both positive.
+        if fb == 0:
+            continue
+        ratio = fa / fb if fb else None
+        if ratio is None:
+            continue
+        if higher_worse and ratio >= 1.5:
+            signs.append(True)
+        elif (not higher_worse) and 0 < ratio <= 0.67:
+            signs.append(True)
+        else:
+            signs.append(False)
+    if not signs:
+        return None
+    return any(signs)
 
 
 def summarize_dataset(
@@ -96,9 +186,50 @@ def summarize_dataset(
         }
         for event_type, modes in by_event.items()
     }
+    expert_by_event: dict[str, Counter[str]] = defaultdict(Counter)
+    expert_by_period: dict[str, Counter[str]] = defaultdict(Counter)
+    expert_by_scope: dict[str, Counter[str]] = defaultdict(Counter)
+    for selection in selections:
+        winner = selection.get("winner")
+        if not winner:
+            continue
+        spec = scenario_by_id.get(selection.get("scenario_id")) or {}
+        expert_by_event[str(spec.get("event", {}).get("event_type") or "unknown")][str(winner)] += 1
+        expert_by_period[str(spec.get("period") or "unknown")][str(winner)] += 1
+        expert_by_scope[str(spec.get("scope") or "unknown")][str(winner)] += 1
+
+    completion_by_mode = {
+        mode: _stats([(item.get("traffic_eval") or {}).get("completion_rate") for item in items])
+        for mode, items in by_mode.items()
+    }
+    gated = 0
+    gated_modes = Counter()
+    for selection in selections:
+        modes = selection.get("trip_reliability_gated_modes") or []
+        if modes:
+            gated += 1
+        for mode in modes:
+            gated_modes[str(mode)] += 1
+    vehicle_blocked = sum(
+        1
+        for item in selections
+        if item.get("winner") == "cov2x"
+        and not item.get("signal_sft_eligible", True)
+    )
+    cov2x_wins = sum(1 for item in selections if item.get("winner") == "cov2x")
+    conflicts = [run for run in runs if _local_vs_global_conflict(run)]
+    monopoly = None
+    if expert_counts:
+        top_mode, top_n = expert_counts.most_common(1)[0]
+        share = top_n / n_select
+        monopoly = {
+            "mode": top_mode,
+            "count": top_n,
+            "share": share,
+            "flag": share >= 0.80 and n_select >= 5,
+        }
     phase_hist: Counter[int] = Counter()
     n_controlled: list[int] = []
-    # filled by caller via sft optional stats
     return {
         "n_scenarios": n_scenarios,
         "n_success_scenarios": len({run["scenario_id"] for run in runs if run.get("state") == "COMPLETED"}),
@@ -114,8 +245,23 @@ def summarize_dataset(
         "expert_share": {
             mode: count / n_select for mode, count in expert_counts.items()
         },
+        "expert_counts_by_event_type": {
+            key: dict(value) for key, value in expert_by_event.items()
+        },
+        "expert_counts_by_period": {
+            key: dict(value) for key, value in expert_by_period.items()
+        },
+        "expert_counts_by_scope": {
+            key: dict(value) for key, value in expert_by_scope.items()
+        },
         "fixed_as_best_share": expert_counts.get("fixed", 0) / n_select,
         "fallback_to_baseline_share": fallback_n / max(1, len(selections)),
+        "ambiguous_share": len(ambiguous) / max(1, len(selections)),
+        "cov2x_wins": cov2x_wins,
+        "cov2x_vehicle_action_blocks_signal_sft": vehicle_blocked,
+        "cov2x_vehicle_action_block_share": (
+            vehicle_blocked / cov2x_wins if cov2x_wins else 0.0
+        ),
         "action_space_counts": dict(action_spaces),
         "n_high_confidence": sum(
             1
@@ -127,12 +273,101 @@ def summarize_dataset(
         "sft_counts": dict(sft_counts),
         "traffic_eval_means": metric_means,
         "tpi_by_event_and_algorithm": event_tpi,
+        "completion_rate_by_algorithm": completion_by_mode,
+        "trip_reliability_gate_scenario_share": gated / max(1, len(selections)),
+        "trip_reliability_gated_modes": dict(gated_modes),
+        "local_vs_global_conflict_runs": len(conflicts),
+        "local_vs_global_conflict_share": len(conflicts) / max(1, len(runs)),
+        "expert_monopoly": monopoly,
         "avg_plan_intersections": _mean(n_controlled),
         "phase_histogram": dict(phase_hist),
     }
 
 
-def render_markdown(summary: Mapping[str, Any]) -> str:
+def wall_and_disk_report(
+    *,
+    scenarios: Sequence[Mapping[str, Any]],
+    runs: Sequence[Mapping[str, Any]],
+    output_dir: Path,
+    workers: int = 1,
+    full_grid_episodes: int = 8748,
+    target_episodes: int | None = None,
+) -> dict[str, Any]:
+    scenario_by_id = {item["scenario_id"]: item for item in scenarios}
+    completed = [run for run in runs if run.get("state") == "COMPLETED"]
+    walls = [float(run.get("elapsed_wall_s") or 0.0) for run in completed]
+    by_mode: dict[str, list[float]] = defaultdict(list)
+    by_scope: dict[str, list[float]] = defaultdict(list)
+    trace_sizes: list[int] = []
+    scope_disk: dict[str, list[int]] = defaultdict(list)
+    traces_dir = output_dir / "traces"
+    for run in completed:
+        mode = str(run.get("control_mode"))
+        spec = scenario_by_id.get(run.get("scenario_id")) or {}
+        scope = str(spec.get("scope") or "unknown")
+        wall = float(run.get("elapsed_wall_s") or 0.0)
+        by_mode[mode].append(wall)
+        by_scope[scope].append(wall)
+        run_id = str(run.get("run_id"))
+        size = file_size(traces_dir / f"{run_id}.jsonl.gz") + file_size(
+            traces_dir / f"{run_id}.snapshots.jsonl.gz"
+        )
+        trace_sizes.append(size)
+        scope_disk[scope].append(size)
+    workers = max(1, int(workers))
+    n_completed = len(completed)
+    mean_wall = _mean(walls)
+    target = int(target_episodes or n_completed)
+    estimate_target = None if mean_wall is None else mean_wall * target / workers
+    estimate_full = None if mean_wall is None else mean_wall * full_grid_episodes / workers
+    scope_weighted = 0.0
+    scope_weighted_ok = False
+    if by_scope and mean_wall is not None:
+        # Assume the official 1458-scenario grid is balanced across the three scopes.
+        n_scopes = max(1, len(by_scope))
+        per_scope_full = full_grid_episodes / n_scopes
+        acc = 0.0
+        for scope, values in by_scope.items():
+            scope_mean = _mean(values)
+            if scope_mean is None:
+                continue
+            acc += scope_mean * per_scope_full
+            scope_weighted_ok = True
+        if scope_weighted_ok:
+            scope_weighted = acc / workers
+    return {
+        "n_completed_runs": n_completed,
+        "workers": workers,
+        "wall_time_s": {
+            "overall": _stats(walls),
+            "by_algorithm": {mode: _stats(values) for mode, values in by_mode.items()},
+            "by_scope": {scope: _stats(values) for scope, values in by_scope.items()},
+        },
+        "trace_bytes": {
+            "overall": _stats(trace_sizes),
+            "by_scope": {
+                scope: _stats(values) for scope, values in scope_disk.items()
+            },
+        },
+        "dataset_bytes": dir_size(output_dir),
+        "estimates": {
+            "source": "actual completed episode wall time / disk, not theoretical FLOPs",
+            "target_episodes": target,
+            "target_wall_seconds": estimate_target,
+            "full_grid_episodes": full_grid_episodes,
+            "full_grid_wall_seconds": estimate_full,
+            "full_grid_scope_weighted_wall_seconds": scope_weighted if scope_weighted_ok else estimate_full,
+            "target_disk_bytes": None
+            if not trace_sizes
+            else (_mean(trace_sizes) or 0) * target,
+            "full_grid_disk_bytes": None
+            if not trace_sizes
+            else (_mean(trace_sizes) or 0) * full_grid_episodes,
+        },
+    }
+
+
+def render_markdown(summary: Mapping[str, Any], cost: Mapping[str, Any] | None = None) -> str:
     lines = ["# Traffic-Qwen dataset summary", ""]
     lines.append(f"- 总场景数: {summary.get('n_scenarios')}")
     lines.append(f"- 成功场景数: {summary.get('n_success_scenarios')}")
@@ -148,13 +383,29 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
     lines.append("")
     lines.append("## Expert 选择")
     lines.append(f"- expert_counts: `{summary.get('expert_counts')}`")
+    lines.append(f"- by event_type: `{summary.get('expert_counts_by_event_type')}`")
+    lines.append(f"- by period: `{summary.get('expert_counts_by_period')}`")
+    lines.append(f"- by scope: `{summary.get('expert_counts_by_scope')}`")
     lines.append(f"- fixed_as_best_share: {summary.get('fixed_as_best_share')}")
     lines.append(f"- fallback_to_baseline_share: {summary.get('fallback_to_baseline_share')}")
+    lines.append(f"- ambiguous_share: {summary.get('ambiguous_share')}")
     lines.append(f"- high_confidence: {summary.get('n_high_confidence')}")
     lines.append(f"- ambiguous: {summary.get('n_ambiguous')}")
     lines.append(f"- rejected: {summary.get('n_rejected')}")
+    lines.append(f"- CoV2X wins / vehicle-action block Signal SFT: {summary.get('cov2x_wins')} / {summary.get('cov2x_vehicle_action_blocks_signal_sft')}")
+    lines.append(f"- trip_reliability_gate_scenario_share: {summary.get('trip_reliability_gate_scenario_share')}")
+    lines.append(f"- completion_rate_by_algorithm: `{summary.get('completion_rate_by_algorithm')}`")
+    lines.append(f"- local_vs_global_conflict_share: {summary.get('local_vs_global_conflict_share')}")
+    lines.append(f"- expert_monopoly: `{summary.get('expert_monopoly')}`")
     lines.append("")
     lines.append("## SFT")
     lines.append(f"- {summary.get('sft_counts')}")
     lines.append(f"- action_space_counts: `{summary.get('action_space_counts')}`")
+    if cost:
+        lines.append("")
+        lines.append("## 运行成本（来自真实 wall time / 磁盘）")
+        lines.append(f"- wall_time: `{cost.get('wall_time_s')}`")
+        lines.append(f"- trace_bytes: `{cost.get('trace_bytes')}`")
+        lines.append(f"- dataset_bytes: {cost.get('dataset_bytes')}")
+        lines.append(f"- estimates: `{cost.get('estimates')}`")
     return "\n".join(lines) + "\n"

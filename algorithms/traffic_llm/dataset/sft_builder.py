@@ -89,8 +89,12 @@ def factual_reason(
     fallback: bool,
 ) -> tuple[str, str]:
     facts: list[str] = []
-    queue = event_window.get("window_avg_queue_veh")
-    spill = event_window.get("window_spillback_pct")
+    queue = event_window.get("local_avg_queue_veh")
+    if queue is None:
+        queue = event_window.get("window_avg_queue_veh")
+    spill = event_window.get("local_spillback_pct")
+    if spill is None:
+        spill = event_window.get("window_spillback_pct")
     if queue is not None and float(queue) > 0.5:
         facts.append("目标进口排队增加")
     if spill is not None and float(spill) > 1.0:
@@ -102,7 +106,7 @@ def factual_reason(
     if fallback:
         objective = "保持固定配时基线"
         if not facts:
-            facts.append("动态算法相对 fixed 提升未达到配置阈值")
+            facts.append("动态算法相对 fixed 的 composite score margin 未达到配置阈值")
         return objective, "；".join(facts)
     objective = "缓解扰动路口排队并抑制上游回溢"
     if not facts:
@@ -210,7 +214,10 @@ def build_sft_samples_for_run(
             }
         objective, rationale = factual_reason(
             spec=spec,
-            event_window=dict(run.get("event_window") or {}),
+            event_window={
+                **dict(run.get("event_window") or {}),
+                **dict(run.get("local_event_window") or {}),
+            },
             recovery=dict(run.get("recovery") or {}),
             fallback=fallback,
         )

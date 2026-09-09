@@ -102,6 +102,7 @@ def _cand(mode: str, tpi: float | None, spill: float | None, **extra) -> dict:
         "traffic_eval": {
             "traffic_performance_index": tpi,
             "spillback_rate": spill,
+            "completion_rate": 0.80,
         },
         "event_window": {},
         "recovery": {},
@@ -311,3 +312,227 @@ def test_factual_reason_is_template() -> None:
     assert "排队" in reason or "溢流" in reason
     assert "思维" not in reason
     assert objective
+
+
+SCORING_V2 = {
+    "selection_version": "scoring_v2",
+    "baseline_mode": "fixed",
+    "min_composite_score_margin_over_baseline": 0.03,
+    "ambiguous_margin": 0.02,
+    "min_episode_seconds": 10,
+    "baseline_gain_mode": "unified_composite",
+    "ambiguity_compare": "best_pareto_front",
+    "relative_range_epsilon": 0.0,
+    "trip_metric_reliability": {
+        "enabled": True,
+        "min_completion_rate": 0.30,
+        "unreliable_metrics": ["traffic_performance_index", "path_avg_speed_kmh"],
+    },
+    "groups": {
+        "efficiency": {
+            "weight": 0.5,
+            "metrics": [
+                {
+                    "id": "traffic_performance_index",
+                    "direction": "minimize",
+                    "weight": 1.0,
+                    "source": "traffic_eval",
+                }
+            ],
+        },
+        "congestion_safety": {
+            "weight": 0.5,
+            "metrics": [
+                {
+                    "id": "spillback_rate",
+                    "direction": "minimize",
+                    "weight": 1.0,
+                    "source": "traffic_eval",
+                }
+            ],
+        },
+    },
+}
+
+
+def test_scoring_v2_tpi_is_minimize() -> None:
+    scored = score_candidates(
+        [
+            _cand("fixed", 8.0, 10.0),
+            _cand("max_pressure", 4.0, 10.0),
+        ],
+        {**SCORING_V2, "relative_range_epsilon": 0.0},
+    )
+    by_mode = {item["control_mode"]: item for item in scored}
+    assert by_mode["max_pressure"]["normalized_metrics"]["traffic_eval.traffic_performance_index"] == 1.0
+    assert by_mode["fixed"]["normalized_metrics"]["traffic_eval.traffic_performance_index"] == 0.0
+
+
+def test_scoring_v2_uses_unified_composite_not_pairwise_renorm() -> None:
+    selection = select_expert(
+        [
+            _cand("fixed", 5.0, 5.0),
+            _cand("max_pressure", 4.6, 4.6),
+            _cand("sotl", 9.0, 9.0),
+        ],
+        {**SCORING_V2, "min_composite_score_margin_over_baseline": 0.03},
+    )
+    unified = selection["candidate_scores"]["max_pressure"] - selection["candidate_scores"]["fixed"]
+    assert selection["composite_score_margin_over_baseline"] == pytest.approx(unified)
+    assert selection["pairwise_gain_over_baseline"] is None
+    assert abs(selection["composite_score_margin_over_baseline"]) < 0.99
+
+
+def test_ambiguity_only_compares_best_pareto_front() -> None:
+    selection = select_expert(
+        [
+            _cand("max_pressure", 4.80, 4.80),
+            _cand("sotl", 5.00, 5.00),
+            _cand("fixed", 9.0, 20.0),
+        ],
+        {**SCORING_V2, "ambiguous_margin": 0.08},
+    )
+    assert selection["winner"] == "max_pressure"
+    assert selection["pareto_rank"]["max_pressure"] == 1
+    assert selection["pareto_rank"]["sotl"] > 1
+    assert selection["ambiguous"] is False
+    all_compare = select_expert(
+        [
+            _cand("max_pressure", 4.80, 4.80),
+            _cand("sotl", 5.00, 5.00),
+            _cand("fixed", 9.0, 20.0),
+        ],
+        {**SCORING_V2, "ambiguous_margin": 0.08, "ambiguity_compare": "all_candidates"},
+    )
+    assert all_compare["ambiguous"] is True
+
+
+def test_tripinfo_reliability_gate_skips_metrics_not_episode() -> None:
+    gated = _cand("max_pressure", 1.0, 20.0)
+    gated["traffic_eval"]["completion_rate"] = 0.10
+    gated["traffic_eval"]["path_avg_speed_kmh"] = 80.0
+    ok = _cand("fixed", 8.0, 2.0)
+    ok["traffic_eval"]["completion_rate"] = 0.80
+    scored = score_candidates([gated, ok], SCORING_V2)
+    by_mode = {item["control_mode"]: item for item in scored}
+    assert by_mode["max_pressure"]["trip_reliability_gated"] is True
+    assert "traffic_performance_index" in by_mode["max_pressure"]["ignored_trip_metrics"]
+    assert by_mode["max_pressure"]["raw_metrics"]["traffic_eval.traffic_performance_index"] is None
+    assert by_mode["fixed"]["raw_metrics"]["traffic_eval.traffic_performance_index"] == 8.0
+    selection = select_expert([gated, ok], SCORING_V2)
+    assert selection["winner"] is not None
+    assert "max_pressure" in selection["ignored_trip_metrics"]
+
+
+def test_post_event_horizon_rejects_no_recovery_window() -> None:
+    from algorithms.traffic_llm.dataset.catalog import load_runtime_catalog
+    from algorithms.traffic_llm.dataset.scenario_generator import generate_scenarios
+
+    catalog = load_runtime_catalog()
+    config = {
+        "dataset_version": "horizon_test",
+        "simulation": {
+            "duration_seconds": 300,
+            "step_length": 0.1,
+            "decision_interval": 5.0,
+            "snapshot_interval_seconds": 1.0,
+            "required_post_event_horizon_s": 90,
+        },
+        "grid": {
+            "periods": ["off_peak"],
+            "scopes": ["east_dense"],
+            "seeds": [42001],
+            "event_types": ["accident"],
+            "event_start_seconds": [210, 120],
+            "event_duration_seconds": [90, 60],
+            "severity": {"accident": {"position_ratio": [0.5]}},
+        },
+    }
+    scenarios = generate_scenarios(config, catalog)
+    windows = {
+        (item.event.start_seconds, item.event.end_seconds - item.event.start_seconds)
+        for item in scenarios
+    }
+    assert (210.0, 90.0) not in windows
+    assert (210.0, 60.0) not in windows
+    assert (120.0, 60.0) in windows
+    assert (120.0, 90.0) in windows
+
+
+def test_resume_skips_completed_and_failed_unless_retry() -> None:
+    from algorithms.traffic_llm.dataset.io_utils import dump_json
+    from algorithms.traffic_llm.dataset.pipeline import classify_resume_jobs
+
+    tmp = Path("/tmp/traffic_llm_resume_test")
+    runs = tmp / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    dump_json(runs / "scenario_000001_fixed.json", {"state": "COMPLETED"})
+    dump_json(runs / "scenario_000001_sotl.json", {"state": "FAILED"})
+    jobs = [
+        {"spec": {"scenario_id": "scenario_000001"}, "control_mode": "fixed"},
+        {"spec": {"scenario_id": "scenario_000001"}, "control_mode": "sotl"},
+        {"spec": {"scenario_id": "scenario_000001"}, "control_mode": "max_pressure"},
+    ]
+    to_run, skipped_ok, skipped_fail = classify_resume_jobs(
+        jobs, tmp, resume=True, retry_failed=False
+    )
+    assert [item["control_mode"] for item in to_run] == ["max_pressure"]
+    assert skipped_ok == ["scenario_000001_fixed"]
+    assert skipped_fail == ["scenario_000001_sotl"]
+    to_retry, _, skipped_fail2 = classify_resume_jobs(
+        jobs, tmp, resume=True, retry_failed=True
+    )
+    assert {item["control_mode"] for item in to_retry} == {"sotl", "max_pressure"}
+    assert skipped_fail2 == []
+
+
+def test_local_scope_uses_all_intersections_for_small_preset() -> None:
+    from algorithms.traffic_llm.dataset.event_window import resolve_local_intersection_ids
+
+    small = resolve_local_intersection_ids(
+        ["demo_3", "demo_5", "demo_6", "demo_9"],
+        "demo_5",
+        {"demo_5": ("demo_3",)},
+        hops=1,
+        small_preset_max_intersections=6,
+    )
+    assert small == ("demo_3", "demo_5", "demo_6", "demo_9")
+    large_ids = [f"n{i}" for i in range(20)]
+    neighbors = {f"n{i}": (f"n{i-1}", f"n{i+1}") for i in range(1, 19)}
+    neighbors["n0"] = ("n1",)
+    neighbors["n19"] = ("n18",)
+    local = resolve_local_intersection_ids(
+        large_ids,
+        "n10",
+        neighbors,
+        hops=1,
+        small_preset_max_intersections=6,
+    )
+    assert set(local) == {"n9", "n10", "n11"}
+
+
+def test_pilot_v2_plan_is_45_by_270() -> None:
+    from algorithms.traffic_llm.dataset.io_utils import load_yaml
+    from algorithms.traffic_llm.dataset.pipeline import plan_job
+
+    config = load_yaml(Path(__file__).resolve().parents[1] / "configs" / "pilot_v2.yaml")
+    result = plan_job(config)
+    assert result["n_scenarios"] == 45
+    assert result["estimated_episodes"] == 270
+    assert result["period_counts"] == {
+        "morning_peak": 15,
+        "off_peak": 15,
+        "evening_peak": 15,
+    }
+    assert result["scope_counts"] == {
+        "east_dense": 15,
+        "west_dense": 15,
+        "xiongan_20": 15,
+    }
+    assert result["event_type_counts"] == {
+        "lane_closure": 9,
+        "speed_limit": 9,
+        "accident": 9,
+        "major_event_opening": 9,
+        "major_event_closing": 9,
+    }

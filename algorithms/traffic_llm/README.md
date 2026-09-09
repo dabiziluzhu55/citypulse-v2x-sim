@@ -6,16 +6,17 @@
 
 ## 阶段规划
 
-1. **Stage 1** 数据集生成与 expert selection（本目录当前目标）
-2. **Stage 2** Traffic-Qwen QLoRA / SFT
-3. **Stage 3** 模型评测与量化
-4. **Stage 4** vLLM 部署
-5. **Stage 5** RAG 更新
-6. **Stage 6** Backend 异步 AI takeover 适配
-7. **Stage 7** Frontend AI 决策全过程展示
-8. **Stage 8** Docker 容器化
+1. **Stage 1** 数据集生成与 expert selection
+2. **Stage 1.5** 评分校准 + 300s 中规模 pilot（当前）
+3. **Stage 2** Traffic-Qwen QLoRA / SFT
+4. **Stage 3** 模型评测与量化
+5. **Stage 4** vLLM 部署
+6. **Stage 5** RAG 更新
+7. **Stage 6** Backend 异步 AI takeover 适配
+8. **Stage 7** Frontend AI 决策全过程展示
+9. **Stage 8** Docker 容器化
 
-本阶段明确不做：Qwen 微调、下载新模型、QLoRA、INT4/AWQ、vLLM、Chroma/RAG 修改、前端 AI 面板、TakeoverOrchestrator 在线控制、算法训练代码或 `traffic_eval` 指标改写。
+本阶段明确不做：Qwen 微调、NarrowNet prediction、下载新模型、QLoRA、INT4/AWQ、vLLM、Chroma/RAG 修改、前端 AI 面板、TakeoverOrchestrator 在线控制、算法训练代码或 `traffic_eval` 指标改写。
 
 ## 运行环境
 
@@ -51,7 +52,7 @@ V1 Signal SFT **只吸收 `teacher_action_space=signal_only` 的高置信 expert
 ```bash
 # 只统计将生成多少场景，不跑 SUMO
 PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli plan \
-  --config algorithms/traffic_llm/configs/dataset_v1.yaml
+  --config algorithms/traffic_llm/configs/pilot_v2.yaml
 
 # 最小闭环 smoke test
 PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli generate \
@@ -60,21 +61,25 @@ PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli generate \
   --limit-scenarios 2 \
   --modes fixed,max_pressure,sotl
 
-# 正式生成（先看 plan 输出再决定）
+# 用 scoring_v2 对已有 runs 重选 expert（不重跑 SUMO）
+PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli score \
+  --dataset outputs/traffic_llm_dataset/smoke_v1 \
+  --scoring algorithms/traffic_llm/configs/scoring_v2.yaml
+
+# 300s pilot（45 scenarios × 6 algorithms = 270）。断点续跑：
 PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli generate \
-  --config algorithms/traffic_llm/configs/dataset_v1.yaml
+  --config algorithms/traffic_llm/configs/pilot_v2.yaml \
+  --resume \
+  --output outputs/traffic_llm_dataset/pilot_v2
 
-# 从已有 runs 按新权重重选 expert（不重跑 SUMO）
-PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli select \
-  --dataset outputs/traffic_llm_dataset/v1 \
-  --scoring algorithms/traffic_llm/configs/scoring_v1.yaml
-
-# 重新生成 SFT
-PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli build-sft \
-  --dataset outputs/traffic_llm_dataset/v1
+# FAILED 默认保留；需要重跑失败 episode 时加 --retry-failed
 ```
 
-`score` 与 `select` 当前都是对已落盘的 `traffic_eval` / event-window / recovery 指标重新加权选择专家。调整 `scoring_v1.yaml` 不必重跑 SUMO。
+`scoring_v1.yaml` 保留以便复现旧结果。`scoring_v2.yaml` 修正 TPI 方向、取消 winner-vs-fixed 二次归一化、只在最佳 Pareto front 内比较 ambiguity，并把扰动响应切到 `local_event_window`。
+
+`generate` 默认不覆盖 `COMPLETED` 的 `<scenario, algorithm>`；`FAILED` 只有 `--retry-failed` 才会重跑。
+
+`retention.mode=audit` 保留完整 1s snapshot；`compact` 只保留 SFT anchor snapshot，但 **不删除** 各算法 decision/action trace。
 
 ## 输出
 
@@ -84,6 +89,8 @@ PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli build-sft \
 
 ## 评价分层
 
-- **Event window**：仅用 Snapshot 可算的排队、溢流、速度、吞吐增量等，不调用短窗 TripInfo。
+- **Event window**：全网 Snapshot 排队/溢流/速度/吞吐增量，不调用短窗 TripInfo。
+- **Local event window**：事件目标路口 + 1-hop（preset ≤6 路口则用全部受控路口），供 scoring_v2 扰动响应使用。
 - **Episode**：完整结束后调用现有 `traffic_eval`，同名指标不以另一套公式重算。
-- **Recovery**：数据集专用，阈值全部来自 YAML；无法判定时 `recovery_time_s=null`。
+- **Recovery**：数据集专用，阈值全部来自 YAML；无法判定时 `recovery_time_s=null`。场景网格可配置 `required_post_event_horizon_s`，拒绝没有恢复窗口的 episode。
+- **TripInfo reliability gate**：`completion_rate` 低于配置阈值时不删除 episode，只忽略 TPI/速度/燃油等截尾敏感指标。

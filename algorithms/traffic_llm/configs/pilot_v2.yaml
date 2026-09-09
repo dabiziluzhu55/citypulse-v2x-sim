@@ -1,0 +1,83 @@
+dataset_version: traffic_qwen_sft_pilot_v2
+full_expert_version: traffic_qwen_full_expert_v1
+output_dir: outputs/traffic_llm_dataset/pilot_v2
+scoring_config: algorithms/traffic_llm/configs/scoring_v2.yaml
+
+simulation:
+  duration_seconds: 300
+  step_length: 0.1
+  snapshot_interval_seconds: 1.0
+  decision_interval: 5.0
+  minimum_green: 5.0
+  flow_multiplier: 1.0
+  workers: 1
+  wall_timeout_factor: 25.0
+  store_full_vehicle_observation: false
+  required_post_event_horizon_s: 90
+
+# audit: 完整 1s snapshot，供本次 pilot 排查。
+# compact: 正式大规模时丢掉全量 1s snapshot，保留 action trace + 指标 + SFT anchor snapshot。
+retention:
+  mode: audit
+
+planning:
+  slot_seconds: 5
+  plan_valid_seconds: 30
+  scope_hops: 1
+  min_episode_seconds: 60
+
+# 独立分层网格，不要用 --limit-scenarios 截取 dataset_v1。
+# 3 periods × 3 scopes × 5 events × 1 seed × 1 start × 1 duration × 1 severity = 45 scenarios
+# 45 × 6 algorithms = 270 episodes
+grid:
+  periods:
+    - morning_peak
+    - off_peak
+    - evening_peak
+  scopes:
+    - east_dense
+    - west_dense
+    - xiongan_20
+  seeds:
+    - 42001
+  event_types:
+    - lane_closure
+    - speed_limit
+    - accident
+    - major_event_opening
+    - major_event_closing
+  event_start_seconds:
+    - 120
+  event_duration_seconds:
+    - 60
+  severity:
+    speed_limit:
+      target_speed_mps: [8.0]
+    major_event_opening:
+      vehicle_count: [30]
+    major_event_closing:
+      vehicle_count: [30]
+    lane_closure:
+      lane_count: [1]
+    accident:
+      position_ratio: [0.5]
+
+control_modes:
+  - fixed
+  - max_pressure
+  - sotl
+  - ippo
+  - mappo
+  - cov2x
+
+split:
+  seed: 20260908
+  train: 0.80
+  val: 0.10
+  test: 0.10
+  holdout_seeds: []
+  ood_event_fraction: 0.15
+
+anchors:
+  offsets_seconds: [0, 30, 60]
+  require_horizon_inside_episode: true
