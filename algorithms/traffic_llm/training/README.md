@@ -10,7 +10,7 @@
 
 对应 HuggingFace id：`Qwen/Qwen2.5-7B-Instruct`。
 
-当前正式训练使用 **prompt-completion** + `completion_only_loss=true`，不要再把 system/user/assistant 拼成单个 `{"text":...}`。
+TRL `SFTTrainer` 必须接收 **4-bit 基座 + `peft_config`**。不要事先 `get_peft_model` 再交给 Trainer：TRL 会对已有 `PeftModel` 再跑 `prepare_model_for_kbit_training`，把 LoRA `B` 冻成全 0，表现为 `grad_norm=0` 且 slot agreement 相对 Base 不变。
 
 ```bash
 # Observation V2 smoke（Pilot raw runs 重建，不重跑 SUMO）
