@@ -79,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
 
     import torch
     from datasets import Dataset
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    from peft import LoraConfig
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainerCallback
     from trl import SFTConfig, SFTTrainer
 
@@ -149,8 +149,6 @@ def main(argv: list[str] | None = None) -> int:
         trust_remote_code=True,
         torch_dtype=compute_dtype,
     )
-    model = prepare_model_for_kbit_training(model)
-    model.enable_input_require_grads()
     lora_cfg = dict(cfg.get("lora") or {})
     peft_config = LoraConfig(
         r=int(lora_cfg.get("r", 16)),
@@ -160,10 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         task_type="CAUSAL_LM",
         target_modules=list(lora_cfg.get("target_modules") or ("q_proj", "v_proj")),
     )
-    model = get_peft_model(model, peft_config)
     model.config.use_cache = False
-    if cfg.get("gradient_checkpointing", True):
-        model.gradient_checkpointing_enable()
 
     loss_history: list[dict[str, Any]] = []
     peak_mem = {"allocated_gb": 0.0, "reserved_gb": 0.0}
@@ -215,8 +210,17 @@ def main(argv: list[str] | None = None) -> int:
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         processing_class=tokenizer,
+        peft_config=peft_config,
         callbacks=[LossCallback()],
     )
+    n_trainable = sum(int(p.requires_grad) for p in trainer.model.parameters())
+    n_trainable_params = sum(p.numel() for p in trainer.model.parameters() if p.requires_grad)
+    if n_trainable == 0 or n_trainable_params == 0:
+        raise SystemExit(
+            "FAIL: no trainable LoRA parameters. Do not train. "
+            "SFTTrainer must wrap the 4-bit base model via peft_config; "
+            "pre-wrapping then calling prepare_peft_model freezes adapters."
+        )
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
     train_result = trainer.train()
@@ -233,6 +237,8 @@ def main(argv: list[str] | None = None) -> int:
         "config": cfg,
         "n_train": len(train_rows),
         "n_val": len(val_rows),
+        "n_trainable_tensors": n_trainable,
+        "n_trainable_params": n_trainable_params,
         "max_length": max_length,
         "completion_only_loss": True,
         "metrics": metrics,
