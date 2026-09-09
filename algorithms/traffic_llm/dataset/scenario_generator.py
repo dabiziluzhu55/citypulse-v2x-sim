@@ -464,12 +464,17 @@ def build_event_spec(
     )
 
 
-def event_spec_to_disturbance(event: EventSpec, event_id: str) -> Any:
+def event_spec_to_disturbance(
+    event: EventSpec,
+    event_id: str,
+    *,
+    ai_control_enabled: bool = False,
+) -> Any:
     common = {
         "event_id": event_id,
         "start_seconds": float(event.start_seconds),
         "end_seconds": float(event.end_seconds),
-        "ai_control_enabled": False,
+        "ai_control_enabled": bool(ai_control_enabled),
     }
     if event.event_type == "lane_closure":
         return LaneClosureEvent(lane_ids=tuple(event.lane_ids), **common)
