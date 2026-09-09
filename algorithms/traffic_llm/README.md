@@ -7,8 +7,8 @@
 ## 阶段规划
 
 1. **Stage 1** 数据集生成与 expert selection
-2. **Stage 1.5** 评分校准 + 300s 中规模 pilot（当前）
-3. **Stage 2** Traffic-Qwen QLoRA / SFT
+2. **Stage 1.5** 评分校准 + 300s 中规模 pilot
+3. **Stage 2** 正式数据集 V1 + Observation V2 + Qwen2.5-7B-Instruct QLoRA（当前）
 4. **Stage 3** 模型评测与量化
 5. **Stage 4** vLLM 部署
 6. **Stage 5** RAG 更新
@@ -16,7 +16,9 @@
 8. **Stage 7** Frontend AI 决策全过程展示
 9. **Stage 8** Docker 容器化
 
-本阶段明确不做：Qwen 微调、NarrowNet prediction、下载新模型、QLoRA、INT4/AWQ、vLLM、Chroma/RAG 修改、前端 AI 面板、TakeoverOrchestrator 在线控制、算法训练代码或 `traffic_eval` 指标改写。
+本阶段明确不做：AWQ / INT4 合并、vLLM 正式服务、Chroma/RAG、前端 AI 面板、TakeoverOrchestrator 在线控制、算法训练代码或 `traffic_eval` 指标改写。
+
+Observation V2 schema 见 `dataset/OBSERVATION_V2.md`。正式训练使用 TRL prompt-completion 且 `completion_only_loss=true`；assistant JSON 被 `max_length` 截断则直接 FAIL。
 
 ## 运行环境
 
@@ -72,8 +74,21 @@ PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli generate \
   --resume \
   --output outputs/traffic_llm_dataset/pilot_v2
 
-# FAILED 默认保留；需要重跑失败 episode 时加 --retry-failed
-```
+# 正式 810 episode（先 plan，再 generate；split 在生成前冻结）
+PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli plan \
+  --config algorithms/traffic_llm/configs/formal_v1.yaml
+
+PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli generate \
+  --config algorithms/traffic_llm/configs/formal_v1.yaml \
+  --resume \
+  --workers 1 \
+  --output outputs/traffic_llm_dataset/formal_v1
+
+# 用现有 Pilot raw runs 重建 Observation V2 SFT（不重跑 SUMO）
+PYTHONPATH=. python -m algorithms.traffic_llm.dataset.cli build-sft-v2 \
+  --dataset outputs/traffic_llm_dataset/pilot_v2 \
+  --config algorithms/traffic_llm/configs/pilot_v2.yaml
+
 
 `scoring_v1.yaml` 保留以便复现旧结果。`scoring_v2.yaml` 修正 TPI 方向、取消 winner-vs-fixed 二次归一化、只在最佳 Pareto front 内比较 ambiguity，并把扰动响应切到 `local_event_window`。
 

@@ -623,3 +623,148 @@ def test_scoring_v2_records_active_and_ignored_metrics() -> None:
     assert selection["ignored_trip_metrics"]["max_pressure"]
     assert "active_metrics" in selection
     assert "participating_metrics" in selection
+
+
+def test_phase_service_covers_all_allowed_phases_with_real_connections() -> None:
+    from algorithms.traffic_llm.dataset.catalog import tls_phase_orders
+    from algorithms.traffic_llm.dataset.phase_service import (
+        load_phase_service_index,
+        validate_phase_service,
+    )
+
+    allowed = tls_phase_orders()
+    index = load_phase_service_index()
+    errors = validate_phase_service(index, allowed_phases=allowed)
+    assert errors == []
+    empty = []
+    for iid, phases in allowed.items():
+        for phase in phases:
+            tokens = list((index.get(iid) or {}).get(str(phase)) or ())
+            if not tokens:
+                empty.append(f"{iid}:{phase}")
+    assert not empty, empty[:20]
+
+
+def test_observation_v2_is_compact_and_has_phase_service() -> None:
+    from algorithms.traffic_llm.dataset.feature_builder import build_observation_v2
+    from algorithms.traffic_llm.dataset.schema import OBSERVATION_VERSION_V2
+
+    spec = _scenario()
+    snapshot = {
+        "intersections": {
+            "demo_5": {
+                "current_phase": 1,
+                "pending_phase": 2,
+                "stage": "green",
+                "lanes": {
+                    "E1_0": {
+                        "role": "incoming",
+                        "vehicle_count": 8,
+                        "halting_count": 5,
+                        "mean_speed": 2.3,
+                        "occupancy": 0.61,
+                        "queue_length_m": 31.5,
+                        "waiting_time": 12.0,
+                        "lane_length_m": 80.0,
+                    },
+                    "E9_0": {"role": "outgoing", "vehicle_count": 3, "halting_count": 0},
+                },
+            },
+            "demo_3": {"current_phase": 2, "lanes": {}},
+            "demo_6": {"current_phase": 1, "lanes": {}},
+            "demo_9": {"current_phase": 3, "lanes": {}},
+        },
+        "metrics": {"active_vehicles": 40, "halting_vehicles": 10, "mean_speed": 5.2},
+    }
+    obs = build_observation_v2(
+        spec=spec,
+        simulation_time=30.0,
+        snapshot_summary=snapshot,
+        allowed_phases={"demo_5": (1, 2, 3), "demo_3": (1, 2), "demo_6": (1,), "demo_9": (1, 2, 3)},
+        neighbors={"demo_5": ("demo_3",)},
+        scope_hops=1,
+    )
+    assert obs["observation_version"] == OBSERVATION_VERSION_V2
+    lanes = obs["ix"]["demo_5"]["lanes"]
+    assert lanes[0]["id"] == "E1_0"
+    assert "veh" in lanes[0]
+    assert all("lane_length_m" not in lane for lane in lanes)
+    assert all(lane["id"] != "E9_0" for lane in lanes)
+    assert "pending_phase" not in obs["ix"]["demo_5"]
+    assert "1" in obs["phase_service"]["demo_5"]
+    assert set(obs["phase_service"]["demo_5"]) == {"1", "2", "3"}
+
+
+def test_factual_reason_reads_v2_short_keys() -> None:
+    spec = _scenario()
+    observation = {
+        "ix": {
+            "demo_5": {
+                "lanes": [{"id": "E1_0", "halt": 6, "speed": 1.2, "occ": 0.6, "queue_m": 40.0}]
+            },
+            "demo_3": {"lanes": [{"id": "E2_0", "halt": 4, "speed": 2.0}]},
+        }
+    }
+    objective, reason = factual_reason(spec=spec, observation=observation, fallback=False)
+    assert "排队" in reason or "溢流" in reason or "速度" in reason
+    assert objective
+
+
+def test_prompt_completion_keeps_assistant_only() -> None:
+    from algorithms.traffic_llm.dataset.sft_builder import SYSTEM_PROMPT, messages_to_prompt_completion
+
+    sample = {
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": "{\"instruction\":\"x\"}"},
+            {"role": "assistant", "content": "{\"fallback_to_baseline\":true}"},
+        ],
+        "metadata": {"split": "train"},
+    }
+    converted = messages_to_prompt_completion(sample)
+    assert [item["role"] for item in converted["prompt"]] == ["system", "user"]
+    assert converted["completion"][0]["role"] == "assistant"
+
+
+def test_assistant_truncation_fails_closed() -> None:
+    from algorithms.traffic_llm.dataset.token_budget import assistant_truncated
+
+    intact = {"prompt_tokens": 2000, "completion_tokens": 200, "total_tokens": 2200, "has_assistant_target": True}
+    cut = {"prompt_tokens": 4000, "completion_tokens": 200, "total_tokens": 4200, "has_assistant_target": True}
+    missing = {"prompt_tokens": 100, "completion_tokens": 0, "total_tokens": 100, "has_assistant_target": False}
+    assert assistant_truncated(intact, 4096) is False
+    assert assistant_truncated(cut, 4096) is True
+    assert assistant_truncated(missing, 4096) is True
+
+
+def test_formal_v1_plan_is_135_by_810() -> None:
+    from algorithms.traffic_llm.dataset.io_utils import load_yaml
+    from algorithms.traffic_llm.dataset.pipeline import plan_job
+
+    config = load_yaml(Path(__file__).resolve().parents[1] / "configs" / "formal_v1.yaml")
+    result = plan_job(config)
+    assert result["n_scenarios"] == 135
+    assert result["estimated_episodes"] == 810
+    assert result["event_type_counts"] == {
+        "lane_closure": 27,
+        "speed_limit": 27,
+        "accident": 27,
+        "major_event_opening": 27,
+        "major_event_closing": 27,
+    }
+
+
+def test_holdout_seed_42003_is_test_only() -> None:
+    from algorithms.traffic_llm.dataset.split import assign_splits
+
+    specs = [
+        _scenario(scenario_id=f"s{seed}", seed=seed, scenario_group_id=f"g{seed}")
+        for seed in (42001, 42002, 42003)
+    ]
+    assignment = assign_splits(
+        specs,
+        {"seed": 20260909, "train": 0.8, "val": 0.2, "test": 0.0, "holdout_seeds": [42003]},
+    )
+    assert assignment["g42003"] == "test"
+    assert assignment["g42001"] in {"train", "val"}
+    assert assignment["g42002"] in {"train", "val"}

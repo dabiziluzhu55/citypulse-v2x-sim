@@ -7,6 +7,7 @@ from .schema import (
     EventSpec,
     FULL_EXPERT_VERSION,
     OBSERVATION_VERSION,
+    OBSERVATION_VERSION_V2,
     Provenance,
     ScenarioSpec,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "EventSpec",
     "FULL_EXPERT_VERSION",
     "OBSERVATION_VERSION",
+    "OBSERVATION_VERSION_V2",
     "Provenance",
     "ScenarioSpec",
 ]

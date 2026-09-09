@@ -2,23 +2,26 @@
 
 from __future__ import annotations
 
+import json
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from traffic_control.registry import CONTROL_MODE_REGISTRY, list_control_modes
 
-from .catalog import load_runtime_catalog, neighbor_map, tls_phase_orders
+from .catalog import git_commit, load_runtime_catalog, neighbor_map, tls_phase_orders
 from .episode_runner import run_episode, run_id_for
 from .event_window import (
     compute_local_event_window_metrics,
     resolve_local_intersection_ids,
 )
 from .io_utils import dump_json, load_json, read_jsonl, write_jsonl
-from .reporting import render_markdown, summarize_dataset, wall_and_disk_report
+from .phase_service import load_phase_service_index
+from .reporting import expert_diagnostics, render_markdown, summarize_dataset, wall_and_disk_report
 from .scenario_generator import generate_scenarios, plan_summary, repair_unroutable_lane_closures
-from .schema import DATASET_VERSION, ScenarioSpec
-from .sft_builder import build_sft_samples_for_run, load_trace_file
+from .schema import DATASET_VERSION, OBSERVATION_VERSION_V2, ScenarioSpec
+from .sft_builder import build_sft_samples_for_run, load_trace_file, messages_to_prompt_completion
 from .split import assign_splits, split_manifest
 from .teacher_selector import select_expert
 
@@ -34,6 +37,8 @@ def dataset_paths(root: Path) -> dict[str, Path]:
         "teacher": root / "teacher_selection",
         "full_expert": root / "full_expert" / "full_expert.jsonl",
         "sft": root / "sft",
+        "sft_v2": root / "sft_v2",
+        "prompt_completion": root / "prompt_completion",
         "reports": root / "reports",
         "split": root / "split_manifest.json",
     }
@@ -68,6 +73,50 @@ def plan_job(config: Mapping[str, Any], *, profile: str | None = None, modes: Se
         "dataset_version": config.get("dataset_version"),
         **plan_summary(scenarios, control_modes),
         "n_scenarios_planned": len(scenarios),
+    }
+
+
+def freeze_split(
+    output_dir: Path,
+    scenarios: Sequence[ScenarioSpec],
+    split_cfg: Mapping[str, Any],
+    *,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    """Write split_manifest once before generate. Holdout seeds stay out of train/val."""
+
+    paths = dataset_paths(output_dir)
+    if paths["split"].is_file() and not overwrite:
+        return load_json(paths["split"])
+    assignment = assign_splits(list(scenarios), dict(split_cfg or {}))
+    payload = split_manifest(list(scenarios), assignment, dict(split_cfg or {}))
+    payload["frozen"] = True
+    payload["git_commit"] = git_commit()
+    dump_json(paths["split"], payload)
+    return payload
+
+
+def load_frozen_assignment(
+    output_dir: Path,
+    scenarios: Sequence[ScenarioSpec],
+    split_cfg: Mapping[str, Any],
+) -> dict[str, str]:
+    paths = dataset_paths(output_dir)
+    if paths["split"].is_file():
+        payload = load_json(paths["split"])
+        assignment = dict(payload.get("assignment") or {})
+        if assignment:
+            return {str(key): str(value) for key, value in assignment.items()}
+    frozen = freeze_split(output_dir, scenarios, split_cfg, overwrite=False)
+    return {str(key): str(value) for key, value in dict(frozen.get("assignment") or {}).items()}
+
+
+def _pipeline_flags(config: Mapping[str, Any]) -> dict[str, bool]:
+    pipe = dict(config.get("pipeline") or {})
+    return {
+        "freeze_split_before_generate": bool(pipe.get("freeze_split_before_generate", True)),
+        "score_on_generate": bool(pipe.get("score_on_generate", True)),
+        "build_sft_on_generate": bool(pipe.get("build_sft_on_generate", True)),
     }
 
 
@@ -176,6 +225,9 @@ def generate_dataset(
     anchors = [float(item) for item in (config.get("anchors") or {}).get("offsets_seconds") or (0, 30, 60)]
     neighbors = neighbor_map()
     sim = dict(config.get("simulation") or {})
+    flags = _pipeline_flags(config)
+    if flags["freeze_split_before_generate"]:
+        freeze_split(output_dir, scenarios, dict(config.get("split") or {}), overwrite=False)
     dump_json(
         paths["manifest"],
         {
@@ -186,6 +238,7 @@ def generate_dataset(
             "retention_mode": retention_mode,
             "resume": bool(resume),
             "retry_failed": bool(retry_failed),
+            "git_commit": git_commit(),
             "config": dict(config),
         },
     )
@@ -221,37 +274,109 @@ def generate_dataset(
 
     _progress(
         f"jobs total={len(jobs)} run={len(to_run)} "
-        f"skip_completed={len(skipped_completed)} skip_failed={len(skipped_failed)}"
+        f"skip_completed={len(skipped_completed)} skip_failed={len(skipped_failed)} "
+        f"git={git_commit()}"
     )
     results: list[dict[str, Any]] = []
     failed_now: list[str] = []
+    started = time.monotonic()
+    paths["reports"].mkdir(parents=True, exist_ok=True)
+    failed_log = paths["reports"] / "failed_episodes.jsonl"
+
+    def _emit_progress(done: int, result: Mapping[str, Any]) -> None:
+        elapsed = max(1e-6, time.monotonic() - started)
+        remaining_now = max(0, len(to_run) - done)
+        eta_s = (elapsed / done) * remaining_now if done else None
+        all_runs_now = _load_runs(output_dir)
+        completed_n = sum(1 for item in all_runs_now if item.get("state") == "COMPLETED")
+        failed_n = sum(1 for item in all_runs_now if item.get("state") != "COMPLETED")
+        remaining_all = max(0, len(jobs) - completed_n)
+        eta_txt = "n/a" if eta_s is None else f"{eta_s / 3600.0:.2f}h"
+        _progress(
+            f"[{done}/{len(to_run)}] {result.get('run_id')} "
+            f"state={result.get('state')} wall={float(result.get('elapsed_wall_s') or 0):.1f}s "
+            f"completed={completed_n} failed={failed_n} remaining={remaining_all} eta={eta_txt}"
+        )
+        if done == 1 or done % 10 == 0 or remaining_now == 0:
+            dump_json(
+                paths["reports"] / "generate_progress.json",
+                {
+                    "completed": completed_n,
+                    "failed": failed_n,
+                    "remaining": remaining_all,
+                    "skipped_completed": len(skipped_completed),
+                    "skipped_failed": len(skipped_failed),
+                    "failed_this_invocation": list(failed_now),
+                    "eta_seconds": eta_s,
+                    "elapsed_seconds": elapsed,
+                    "git_commit": git_commit(),
+                },
+            )
+
     if workers == 1:
         for idx, job in enumerate(to_run, start=1):
-            result = _run_payload(job)
+            try:
+                result = _run_payload(job)
+            except Exception as exc:
+                result = {
+                    "run_id": run_id_for(job["spec"]["scenario_id"], job["control_mode"]),
+                    "state": "FAILED",
+                    "error": str(exc),
+                    "elapsed_wall_s": 0.0,
+                }
             results.append(result)
             if result.get("state") != "COMPLETED":
                 failed_now.append(str(result.get("run_id")))
-            _progress(
-                f"[{idx}/{len(to_run)}] {result.get('run_id')} "
-                f"state={result.get('state')} wall={float(result.get('elapsed_wall_s') or 0):.1f}s"
-            )
+                with failed_log.open("a", encoding="utf-8") as handle:
+                    handle.write(
+                        json.dumps(
+                            {
+                                "run_id": result.get("run_id"),
+                                "state": result.get("state"),
+                                "error": result.get("error"),
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+            _emit_progress(idx, result)
     else:
         with ProcessPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(_run_payload, job): job for job in to_run}
             done = 0
             for future in as_completed(futures):
-                result = future.result()
+                job = futures[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    result = {
+                        "run_id": run_id_for(job["spec"]["scenario_id"], job["control_mode"]),
+                        "state": "FAILED",
+                        "error": str(exc),
+                        "elapsed_wall_s": 0.0,
+                    }
                 results.append(result)
                 done += 1
                 if result.get("state") != "COMPLETED":
                     failed_now.append(str(result.get("run_id")))
-                _progress(
-                    f"[{done}/{len(to_run)}] {result.get('run_id')} "
-                    f"state={result.get('state')} wall={float(result.get('elapsed_wall_s') or 0):.1f}s"
-                )
+                    with failed_log.open("a", encoding="utf-8") as handle:
+                        handle.write(
+                            json.dumps(
+                                {
+                                    "run_id": result.get("run_id"),
+                                    "state": result.get("state"),
+                                    "error": result.get("error"),
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                _emit_progress(done, result)
 
-    select_teachers(output_dir, scoring)
-    build_sft(output_dir, config, scoring)
+    if flags["score_on_generate"]:
+        select_teachers(output_dir, scoring)
+    if flags["build_sft_on_generate"]:
+        build_sft(output_dir, config, scoring)
     all_runs = _load_runs(output_dir)
     completed_n = sum(1 for item in all_runs if item.get("state") == "COMPLETED")
     failed_n = sum(1 for item in all_runs if item.get("state") != "COMPLETED")
@@ -387,11 +512,25 @@ def select_teachers(output_dir: Path, scoring: Mapping[str, Any]) -> dict[str, A
     write_jsonl(paths["teacher"] / "ambiguous_candidates.jsonl", ambiguous)
     write_jsonl(paths["teacher"] / "rejected_candidates.jsonl", rejected)
     write_jsonl(paths["full_expert"], full_expert)
+    diagnostics = expert_diagnostics(
+        scenarios=[item.to_dict() for item in _load_scenarios(output_dir)],
+        selections=selected + ambiguous,
+        ambiguous=ambiguous,
+        rejected=rejected,
+    )
+    paths["reports"].mkdir(parents=True, exist_ok=True)
+    dump_json(paths["reports"] / "expert_diagnostics.json", diagnostics)
+    if diagnostics.get("block_training"):
+        _progress(
+            "expert diagnostics FLAG block_training="
+            f"{diagnostics['flags']}. Do not start formal training until reviewed."
+        )
     return {
         "n_selected": len(selected),
         "n_ambiguous": len(ambiguous),
         "n_rejected": len(rejected),
         "selection_version": scoring.get("selection_version"),
+        "diagnostics": diagnostics,
     }
 
 
@@ -407,6 +546,10 @@ def build_sft(
     output_dir: Path,
     dataset_config: Mapping[str, Any],
     scoring: Mapping[str, Any],
+    *,
+    observation_version: str = "v1",
+    sft_dirname: str | None = None,
+    write_prompt_completion: bool | None = None,
 ) -> dict[str, Any]:
     paths = dataset_paths(output_dir)
     scenarios = {item.scenario_id: item for item in _load_scenarios(output_dir)}
@@ -421,11 +564,21 @@ def build_sft(
     }
     neighbors = neighbor_map()
     allowed = tls_phase_orders()
-    assignment = assign_splits(list(scenarios.values()), dict(dataset_config.get("split") or {}))
-    dump_json(paths["split"], split_manifest(list(scenarios.values()), assignment, dict(dataset_config.get("split") or {})))
+    use_v2 = str(observation_version).lower() in {"v2", OBSERVATION_VERSION_V2, "traffic_observation_v2"}
+    if sft_dirname is None:
+        sft_dirname = "sft_v2" if use_v2 else "sft"
+    if write_prompt_completion is None:
+        write_prompt_completion = use_v2
+    assignment = load_frozen_assignment(
+        output_dir,
+        list(scenarios.values()),
+        dict(dataset_config.get("split") or {}),
+    )
+    phase_index = load_phase_service_index() if use_v2 else None
 
-    buckets = {"train": [], "val": [], "test": []}
+    buckets: dict[str, list[dict[str, Any]]] = {"train": [], "val": [], "test": []}
     skipped_ambiguous = []
+    skipped_signal_vehicle = []
     for scenario_id, spec in scenarios.items():
         selection = selections.get(scenario_id) or ambiguous.get(scenario_id)
         if selection is None:
@@ -451,18 +604,33 @@ def build_sft(
             dataset_config=dataset_config,
             neighbors=neighbors,
             allowed_phases=allowed,
+            observation_version="v2" if use_v2 else "v1",
+            phase_service=phase_index,
         )
+        if not samples and str(run.get("teacher_action_space")) == "signal_vehicle":
+            skipped_signal_vehicle.append(scenario_id)
         for sample in samples:
             sample["metadata"]["split"] = split
             buckets[split].append(sample)
 
-    paths["sft"].mkdir(parents=True, exist_ok=True)
-    write_jsonl(paths["sft"] / "train.jsonl", buckets["train"])
-    write_jsonl(paths["sft"] / "val.jsonl", buckets["val"])
-    write_jsonl(paths["sft"] / "test.jsonl", buckets["test"])
-    write_jsonl(paths["sft"] / "sft_train.jsonl", buckets["train"])
-    write_jsonl(paths["sft"] / "sft_val.jsonl", buckets["val"])
-    write_jsonl(paths["sft"] / "sft_test.jsonl", buckets["test"])
+    sft_dir = output_dir / sft_dirname
+    sft_dir.mkdir(parents=True, exist_ok=True)
+    write_jsonl(sft_dir / "train.jsonl", buckets["train"])
+    write_jsonl(sft_dir / "val.jsonl", buckets["val"])
+    write_jsonl(sft_dir / "test.jsonl", buckets["test"])
+    write_jsonl(sft_dir / "sft_train.jsonl", buckets["train"])
+    write_jsonl(sft_dir / "sft_val.jsonl", buckets["val"])
+    write_jsonl(sft_dir / "sft_test.jsonl", buckets["test"])
+    pc_counts = {"train": 0, "val": 0, "test": 0}
+    if write_prompt_completion:
+        pc_root = output_dir / "prompt_completion"
+        if sft_dirname not in {"sft", "sft_v1"}:
+            pc_root = output_dir / "prompt_completion_v2"
+        pc_root.mkdir(parents=True, exist_ok=True)
+        for split, rows in buckets.items():
+            converted = [messages_to_prompt_completion(item) for item in rows]
+            write_jsonl(pc_root / f"{split}.jsonl", converted)
+            pc_counts[split] = len(converted)
 
     run_list = list(runs.values())
     selection_list = list(selections.values()) + list(ambiguous.values())
@@ -483,14 +651,28 @@ def build_sft(
         target_episodes=max(1, len(run_list)),
     )
     summary["cost"] = cost
+    summary["observation_version"] = OBSERVATION_VERSION_V2 if use_v2 else "traffic_qwen_observation_v1"
+    summary["sft_dirname"] = sft_dirname
+    summary["prompt_completion_counts"] = pc_counts
     paths["reports"].mkdir(parents=True, exist_ok=True)
-    dump_json(paths["reports"] / "dataset_summary.json", summary)
-    dump_json(paths["reports"] / "cost_report.json", cost)
-    (paths["reports"] / "dataset_summary.md").write_text(
-        render_markdown(summary, cost), encoding="utf-8"
-    )
+    report_name = "dataset_summary_v2.json" if use_v2 else "dataset_summary.json"
+    dump_json(paths["reports"] / report_name, summary)
+    if not use_v2:
+        dump_json(paths["reports"] / "cost_report.json", cost)
+        (paths["reports"] / "dataset_summary.md").write_text(
+            render_markdown(summary, cost), encoding="utf-8"
+        )
+    else:
+        dump_json(paths["reports"] / "cost_report_v2.json", cost)
+        (paths["reports"] / "dataset_summary_v2.md").write_text(
+            render_markdown(summary, cost), encoding="utf-8"
+        )
     return {
         "sft_counts": {key: len(value) for key, value in buckets.items()},
+        "prompt_completion_counts": pc_counts,
         "skipped_ambiguous": len(skipped_ambiguous),
+        "skipped_signal_vehicle": len(skipped_signal_vehicle),
+        "observation_version": summary["observation_version"],
+        "sft_dirname": sft_dirname,
         "cost": cost,
     }

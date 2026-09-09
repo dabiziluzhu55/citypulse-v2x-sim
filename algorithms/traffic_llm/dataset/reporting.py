@@ -409,3 +409,97 @@ def render_markdown(summary: Mapping[str, Any], cost: Mapping[str, Any] | None =
         lines.append(f"- dataset_bytes: {cost.get('dataset_bytes')}")
         lines.append(f"- estimates: `{cost.get('estimates')}`")
     return "\n".join(lines) + "\n"
+
+
+def expert_diagnostics(
+    *,
+    scenarios: Sequence[Mapping[str, Any]],
+    selections: Sequence[Mapping[str, Any]],
+    ambiguous: Sequence[Mapping[str, Any]],
+    rejected: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Formal expert-selection health checks. Does not change scoring."""
+
+    scenario_by_id = {item["scenario_id"]: item for item in scenarios}
+    selected = [item for item in selections if item.get("winner") and not item.get("ambiguous")]
+    n_selected = len(selected)
+    n_ambiguous = len(ambiguous)
+    n_compared = max(1, n_selected + n_ambiguous)
+    winners = Counter(str(item.get("winner")) for item in selected)
+    by_event = defaultdict(Counter)
+    by_period = defaultdict(Counter)
+    by_scope = defaultdict(Counter)
+    sft_by_event: Counter[str] = Counter()
+    event_totals: Counter[str] = Counter()
+    scope_gate: Counter[str] = Counter()
+    scope_totals: Counter[str] = Counter()
+    signal_vehicle = 0
+    signal_sft_ok = 0
+    fallback = 0
+    trip_gated = 0
+    for item in selected:
+        spec = scenario_by_id.get(item.get("scenario_id")) or {}
+        event_type = str((spec.get("event") or {}).get("event_type") or "unknown")
+        period = str(spec.get("period") or "unknown")
+        scope = str(spec.get("scope") or "unknown")
+        winners_key = str(item.get("winner"))
+        by_event[event_type][winners_key] += 1
+        by_period[period][winners_key] += 1
+        by_scope[scope][winners_key] += 1
+        event_totals[event_type] += 1
+        scope_totals[scope] += 1
+        if item.get("fallback_to_baseline"):
+            fallback += 1
+        if item.get("signal_sft_eligible"):
+            signal_sft_ok += 1
+            sft_by_event[event_type] += 1
+        if item.get("winner_action_space") == "signal_vehicle" or not item.get("signal_sft_eligible", True):
+            signal_vehicle += 1
+        gated_modes = item.get("trip_reliability_gated_modes") or []
+        if gated_modes:
+            trip_gated += 1
+            scope_gate[scope] += 1
+    for item in ambiguous:
+        spec = scenario_by_id.get(item.get("scenario_id")) or {}
+        event_type = str((spec.get("event") or {}).get("event_type") or "unknown")
+        event_totals[event_type] += 1
+    top_share = (winners.most_common(1)[0][1] / n_selected) if n_selected else 0.0
+    events_without_sft = [
+        event_type
+        for event_type, total in event_totals.items()
+        if sft_by_event.get(event_type, 0) == 0
+    ]
+    high_gate_scopes = {
+        scope: (scope_gate[scope] / n) if n else 0.0
+        for scope, n in scope_totals.items()
+        if n and (scope_gate[scope] / n) >= 0.50
+    }
+    flags = {
+        "single_expert_over_80pct": bool(n_selected and top_share >= 0.80),
+        "event_without_signal_sft": events_without_sft,
+        "scope_tripinfo_gate_ge_50pct": high_gate_scopes,
+    }
+    return {
+        "n_selected": n_selected,
+        "n_ambiguous": n_ambiguous,
+        "n_rejected": len(rejected),
+        "winner_counts": dict(winners),
+        "winner_share": {mode: count / n_selected for mode, count in winners.items()} if n_selected else {},
+        "winner_by_event": {key: dict(value) for key, value in by_event.items()},
+        "winner_by_period": {key: dict(value) for key, value in by_period.items()},
+        "winner_by_scope": {key: dict(value) for key, value in by_scope.items()},
+        "ambiguous_rate": n_ambiguous / n_compared,
+        "signal_vehicle_rate": signal_vehicle / max(1, n_selected),
+        "signal_sft_eligible_rate": signal_sft_ok / max(1, n_selected),
+        "fixed_fallback_rate": fallback / max(1, n_selected),
+        "tripinfo_gate_rate": trip_gated / max(1, n_selected + n_ambiguous),
+        "tripinfo_gate_by_scope": {
+            scope: (scope_gate[scope] / n) if n else 0.0 for scope, n in scope_totals.items()
+        },
+        "flags": flags,
+        "block_training": bool(
+            flags["single_expert_over_80pct"]
+            or flags["event_without_signal_sft"]
+            or flags["scope_tripinfo_gate_ge_50pct"]
+        ),
+    }

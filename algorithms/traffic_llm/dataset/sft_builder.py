@@ -9,9 +9,9 @@ from typing import Any, Mapping, Sequence
 from simulation.sumo.engine.ai_control import AIControlPlan, AIControlConfig
 
 from .action_parser import parse_target_phases
-from .feature_builder import build_observation
+from .feature_builder import build_observation, build_observation_v2
 from .io_utils import read_jsonl
-from .schema import DATASET_VERSION, ScenarioSpec
+from .schema import DATASET_VERSION, OBSERVATION_VERSION_V2, ScenarioSpec
 from .teacher_selector import signal_sft_reason
 
 
@@ -95,9 +95,12 @@ FUTURE_LEAK_PATTERNS = (
 
 
 def _incoming_lane_maps(observation: Mapping[str, Any], intersection_id: str) -> list[Mapping[str, Any]]:
-    ix = (observation.get("intersections") or {}).get(intersection_id) or {}
+    ix_map = observation.get("intersections") or observation.get("ix") or {}
+    ix = ix_map.get(intersection_id) or {}
+    raw_lanes = ix.get("lanes") or {}
+    items = raw_lanes.values() if isinstance(raw_lanes, Mapping) else raw_lanes
     lanes = []
-    for lane in dict(ix.get("lanes") or {}).values():
+    for lane in items:
         if not isinstance(lane, Mapping):
             continue
         role = str(lane.get("role") or "incoming")
@@ -105,6 +108,13 @@ def _incoming_lane_maps(observation: Mapping[str, Any], intersection_id: str) ->
             continue
         lanes.append(lane)
     return lanes
+
+
+def _lane_field(lane: Mapping[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in lane and lane[key] is not None:
+            return lane[key]
+    return None
 
 
 def _mean(values: Sequence[Any]) -> float | None:
@@ -124,25 +134,29 @@ def factual_reason(
 
     target = spec.event.intersection_id
     target_lanes = _incoming_lane_maps(observation, target)
-    halt = _mean([lane.get("halting_count") for lane in target_lanes])
-    speed = _mean([lane.get("mean_speed") for lane in target_lanes])
-    occupancy = _mean([lane.get("occupancy") for lane in target_lanes])
+    halt = _mean([_lane_field(lane, "halting_count", "halt") for lane in target_lanes])
+    speed = _mean([_lane_field(lane, "mean_speed", "speed") for lane in target_lanes])
+    occupancy = _mean([_lane_field(lane, "occupancy", "occ") for lane in target_lanes])
     spill = False
     for lane in target_lanes:
-        queue = lane.get("queue_length_m")
+        queue = _lane_field(lane, "queue_length_m", "queue_m")
         length = lane.get("lane_length_m")
+        occ = _lane_field(lane, "occupancy", "occ")
         try:
             if queue is not None and length is not None and float(length) > 0:
                 if float(queue) + 1e-9 >= 0.85 * float(length):
                     spill = True
+            elif occ is not None and float(occ) >= 0.85:
+                spill = True
         except (TypeError, ValueError):
             continue
     neighbor_halt = []
-    for iid, i_obs in dict(observation.get("intersections") or {}).items():
+    ix_map = observation.get("intersections") or observation.get("ix") or {}
+    for iid in dict(ix_map):
         if str(iid) == str(target):
             continue
         lanes = _incoming_lane_maps(observation, str(iid))
-        value = _mean([lane.get("halting_count") for lane in lanes])
+        value = _mean([_lane_field(lane, "halting_count", "halt") for lane in lanes])
         if value is not None:
             neighbor_halt.append(value)
 
@@ -190,6 +204,17 @@ def snapshot_at(
     return best.get("summary") or best
 
 
+def messages_to_prompt_completion(sample: Mapping[str, Any]) -> dict[str, Any]:
+    messages = list(sample.get("messages") or ())
+    prompt = [item for item in messages if item.get("role") in {"system", "user"}]
+    completion = [item for item in messages if item.get("role") == "assistant"]
+    return {
+        "prompt": prompt,
+        "completion": completion,
+        "metadata": dict(sample.get("metadata") or {}),
+    }
+
+
 def build_sft_samples_for_run(
     *,
     spec: ScenarioSpec,
@@ -200,6 +225,8 @@ def build_sft_samples_for_run(
     dataset_config: Mapping[str, Any],
     neighbors: Mapping[str, Sequence[str]],
     allowed_phases: Mapping[str, Sequence[int]],
+    observation_version: str = "v1",
+    phase_service: Mapping[str, Mapping[str, Sequence[str]]] | None = None,
 ) -> list[dict[str, Any]]:
     fallback = bool(selection.get("fallback_to_baseline"))
     teacher_mode = str(selection.get("winner") or "")
@@ -232,15 +259,27 @@ def build_sft_samples_for_run(
         snap = snapshot_at(snapshots, anchor)
         if snap is None:
             continue
-        observation = build_observation(
-            spec=spec,
-            simulation_time=anchor,
-            snapshot_summary=snap,
-            allowed_phases=allowed_phases,
-            neighbors=neighbors,
-            scope_hops=hops,
-            prediction=None,
-        )
+        use_v2 = str(observation_version).lower() in {"v2", OBSERVATION_VERSION_V2, "traffic_observation_v2"}
+        if use_v2:
+            observation = build_observation_v2(
+                spec=spec,
+                simulation_time=anchor,
+                snapshot_summary=snap,
+                allowed_phases=allowed_phases,
+                neighbors=neighbors,
+                scope_hops=hops,
+                phase_service=phase_service,
+            )
+        else:
+            observation = build_observation(
+                spec=spec,
+                simulation_time=anchor,
+                snapshot_summary=snap,
+                allowed_phases=allowed_phases,
+                neighbors=neighbors,
+                scope_hops=hops,
+                prediction=None,
+            )
         controlled = list(observation["controlled_region"])
         if fallback:
             plan_obj = {
@@ -305,6 +344,7 @@ def build_sft_samples_for_run(
                     "action_space": run.get("teacher_action_space"),
                     "fallback_to_baseline": fallback,
                     "dataset_version": spec.dataset_version or DATASET_VERSION,
+                    "observation_version": observation.get("observation_version"),
                     "ambiguous": bool(selection.get("ambiguous")),
                     "recovery_time_s": (run.get("recovery") or {}).get("recovery_time_s"),
                     "winner_score": selection.get("winner_score"),

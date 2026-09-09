@@ -51,10 +51,22 @@ def _parser() -> argparse.ArgumentParser:
     sft.add_argument("--dataset", required=True)
     sft.add_argument("--config", default="algorithms/traffic_llm/configs/dataset_v1.yaml")
     sft.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v2.yaml")
+    sft.add_argument("--observation-version", default="v1", choices=("v1", "v2"))
+    sft.add_argument("--sft-dir", default="")
+    sft.add_argument("--write-prompt-completion", action="store_true")
+
+    sft_v2 = sub.add_parser("build-sft-v2", help="Rebuild Observation V2 SFT without overwriting Pilot V1")
+    sft_v2.add_argument("--dataset", required=True)
+    sft_v2.add_argument("--config", default="algorithms/traffic_llm/configs/pilot_v2.yaml")
+    sft_v2.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v2.yaml")
+    sft_v2.add_argument("--sft-dir", default="sft_v2")
 
     audit = sub.add_parser("audit", help="Audit frozen Signal SFT JSONL")
     audit.add_argument("--dataset", required=True)
     audit.add_argument("--model", default="")
+    audit.add_argument("--sft-dir", default="sft")
+    audit.add_argument("--prompt-completion-dir", default="")
+    audit.add_argument("--max-length", type=int, default=None)
     return parser
 
 
@@ -128,12 +140,50 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "build-sft":
         config = load_yaml(args.config)
         scoring = load_yaml(args.scoring)
-        result = build_sft(Path(args.dataset), config, scoring)
+        result = build_sft(
+            Path(args.dataset),
+            config,
+            scoring,
+            observation_version=args.observation_version,
+            sft_dirname=args.sft_dir or None,
+            write_prompt_completion=True if args.write_prompt_completion else None,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "build-sft-v2":
+        config = load_yaml(args.config)
+        scoring = load_yaml(args.scoring)
+        result = build_sft(
+            Path(args.dataset),
+            config,
+            scoring,
+            observation_version="v2",
+            sft_dirname=args.sft_dir or "sft_v2",
+            write_prompt_completion=True,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.command == "audit":
-        result = audit_sft(Path(args.dataset), model_path=args.model or None)
-        print(json.dumps({k: result[k] for k in ("passed", "n_samples", "n_errors", "checks", "counts", "prompt_tokens") if k in result}, ensure_ascii=False, indent=2))
+        result = audit_sft(
+            Path(args.dataset),
+            model_path=args.model or None,
+            sft_dirname=args.sft_dir,
+            prompt_completion_dirname=args.prompt_completion_dir or None,
+            max_length=args.max_length,
+        )
+        keep = (
+            "passed",
+            "n_samples",
+            "n_errors",
+            "checks",
+            "counts",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "phase_service_complete_rate",
+            "assistant_truncation_rate",
+        )
+        print(json.dumps({k: result[k] for k in keep if k in result}, ensure_ascii=False, indent=2))
         return 0 if result.get("passed") else 2
     return 1
 

@@ -9,6 +9,7 @@ from typing import Any, Mapping
 DATASET_VERSION = "traffic_qwen_sft_v1"
 FULL_EXPERT_VERSION = "traffic_qwen_full_expert_v1"
 OBSERVATION_VERSION = "traffic_qwen_observation_v1"
+OBSERVATION_VERSION_V2 = "traffic_observation_v2"
 ACTION_SPACE_SIGNAL_ONLY = "signal_only"
 ACTION_SPACE_SIGNAL_VEHICLE = "signal_vehicle"
 

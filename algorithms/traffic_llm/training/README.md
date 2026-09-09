@@ -10,7 +10,27 @@
 
 对应 HuggingFace id：`Qwen/Qwen2.5-7B-Instruct`。
 
-当前 smoke 使用 PEFT + TRL + bitsandbytes 4-bit NF4，不 merge、不 AWQ、不替换线上服务。
+当前正式训练使用 **prompt-completion** + `completion_only_loss=true`，不要再把 system/user/assistant 拼成单个 `{"text":...}`。
+
+```bash
+# Observation V2 smoke（Pilot raw runs 重建，不重跑 SUMO）
+python -m algorithms.traffic_llm.dataset.cli build-sft-v2 \
+  --dataset outputs/traffic_llm_dataset/pilot_v2 \
+  --config algorithms/traffic_llm/configs/pilot_v2.yaml
+
+python -m algorithms.traffic_llm.dataset.cli audit \
+  --dataset outputs/traffic_llm_dataset/pilot_v2 \
+  --sft-dir sft_v2 \
+  --prompt-completion-dir prompt_completion_v2 \
+  --model /home/kemove/devdata1/zyh_v2x_ai/models/Qwen2.5-7B-Instruct \
+  --max-length 4096
+
+python -m algorithms.traffic_llm.training.train_qlora \
+  --config algorithms/traffic_llm/training/configs/qlora_smoke_v2.yaml
+```
+
+正式 810 完成后使用 `qlora_formal_v1.yaml`（epoch-based，只看 val loss 选 checkpoint）。不要 merge、AWQ、vLLM。
+
 
 ```bash
 export PYTHONPATH=.
