@@ -14,7 +14,8 @@ from .contract import (
 )
 
 
-DEFAULT_MODEL_ALIAS = "cov2x_g30_temp_cap_u24"
+DEFAULT_MODEL_ALIAS = "cv_joint_v1"
+LEGACY_MODEL_ALIAS = "cov2x_g30_temp_cap_u24"
 
 
 @dataclass(frozen=True)
@@ -38,8 +39,8 @@ class ScenarioAlias:
 _MODEL_DIR = Path(__file__).resolve().parent / "models"
 
 MODEL_ALIASES: dict[str, ModelAlias] = {
-    DEFAULT_MODEL_ALIAS: ModelAlias(
-        alias=DEFAULT_MODEL_ALIAS,
+    LEGACY_MODEL_ALIAS: ModelAlias(
+        alias=LEGACY_MODEL_ALIAS,
         checkpoint_path=_MODEL_DIR / TEMPORARY_CAP_MODEL_FILENAME,
         manifest_path=_MODEL_DIR / TEMPORARY_CAP_MANIFEST_FILENAME,
         training_intersection_ids=TRAINING_INTERSECTION_IDS,
@@ -49,6 +50,16 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         description=(
             "Frozen G30 Road/Cloud plus update-24 temporary base-relative "
             "Vehicle speed-cap candidate"
+        ),
+    ),
+    "cv_joint_v1": ModelAlias(
+        alias="cv_joint_v1",
+        checkpoint_path=_MODEL_DIR / "cv_joint_v1_generation_003.pt",
+        manifest_path=_MODEL_DIR / "cv_joint_v1_manifest.json",
+        training_intersection_ids=TRAINING_INTERSECTION_IDS,
+        adapter_module="traffic_control.cov2x.candidates.cv_joint_v1",
+        description=(
+            "Generation-3 CV Joint Cloud/Vehicle candidate with frozen IPPO Road"
         ),
     ),
     "cov2x_joint_ep12": ModelAlias(
@@ -74,13 +85,13 @@ SCENARIO_ALIASES: dict[str, ScenarioAlias] = {
     "east_dense": ScenarioAlias(
         alias="east_dense",
         scenario_preset_id="east_dense",
-        model_alias=DEFAULT_MODEL_ALIAS,
+        model_alias=LEGACY_MODEL_ALIAS,
         description="East demo_3/5/6/9 scope; other intersections stay Fixed",
     ),
     "west_dense": ScenarioAlias(
         alias="west_dense",
         scenario_preset_id="west_dense",
-        model_alias=DEFAULT_MODEL_ALIAS,
+        model_alias=LEGACY_MODEL_ALIAS,
         description="West demo_14/15/19 scope; other intersections stay Fixed",
     ),
 }
@@ -121,6 +132,16 @@ def validate_alias_combo(
     """Validate that controlled IDs are a subset of model training IDs."""
     model = resolve_model(model_alias)
     controlled = tuple(str(iid) for iid in intersection_ids)
+    if (
+        model_alias == "cv_joint_v1"
+        and (
+            len(controlled) != len(TRAINING_INTERSECTION_IDS)
+            or set(controlled) != set(TRAINING_INTERSECTION_IDS)
+        )
+    ):
+        raise ValueError(
+            "cv_joint_v1 requires exactly demo_1..demo_20 intersections"
+        )
     trained = set(model.training_intersection_ids)
     unknown = [iid for iid in controlled if iid not in trained]
     if unknown:

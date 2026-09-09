@@ -24,9 +24,10 @@ from traffic_control.cov2x.test_joint_deploy import _metadata, _payload
 MODEL_ALIAS = "cov2x_g30_temp_cap_u24"
 
 
-def test_update24_alias_is_default_and_exact() -> None:
-    assert DEFAULT_MODEL_ALIAS == MODEL_ALIAS
-    for scenario in ("xiongan_20", "east_dense", "west_dense"):
+def test_update24_alias_remains_available_and_exact() -> None:
+    assert DEFAULT_MODEL_ALIAS == "cv_joint_v1"
+    assert default_model_alias_for("xiongan_20") == "cv_joint_v1"
+    for scenario in ("east_dense", "west_dense"):
         assert default_model_alias_for(scenario) == MODEL_ALIAS
 
     model = resolve_model(MODEL_ALIAS)
