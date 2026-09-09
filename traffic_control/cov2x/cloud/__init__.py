@@ -1,1 +1,1 @@
-"""云端（cloud）。"""
+"""CV Joint cloud implementation."""

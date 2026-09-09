@@ -70,7 +70,7 @@ CONTROL_MODE_REGISTRY: dict[str, ControlModeSpec] = {
         kernel_mode="algorithm",
         algorithm_transport="local",
         algorithm_module="traffic_control.cov2x",
-        supported_presets=("xiongan_20", "east_dense", "west_dense"),
+        supported_presets=("xiongan_20",),
     ),
 }
 

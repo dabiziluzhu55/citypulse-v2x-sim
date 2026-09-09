@@ -1,32 +1,22 @@
-# CoV2X：frozen IPPO + Cloud / Vehicle
+# CoV2X — CV Joint generation 3
 
-公共入口为 `traffic_control.cov2x`。完整 20 路口场景的默认候选为
-`cv_joint_v1`：Road 使用冻结 IPPO，Cloud 产生 movement 速度控制许可，
-Vehicle 在许可和合法动作约束下决定限速与变道。部署只进行确定性推理。
+唯一部署策略：frozen IPPO Road + 已训练 Cloud/Vehicle。入口为 `traffic_control.cov2x`，仅支持完整 `demo_1..demo_20`；不再提供旧 EP12、u24 或局部地图候选。
 
-当前状态：训练选优结束，已绑定 generation 3；seen DEV 改善 2.207842404%；独立确认因评估误判中止，候选尚无独立结果。
-当前文件不能作为已达到 3% 增益或正式验收通过的证明。
+- `controller.py`：固定 callback 观测、六向消息调度、最终请求与回执。
+- `deployment.py`：generation 3 模型、SHA、特征版本、movement 顺序及依赖校验；仅推理，加载失败报错。
+- `cloud/policy.py`：movement 速度许可网络，每 15 秒决策，有效许可保持。
+- `vehicle/policy.py`：许可下速度幅度与合法变道网络。
+- `vehicle/speed_advice.py`：非累积限速执行器；`vehicle/feedback.py`：执行回执。
+- `road/hooks.py`：纯 frozen IPPO 接口与生命周期恢复，不允许 Cloud 修改最终相位。
+- `observations.py` / `contracts.py`：版本化观测、movement、消息与动作定义。
+- `communication/transport.py`：实际消息总线、TTL 与许可；`bridge.py`：事件导出；JSON schema 声明 CVJointV1 消息。
+- `model.py`：组合车云网络与 checkpoint 兼容状态价值网络。
+- `models/`：唯一 gen3 权重、manifest、规范拓扑。冻结 IPPO 依赖在 `traffic_control/ippo/`。
 
-## 运行与模型选择
+六向逻辑通路：Vehicle→Cloud/Road、Road→Cloud/Vehicle、Cloud→Road/Vehicle。云→路仅上下文与反馈。消息可通过 response、drain、sink 导出；平台 UI 是否消费这些事件不由本模块保证。
 
-使用已有仿真启动方式选择算法 `cov2x`，场景为完整 `demo_1..demo_20`。
-环境需具有项目所需的 PyTorch / NumPy，模式为 `COV2X_MODE=eval`。
-checkpoint、特征版本、movement 顺序或依赖哈希不匹配时启动失败，不回退到随机策略。
+只复制整个 `traffic_control` 即可运行，不依赖研究目录 `algorithms`。配置 `COV2X_MODEL_ALIAS=cv_joint_v1`、`COV2X_MODE=eval`；运行时使用三时段之一和完整 900 秒协议。旧模型与旧代码仅保留于 Git 历史。
 
-旧候选 `cov2x_g30_temp_cap_u24` 与 `cov2x_joint_ep12` 继续保留。
-`east_dense` / `west_dense` 子集默认保持旧候选；新版只支持完整 20 路口。
-训练入口留在研究模块，部署入口不接受训练模式。
+验证：`python -m pytest traffic_control/cov2x -q`。严格 schema 测试需要测试依赖 `jsonschema`，推理无需此依赖。
 
-## 通信
-
-六个逻辑方向均保留：车→路、车→云、路→车、路→云、云→路、云→车。
-消息携带 episode、时间、有效期、movement 和关联请求；执行回执在后续 callback
-反馈。云→路为信息与反馈通路，最终相位始终由 frozen IPPO 决定。
-
-消息可通过返回值中的 `v2x`、`traffic_control.cov2x.drain_v2x_events()`
-或事件 sink 导出。事件镜像不改变消息消费与控制时序。
-现有仿真客户端会丢弃返回值顶层 `v2x`，平台展示尚未接入导出接口；
-本次未修改 simulation、backend 或 frontend。
-
-模型来源、特征版本及依赖哈希见
-[模型清单](models/cv_joint_v1_manifest.json)。当前仅有两seed的seen DEV改善2.21%；独立确认未完成，不能宣称稳定达到3%提升。
+历史 DEV 筛选有正增益，但独立确认未完成，不能宣称已验证稳定 3% 提升。本次仅整理部署目录，不更改参数、不训练、不运行 SUMO。

@@ -184,7 +184,7 @@ class FeatureBuilder:
     @staticmethod
     def _load_canonical(canonical: Mapping[str, Any] | str | Path | None) -> Mapping[str, Any]:
         if canonical is None:
-            path = Path(__file__).resolve().parents[1] / "semantics" / "c1c_out" / "canonical_topology.json"
+            path = Path(__file__).resolve().parent / "models" / "cv_joint_v1_canonical_topology.json"
             with path.open(encoding="utf-8") as handle:
                 canonical = json.load(handle)
         elif isinstance(canonical, (str, Path)):

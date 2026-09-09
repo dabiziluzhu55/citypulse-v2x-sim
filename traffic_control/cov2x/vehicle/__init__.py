@@ -1,1 +1,1 @@
-"""车端（vehicle）。"""
+"""CV Joint vehicle implementation."""

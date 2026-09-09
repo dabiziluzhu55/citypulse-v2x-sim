@@ -11,8 +11,8 @@ import os
 import torch
 
 from traffic_control.cov2x.aliases import ModelAlias
-from traffic_control.cov2x.runtime.cv_joint_v1 import controller as _runtime
-from traffic_control.cov2x.runtime.cv_joint_v1.model import JointPolicy
+from traffic_control.cov2x import controller as _runtime
+from traffic_control.cov2x.model import JointPolicy
 
 MODEL_ALIAS = "cv_joint_v1"
 CANDIDATE_ID = "cv_joint_v1_generation_003"
@@ -24,7 +24,7 @@ IPPO_SHA256 = "4055ec30bcd03c65572720cea38e51a338f466c351e21124be5fa683e6339449"
 CANONICAL_SHA256 = "026a9d2c884a8722a5e85021a11220cd7b25cc46f5b10118850f0bc1118adddc"
 _EXPECTED_CHECKPOINT_SCHEMA = "cv_joint_v1.checkpoint.v1"
 _FULL_TLS = frozenset(f"demo_{index}" for index in range(1, 21))
-_REPO = Path(__file__).resolve().parents[3]
+_REPO = Path(__file__).resolve().parents[2]
 
 _configured = False
 _model: ModelAlias | None = None
@@ -71,7 +71,7 @@ def _validate_deployment_hashes(manifest: Mapping[str, Any]) -> None:
             )
     candidate_expected = manifest.get("deployment_candidate_source_sha256")
     bridge_expected = manifest.get("deployment_bridge_source_sha256")
-    bridge_path = _REPO / "traffic_control/cov2x/communication/newbridge.py"
+    bridge_path = _REPO / "traffic_control/cov2x/communication/bridge.py"
     if candidate_expected != _sha256(Path(__file__).resolve()):
         raise ValueError("CV Joint V1 candidate source hash mismatch")
     if bridge_expected != _sha256(bridge_path):

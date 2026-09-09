@@ -15,9 +15,9 @@ import sys
 import pytest
 
 from traffic_control.cov2x import aliases
-from traffic_control.cov2x.communication.newbridge import CVJointV1EventBridge
-from traffic_control.cov2x.runtime.cv_joint_v1.transport import MessageBus
-from traffic_control.cov2x.runtime.cv_joint_v1 import controller as runtime
+from traffic_control.cov2x.communication.bridge import CVJointV1EventBridge
+from traffic_control.cov2x.communication.transport import MessageBus
+from traffic_control.cov2x import controller as runtime
 
 REPO = Path(__file__).resolve().parents[2]
 TRAFFIC_CONTROL_ROOT = REPO / "traffic_control"
@@ -37,28 +37,16 @@ def _clear_candidate(candidate) -> None:
     candidate.reset()
 
 
-def test_cv_joint_v1_is_default_for_full_map_and_retains_legacy_aliases() -> None:
-    from traffic_control.cov2x.aliases import DEFAULT_MODEL_ALIAS, resolve_model
-
-    assert DEFAULT_MODEL_ALIAS == "cv_joint_v1"
-    assert aliases.resolve_model("cov2x_g30_temp_cap_u24").alias == (
-        "cov2x_g30_temp_cap_u24"
-    )
-    model = resolve_model("cv_joint_v1")
-    assert model.alias == "cv_joint_v1"
-    assert model.adapter_module == (
-        "traffic_control.cov2x.candidates.cv_joint_v1"
-    )
-    assert model.checkpoint_path.name == "cv_joint_v1_generation_003.pt"
-    assert model.manifest_path is not None
-    assert model.manifest_path.name == "cv_joint_v1_manifest.json"
-    assert aliases.default_model_alias_for("xiongan_20") == "cv_joint_v1"
-    assert aliases.default_model_alias_for("east_dense") == (
-        aliases.LEGACY_MODEL_ALIAS
-    )
-    assert aliases.default_model_alias_for("west_dense") == (
-        aliases.LEGACY_MODEL_ALIAS
-    )
+def test_cv_joint_v1_is_the_only_deployment_model():
+    assert set(aliases.MODEL_ALIASES) == {"cv_joint_v1"}
+    assert aliases.DEFAULT_MODEL_ALIAS == "cv_joint_v1"
+    assert aliases.resolve_model("cv_joint_v1").adapter_module == "traffic_control.cov2x.deployment"
+    for old in ("cov2x_g30_temp_cap_u24", "cov2x_joint_ep12"):
+        with pytest.raises(ValueError):
+            aliases.resolve_model(old)
+    for partial in ("east_dense", "west_dense"):
+        with pytest.raises(ValueError):
+            aliases.default_model_alias_for(partial)
 
 
 def test_cv_joint_v1_alias_requires_full_twenty_tls_before_loading() -> None:
@@ -103,7 +91,7 @@ def test_cv_joint_v1_manifest_pins_live_sources_and_catalog() -> None:
 
 
 def test_cv_joint_v1_rejects_missing_or_tampered_model(tmp_path: Path) -> None:
-    from traffic_control.cov2x.candidates import cv_joint_v1 as candidate
+    from traffic_control.cov2x import deployment as candidate
 
     model = aliases.resolve_model("cv_joint_v1")
     missing = replace(model, checkpoint_path=tmp_path / "missing.pt")
@@ -122,7 +110,7 @@ def test_cv_joint_v1_matches_product_frozen_ippo_on_real_static_map(
     period: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from traffic_control.cov2x.candidates import cv_joint_v1 as candidate
+    from traffic_control.cov2x import deployment as candidate
     from traffic_control.ippo import controller as ippo
 
     torch = pytest.importorskip("torch")
@@ -284,7 +272,7 @@ def test_cv_joint_v1_bridge_maps_expiry_without_claiming_receipt() -> None:
 
 
 def test_cv_joint_v1_inline_batch_keeps_held_and_expired_events() -> None:
-    from traffic_control.cov2x.runtime.cv_joint_v1.transport import PermissionBook
+    from traffic_control.cov2x.communication.transport import PermissionBook
 
     bus = MessageBus("inline-episode")
     bridge = CVJointV1EventBridge("inline-episode")
@@ -337,7 +325,7 @@ def test_cv_joint_v1_inline_batch_keeps_held_and_expired_events() -> None:
 
 
 def test_cv_joint_v1_receipt_buffer_preserves_echo_and_release_semantics() -> None:
-    from traffic_control.cov2x.runtime.cv_joint_v1.rollout import EpisodeBuffer
+    from traffic_control.cov2x.vehicle.feedback import EpisodeBuffer
 
     buffer = EpisodeBuffer("receipt-episode", "policy-v1", "morning_peak", seed=7)
     assert buffer.observe_receipts({
@@ -378,7 +366,7 @@ def test_cv_joint_v1_receipt_buffer_preserves_echo_and_release_semantics() -> No
 
 
 def test_cv_joint_v1_receipt_buffer_rejects_mismatched_requested_echo() -> None:
-    from traffic_control.cov2x.runtime.cv_joint_v1.rollout import EpisodeBuffer
+    from traffic_control.cov2x.vehicle.feedback import EpisodeBuffer
 
     buffer = EpisodeBuffer("receipt-identity", "policy-v1", "morning_peak")
     buffer.record_request(1, "veh-1", {"target_speed_mps": 4.0})
@@ -405,7 +393,7 @@ def test_cv_joint_v1_receipt_buffer_rejects_mismatched_requested_echo() -> None:
 def test_cv_joint_v1_requires_full_twenty_tls_and_is_eval_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from traffic_control.cov2x.candidates import cv_joint_v1 as candidate
+    from traffic_control.cov2x import deployment as candidate
 
     monkeypatch.setenv("COV2X_MODE", "train")
     with pytest.raises(ValueError, match="inference-only"):
@@ -429,7 +417,7 @@ def test_cv_joint_v1_checkpoint_policy_outputs_legal_masks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import numpy as np
-    from traffic_control.cov2x.candidates import cv_joint_v1 as candidate
+    from traffic_control.cov2x import deployment as candidate
 
     monkeypatch.setenv("COV2X_MODE", "eval")
     candidate.configure(aliases.resolve_model("cv_joint_v1"))
@@ -464,12 +452,12 @@ def test_cv_joint_v1_synthetic_permit_exercises_speed_hold_and_feedback(
 ) -> None:
     import math
     import torch
-    from traffic_control.cov2x.runtime.cv_joint_v1.model import JointPolicy
-    from traffic_control.cov2x.runtime.cv_joint_v1.transport import (
+    from traffic_control.cov2x.model import JointPolicy
+    from traffic_control.cov2x.communication.transport import (
         MessageBus,
         PermissionBook,
     )
-    from traffic_control.cov2x.runtime.vehicle.speed_advice import (
+    from traffic_control.cov2x.vehicle.speed_advice import (
         apply_temporary_base_relative_speed_advice,
     )
 
@@ -632,7 +620,7 @@ os.environ["IPPO_MODE"] = "model"
 os.environ["IPPO_JOINT_ROAD"] = "off"
 
 from traffic_control.cov2x import aliases
-from traffic_control.cov2x.candidates import cv_joint_v1
+from traffic_control.cov2x import deployment as cv_joint_v1
 
 metadata = json.load(open("metadata.json", encoding="utf-8"))
 frame = json.load(open("frame.json", encoding="utf-8"))

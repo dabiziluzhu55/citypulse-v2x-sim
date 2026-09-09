@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from .contracts import (
+from ..contracts import (
     CALLBACK_INTERVAL,
     CONTEXT_DIM,
     HORIZON,

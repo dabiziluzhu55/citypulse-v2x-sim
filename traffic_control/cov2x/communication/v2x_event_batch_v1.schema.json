@@ -15,16 +15,41 @@
     "events"
   ],
   "properties": {
-    "schema": {"const": "cov2x.v2x.event_batch"},
-    "schema_version": {"const": "1.0"},
-    "episode_id": {"type": ["string", "null"]},
-    "snapshot_id": {"type": ["string", "null"]},
-    "event_count": {"type": "integer", "minimum": 0},
-    "last_sequence": {"type": "integer", "minimum": 0},
-    "sink_error_count": {"type": "integer", "minimum": 0},
+    "schema": {
+      "const": "cov2x.v2x.event_batch"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "episode_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "snapshot_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "event_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "last_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sink_error_count": {
+      "type": "integer",
+      "minimum": 0
+    },
     "events": {
       "type": "array",
-      "items": {"$ref": "#/$defs/event"}
+      "items": {
+        "$ref": "#/$defs/event"
+      }
     }
   },
   "$defs": {
@@ -52,51 +77,134 @@
         "expires_at_s",
         "causal_parent_ids",
         "payload_fields",
-        "drop_reason"
+        "drop_reason",
+        "original_kind",
+        "payload_sha256",
+        "payload_projection"
       ],
       "properties": {
-        "schema": {"const": "cov2x.v2x.event"},
-        "schema_version": {"const": "1.0"},
-        "sequence": {"type": "integer", "minimum": 1},
-        "event": {
-          "enum": ["SEND", "DELIVER", "CONSUME", "TTL_EXPIRED"]
+        "schema": {
+          "const": "cov2x.v2x.event"
         },
-        "message_type": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "event": {
           "enum": [
-            "VehicleStateV1",
-            "IntersectionSummaryV1",
-            "RegionalPriorityV1",
-            "SPaTV2",
-            "MAPV1"
+            "SEND",
+            "DELIVER",
+            "CONSUME",
+            "TTL_EXPIRED"
           ]
         },
-        "message_id": {"type": "string", "minLength": 1},
-        "episode_id": {"type": "string", "minLength": 1},
-        "snapshot_id": {"type": "string", "minLength": 1},
-        "source_role": {"enum": ["cloud", "road", "vehicle"]},
-        "source_id": {"type": "string", "minLength": 1},
-        "destination_role": {"enum": ["cloud", "road", "vehicle"]},
-        "destination_id": {"type": "string", "minLength": 1},
-        "logical_phase": {
-          "enum": ["state", "cloud", "road", "vehicle", "commit"]
+        "message_type": {
+          "const": "CVJointV1"
         },
-        "event_time_s": {"type": "number"},
-        "sent_time_s": {"type": "number"},
-        "message_age_s": {"type": "number", "minimum": 0},
-        "ttl_s": {"type": "number", "minimum": 0},
-        "expires_at_s": {"type": "number"},
+        "message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "episode_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_role": {
+          "enum": [
+            "cloud",
+            "road",
+            "vehicle"
+          ]
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "destination_role": {
+          "enum": [
+            "cloud",
+            "road",
+            "vehicle"
+          ]
+        },
+        "destination_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logical_phase": {
+          "enum": [
+            "state",
+            "cloud",
+            "road",
+            "vehicle",
+            "commit"
+          ]
+        },
+        "event_time_s": {
+          "type": "number"
+        },
+        "sent_time_s": {
+          "type": "number"
+        },
+        "message_age_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "ttl_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "expires_at_s": {
+          "type": "number"
+        },
         "causal_parent_ids": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         },
         "payload_fields": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "uniqueItems": true
         },
         "drop_reason": {
-          "type": ["string", "null"],
-          "enum": ["ttl_expired", null]
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "ttl_expired",
+            null
+          ]
+        },
+        "original_kind": {
+          "enum": [
+            "vehicle_feedback",
+            "vehicle_state",
+            "road_state",
+            "road_feedback",
+            "coordination_context",
+            "speed_permission"
+          ]
+        },
+        "payload_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "payload_projection": {
+          "type": "object"
         }
       }
     }
