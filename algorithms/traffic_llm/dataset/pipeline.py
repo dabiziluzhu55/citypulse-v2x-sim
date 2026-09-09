@@ -16,7 +16,7 @@ from .event_window import (
 )
 from .io_utils import dump_json, load_json, read_jsonl, write_jsonl
 from .reporting import render_markdown, summarize_dataset, wall_and_disk_report
-from .scenario_generator import generate_scenarios, plan_summary
+from .scenario_generator import generate_scenarios, plan_summary, repair_unroutable_lane_closures
 from .schema import DATASET_VERSION, ScenarioSpec
 from .sft_builder import build_sft_samples_for_run, load_trace_file
 from .split import assign_splits, split_manifest
@@ -140,11 +140,27 @@ def generate_dataset(
     workers: int | None = None,
     resume: bool = True,
     retry_failed: bool = False,
+    scenario_ids: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     catalog = load_runtime_catalog()
-    scenarios = generate_scenarios(
-        config, catalog, profile=profile, limit=limit_scenarios
-    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = dataset_paths(output_dir)
+    existing_scenarios = paths["scenarios"].is_file()
+    if resume and existing_scenarios:
+        scenarios = _load_scenarios(output_dir)
+        if limit_scenarios is not None:
+            scenarios = scenarios[: int(limit_scenarios)]
+        failed_ids = {
+            str(run.get("scenario_id"))
+            for run in _load_runs(output_dir)
+            if run.get("state") != "COMPLETED"
+        }
+        if failed_ids:
+            scenarios = repair_unroutable_lane_closures(scenarios, catalog, failed_ids)
+    else:
+        scenarios = generate_scenarios(
+            config, catalog, profile=profile, limit=limit_scenarios
+        )
     if profile == "smoke":
         control_modes = resolve_modes(
             modes or (config.get("smoke") or {}).get("control_modes")
@@ -155,8 +171,6 @@ def generate_dataset(
         control_modes = resolve_modes(modes or config.get("control_modes"))
         workers = int((config.get("simulation") or {}).get("workers", 1) if workers is None else workers)
     workers = max(1, int(workers))
-    output_dir.mkdir(parents=True, exist_ok=True)
-    paths = dataset_paths(output_dir)
     write_jsonl(paths["scenarios"], (item.to_dict() for item in scenarios))
     retention_mode = str((config.get("retention") or {}).get("mode") or "audit")
     anchors = [float(item) for item in (config.get("anchors") or {}).get("offsets_seconds") or (0, 30, 60)]
@@ -186,7 +200,7 @@ def generate_dataset(
                     "control_mode": mode,
                     "output_dir": str(output_dir),
                     "scoring": dict(scoring),
-                    "session_root": str(output_dir / "sessions" / mode),
+                    "session_root": str(output_dir / "sessions" / mode / spec.scenario_id),
                     "store_full_vehicles": bool(sim.get("store_full_vehicle_observation")),
                     "retention_mode": retention_mode,
                     "anchor_offsets_seconds": anchors,
@@ -194,6 +208,9 @@ def generate_dataset(
                     "wall_timeout_s": timeout,
                 }
             )
+    if scenario_ids:
+        allow = {str(item) for item in scenario_ids}
+        jobs = [job for job in jobs if str(job["spec"]["scenario_id"]) in allow]
 
     to_run, skipped_completed, skipped_failed = classify_resume_jobs(
         jobs,
@@ -299,6 +316,9 @@ def hydrate_local_event_windows(output_dir: Path, scoring: Mapping[str, Any]) ->
         snap_path = output_dir / "traces" / f"{run['run_id']}.snapshots.jsonl.gz"
         snapshots = load_trace_file(snap_path) if snap_path.is_file() else []
         if not snapshots:
+            continue
+        existing_local = dict(run.get("local_event_window") or {})
+        if existing_local.get("local_avg_queue_veh") is not None:
             continue
         local_ids = resolve_local_intersection_ids(
             spec.intersection_ids,

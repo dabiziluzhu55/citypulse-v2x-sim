@@ -56,15 +56,15 @@ def hard_validate(
 
 def _selection_policy(scoring: Mapping[str, Any]) -> tuple[str, str]:
     version = str(scoring.get("selection_version") or "scoring_v1")
-    gain_mode = str(
-        scoring.get("baseline_gain_mode")
-        or ("pairwise_renorm" if version.startswith("scoring_v1") else "unified_composite")
+    # scoring_v2+ never re-normalizes winner vs fixed as a pair.
+    if version.startswith("scoring_v1"):
+        gain_mode = str(scoring.get("baseline_gain_mode") or "pairwise_renorm")
+        ambiguity = str(scoring.get("ambiguity_compare") or "all_candidates")
+        return gain_mode, ambiguity
+    return (
+        str(scoring.get("baseline_gain_mode") or "unified_composite"),
+        str(scoring.get("ambiguity_compare") or "best_pareto_front"),
     )
-    ambiguity = str(
-        scoring.get("ambiguity_compare")
-        or ("all_candidates" if version.startswith("scoring_v1") else "best_pareto_front")
-    )
-    return gain_mode, ambiguity
 
 
 def _margin_threshold(scoring: Mapping[str, Any]) -> float:
@@ -191,6 +191,21 @@ def select_expert(
         item["control_mode"]: list(item.get("ignored_trip_metrics") or [])
         for item in scored
     }
+    active_metrics = {
+        item["control_mode"]: [
+            key
+            for key, value in (item.get("raw_metrics") or {}).items()
+            if value is not None
+        ]
+        for item in scored
+    }
+    participating = sorted(
+        {
+            key
+            for metrics in active_metrics.values()
+            for key in metrics
+        }
+    )
     return {
         "selection_version": selection_version,
         "winner": winner["control_mode"],
@@ -210,6 +225,11 @@ def select_expert(
         "minimum_improvement_over_baseline": min_improve,
         "baseline_gain_mode": gain_mode,
         "ambiguity_compare": ambiguity_compare,
+        "score_source": (
+            "pairwise_renorm"
+            if gain_mode == "pairwise_renorm"
+            else "unified_all_candidates"
+        ),
         "ambiguous_margin": ambiguous_margin,
         "pareto_rank": {
             item["control_mode"]: by_mode[item["control_mode"]]["pareto_rank"]
@@ -226,6 +246,8 @@ def select_expert(
             item["control_mode"]: item["normalized_metrics"] for item in scored
         },
         "ignored_trip_metrics": ignored,
+        "active_metrics": active_metrics,
+        "participating_metrics": participating,
         "trip_reliability_gated_modes": [
             mode for mode, metrics in ignored.items() if metrics
         ],

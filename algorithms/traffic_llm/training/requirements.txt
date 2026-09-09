@@ -1,0 +1,7 @@
+# Pinned for Traffic-Qwen QLoRA smoke on the v2x-ai-py310 env.
+# transformers is already 4.57.6 in that environment.
+# bitsandbytes 0.46.1 has no CUDA 13 wheel; 0.48.0 is required on this server.
+peft==0.17.1
+trl==0.22.2
+bitsandbytes==0.48.0
+datasets==3.6.0

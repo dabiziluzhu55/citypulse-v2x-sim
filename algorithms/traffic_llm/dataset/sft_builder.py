@@ -81,37 +81,94 @@ def extract_signal_plan(
     return plan
 
 
+FUTURE_LEAK_PATTERNS = (
+    "恢复",
+    "recovery_time",
+    "did not recover",
+    "composite",
+    "winner_score",
+    "expert_confidence",
+    "traffic_performance_index",
+    "traffic_eval",
+    "最终",
+)
+
+
+def _incoming_lane_maps(observation: Mapping[str, Any], intersection_id: str) -> list[Mapping[str, Any]]:
+    ix = (observation.get("intersections") or {}).get(intersection_id) or {}
+    lanes = []
+    for lane in dict(ix.get("lanes") or {}).values():
+        if not isinstance(lane, Mapping):
+            continue
+        role = str(lane.get("role") or "incoming")
+        if role in {"outgoing"}:
+            continue
+        lanes.append(lane)
+    return lanes
+
+
+def _mean(values: Sequence[Any]) -> float | None:
+    present = [float(item) for item in values if item is not None]
+    if not present:
+        return None
+    return sum(present) / len(present)
+
+
 def factual_reason(
     *,
     spec: ScenarioSpec,
-    event_window: Mapping[str, Any],
-    recovery: Mapping[str, Any],
+    observation: Mapping[str, Any],
     fallback: bool,
 ) -> tuple[str, str]:
+    """Anchor-time factual templates only. No recovery / final eval / future state."""
+
+    target = spec.event.intersection_id
+    target_lanes = _incoming_lane_maps(observation, target)
+    halt = _mean([lane.get("halting_count") for lane in target_lanes])
+    speed = _mean([lane.get("mean_speed") for lane in target_lanes])
+    occupancy = _mean([lane.get("occupancy") for lane in target_lanes])
+    spill = False
+    for lane in target_lanes:
+        queue = lane.get("queue_length_m")
+        length = lane.get("lane_length_m")
+        try:
+            if queue is not None and length is not None and float(length) > 0:
+                if float(queue) + 1e-9 >= 0.85 * float(length):
+                    spill = True
+        except (TypeError, ValueError):
+            continue
+    neighbor_halt = []
+    for iid, i_obs in dict(observation.get("intersections") or {}).items():
+        if str(iid) == str(target):
+            continue
+        lanes = _incoming_lane_maps(observation, str(iid))
+        value = _mean([lane.get("halting_count") for lane in lanes])
+        if value is not None:
+            neighbor_halt.append(value)
+
     facts: list[str] = []
-    queue = event_window.get("local_avg_queue_veh")
-    if queue is None:
-        queue = event_window.get("window_avg_queue_veh")
-    spill = event_window.get("local_spillback_pct")
-    if spill is None:
-        spill = event_window.get("window_spillback_pct")
-    if queue is not None and float(queue) > 0.5:
-        facts.append("目标进口排队增加")
-    if spill is not None and float(spill) > 1.0:
-        facts.append("上游出现溢流风险")
-    if recovery.get("recovery_time_s") is None and recovery.get("reason"):
-        facts.append("事件结束后仍未恢复")
-    elif recovery.get("recovery_time_s") is not None:
-        facts.append(f"事件结束后约 {float(recovery['recovery_time_s']):.0f}s 恢复")
+    if halt is not None and halt >= 1.0:
+        facts.append("目标路口停车车辆较多，当前进口持续排队")
+    if speed is not None and speed < 4.0:
+        facts.append("目标进口平均速度较低")
+    if spill or (occupancy is not None and occupancy >= 0.45):
+        facts.append("当前存在局部溢流风险")
+    if halt is not None and neighbor_halt and max(neighbor_halt) >= max(0.8, halt * 0.6):
+        facts.append("相邻路口排队同步上升")
     if fallback:
         objective = "保持固定配时基线"
         if not facts:
-            facts.append("动态算法相对 fixed 的 composite score margin 未达到配置阈值")
+            facts.append("当前观测下维持固定配时")
         return objective, "；".join(facts)
     objective = "缓解扰动路口排队并抑制上游回溢"
     if not facts:
-        facts.append(f"{spec.event.event_type} 事件窗口内记录专家信号序列")
-    return objective, "；".join(facts)
+        facts.append("扰动目标路口附近交通正在受事件影响")
+    reason = "；".join(facts)
+    for token in FUTURE_LEAK_PATTERNS:
+        if token in reason:
+            reason = "扰动目标路口附近交通正在受事件影响"
+            break
+    return objective, reason
 
 
 def snapshot_at(
@@ -214,11 +271,7 @@ def build_sft_samples_for_run(
             }
         objective, rationale = factual_reason(
             spec=spec,
-            event_window={
-                **dict(run.get("event_window") or {}),
-                **dict(run.get("local_event_window") or {}),
-            },
-            recovery=dict(run.get("recovery") or {}),
+            observation=observation,
             fallback=fallback,
         )
         plan_obj["objective"] = objective
@@ -253,6 +306,8 @@ def build_sft_samples_for_run(
                     "fallback_to_baseline": fallback,
                     "dataset_version": spec.dataset_version or DATASET_VERSION,
                     "ambiguous": bool(selection.get("ambiguous")),
+                    "recovery_time_s": (run.get("recovery") or {}).get("recovery_time_s"),
+                    "winner_score": selection.get("winner_score"),
                 },
             }
         )

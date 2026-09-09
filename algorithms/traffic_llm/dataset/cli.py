@@ -15,6 +15,7 @@ from .pipeline import (
     score_existing,
     select_teachers,
 )
+from .sft_audit import audit_sft
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -36,6 +37,7 @@ def _parser() -> argparse.ArgumentParser:
     gen.add_argument("--workers", type=int, default=None)
     gen.add_argument("--resume", action="store_true", help="Skip COMPLETED runs; do not overwrite valid results")
     gen.add_argument("--retry-failed", action="store_true", help="Re-run FAILED pairs; default leaves them in place")
+    gen.add_argument("--scenario-ids", default="", help="Comma-separated scenario ids to run")
 
     score = sub.add_parser("score", help="Re-score / re-select from existing runs")
     score.add_argument("--dataset", required=True)
@@ -49,6 +51,10 @@ def _parser() -> argparse.ArgumentParser:
     sft.add_argument("--dataset", required=True)
     sft.add_argument("--config", default="algorithms/traffic_llm/configs/dataset_v1.yaml")
     sft.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v2.yaml")
+
+    audit = sub.add_parser("audit", help="Audit frozen Signal SFT JSONL")
+    audit.add_argument("--dataset", required=True)
+    audit.add_argument("--model", default="")
     return parser
 
 
@@ -96,8 +102,9 @@ def main(argv: list[str] | None = None) -> int:
             modes=_modes(args.modes),
             limit_scenarios=args.limit_scenarios,
             workers=args.workers,
-            resume=True,
+            resume=bool(getattr(args, "resume", False)),
             retry_failed=bool(getattr(args, "retry_failed", False)),
+            scenario_ids=_modes(getattr(args, "scenario_ids", "")),
         )
         print(
             "\n".join(
@@ -124,6 +131,10 @@ def main(argv: list[str] | None = None) -> int:
         result = build_sft(Path(args.dataset), config, scoring)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
+    if args.command == "audit":
+        result = audit_sft(Path(args.dataset), model_path=args.model or None)
+        print(json.dumps({k: result[k] for k in ("passed", "n_samples", "n_errors", "checks", "counts", "prompt_tokens") if k in result}, ensure_ascii=False, indent=2))
+        return 0 if result.get("passed") else 2
     return 1
 
 

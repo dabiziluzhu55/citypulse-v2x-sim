@@ -303,13 +303,35 @@ def test_illegal_phase_detected() -> None:
 
 def test_factual_reason_is_template() -> None:
     spec = _scenario()
+    observation = {
+        "intersections": {
+            "demo_5": {
+                "lanes": {
+                    "E1_0": {
+                        "role": "incoming",
+                        "halting_count": 6,
+                        "mean_speed": 1.2,
+                        "occupancy": 0.6,
+                        "queue_length_m": 40.0,
+                        "lane_length_m": 45.0,
+                    }
+                }
+            },
+            "demo_3": {
+                "lanes": {
+                    "E2_0": {"role": "incoming", "halting_count": 4, "mean_speed": 2.0}
+                }
+            },
+        }
+    }
     objective, reason = factual_reason(
         spec=spec,
-        event_window={"window_avg_queue_veh": 4.0, "window_spillback_pct": 8.0},
-        recovery={"recovery_time_s": None, "reason": "did not recover"},
+        observation=observation,
         fallback=False,
     )
-    assert "排队" in reason or "溢流" in reason
+    assert "排队" in reason or "溢流" in reason or "速度" in reason
+    assert "恢复" not in reason
+    assert "composite" not in reason
     assert "思维" not in reason
     assert objective
 
@@ -536,3 +558,68 @@ def test_pilot_v2_plan_is_45_by_270() -> None:
         "major_event_opening": 9,
         "major_event_closing": 9,
     }
+
+
+def test_lane_closure_rejects_unique_edge_lane() -> None:
+    from algorithms.traffic_llm.dataset.catalog import load_runtime_catalog
+    from algorithms.traffic_llm.dataset.scenario_generator import (
+        lane_closure_is_safe,
+        load_closure_safety_index,
+    )
+
+    catalog = load_runtime_catalog()
+    safety = load_closure_safety_index()
+    known_unroutable = [
+        ("demo_5", ["-57586_2"]),
+        ("demo_9", ["-56619_3"]),
+        ("demo_19", ["-52215_1"]),
+        ("demo_1", ["-manual_demo1_missing_arm_1"]),
+        ("demo_9", ["-50339_3"]),
+        ("demo_14", ["-46539_0"]),
+        ("demo_10", ["-57445_0"]),
+    ]
+    for intersection_id, lane_ids in known_unroutable:
+        ok, reason = lane_closure_is_safe(
+            lane_ids,
+            catalog=catalog,
+            intersection_id=intersection_id,
+            safety=safety,
+        )
+        assert ok is False, (intersection_id, lane_ids, reason)
+        assert any(
+            token in reason
+            for token in (
+                "only",
+                "disconnect",
+                "block",
+                "missing_arm",
+                "interior",
+                "fewer than two",
+                "synthetic",
+            )
+        )
+    ok, reason = lane_closure_is_safe(
+        ["-52215_1"],
+        catalog=catalog,
+        intersection_id="demo_19",
+        safety=safety,
+    )
+    assert ok is False
+    assert any(
+        token in reason
+        for token in ("only", "disconnect", "block", "missing_arm", "interior", "synthetic")
+    )
+
+
+def test_scoring_v2_records_active_and_ignored_metrics() -> None:
+    gated = _cand("max_pressure", 1.0, 20.0)
+    gated["traffic_eval"]["completion_rate"] = 0.10
+    ok = _cand("fixed", 8.0, 2.0)
+    ok["traffic_eval"]["completion_rate"] = 0.80
+    selection = select_expert([gated, ok], SCORING_V2)
+    assert selection["score_source"] == "unified_all_candidates"
+    assert selection["pairwise_gain_over_baseline"] is None
+    assert "max_pressure" in selection["ignored_trip_metrics"]
+    assert selection["ignored_trip_metrics"]["max_pressure"]
+    assert "active_metrics" in selection
+    assert "participating_metrics" in selection
