@@ -15,6 +15,7 @@ from .pipeline import (
     score_existing,
     select_teachers,
 )
+from .sensitivity_audit import audit_xiongan_sensitivity
 from .sft_audit import audit_sft
 
 
@@ -67,6 +68,15 @@ def _parser() -> argparse.ArgumentParser:
     audit.add_argument("--sft-dir", default="sft")
     audit.add_argument("--prompt-completion-dir", default="")
     audit.add_argument("--max-length", type=int, default=None)
+
+    sensitivity = sub.add_parser(
+        "sensitivity",
+        help="Offline xiongan expert-selection sensitivity (no SUMO rerun)",
+    )
+    sensitivity.add_argument("--dataset", required=True)
+    sensitivity.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v2.yaml")
+    sensitivity.add_argument("--scope", default="xiongan_20")
+    sensitivity.add_argument("--min-agreement", type=float, default=0.70)
     return parser
 
 
@@ -177,14 +187,38 @@ def main(argv: list[str] | None = None) -> int:
             "n_errors",
             "checks",
             "counts",
+            "counts_by_split",
             "prompt_tokens",
             "completion_tokens",
             "total_tokens",
             "phase_service_complete_rate",
             "assistant_truncation_rate",
+            "halt_training_recommended",
         )
         print(json.dumps({k: result[k] for k in keep if k in result}, ensure_ascii=False, indent=2))
         return 0 if result.get("passed") else 2
+    if args.command == "sensitivity":
+        scoring = load_yaml(args.scoring)
+        result = audit_xiongan_sensitivity(
+            Path(args.dataset),
+            scoring,
+            scope=args.scope,
+            min_agreement=args.min_agreement,
+        )
+        keep = (
+            "scope",
+            "n_scenarios",
+            "winner_agreement",
+            "three_way_winner_agreement",
+            "min_pairwise_winner_agreement",
+            "winner_counts",
+            "state_counts",
+            "pairwise",
+            "stop_training",
+            "stop_reason",
+        )
+        print(json.dumps({k: result[k] for k in keep}, ensure_ascii=False, indent=2))
+        return 2 if result.get("stop_training") else 0
     return 1
 
 

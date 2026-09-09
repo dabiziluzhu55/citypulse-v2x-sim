@@ -162,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
 
     loss_history: list[dict[str, Any]] = []
     peak_mem = {"allocated_gb": 0.0, "reserved_gb": 0.0}
+    epoch_structured: list[dict[str, Any]] = []
 
     class LossCallback(TrainerCallback):
         def on_log(self, args, state, control, logs=None, **kwargs):
@@ -172,6 +173,69 @@ def main(argv: list[str] | None = None) -> int:
                 reserved = torch.cuda.max_memory_reserved() / (1024 ** 3)
                 peak_mem["allocated_gb"] = max(peak_mem["allocated_gb"], allocated)
                 peak_mem["reserved_gb"] = max(peak_mem["reserved_gb"], reserved)
+
+    class StructuredEpochCallback(TrainerCallback):
+        def on_epoch_end(self, args, state, control, model=None, **kwargs):
+            if not bool(cfg.get("epoch_structured_eval", False)) or not val_rows:
+                return
+            from algorithms.traffic_llm.training.eval_structured import evaluate_samples
+
+            limit = cfg.get("epoch_structured_max_samples")
+            samples = list(val_rows)
+            if limit:
+                samples = samples[: int(limit)]
+            was_training = bool(model.training) if model is not None else False
+            cache = getattr(getattr(model, "config", None), "use_cache", False)
+            if model is None:
+                return
+            model.eval()
+            if hasattr(model, "config"):
+                model.config.use_cache = True
+            try:
+                import torch
+
+                device_type = "cuda" if torch.cuda.is_available() else "cpu"
+                with torch.inference_mode():
+                    with torch.autocast(device_type=device_type, dtype=torch.bfloat16, enabled=device_type == "cuda"):
+                        report = evaluate_samples(
+                            samples=samples,
+                            model=model,
+                            tokenizer=tokenizer,
+                            max_new_tokens=int(cfg.get("max_new_tokens", 512)),
+                            adapter=str(adapter_dir),
+                            split="val",
+                        )
+            except Exception as exc:
+                epoch_structured.append(
+                    {
+                        "epoch": float(state.epoch or 0.0),
+                        "step": int(state.global_step),
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                print(json.dumps({"epoch_structured_eval_error": str(exc)}, ensure_ascii=False), flush=True)
+                return
+            finally:
+                if hasattr(model, "config"):
+                    model.config.use_cache = cache
+                if was_training:
+                    model.train()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            slim = {
+                "epoch": float(state.epoch or 0.0),
+                "step": int(state.global_step),
+                "n": report.get("n"),
+                "teacher_phase_slot_agreement": report.get("teacher_phase_slot_agreement"),
+                "whole_plan_exact_match": report.get("whole_plan_exact_match"),
+                "json_parse_rate": report.get("json_parse_rate"),
+                "aicontrolplan_valid_rate": report.get("aicontrolplan_valid_rate"),
+                "phase_legality_rate": report.get("phase_legality_rate"),
+                "controlled_region_legality_rate": report.get("controlled_region_legality_rate"),
+                "controlled_intersection_exact_match": report.get("controlled_intersection_exact_match"),
+            }
+            epoch_structured.append(slim)
+            print(json.dumps({"epoch_structured_eval": slim}, ensure_ascii=False), flush=True)
 
     eval_strategy = str(cfg.get("eval_strategy", "no"))
     save_strategy = str(cfg.get("save_strategy", "epoch" if eval_strategy == "epoch" else "steps"))
@@ -211,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
         eval_dataset=eval_ds,
         processing_class=tokenizer,
         peft_config=peft_config,
-        callbacks=[LossCallback()],
+        callbacks=[LossCallback(), StructuredEpochCallback()],
     )
     n_trainable = sum(int(p.requires_grad) for p in trainer.model.parameters())
     n_trainable_params = sum(p.numel() for p in trainer.model.parameters() if p.requires_grad)
@@ -231,6 +295,24 @@ def main(argv: list[str] | None = None) -> int:
     if best_ckpt:
         (output_dir / "best_checkpoint.txt").write_text(str(best_ckpt) + "\n", encoding="utf-8")
     metrics = dict(train_result.metrics)
+    epoch_losses = []
+    pending_train = None
+    for row in loss_history:
+        if "loss" in row:
+            pending_train = {
+                "step": row.get("step"),
+                "epoch": row.get("epoch"),
+                "train_loss": row.get("loss"),
+            }
+        if "eval_loss" in row:
+            item = {
+                "step": row.get("step"),
+                "epoch": row.get("epoch"),
+                "eval_loss": row.get("eval_loss"),
+            }
+            if pending_train:
+                item["train_loss"] = pending_train.get("train_loss")
+            epoch_losses.append(item)
     payload = {
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "git_commit": _git_commit(),
@@ -243,6 +325,8 @@ def main(argv: list[str] | None = None) -> int:
         "completion_only_loss": True,
         "metrics": metrics,
         "loss_history": loss_history,
+        "epoch_losses": epoch_losses,
+        "epoch_structured_eval": epoch_structured,
         "best_checkpoint": best_ckpt,
         "gpu_memory_peak": peak_mem,
         "token_validation": {
@@ -262,6 +346,8 @@ def main(argv: list[str] | None = None) -> int:
                 "metrics": metrics,
                 "best_checkpoint": best_ckpt,
                 "gpu_memory_peak": peak_mem,
+                "epoch_losses": epoch_losses,
+                "epoch_structured_eval": epoch_structured,
                 "git_commit": payload["git_commit"],
             },
             ensure_ascii=False,

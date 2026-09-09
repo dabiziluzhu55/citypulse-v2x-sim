@@ -133,6 +133,11 @@ def audit_sft(
         "split": Counter(),
         "observation_version": Counter(),
     }
+    split_event: dict[str, Counter[str]] = {
+        "train": Counter(),
+        "val": Counter(),
+        "test": Counter(),
+    }
     prompt_lens: list[int] = []
     completion_lens: list[int] = []
     total_lens: list[int] = []
@@ -211,6 +216,7 @@ def audit_sft(
             except (TypeError, ValueError):
                 pass
             distributions["event"][str(meta.get("event_type") or "unknown")] += 1
+            split_event.setdefault(split, Counter())[str(meta.get("event_type") or "unknown")] += 1
             distributions["teacher"][str(meta.get("teacher") or "unknown")] += 1
             distributions["observation_version"][str(observation.get("observation_version") or "unknown")] += 1
             scene = dict((observation.get("scene") or {}))
@@ -256,14 +262,28 @@ def audit_sft(
     checks["phase_service_complete"] = (phase_service_n == 0) or (phase_service_ok == phase_service_n)
     checks["assistant_truncation_rate"] = (truncated / n_total) if n_total else 0.0
     checks["n_samples"] = n_total
+    train_event_counts = dict(split_event.get("train") or {})
+    all_events = sorted(set(distributions["event"]) | set(train_event_counts))
+    sparse_train_events = {
+        event: int(train_event_counts.get(event, 0))
+        for event in all_events
+        if int(train_event_counts.get(event, 0)) < 8
+    }
+    checks["train_event_counts"] = train_event_counts
+    checks["sparse_train_events"] = sparse_train_events
+    halt_for_sparse_events = bool(sparse_train_events)
     passed = n_total > 0 and not errors and checks["assistant_truncation_rate"] == 0.0
     report = {
         "passed": passed,
+        "halt_training_recommended": halt_for_sparse_events,
         "n_samples": n_total,
         "n_errors": len(errors),
         "errors": errors[:200],
         "checks": checks,
         "counts": {key: dict(value) for key, value in distributions.items()},
+        "counts_by_split": {
+            "event": {split: dict(counter) for split, counter in split_event.items()},
+        },
         "prompt_tokens": {**_token_stats(prompt_lens), "tokenizer": model_path or "char/4 fallback"},
         "completion_tokens": _token_stats(completion_lens),
         "total_tokens": _token_stats(total_lens),

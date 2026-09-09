@@ -768,3 +768,168 @@ def test_holdout_seed_42003_is_test_only() -> None:
     assert assignment["g42003"] == "test"
     assert assignment["g42001"] in {"train", "val"}
     assert assignment["g42002"] in {"train", "val"}
+
+
+def test_tripinfo_gate_override_does_not_block_xiongan() -> None:
+    from algorithms.traffic_llm.dataset.io_utils import load_yaml
+    from algorithms.traffic_llm.dataset.reporting import expert_diagnostics, tripinfo_gate_audit
+
+    scoring = load_yaml(Path(__file__).resolve().parents[1] / "configs" / "scoring_v2.yaml")
+    scenarios = [
+        {"scenario_id": "xa1", "scope": "xiongan_20", "event": {"event_type": "accident"}},
+        {"scenario_id": "xa2", "scope": "xiongan_20", "event": {"event_type": "lane_closure"}},
+    ]
+    selected = [
+        {
+            "scenario_id": "xa1",
+            "winner": "max_pressure",
+            "ambiguous": False,
+            "signal_sft_eligible": True,
+            "winner_action_space": "signal_only",
+            "trip_reliability_gated_modes": ["max_pressure", "fixed"],
+        },
+        {
+            "scenario_id": "xa2",
+            "winner": "cov2x",
+            "ambiguous": False,
+            "signal_sft_eligible": True,
+            "winner_action_space": "signal_only",
+            "trip_reliability_gated_modes": ["cov2x"],
+        },
+    ]
+    diagnostics = expert_diagnostics(
+        scenarios=scenarios,
+        selections=selected,
+        ambiguous=[],
+        rejected=[],
+        scoring=scoring,
+        runs=[
+            {"scenario_id": "xa1", "traffic_eval": {"completion_rate": 0.17}},
+            {"scenario_id": "xa2", "traffic_eval": {"completion_rate": 0.16}},
+        ],
+    )
+    assert diagnostics["flags"]["scope_tripinfo_gate_ge_50pct"]["xiongan_20"] == 1.0
+    assert diagnostics["flags"]["unexpected_tripinfo_gate_ge_50pct"] == {}
+    assert diagnostics["block_training"] is False
+    assert "xiongan_20" in diagnostics["tripinfo_gate_override"]["acknowledged_scopes"]
+    audit = tripinfo_gate_audit(diagnostics)
+    assert audit["xiongan_20"]["tripinfo_metrics_excluded_from_scoring"] is True
+    assert audit["xiongan_20"]["override"] is True
+
+
+def test_east_west_unexpected_gate_still_blocks() -> None:
+    from algorithms.traffic_llm.dataset.io_utils import load_yaml
+    from algorithms.traffic_llm.dataset.reporting import expert_diagnostics
+
+    scoring = load_yaml(Path(__file__).resolve().parents[1] / "configs" / "scoring_v2.yaml")
+    scenarios = [{"scenario_id": "e1", "scope": "east_dense", "event": {"event_type": "accident"}}]
+    selected = [
+        {
+            "scenario_id": "e1",
+            "winner": "max_pressure",
+            "ambiguous": False,
+            "signal_sft_eligible": True,
+            "winner_action_space": "signal_only",
+            "trip_reliability_gated_modes": ["max_pressure"],
+        }
+    ]
+    diagnostics = expert_diagnostics(
+        scenarios=scenarios,
+        selections=selected,
+        ambiguous=[],
+        rejected=[],
+        scoring=scoring,
+        runs=[{"scenario_id": "e1", "traffic_eval": {"completion_rate": 0.10}}],
+    )
+    assert "east_dense" in diagnostics["flags"]["unexpected_tripinfo_gate_ge_50pct"]
+    assert diagnostics["block_training"] is True
+
+
+def test_sensitivity_variants_do_not_retune_production_weights() -> None:
+    from algorithms.traffic_llm.dataset.io_utils import load_yaml
+    from algorithms.traffic_llm.dataset.sensitivity_audit import (
+        scoring_variant_drop_tripinfo,
+        scoring_variant_local_recovery,
+    )
+
+    scoring = load_yaml(Path(__file__).resolve().parents[1] / "configs" / "scoring_v2.yaml")
+    original_dr = scoring["groups"]["disturbance_response"]["weight"]
+    local = scoring_variant_local_recovery(scoring)
+    dropped = scoring_variant_drop_tripinfo(scoring)
+    assert scoring["groups"]["disturbance_response"]["weight"] == original_dr
+    assert local["groups"]["disturbance_response"]["weight"] > original_dr
+    assert local["groups"]["efficiency"]["weight"] == 0.0
+    assert dropped["trip_metric_reliability"]["min_completion_rate"] > 1.0
+    assert "completion_rate" in dropped["trip_metric_reliability"]["unreliable_metrics"]
+    assert scoring["trip_metric_reliability"]["min_completion_rate"] == 0.30
+
+
+def test_xiongan_sensitivity_audit_on_synthetic_runs(tmp_path: Path) -> None:
+    from algorithms.traffic_llm.dataset.io_utils import dump_json, load_yaml, write_jsonl
+    from algorithms.traffic_llm.dataset.sensitivity_audit import audit_xiongan_sensitivity
+
+    scoring = load_yaml(Path(__file__).resolve().parents[1] / "configs" / "scoring_v2.yaml")
+    scenarios = [
+        {
+            "scenario_id": "xa_s1",
+            "scope": "xiongan_20",
+            "period": "off_peak",
+            "event": {"event_type": "accident"},
+        },
+        {
+            "scenario_id": "xa_s2",
+            "scope": "xiongan_20",
+            "period": "off_peak",
+            "event": {"event_type": "lane_closure"},
+        },
+    ]
+    write_jsonl(tmp_path / "scenarios.jsonl", scenarios)
+    (tmp_path / "runs").mkdir()
+
+    def _run(scenario_id: str, mode: str, local_q: float, tpi: float) -> dict:
+        return {
+            "run_id": f"{scenario_id}__{mode}",
+            "scenario_id": scenario_id,
+            "control_mode": mode,
+            "state": "COMPLETED",
+            "init_ok": True,
+            "elapsed_seconds": 300.0,
+            "has_valid_action": True,
+            "teacher_action_space": ACTION_SPACE_SIGNAL_ONLY,
+            "traffic_eval": {
+                "traffic_performance_index": tpi,
+                "spillback_rate": 2.0,
+                "regional_max_queue_length_m": 20.0,
+                "hard_braking_rate": 0.01,
+                "throughput_veh_per_h": 400.0,
+                "path_avg_speed_kmh": 20.0,
+                "fuel_intensity_L_per_100km": 8.0,
+                "completion_rate": 0.17,
+                "avg_decision_latency_ms": 5.0,
+            },
+            "local_event_window": {
+                "local_avg_queue_veh": local_q,
+                "local_max_queue_m": local_q * 8,
+                "local_spillback_pct": local_q,
+                "local_mean_speed_mps": max(0.5, 10.0 - local_q),
+                "local_throughput_delta": -local_q,
+                "local_waiting_time_delta": local_q,
+                "local_hard_braking_delta": 0.0,
+            },
+            "recovery": {"recovery_time_s": local_q * 10.0, "post_event_avg_queue": local_q},
+        }
+
+    for sid in ("xa_s1", "xa_s2"):
+        for mode, local_q, tpi in (
+            ("fixed", 12.0, 8.0),
+            ("max_pressure", 3.0, 9.5),
+            ("cov2x", 11.0, 2.0),
+        ):
+            payload = _run(sid, mode, local_q, tpi)
+            dump_json(tmp_path / "runs" / f"{payload['run_id']}.json", payload)
+
+    report = audit_xiongan_sensitivity(tmp_path, scoring, scope="xiongan_20", min_agreement=0.70)
+    assert report["n_scenarios"] == 2
+    assert report["stop_training"] is False
+    assert report["min_pairwise_winner_agreement"] >= 0.70
+    assert report["winner_counts"]["A_scoring_v2"].get("max_pressure") == 2

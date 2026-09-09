@@ -27,6 +27,13 @@ trip_metric_reliability:
     - avg_waiting_time_s
     - throughput_veh_per_h
 
+# 300s xiongan_20 会系统性截尾 TripInfo。不关闭 gate，只允许该 scope 不因此 block_training。
+# east/west 仍按 completion_rate 正常使用可靠 TripInfo。
+tripinfo_gate_override:
+  allowed_scopes:
+    - xiongan_20
+  reason: "300s episode causes systematic TripInfo truncation; expert selection uses local event/recovery metrics"
+
 # TPI 0~10 越高越拥堵，必须 minimize。
 # 扰动响应用 local event-window；全网 traffic_eval 只评价整体副作用与长期效果。
 groups:

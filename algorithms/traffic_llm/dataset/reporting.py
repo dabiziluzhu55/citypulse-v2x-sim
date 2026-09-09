@@ -397,6 +397,19 @@ def render_markdown(summary: Mapping[str, Any], cost: Mapping[str, Any] | None =
     lines.append(f"- completion_rate_by_algorithm: `{summary.get('completion_rate_by_algorithm')}`")
     lines.append(f"- local_vs_global_conflict_share: {summary.get('local_vs_global_conflict_share')}")
     lines.append(f"- expert_monopoly: `{summary.get('expert_monopoly')}`")
+    gate_audit = dict(summary.get("tripinfo_gate_audit") or {})
+    if gate_audit:
+        lines.append("")
+        lines.append("## TripInfo reliability gate")
+        for scope, item in gate_audit.items():
+            if scope.startswith("_"):
+                continue
+            lines.append(
+                f"- {scope}: gate=`{item.get('tripinfo_gate_rate')}` "
+                f"completion_rate_mean=`{(item.get('completion_rate') or {}).get('mean')}` "
+                f"tripinfo_excluded=`{item.get('tripinfo_metrics_excluded_from_scoring')}` "
+                f"override=`{item.get('override')}`"
+            )
     lines.append("")
     lines.append("## SFT")
     lines.append(f"- {summary.get('sft_counts')}")
@@ -417,9 +430,15 @@ def expert_diagnostics(
     selections: Sequence[Mapping[str, Any]],
     ambiguous: Sequence[Mapping[str, Any]],
     rejected: Sequence[Mapping[str, Any]],
+    scoring: Mapping[str, Any] | None = None,
+    runs: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Formal expert-selection health checks. Does not change scoring."""
 
+    scoring = dict(scoring or {})
+    override = dict(scoring.get("tripinfo_gate_override") or {})
+    allowed_override_scopes = {str(item) for item in override.get("allowed_scopes") or ()}
+    override_reason = str(override.get("reason") or "")
     scenario_by_id = {item["scenario_id"]: item for item in scenarios}
     selected = [item for item in selections if item.get("winner") and not item.get("ambiguous")]
     n_selected = len(selected)
@@ -462,7 +481,13 @@ def expert_diagnostics(
     for item in ambiguous:
         spec = scenario_by_id.get(item.get("scenario_id")) or {}
         event_type = str((spec.get("event") or {}).get("event_type") or "unknown")
+        scope = str(spec.get("scope") or "unknown")
         event_totals[event_type] += 1
+        scope_totals[scope] += 1
+        gated_modes = item.get("trip_reliability_gated_modes") or []
+        if gated_modes:
+            trip_gated += 1
+            scope_gate[scope] += 1
     top_share = (winners.most_common(1)[0][1] / n_selected) if n_selected else 0.0
     events_without_sft = [
         event_type
@@ -474,10 +499,46 @@ def expert_diagnostics(
         for scope, n in scope_totals.items()
         if n and (scope_gate[scope] / n) >= 0.50
     }
+    unexpected_high_gate = {
+        scope: rate
+        for scope, rate in high_gate_scopes.items()
+        if scope not in allowed_override_scopes
+    }
+    completion_by_scope: dict[str, dict[str, float | None]] = {}
+    if runs:
+        by_scope_rates: dict[str, list[float]] = defaultdict(list)
+        for run in runs:
+            spec = scenario_by_id.get(run.get("scenario_id")) or run.get("scenario") or {}
+            if not isinstance(spec, Mapping):
+                spec = {}
+            scope = str(spec.get("scope") or "unknown")
+            rate = (run.get("traffic_eval") or {}).get("completion_rate")
+            try:
+                if rate is not None:
+                    by_scope_rates[scope].append(float(rate))
+            except (TypeError, ValueError):
+                continue
+        for scope, values in by_scope_rates.items():
+            completion_by_scope[scope] = {
+                "n": len(values),
+                "mean": sum(values) / len(values) if values else None,
+                "min": min(values) if values else None,
+                "max": max(values) if values else None,
+            }
     flags = {
         "single_expert_over_80pct": bool(n_selected and top_share >= 0.80),
         "event_without_signal_sft": events_without_sft,
         "scope_tripinfo_gate_ge_50pct": high_gate_scopes,
+        "unexpected_tripinfo_gate_ge_50pct": unexpected_high_gate,
+    }
+    acknowledged = {
+        scope: {
+            "tripinfo_gate_rate": high_gate_scopes.get(scope),
+            "completion_rate": completion_by_scope.get(scope),
+            "reason": override_reason,
+            "tripinfo_metrics_excluded_from_scoring": True,
+        }
+        for scope in sorted(allowed_override_scopes & set(high_gate_scopes))
     }
     return {
         "n_selected": n_selected,
@@ -496,10 +557,45 @@ def expert_diagnostics(
         "tripinfo_gate_by_scope": {
             scope: (scope_gate[scope] / n) if n else 0.0 for scope, n in scope_totals.items()
         },
+        "completion_rate_by_scope": completion_by_scope,
+        "tripinfo_gate_override": {
+            "allowed_scopes": sorted(allowed_override_scopes),
+            "reason": override_reason,
+            "acknowledged_scopes": acknowledged,
+        },
         "flags": flags,
         "block_training": bool(
             flags["single_expert_over_80pct"]
             or flags["event_without_signal_sft"]
-            or flags["scope_tripinfo_gate_ge_50pct"]
+            or flags["unexpected_tripinfo_gate_ge_50pct"]
         ),
     }
+
+
+def tripinfo_gate_audit(diagnostics: Mapping[str, Any]) -> dict[str, Any]:
+    """Auditable per-scope TripInfo gate record for manifest / final reports."""
+
+    override = dict(diagnostics.get("tripinfo_gate_override") or {})
+    allowed = {str(item) for item in override.get("allowed_scopes") or ()}
+    gates = dict(diagnostics.get("tripinfo_gate_by_scope") or {})
+    completion = dict(diagnostics.get("completion_rate_by_scope") or {})
+    acknowledged = dict(override.get("acknowledged_scopes") or {})
+    scopes = sorted(set(gates) | set(completion) | allowed)
+    payload: dict[str, Any] = {}
+    for scope in scopes:
+        rate = gates.get(scope)
+        payload[scope] = {
+            "tripinfo_gate_rate": rate,
+            "completion_rate": completion.get(scope),
+            "tripinfo_metrics_excluded_from_scoring": bool(
+                scope in allowed and rate is not None and float(rate) >= 0.50
+            ),
+            "override": scope in allowed,
+            "override_reason": override.get("reason") if scope in allowed else None,
+            "acknowledged": acknowledged.get(scope),
+        }
+    payload["_notes"] = {
+        "xiongan_20_expected": "300s episode causes systematic TripInfo truncation; expert selection uses local event/recovery metrics",
+        "east_west": "continue using reliable TripInfo when completion_rate >= 0.30",
+    }
+    return payload

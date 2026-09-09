@@ -7,7 +7,7 @@ import json
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from simulation.sumo.engine.ai_control import AIControlConfig, AIControlPlan, AIControlValidationError
 
@@ -89,56 +89,20 @@ def _group_key(user: Mapping[str, Any], meta: Mapping[str, Any], field: str) -> 
     return str(scene.get(field) or "unknown")
 
 
-def evaluate(
+def evaluate_samples(
     *,
-    dataset_dir: Path,
-    split: str,
-    model_path: str,
-    adapter: str | None,
-    max_samples: int | None,
+    samples: Sequence[Mapping[str, Any]],
+    model: Any,
+    tokenizer: Any,
     max_new_tokens: int,
-    sft_dirname: str = "sft",
-    prompt_completion_dirname: str | None = None,
+    adapter: str | None = None,
+    split: str = "",
 ) -> dict[str, Any]:
-    from algorithms.traffic_llm.training.cuda_env import ensure_cuda_runtime_libs
-
-    ensure_cuda_runtime_libs()
     import torch
-    from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-    pc_dir = dataset_dir / (prompt_completion_dirname or "prompt_completion")
-    sft_dir = dataset_dir / sft_dirname
-    path = pc_dir / f"{split}.jsonl"
-    if not path.is_file():
-        path = sft_dir / f"{split}.jsonl"
-    samples = list(read_jsonl(path))
-    if max_samples is not None:
-        samples = samples[: int(max_samples)]
-    if not samples:
-        raise SystemExit(f"no {split} samples")
     allowed = tls_phase_orders()
     policy = AIControlConfig(plan_valid_seconds=30.0, slot_seconds=5.0)
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    bnb = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_compute_dtype=torch.bfloat16,
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        quantization_config=bnb,
-        device_map="auto",
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-    )
-    if adapter:
-        model = PeftModel.from_pretrained(model, adapter)
     model.eval()
-
     n = 0
     json_ok = 0
     schema_ok = 0
@@ -170,14 +134,16 @@ def evaluate(
         inputs = tokenizer(prompt, return_tensors="pt")
         device = next(model.parameters()).device
         inputs = {key: value.to(device) for key, value in inputs.items()}
+        use_cuda = device.type == "cuda"
         with torch.no_grad():
-            output = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-            )
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_cuda):
+                output = model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
         decoded = tokenizer.decode(output[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
         observation = dict(user.get("observation") or {})
         allowed_region = set(observation.get("controlled_region") or ())
@@ -287,6 +253,62 @@ def evaluate(
         "grouped": grouped_rates,
         "example": examples[0] if examples else None,
     }
+
+
+def evaluate(
+    *,
+    dataset_dir: Path,
+    split: str,
+    model_path: str,
+    adapter: str | None,
+    max_samples: int | None,
+    max_new_tokens: int,
+    sft_dirname: str = "sft",
+    prompt_completion_dirname: str | None = None,
+) -> dict[str, Any]:
+    from algorithms.traffic_llm.training.cuda_env import ensure_cuda_runtime_libs
+
+    ensure_cuda_runtime_libs()
+    import torch
+    from peft import PeftModel
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+    pc_dir = dataset_dir / (prompt_completion_dirname or "prompt_completion")
+    sft_dir = dataset_dir / sft_dirname
+    path = pc_dir / f"{split}.jsonl"
+    if not path.is_file():
+        path = sft_dir / f"{split}.jsonl"
+    samples = list(read_jsonl(path))
+    if max_samples is not None:
+        samples = samples[: int(max_samples)]
+    if not samples:
+        raise SystemExit(f"no {split} samples")
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    bnb = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        quantization_config=bnb,
+        device_map="auto",
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+    )
+    if adapter:
+        model = PeftModel.from_pretrained(model, adapter)
+    return evaluate_samples(
+        samples=samples,
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=max_new_tokens,
+        adapter=adapter,
+        split=split,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

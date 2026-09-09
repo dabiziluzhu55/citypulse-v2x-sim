@@ -18,7 +18,13 @@ from .event_window import (
 )
 from .io_utils import dump_json, load_json, read_jsonl, write_jsonl
 from .phase_service import load_phase_service_index
-from .reporting import expert_diagnostics, render_markdown, summarize_dataset, wall_and_disk_report
+from .reporting import (
+    expert_diagnostics,
+    render_markdown,
+    summarize_dataset,
+    tripinfo_gate_audit,
+    wall_and_disk_report,
+)
 from .scenario_generator import generate_scenarios, plan_summary, repair_unroutable_lane_closures
 from .schema import DATASET_VERSION, OBSERVATION_VERSION_V2, ScenarioSpec
 from .sft_builder import build_sft_samples_for_run, load_trace_file, messages_to_prompt_completion
@@ -517,20 +523,39 @@ def select_teachers(output_dir: Path, scoring: Mapping[str, Any]) -> dict[str, A
         selections=selected + ambiguous,
         ambiguous=ambiguous,
         rejected=rejected,
+        scoring=scoring,
+        runs=runs,
     )
     paths["reports"].mkdir(parents=True, exist_ok=True)
+    audit = tripinfo_gate_audit(diagnostics)
+    diagnostics["tripinfo_gate_audit"] = audit
     dump_json(paths["reports"] / "expert_diagnostics.json", diagnostics)
+    dump_json(paths["reports"] / "tripinfo_gate_audit.json", audit)
+    if paths["manifest"].is_file():
+        manifest = load_json(paths["manifest"])
+        manifest["tripinfo_gate_override"] = dict(scoring.get("tripinfo_gate_override") or {})
+        manifest["tripinfo_gate_audit"] = audit
+        dump_json(paths["manifest"], manifest)
     if diagnostics.get("block_training"):
         _progress(
             "expert diagnostics FLAG block_training="
             f"{diagnostics['flags']}. Do not start formal training until reviewed."
         )
+    else:
+        acknowledged = (diagnostics.get("tripinfo_gate_override") or {}).get("acknowledged_scopes") or {}
+        if acknowledged:
+            _progress(
+                "tripinfo_gate_override acknowledged "
+                f"{sorted(acknowledged)}; block_training=false"
+            )
     return {
         "n_selected": len(selected),
         "n_ambiguous": len(ambiguous),
         "n_rejected": len(rejected),
         "selection_version": scoring.get("selection_version"),
         "diagnostics": diagnostics,
+        "tripinfo_gate_audit": audit,
+        "block_training": bool(diagnostics.get("block_training")),
     }
 
 
@@ -654,6 +679,17 @@ def build_sft(
     summary["observation_version"] = OBSERVATION_VERSION_V2 if use_v2 else "traffic_qwen_observation_v1"
     summary["sft_dirname"] = sft_dirname
     summary["prompt_completion_counts"] = pc_counts
+    diag_path = paths["reports"] / "expert_diagnostics.json"
+    if diag_path.is_file():
+        diagnostics = load_json(diag_path)
+        summary["tripinfo_gate_audit"] = diagnostics.get("tripinfo_gate_audit") or tripinfo_gate_audit(
+            diagnostics
+        )
+        if diagnostics.get("block_training"):
+            raise RuntimeError(
+                "block_training=true; refuse build-sft. "
+                f"flags={diagnostics.get('flags')}"
+            )
     paths["reports"].mkdir(parents=True, exist_ok=True)
     report_name = "dataset_summary_v2.json" if use_v2 else "dataset_summary.json"
     dump_json(paths["reports"] / report_name, summary)
