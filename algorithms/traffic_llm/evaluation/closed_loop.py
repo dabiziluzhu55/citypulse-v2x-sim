@@ -31,6 +31,7 @@ from algorithms.traffic_llm.dataset.phase_service import load_phase_service_inde
 from algorithms.traffic_llm.dataset.scenario_generator import event_spec_to_disturbance
 from algorithms.traffic_llm.dataset.schema import ScenarioSpec
 from algorithms.traffic_llm.dataset.trace_collector import compact_snapshot_summary
+from algorithms.traffic_llm.evaluation.event_lifecycle import collect_event_lifecycle
 from algorithms.traffic_llm.evaluation.policy import PolicyDecision
 
 
@@ -392,6 +393,7 @@ def run_closed_loop_episode(
                 ),
                 "fallback_rate": result["n_fallback"] / n_dec if n_dec else None,
                 "invalid_plan_rate": result["n_invalid_plans"] / n_dec if n_dec else None,
+                "event_lifecycle": collect_event_lifecycle(snapshots),
             }
         )
         _persist(output_dir, spec, result)
@@ -437,5 +439,6 @@ def _persist(output_dir: Path, spec: ScenarioSpec, result: Mapping[str, Any]) ->
             "fallback_rate": result.get("fallback_rate"),
             "invalid_plan_rate": result.get("invalid_plan_rate"),
             "inference_latency_ms": result.get("inference_latency_ms"),
+            "event_lifecycle": result.get("event_lifecycle") or {},
         },
     )

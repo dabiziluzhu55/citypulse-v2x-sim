@@ -47,7 +47,11 @@ def _parser() -> argparse.ArgumentParser:
     loop = sub.add_parser("closed-loop", help="Run holdout closed-loop SUMO with a frozen Qwen policy")
     loop.add_argument("--dataset", default="outputs/traffic_llm_dataset/formal_v1")
     loop.add_argument("--scoring", default="algorithms/traffic_llm/configs/scoring_v2.yaml")
-    loop.add_argument("--policy", required=True, choices=("traffic_qwen", "base_qwen"))
+    loop.add_argument(
+        "--policy",
+        required=True,
+        choices=("traffic_qwen", "base_qwen", "traffic_qwen_v1", "traffic_qwen_v2"),
+    )
     loop.add_argument("--model", default=DEFAULT_MODEL)
     loop.add_argument("--adapter", default=DEFAULT_ADAPTER)
     loop.add_argument("--output", default="")
@@ -66,6 +70,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     report.add_argument("--seed", type=int, default=42003)
     report.add_argument("--split", default="test")
+    report.add_argument("--llm-policy", default="traffic_qwen_v2")
+    report.add_argument("--v1-policy", default="traffic_qwen_v1")
+    report.add_argument("--base-policy", default="base_qwen")
     return parser
 
 
@@ -164,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
             closed_loop_root=Path(args.closed_loop_dir),
             scoring=scoring,
             scenarios=scenarios,
+            llm_policy=str(args.llm_policy),
+            base_policy=str(args.base_policy),
+            v1_policy=str(args.v1_policy),
         )
         report["decision"] = decide_next_step(report)
         reports = dataset_dir / "reports"
@@ -174,6 +184,10 @@ def main(argv: list[str] | None = None) -> int:
             "n_scenarios",
             "n_llm_completed",
             "n_base_completed",
+            "n_v1_completed",
+            "n_fixed_completed",
+            "n_max_pressure_completed",
+            "n_invalid_event",
             "json_ok_rate",
             "schema_ok_rate",
             "phase_ok_rate",

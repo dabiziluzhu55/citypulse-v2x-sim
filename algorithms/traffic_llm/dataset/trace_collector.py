@@ -146,6 +146,7 @@ def compact_snapshot_summary(snapshot: SimulationSnapshot) -> dict[str, Any]:
                 "state": item.state,
                 "start_seconds": item.start_seconds,
                 "end_seconds": item.end_seconds,
+                "error": item.error,
             }
             for item in snapshot.events
         ],

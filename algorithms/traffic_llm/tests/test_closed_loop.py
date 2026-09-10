@@ -150,6 +150,12 @@ def _run(local_q: float, recovery: float = 20.0) -> dict:
         * 2,
         "fallback_rate": 0.0,
         "invalid_plan_rate": 0.0,
+        "event_lifecycle": {
+            "states": ["SCHEDULED", "ACTIVE", "COMPLETED"],
+            "activated": True,
+            "completed": True,
+            "valid_for_compare": True,
+        },
     }
 
 
@@ -202,5 +208,34 @@ def test_compare_closed_loop_win_tie_loss(tmp_path):
     decision = decide_next_step(report)
     assert decision["improves_vs_base"] is True
     assert decision["improves_vs_fixed"] is True
+    assert decision["queue_spillback_improved"] is True
+    assert decision["deployment_ready"] is True
     assert decision["competitive_vs_max_pressure"] is False
     assert decision["recommend_awq_vllm_backend"] is False
+
+
+def test_compare_excludes_inactive_event(tmp_path):
+    dataset = tmp_path / "dataset"
+    loop = tmp_path / "closed_loop"
+    (dataset / "runs").mkdir(parents=True)
+    (loop / "traffic_qwen" / "runs").mkdir(parents=True)
+    sid = "scenario_dead"
+    dead = _run(5.0)
+    dead["n_plans"] = 0
+    dead["event_lifecycle"] = {
+        "states": ["SCHEDULED", "FAILED"],
+        "activated": False,
+        "completed": False,
+        "valid_for_compare": False,
+    }
+    dump_json(dataset / "runs" / f"{sid}_fixed.json", dead)
+    dump_json(loop / "traffic_qwen" / "runs" / f"{sid}_traffic_qwen.json", dead)
+    report = compare_closed_loop(
+        dataset_dir=dataset,
+        closed_loop_root=loop,
+        scoring={},
+        scenarios=[{"scenario_id": sid, "event": {"event_type": "accident"}, "period": "off_peak", "scope": "east_dense"}],
+    )
+    assert report["n_llm_completed"] == 1
+    assert report["n_compared"] == 0
+    assert report["n_invalid_event"] == 1

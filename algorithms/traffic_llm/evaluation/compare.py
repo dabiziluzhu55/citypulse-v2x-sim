@@ -8,6 +8,10 @@ from typing import Any, Mapping, Sequence
 
 from algorithms.traffic_llm.dataset.io_utils import load_json, read_jsonl
 from algorithms.traffic_llm.dataset.scorer import ignored_trip_metrics_for
+from algorithms.traffic_llm.evaluation.event_lifecycle import (
+    event_is_valid_for_compare,
+    lifecycle_from_run,
+)
 
 
 PRIMARY_METRICS: tuple[tuple[str, str, str], ...] = (
@@ -208,6 +212,9 @@ def summarize_group(rows: Sequence[Mapping[str, Any]], comparison: str) -> dict[
     }
 
 
+COMPARISON_KEYS = ("fixed", "base_qwen", "traffic_qwen_v1", "max_pressure", "selected_expert")
+
+
 def compare_closed_loop(
     *,
     dataset_dir: Path,
@@ -216,9 +223,11 @@ def compare_closed_loop(
     scenarios: Sequence[Mapping[str, Any]],
     llm_policy: str = "traffic_qwen",
     base_policy: str = "base_qwen",
+    v1_policy: str = "traffic_qwen_v1",
 ) -> dict[str, Any]:
     experts = load_selected_experts(dataset_dir)
     rows: list[dict[str, Any]] = []
+    invalid_events: list[dict[str, Any]] = []
     latencies: list[float] = []
     json_ok = 0
     schema_ok = 0
@@ -229,14 +238,26 @@ def compare_closed_loop(
     n_invalid = 0
     n_llm_ok = 0
     n_base_ok = 0
+    n_v1_ok = 0
+    n_fixed_ok = 0
+    n_mp_ok = 0
     for spec in scenarios:
         sid = str(spec["scenario_id"])
         llm = load_closed_loop_run(closed_loop_root, llm_policy, sid)
         base = load_closed_loop_run(closed_loop_root, base_policy, sid)
+        v1 = load_closed_loop_run(closed_loop_root, v1_policy, sid)
+        fixed = load_algorithm_run(dataset_dir, sid, "fixed")
+        mp = load_algorithm_run(dataset_dir, sid, "max_pressure")
         if llm and llm.get("state") == "COMPLETED":
             n_llm_ok += 1
         if base and base.get("state") == "COMPLETED":
             n_base_ok += 1
+        if v1 and v1.get("state") == "COMPLETED":
+            n_v1_ok += 1
+        if fixed and fixed.get("state") == "COMPLETED":
+            n_fixed_ok += 1
+        if mp and mp.get("state") == "COMPLETED":
+            n_mp_ok += 1
         if not llm or llm.get("state") != "COMPLETED":
             continue
         for ms in llm.get("inference_latency_ms") or ():
@@ -254,16 +275,36 @@ def compare_closed_loop(
             schema_ok += int(bool(decision.get("schema_ok")))
             phase_ok += int(bool(decision.get("phase_ok")))
             region_ok += int(bool(decision.get("region_ok")))
+        present = [
+            item
+            for item in (llm, base, v1, fixed, mp)
+            if item and item.get("state") == "COMPLETED"
+        ]
+        event_ok = event_is_valid_for_compare(*present)
+        llm_life = lifecycle_from_run(llm) or {}
+        if not event_ok:
+            invalid_events.append(
+                {
+                    "scenario_id": sid,
+                    "event_type": (
+                        spec.get("event", {}).get("event_type")
+                        if isinstance(spec.get("event"), Mapping)
+                        else spec.get("event_type")
+                    ),
+                    "period": spec.get("period"),
+                    "scope": spec.get("scope"),
+                    "llm_lifecycle": llm_life,
+                    "fixed_lifecycle": lifecycle_from_run(fixed),
+                    "n_plans": llm.get("n_plans"),
+                }
+            )
+            continue
         expert_mode = experts.get(sid)
         comparisons = {
             "base_qwen": _pair_row(llm, base, scoring, other_name="base_qwen") if base else None,
-            "fixed": _pair_row(llm, load_algorithm_run(dataset_dir, sid, "fixed"), scoring, other_name="fixed"),
-            "max_pressure": _pair_row(
-                llm,
-                load_algorithm_run(dataset_dir, sid, "max_pressure"),
-                scoring,
-                other_name="max_pressure",
-            ),
+            "traffic_qwen_v1": _pair_row(llm, v1, scoring, other_name="traffic_qwen_v1") if v1 else None,
+            "fixed": _pair_row(llm, fixed, scoring, other_name="fixed"),
+            "max_pressure": _pair_row(llm, mp, scoring, other_name="max_pressure"),
             "selected_expert": (
                 _pair_row(
                     llm,
@@ -285,6 +326,7 @@ def compare_closed_loop(
                 "llm_state": llm.get("state"),
                 "selected_expert": expert_mode,
                 "n_plans": llm.get("n_plans"),
+                "event_lifecycle": llm_life,
                 "tripinfo_gated": bool((_metric_pack(llm, scoring)).get("tripinfo_gated")),
                 "comparisons": comparisons,
                 "llm_local": dict(llm.get("local_event_window") or {}),
@@ -302,20 +344,22 @@ def compare_closed_loop(
         return {
             key: {
                 comparison: summarize_group(items, comparison)
-                for comparison in ("base_qwen", "fixed", "max_pressure", "selected_expert")
+                for comparison in COMPARISON_KEYS
             }
             for key, items in sorted(buckets.items())
         }
 
-    overall = {
-        comparison: summarize_group(rows, comparison)
-        for comparison in ("base_qwen", "fixed", "max_pressure", "selected_expert")
-    }
+    overall = {comparison: summarize_group(rows, comparison) for comparison in COMPARISON_KEYS}
     return {
         "n_scenarios": len(scenarios),
         "n_llm_completed": n_llm_ok,
         "n_base_completed": n_base_ok,
+        "n_v1_completed": n_v1_ok,
+        "n_fixed_completed": n_fixed_ok,
+        "n_max_pressure_completed": n_mp_ok,
         "n_compared": len(rows),
+        "n_invalid_event": len(invalid_events),
+        "invalid_events": invalid_events,
         "n_zero_plan_episodes": sum(1 for item in rows if not int(item.get("n_plans") or 0)),
         "n_plans": n_plans,
         "json_ok_rate": (json_ok / n_plans) if n_plans else None,
@@ -334,5 +378,6 @@ def compare_closed_loop(
         "by_event": _group("event_type"),
         "by_period": _group("period"),
         "by_scope": _group("scope"),
+        "llm_policy": llm_policy,
         "scenarios": rows,
     }

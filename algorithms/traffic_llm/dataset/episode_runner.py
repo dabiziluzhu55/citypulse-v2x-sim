@@ -25,6 +25,8 @@ from .event_window import (
 from .io_utils import dump_json, write_jsonl_gz
 from .scenario_generator import event_spec_to_disturbance
 from .schema import ScenarioSpec
+from algorithms.traffic_llm.evaluation.event_lifecycle import collect_event_lifecycle
+
 from .trace_collector import TraceCollector, compact_snapshot_summary
 
 TERMINAL_STATES = frozenset({"COMPLETED", "STOPPED", "FAILED"})
@@ -261,6 +263,7 @@ def run_episode(
                 "has_vehicle_actions": trace_summary["has_vehicle_actions"],
                 "has_valid_action": trace_summary["has_valid_action"] or control_mode == "fixed",
                 "n_decisions": trace_summary["n_decisions"],
+                "event_lifecycle": collect_event_lifecycle(snapshots),
             }
         )
         if result["state"] != "COMPLETED":
@@ -345,6 +348,7 @@ def _persist_run(
             "local_event_window": result.get("local_event_window") or {},
             "recovery": result.get("recovery") or {},
             "state": result.get("state"),
+            "event_lifecycle": result.get("event_lifecycle") or {},
         },
     )
     write_jsonl_gz(

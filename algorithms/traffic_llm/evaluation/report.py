@@ -40,51 +40,65 @@ def _ms(value: Any) -> str:
     return f"{float(value):.1f}"
 
 
+QUEUE_SPILLBACK = (
+    "local_avg_queue_veh",
+    "local_max_queue_m",
+    "local_spillback_pct",
+)
+
+
 def decide_next_step(report: Mapping[str, Any]) -> dict[str, Any]:
     json_ok = float(report.get("json_ok_rate") or 0.0)
     schema_ok = float(report.get("schema_ok_rate") or 0.0)
     phase_ok = float(report.get("phase_ok_rate") or 0.0)
+    region_ok = float(report.get("region_ok_rate") or 0.0)
     overall = dict(report.get("overall") or {})
     vs_base = (overall.get("base_qwen") or {}).get("win_tie_loss") or {}
     vs_fixed = (overall.get("fixed") or {}).get("win_tie_loss") or {}
+    vs_v1 = (overall.get("traffic_qwen_v1") or {}).get("win_tie_loss") or {}
     vs_mp = (overall.get("max_pressure") or {}).get("win_tie_loss") or {}
-    legality_ok = min(json_ok, schema_ok, phase_ok) >= 0.98
-    n_base = max(1, int(vs_base.get("n") or 0))
-    n_fixed = max(1, int(vs_fixed.get("n") or 0))
-    n_mp = max(1, int(vs_mp.get("n") or 0))
-    beat_base = (int(vs_base.get("win") or 0) + 0.5 * int(vs_base.get("tie") or 0)) / n_base >= 0.55
-    beat_fixed = (int(vs_fixed.get("win") or 0) + 0.5 * int(vs_fixed.get("tie") or 0)) / n_fixed >= 0.55
-    competitive_mp = (int(vs_mp.get("loss") or 0) / n_mp) <= 0.50
-    deploy = bool(legality_ok and beat_base and beat_fixed and competitive_mp)
-    weakest = []
+    legality_ok = min(json_ok, schema_ok, phase_ok, region_ok) >= 0.98
+    beat_fixed = int(vs_fixed.get("win") or 0) > int(vs_fixed.get("loss") or 0)
+    beat_base = int(vs_base.get("win") or 0) > int(vs_base.get("loss") or 0)
+    beat_v1 = int(vs_v1.get("win") or 0) > int(vs_v1.get("loss") or 0)
+    competitive_mp = int(vs_mp.get("win") or 0) >= int(vs_mp.get("loss") or 0)
+    means = dict((overall.get("fixed") or {}).get("mean_improvement_pct") or {})
+    queue_vals = [means.get(key) for key in QUEUE_SPILLBACK]
+    present_queue = [float(item) for item in queue_vals if item is not None]
+    queue_improved = bool(present_queue) and (sum(present_queue) / len(present_queue) > 0.0)
     by_event = dict(report.get("by_event") or {})
+    event_net = []
     for event, payload in by_event.items():
-        mp = ((payload.get("max_pressure") or {}).get("win_tie_loss") or {})
-        n = max(1, int(mp.get("n") or 0))
-        loss_rate = int(mp.get("loss") or 0) / n
-        weakest.append((loss_rate, event, "event"))
-    by_scope = dict(report.get("by_scope") or {})
-    for scope, payload in by_scope.items():
-        mp = ((payload.get("max_pressure") or {}).get("win_tie_loss") or {})
-        n = max(1, int(mp.get("n") or 0))
-        loss_rate = int(mp.get("loss") or 0) / n
-        weakest.append((loss_rate, scope, "scope"))
-    weakest.sort(reverse=True)
-    data_focus = []
-    for loss_rate, name, kind in weakest[:3]:
-        if loss_rate >= 0.45:
-            data_focus.append({"kind": kind, "name": name, "mp_loss_rate": loss_rate})
+        wtl = ((payload.get("fixed") or {}).get("win_tie_loss") or {})
+        wins = int(wtl.get("win") or 0)
+        losses = int(wtl.get("loss") or 0)
+        if int(wtl.get("n") or 0) <= 0:
+            continue
+        event_net.append((event, wins > losses, wins, losses))
+    n_event_ok = sum(1 for item in event_net if item[1])
+    majority_events = n_event_ok >= 3 if len(event_net) >= 5 else (
+        n_event_ok > (len(event_net) - n_event_ok) if event_net else False
+    )
+    weak_events = [item[0] for item in event_net if not item[1]]
+    deploy = bool(legality_ok and beat_fixed and queue_improved and majority_events)
     return {
-        "recommend_awq_vllm_backend": deploy,
+        "deployment_ready": deploy,
+        "recommend_awq_vllm_backend": False,
         "legality_ok": legality_ok,
         "improves_vs_base": beat_base,
         "improves_vs_fixed": beat_fixed,
+        "improves_vs_v1": beat_v1,
+        "queue_spillback_improved": queue_improved,
+        "majority_events_improved_vs_fixed": majority_events,
+        "n_events_improved_vs_fixed": n_event_ok,
+        "n_events_compared": len(event_net),
+        "weak_events_vs_fixed": weak_events,
         "competitive_vs_max_pressure": competitive_mp,
-        "data_focus": data_focus,
+        "data_focus": [{"kind": "event", "name": name} for name in weak_events],
         "reason": (
-            "合法率接近 100%，相对 Base/Fixed 在主扰动指标上稳定改善，且多数 scenario 不明显劣于 Max Pressure。"
+            "Traffic-Qwen 已证明能够在未见扰动场景中相对固定配时改善交通运行，可以进入轻量化部署阶段。"
             if deploy
-            else "闭环交通效果尚未达到部署门槛；不要 merge / AWQ / vLLM / Backend takeover。"
+            else "相对 Fixed 的闭环改善尚未达到进入轻量化部署的门槛；本轮不训练、不部署。"
         ),
     }
 
@@ -93,7 +107,7 @@ def _slice_block(title: str, grouped: Mapping[str, Any]) -> list[str]:
     lines = [f"## {title}", ""]
     for name, payload in grouped.items():
         lines.append(f"### {name}")
-        for other in ("base_qwen", "fixed", "max_pressure", "selected_expert"):
+        for other in ("fixed", "base_qwen", "traffic_qwen_v1", "max_pressure"):
             block = dict(payload.get(other) or {})
             means = dict(block.get("mean_improvement_pct") or {})
             lines.append(f"- vs {other}: `{_wtl(block)}`")
@@ -114,9 +128,9 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "主结论看 local event-window + recovery；xiongan_20 的不可靠 TripInfo 不参与结论。",
         "AI 计划仅在扰动 ACTIVE 期间生效（120–180s 事件可执行 [120, 150] 两段 30s）。",
         "",
-        f"- Traffic-Qwen 完成：`{report.get('n_llm_completed')}/{report.get('n_scenarios')}`",
-        f"- Base Qwen 完成：`{report.get('n_base_completed')}/{report.get('n_scenarios')}`",
-        f"- 扰动事件未 ACTIVE、因而无法接管的 episode：`{report.get('n_zero_plan_episodes')}`（SUMO accident spawn 失败，原 formal_v1 六算法同样无 ACTIVE 事故）",
+        f"- Traffic-Qwen V2 完成：`{report.get('n_llm_completed')}/{report.get('n_scenarios')}`",
+        f"- Base / V1 / Fixed / MP 完成：`{report.get('n_base_completed')}` / `{report.get('n_v1_completed')}` / `{report.get('n_fixed_completed')}` / `{report.get('n_max_pressure_completed')}`",
+        f"- 无效扰动（未 ACTIVE，已剔除出效果比较）：`{report.get('n_invalid_event')}`",
         f"- JSON / schema / phase / region：`{_rate(report.get('json_ok_rate'))}` / `{_rate(report.get('schema_ok_rate'))}` / `{_rate(report.get('phase_ok_rate'))}` / `{_rate(report.get('region_ok_rate'))}`",
         f"- fallback rate：`{_rate(report.get('fallback_rate'))}`",
         f"- invalid_plan rate：`{_rate(report.get('invalid_plan_rate'))}`",
@@ -124,18 +138,18 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "",
         "## 综合结论",
         "",
-        f"1. 相比 Base Qwen：`{_wtl(overall.get('base_qwen'))}`；判定改善：`{decision.get('improves_vs_base')}`",
-        f"2. 相比 Fixed：`{_wtl(overall.get('fixed'))}`；判定改善：`{decision.get('improves_vs_fixed')}`",
-        f"3. 相比 Max Pressure：`{_wtl(overall.get('max_pressure'))}`；判定有竞争力：`{decision.get('competitive_vs_max_pressure')}`",
-        f"4. 相比 selected expert：`{_wtl(overall.get('selected_expert'))}`",
-        f"5. 最弱切片：`{decision.get('data_focus')}`",
-        f"6. 推理 P50/P95：`{_ms(latency.get('p50'))}` / `{_ms(latency.get('p95'))}` ms",
-        f"7. 是否进入 AWQ + vLLM + Backend 异步 takeover：**{'否' if not decision.get('recommend_awq_vllm_backend') else '是'}** — {decision.get('reason')}",
+        f"1. **V2 vs Fixed（主判定）**：`{_wtl(overall.get('fixed'))}`；W>L：`{decision.get('improves_vs_fixed')}`；queue/spillback 改善：`{decision.get('queue_spillback_improved')}`",
+        f"2. 五类 event 净改善：`{decision.get('n_events_improved_vs_fixed')}/{decision.get('n_events_compared')}`；较弱事件：`{decision.get('weak_events_vs_fixed')}`",
+        f"3. 补充 V2 vs Base：`{_wtl(overall.get('base_qwen'))}`；V2 vs V1：`{_wtl(overall.get('traffic_qwen_v1'))}`",
+        f"4. 补充 V2 vs Max Pressure：`{_wtl(overall.get('max_pressure'))}`（不是部署硬门槛）",
+        f"5. 推理 P50/P95：`{_ms(latency.get('p50'))}` / `{_ms(latency.get('p95'))}` ms",
+        f"6. `deployment_ready={decision.get('deployment_ready')}` — {decision.get('reason')}",
+        "7. 本轮不自动 merge / AWQ / vLLM / Backend / Frontend / Docker。",
         "",
         "## Overall 相对改善（Traffic-Qwen 相对对照；+ 更好）",
         "",
     ]
-    for name in ("base_qwen", "fixed", "max_pressure", "selected_expert"):
+    for name in ("fixed", "base_qwen", "traffic_qwen_v1", "max_pressure"):
         block = overall.get(name) or {}
         means = dict(block.get("mean_improvement_pct") or {})
         lines.append(f"### {name}")
