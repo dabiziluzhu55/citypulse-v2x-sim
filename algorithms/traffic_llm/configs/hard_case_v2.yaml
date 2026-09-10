@@ -1,0 +1,117 @@
+dataset_version: traffic_qwen_sft_hard_case_v2
+full_expert_version: traffic_qwen_full_expert_v1
+sample_source: hard_case_v2
+output_dir: outputs/traffic_llm_dataset/hard_case_v2
+scoring_config: algorithms/traffic_llm/configs/scoring_v2.yaml
+
+simulation:
+  duration_seconds: 300
+  step_length: 0.1
+  snapshot_interval_seconds: 1.0
+  decision_interval: 5.0
+  minimum_green: 5.0
+  flow_multiplier: 1.0
+  workers: 4
+  wall_timeout_factor: 25.0
+  store_full_vehicle_observation: false
+  required_post_event_horizon_s: 90
+
+retention:
+  mode: compact
+
+pipeline:
+  freeze_split_before_generate: true
+  score_on_generate: false
+  build_sft_on_generate: false
+
+planning:
+  slot_seconds: 5
+  plan_valid_seconds: 30
+  scope_hops: 1
+  min_episode_seconds: 60
+
+# Targeted V2 hard cases. Do not expand event_start / event_duration.
+# east: 2 period × 4 event × 2 severity × 4 seeds = 64
+# xiongan high-only: 2 period × 4 event × 1 severity × 2 seeds = 16
+# total 80 scenarios × 6 algorithms = 480 episodes
+# west_dense / off_peak / lane_closure are intentionally omitted this round.
+grids:
+  - periods:
+      - morning_peak
+      - evening_peak
+    scopes:
+      - east_dense
+    seeds:
+      - 43001
+      - 43002
+      - 43003
+      - 43004
+    event_types:
+      - speed_limit
+      - major_event_closing
+      - accident
+      - major_event_opening
+    event_start_seconds:
+      - 120
+    event_duration_seconds:
+      - 60
+    severity:
+      speed_limit:
+        target_speed_mps: [8.0, 4.0]
+      major_event_opening:
+        vehicle_count: [30, 50]
+      major_event_closing:
+        vehicle_count: [30, 50]
+      accident:
+        position_ratio: [0.5, 0.8]
+  - periods:
+      - morning_peak
+      - evening_peak
+    scopes:
+      - xiongan_20
+    seeds:
+      - 43001
+      - 43004
+    event_types:
+      - speed_limit
+      - major_event_closing
+      - accident
+      - major_event_opening
+    event_start_seconds:
+      - 120
+    event_duration_seconds:
+      - 60
+    severity:
+      speed_limit:
+        target_speed_mps: [4.0]
+      major_event_opening:
+        vehicle_count: [50]
+      major_event_closing:
+        vehicle_count: [50]
+      accident:
+        position_ratio: [0.8]
+
+control_modes:
+  - fixed
+  - max_pressure
+  - sotl
+  - ippo
+  - mappo
+  - cov2x
+
+# 43004 is the only V2 val seed. 42003 is analysis-only (not in this grid).
+# 44001 is the frozen final holdout and must not be generated here.
+split:
+  seed: 20260909
+  train: 1.0
+  val: 0.0
+  test: 0.0
+  val_seeds:
+    - 43004
+  holdout_seeds: []
+  analysis_seeds: []
+  ood_event_fraction: 0.0
+
+anchors:
+  offsets_seconds: [0, 15, 30, 45, 60]
+  require_horizon_inside_episode: true

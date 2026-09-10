@@ -20,13 +20,19 @@ DEFAULT_ADAPTER = (
 )
 
 
-def _holdout_scenarios(dataset_dir: Path, *, seed: int = 42003) -> list[ScenarioSpec]:
-    split = load_json(dataset_dir / "split_manifest.json")
-    assignment = dict(split.get("assignment") or {})
+def _scenarios_for_seed(
+    dataset_dir: Path,
+    *,
+    seed: int = 42003,
+    split: str = "test",
+) -> list[ScenarioSpec]:
+    split_payload = load_json(dataset_dir / "split_manifest.json")
+    assignment = dict(split_payload.get("assignment") or {})
     rows = []
     for item in read_jsonl(dataset_dir / "scenarios.jsonl"):
         spec = ScenarioSpec.from_dict(item)
-        if assignment.get(spec.scenario_group_id) != "test":
+        assigned = assignment.get(spec.scenario_group_id)
+        if assigned is not None and assigned != split:
             continue
         if int(spec.seed) != int(seed):
             continue
@@ -49,6 +55,7 @@ def _parser() -> argparse.ArgumentParser:
     loop.add_argument("--scenario-ids", default="")
     loop.add_argument("--resume", action="store_true")
     loop.add_argument("--seed", type=int, default=42003)
+    loop.add_argument("--split", default="test", help="Frozen split to load: test|val|train")
 
     report = sub.add_parser("report", help="Aggregate Traffic-Qwen vs Base/Fixed/MP/expert")
     report.add_argument("--dataset", default="outputs/traffic_llm_dataset/formal_v1")
@@ -58,6 +65,7 @@ def _parser() -> argparse.ArgumentParser:
         default="outputs/traffic_llm_dataset/formal_v1/closed_loop",
     )
     report.add_argument("--seed", type=int, default=42003)
+    report.add_argument("--split", default="test")
     return parser
 
 
@@ -72,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
 
         dataset_dir = Path(args.dataset)
         scoring = load_yaml(args.scoring)
-        scenarios = _holdout_scenarios(dataset_dir, seed=args.seed)
+        scenarios = _scenarios_for_seed(dataset_dir, seed=args.seed, split=str(args.split))
         allow = set(_ids(args.scenario_ids))
         if allow:
             scenarios = [item for item in scenarios if item.scenario_id in allow]
@@ -150,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "report":
         dataset_dir = Path(args.dataset)
         scoring = load_yaml(args.scoring)
-        scenarios = [item.to_dict() for item in _holdout_scenarios(dataset_dir, seed=args.seed)]
+        scenarios = [item.to_dict() for item in _scenarios_for_seed(dataset_dir, seed=args.seed, split=str(args.split))]
         report = compare_closed_loop(
             dataset_dir=dataset_dir,
             closed_loop_root=Path(args.closed_loop_dir),

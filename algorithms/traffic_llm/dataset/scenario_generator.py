@@ -5,14 +5,19 @@ from __future__ import annotations
 import hashlib
 import itertools
 import random
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from simulation.sumo.engine.events import (
+    ACCIDENT_VEHICLE_CLASS,
+    MIN_ACCIDENT_LANE_LENGTH_M,
     AccidentEvent,
     LaneClosureEvent,
     MajorEventClosingEvent,
     MajorEventOpeningEvent,
     SpeedLimitEvent,
+    lane_allows_vehicle_class,
 )
 from simulation.sumo.engine.session import SimulationCatalog
 
@@ -172,7 +177,120 @@ def load_closure_safety_index(generated_dir: Any | None = None) -> dict[str, Any
         "incoming_by_edge": incoming_by_edge,
         "connections_by_intersection": connections_by_intersection,
         "synthetic_intersections": synthetic_intersections,
+        "connected_lanes": {
+            _lane_id(from_edge, from_lane)
+            for connections in connections_by_intersection.values()
+            for from_edge, from_lane, _to_edge, _to_lane in connections
+        },
     }
+
+
+def load_lane_permission_index(generated_dir: Any | None = None) -> dict[str, dict[str, Any]]:
+    """Static net.xml allow/disallow/length for accident depart checks."""
+
+    from pathlib import Path
+
+    root = Path(generated_dir) if generated_dir is not None else DEFAULT_GENERATED_DIR
+    return _load_lane_permission_index(str(root.resolve()))
+
+
+@lru_cache(maxsize=4)
+def _load_lane_permission_index(root: str) -> dict[str, dict[str, Any]]:
+    import xml.etree.ElementTree as ET
+
+    from simulation.sumo.building.artifacts import GeneratedArtifactLayout
+
+    net_path = GeneratedArtifactLayout(Path(root)).network_file
+    index: dict[str, dict[str, Any]] = {}
+    for _event, elem in ET.iterparse(net_path, events=("end",)):
+        if elem.tag != "lane":
+            continue
+        lane_id = str(elem.get("id") or "")
+        if not lane_id:
+            elem.clear()
+            continue
+        allow_raw = elem.get("allow")
+        disallow_raw = elem.get("disallow")
+        try:
+            lane_index = int(elem.get("index") or lane_id.rsplit("_", 1)[-1])
+        except ValueError:
+            elem.clear()
+            continue
+        index[lane_id] = {
+            "edge_id": lane_id.rsplit("_", 1)[0],
+            "lane_index": lane_index,
+            "allow": tuple(str(item) for item in (allow_raw or "").split() if item),
+            "disallow": tuple(str(item) for item in (disallow_raw or "").split() if item),
+            "length_m": float(elem.get("length") or 0.0),
+        }
+        elem.clear()
+    return index
+
+
+def accident_lane_is_safe(
+    lane_id: str,
+    *,
+    catalog: SimulationCatalog,
+    intersection_id: str,
+    permissions: Mapping[str, Mapping[str, Any]],
+    safety: Mapping[str, Any],
+    vehicle_class: str = ACCIDENT_VEHICLE_CLASS,
+) -> tuple[bool, str]:
+    """Reject bicycle-only / missing / unroutable accident depart lanes."""
+
+    lane_id = str(lane_id)
+    incoming = {lane.lane_id for lane in incoming_lanes(catalog, intersection_id)}
+    incoming |= set(safety.get("incoming_by_intersection", {}).get(intersection_id) or ())
+    if lane_id not in incoming:
+        return False, f"{lane_id} is not a legal incoming lane at {intersection_id}"
+    meta = dict(permissions.get(lane_id) or {})
+    if not meta:
+        return False, f"{lane_id} does not exist in the SUMO network"
+    if float(meta.get("length_m") or 0.0) + 1e-9 < MIN_ACCIDENT_LANE_LENGTH_M:
+        return False, f"{lane_id} is shorter than {MIN_ACCIDENT_LANE_LENGTH_M:g}m"
+    if not lane_allows_vehicle_class(
+        tuple(meta.get("allow") or ()),
+        tuple(meta.get("disallow") or ()),
+        vehicle_class,
+    ):
+        return False, f"{lane_id} does not allow {vehicle_class} departure"
+    connected = set(safety.get("connected_lanes") or ())
+    if connected and lane_id not in connected:
+        return False, f"{lane_id} has no TLS connection, so a single-edge accident route is unreachable"
+    return True, "ok"
+
+
+def _choose_safe_accident_lane(
+    rng: random.Random,
+    catalog: SimulationCatalog,
+    intersection_ids: Sequence[str],
+    permissions: Mapping[str, Mapping[str, Any]],
+    safety: Mapping[str, Any],
+    *,
+    preferred_intersection: str | None = None,
+) -> tuple[str, str]:
+    ordered = list(intersection_ids)
+    if preferred_intersection in ordered:
+        ordered.remove(preferred_intersection)
+        rng.shuffle(ordered)
+        ordered = [preferred_intersection, *ordered]
+    else:
+        rng.shuffle(ordered)
+    for intersection_id in ordered:
+        candidates = [
+            lane.lane_id
+            for lane in incoming_lanes(catalog, intersection_id)
+            if accident_lane_is_safe(
+                lane.lane_id,
+                catalog=catalog,
+                intersection_id=intersection_id,
+                permissions=permissions,
+                safety=safety,
+            )[0]
+        ]
+        if candidates:
+            return str(intersection_id), str(rng.choice(candidates))
+    raise IllegalEventError("No incoming lane allows a passenger accident vehicle to depart")
 
 
 def _od_pairs(
@@ -385,6 +503,7 @@ def build_event_spec(
     severity: Mapping[str, Any],
     rng: random.Random,
     safety: Mapping[str, Any] | None = None,
+    permissions: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> EventSpec:
     if event_type not in EVENT_TYPES:
         raise IllegalEventError(f"Unsupported event_type={event_type!r}")
@@ -424,7 +543,16 @@ def build_event_spec(
             severity=dict(severity),
         )
     if event_type == "accident":
-        lane_id = _choose_incoming_lane(rng, catalog, intersection_id)
+        safety = safety or load_closure_safety_index()
+        permissions = permissions or load_lane_permission_index()
+        intersection_id, lane_id = _choose_safe_accident_lane(
+            rng,
+            catalog,
+            intersection_ids,
+            permissions,
+            safety,
+            preferred_intersection=intersection_id,
+        )
         ratio = float(severity.get("position_ratio", 0.5))
         if not 0.0 <= ratio <= 1.0:
             raise IllegalEventError("accident position_ratio must be in [0, 1]")
@@ -521,12 +649,15 @@ def generate_scenarios(
     limit: int | None = None,
 ) -> list[ScenarioSpec]:
     sim = dict(config.get("simulation") or {})
-    grid = dict(config.get("grid") or {})
+    grids = [dict(item) for item in (config.get("grids") or ()) if isinstance(item, Mapping)]
+    if not grids:
+        grids = [dict(config.get("grid") or {})]
     if profile == "smoke":
         smoke = dict(config.get("smoke") or {})
-        grid = {**grid, **{k: v for k, v in smoke.items() if k != "severity"}}
+        grid = {**(grids[0] if grids else {}), **{k: v for k, v in smoke.items() if k != "severity"}}
         if "severity" in smoke:
             grid["severity"] = smoke["severity"]
+        grids = [grid]
         for key in (
             "duration_seconds",
             "step_length",
@@ -535,85 +666,92 @@ def generate_scenarios(
         ):
             if key in smoke:
                 sim[key] = smoke[key]
-    periods = _as_tuple(grid.get("periods") or ())
-    scopes = _as_tuple(grid.get("scopes") or ())
-    seeds = tuple(int(item) for item in grid.get("seeds") or ())
-    event_types = _as_tuple(grid.get("event_types") or ())
-    starts = tuple(float(item) for item in grid.get("event_start_seconds") or ())
-    durations = tuple(float(item) for item in grid.get("event_duration_seconds") or ())
-    severity_cfg = dict(grid.get("severity") or {})
     duration_seconds = float(sim.get("duration_seconds", 300))
     legal_scopes = set(list_scopes(catalog)) | {"xiongan_20", "east_dense", "west_dense", "global"}
     safety = load_closure_safety_index()
+    permissions = load_lane_permission_index()
     scenarios: list[ScenarioSpec] = []
+    seen_groups: set[str] = set()
     index = 1
-    for period, scope, seed, event_type, start, event_duration in itertools.product(
-        periods, scopes, seeds, event_types, starts, durations
-    ):
-        if scope not in legal_scopes:
-            raise IllegalEventError(f"Unknown scope {scope!r}")
-        preset_id, traffic_scope, intersection_ids = resolve_scope(str(scope))
-        if period not in catalog.intersections[intersection_ids[0]].periods:
-            continue
-        if float(start) + float(event_duration) > duration_seconds + 1e-9:
-            continue
+    for grid in grids:
+        periods = _as_tuple(grid.get("periods") or ())
+        scopes = _as_tuple(grid.get("scopes") or ())
+        seeds = tuple(int(item) for item in grid.get("seeds") or ())
+        event_types = _as_tuple(grid.get("event_types") or ())
+        starts = tuple(float(item) for item in grid.get("event_start_seconds") or ())
+        durations = tuple(float(item) for item in grid.get("event_duration_seconds") or ())
+        severity_cfg = dict(grid.get("severity") or {})
         required_horizon = float(
             sim.get("required_post_event_horizon_s")
             or grid.get("required_post_event_horizon_s")
             or 0.0
         )
-        event_end = float(start) + float(event_duration)
-        if event_end > duration_seconds - required_horizon + 1e-9:
-            continue
-        for severity in _severity_axis(str(event_type), severity_cfg):
-            group_id = _canonical_group_id(
-                period=str(period),
-                scope=str(scope),
-                seed=int(seed),
-                event_type=str(event_type),
-                start=float(start),
-                duration=float(event_duration),
-                severity=severity,
-            )
-            rng = random.Random(
-                f"{config.get('dataset_version')}|{group_id}|{seed}"
-            )
-            try:
-                event = build_event_spec(
-                    catalog=catalog,
-                    event_type=str(event_type),
-                    start_seconds=float(start),
-                    duration_seconds=float(event_duration),
-                    intersection_ids=intersection_ids,
-                    severity=severity,
-                    rng=rng,
-                    safety=safety,
-                )
-            except IllegalEventError:
+        for period, scope, seed, event_type, start, event_duration in itertools.product(
+            periods, scopes, seeds, event_types, starts, durations
+        ):
+            if scope not in legal_scopes:
+                raise IllegalEventError(f"Unknown scope {scope!r}")
+            preset_id, traffic_scope, intersection_ids = resolve_scope(str(scope))
+            if period not in catalog.intersections[intersection_ids[0]].periods:
                 continue
-            scenarios.append(
-                ScenarioSpec(
-                    scenario_id=_scenario_id(index),
-                    scenario_group_id=group_id,
+            if float(start) + float(event_duration) > duration_seconds + 1e-9:
+                continue
+            event_end = float(start) + float(event_duration)
+            if event_end > duration_seconds - required_horizon + 1e-9:
+                continue
+            for severity in _severity_axis(str(event_type), severity_cfg):
+                group_id = _canonical_group_id(
                     period=str(period),
                     scope=str(scope),
-                    scenario_preset_id=preset_id,
-                    scenario_scope=traffic_scope,
                     seed=int(seed),
-                    intersection_ids=tuple(intersection_ids),
-                    duration_seconds=duration_seconds,
-                    step_length=float(sim.get("step_length", 0.1)),
-                    decision_interval=float(sim.get("decision_interval", 5.0)),
-                    snapshot_interval_seconds=float(
-                        sim.get("snapshot_interval_seconds", 1.0)
-                    ),
-                    event=event,
-                    dataset_version=str(config.get("dataset_version") or "traffic_qwen_sft_v1"),
+                    event_type=str(event_type),
+                    start=float(start),
+                    duration=float(event_duration),
+                    severity=severity,
                 )
-            )
-            index += 1
-            if limit is not None and len(scenarios) >= int(limit):
-                return scenarios
+                if group_id in seen_groups:
+                    continue
+                rng = random.Random(
+                    f"{config.get('dataset_version')}|{group_id}|{seed}"
+                )
+                try:
+                    event = build_event_spec(
+                        catalog=catalog,
+                        event_type=str(event_type),
+                        start_seconds=float(start),
+                        duration_seconds=float(event_duration),
+                        intersection_ids=intersection_ids,
+                        severity=severity,
+                        rng=rng,
+                        safety=safety,
+                        permissions=permissions,
+                    )
+                except IllegalEventError:
+                    continue
+                seen_groups.add(group_id)
+                scenarios.append(
+                    ScenarioSpec(
+                        scenario_id=_scenario_id(index),
+                        scenario_group_id=group_id,
+                        period=str(period),
+                        scope=str(scope),
+                        scenario_preset_id=preset_id,
+                        scenario_scope=traffic_scope,
+                        seed=int(seed),
+                        intersection_ids=tuple(intersection_ids),
+                        duration_seconds=duration_seconds,
+                        step_length=float(sim.get("step_length", 0.1)),
+                        decision_interval=float(sim.get("decision_interval", 5.0)),
+                        snapshot_interval_seconds=float(
+                            sim.get("snapshot_interval_seconds", 1.0)
+                        ),
+                        event=event,
+                        dataset_version=str(config.get("dataset_version") or "traffic_qwen_sft_v1"),
+                    )
+                )
+                index += 1
+                if limit is not None and len(scenarios) >= int(limit):
+                    return scenarios
     return scenarios
 
 

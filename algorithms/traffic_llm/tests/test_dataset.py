@@ -933,3 +933,121 @@ def test_xiongan_sensitivity_audit_on_synthetic_runs(tmp_path: Path) -> None:
     assert report["stop_training"] is False
     assert report["min_pairwise_winner_agreement"] >= 0.70
     assert report["winner_counts"]["A_scoring_v2"].get("max_pressure") == 2
+
+
+def test_hard_case_v2_plan_is_80_by_480() -> None:
+    from algorithms.traffic_llm.dataset.io_utils import load_yaml
+    from algorithms.traffic_llm.dataset.pipeline import plan_job
+
+    config = load_yaml(Path(__file__).resolve().parents[1] / "configs" / "hard_case_v2.yaml")
+    result = plan_job(config)
+    assert result["n_scenarios"] == 80
+    assert result["estimated_episodes"] == 480
+    assert result["period_counts"] == {"morning_peak": 40, "evening_peak": 40}
+    assert result["scope_counts"] == {"east_dense": 64, "xiongan_20": 16}
+    assert "lane_closure" not in result["event_type_counts"]
+    assert result["event_type_counts"] == {
+        "speed_limit": 20,
+        "major_event_closing": 20,
+        "accident": 20,
+        "major_event_opening": 20,
+    }
+
+
+def test_holdout_v2_44001_plan_is_45_and_not_mixed_into_hard_case() -> None:
+    from algorithms.traffic_llm.dataset.io_utils import load_yaml
+    from algorithms.traffic_llm.dataset.pipeline import plan_job
+
+    holdout = load_yaml(Path(__file__).resolve().parents[1] / "configs" / "holdout_v2_44001.yaml")
+    hard = load_yaml(Path(__file__).resolve().parents[1] / "configs" / "hard_case_v2.yaml")
+    result = plan_job(holdout)
+    assert result["n_scenarios"] == 45
+    assert result["estimated_episodes"] == 270
+    hard_seeds = {
+        int(seed)
+        for grid in hard["grids"]
+        for seed in grid["seeds"]
+    }
+    assert 44001 not in hard_seeds
+    assert 42003 not in hard_seeds
+    assert holdout["grid"]["seeds"] == [44001]
+
+
+def test_merge_sft_upsamples_hard_and_keeps_42003_out_of_train(tmp_path: Path) -> None:
+    from algorithms.traffic_llm.dataset.io_utils import dump_json, write_jsonl
+    from algorithms.traffic_llm.dataset.pipeline import merge_sft_datasets
+    from algorithms.traffic_llm.dataset.sft_builder import SYSTEM_PROMPT
+
+    def _row(seed: int, group: str, split: str, source: str) -> dict:
+        observation = {
+            "observation_version": "traffic_observation_v2",
+            "scene": {"period": "morning_peak", "scope": "east_dense", "t": 120.0, "seed": seed},
+            "event": {"type": "speed_limit", "status": "active"},
+            "controlled_region": ["demo_5"],
+            "phase_service": {"demo_5": {"1": ["N"]}},
+            "allowed_phases": {"demo_5": [1, 2]},
+        }
+        user = {"instruction": "x", "observation": observation}
+        assistant = {
+            "controlled_intersections": ["demo_5"],
+            "valid_seconds": 30,
+            "signal_plan": {"demo_5": [1, 1, 2, 2, 1, 1]},
+            "objective": "drain",
+            "reason": "queued",
+            "fallback_to_baseline": False,
+        }
+        return {
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
+                {"role": "assistant", "content": json.dumps(assistant, ensure_ascii=False)},
+            ],
+            "metadata": {
+                "scenario_group_id": group,
+                "split": split,
+                "event_type": "speed_limit",
+                "teacher": "max_pressure",
+                "sample_source": source,
+            },
+        }
+
+    v1 = tmp_path / "v1"
+    hard = tmp_path / "hard"
+    out = tmp_path / "v2"
+    (v1 / "sft").mkdir(parents=True)
+    (hard / "sft").mkdir(parents=True)
+    write_jsonl(v1 / "sft" / "train.jsonl", [_row(42001, "g_train", "train", "formal_v1")])
+    write_jsonl(v1 / "sft" / "test.jsonl", [_row(42003, "g_test", "test", "formal_v1")])
+    write_jsonl(hard / "sft" / "train.jsonl", [_row(43001, "g_hard", "train", "hard_case_v2")])
+    write_jsonl(hard / "sft" / "val.jsonl", [_row(43004, "g_val", "val", "hard_case_v2")])
+    dump_json(
+        v1 / "split_manifest.json",
+        {"assignment": {"g_train": "train", "g_test": "test"}, "holdout_seeds": [42003]},
+    )
+    dump_json(
+        hard / "split_manifest.json",
+        {"assignment": {"g_hard": "train", "g_val": "val"}, "val_seeds": [43004]},
+    )
+    report = merge_sft_datasets(
+        v1_dir=v1,
+        hard_dir=hard,
+        output_dir=out,
+        hard_weight=2.0,
+    )
+    assert report["n_v1_train"] == 1
+    assert report["n_hard_train_unique"] == 1
+    assert report["n_hard_train_weighted"] == 2
+    assert report["n_train"] == 3
+    assert report["n_val"] == 1
+    assert report["n_closed_loop_relabel"] == 0
+    assert report["closed_loop_relabel_implemented"] is False
+    train_text = (out / "sft" / "train.jsonl").read_text(encoding="utf-8")
+    assert "42003" not in train_text
+    assert "44001" not in train_text
+    val_text = (out / "sft" / "val.jsonl").read_text(encoding="utf-8")
+    assert "43004" in val_text
+    split = json.loads((out / "split_manifest.json").read_text(encoding="utf-8"))
+    assert split["analysis_seeds"] == [42003]
+    assert split["final_test_seeds"] == [44001]
+    assert split["assignment"]["g_test"] == "analysis"
+

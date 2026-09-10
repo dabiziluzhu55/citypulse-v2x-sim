@@ -132,6 +132,7 @@ def audit_sft(
         "teacher": Counter(),
         "split": Counter(),
         "observation_version": Counter(),
+        "sample_source": Counter(),
     }
     split_event: dict[str, Counter[str]] = {
         "train": Counter(),
@@ -147,6 +148,9 @@ def audit_sft(
     n_total = 0
     holdout_leaks = 0
     holdout_seeds = {int(item) for item in split_payload.get("holdout_seeds") or ()}
+    analysis_seeds = {int(item) for item in split_payload.get("analysis_seeds") or ()}
+    final_test_seeds = {int(item) for item in split_payload.get("final_test_seeds") or ()}
+    forbidden_train_val = set(holdout_seeds) | analysis_seeds | final_test_seeds
 
     all_samples: list[dict[str, Any]] = []
     for split, path in paths.items():
@@ -210,12 +214,13 @@ def audit_sft(
                 errors.append(f"{prefix} signal_vehicle expert entered Signal SFT")
             seed = observation.get("scene", {}).get("seed")
             try:
-                if holdout_seeds and int(seed) in holdout_seeds and split != "test":
+                if forbidden_train_val and int(seed) in forbidden_train_val and split in {"train", "val"}:
                     holdout_leaks += 1
-                    errors.append(f"{prefix} holdout seed {seed} in {split}")
+                    errors.append(f"{prefix} forbidden seed {seed} in {split}")
             except (TypeError, ValueError):
                 pass
             distributions["event"][str(meta.get("event_type") or "unknown")] += 1
+            distributions["sample_source"][str(meta.get("sample_source") or "unknown")] += 1
             split_event.setdefault(split, Counter())[str(meta.get("event_type") or "unknown")] += 1
             distributions["teacher"][str(meta.get("teacher") or "unknown")] += 1
             distributions["observation_version"][str(observation.get("observation_version") or "unknown")] += 1
@@ -259,6 +264,7 @@ def audit_sft(
     checks["no_future_in_user"] = not any("future key" in item for item in errors)
     checks["no_future_in_reason"] = not any("leaks" in item or "recovery time" in item for item in errors)
     checks["no_holdout_in_train_val"] = holdout_leaks == 0
+    checks["no_analysis_or_final_test_in_train_val"] = holdout_leaks == 0
     checks["phase_service_complete"] = (phase_service_n == 0) or (phase_service_ok == phase_service_n)
     checks["assistant_truncation_rate"] = (truncated / n_total) if n_total else 0.0
     checks["n_samples"] = n_total

@@ -609,6 +609,8 @@ def build_sft(
         if selection is None:
             continue
         split = assignment.get(spec.scenario_group_id, "train")
+        if split not in buckets:
+            continue
         if selection.get("ambiguous"):
             skipped_ambiguous.append(scenario_id)
             continue
@@ -636,6 +638,11 @@ def build_sft(
             skipped_signal_vehicle.append(scenario_id)
         for sample in samples:
             sample["metadata"]["split"] = split
+            sample["metadata"]["sample_source"] = str(
+                dataset_config.get("sample_source")
+                or spec.dataset_version
+                or DATASET_VERSION
+            )
             buckets[split].append(sample)
 
     sft_dir = output_dir / sft_dirname
@@ -712,3 +719,212 @@ def build_sft(
         "sft_dirname": sft_dirname,
         "cost": cost,
     }
+
+
+def _sft_split_rows(dataset_dir: Path, split: str, sft_dirname: str = "sft") -> list[dict[str, Any]]:
+    path = dataset_dir / sft_dirname / f"{split}.jsonl"
+    return list(read_jsonl(path)) if path.is_file() else []
+
+
+def _tag_sft_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    sample_source: str,
+    split: str,
+) -> list[dict[str, Any]]:
+    tagged: list[dict[str, Any]] = []
+    for row in rows:
+        sample = dict(row)
+        meta = dict(sample.get("metadata") or {})
+        meta["sample_source"] = sample_source
+        meta["split"] = split
+        sample["metadata"] = meta
+        tagged.append(sample)
+    return tagged
+
+
+def merge_sft_datasets(
+    *,
+    v1_dir: Path,
+    hard_dir: Path,
+    output_dir: Path,
+    hard_weight: float = 2.0,
+    relabel_dir: Path | None = None,
+    v1_sft_dirname: str = "sft",
+    hard_sft_dirname: str = "sft",
+    analysis_seeds: Sequence[int] = (42003,),
+    final_test_seeds: Sequence[int] = (44001,),
+) -> dict[str, Any]:
+    """V2 train = formal_v1 train + weighted hard_case train + optional relabel.
+
+    42003 stays analysis-only. 44001 is never mixed in. Val is hard_case 43004 only.
+    Closed-loop relabel is optional; if missing, count is zero.
+    """
+
+    output_dir = Path(output_dir)
+    v1_dir = Path(v1_dir)
+    hard_dir = Path(hard_dir)
+    copies = max(1, int(round(float(hard_weight))))
+    analysis_seed_set = {int(item) for item in analysis_seeds}
+    final_seed_set = {int(item) for item in final_test_seeds}
+
+    v1_train = _tag_sft_rows(
+        _sft_split_rows(v1_dir, "train", v1_sft_dirname),
+        sample_source="formal_v1",
+        split="train",
+    )
+    hard_train_unique = _tag_sft_rows(
+        _sft_split_rows(hard_dir, "train", hard_sft_dirname),
+        sample_source="hard_case_v2",
+        split="train",
+    )
+    hard_train: list[dict[str, Any]] = []
+    for copy_idx in range(copies):
+        for row in hard_train_unique:
+            sample = dict(row)
+            meta = dict(sample.get("metadata") or {})
+            meta["upsample_copy"] = copy_idx
+            sample["metadata"] = meta
+            hard_train.append(sample)
+    relabel_rows: list[dict[str, Any]] = []
+    if relabel_dir is not None and Path(relabel_dir).exists():
+        relabel_path = Path(relabel_dir)
+        candidate_files = [
+            relabel_path / "sft" / "train.jsonl",
+            relabel_path / "train.jsonl",
+            relabel_path if relabel_path.is_file() else None,
+        ]
+        for path in candidate_files:
+            if path is not None and path.is_file():
+                relabel_rows = _tag_sft_rows(
+                    list(read_jsonl(path)),
+                    sample_source="closed_loop_relabel",
+                    split="train",
+                )
+                break
+    train_rows = [*v1_train, *hard_train, *relabel_rows]
+    val_rows = _tag_sft_rows(
+        _sft_split_rows(hard_dir, "val", hard_sft_dirname),
+        sample_source="hard_case_v2",
+        split="val",
+    )
+    analysis_rows = _tag_sft_rows(
+        _sft_split_rows(v1_dir, "test", v1_sft_dirname),
+        sample_source="formal_v1_analysis_42003",
+        split="analysis",
+    )
+
+    leaked_seeds = []
+    for split, rows in (("train", train_rows), ("val", val_rows)):
+        for row in rows:
+            seed = ((row.get("metadata") or {}).get("seed"))
+            if seed is None:
+                user = ""
+                for message in row.get("messages") or ():
+                    if message.get("role") == "user":
+                        user = str(message.get("content") or "")
+                        break
+                try:
+                    payload = json.loads(user)
+                    seed = (payload.get("observation") or {}).get("scene", {}).get("seed")
+                except Exception:
+                    seed = None
+            try:
+                seed_i = int(seed)
+            except (TypeError, ValueError):
+                continue
+            if seed_i in analysis_seed_set or seed_i in final_seed_set:
+                leaked_seeds.append({"split": split, "seed": seed_i})
+    if leaked_seeds:
+        raise RuntimeError(f"analysis/final-test seeds leaked into V2 train/val: {leaked_seeds[:20]}")
+
+    paths = dataset_paths(output_dir)
+    sft_dir = paths["sft"]
+    pc_dir = paths["prompt_completion"]
+    sft_dir.mkdir(parents=True, exist_ok=True)
+    pc_dir.mkdir(parents=True, exist_ok=True)
+    analysis_dir = output_dir / "analysis"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+
+    write_jsonl(sft_dir / "train.jsonl", train_rows)
+    write_jsonl(sft_dir / "val.jsonl", val_rows)
+    write_jsonl(sft_dir / "test.jsonl", [])
+    write_jsonl(sft_dir / "sft_train.jsonl", train_rows)
+    write_jsonl(sft_dir / "sft_val.jsonl", val_rows)
+    write_jsonl(sft_dir / "sft_test.jsonl", [])
+    for split, rows in (("train", train_rows), ("val", val_rows), ("test", [])):
+        write_jsonl(pc_dir / f"{split}.jsonl", [messages_to_prompt_completion(item) for item in rows])
+    write_jsonl(analysis_dir / "sft_42003.jsonl", analysis_rows)
+
+    v1_split = load_json(v1_dir / "split_manifest.json") if (v1_dir / "split_manifest.json").is_file() else {}
+    hard_split = load_json(hard_dir / "split_manifest.json") if (hard_dir / "split_manifest.json").is_file() else {}
+    assignment: dict[str, str] = {}
+    for group_id, split in dict(v1_split.get("assignment") or {}).items():
+        if split == "test":
+            assignment[str(group_id)] = "analysis"
+        elif split == "train":
+            assignment[str(group_id)] = "train"
+    for group_id, split in dict(hard_split.get("assignment") or {}).items():
+        assignment[str(group_id)] = str(split)
+    counts = {"train": 0, "val": 0, "test": 0, "analysis": 0}
+    for split in assignment.values():
+        counts[split] = counts.get(split, 0) + 1
+    split_payload = {
+        "rule": "V2 merge: formal_v1 train + hard_case_v2 train (weighted) + optional closed_loop_relabel; val=43004 only; 42003 analysis; 44001 held out",
+        "seed": 20260909,
+        "ratios": {"train": None, "val": None, "test": 0.0},
+        "holdout_seeds": [],
+        "val_seeds": [43004],
+        "analysis_seeds": sorted(analysis_seed_set),
+        "final_test_seeds": sorted(final_seed_set),
+        "ood_event_fraction": 0.0,
+        "n_scenarios": counts,
+        "n_groups": len(assignment),
+        "assignment": assignment,
+        "frozen": True,
+        "git_commit": git_commit(),
+    }
+    dump_json(paths["split"], split_payload)
+
+    source_counts: dict[str, int] = {}
+    for row in [*train_rows, *val_rows]:
+        source = str((row.get("metadata") or {}).get("sample_source") or "unknown")
+        source_counts[source] = source_counts.get(source, 0) + 1
+    report = {
+        "n_v1_train": len(v1_train),
+        "n_hard_train_unique": len(hard_train_unique),
+        "n_hard_train_weighted": len(hard_train),
+        "hard_weight": copies,
+        "n_closed_loop_relabel": len(relabel_rows),
+        "closed_loop_relabel_implemented": bool(relabel_rows),
+        "closed_loop_relabel_deferred_reason": (
+            None
+            if relabel_rows
+            else "simulation kernel has no SUMO saveState/loadState; skipped rather than rewriting the engine"
+        ),
+        "n_train": len(train_rows),
+        "n_val": len(val_rows),
+        "n_analysis_42003": len(analysis_rows),
+        "n_test": 0,
+        "sample_source_counts": source_counts,
+        "analysis_seeds": sorted(analysis_seed_set),
+        "final_test_seeds": sorted(final_seed_set),
+        "note": "Do not inspect 44001 LLM closed-loop until the V2 adapter is frozen.",
+    }
+    paths["reports"].mkdir(parents=True, exist_ok=True)
+    dump_json(paths["reports"] / "v2_merge.json", report)
+    dump_json(
+        paths["manifest"],
+        {
+            "dataset_version": "traffic_qwen_sft_formal_v2",
+            "n_train": len(train_rows),
+            "n_val": len(val_rows),
+            "git_commit": git_commit(),
+            "sources": {
+                "formal_v1": str(v1_dir),
+                "hard_case_v2": str(hard_dir),
+                "closed_loop_relabel": str(relabel_dir) if relabel_dir else None,
+            },
+        },
+    )
+    return report

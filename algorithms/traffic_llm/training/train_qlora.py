@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -65,6 +66,74 @@ def _load_split_rows(dataset_dir: Path, split: str, cfg: dict[str, Any]) -> list
     sft_path = dataset_dir / sft_name / f"{split}.jsonl"
     path = pc_path if pc_path.is_file() else sft_path
     return [_to_prompt_completion(row) for row in _read_jsonl(path)]
+
+
+_ADAPTER_SKIP = {
+    "optimizer.pt",
+    "scheduler.pt",
+    "rng_state.pth",
+    "trainer_state.json",
+    "training_args.bin",
+}
+
+
+def _copy_adapter(src: Path, dest: Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    for path in src.iterdir():
+        if not path.is_file() or path.name in _ADAPTER_SKIP:
+            continue
+        shutil.copy2(path, dest / path.name)
+
+
+def _select_best_checkpoint(
+    trainer_dir: Path,
+    epoch_structured: list[dict[str, Any]],
+    fallback: str | None,
+    criterion: str,
+) -> dict[str, Any]:
+    if criterion != "teacher_phase_slot_agreement":
+        return {
+            "criterion": criterion or "eval_loss",
+            "checkpoint": fallback,
+            "reason": "configured to keep trainer best",
+        }
+    viable = [
+        row
+        for row in epoch_structured
+        if row.get("teacher_phase_slot_agreement") is not None and "error" not in row
+    ]
+    if not viable:
+        return {
+            "criterion": "eval_loss_fallback",
+            "checkpoint": fallback,
+            "reason": "epoch structured eval missing; keep trainer/eval_loss adapter",
+        }
+    best = max(
+        viable,
+        key=lambda row: (
+            float(row.get("teacher_phase_slot_agreement") or -1.0),
+            float(row.get("whole_plan_exact_match") or -1.0),
+            int(row.get("step") or 0),
+        ),
+    )
+    step = int(best["step"])
+    ckpt = trainer_dir / f"checkpoint-{step}"
+    if not ckpt.is_dir():
+        return {
+            "criterion": "eval_loss_fallback",
+            "checkpoint": fallback,
+            "reason": f"checkpoint-{step} not found",
+            "wanted": dict(best),
+        }
+    return {
+        "criterion": "teacher_phase_slot_agreement",
+        "checkpoint": str(ckpt),
+        "epoch": best.get("epoch"),
+        "step": step,
+        "teacher_phase_slot_agreement": best.get("teacher_phase_slot_agreement"),
+        "whole_plan_exact_match": best.get("whole_plan_exact_match"),
+        "candidates": viable,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -292,8 +361,24 @@ def main(argv: list[str] | None = None) -> int:
     trainer.model.save_pretrained(adapter_dir)
     tokenizer.save_pretrained(adapter_dir)
     best_ckpt = getattr(trainer.state, "best_model_checkpoint", None)
-    if best_ckpt:
-        (output_dir / "best_checkpoint.txt").write_text(str(best_ckpt) + "\n", encoding="utf-8")
+    selection = _select_best_checkpoint(
+        output_dir / "trainer",
+        epoch_structured,
+        fallback=best_ckpt or str(adapter_dir),
+        criterion=str(cfg.get("select_best_by") or "eval_loss"),
+    )
+    selected_ckpt = selection.get("checkpoint")
+    if selected_ckpt and Path(selected_ckpt).is_dir() and Path(selected_ckpt).resolve() != adapter_dir.resolve():
+        _copy_adapter(Path(selected_ckpt), adapter_dir)
+        tokenizer.save_pretrained(adapter_dir)
+    (output_dir / "best_checkpoint.txt").write_text(
+        str(selected_ckpt or adapter_dir) + "\n", encoding="utf-8"
+    )
+    dump_selection = dict(selection)
+    (output_dir / "best_checkpoint_selection.json").write_text(
+        json.dumps(dump_selection, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     metrics = dict(train_result.metrics)
     epoch_losses = []
     pending_train = None
@@ -327,7 +412,8 @@ def main(argv: list[str] | None = None) -> int:
         "loss_history": loss_history,
         "epoch_losses": epoch_losses,
         "epoch_structured_eval": epoch_structured,
-        "best_checkpoint": best_ckpt,
+        "best_checkpoint": selected_ckpt,
+        "best_checkpoint_selection": dump_selection,
         "gpu_memory_peak": peak_mem,
         "token_validation": {
             "train_truncation_rate": train_check["assistant_truncation_rate"],
@@ -344,7 +430,13 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "adapter": str(adapter_dir),
                 "metrics": metrics,
-                "best_checkpoint": best_ckpt,
+                "best_checkpoint": selected_ckpt,
+                "best_checkpoint_selection": {
+                    "criterion": dump_selection.get("criterion"),
+                    "checkpoint": dump_selection.get("checkpoint"),
+                    "teacher_phase_slot_agreement": dump_selection.get("teacher_phase_slot_agreement"),
+                    "whole_plan_exact_match": dump_selection.get("whole_plan_exact_match"),
+                },
                 "gpu_memory_peak": peak_mem,
                 "epoch_losses": epoch_losses,
                 "epoch_structured_eval": epoch_structured,

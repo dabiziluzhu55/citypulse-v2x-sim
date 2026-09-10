@@ -1,0 +1,45 @@
+base_model: /home/kemove/devdata1/zyh_v2x_ai/models/Qwen2.5-7B-Instruct
+hf_model_id: Qwen/Qwen2.5-7B-Instruct
+dataset_dir: outputs/traffic_llm_dataset/formal_v2
+sft_dirname: sft
+prompt_completion_dirname: prompt_completion
+output_dir: outputs/traffic_llm_dataset/formal_v2/training/qlora_formal_v2
+seed: 20260909
+max_seq_length: 4096
+completion_only_loss: true
+num_train_epochs: 3
+max_steps: -1
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 2.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+logging_steps: 10
+eval_strategy: epoch
+save_strategy: epoch
+load_best_model_at_end: false
+metric_for_best_model: eval_loss
+greater_is_better: false
+select_best_by: teacher_phase_slot_agreement
+epoch_structured_eval: true
+epoch_structured_max_samples: null
+max_new_tokens: 512
+bf16: true
+gradient_checkpointing: true
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_compute_dtype: bfloat16

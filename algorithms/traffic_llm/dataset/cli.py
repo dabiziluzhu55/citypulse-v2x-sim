@@ -11,6 +11,7 @@ from .io_utils import load_yaml
 from .pipeline import (
     build_sft,
     generate_dataset,
+    merge_sft_datasets,
     plan_job,
     score_existing,
     select_teachers,
@@ -68,6 +69,18 @@ def _parser() -> argparse.ArgumentParser:
     audit.add_argument("--sft-dir", default="sft")
     audit.add_argument("--prompt-completion-dir", default="")
     audit.add_argument("--max-length", type=int, default=None)
+
+    merge = sub.add_parser(
+        "merge-sft",
+        help="Merge formal_v1 train + hard_case_v2 train into V2 SFT (no 44001)",
+    )
+    merge.add_argument("--v1", default="outputs/traffic_llm_dataset/formal_v1")
+    merge.add_argument("--hard", default="outputs/traffic_llm_dataset/hard_case_v2")
+    merge.add_argument("--output", default="outputs/traffic_llm_dataset/formal_v2")
+    merge.add_argument("--hard-weight", type=float, default=2.0)
+    merge.add_argument("--relabel", default="", help="Optional closed_loop_relabel JSONL dir")
+    merge.add_argument("--v1-sft-dir", default="sft")
+    merge.add_argument("--hard-sft-dir", default="sft")
 
     sensitivity = sub.add_parser(
         "sensitivity",
@@ -170,6 +183,18 @@ def main(argv: list[str] | None = None) -> int:
             observation_version="v2",
             sft_dirname=args.sft_dir or "sft_v2",
             write_prompt_completion=True,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "merge-sft":
+        result = merge_sft_datasets(
+            v1_dir=Path(args.v1),
+            hard_dir=Path(args.hard),
+            output_dir=Path(args.output),
+            hard_weight=float(args.hard_weight),
+            relabel_dir=Path(args.relabel) if args.relabel else None,
+            v1_sft_dirname=args.v1_sft_dir,
+            hard_sft_dirname=args.hard_sft_dir,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

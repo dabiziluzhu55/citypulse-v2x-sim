@@ -8,6 +8,8 @@ from typing import Mapping
 
 
 DEFAULT_ACTIVITY_VEHICLE_TYPE_ID = "citypulse_event_passenger"
+ACCIDENT_VEHICLE_CLASS = "passenger"
+MIN_ACCIDENT_LANE_LENGTH_M = 6.0
 
 BLOCKED_VEHICLE_CLASSES = (
     "private",
@@ -26,6 +28,22 @@ BLOCKED_VEHICLE_CLASSES = (
 
 class EventValidationError(ValueError):
     """Raised before an invalid disturbance reaches TraCI."""
+
+
+def lane_allows_vehicle_class(
+    allowed: tuple[str, ...] | list[str],
+    disallowed: tuple[str, ...] | list[str],
+    vehicle_class: str,
+) -> bool:
+    """SUMO allow/disallow semantics for one vClass."""
+
+    allowed_set = {str(item) for item in allowed if item}
+    disallowed_set = {str(item) for item in disallowed if item}
+    if "all" in disallowed_set or vehicle_class in disallowed_set:
+        return False
+    if allowed_set:
+        return "all" in allowed_set or vehicle_class in allowed_set
+    return True
 
 
 class EventState(str, Enum):
@@ -300,6 +318,18 @@ class DisturbanceScheduler:
             raise EventValidationError("Speed limit must be positive.")
         if isinstance(event, AccidentEvent) and not 0 <= event.position_ratio <= 1:
             raise EventValidationError("Accident position_ratio must be between 0 and 1.")
+        if isinstance(event, AccidentEvent):
+            allowed = tuple(str(item) for item in self.traci.lane.getAllowed(event.lane_id))
+            disallowed = tuple(str(item) for item in self.traci.lane.getDisallowed(event.lane_id))
+            if not lane_allows_vehicle_class(allowed, disallowed, ACCIDENT_VEHICLE_CLASS):
+                raise EventValidationError(
+                    f"Accident lane {event.lane_id} does not allow {ACCIDENT_VEHICLE_CLASS} departure."
+                )
+            length = float(self.lane_targets[event.lane_id].length)
+            if length + 1e-9 < MIN_ACCIDENT_LANE_LENGTH_M:
+                raise EventValidationError(
+                    f"Accident lane {event.lane_id} is too short for a stopped vehicle."
+                )
         if isinstance(event, (AccidentEvent, LaneClosureEvent)):
             own_lanes = set(lanes)
             for existing in self._events.values():

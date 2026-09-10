@@ -23,6 +23,8 @@ def assign_splits(
     train_p = float(split_cfg.get("train", 0.8))
     val_p = float(split_cfg.get("val", 0.1))
     holdout_seeds = {int(item) for item in split_cfg.get("holdout_seeds") or ()}
+    val_seeds = {int(item) for item in split_cfg.get("val_seeds") or ()}
+    analysis_seeds = {int(item) for item in split_cfg.get("analysis_seeds") or ()}
     ood_fraction = float(split_cfg.get("ood_event_fraction") or 0.0)
 
     groups: dict[str, list[ScenarioSpec]] = defaultdict(list)
@@ -46,6 +48,12 @@ def assign_splits(
             float(spec.event.start_seconds),
             float(spec.event.end_seconds - spec.event.start_seconds),
         )
+        if spec.seed in analysis_seeds:
+            assignment[group_id] = "analysis"
+            continue
+        if spec.seed in val_seeds:
+            assignment[group_id] = "val"
+            continue
         if spec.seed in holdout_seeds or event_key in ood_keys:
             assignment[group_id] = "test"
             continue
@@ -64,7 +72,7 @@ def split_manifest(
     assignment: Mapping[str, str],
     split_cfg: Mapping[str, Any],
 ) -> dict[str, Any]:
-    counts = {"train": 0, "val": 0, "test": 0}
+    counts = {"train": 0, "val": 0, "test": 0, "analysis": 0}
     for spec in scenarios:
         counts[assignment.get(spec.scenario_group_id, "train")] += 1
     return {
@@ -76,6 +84,8 @@ def split_manifest(
             "test": split_cfg.get("test"),
         },
         "holdout_seeds": list(split_cfg.get("holdout_seeds") or ()),
+        "val_seeds": list(split_cfg.get("val_seeds") or ()),
+        "analysis_seeds": list(split_cfg.get("analysis_seeds") or ()),
         "ood_event_fraction": split_cfg.get("ood_event_fraction"),
         "n_scenarios": dict(counts),
         "n_groups": len(set(assignment)),
