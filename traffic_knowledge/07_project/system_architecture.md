@@ -10,9 +10,9 @@
 
 **【项目事实】** 前端只提交业务名 `control_mode`。Backend 查 `traffic_control.registry`：`fixed` 映射内核 `fixed`；其余映射 `algorithm` + 本地 `algorithm_module`。本地模块遵循 Protocol 2.0：`initialize` 收路口元数据，`step` 收观测并返回 `{signals, vehicles}`，`finish` 清理。信号动作只有 `target_phase`。`SafePhaseController` 保证最小绿、黄灯和全红清空后，Worker 才把官方相位模板灯色写入 SUMO。
 
-内部 HTTP `/api/v1/internal/algorithm/{name}/initialize|step|finish` 仅服务 `max_pressure` 和 `sotl`。IPPO/MAPPO 走 Worker 内 `LocalAlgorithmClient`。
+内部 HTTP `/api/v1/internal/algorithm/{name}/initialize|step|finish` 仅服务 `max_pressure` 和 `sotl`。IPPO/MAPPO/CoV2X 走 Worker 内 `LocalAlgorithmClient`。
 
-**【规划功能】** CityPulse-Qwen 不进入上述注册表。它生成结构化 AI Control Plan；Backend AI Control Orchestrator 做安全校验，AI Plan Executor 在现有决策周期内把它转换成 Protocol 2.0 可执行 `target_phase`。CityPulse-Qwen 本身不直接操作 SUMO。详见 `ai_control_architecture.md`、`ai_plan_executor.md`。
+**【项目事实】** CityPulse-Qwen 不进入上述注册表。它生成结构化 AI Control Plan；Backend AI Control Orchestrator 做安全校验，AI Plan Executor 在现有决策周期内把它转换成 Protocol 2.0 可执行 `target_phase`。CityPulse-Qwen 本身不直接操作 SUMO。详见 `ai_control_architecture.md`、`ai_plan_executor.md`。Copilot 另见 `copilot_rag_tools.md`。
 
 ## 评估链路
 
@@ -45,20 +45,21 @@
 | GET | `/api/v1/simulations/{id}/intelligence` | 检测 + 预测 + 路况样式 |
 | GET | `/api/v1/simulations/{id}/prediction` | 仅预测 |
 | GET | `/api/v1/catalog` | 路口、预设、事件类型、控制模式 |
-| POST | `/api/v1/scenarios/export` | 导出 SUMO 包 |
+| POST | `/api/v1/copilot/chat` | CityPulse-Qwen Copilot；`session_id` 可选 |
+| POST | `/api/v1/simulations/{id}/copilot/chat` | 兼容旧 Copilot 路径，必须已有仿真会话 |
 
-启动字段包括 `scenario_preset_id`、`period`、`duration_seconds`、`control_mode`、`model_alias`、`disturbance_targets`、`seed`、`step_length`（默认 0.1）、`snapshot_interval_seconds`（默认 0.5）。没有 `ai_enabled` 或 Qwen 字段。
+启动字段包括 `scenario_preset_id`、`period`、`duration_seconds`、`control_mode`、`model_alias`、`disturbance_targets`、`seed`、`step_length`（默认 0.1）、`snapshot_interval_seconds`（默认 0.5）。扰动 target 可带 `ai_control_enabled`；至多一个 AI 目标。
 
 ## 代码归属
 
-`traffic_control/` 是产品部署算法；`algorithms/` 主要是训练、实验和事件检测研究代码，不自动等于产品 `control_mode`。**【规划功能】** 未来 Qwen 应由 Backend 托管，生成结构化 AI Control Plan，经 Orchestrator / 安全校验 / Executor 变成 `target_phase`。Qwen 不得直接导入训练脚本或连接 libsumo。
+`traffic_control/` 是产品部署算法；`algorithms/` 主要是训练、实验和事件检测研究代码，不自动等于产品 `control_mode`。**【项目事实】** CityPulse-Qwen 由 Backend 托管，生成结构化 AI Control Plan，经 Orchestrator / 安全校验 / Executor 变成 `target_phase`。Qwen 不得直接导入训练脚本或连接 libsumo。
 
 ## 来源
 
 1. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
+   - revision: 0847ae894e1456fa43d97c3332b1418399a04194
    - file: backend/app/api/router.py; backend/app/services/simulation_service.py; backend/app/services/prediction_runtime.py; backend/app/services/intelligence_runtime.py; simulation/sumo/engine/session.py; traffic_control/protocol.py
    - 用于支持：架构、API、预测和快照字段。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim

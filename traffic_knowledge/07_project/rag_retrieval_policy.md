@@ -1,7 +1,7 @@
 ---
-information_type: planning
+information_type: project_fact
 status: current
-code_revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
+code_revision: 0847ae894e1456fa43d97c3332b1418399a04194
 applicable_events:
   - accident
   - lane_closure
@@ -17,7 +17,7 @@ priority: high
 
 # RAG 检索策略
 
-**【项目事实】** `search_knowledge` 已接入 Backend 的 manifest-aware 向量检索，供只读 Copilot 按 `general` / `control` profile 查询。**【规划功能】** 本文还约束未来 AI control retrieval 的文档优先级与禁止项；AI 控制编排和执行链尚未实现。
+**【项目事实】** `search_knowledge` 已接入 Backend 的 manifest-aware 向量检索，供只读 Copilot 按 `general` / `control` profile 查询。用户明确点名算法时，后端先按 alias 锁定 `document_id`。**【项目事实】** AI 事件接管不把 RAG 写入 Observation V2；本文仍约束 Copilot 检索优先级与禁止项。
 
 可用过滤字段见 `manifest.json` 的 `documents[]`：`information_type`、`status`、`applicable_events`、`applicable_presets`、`code_revision`。
 
@@ -48,7 +48,7 @@ priority: high
 - 把规划设计文档当作“当前已实现 API”证据。
 - 用 RAG catalog 的 phase 表覆盖 runtime `phase_order`。
 - 用通用理论覆盖 Snapshot 实时观测。
-- 检索到 Fixed/SOTL/Max Pressure/IPPO/MAPPO 原理后，让模型去“选择一个算法”。这些文档只解释 baseline，不提供推荐算法任务。
+- 检索到 Fixed/SOTL/Max Pressure/IPPO/MAPPO/CoV2X 原理后，让模型去“选择一个算法”。这些文档只解释 baseline，不提供推荐算法任务。
 
 ## 冲突处理
 
@@ -59,7 +59,7 @@ runtime payload 与 RAG 冲突时，**runtime payload 优先**。完整优先级
 1. citypulse-v2x-sim
    - source: citypulse-v2x-sim
    - branch: main
-   - revision: 1331ba87d6cd77e9052953d894a5dc83e1953009
-   - file: traffic_knowledge/manifest.json
+   - revision: 0847ae894e1456fa43d97c3332b1418399a04194
+   - file: traffic_knowledge/manifest.json; backend/app/copilot/rag.py
    - 用于支持：文档元数据过滤。
    - URL：https://github.com/dabiziluzhu55/citypulse-v2x-sim

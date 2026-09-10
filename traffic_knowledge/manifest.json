@@ -1,7 +1,7 @@
 {
-  "version": "0.4",
-  "generated_at": "2026-09-03",
-  "project_revision": "8efb0c5acc3aaac326e9b5dbf8d2106fa4fb220d",
+  "version": "0.5",
+  "generated_at": "2026-09-10",
+  "project_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
   "source_summary": {
     "unique_sources": 41,
     "official_docs_and_repositories": 26,
@@ -233,7 +233,7 @@
       ],
       "information_type": "mixed",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -433,7 +433,7 @@
       ],
       "information_type": "project_fact",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -459,7 +459,7 @@
       ],
       "information_type": "project_fact",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -485,7 +485,7 @@
       ],
       "information_type": "project_fact",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -512,7 +512,7 @@
       ],
       "information_type": "project_fact",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -540,7 +540,33 @@
       ],
       "information_type": "project_fact",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
+      "applicable_presets": [
+        "xiongan_20",
+        "east_dense",
+        "west_dense"
+      ],
+      "applicable_events": [],
+      "priority": "normal"
+    },
+    {
+      "id": "control_cov2x",
+      "path": "02_control_algorithms/cov2x.md",
+      "category": "control_algorithm",
+      "title": "CoV2X 车路协同控制",
+      "source_type": "project",
+      "sources": [
+        "project_citypulse"
+      ],
+      "tags": [
+        "signal_control",
+        "cov2x",
+        "v2x",
+        "cooperative"
+      ],
+      "information_type": "project_fact",
+      "status": "current",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -597,7 +623,7 @@
       ],
       "information_type": "mixed",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -1210,7 +1236,103 @@
       ],
       "information_type": "project_fact",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
+      "applicable_presets": [
+        "xiongan_20",
+        "east_dense",
+        "west_dense"
+      ],
+      "applicable_events": [
+        "accident",
+        "lane_closure",
+        "speed_limit",
+        "major_event_opening",
+        "major_event_closing"
+      ],
+      "priority": "high"
+    },
+    {
+      "id": "project_citypulse_qwen_v2",
+      "path": "07_project/citypulse_qwen_v2.md",
+      "category": "project",
+      "title": "CityPulse-Qwen V2",
+      "source_type": "project",
+      "sources": [
+        "project_citypulse"
+      ],
+      "tags": [
+        "citypulse_qwen",
+        "qlora",
+        "awq",
+        "copilot",
+        "ai_control"
+      ],
+      "information_type": "project_fact",
+      "status": "current",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
+      "applicable_presets": [
+        "xiongan_20",
+        "east_dense",
+        "west_dense"
+      ],
+      "applicable_events": [
+        "accident",
+        "lane_closure",
+        "speed_limit",
+        "major_event_opening",
+        "major_event_closing"
+      ],
+      "priority": "high"
+    },
+    {
+      "id": "project_narrow_tdp",
+      "path": "07_project/narrow_tdp.md",
+      "category": "project",
+      "title": "Narrow-TDP 短时交通流预测",
+      "source_type": "project",
+      "sources": [
+        "project_citypulse"
+      ],
+      "tags": [
+        "prediction",
+        "narrow_tdp",
+        "narrownet"
+      ],
+      "information_type": "project_fact",
+      "status": "current",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
+      "applicable_presets": [
+        "xiongan_20",
+        "east_dense",
+        "west_dense"
+      ],
+      "applicable_events": [
+        "accident",
+        "lane_closure",
+        "speed_limit",
+        "major_event_opening",
+        "major_event_closing"
+      ],
+      "priority": "high"
+    },
+    {
+      "id": "project_copilot_rag_tools",
+      "path": "07_project/copilot_rag_tools.md",
+      "category": "project",
+      "title": "Copilot RAG 与 Tools 架构",
+      "source_type": "project",
+      "sources": [
+        "project_citypulse"
+      ],
+      "tags": [
+        "copilot",
+        "rag",
+        "tools",
+        "sessionless"
+      ],
+      "information_type": "project_fact",
+      "status": "current",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -1241,7 +1363,7 @@
       ],
       "information_type": "project_fact",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -1308,9 +1430,9 @@
         "safety",
         "fallback"
       ],
-      "information_type": "mixed",
+      "information_type": "project_fact",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -1343,7 +1465,7 @@
       ],
       "information_type": "mixed",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -1471,9 +1593,9 @@
         "fallback",
         "planning"
       ],
-      "information_type": "planning",
+      "information_type": "project_fact",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",
@@ -1569,9 +1691,9 @@
         "information_type",
         "planning"
       ],
-      "information_type": "planning",
+      "information_type": "project_fact",
       "status": "current",
-      "code_revision": "1331ba87d6cd77e9052953d894a5dc83e1953009",
+      "code_revision": "0847ae894e1456fa43d97c3332b1418399a04194",
       "applicable_presets": [
         "xiongan_20",
         "east_dense",

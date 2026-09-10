@@ -23,6 +23,7 @@ from ...copilot.orchestrator import (
     CopilotOrchestrator,
 )
 from ...copilot.traffic_tools import (
+    InMemoryTrafficDataSource,
     SimulationServiceTrafficDataSource,
     TrafficToolService,
 )
@@ -35,6 +36,22 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+@router.post("/copilot/chat", response_model=CopilotChatResponse)
+def chat_general(
+    request_body: CopilotChatRequest,
+    request: Request,
+    provider: LLMProvider = Depends(get_copilot_provider),
+) -> CopilotChatResponse:
+    """无仿真或有仿真均可使用的 Copilot 问答。``session_id`` 可选。"""
+
+    return _run_copilot_chat(
+        request,
+        request_body,
+        provider,
+        session_id=request_body.session_id,
+    )
+
+
 @router.post(
     "/simulations/{session_id}/copilot/chat",
     response_model=CopilotChatResponse,
@@ -43,27 +60,56 @@ def chat(
     session_id: str,
     request_body: CopilotChatRequest,
     request: Request,
-    service: SimulationService = Depends(get_simulation_service),
     provider: LLMProvider = Depends(get_copilot_provider),
 ) -> CopilotChatResponse:
-    """在指定仿真会话上执行一次只读 Copilot 问答。"""
+    """兼容旧路径：在指定仿真会话上执行只读 Copilot 问答。"""
 
-    # 先校验会话存在，再调用模型；否则模型可能只调用 calculator/search
-    # 而绕过当前会话的有效性检查。
-    snapshot = service.snapshot(session_id)
-    resolved_event_id = _resolve_event_context(
-        snapshot,
-        request_body.active_event_id,
+    return _run_copilot_chat(
+        request,
+        request_body,
+        provider,
+        session_id=session_id,
     )
-    data_source = SimulationServiceTrafficDataSource(
-        service,
-        history_repository=getattr(service, "history_repository", None),
-        topology=getattr(request.app.state, "copilot_topology", None),
+
+
+def _run_copilot_chat(
+    request: Request,
+    request_body: CopilotChatRequest,
+    provider: LLMProvider,
+    *,
+    session_id: str | None,
+) -> CopilotChatResponse:
+    normalized_session = str(session_id or "").strip() or None
+    snapshot: Mapping[str, Any] | None = None
+    service: SimulationService | None = None
+    if normalized_session:
+        service = get_simulation_service(request)
+        # 有 session 时先校验会话存在，再调用模型；不要伪造 session。
+        snapshot = service.snapshot(normalized_session)
+
+    resolved_event_id = (
+        _resolve_event_context(snapshot, request_body.active_event_id)
+        if snapshot is not None
+        else (
+            request_body.active_event_id.strip()
+            if isinstance(request_body.active_event_id, str)
+            and request_body.active_event_id.strip()
+            else None
+        )
     )
+    if service is not None:
+        data_source = SimulationServiceTrafficDataSource(
+            service,
+            history_repository=getattr(service, "history_repository", None),
+            topology=getattr(request.app.state, "copilot_topology", None),
+        )
+    else:
+        data_source = InMemoryTrafficDataSource({})
+
     settings = request.app.state.settings
     tool_service = TrafficToolService(
         data_source,
-        session_id=session_id,
+        session_id=normalized_session,
         history_default_lookback_seconds=getattr(
             settings, "history_default_lookback_seconds", 300.0
         ),
@@ -80,6 +126,7 @@ def chat(
         max_rounds=settings.copilot_max_rounds,
         max_tool_calls=settings.copilot_max_tool_calls,
         max_tool_result_chars=settings.copilot_max_tool_result_chars,
+        session_available=normalized_session is not None,
     )
 
     try:
@@ -145,7 +192,7 @@ def chat(
         ) from exc
 
     return CopilotChatResponse(
-        session_id=session_id,
+        session_id=normalized_session,
         answer=result.answer,
         rounds=result.rounds,
         tool_calls=[item.as_dict() for item in result.tool_calls],

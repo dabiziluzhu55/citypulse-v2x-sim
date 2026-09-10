@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from pydantic import ValidationError
 
-from backend.app.api.v1.copilot import chat, router
+from backend.app.api.v1.copilot import chat, chat_general, router
 from backend.app.copilot.llm import (
     AssistantMessage,
     LLMCompletion,
@@ -46,13 +46,28 @@ class _SimulationService:
         return {"session_id": session_id}
 
 
-def _request() -> SimpleNamespace:
+def _request(service: _SimulationService | None = None) -> SimpleNamespace:
     settings = SimpleNamespace(
         copilot_max_rounds=4,
         copilot_max_tool_calls=8,
         copilot_max_tool_result_chars=20_000,
+        history_default_lookback_seconds=300.0,
+        history_max_query_seconds=3600.0,
+        history_max_points=120,
+        rag_top_k=5,
     )
-    state = SimpleNamespace(settings=settings, copilot_topology=None)
+    state = SimpleNamespace(
+        settings=settings,
+        copilot_topology=None,
+        artifacts_ready=True,
+        missing_files=(),
+        sumo_home_configured=True,
+        simulation_manager_mode="local",
+        simulation_manager_ready=True,
+        redis_ready=True,
+        simulation_service=service,
+        knowledge_retriever=None,
+    )
     return SimpleNamespace(app=SimpleNamespace(state=state))
 
 
@@ -68,8 +83,7 @@ def test_copilot_route_returns_answer_and_binds_session() -> None:
             active_event_id="event-001",
             active_scope="intersection:demo_1",
         ),
-        _request(),
-        service,
+        _request(service),
         provider,
     )
 
@@ -87,8 +101,7 @@ def test_copilot_route_maps_qwen_unavailable_to_503() -> None:
         chat(
             "session-001",
             CopilotChatRequest(message="现在交通怎么样？"),
-            _request(),
-            service,
+            _request(service),
             provider,
         )
 
@@ -107,9 +120,27 @@ def test_copilot_schema_rejects_tool_history_and_extra_fields() -> None:
         CopilotChatRequest(message="你好", unexpected="write operation")
 
 
+def test_copilot_general_chat_does_not_require_a_session() -> None:
+    provider = _Provider(LLMCompletion(message=AssistantMessage(content="Max Pressure 是一种信号控制方法。")))
+    request = _request()
+    request.app.state.artifacts_ready = False
+
+    response = chat_general(
+        CopilotChatRequest(message="Max Pressure算法是什么？"),
+        request,
+        provider,
+    )
+
+    assert response.session_id is None
+    assert "Max Pressure" in response.answer
+    assert request.app.state.simulation_service is None
+
+
 def test_copilot_router_exposes_session_chat_path() -> None:
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
     # FastAPI 0.141 uses a lazy _IncludedRouter entry in ``app.routes``;
     # OpenAPI is the stable public view of the registered endpoint.
-    assert "/api/v1/simulations/{session_id}/copilot/chat" in app.openapi()["paths"]
+    paths = app.openapi()["paths"]
+    assert "/api/v1/simulations/{session_id}/copilot/chat" in paths
+    assert "/api/v1/copilot/chat" in paths

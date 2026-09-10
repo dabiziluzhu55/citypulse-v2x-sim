@@ -10,6 +10,7 @@ explicit unavailable error instead of silently falling back to keyword search.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -44,6 +45,15 @@ CANONICAL_EFFICIENCY_DOCUMENT_ID = "metrics_efficiency"
 SAFETY_METRIC_DOCUMENT_ID = "metrics_safety"
 EMISSION_METRIC_DOCUMENT_ID = "metrics_emission"
 AI_EVALUATION_DOCUMENT_ID = "metrics_ai_evaluation"
+CONTROL_FIXED_DOCUMENT_ID = "control_fixed"
+CONTROL_SOTL_DOCUMENT_ID = "control_sotl"
+CONTROL_MAX_PRESSURE_DOCUMENT_ID = "control_max_pressure"
+CONTROL_IPPO_DOCUMENT_ID = "control_ippo"
+CONTROL_MAPPO_DOCUMENT_ID = "control_mappo"
+CONTROL_COV2X_DOCUMENT_ID = "control_cov2x"
+PROJECT_CITYPULSE_QWEN_DOCUMENT_ID = "project_citypulse_qwen_v2"
+PROJECT_NARROW_TDP_DOCUMENT_ID = "project_narrow_tdp"
+PROJECT_COPILOT_DOCUMENT_ID = "project_copilot_rag_tools"
 SUPPORTED_KNOWLEDGE_SOURCES = frozenset(
     {
         TRAFFIC_KNOWLEDGE_SOURCE,
@@ -367,6 +377,67 @@ _EMISSION_METRIC_MARKERS = (
     "energy",
 )
 _POLICY_QUERY_MARKERS = ("雄安规划", "规划纲要", "雄安新区规划", "规划背景")
+_ALGORITHM_ALIAS_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        CONTROL_MAX_PRESSURE_DOCUMENT_ID,
+        (
+            "max pressure",
+            "max_pressure",
+            "max-pressure",
+            "maxpressure",
+            "最大压力",
+            "backpressure",
+            "背压控制",
+        ),
+    ),
+    (
+        CONTROL_SOTL_DOCUMENT_ID,
+        ("sotl", "自组织交通灯", "自组织信号"),
+    ),
+    (
+        CONTROL_IPPO_DOCUMENT_ID,
+        ("ippo",),
+    ),
+    (
+        CONTROL_MAPPO_DOCUMENT_ID,
+        ("mappo",),
+    ),
+    (
+        CONTROL_FIXED_DOCUMENT_ID,
+        ("固定配时", "fixed time", "fixed_time", "fixed配时", "fixed 固定"),
+    ),
+    (
+        CONTROL_COV2X_DOCUMENT_ID,
+        (
+            "cov2x",
+            "co-v2x",
+            "cooperative vehicle to everything",
+            "车路协同控制",
+        ),
+    ),
+    (
+        PROJECT_CITYPULSE_QWEN_DOCUMENT_ID,
+        (
+            "citypulse-qwen",
+            "citypulse qwen",
+            "traffic-qwen",
+            "traffic qwen",
+            "citypulseqwen",
+            "trafficqwen",
+        ),
+    ),
+    (
+        PROJECT_NARROW_TDP_DOCUMENT_ID,
+        (
+            "narrow-tdp",
+            "narrow tdp",
+            "narrownet-tdp",
+            "narrownet tdp",
+            "narrow_net_tdp",
+            "narrownet",
+        ),
+    ),
+)
 
 
 def route_knowledge_query(
@@ -407,6 +478,18 @@ def route_knowledge_query(
         for item in (information_types or ())
         if str(item).strip()
     }
+
+    algorithm_document_ids = _algorithm_document_ids(normalized_query)
+    if algorithm_document_ids:
+        # Named algorithms live in the general profile.  Locking document_id
+        # first prevents a control-profile vector search from dropping
+        # 02_control_algorithms/ even when the model picked profile=control.
+        return KnowledgeRouting(
+            profile=GENERAL_PROFILE,
+            knowledge_sources=(TRAFFIC_KNOWLEDGE_SOURCE,),
+            document_ids=algorithm_document_ids,
+            reason="algorithm_alias",
+        )
 
     # A model-supplied source is only a hint.  Treating it as user intent
     # would let an incorrect ``standards`` tool argument pull the wrong index
@@ -506,6 +589,63 @@ def _metric_document_ids(query: str) -> tuple[str, ...]:
     if not document_ids:
         document_ids.append(CANONICAL_EFFICIENCY_DOCUMENT_ID)
     return tuple(document_ids)
+
+
+def _algorithm_document_ids(query: str) -> tuple[str, ...]:
+    """Return canonical document ids when the user explicitly names algorithms."""
+
+    matched: list[str] = []
+    for document_id, aliases in _ALGORITHM_ALIAS_RULES:
+        if any(_alias_in_query(query, alias) for alias in aliases):
+            matched.append(document_id)
+    return tuple(matched)
+
+
+def _alias_in_query(query: str, alias: str) -> bool:
+    haystack = str(query).casefold()
+    token = str(alias).casefold().strip()
+    if not token:
+        return False
+    if re.search(r"[a-z0-9]", token):
+        compact_haystack = re.sub(r"[\s_\-]+", "", haystack)
+        compact_alias = re.sub(r"[\s_\-]+", "", token)
+        pattern = r"(?<![a-z0-9])" + re.escape(compact_alias) + r"(?![a-z0-9])"
+        return re.search(pattern, compact_haystack) is not None
+    return token in haystack
+
+
+def compute_knowledge_content_hash(manifest_path: str | Path) -> str:
+    """Fingerprint the current manifest plus every referenced Markdown file.
+
+    The hash is independent of ``version`` / ``project_revision`` labels, so a
+    forgotten version bump cannot keep a rebuilt-looking index serving stale
+    chunks.
+    """
+
+    path = Path(manifest_path).expanduser().resolve()
+    hasher = hashlib.sha256()
+    hasher.update(path.read_bytes())
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise KnowledgeBuildError(
+            f"Cannot hash knowledge manifest: {path}"
+        ) from exc
+    documents = payload.get("documents", ()) if isinstance(payload, Mapping) else ()
+    root = path.parent
+    for document in documents:
+        if not isinstance(document, Mapping):
+            continue
+        relative = str(document.get("path", "")).strip()
+        hasher.update(relative.encode("utf-8"))
+        hasher.update(b"\0")
+        source = root / relative
+        if source.is_file():
+            hasher.update(source.read_bytes())
+        else:
+            hasher.update(b"missing")
+        hasher.update(b"\n")
+    return hasher.hexdigest()
 
 
 def load_knowledge_manifest(path: str | Path) -> dict[str, Any]:
@@ -674,11 +814,9 @@ def build_chroma_index(
 
     try:
         import chromadb  # type: ignore[import-not-found]
-        from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
     except ImportError as exc:
         raise KnowledgeUnavailableError(
-            "RAG build requires chromadb and sentence-transformers; "
-            "install backend/requirements.txt first."
+            "RAG build requires chromadb; install backend/requirements.txt first."
         ) from exc
 
     manifest = load_knowledge_manifest(knowledge_manifest_path)
@@ -701,7 +839,7 @@ def build_chroma_index(
     model_path_text = str(embedding_model_path).strip() if embedding_model_path else ""
     model_source = model_path_text or embedding_model_name
     try:
-        model = SentenceTransformer(model_source, device=resolved_device)
+        model = _load_embedding_model(model_source, device=resolved_device)
     except Exception as exc:
         raise KnowledgeUnavailableError(
             f"Embedding model could not be loaded: {model_source}"
@@ -743,11 +881,18 @@ def build_chroma_index(
     index_metadata = {
         "knowledge_version": manifest_version,
         "code_revision": manifest_revision,
+        "knowledge_content_hash": compute_knowledge_content_hash(
+            knowledge_manifest_path
+        ),
         "embedding_model": embedding_model_name,
         "embedding_dimension": dimension,
         "collection_name": normalized_collection_name,
+        "document_count": len(
+            {str(item.get("document_id", "")).strip() for item in chunks}
+        ),
         "chunk_count": len(chunks),
         "device": resolved_device,
+        "index_path": str(target_dir),
         "built_at": datetime.now(timezone.utc).isoformat(),
     }
     _write_json_last(target_dir / "index_manifest.json", index_metadata)
@@ -843,16 +988,22 @@ class ChromaKnowledgeRetriever:
         results = _normalize_chroma_results(raw, request.limit)
         return KnowledgeSearchResponse(
             results=tuple(results),
-            search_mode="vector",
+            search_mode=(
+                "document_scoped_vector" if request.document_ids else "vector"
+            ),
             index_metadata=dict(index_metadata),
         )
 
     def _where_for_request(self, request: KnowledgeQuery) -> Mapping[str, Any]:
         if self.index_kind == STANDARDS_KNOWLEDGE_SOURCE:
             return _standards_where(request)
-        where = _profile_where(request)
         if request.document_ids:
+            # Document lock is stronger than profile.  Algorithm docs are
+            # general-only; a control profile would otherwise return zero hits.
+            where: Mapping[str, Any] = {"status": "current"}
             where = _add_where_any(where, "document_id", request.document_ids)
+        else:
+            where = _profile_where(request)
         if request.information_types:
             return _add_where_contains(
                 where, "information_type", request.information_types
@@ -881,6 +1032,12 @@ class ChromaKnowledgeRetriever:
 
             source_manifest = load_knowledge_manifest(self.knowledge_manifest_path)
             source_revision = _manifest_revision(source_manifest)
+            source_hash = compute_knowledge_content_hash(self.knowledge_manifest_path)
+            stored_hash = str(index_metadata.get("knowledge_content_hash", "")).strip()
+            if not stored_hash or stored_hash != source_hash:
+                raise KnowledgeUnavailableError(
+                    "RAG index is stale; rebuild it from the current knowledge sources."
+                )
             if str(index_metadata.get("knowledge_version", "")) != str(
                 source_manifest.get("version", "")
             ) or str(index_metadata.get("code_revision", "")) != source_revision:
@@ -904,10 +1061,9 @@ class ChromaKnowledgeRetriever:
 
             try:
                 import chromadb  # type: ignore[import-not-found]
-                from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
             except ImportError as exc:
                 raise KnowledgeUnavailableError(
-                    "RAG runtime requires chromadb and sentence-transformers."
+                    "RAG runtime requires chromadb."
                 ) from exc
             try:
                 client = chromadb.PersistentClient(path=str(self.index_dir))
@@ -920,7 +1076,7 @@ class ChromaKnowledgeRetriever:
                     if self.embedding_model_path is not None
                     else self.embedding_model
                 )
-                model = SentenceTransformer(
+                model = _load_embedding_model(
                     model_source,
                     device=resolve_embedding_device(self.device),
                 )
@@ -1113,6 +1269,86 @@ def resolve_embedding_device(device: str) -> str:
         return "cuda" if torch.cuda.is_available() else "cpu"
     except ImportError:
         return "cpu"
+
+
+def _load_embedding_model(source: str, *, device: str) -> Any:
+    """Load Qwen3-Embedding without requiring a working sentence-transformers import.
+
+    sentence-transformers 6 may fail to import on transformers 5 + peft stacks.
+    The transformers AutoModel path uses the same last-token pooling as the
+    shipped Qwen3-Embedding sentence-transformers config.
+    """
+
+    try:
+        from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+
+        return SentenceTransformer(source, device=device)
+    except Exception:
+        logger.info(
+            "sentence-transformers is unavailable; using transformers embedding fallback"
+        )
+        return _TransformersEmbeddingModel(source, device=device)
+
+
+class _TransformersEmbeddingModel:
+    """Last-token pooling encoder compatible with Qwen3-Embedding-0.6B."""
+
+    def __init__(self, source: str, *, device: str) -> None:
+        try:
+            import torch  # type: ignore[import-not-found]
+            from transformers import AutoModel, AutoTokenizer  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise KnowledgeUnavailableError(
+                "RAG embedding requires transformers and torch."
+            ) from exc
+        self._torch = torch
+        self._device = device
+        try:
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                source,
+                padding_side="left",
+                trust_remote_code=True,
+            )
+            self._model = AutoModel.from_pretrained(
+                source,
+                trust_remote_code=True,
+            )
+            self._model.to(device)
+            self._model.eval()
+        except Exception as exc:
+            raise KnowledgeUnavailableError(
+                f"Embedding model could not be loaded: {source}"
+            ) from exc
+
+    def encode(
+        self,
+        texts: Sequence[str],
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        normalize_embeddings: bool = True,
+        convert_to_numpy: bool = True,
+        show_progress_bar: bool = False,
+    ) -> Any:
+        del convert_to_numpy, show_progress_bar
+        rows: list[list[float]] = []
+        torch = self._torch
+        for start in range(0, len(texts), max(1, batch_size)):
+            batch = [str(item) for item in texts[start : start + max(1, batch_size)]]
+            encoded = self._tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=8192,
+                return_tensors="pt",
+            )
+            encoded = {key: value.to(self._device) for key, value in encoded.items()}
+            with torch.no_grad():
+                hidden = self._model(**encoded).last_hidden_state
+            pooled = hidden[:, -1]
+            if normalize_embeddings:
+                pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
+            rows.extend(pooled.detach().cpu().tolist())
+        return rows
 
 
 def _check_query_timeout(started_at: float, timeout_seconds: float) -> None:
@@ -1814,6 +2050,7 @@ __all__ = [
     "SAFETY_METRIC_DOCUMENT_ID",
     "build_chroma_index",
     "build_knowledge_chunks",
+    "compute_knowledge_content_hash",
     "load_knowledge_manifest",
     "route_knowledge_query",
     "resolve_embedding_device",

@@ -41,7 +41,27 @@ let messageSequence = 0
 let requestController: AbortController | null = null
 
 const canSubmit = computed(() => Boolean(
-  props.sessionId.trim() && question.value.trim() && !submitting.value,
+  question.value.trim() && !submitting.value,
+))
+
+const hasSession = computed(() => Boolean(props.sessionId.trim()))
+const aiControlOn = computed(() => Boolean(props.aiTakeover?.ai_enabled))
+const welcomeBody = computed(() => {
+  if (!hasSession.value) {
+    return '当前未开启交通仿真和AI管控，暂无实时仿真数据。\n您仍可以咨询交通控制算法、扰动处置、交通工程知识和一般交通态势问题。'
+  }
+  if (!aiControlOn.value) {
+    return '交通仿真已启动，AI管控未开启。\n您可以查询实时交通状态、预测结果，也可以进行交通知识问答。'
+  }
+  return '我可以帮您查询交通状态、分析拥堵原因或提供管控建议。'
+})
+const identitySubtitle = computed(() => (
+  hasSession.value
+    ? '可查询实时仿真交通，并进行交通知识问答'
+    : '可进行交通知识问答；启动仿真后可查询实时交通状态'
+))
+const thinkingLabel = computed(() => (
+  hasSession.value ? '正在分析当前仿真交通状态……' : '正在思考……'
 ))
 
 const takeoverLabel = computed(() => {
@@ -70,11 +90,7 @@ async function scrollConversationToEnd(): Promise<void> {
 async function submitQuestion(): Promise<void> {
   const normalizedQuestion = question.value.trim()
   if (!normalizedQuestion) {
-    submitHint.value = '请输入需要咨询的交通状态问题'
-    return
-  }
-  if (!props.sessionId.trim()) {
-    submitHint.value = '请先启动仿真，再向交通 Copilot 提问'
+    submitHint.value = '请输入需要咨询的交通问题'
     return
   }
   if (submitting.value) return
@@ -98,12 +114,12 @@ async function submitQuestion(): Promise<void> {
   void scrollConversationToEnd()
 
   try {
-    const response = await chatWithCopilot(props.sessionId, {
+    const response = await chatWithCopilot({
       message: normalizedQuestion,
       history,
       active_event_id: props.activeEventId,
       active_scope: props.activeScope,
-    }, controller.signal)
+    }, props.sessionId, controller.signal)
     messages.value.push({
       id: ++messageSequence,
       role: 'assistant',
@@ -112,7 +128,7 @@ async function submitQuestion(): Promise<void> {
     })
   } catch (cause) {
     if (controller.signal.aborted) return
-    const message = simulationApiErrorMessage(cause, 'Traffic Copilot 请求失败')
+    const message = simulationApiErrorMessage(cause, 'CityPulse-Qwen 请求失败')
     messages.value.push({
       id: ++messageSequence,
       role: 'assistant',
@@ -149,7 +165,7 @@ onBeforeUnmount(() => requestController?.abort())
       </span>
       <div class="ai-control-panel__identity">
         <strong>CityPulse-Qwen AI助手</strong>
-        <span>基于当前仿真数据，为您提供交通分析与管控建议</span>
+        <span>{{ identitySubtitle }}</span>
       </div>
       <button type="button" class="ai-control-panel__close" aria-label="关闭AI交通助手" title="关闭" @click="emit('close')">
         ×
@@ -179,11 +195,7 @@ onBeforeUnmount(() => requestController?.abort())
         </span>
         <div class="ai-control-panel__message-body">
           <strong>上午好，有什么可以帮您？</strong>
-          <p>
-            {{ sessionId
-              ? '我可以帮您查询交通状态、分析拥堵原因或提供管控建议。'
-              : '请先启动仿真，再向交通 Copilot 提问。' }}
-          </p>
+          <p>{{ welcomeBody }}</p>
         </div>
       </article>
 
@@ -207,7 +219,7 @@ onBeforeUnmount(() => requestController?.abort())
           <AiOutlineIcon />
         </span>
         <div class="ai-control-panel__message-body">
-          <p class="ai-control-panel__thinking">正在分析当前仿真交通状态……</p>
+          <p class="ai-control-panel__thinking">{{ thinkingLabel }}</p>
         </div>
       </article>
     </div>
@@ -225,7 +237,7 @@ onBeforeUnmount(() => requestController?.abort())
           v-model="question"
           maxlength="4000"
           :disabled="submitting"
-          aria-label="请输入交通状态问题"
+          aria-label="请输入交通问题"
           placeholder="输入您的问题..."
           @input="submitHint = ''"
           @keydown.ctrl.enter.prevent="submitQuestion"

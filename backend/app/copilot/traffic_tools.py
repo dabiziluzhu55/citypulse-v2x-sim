@@ -1627,6 +1627,19 @@ TOOL_HANDLERS: dict[str, str] = {
     "calculator": "calculator",
 }
 
+SESSIONLESS_TOOL_NAMES = frozenset({"search_knowledge", "calculator"})
+LIVE_SESSION_TOOL_NAMES = frozenset(TOOL_HANDLERS) - SESSIONLESS_TOOL_NAMES
+
+
+def tool_definitions_for(*, session_available: bool) -> tuple[dict[str, Any], ...]:
+    if session_available:
+        return TOOL_DEFINITIONS
+    return tuple(
+        item
+        for item in TOOL_DEFINITIONS
+        if item.get("function", {}).get("name") in SESSIONLESS_TOOL_NAMES
+    )
+
 
 # OpenAI/Qwen tool calling 所需的固定只读工具定义；session_id 由后端会话上下文注入。
 TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (

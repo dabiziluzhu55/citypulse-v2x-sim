@@ -4,16 +4,17 @@ import type { CopilotChatRequest, CopilotChatResponse } from '../types/copilot'
 const COPILOT_REQUEST_TIMEOUT_MS = 90_000
 
 export async function chatWithCopilot(
-  sessionId: string,
   payload: CopilotChatRequest,
+  sessionId?: string | null,
   signal?: AbortSignal,
 ): Promise<CopilotChatResponse> {
-  const normalizedSessionId = sessionId.trim()
-  if (!normalizedSessionId) throw new Error('请先启动仿真，再向交通 Copilot 提问')
-
+  const normalizedSessionId = sessionId?.trim() || undefined
   const { data } = await apiClient.post<CopilotChatResponse>(
-    `/simulations/${encodeURIComponent(normalizedSessionId)}/copilot/chat`,
-    payload,
+    '/copilot/chat',
+    {
+      ...payload,
+      session_id: normalizedSessionId,
+    },
     { timeoutMs: COPILOT_REQUEST_TIMEOUT_MS, signal },
   )
   return data

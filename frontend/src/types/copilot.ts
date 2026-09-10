@@ -10,6 +10,7 @@ export interface CopilotChatRequest {
   history?: CopilotHistoryMessage[]
   active_event_id?: string | null
   active_scope?: string | null
+  session_id?: string | null
 }
 
 export interface CopilotToolCall {
@@ -21,7 +22,7 @@ export interface CopilotToolCall {
 }
 
 export interface CopilotChatResponse {
-  session_id: string
+  session_id: string | null
   answer: string
   rounds: number
   tool_calls: CopilotToolCall[]

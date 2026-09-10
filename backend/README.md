@@ -734,24 +734,21 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 
 ### 6.11 Traffic Copilot 对话
 
-**接口：** `POST /api/v1/simulations/{session_id}/copilot/chat`
+**接口：** `POST /api/v1/copilot/chat`（`session_id` 可选）
+
+兼容旧路径：`POST /api/v1/simulations/{session_id}/copilot/chat`
 
 请求示例：
 
 ```json
 {
-  "message": "这个路口现在为什么拥堵？",
-  "history": [
-    {"role": "user", "content": "刚才哪个路口有事件？"},
-    {"role": "assistant", "content": "可以点击事件卡片查看详情。"}
-  ],
-  "active_event_id": "event-001",
-  "active_scope": "intersection:demo_1"
+  "message": "Max Pressure算法是什么？",
+  "history": [],
+  "session_id": null
 }
 ```
 
-后端会把 `session_id` 绑定到当前仿真数据源，Traffic-Qwen 作为 Copilot 只能调用固定的只读交通工具（含 RAG `search_knowledge` 与预测查询）；
-不能修改信号灯、车辆、事件或仿真状态。模型服务不可用时返回 HTTP 503，模型协议错误返回 HTTP 502。Copilot 不要求开启 AI 管控开关，但必须先有有效仿真 session。
+无仿真会话时，CityPulse-Qwen 作为 Copilot 只能调用 `search_knowledge` 与 `calculator`，用于交通知识问答；有有效 `session_id` 时额外开放实时交通、预测、事件和 AI 接管查询。不能修改信号灯、车辆、事件或仿真状态。不要伪造 simulation session。模型服务不可用时返回 HTTP 503，模型协议错误返回 HTTP 502。Copilot 不要求开启 AI 管控开关，也不要求先启动仿真。
 
 响应核心字段：
 

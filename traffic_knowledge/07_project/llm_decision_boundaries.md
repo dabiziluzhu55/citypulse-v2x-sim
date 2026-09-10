@@ -1,6 +1,6 @@
 # CityPulse-Qwen 决策边界
 
-CityPulse-Qwen 是 **面向突发交通扰动的知识增强局部多路口协同信号管控模型**。**【规划功能】** 接管、编排器与 Executor 尚未实现；本文同时约束规划设计和当前代码能力。
+CityPulse-Qwen 是 **面向突发交通扰动的知识增强局部多路口协同信号管控模型**。**【项目事实】** 事件触发的异步 AI 接管、Backend Orchestrator 与 Executor 已经实现；Copilot 问答独立于 AI 管控开关。
 
 ## 可以做
 
@@ -15,7 +15,7 @@ CityPulse-Qwen 是 **面向突发交通扰动的知识增强局部多路口协�
 ## 不可以做
 
 - 默认控制所有会话，或在无扰动、用户未启用 AI 时接管。
-- 替用户选择 baseline controller，或在 `fixed` / `sotl` / `max_pressure` / `ippo` / `mappo` 之间做算法推荐/选择。
+- 替用户选择 baseline controller，或在 `fixed` / `sotl` / `max_pressure` / `ippo` / `mappo` / `cov2x` 之间做算法推荐/选择。
 - 直接调用 TraCI / libsumo。
 - 绕过 Backend / Worker。
 - 输出任意灯色字符串。
@@ -30,7 +30,7 @@ CityPulse-Qwen 是 **面向突发交通扰动的知识增强局部多路口协�
 
 ## 必须经过的校验与执行链
 
-**【规划功能】** AI plan 必须整体经过：
+**【项目事实】** AI plan 必须整体经过：
 
 ```
 schema validation

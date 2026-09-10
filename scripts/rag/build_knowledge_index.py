@@ -116,7 +116,22 @@ def main() -> int:
         collection_name=args.collection,
         batch_size=args.batch_size,
     )
-    print(json.dumps(metadata, ensure_ascii=False, indent=2))
+    document_ids = {
+        str(item.get("document_id", "")).strip()
+        for item in chunks
+        if str(item.get("document_id", "")).strip()
+    }
+    summary = {
+        "document_count": len(document_ids),
+        "chunk_count": len(chunks),
+        "knowledge_version": metadata.get("knowledge_version"),
+        "project_revision": metadata.get("code_revision"),
+        "knowledge_content_hash": metadata.get("knowledge_content_hash"),
+        "embedding_model": metadata.get("embedding_model"),
+        "index_path": str(args.index_dir.resolve()),
+        "build_time": metadata.get("built_at"),
+    }
+    print(json.dumps({**summary, "index_metadata": metadata}, ensure_ascii=False, indent=2))
     return 0
 
 

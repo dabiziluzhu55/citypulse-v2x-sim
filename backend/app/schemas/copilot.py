@@ -37,6 +37,11 @@ class CopilotChatRequest(BaseModel):
     )
     active_event_id: str | None = Field(default=None, max_length=256)
     active_scope: str | None = Field(default=None, max_length=256)
+    session_id: str | None = Field(
+        default=None,
+        max_length=256,
+        description="可选仿真会话。缺省时仅进行知识问答，不调用实时交通工具。",
+    )
 
     @field_validator("message")
     @classmethod
@@ -46,7 +51,7 @@ class CopilotChatRequest(BaseModel):
             raise ValueError("message must not be blank")
         return value
 
-    @field_validator("active_event_id", "active_scope")
+    @field_validator("active_event_id", "active_scope", "session_id")
     @classmethod
     def normalize_optional_context(cls, value: str | None) -> str | None:
         if value is None:
@@ -66,7 +71,7 @@ class CopilotToolCallResponse(BaseModel):
 class CopilotChatResponse(BaseModel):
     """Copilot 最终回答及本次受控工具调用摘要。"""
 
-    session_id: str
+    session_id: str | None = None
     answer: str
     rounds: int
     tool_calls: list[CopilotToolCallResponse] = Field(default_factory=list)

@@ -11,6 +11,12 @@ import pytest
 from backend.app.copilot.rag import (
     AI_EVALUATION_DOCUMENT_ID,
     CANONICAL_EFFICIENCY_DOCUMENT_ID,
+    CONTROL_COV2X_DOCUMENT_ID,
+    CONTROL_FIXED_DOCUMENT_ID,
+    CONTROL_IPPO_DOCUMENT_ID,
+    CONTROL_MAPPO_DOCUMENT_ID,
+    CONTROL_MAX_PRESSURE_DOCUMENT_ID,
+    CONTROL_SOTL_DOCUMENT_ID,
     ChromaKnowledgeRetriever,
     CompositeKnowledgeRetriever,
     CONTROL_PROFILE,
@@ -18,10 +24,13 @@ from backend.app.copilot.rag import (
     KnowledgeQuery,
     KnowledgeResult,
     KnowledgeSearchResponse,
+    PROJECT_CITYPULSE_QWEN_DOCUMENT_ID,
+    PROJECT_NARROW_TDP_DOCUMENT_ID,
     SAFETY_METRIC_DOCUMENT_ID,
     STANDARDS_KNOWLEDGE_SOURCE,
     KnowledgeUnavailableError,
     build_knowledge_chunks,
+    compute_knowledge_content_hash,
     route_knowledge_query,
 )
 from backend.app.copilot.llm import AssistantMessage, LLMCompletion, ToolCall
@@ -140,6 +149,24 @@ def test_repository_chunks_are_manifest_aware_and_profiles_are_separated() -> No
             ("traffic",),
             (SAFETY_METRIC_DOCUMENT_ID,),
             "project_metric",
+        ),
+        (
+            "Max Pressure算法是什么？",
+            ("traffic",),
+            (CONTROL_MAX_PRESSURE_DOCUMENT_ID,),
+            "algorithm_alias",
+        ),
+        (
+            "IPPO和MAPPO有什么区别？",
+            ("traffic",),
+            (CONTROL_IPPO_DOCUMENT_ID, CONTROL_MAPPO_DOCUMENT_ID),
+            "algorithm_alias",
+        ),
+        (
+            "CoV2X是什么？",
+            ("traffic",),
+            (CONTROL_COV2X_DOCUMENT_ID,),
+            "algorithm_alias",
         ),
     ],
 )
@@ -547,6 +574,7 @@ def test_search_knowledge_backend_overrides_model_source_hint(
         "standards",
         "project_vs_standard",
         "ai_evaluation",
+        "algorithm_alias",
     }
 
 
@@ -620,7 +648,6 @@ def test_chroma_retriever_can_restrict_to_canonical_document() -> None:
     where = collection.queries[0]["where"]
     assert where["$and"] == [
         {"status": "current"},
-        {"profile_control": True},
         {"document_id": CANONICAL_EFFICIENCY_DOCUMENT_ID},
     ]
 
@@ -928,3 +955,58 @@ def test_knowledge_tool_definition_exposes_metadata_filters() -> None:
         "information_types",
         "knowledge_sources",
     } <= set(definition["parameters"]["properties"])
+
+
+@pytest.mark.parametrize(
+    ("query", "document_ids"),
+    [
+        ("Max Pressure算法是什么？", (CONTROL_MAX_PRESSURE_DOCUMENT_ID,)),
+        ("什么是max pressure？", (CONTROL_MAX_PRESSURE_DOCUMENT_ID,)),
+        ("最大压力信号控制是什么？", (CONTROL_MAX_PRESSURE_DOCUMENT_ID,)),
+        ("介绍一下MaxPressure算法", (CONTROL_MAX_PRESSURE_DOCUMENT_ID,)),
+        ("Fixed固定配时是什么？", (CONTROL_FIXED_DOCUMENT_ID,)),
+        ("SOTL是什么？", (CONTROL_SOTL_DOCUMENT_ID,)),
+        ("Traffic-Qwen是什么？", (PROJECT_CITYPULSE_QWEN_DOCUMENT_ID,)),
+        ("Narrow-TDP做什么？", (PROJECT_NARROW_TDP_DOCUMENT_ID,)),
+    ],
+)
+def test_named_algorithms_lock_canonical_documents(
+    query: str,
+    document_ids: tuple[str, ...],
+) -> None:
+    routing = route_knowledge_query(query, profile=CONTROL_PROFILE)
+    assert routing.reason == "algorithm_alias"
+    assert routing.profile == "general"
+    assert routing.document_ids == document_ids
+    assert routing.knowledge_sources == ("traffic",)
+
+
+def test_open_ended_accident_query_does_not_lock_an_algorithm() -> None:
+    routing = route_knowledge_query(
+        "交通事故发生后信号控制一般如何处理？",
+        profile=CONTROL_PROFILE,
+    )
+    assert routing.reason == "traffic_knowledge"
+    assert routing.document_ids == ()
+
+
+def test_knowledge_content_hash_changes_when_markdown_changes(tmp_path: Path) -> None:
+    root = tmp_path / "traffic_knowledge"
+    root.mkdir()
+    source = root / "note.md"
+    source.write_text("# Note\n\nhello\n", encoding="utf-8")
+    manifest = root / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": "0.5",
+                "project_revision": "rev",
+                "documents": [{"id": "note", "path": "note.md"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    first = compute_knowledge_content_hash(manifest)
+    source.write_text("# Note\n\nchanged\n", encoding="utf-8")
+    second = compute_knowledge_content_hash(manifest)
+    assert first != second

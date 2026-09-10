@@ -17,25 +17,32 @@ from typing import Any, Mapping, Sequence
 
 from .llm import LLMError, LLMProvider, ToolCall
 from .traffic_tools import (
-    TOOL_DEFINITIONS,
+    LIVE_SESSION_TOOL_NAMES,
+    SESSIONLESS_TOOL_NAMES,
     TOOL_HANDLERS,
     TrafficToolError,
     TrafficToolService,
+    tool_definitions_for,
 )
 
 
-DEFAULT_SYSTEM_PROMPT = """你是 CityPulse 车路云交通 Copilot，负责解释当前仿真中的交通状态。
+DEFAULT_SYSTEM_PROMPT = """你是 CityPulse-Qwen，CityPulse 车路云交通 Copilot。你负责交通知识问答；当仿真会话可用时，也可以解释当前仿真中的交通状态。
 
 必须遵守：
-1. 当前车辆数、停车数、速度、事件状态、历史趋势和预测等事实，必须先调用只读交通工具获得；没有工具结果就明确说无法确认，不得编造实时数据。凡是需要交通工程知识、处置原则或标准依据的问题，也必须先调用 search_knowledge，不得凭模型记忆直接回答。
+1. 当前车辆数、停车数、速度、事件状态、历史趋势和预测等实时仿真事实，必须先调用只读交通工具获得；没有工具结果就明确说无法确认，不得编造实时数据。凡是涉及本项目实现、评估口径、标准条款或用户已点名的控制算法，必须先调用 search_knowledge。search_knowledge 无命中时，一般交通工程常识可以基于通用知识回答，但不得编造本项目实现、指标公式或标准编号/条款；不要因为 matched_count=0 就回答“知识库没有，所以无法回答”。
 2. 工具结果中的 timestamp、scope、source 代表数据口径。回答时区分观测事实、预测结果、基于证据的推断和未知原因。`get_current_traffic` 返回的 `model_summary` 是逐车道精确摘要，以其中的车道值为准，不要把路口总量分摊或推算到单条车道。用户未指定路口或车道，却询问“当前车流”“全网交通”“整体拥堵”等范围问题时，必须调用 `get_network_summary`，不要先反问路口 ID；只有用户明确指定路口或车道时才调用 `get_current_traffic`。没有指定路口的全网预测问题，调用 `get_prediction` 时不要填写任何路口 ID，直接依据工具返回的 `top_increases` 排序结果回答。预测只能使用工具返回的 horizon_seconds（当前运行配置通常约为 60 秒）；用户要求超过该范围（例如 5 分钟）时，直接说明当前不支持，不要虚构路口 ID 重试，也不要把短时预测外推成更长预测。
 3. 事件的具体成因如果工具没有确认，就说“原因未确认”；不要把前端注入事件直接当成识别结论。事件类型（例如“事故”“施工”）不是事件 ID；如果当前会话上下文已经提供唯一事件 ID，使用该 ID 查询，不要把事件类型当作 ID。
 4. 如果用户是在查看前端选中的事件并请求事件简报，必须先查询该事件详情；同时查询相关路口当前状态和历史趋势，再生成简报。只有用户点击/主动提问时才生成简报，不要因为事件写入历史就主动调用模型。
 5. 你只能查询和计算，不能启动、停止、暂停仿真，不能修改信号灯、车辆、事件或任何系统状态。用户要求控制操作时，说明当前 Copilot 只支持只读分析。
-6. 查询事故、施工占道、限速、大型活动、回溢或多路口协同的一般处置原则时，search_knowledge 是必需的第一步，使用 profile="control" 和 knowledge_sources=["traffic"]；如果用户只问处置原则而没有提供具体路口/车道 ID，不要索要 ID。一般交通原则查询不要自行填写 information_types，除非用户明确要求按已知类别筛选；不要创造 `disposal_principle` 等不存在的类别。知识来源最终由后端按用户原问题再次约束：普通项目指标/公式问题只检索当前正式指标文档；明确的国家/行业标准问题只检索标准索引；只有用户明确要求比较项目口径与国家/行业标准时才同时检索两者；AI 管控评估问题检索 AI 评估规范。不要为了猜测而同时选择多个知识来源。不得引用检索结果中没有明确出现的标准编号、条款或数值；没有直接标准条款时明确说明没有直接条款。比较项目口径和标准时，只有公式、对象、时间窗口以及边界/统计处理都明确一致才说“一致”，否则说“部分对应”；没有直接条款就明确写“没有直接条款”。查询雄安规划时，使用 profile="general" 和 knowledge_sources=["policy"]。普通算法说明或项目规划问题才使用 profile="general"。RAG 返回的 planning/policy 内容表示规划，不是已经上线的能力；回答时保留标准编号、章节、页码和文档状态。
+6. 查询事故、施工占道、限速、大型活动、回溢或多路口协同的一般处置原则时，search_knowledge 是必需的第一步，使用 profile="control" 和 knowledge_sources=["traffic"]；如果用户只问处置原则而没有提供具体路口/车道 ID，不要索要 ID。一般交通原则查询不要自行填写 information_types，除非用户明确要求按已知类别筛选；不要创造 `disposal_principle` 等不存在的类别。知识来源最终由后端按用户原问题再次约束：普通项目指标/公式问题只检索当前正式指标文档；明确的国家/行业标准问题只检索标准索引；只有用户明确要求比较项目口径与国家/行业标准时才同时检索两者；AI 管控评估问题检索 AI 评估规范；用户明确点名 Fixed / SOTL / Max Pressure / IPPO / MAPPO / CoV2X / CityPulse-Qwen / Narrow-TDP 时，后端会锁定对应项目文档，模型仍应调用 search_knowledge，profile 使用 "general"。不要为了猜测而同时选择多个知识来源。不得引用检索结果中没有明确出现的标准编号、条款或数值；没有直接标准条款时明确说明没有直接条款。比较项目口径和标准时，只有公式、对象、时间窗口以及边界/统计处理都明确一致才说“一致”，否则说“部分对应”；没有直接条款就明确写“没有直接条款”。查询雄安规划时，使用 profile="general" 和 knowledge_sources=["policy"]。普通算法说明使用 profile="general"。检索片段标明【规划功能】的内容表示尚未实现；标明【项目事实】的内容按当前系统能力回答。回答时保留标准编号、章节、页码和文档状态。
 7. 最终用简洁、清楚的中文回答；涉及多个数据来源时说明各自的范围和时间。
 8. 关于当前或最近一次 AI 接管的问题（是否真正生效、当前状态、接管事件、控制范围、已安装计划、目标相位、失败或回退原因），必须先调用 get_ai_takeover_status；不要根据事件的 ai_control_enabled 字段自行推断接管成功。回答“当前正在管控吗”时，以工具返回的 `is_currently_executing` 和 `execution_state` 为准：只有 `is_currently_executing=true` 或 `execution_state=EXECUTING` 才能说当前管控正在执行；`PLANNING_PAUSED` 只能说仿真正在暂停并进行规划，不能说信号控制动作正在执行；终态仿真（FAILED/STOPPED/COMPLETED）不能说仍在管控。`installed_plan_active` 表示计划仍安装在非终态会话中，不等于当前正在执行。get_ai_takeover_status 返回的目标相位序列是已安装的控制请求，不是 SUMO 当前实测相位；要回答当前实际相位，另调 get_current_traffic。询问“管控后车流如何变化”时，先调用 get_ai_takeover_status，再调用 get_traffic_history，将管控动作与实际交通指标分开说明。AI 接管状态和计划信息是运行时事实，不要调用 search_knowledge 替代。
 """
+
+SESSIONLESS_NO_LIVE_DATA_ANSWER = (
+    "当前未启动交通仿真，因此暂无实时仿真交通数据。"
+    "启动仿真后可以进一步查询实时车流、事件和预测结果。"
+)
 
 _PLACEHOLDER_PATTERN = re.compile(r"\[[^\[\]\n]{1,40}\]")
 _PROTOCOL_FIELD_PATTERN = re.compile(
@@ -85,6 +92,30 @@ def _requires_live_data(question: str) -> bool:
         any(keyword in question for keyword in _LIVE_METRIC_KEYWORDS)
         and any(keyword in question for keyword in _LIVE_QUERY_INTENTS)
     )
+
+
+_LIVE_SIMULATION_NEEDLES = (
+    "多少辆",
+    "多少车",
+    "最堵",
+    "最拥堵",
+    "未来60秒",
+    "未来六十秒",
+    "实时车流",
+    "实时交通",
+    "当前车流",
+    "现在有多少",
+    "哪个路口堵",
+    "哪个路口最",
+    "哪里会拥堵",
+    "哪里拥堵",
+    "现在交通怎么样",
+)
+
+
+def _asks_for_live_simulation_data(question: str) -> bool:
+    normalized = str(question).strip()
+    return any(needle in normalized for needle in _LIVE_SIMULATION_NEEDLES)
 
 
 def _intersection_from_scope(active_scope: str | None) -> str | None:
@@ -175,6 +206,7 @@ class CopilotOrchestrator:
         max_tool_result_chars: int = 20_000,
         max_history_messages: int = 20,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        session_available: bool | None = None,
     ) -> None:
         self._provider = provider
         self._tool_service = tool_service
@@ -189,7 +221,17 @@ class CopilotOrchestrator:
         self.system_prompt = str(system_prompt).strip()
         if not self.system_prompt:
             raise CopilotInputError("system_prompt must not be empty.")
-        self._allowed_tools = frozenset(TOOL_HANDLERS)
+        if session_available is None:
+            session_available = bool(getattr(tool_service, "session_id", None))
+        self.session_available = bool(session_available)
+        self._allowed_tools = (
+            SESSIONLESS_TOOL_NAMES
+            if not self.session_available
+            else frozenset(TOOL_HANDLERS)
+        )
+        self._tool_definitions = tool_definitions_for(
+            session_available=self.session_available
+        )
 
     def run(
         self,
@@ -204,6 +246,12 @@ class CopilotOrchestrator:
         question = str(user_message).strip()
         if not question:
             raise CopilotInputError("user_message must not be empty.")
+        if not self.session_available and _asks_for_live_simulation_data(question):
+            return CopilotResponse(
+                answer=SESSIONLESS_NO_LIVE_DATA_ANSWER,
+                rounds=1,
+                tool_calls=(),
+            )
         messages = self._initial_messages(
             question,
             history=history,
@@ -219,7 +267,7 @@ class CopilotOrchestrator:
         # tool_choice="auto".  Current-state questions nevertheless require
         # authoritative data, so bind one read-only observation before asking
         # the model to write the user-facing summary.
-        if _requires_live_data(question):
+        if self.session_available and _requires_live_data(question):
             intersection_id = _intersection_from_scope(active_scope)
             call = ToolCall(
                 call_id="prefetch_current_traffic",
@@ -266,7 +314,7 @@ class CopilotOrchestrator:
             try:
                 completion = self._provider.complete(
                     messages,
-                    tools=TOOL_DEFINITIONS,
+                    tools=self._tool_definitions,
                     tool_choice="auto",
                     temperature=temperature,
                     max_tokens=max_tokens,
@@ -286,9 +334,14 @@ class CopilotOrchestrator:
             assistant = completion.message
             if not assistant.tool_calls:
                 answer = (assistant.content or "").strip()
-                missing_required_tool = _requires_live_data(question) and not records
+                missing_required_tool = (
+                    self.session_available
+                    and _requires_live_data(question)
+                    and not records
+                )
                 invalid_answer = _invalid_visible_answer(answer) or (
-                    _requires_live_data(question)
+                    self.session_available
+                    and _requires_live_data(question)
                     and _UNHELPFUL_LIVE_ANSWER_PATTERN.search(answer) is not None
                 )
                 if (
@@ -360,9 +413,19 @@ class CopilotOrchestrator:
         active_event_id: str | None,
         active_scope: str | None,
     ) -> list[dict[str, Any]]:
-        context_lines = [
-            "后端已经把当前仿真会话绑定到交通工具；工具参数中不要自行添加 session_id。"
-        ]
+        if self.session_available:
+            context_lines = [
+                "当前 runtime：session_available=true。后端已经把当前仿真会话绑定到交通工具；工具参数中不要自行添加 session_id。"
+            ]
+        else:
+            context_lines = [
+                "当前 runtime：session_available=false。未绑定仿真会话。",
+                "只允许调用 search_knowledge 和 calculator。",
+                "不要调用 get_current_traffic、get_network_summary、get_prediction、get_event_details、get_ai_takeover_status、get_traffic_history、get_road_context。",
+                "如果用户询问当前车辆数、路口拥堵或短时预测等实时仿真数据，明确说明："
+                + SESSIONLESS_NO_LIVE_DATA_ANSWER,
+                "一般交通知识、算法说明和扰动处置原则仍可回答。",
+            ]
         if active_event_id and str(active_event_id).strip():
             context_lines.append(
                 f"当前查询上下文中的事件 ID（前端传入或后端在单一事件会话中推断）：{str(active_event_id).strip()}"
@@ -401,6 +464,11 @@ class CopilotOrchestrator:
         self, call: ToolCall
     ) -> tuple[Mapping[str, Any] | None, Mapping[str, Any] | None]:
         if call.name not in self._allowed_tools:
+            if call.name in LIVE_SESSION_TOOL_NAMES and not self.session_available:
+                return None, {
+                    "code": "SIMULATION_SESSION_REQUIRED",
+                    "message": SESSIONLESS_NO_LIVE_DATA_ANSWER,
+                }
             return None, {
                 "code": "UNSUPPORTED_TOOL",
                 "message": "该 Copilot 只允许调用固定的只读交通工具。",
