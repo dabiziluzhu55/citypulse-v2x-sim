@@ -1,8 +1,8 @@
-"""Backend orchestration for event-scoped Qwen signal control.
+"""Backend orchestration for event-scoped Traffic-Qwen signal control.
 
 The orchestrator is fed by the existing per-session snapshot watcher.  It
-pauses simulation time while building one bounded control context and asking
-Qwen for a plan, then sends only the validated JSON plan to the SUMO manager.
+pauses simulation time while building Observation V2 and asking Traffic-Qwen
+for a plan, then sends only the validated JSON plan to the SUMO manager.
 The worker remains the final safety boundary.
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from simulation.sumo.engine.ai_control import (
@@ -19,13 +19,14 @@ from simulation.sumo.engine.ai_control import (
 )
 from simulation.sumo.engine.session import SimulationSnapshot
 
+from algorithms.traffic_llm.dataset.sft_builder import SYSTEM_PROMPT
+from algorithms.traffic_llm.deployment.schema import PLAN_JSON_SCHEMA
+from algorithms.traffic_llm.evaluation.policy import POLICY_INSTRUCTION
+
 from ..copilot.llm import LLMProvider
-from ..copilot.rag import (
-    KnowledgeQuery,
-    KnowledgeRetriever,
-    KnowledgeUnavailableError,
-)
-from .history import HistoryQuery, HistoryRepository, HistoryUnavailableError
+from .ai_control_validation import active_ai_control_events
+from .history import HistoryRepository
+from .traffic_qwen_observation import build_live_observation_v2
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,16 @@ CONTROL_CONTEXT_MAX_CHARS = 6_000
 class TakeoverPlanningError(RuntimeError):
     """A planning failure that must result in a baseline fallback."""
 
-    def __init__(self, message: str, *, rag_status: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        rag_status: str | None = "not_required",
+        event_id: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.rag_status = rag_status
+        self.event_id = event_id
 
 
 def _parse_control_plan_content(raw_content: str) -> Mapping[str, Any]:
@@ -72,10 +80,9 @@ class _PlanningState:
     next_retry_seconds: float = 0.0
     planning: bool = False
     last_replan_signature: tuple[Any, ...] | None = None
+    last_prediction_token: tuple[Any, ...] | None = None
     replan_requested: bool = False
-    rag_cache: dict[tuple[str, str | None, tuple[str, ...]], tuple[dict[str, Any], ...]] = field(
-        default_factory=dict
-    )
+    config_error: bool = False
 
 
 class TakeoverOrchestrator:
@@ -92,14 +99,12 @@ class TakeoverOrchestrator:
         self._settings = settings
         self._history_repository = history_repository
         self._provider: LLMProvider | None = None
-        self._retriever: KnowledgeRetriever | None = None
         self._topology: Any = None
         self._states: dict[str, _PlanningState] = {}
         self._lock = threading.RLock()
 
     def configure(self, *, provider=None, retriever=None, topology=None) -> None:
         self._provider = provider
-        self._retriever = retriever
         self._topology = topology
 
     def observe(
@@ -109,10 +114,32 @@ class TakeoverOrchestrator:
         intelligence: Mapping[str, Any] | None = None,
         preset_id: str | None = None,
         baseline_controller: str | None = None,
+        period: str | None = None,
+        seed: int | None = None,
     ) -> None:
         """Consume one watcher snapshot and plan only when a plan is due."""
 
-        event = _active_ai_event(snapshot.events)
+        try:
+            event = _unique_active_ai_event(snapshot.events)
+        except TakeoverPlanningError as exc:
+            logger.error(
+                "AI takeover configuration error: session=%s reason=%s",
+                snapshot.session_id,
+                exc,
+            )
+            with self._lock:
+                state = self._states.setdefault(snapshot.session_id, _PlanningState())
+                already_blocked = state.config_error
+                state.config_error = True
+            if already_blocked:
+                return
+            self._handle_failure(
+                snapshot,
+                str(getattr(exc, "event_id", "") or "multiple_ai_events"),
+                exc,
+                state,
+            )
+            return
         if event is None:
             with self._lock:
                 self._states.pop(snapshot.session_id, None)
@@ -122,7 +149,7 @@ class TakeoverOrchestrator:
 
         status = snapshot.ai_takeover
         intelligence_payload = intelligence or {}
-        replan_signature = _replan_signature(event, intelligence_payload)
+        allowed_scope = self.allowed_scope(snapshot, event)
         with self._lock:
             state = self._states.setdefault(snapshot.session_id, _PlanningState())
             if state.event_id != event.event_id:
@@ -130,13 +157,22 @@ class TakeoverOrchestrator:
                 state.failures = 0
                 state.next_retry_seconds = 0.0
                 state.last_replan_signature = None
+                state.last_prediction_token = None
                 state.replan_requested = False
+                state.config_error = False
+            replan_signature, prediction_token, prediction_changed = _replan_signature(
+                event,
+                intelligence_payload,
+                allowed_scope=allowed_scope,
+                last_prediction_token=state.last_prediction_token,
+            )
+            state.last_prediction_token = prediction_token
             if state.last_replan_signature is None:
                 state.last_replan_signature = replan_signature
-            elif replan_signature != state.last_replan_signature:
-                # Coarse event-risk/prediction changes are a valid reason to
-                # replan before the current 30-second window expires.  The
-                # signature deliberately ignores noisy continuous values.
+            elif replan_signature != state.last_replan_signature or prediction_changed:
+                # Coarse event-risk or Narrow-TDP bucket changes can replan
+                # before the current 30-second window expires.  Continuous
+                # numeric jitter is ignored; unusable prediction is frozen.
                 state.replan_requested = True
             if state.planning:
                 return
@@ -171,6 +207,8 @@ class TakeoverOrchestrator:
                 intelligence=intelligence_payload,
                 preset_id=preset_id,
                 baseline_controller=baseline_controller,
+                period=period,
+                seed=seed,
                 state=state,
             )
             with self._lock:
@@ -190,31 +228,27 @@ class TakeoverOrchestrator:
         intelligence: Mapping[str, Any],
         preset_id: str | None,
         baseline_controller: str | None,
+        period: str | None,
+        seed: int | None,
         state: _PlanningState,
     ) -> None:
         if self._provider is None:
-            raise TakeoverPlanningError("Qwen provider is unavailable.")
+            raise TakeoverPlanningError("Traffic-Qwen provider is unavailable.")
 
         # Pause before reading any runtime-dependent context.  The watcher
         # snapshot may be a little older than the worker, while the completed
-        # pause command gives us one consistent SUMO time for current state,
-        # history, RAG context, and the Qwen request.
+        # pause command gives us one consistent SUMO time for Observation V2
+        # and the Traffic-Qwen request.
         paused = False
         self._manager.pause(snapshot.session_id)
         paused = True
         try:
             live = self._manager.snapshot(snapshot.session_id)
-            live_event = next(
-                (
-                    item
-                    for item in live.events
-                    if item.event_id == event.event_id and item.state == "ACTIVE"
-                ),
-                None,
-            )
-            if live_event is None or not bool(
-                live_event.details.get("ai_control_enabled", False)
-            ):
+            try:
+                live_event = _unique_active_ai_event(live.events)
+            except TakeoverPlanningError:
+                raise
+            if live_event is None or live_event.event_id != event.event_id:
                 raise TakeoverPlanningError(
                     "AI event is no longer active after pausing the simulation."
                 )
@@ -224,29 +258,21 @@ class TakeoverOrchestrator:
                     "AI event has no intersection in the active session."
                 )
             phase_orders = self._phase_orders_for_scope(allowed_scope)
-            rag_items = self._knowledge_for_event(
-                live_event,
-                allowed_scope,
-                preset_id=preset_id,
-                state=state,
-            )
-            history_payload = self._history_for_scope(
-                live.session_id,
-                allowed_scope,
-            )
-            context = self._build_context(
+            primary = _event_intersections(live, live_event, self._topology)
+            primary_intersection = next(iter(sorted(primary)), allowed_scope[0])
+            observation = build_live_observation_v2(
                 live,
                 live_event,
-                allowed_scope,
-                intelligence=intelligence,
-                history=history_payload,
-                rag=rag_items,
+                primary_intersection=str(primary_intersection),
+                topology=self._topology,
+                allowed_phases=phase_orders,
+                scope_hops=int(self._settings.ai_control_config.scope_hops),
                 preset_id=preset_id,
-                baseline_controller=baseline_controller,
-                phase_orders=phase_orders,
+                period=period,
+                seed=seed,
             )
             plan = self._request_valid_plan(
-                context,
+                observation,
                 allowed_scope=allowed_scope,
                 phase_orders=phase_orders,
             )
@@ -263,7 +289,7 @@ class TakeoverOrchestrator:
                 "allowed_scope": list(allowed_scope),
                 "plan_id": f"{snapshot.session_id}:{live_event.event_id}:{plan_sequence}",
                 "plan_started_at": plan_started_at,
-                "rag_status": "ready",
+                "rag_status": "not_required",
             }
             self._manager.install_ai_plan(snapshot.session_id, payload)
             state.failures = 0
@@ -284,51 +310,46 @@ class TakeoverOrchestrator:
 
     def _request_valid_plan(
         self,
-        context: Mapping[str, Any],
+        observation: Mapping[str, Any],
         *,
         allowed_scope: Sequence[str],
         phase_orders: Mapping[str, Sequence[int]],
     ) -> AIControlPlan:
         """Request a plan and validate it before returning it to the worker.
 
-        The model server is a normal Transformers generation endpoint and does
-        not provide grammar-constrained decoding.  Keep the safety boundary in
-        the backend: accept only a JSON object (with a small amount of
-        transport cleanup for a Markdown fence or a leading ``<think>`` block),
-        then run the same schema and runtime validation used by the worker.
-        A single corrective retry handles transient formatting mistakes; it
-        never bypasses validation and ultimately falls back through the normal
-        failure path.
+        Structured decoding is a generation constraint only.  Backend still
+        runs AIControlPlan.from_mapping and runtime phase/region checks.
         """
 
         if self._provider is None:
-            raise TakeoverPlanningError("Qwen provider is unavailable.")
+            raise TakeoverPlanningError("Traffic-Qwen provider is unavailable.")
 
-        context_for_prompt = _compact_control_context(
-            context,
-            max_chars=_control_context_max_chars(self._settings),
-        )
+        user_payload = {
+            "instruction": POLICY_INSTRUCTION,
+            "observation": dict(observation),
+        }
         context_message = json.dumps(
-            context_for_prompt,
+            user_payload,
             ensure_ascii=False,
             separators=(",", ":"),
         )
         logger.debug(
-            "AI control context prepared: session=%s chars=%s intersections=%s "
-            "knowledge=%s",
-            context.get("session_id"),
-            len(context_message),
-            len(context_for_prompt.get("intersections", {})),
-            len(context_for_prompt.get("knowledge", ())),
+            "AI control Observation V2 prepared: session_t=%s region=%s",
+            observation.get("scene", {}),
+            observation.get("controlled_region"),
         )
         max_tokens = max(
-            900,
-            int(getattr(self._settings, "citypulse_qwen_max_tokens", 512)),
+            512,
+            int(
+                getattr(self._settings, "resolved_ai_control_max_tokens", None)
+                or getattr(self._settings, "citypulse_ai_control_max_tokens", None)
+                or getattr(self._settings, "citypulse_qwen_max_tokens", 512)
+            ),
         )
         last_error: ValueError | None = None
 
         for attempt in range(1, CONTROL_PLAN_MAX_ATTEMPTS + 1):
-            system_prompt = _CONTROL_SYSTEM_PROMPT
+            system_prompt = SYSTEM_PROMPT
             if attempt > 1:
                 system_prompt += _CONTROL_RETRY_PROMPT
             completion = self._provider.complete(
@@ -346,6 +367,15 @@ class TakeoverOrchestrator:
                 tool_choice=None,
                 temperature=0.0,
                 max_tokens=max_tokens,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "AIControlPlan",
+                        "schema": PLAN_JSON_SCHEMA,
+                        "strict": True,
+                    },
+                },
+                extra_body={"guided_json": PLAN_JSON_SCHEMA},
             )
             raw_content = completion.message.content
             try:
@@ -360,7 +390,7 @@ class TakeoverOrchestrator:
                 )
                 if not set(plan.controlled_intersections) <= set(allowed_scope):
                     raise ValueError(
-                        "Qwen selected an intersection outside the allowed scope."
+                        "Traffic-Qwen selected an intersection outside the allowed scope."
                     )
                 if phase_orders:
                     plan.validate_runtime(
@@ -376,7 +406,7 @@ class TakeoverOrchestrator:
                     else repr(raw_content)
                 )
                 logger.warning(
-                    "Rejected Qwen AI control plan attempt %s/%s: "
+                    "Rejected Traffic-Qwen AI control plan attempt %s/%s: "
                     "finish_reason=%s error=%s content_prefix=%r",
                     attempt,
                     CONTROL_PLAN_MAX_ATTEMPTS,
@@ -386,7 +416,7 @@ class TakeoverOrchestrator:
                 )
 
         raise TakeoverPlanningError(
-            "Qwen returned an invalid control plan after "
+            "Traffic-Qwen returned an invalid control plan after "
             f"{CONTROL_PLAN_MAX_ATTEMPTS} attempts: {last_error}"
         )
 
@@ -403,11 +433,9 @@ class TakeoverOrchestrator:
         )
         reason = str(error) or error.__class__.__name__
         if isinstance(error, TakeoverPlanningError):
-            rag_status = error.rag_status
-        elif isinstance(error, KnowledgeUnavailableError):
-            rag_status = "unavailable"
+            rag_status = error.rag_status or "not_required"
         else:
-            rag_status = None
+            rag_status = "not_required"
 
         # Planning runs in the metrics watcher while the SUMO worker continues
         # to publish snapshots.  The event may therefore finish (or the
@@ -421,11 +449,24 @@ class TakeoverOrchestrator:
             # failure; the fallback command below remains the safe default.
             latest = None
         if latest is not None:
-            latest_event = _active_ai_event(latest.events)
+            try:
+                latest_event = _unique_active_ai_event(latest.events)
+            except TakeoverPlanningError:
+                latest_event = None
             if latest.state in {"STOPPED", "COMPLETED", "FAILED"} or (
-                latest_event is None
-                or latest_event.event_id != event_id
-                or latest.ai_takeover.state == "RECOVERY"
+                latest.ai_takeover.state == "RECOVERY"
+            ):
+                logger.info(
+                    "Skip late AI fallback: session=%s event=%s state=%s",
+                    snapshot.session_id,
+                    event_id,
+                    latest.state,
+                )
+                return
+            if (
+                latest_event is not None
+                and event_id not in {"multiple_ai_events", ""}
+                and latest_event.event_id != event_id
             ):
                 logger.info(
                     "Skip late AI fallback: session=%s event=%s state=%s",
@@ -485,74 +526,6 @@ class TakeoverOrchestrator:
             scope.update(next_frontier)
             frontier = next_frontier
         return tuple(sorted(scope & session_intersections))
-
-    def _knowledge_for_event(
-        self,
-        event,
-        allowed_scope: Sequence[str],
-        *,
-        preset_id: str | None,
-        state: _PlanningState,
-    ) -> tuple[dict[str, Any], ...]:
-        key = (str(event.event_type), preset_id, tuple(sorted(allowed_scope)))
-        if key in state.rag_cache:
-            return state.rag_cache[key]
-        if self._retriever is None:
-            raise TakeoverPlanningError("Traffic knowledge RAG is unavailable.", rag_status="unavailable")
-        query = (
-            f"{event.event_type} event signal control for intersections "
-            f"{', '.join(sorted(allowed_scope))}; protect upstream and downstream traffic"
-        )
-        try:
-            response = self._retriever.search(
-                KnowledgeQuery(
-                    query=query,
-                    limit=5,
-                    profile="control",
-                    event_type=str(event.event_type),
-                    preset_id=preset_id,
-                )
-            )
-        except KnowledgeUnavailableError as exc:
-            raise TakeoverPlanningError(
-                "Traffic knowledge RAG is unavailable.", rag_status="unavailable"
-            ) from exc
-        if response.search_mode != "vector":
-            raise TakeoverPlanningError(
-                "Traffic knowledge RAG did not return vector results.",
-                rag_status="invalid",
-            )
-        results = tuple(result.as_dict() for result in response.results[:5])
-        if not results:
-            raise TakeoverPlanningError(
-                "Traffic knowledge RAG returned no control guidance.",
-                rag_status="empty",
-            )
-        state.rag_cache[key] = results
-        return results
-
-    def _history_for_scope(
-        self,
-        session_id: str,
-        allowed_scope: Sequence[str],
-    ) -> Mapping[str, Any]:
-        try:
-            result = self._history_repository.query(
-                HistoryQuery(
-                    session_id=session_id,
-                    intersection_ids=tuple(allowed_scope),
-                    lookback_seconds=300.0,
-                    max_points=12,
-                )
-            )
-        except HistoryUnavailableError:
-            return {"status": "unavailable", "frames": [], "events": []}
-        return {
-            "status": "ready",
-            "frames": list(result.frames[-12:]),
-            "events": list(result.events[-20:]),
-            "downsampled": result.downsampled,
-        }
 
     def _phase_orders_for_scope(
         self, allowed_scope: Sequence[str]
@@ -636,17 +609,55 @@ class TakeoverOrchestrator:
         }
 
 
+def _prediction_trend_token(
+    intelligence: Mapping[str, Any],
+    allowed_scope: Sequence[str],
+) -> tuple[Any, ...] | None:
+    """Return coarse Narrow-TDP buckets, or None when prediction is not usable."""
+
+    prediction = intelligence.get("prediction", {})
+    if not isinstance(prediction, Mapping):
+        return None
+    if prediction.get("ready") is not True or prediction.get("fallback") is True:
+        return None
+    rows = prediction.get("intersections", {})
+    if not isinstance(rows, Mapping):
+        return None
+    scope = {str(item) for item in allowed_scope}
+    tokens: list[tuple[str, str]] = []
+    for intersection_id, row in sorted(rows.items(), key=lambda item: str(item[0])):
+        if scope and str(intersection_id) not in scope:
+            continue
+        if not isinstance(row, Mapping):
+            continue
+        try:
+            ratio = float(row.get("delta_ratio"))
+        except (TypeError, ValueError):
+            bucket = "unknown"
+        else:
+            if ratio >= 0.2:
+                bucket = "rising"
+            elif ratio <= -0.2:
+                bucket = "falling"
+            else:
+                bucket = "stable"
+        tokens.append((str(intersection_id), bucket))
+    return tuple(tokens)
+
+
 def _replan_signature(
     event: Any,
     intelligence: Mapping[str, Any],
-) -> tuple[Any, ...]:
+    *,
+    allowed_scope: Sequence[str] = (),
+    last_prediction_token: tuple[Any, ...] | None = None,
+) -> tuple[tuple[Any, ...], tuple[Any, ...] | None, bool]:
     """Return coarse changes that justify an early replan.
 
-    Detection cards and prediction ratios contain noisy continuous values.  A
-    signature made from their categorical transitions avoids sending a Qwen
-    request on every 0.5-second snapshot while still reacting to a new risk
-    level, traffic-state transition, affected scope, or a material prediction
-    change.
+    Prediction buckets are only used when Narrow-TDP is ready and not in
+    fallback.  Unusable prediction keeps the last token so fallback/unavailable
+    does not itself trigger a prediction-enhanced replan.  The first usable
+    prediction is recorded without counting as a bucket change.
     """
 
     detection = intelligence.get("event_detection", {})
@@ -674,39 +685,39 @@ def _replan_signature(
                 )
             )
 
-    prediction = intelligence.get("prediction", {})
-    rows = prediction.get("intersections", {}) if isinstance(prediction, Mapping) else {}
-    prediction_signature: list[tuple[str, str]] = []
-    if isinstance(rows, Mapping):
-        for intersection_id, row in sorted(rows.items(), key=lambda item: str(item[0])):
-            if not isinstance(row, Mapping):
-                continue
-            try:
-                ratio = float(row.get("delta_ratio"))
-            except (TypeError, ValueError):
-                bucket = "unknown"
-            else:
-                if ratio >= 0.2:
-                    bucket = "rising"
-                elif ratio <= -0.2:
-                    bucket = "falling"
-                else:
-                    bucket = "stable"
-            prediction_signature.append((str(intersection_id), bucket))
-
-    return (
+    usable_prediction = _prediction_trend_token(intelligence, allowed_scope)
+    prediction_changed = (
+        usable_prediction is not None
+        and last_prediction_token is not None
+        and usable_prediction != last_prediction_token
+    )
+    prediction_token = (
+        usable_prediction if usable_prediction is not None else last_prediction_token
+    )
+    signature = (
         str(event.event_id),
         str(event.event_type),
         tuple(sorted(card_signature)),
-        tuple(prediction_signature),
     )
+    return signature, prediction_token, prediction_changed
+
+
+def _unique_active_ai_event(events: Sequence[Any]):
+    matches = active_ai_control_events(events)
+    if len(matches) > 1:
+        raise TakeoverPlanningError(
+            "configuration error: multiple ACTIVE AI-control events; "
+            "refusing concurrent Traffic-Qwen plans",
+            rag_status="not_required",
+            event_id="multiple_ai_events",
+        )
+    return matches[0] if matches else None
 
 
 def _active_ai_event(events: Sequence[Any]):
-    for event in events:
-        if event.state == "ACTIVE" and bool(event.details.get("ai_control_enabled", False)):
-            return event
-    return None
+    """Compatibility wrapper. Raises if more than one ACTIVE AI event exists."""
+
+    return _unique_active_ai_event(events)
 
 
 def _event_intersections(snapshot: SimulationSnapshot, event, topology) -> set[str]:
@@ -744,26 +755,6 @@ def _bounded(value: Any, *, max_chars: int = 12_000) -> Any:
         "status": "truncated",
         "content": raw[:max_chars],
     }
-
-
-_CONTROL_SYSTEM_PROMPT = """你是 CityPulse 的高层交通信号控制规划器。
-只根据用户事件、当前运行时交通状态、历史趋势、预测和交通工程知识生成一个控制计划。
-Runtime Traffic Context 的事实优先于知识库；不要编造缺失数据。
-
-你必须只输出一个严格 JSON 对象，不要输出 Markdown、代码块、解释文字或工具调用。
-JSON 必须包含且只能包含以下字段：
-controlled_intersections (string array), valid_seconds (number=30),
-signal_plan (object: 每个受控路口对应 6 个整数目标相位),
-objective (string), reason (string), fallback_to_baseline (boolean)。
-`signal_plan` 的键必须是路口 ID，值必须是长度为 6 的整数数组；例如格式为
-{"controlled_intersections":["demo_3"],"valid_seconds":30,"signal_plan":{"demo_3":[2,1,2,1,2,1]},"objective":"...","reason":"...","fallback_to_baseline":false}。
-绝对不要把 `signal_plan` 写成 {"0":2,"1":2,"2":2,"3":2,"4":2,"5":2} 这样的槽位对象。
-
-只能选择 allowed_scope 中的路口；只能返回 target_phase，不得返回黄灯、全红、持续时间、车辆控制、事件修改或基线切换。
-每个路口的目标相位整数必须从 `intersections[路口].allowed_phase_ids` 中选择；这些是 SUMO 的真实相位编号，不是从 0 开始的数组下标，不能凭常见习惯输出 0 或其它列表外编号。数组长度 6 表示 6 个连续的 5 秒决策槽位，不表示有 6 个不同相位。比如 allowed_phase_ids 为 [1,2] 时，合法示例是 [2,1,2,1,2,1]，非法示例是 [1,2,3,4,5,6]。
-只要 signal_plan 非空，fallback_to_baseline 必须为 false；只要 fallback_to_baseline 为 true，controlled_intersections 必须为 [] 且 signal_plan 必须为 {}。
-如果无法安全规划，返回 controlled_intersections=[]、signal_plan={}、fallback_to_baseline=true，并说明原因。
-"""
 
 
 _CONTROL_RETRY_PROMPT = """

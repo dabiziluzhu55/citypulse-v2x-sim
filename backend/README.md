@@ -65,6 +65,21 @@ CITYPULSE_WORKER_HEARTBEAT_TTL_SECONDS=15
 ALGORITHM_BASE_URL=http://127.0.0.1:8000
 ```
 
+系统唯一大模型为 **Traffic-Qwen V2 AWQ-vLLM**。Copilot 与 AI Control 共用
+`base_url` + `model`，但 prompt / timeout / tools / RAG 彼此独立：
+
+```bash
+CITYPULSE_LLM_BASE_URL=http://127.0.0.1:8001/v1
+CITYPULSE_LLM_MODEL=traffic-qwen-v2
+CITYPULSE_COPILOT_TIMEOUT_SECONDS=60
+CITYPULSE_AI_CONTROL_TIMEOUT_SECONDS=90
+CITYPULSE_COPILOT_MAX_TOKENS=512
+CITYPULSE_AI_CONTROL_MAX_TOKENS=512
+```
+
+旧变量 `CITYPULSE_QWEN_*` 仅在 `CITYPULSE_LLM_*` 为空时作为 deprecated fallback。
+未经微调的 Qwen 不再作为第二套模型服务。
+
 redis 基础设施可参考仓库根目录 `compose.redis.yml` 与 `docs/distributed_simulation.md`（SUMO worker 启动方式）
 
 ---
@@ -137,6 +152,7 @@ PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
 - 必须使用 `--workers 1`（算法控制器状态不跨进程共享）
 - **local 模式**下活动仿真运行时不要使用 `--reload`，否则 reload 会导致本机会话丢失
 - **redis 模式**下 reload/重启 API 不会停止已在 SUMO worker 中运行的会话
+- Traffic-Qwen V2 AWQ-vLLM 需先在 GPU1 监听 `8001`（served name：`traffic-qwen-v2`），再启动 Backend
 
 Swagger 文档：`http://localhost:8000/docs`
 
@@ -318,8 +334,9 @@ od/
 | 409 | `SIMULATION_BUSY` | local 模式已有仿真在运行 |
 | 409 | `SESSION_QUEUED` | 排队中不允许该命令 |
 | 409 | `AI_EVENT_MUST_BE_CONFIGURED_AT_START` | AI 接管事件必须在启动仿真时配置 |
-| 503 | `COPILOT_LLM_UNAVAILABLE` | Qwen 推理服务不可用 |
-| 502 | `COPILOT_LLM_PROTOCOL_ERROR` | Qwen 返回格式无效 |
+| 422 | `MULTIPLE_AI_CONTROL_TARGETS` | 一次仿真只能有一个 AI 管控目标 |
+| 503 | `COPILOT_LLM_UNAVAILABLE` | Traffic-Qwen 推理服务不可用 |
+| 502 | `COPILOT_LLM_PROTOCOL_ERROR` | Traffic-Qwen 返回格式无效 |
 
 ---
 
@@ -546,7 +563,7 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 
 **接口：** `GET /api/v1/simulations/{session_id}/ai-takeover`
 
-只有启动请求中的事件设置 `ai_control_enabled=true` 才会触发接管；运行中新增 AI 事件会返回 `409 AI_EVENT_MUST_BE_CONFIGURED_AT_START`。AI 计划由 Backend 请求 Qwen 并校验，SUMO worker 会再次校验路口、相位和安全过渡。Qwen 或 RAG 不可用时保持基线，仿真不会停止。
+只有启动请求中**至多一个**扰动 target 设置 `ai_control_enabled=true` 才会触发接管；超过一个返回 `422 MULTIPLE_AI_CONTROL_TARGETS`。运行中新增 AI 事件会返回 `409 AI_EVENT_MUST_BE_CONFIGURED_AT_START`。AI 计划由 Backend 用 Observation V2 请求 Traffic-Qwen 并校验，SUMO worker 会再次校验路口、相位和安全过渡。Traffic-Qwen 不可用时保持基线，仿真不会停止。AI Control **不依赖 RAG**；`rag_status` 兼容字段为 `not_required`。
 
 状态字段包括：`state`、`ai_enabled`、`active_event_id`、`allowed_scope`、`controlled_intersections`、`plan_sequence`、`plan_id`、`plan_valid_until`、`baseline_controller`、`last_error`、`fallback_reason` 和 `rag_status`。
 
@@ -733,8 +750,8 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
 }
 ```
 
-后端会把 `session_id` 绑定到当前仿真数据源，Qwen 只能调用固定的只读交通工具；
-不能修改信号灯、车辆、事件或仿真状态。模型服务不可用时返回 HTTP 503，模型协议错误返回 HTTP 502。
+后端会把 `session_id` 绑定到当前仿真数据源，Traffic-Qwen 作为 Copilot 只能调用固定的只读交通工具（含 RAG `search_knowledge` 与预测查询）；
+不能修改信号灯、车辆、事件或仿真状态。模型服务不可用时返回 HTTP 503，模型协议错误返回 HTTP 502。Copilot 不要求开启 AI 管控开关，但必须先有有效仿真 session。
 
 响应核心字段：
 
@@ -744,7 +761,7 @@ redis 模式额外字段示例：`redis_state_url`、`redis_key_prefix`、`backe
   "answer": "系统当前查询结果显示……",
   "rounds": 2,
   "tool_calls": [],
-  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "model": "traffic-qwen-v2",
   "usage": {},
   "latency_ms": 1234.5
 }
@@ -815,13 +832,20 @@ RAG_STANDARDS_COLLECTION_NAME=citypulse_standards_policy
 
 ### 6.14 事件级 AI 信号接管
 
-仅在启动仿真的 `disturbance_targets` 中设置 `ai_control_enabled=true` 才会
-启用该事件的 Qwen 接管；运行中新增 AI 事件会被拒绝。Backend 负责组合当前
-交通状态、历史趋势、预测和 `control` 知识，Qwen 只能返回 30 秒内每 5 秒一个
-目标相位的严格 JSON，SUMO worker 会再次校验路口范围、相位和黄灯/全红安全过渡。
+仅在启动仿真的 `disturbance_targets` 中设置 **恰好一个** `ai_control_enabled=true`
+才会启用该主要事件的 Traffic-Qwen 接管；其余扰动仍注入 SUMO，但不会独立启动
+规划状态机。超过一个 AI target 会被 Backend 以 422 拒绝。运行中新增 AI 事件会被拒绝。
 
-状态接口：`GET /api/v1/simulations/{session_id}/ai-takeover`。Qwen、RAG 或
-网络异常时保持 Fixed/SOTL/Max Pressure/IPPO/MAPPO 基线；事件结束后等待安全
+规划链为：选中的 ACTIVE 事件 → Observation V2 → Traffic-Qwen → `AIControlPlan`
+校验 → install。AI Control **不把 RAG 文本、Copilot 历史或完整 Narrow-TDP JSON
+写入 prompt**。Narrow-TDP 仅在 `ready==true` 且 `fallback==false` 时，用
+rising/stable/falling 粗粒度趋势变化提前触发再规划。
+
+主要路口可由 Backend 扩展到 1-hop 上下游，模型仍可输出多个路口的 30 秒协同计划。
+SUMO worker 会再次校验路口范围、相位和黄灯/全红安全过渡。
+
+状态接口：`GET /api/v1/simulations/{session_id}/ai-takeover`。Traffic-Qwen
+或网络异常时保持 Fixed/SOTL/Max Pressure/IPPO/MAPPO 基线；事件结束后等待安全
 恢复窗口，再回到原基线。可通过以下配置调整策略边界：
 
 ```text

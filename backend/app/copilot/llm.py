@@ -129,16 +129,17 @@ class CompletionTransport(Protocol):
 class QwenProvider:
     """调用 OpenAI 兼容 Qwen 服务的同步 Provider。
 
-    ``base_url`` 通常是 ``http://127.0.0.1:18000/v1``。生产部署建议让
-    Qwen 服务只监听 GPU 服务器内网/回环地址，再由后端通过内网或 SSH
-    隧道访问，而不是把推理端口直接暴露到公网。
+    ``base_url`` 通常是 Traffic-Qwen V2 AWQ-vLLM 的
+    ``http://127.0.0.1:8001/v1``。Copilot 与 AI Control 共用同一模型服务，
+    但 timeout / max_tokens / tools / RAG 彼此独立。生产部署建议只监听
+    GPU 服务器内网或回环地址，不要把推理端口直接暴露到公网。
     """
 
     def __init__(
         self,
-        base_url: str = "http://127.0.0.1:18000/v1",
+        base_url: str = "http://127.0.0.1:8001/v1",
         *,
-        model: str = "Qwen/Qwen2.5-7B-Instruct",
+        model: str = "traffic-qwen-v2",
         api_key: str | None = None,
         timeout_seconds: float = 60.0,
         default_temperature: float = 0.2,
@@ -173,27 +174,57 @@ class QwenProvider:
         """从部署环境读取配置；不会把 API key 写入日志或响应。"""
 
         return cls(
-            base_url=os.getenv(
-                "CITYPULSE_QWEN_BASE_URL", "http://127.0.0.1:18000/v1"
+            base_url=_env_first(
+                "CITYPULSE_LLM_BASE_URL",
+                "CITYPULSE_QWEN_BASE_URL",
+                default="http://127.0.0.1:8001/v1",
             ),
-            model=os.getenv("CITYPULSE_QWEN_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
-            api_key=os.getenv("CITYPULSE_QWEN_API_KEY") or None,
-            timeout_seconds=_env_float("CITYPULSE_QWEN_TIMEOUT_SECONDS", 60.0),
-            default_temperature=_env_float("CITYPULSE_QWEN_TEMPERATURE", 0.2),
-            default_max_tokens=_env_int("CITYPULSE_QWEN_MAX_TOKENS", 512),
+            model=_env_first(
+                "CITYPULSE_LLM_MODEL",
+                "CITYPULSE_QWEN_MODEL",
+                default="traffic-qwen-v2",
+            ),
+            api_key=_env_first("CITYPULSE_LLM_API_KEY", "CITYPULSE_QWEN_API_KEY", default="") or None,
+            timeout_seconds=_env_float("CITYPULSE_COPILOT_TIMEOUT_SECONDS", None)
+            or _env_float("CITYPULSE_QWEN_TIMEOUT_SECONDS", 60.0),
+            default_temperature=_env_float("CITYPULSE_COPILOT_TEMPERATURE", None)
+            or _env_float("CITYPULSE_QWEN_TEMPERATURE", 0.2),
+            default_max_tokens=_env_int("CITYPULSE_COPILOT_MAX_TOKENS", None)
+            or _env_int("CITYPULSE_QWEN_MAX_TOKENS", 512),
         )
 
     @classmethod
-    def from_settings(cls, settings: Any) -> "QwenProvider":
-        """从项目 ``Settings`` 对象创建 Provider，不依赖 Pydantic。"""
+    def from_settings(cls, settings: Any, *, role: str = "copilot") -> "QwenProvider":
+        """从项目 ``Settings`` 创建 Provider。role=copilot|control 共用同一模型。"""
 
+        if role == "control":
+            timeout_seconds = getattr(
+                settings, "resolved_ai_control_timeout_seconds", None
+            ) or getattr(settings, "citypulse_qwen_timeout_seconds")
+            default_max_tokens = getattr(
+                settings, "resolved_ai_control_max_tokens", None
+            ) or getattr(settings, "citypulse_qwen_max_tokens", 512)
+            default_temperature = 0.0
+        else:
+            timeout_seconds = getattr(
+                settings, "resolved_copilot_timeout_seconds", None
+            ) or getattr(settings, "citypulse_qwen_timeout_seconds")
+            default_max_tokens = getattr(
+                settings, "resolved_copilot_max_tokens", None
+            ) or getattr(settings, "citypulse_qwen_max_tokens", 512)
+            default_temperature = getattr(
+                settings, "resolved_copilot_temperature", None
+            ) or getattr(settings, "citypulse_qwen_temperature", 0.2)
         return cls(
-            base_url=getattr(settings, "citypulse_qwen_base_url"),
-            model=getattr(settings, "citypulse_qwen_model"),
-            api_key=getattr(settings, "citypulse_qwen_api_key", None),
-            timeout_seconds=getattr(settings, "citypulse_qwen_timeout_seconds"),
-            default_temperature=getattr(settings, "citypulse_qwen_temperature"),
-            default_max_tokens=getattr(settings, "citypulse_qwen_max_tokens"),
+            base_url=getattr(settings, "llm_base_url", None)
+            or getattr(settings, "citypulse_qwen_base_url"),
+            model=getattr(settings, "llm_model", None)
+            or getattr(settings, "citypulse_qwen_model"),
+            api_key=getattr(settings, "llm_api_key", None)
+            or getattr(settings, "citypulse_qwen_api_key", None),
+            timeout_seconds=timeout_seconds,
+            default_temperature=default_temperature,
+            default_max_tokens=default_max_tokens,
         )
 
     @property
@@ -210,16 +241,17 @@ class QwenProvider:
         tool_choice: str | Mapping[str, Any] | None = "auto",
         temperature: float | None = None,
         max_tokens: int | None = None,
+        extra_body: Mapping[str, Any] | None = None,
+        response_format: Mapping[str, Any] | None = None,
+        timeout_seconds: float | None = None,
     ) -> LLMCompletion:
         if not messages:
             raise LLMInputError("messages must contain at least one message.")
-        # Qwen2.5's Transformers chat template expects the arguments inside a
-        # previous assistant tool call to be a JSON object.  The external
-        # OpenAI-compatible response format returns them as a JSON string, so
-        # normalize that one representation at the provider boundary.
+        # Traffic-Qwen V2 AWQ-vLLM 使用 OpenAI 兼容协议：历史 tool_call.arguments
+        # 必须是 JSON 字符串。旧 Transformers 服务需要 object 的路径已废弃。
         normalized_messages = _messages_payload(
             messages,
-            normalize_tool_call_arguments=True,
+            normalize_tool_call_arguments=False,
         )
         normalized_tools = _tools_payload(tools)
         selected_temperature = (
@@ -245,6 +277,10 @@ class QwenProvider:
             payload["tools"] = normalized_tools
             if tool_choice is not None:
                 payload["tool_choice"] = tool_choice
+        if response_format:
+            payload["response_format"] = dict(response_format)
+        if extra_body:
+            payload.update(dict(extra_body))
 
         headers = {
             "Accept": "application/json",
@@ -259,7 +295,7 @@ class QwenProvider:
                 self.endpoint,
                 payload,
                 headers,
-                self.timeout_seconds,
+                float(timeout_seconds) if timeout_seconds is not None else self.timeout_seconds,
             )
         except LLMError:
             raise
@@ -476,7 +512,15 @@ def _max_tokens(value: Any) -> int:
     return result
 
 
-def _env_float(name: str, default: float) -> float:
+def _env_first(*names: str, default: str = "") -> str:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is not None and raw.strip():
+            return raw.strip()
+    return default
+
+
+def _env_float(name: str, default: float | None) -> float | None:
     raw = os.getenv(name)
     if raw is None or not raw.strip():
         return default
@@ -486,7 +530,7 @@ def _env_float(name: str, default: float) -> float:
         raise LLMInputError(f"{name} must be a number.") from exc
 
 
-def _env_int(name: str, default: int) -> int:
+def _env_int(name: str, default: int | None) -> int | None:
     raw = os.getenv(name)
     if raw is None or not raw.strip():
         return default

@@ -142,3 +142,30 @@ test('keeps one full-width current-simulation export action', () => {
   assert.match(sidebarSource, /gridTemplateColumns: 'minmax\(0, 1fr\)'/)
   assert.doesNotMatch(sidebarSource, /fileActions\.buttonWidth/)
 })
+
+test('decouples Copilot from the AI takeover switch and requires an event selection', () => {
+  const aiPanelSource = readFileSync(
+    new URL('../src/components/dashboard/AiControlPanel.vue', import.meta.url),
+    'utf8',
+  )
+  assert.match(sidebarSource, /请先配置至少一个扰动事件，再开启AI管控/)
+  assert.match(sidebarSource, /开启AI事件接管/)
+  assert.match(sidebarSource, /主要扰动事件/)
+  assert.match(sidebarSource, /主要路口/)
+  assert.match(sidebarSource, /其他扰动仍会正常作用于仿真，但AI仅对本次选择的主要事件进行主动接管/)
+  assert.match(sidebarSource, /:model-value="aiControlEnabled"/)
+  assert.doesNotMatch(sidebarSource, /v-model="aiControlEnabled"/)
+  assert.match(sidebarSource, /selectedAiEventId/)
+  assert.match(sidebarSource, /selectedAiIntersectionId/)
+  assert.match(sidebarSource, /已选AI管控目标已不存在，请重新选择后再开启AI管控/)
+  assert.match(sidebarSource, /clearAiTakeoverSelection/)
+  assert.match(aiPanelSource, /props\.sessionId\.trim\(\) && question\.value\.trim/)
+  assert.doesNotMatch(aiPanelSource, /aiControlEnabled/)
+  assert.doesNotMatch(aiPanelSource, /snapshot\?\.ai_takeover\?\.ai_enabled/)
+  assert.match(aiPanelSource, /请先启动仿真，再向交通 Copilot 提问/)
+  assert.doesNotMatch(overlaySource, /ai_enabled/)
+  assert.doesNotMatch(overlaySource, /aiControlEnabled/)
+  assert.match(bottomIconsSource, /toggleAiControlPanel/)
+  assert.doesNotMatch(bottomIconsSource, /ai_enabled|aiControlEnabled/)
+  assert.match(homeSource, /:session-id="sessionId"/)
+})

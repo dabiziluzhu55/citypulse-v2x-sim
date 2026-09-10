@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
 import pytest
@@ -91,7 +92,7 @@ def test_qwen_provider_normalizes_openai_tool_call_and_request() -> None:
 
     assert captured["endpoint"] == "http://qwen.internal:18000/v1/chat/completions"
     assert captured["payload"]["stream"] is False
-    assert captured["payload"]["model"] == "Qwen/Qwen2.5-7B-Instruct"
+    assert captured["payload"]["model"] == "traffic-qwen-v2"
     assert captured["payload"]["tool_choice"] == "auto"
     assert captured["headers"]["Authorization"] == "Bearer test-key"
     assert completion.message.tool_calls[0].name == "get_current_traffic"
@@ -126,7 +127,7 @@ def test_qwen_provider_normalizes_openai_tool_call_and_request() -> None:
     )
     assert captured["payload"]["messages"][1]["tool_calls"][0]["function"][
         "arguments"
-    ] == {"intersection_id": "demo_1"}
+    ] == '{"intersection_id":"demo_1"}'
 
 
 def test_qwen_provider_reports_transport_and_protocol_errors() -> None:
@@ -411,9 +412,9 @@ def test_orchestrator_can_answer_current_ai_takeover_from_status_tool() -> None:
     )
 
     assert response.answer == "AI 接管当前正在生效。"
-    assert response.tool_calls[0].name == "get_ai_takeover_status"
-    assert response.tool_calls[0].result["data"]["control_active"] is True
-    assert response.tool_calls[0].result["data"]["installed_plan"][
+    status_call = next(call for call in response.tool_calls if call.name == "get_ai_takeover_status")
+    assert status_call.result["data"]["control_active"] is True
+    assert status_call.result["data"]["installed_plan"][
         "target_phase_sequence"
     ]["j1"] == [1, 0, 1, 0, 1, 0]
 
@@ -538,3 +539,48 @@ def test_orchestrator_enforces_tool_call_limit() -> None:
             max_tool_calls=1,
         ).run("计算两个结果")
     assert exc_info.value.code == "COPILOT_TOOL_CALL_LIMIT"
+
+
+def test_copilot_tools_keep_rag_and_remain_read_only() -> None:
+    names = [item["function"]["name"] for item in TOOL_DEFINITIONS]
+    for required in (
+        "search_knowledge",
+        "get_prediction",
+        "get_current_traffic",
+        "get_event_details",
+        "get_network_summary",
+        "get_road_context",
+        "calculator",
+    ):
+        assert required in names
+    for forbidden in ("set_signal", "install_ai_plan", "change_phase", "add_event"):
+        assert forbidden not in names
+
+
+def test_copilot_and_control_providers_share_traffic_qwen_awq() -> None:
+    settings = SimpleNamespace(
+        llm_base_url="http://127.0.0.1:8001/v1",
+        llm_model="traffic-qwen-v2",
+        llm_api_key=None,
+        citypulse_qwen_base_url="http://127.0.0.1:18000/v1",
+        citypulse_qwen_model="Qwen/Qwen2.5-7B-Instruct",
+        citypulse_qwen_api_key=None,
+        resolved_copilot_timeout_seconds=60.0,
+        resolved_ai_control_timeout_seconds=90.0,
+        resolved_copilot_max_tokens=512,
+        resolved_ai_control_max_tokens=768,
+        resolved_copilot_temperature=0.2,
+        citypulse_qwen_timeout_seconds=45.0,
+        citypulse_qwen_max_tokens=256,
+        citypulse_qwen_temperature=0.7,
+    )
+    copilot = QwenProvider.from_settings(settings, role="copilot")
+    control = QwenProvider.from_settings(settings, role="control")
+    assert copilot.base_url == control.base_url == "http://127.0.0.1:8001/v1"
+    assert copilot.model == control.model == "traffic-qwen-v2"
+    assert copilot.timeout_seconds == 60.0
+    assert control.timeout_seconds == 90.0
+    assert copilot.default_max_tokens == 512
+    assert control.default_max_tokens == 768
+    assert copilot.default_temperature == 0.2
+    assert control.default_temperature == 0.0

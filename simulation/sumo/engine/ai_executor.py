@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import replace
 from typing import Callable, Mapping, Sequence
@@ -15,6 +16,8 @@ from .ai_control import (
 )
 from .events import EventSnapshot
 from .signal import SafePhaseController, SignalStage
+
+logger = logging.getLogger(__name__)
 
 
 class AIPlanExecutor:
@@ -100,10 +103,21 @@ class AIPlanExecutor:
             if bool(event.details.get("ai_control_enabled", False))
         ]
         active = [event for event in ai_events if event.state == "ACTIVE"]
-        current = next(
-            (event for event in active if event.event_id == self._event_id),
-            active[0] if active else None,
-        )
+        if len(active) > 1:
+            logger.error(
+                "Multiple ACTIVE AI-control events at t=%s: %s; refusing to arm a new takeover",
+                current_time,
+                [event.event_id for event in active],
+            )
+            current = next(
+                (event for event in active if event.event_id == self._event_id),
+                None,
+            )
+        else:
+            current = next(
+                (event for event in active if event.event_id == self._event_id),
+                active[0] if active else None,
+            )
         changed = False
         if current is not None:
             if (

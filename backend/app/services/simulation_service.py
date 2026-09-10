@@ -36,6 +36,7 @@ from ..scenario.presets import list_scenario_presets, supported_intersection_ids
 from ..scenario.resolver import ResolvedStartSimulation, resolve_start_simulation
 from ..schemas.simulations import StartSimulationRequest
 from .intelligence_runtime import IntelligenceHub
+from .ai_control_validation import ensure_at_most_one_ai_target
 from .history import (
     HistoryRepository,
     HistoryRecorder,
@@ -109,6 +110,7 @@ class SimulationService:
             ),
         )
         self._metrics_threads: dict[str, threading.Thread] = {}
+        self._session_scene: dict[str, dict[str, Any]] = {}
         self._watcher_owners: dict[str, str] = {}
         self._watcher_stop: set[str] = set()
         self._lock = threading.RLock()
@@ -138,7 +140,11 @@ class SimulationService:
         )
 
     def configure_ai_control(self, *, provider=None, retriever=None, topology=None) -> None:
-        """Inject optional Qwen/RAG dependencies after app startup wiring."""
+        """Inject the Traffic-Qwen control provider after app startup wiring.
+
+        ``retriever`` is accepted for call-site compatibility but is not used
+        by AI Control.  Copilot keeps RAG separately.
+        """
 
         self._takeover_orchestrator.configure(
             provider=provider,
@@ -247,6 +253,11 @@ class SimulationService:
         )
         session_id = self._manager.start(config)
         snapshot = self._manager.snapshot(session_id)
+        self._session_scene[session_id] = {
+            "period": resolved.period,
+            "seed": resolved.seed,
+            "preset_id": resolved.scenario_preset_id,
+        }
         self._metadata.upsert(
             session_id,
             control_mode=resolved.control_mode,
@@ -600,12 +611,18 @@ class SimulationService:
                     intelligence = self._intelligence.observe(snapshot)
                     self._history_recorder.record(snapshot, intelligence)
                     meta = self._metadata.get(session_id)
+                    scene = self._session_scene.get(session_id) or {}
                     try:
                         self._takeover_orchestrator.observe(
                             snapshot,
                             intelligence=intelligence,
-                            preset_id=(meta.scenario_preset_id if meta else None),
+                            preset_id=(
+                                scene.get("preset_id")
+                                or (meta.scenario_preset_id if meta else None)
+                            ),
                             baseline_controller=(meta.control_mode if meta else None),
+                            period=scene.get("period"),
+                            seed=scene.get("seed"),
                         )
                     except Exception:
                         logger.exception(
@@ -704,6 +721,7 @@ class SimulationService:
     # ------------------------------------------------------------------
 
     def _validate_ai_control_request(self, request: ResolvedStartSimulation) -> None:
+        ensure_at_most_one_ai_target(request.initial_events)
         ai_events = [
             event
             for event in request.initial_events

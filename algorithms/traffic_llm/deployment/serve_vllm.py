@@ -43,6 +43,9 @@ def build_command(
         "FLASH_ATTN",
         "--disable-log-stats",
         "--no-enable-log-requests",
+        "--enable-auto-tool-choice",
+        "--tool-call-parser",
+        "hermes",
     ]
     if mode == "lora":
         # Base keeps its own served name. API clients must call traffic-qwen-v2

@@ -709,6 +709,10 @@ class SimulationManager:
             for event in config.initial_events
             if bool(getattr(event, "ai_control_enabled", False))
         )
+        if len(ai_events) > 1:
+            raise ScenarioCompilationError(
+                "当前Traffic-Qwen仅支持单一主要扰动事件接管，请只选择一个AI管控目标。"
+            )
         if ai_events and abs(config.decision_interval - config.ai_control.slot_seconds) > 1e-6:
             raise ScenarioCompilationError(
                 "AI control slot_seconds must equal the simulation decision_interval."

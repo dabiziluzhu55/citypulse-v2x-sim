@@ -128,6 +128,9 @@ Merge 后用 merged-vLLM 做结构化回归，通过后再 AWQ：
 
 ## 4. AWQ-vLLM 启动
 
+Copilot 需要 OpenAI tools，因此 AWQ 服务必须打开 auto tool choice。
+AI Control 仍走 Observation V2 + `guided_json`，不依赖 tools。
+
 ```bash
 "${PY}" -m algorithms.traffic_llm.deployment.serve_vllm --mode awq --port 8001
 ```
@@ -146,7 +149,9 @@ Merge 后用 merged-vLLM 做结构化回归，通过后再 AWQ：
   --gpu-memory-utilization 0.85 \
   --attention-backend FLASH_ATTN \
   --disable-log-stats \
-  --no-enable-log-requests
+  --no-enable-log-requests \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes
 ```
 
 ## 5. Benchmark

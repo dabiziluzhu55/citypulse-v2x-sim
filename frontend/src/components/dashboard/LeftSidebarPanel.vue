@@ -80,7 +80,7 @@ import {
   assertSafeLaneClosureEvents,
   laneClosureAvailability,
 } from '../../utils/safeLaneClosures'
-import { applyAiControlToSimulationRequest } from '../../utils/scenarioPayload'
+import { applyAiControlToSimulationRequest, isAiSelectionValid } from '../../utils/scenarioPayload'
 
 const props = defineProps<{
   sessionId: string
@@ -144,6 +144,11 @@ const {
 )
 const feedback = ref<string | null>(null)
 const aiControlEnabled = ref(false)
+const selectedAiEventId = ref<string | null>(null)
+const selectedAiIntersectionId = ref<string | null>(null)
+const aiTakeoverDialogOpen = ref(false)
+const aiTakeoverDraftEventId = ref('')
+const aiTakeoverDraftIntersectionId = ref('')
 const multiplierOpen = ref(false)
 const exporting = ref(false)
 const disturbanceModalOpen = ref(false)
@@ -213,6 +218,22 @@ const isMajorDisturbance = computed(() => (
 
 const isSpeedLimitDisturbance = computed(() => (
   selectedDisturbanceOption.value?.eventType === 'speed_limit'
+))
+
+const aiTakeoverCandidateEvents = computed(() => config.value.disturbance_events)
+const aiTakeoverDraftEvent = computed(() => (
+  aiTakeoverCandidateEvents.value.find((event) => event.event_id === aiTakeoverDraftEventId.value) ?? null
+))
+const aiTakeoverDraftIntersections = computed(() => aiTakeoverDraftEvent.value?.intersection_ids ?? [])
+const canConfirmAiTakeover = computed(() => (
+  Boolean(aiTakeoverDraftEventId.value)
+  && Boolean(aiTakeoverDraftIntersectionId.value)
+  && aiTakeoverDraftIntersections.value.includes(aiTakeoverDraftIntersectionId.value)
+))
+const selectedAiSelection = computed(() => (
+  selectedAiEventId.value && selectedAiIntersectionId.value
+    ? { eventId: selectedAiEventId.value, intersectionId: selectedAiIntersectionId.value }
+    : null
 ))
 
 const availableDisturbanceEventOptions = computed(() => DISTURBANCE_EVENT_OPTIONS.map((option) => ({
@@ -402,6 +423,23 @@ watch(
   },
 )
 
+watch(
+  [
+    () => config.value.disturbance_events,
+    () => config.value.scenario_preset_id,
+    selectedAiEventId,
+    selectedAiIntersectionId,
+    aiControlEnabled,
+  ],
+  () => {
+    if (!aiControlEnabled.value && !selectedAiEventId.value) return
+    if (isAiSelectionValid(config.value.disturbance_events, selectedAiSelection.value)) return
+    clearAiTakeoverSelection()
+    feedback.value = '已选AI管控目标已不存在，请重新选择后再开启AI管控。'
+  },
+  { deep: true },
+)
+
 function fieldModel(key: string): 'scenario_preset_id' | 'flow_mode' {
   if (key === 'scenario') return 'scenario_preset_id'
   return 'flow_mode'
@@ -412,8 +450,25 @@ function applyConfiguration(next: CompactScenarioConfig, onApplied?: () => void)
   onApplied?.()
 }
 
+function clearAiTakeoverSelection(): void {
+  aiControlEnabled.value = false
+  selectedAiEventId.value = null
+  selectedAiIntersectionId.value = null
+  aiTakeoverDialogOpen.value = false
+  aiTakeoverDraftEventId.value = ''
+  aiTakeoverDraftIntersectionId.value = ''
+}
+
+function disturbanceEventTypeLabel(eventType: string): string {
+  return DISTURBANCE_EVENT_OPTIONS.find((item) => item.eventType === eventType)?.label ?? eventType
+}
+
 function withAiControl(payload: StartSimulationRequest): StartSimulationRequest {
-  return applyAiControlToSimulationRequest(payload, aiControlEnabled.value)
+  return applyAiControlToSimulationRequest(
+    payload,
+    aiControlEnabled.value,
+    selectedAiSelection.value,
+  )
 }
 
 function buildCurrentPayload(): StartSimulationRequest {
@@ -422,12 +477,43 @@ function buildCurrentPayload(): StartSimulationRequest {
 
 function handleAiControlChange(enabled: boolean): void {
   if (!enabled) {
+    clearAiTakeoverSelection()
     feedback.value = '已关闭事件级 AI 管控，将继续使用所选基线算法'
     return
   }
-  feedback.value = config.value.disturbance_events.length > 0
-    ? 'AI管控将在仿真启动时应用到全部已配置扰动事件'
-    : '尚未配置扰动事件；仍可启动基线仿真并使用 AI 问答，事件级接管暂不生效'
+  if (config.value.disturbance_events.length === 0) {
+    aiControlEnabled.value = false
+    feedback.value = '请先配置至少一个扰动事件，再开启AI管控。'
+    return
+  }
+  const first = config.value.disturbance_events[0]
+  aiTakeoverDraftEventId.value = first.event_id
+  aiTakeoverDraftIntersectionId.value = first.intersection_ids[0] ?? ''
+  aiTakeoverDialogOpen.value = true
+}
+
+function cancelAiTakeoverDialog(): void {
+  aiTakeoverDialogOpen.value = false
+  clearAiTakeoverSelection()
+  feedback.value = '已取消开启 AI 管控'
+}
+
+function confirmAiTakeoverDialog(): void {
+  if (!canConfirmAiTakeover.value) return
+  selectedAiEventId.value = aiTakeoverDraftEventId.value
+  selectedAiIntersectionId.value = aiTakeoverDraftIntersectionId.value
+  aiControlEnabled.value = true
+  aiTakeoverDialogOpen.value = false
+  feedback.value = `AI管控将接管 ${disturbanceEventTypeLabel(aiTakeoverDraftEvent.value?.event_type ?? '')} / ${formatIntersectionLabel(aiTakeoverDraftIntersectionId.value)}`
+}
+
+function selectAiTakeoverEvent(eventId: string): void {
+  aiTakeoverDraftEventId.value = eventId
+  const event = config.value.disturbance_events.find((item) => item.event_id === eventId)
+  const intersections = event?.intersection_ids ?? []
+  aiTakeoverDraftIntersectionId.value = intersections.includes(aiTakeoverDraftIntersectionId.value)
+    ? aiTakeoverDraftIntersectionId.value
+    : (intersections[0] ?? '')
 }
 
 function requestConfiguration(next: CompactScenarioConfig, onApplied?: () => void): void {
@@ -775,8 +861,9 @@ function handleStart() {
   }
   try {
     const payload = buildCurrentPayload()
-    if (aiControlEnabled.value && payload.disturbance_targets.length === 0) {
-      feedback.value = '未配置扰动事件，已按所选基线算法启动；仿真启动后可正常使用 AI 问答'
+    if (aiControlEnabled.value && !selectedAiSelection.value) {
+      feedback.value = '请先选择本次AI管控的主要扰动事件及主要路口。'
+      return
     }
     emit('start', payload)
   } catch (error) {
@@ -797,6 +884,8 @@ function handleModalKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
   if (runtimeErrorOpen.value) {
     runtimeErrorOpen.value = false
+  } else if (aiTakeoverDialogOpen.value) {
+    cancelAiTakeoverDialog()
   } else if (disturbanceModalOpen.value) {
     closeDisturbanceModal()
   } else {
@@ -890,7 +979,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
           <label class="left-sidebar__ai-control">
             <span>AI管控</span>
             <el-switch
-              v-model="aiControlEnabled"
+              :model-value="aiControlEnabled"
               size="small"
               :disabled="isSessionActive"
               aria-label="是否开启 AI 管控"
@@ -1115,6 +1204,83 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
             <summary>后端原始错误</summary>
             <pre>{{ runtimeRawError }}</pre>
           </details>
+        </section>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="aiTakeoverDialogOpen"
+        class="runtime-error-modal ai-takeover-dialog"
+        role="presentation"
+        @mousedown.self="cancelAiTakeoverDialog"
+      >
+        <section
+          class="runtime-error-modal__dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ai-takeover-title"
+        >
+          <header>
+            <div>
+              <span>开启AI事件接管</span>
+              <h2 id="ai-takeover-title">选择主要扰动事件及主要路口</h2>
+            </div>
+            <button type="button" aria-label="取消开启 AI 管控" title="关闭" @click="cancelAiTakeoverDialog">×</button>
+          </header>
+          <p class="ai-takeover-dialog__lead">
+            一次仅针对一个主要扰动事件进行接管管控。请选择本次AI管控的主要扰动事件及主要路口。
+          </p>
+          <p class="ai-takeover-dialog__note">
+            其他扰动仍会正常作用于仿真，但AI仅对本次选择的主要事件进行主动接管。
+          </p>
+          <fieldset class="ai-takeover-dialog__fieldset">
+            <legend>主要扰动事件</legend>
+            <label
+              v-for="event in aiTakeoverCandidateEvents"
+              :key="event.event_id"
+              class="ai-takeover-dialog__choice"
+            >
+              <input
+                type="radio"
+                name="ai-takeover-event"
+                :value="event.event_id"
+                :checked="aiTakeoverDraftEventId === event.event_id"
+                @change="selectAiTakeoverEvent(event.event_id)"
+              >
+              <span>
+                <strong>{{ disturbanceEventTypeLabel(event.event_type) }}</strong>
+                <em>{{ event.start_time }} – {{ event.end_time }}</em>
+                <small>已配置路口：{{ event.intersection_ids.map(formatIntersectionLabel).join('、') }}</small>
+              </span>
+            </label>
+          </fieldset>
+          <fieldset class="ai-takeover-dialog__fieldset">
+            <legend>主要路口</legend>
+            <label
+              v-for="intersectionId in aiTakeoverDraftIntersections"
+              :key="intersectionId"
+              class="ai-takeover-dialog__choice"
+            >
+              <input
+                type="radio"
+                name="ai-takeover-intersection"
+                :value="intersectionId"
+                :checked="aiTakeoverDraftIntersectionId === intersectionId"
+                @change="aiTakeoverDraftIntersectionId = intersectionId"
+              >
+              <span>{{ formatIntersectionLabel(intersectionId) }}</span>
+            </label>
+          </fieldset>
+          <div class="ai-takeover-dialog__actions">
+            <button type="button" class="ai-takeover-dialog__cancel" @click="cancelAiTakeoverDialog">取消</button>
+            <button
+              type="button"
+              class="ai-takeover-dialog__confirm"
+              :disabled="!canConfirmAiTakeover"
+              @click="confirmAiTakeoverDialog"
+            >确认开启</button>
+          </div>
         </section>
       </div>
     </Teleport>
@@ -1715,6 +1881,69 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
 .runtime-error-modal__dialog pre {
   max-height: 240px; overflow: auto; margin: 10px 0 0; padding: 12px; background: #020b15;
   color: #c8e6f5; font: 11px/1.55 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+.ai-takeover-dialog .runtime-error-modal__dialog {
+  width: min(560px, calc(100vw - 48px));
+}
+.ai-takeover-dialog__lead,
+.ai-takeover-dialog__note {
+  margin: 14px 0 0;
+  color: #c8e6f5;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ai-takeover-dialog__note { color: #8fd9f7; }
+.ai-takeover-dialog__fieldset {
+  margin: 16px 0 0;
+  padding: 12px;
+  border: 1px solid rgba(79,148,199,.25);
+  background: rgba(3,14,29,.55);
+}
+.ai-takeover-dialog__fieldset legend {
+  padding: 0 6px;
+  color: #73cfff;
+  font-size: 12px;
+}
+.ai-takeover-dialog__choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 0 0;
+  cursor: pointer;
+  color: #eaf7ff;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.ai-takeover-dialog__choice input { margin-top: 3px; }
+.ai-takeover-dialog__choice span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.ai-takeover-dialog__choice strong { font-weight: 700; }
+.ai-takeover-dialog__choice em { color: #91cde9; font-style: normal; font-size: 12px; }
+.ai-takeover-dialog__choice small { color: #6d9fbd; font-size: 11px; }
+.ai-takeover-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+.ai-takeover-dialog__cancel,
+.ai-takeover-dialog__confirm {
+  min-width: 88px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(115,207,255,.45);
+  background: #03101f;
+  color: #d9f4ff;
+  cursor: pointer;
+}
+.ai-takeover-dialog__confirm {
+  border-color: rgba(19,206,102,.7);
+  background: #0b3a28;
+  color: #b8ffd9;
+}
+.ai-takeover-dialog__confirm:disabled {
+  opacity: .45;
+  cursor: not-allowed;
 }
 
 .disturbance-modal {

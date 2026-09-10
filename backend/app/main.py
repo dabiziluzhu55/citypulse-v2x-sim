@@ -153,12 +153,21 @@ async def lifespan(app: FastAPI):
     )
 
     copilot_provider = None
+    control_provider = None
     copilot_config_error = None
     try:
-        copilot_provider = QwenProvider.from_settings(settings)
+        copilot_provider = QwenProvider.from_settings(settings, role="copilot")
+        control_provider = QwenProvider.from_settings(settings, role="control")
+        logger.info(
+            "Traffic-Qwen providers ready: model=%s base_url=%s copilot_timeout=%ss control_timeout=%ss",
+            settings.llm_model,
+            settings.llm_base_url,
+            settings.resolved_copilot_timeout_seconds,
+            settings.resolved_ai_control_timeout_seconds,
+        )
     except LLMError as exc:
         copilot_config_error = "Copilot model configuration is invalid."
-        logger.error("Copilot provider configuration failed: code=%s", exc.code)
+        logger.error("Traffic-Qwen provider configuration failed: code=%s", exc.code)
 
     copilot_topology = None
     topology_path = settings.generated_dir / "manifests" / "tls_manifest.json"
@@ -233,8 +242,8 @@ async def lifespan(app: FastAPI):
     app.state.standards_knowledge_retriever = standards_knowledge_retriever
     if simulation_service is not None:
         simulation_service.configure_ai_control(
-            provider=copilot_provider,
-            retriever=knowledge_retriever,
+            provider=control_provider,
+            retriever=None,
             topology=copilot_topology,
         )
         try:

@@ -23,6 +23,7 @@ import { formatIntersectionLabel } from '../src/utils/intersectionLabels.ts'
 import {
   applyAiControlToSimulationRequest,
   buildStartSimulationRequest,
+  isAiSelectionValid,
 } from '../src/utils/scenarioPayload.ts'
 import {
   assertSafeLaneClosureEvents,
@@ -549,8 +550,55 @@ test('uses each configured event time and rejects an event outside the simulatio
   }), /simulation window/)
 })
 
-test('applies event-scoped AI control to every configured disturbance target', () => {
+test('applies AI control to only the selected disturbance target', () => {
   const payload = buildStartSimulationRequest({
+    scenarioPresetId: 'xiongan_20',
+    period: 'morning_peak',
+    windowStartSeconds: 0,
+    durationSeconds: 900,
+    controlMode: 'fixed',
+    playbackSpeed: 1,
+    disturbanceEvents: [
+      {
+        eventId: 'event_accident',
+        eventType: 'accident',
+        intersectionIds: ['demo_1'],
+        startSeconds: 120,
+        endSeconds: 480,
+      },
+      {
+        eventId: 'event_speed',
+        eventType: 'speed_limit',
+        intersectionIds: ['demo_2'],
+        startSeconds: 180,
+        endSeconds: 600,
+        speedLimitKmh: 30,
+      },
+      {
+        eventId: 'event_major',
+        eventType: 'major_event_opening',
+        intersectionIds: ['demo_3'],
+        startSeconds: 200,
+        endSeconds: 700,
+        vehicleCount: 20,
+      },
+    ],
+    snapshotIntervalSeconds: 1,
+  })
+
+  const enabled = applyAiControlToSimulationRequest(payload, true, {
+    eventId: 'event_accident',
+    intersectionId: 'demo_1',
+  })
+  const accident = enabled.disturbance_targets.find((target) => target.event_id === 'event_accident')
+  const speed = enabled.disturbance_targets.find((target) => target.event_id === 'event_speed')
+  const major = enabled.disturbance_targets.find((target) => target.event_id === 'event_major')
+  assert.equal(accident.ai_control_enabled, true)
+  assert.equal(speed.ai_control_enabled, false)
+  assert.equal(major.ai_control_enabled, false)
+  assert.equal(enabled.disturbance_targets.filter((target) => target.ai_control_enabled).length, 1)
+
+  const split = buildStartSimulationRequest({
     scenarioPresetId: 'xiongan_20',
     period: 'morning_peak',
     windowStartSeconds: 0,
@@ -566,10 +614,25 @@ test('applies event-scoped AI control to every configured disturbance target', (
     }],
     snapshotIntervalSeconds: 1,
   })
+  const selected = applyAiControlToSimulationRequest(split, true, {
+    eventId: 'ai-event',
+    intersectionId: 'demo_1',
+  })
+  assert.equal(selected.disturbance_targets.find((target) => target.intersection_id === 'demo_1').ai_control_enabled, true)
+  assert.equal(selected.disturbance_targets.find((target) => target.intersection_id === 'demo_2').ai_control_enabled, false)
 
-  const enabled = applyAiControlToSimulationRequest(payload, true)
-  assert.ok(enabled.disturbance_targets.every((target) => target.ai_control_enabled === true))
-  assert.ok(payload.disturbance_targets.every((target) => !('ai_control_enabled' in target)))
+  const cleared = applyAiControlToSimulationRequest(enabled, false, {
+    eventId: 'event_accident',
+    intersectionId: 'demo_1',
+  })
+  assert.ok(cleared.disturbance_targets.every((target) => target.ai_control_enabled === false))
+  assert.equal(isAiSelectionValid(payload.disturbance_targets.map((target) => ({
+    event_id: 'event_accident',
+    intersection_ids: ['demo_1'],
+  })), { eventId: 'event_accident', intersectionId: 'demo_1' }), true)
+  assert.equal(isAiSelectionValid([
+    { event_id: 'event_accident', intersection_ids: ['demo_2'] },
+  ], { eventId: 'event_accident', intersectionId: 'demo_1' }), false)
 })
 
 test('aggregates multiple warnings per intersection and tracks active/completed state', () => {

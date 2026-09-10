@@ -71,14 +71,24 @@ class Settings(BaseSettings):
     # 已废弃保留兼容旧环境变量NarrowNet推理不再依赖外部STGCN仓库
     stgcn_root: str = ""
 
-    # Traffic Copilot：Qwen 服务只提供模型推理，默认通过本机回环/SSH 隧道访问
-    citypulse_qwen_base_url: str = "http://127.0.0.1:18000/v1"
-    citypulse_qwen_model: str = "Qwen/Qwen2.5-7B-Instruct"
+    # 系统唯一大模型：Traffic-Qwen V2 AWQ-vLLM。Copilot / AI Control 共用
+    # base_url+model，但 timeout / max_tokens / tools / RAG 彼此独立。
+    citypulse_llm_base_url: str = ""
+    citypulse_llm_model: str = ""
+    citypulse_llm_api_key: str | None = None
+    # Deprecated aliases for CITYPULSE_QWEN_*; used only when LLM_* is empty.
+    citypulse_qwen_base_url: str = "http://127.0.0.1:8001/v1"
+    citypulse_qwen_model: str = "traffic-qwen-v2"
     citypulse_qwen_api_key: str | None = None
     citypulse_qwen_timeout_seconds: float = 60.0
     citypulse_qwen_temperature: float = 0.2
     citypulse_qwen_max_tokens: int = 512
-    # AI 控制规划上下文字符上限；避免 Qwen tokenizer 截断最终生成标记
+    citypulse_copilot_timeout_seconds: float | None = None
+    citypulse_ai_control_timeout_seconds: float | None = None
+    citypulse_copilot_max_tokens: int | None = None
+    citypulse_ai_control_max_tokens: int | None = None
+    citypulse_copilot_temperature: float | None = None
+    # AI 控制规划上下文字符上限；Observation V2 路径不再截断知识/预测
     citypulse_qwen_control_context_max_chars: int = 6_000
     copilot_max_rounds: int = 4
     copilot_max_tool_calls: int = 8
@@ -201,6 +211,85 @@ class Settings(BaseSettings):
     @property
     def signals_net_path(self) -> Path:
         return self.generated_dir / "network" / "TotalMap_20.signals.net.xml"
+
+    @staticmethod
+    def _prefer(primary: str | float | int | None, fallback: str | float | int | None, default):
+        if primary not in (None, ""):
+            return primary
+        if fallback not in (None, ""):
+            return fallback
+        return default
+
+    @property
+    def llm_base_url(self) -> str:
+        return str(
+            self._prefer(
+                self.citypulse_llm_base_url,
+                self.citypulse_qwen_base_url,
+                "http://127.0.0.1:8001/v1",
+            )
+        ).rstrip("/")
+
+    @property
+    def llm_model(self) -> str:
+        return str(
+            self._prefer(self.citypulse_llm_model, self.citypulse_qwen_model, "traffic-qwen-v2")
+        )
+
+    @property
+    def llm_api_key(self) -> str | None:
+        key = self.citypulse_llm_api_key or self.citypulse_qwen_api_key
+        return str(key).strip() if key else None
+
+    @property
+    def resolved_copilot_timeout_seconds(self) -> float:
+        return float(
+            self._prefer(
+                self.citypulse_copilot_timeout_seconds,
+                self.citypulse_qwen_timeout_seconds,
+                60.0,
+            )
+        )
+
+    @property
+    def resolved_ai_control_timeout_seconds(self) -> float:
+        return float(
+            self._prefer(
+                self.citypulse_ai_control_timeout_seconds,
+                self.citypulse_qwen_timeout_seconds,
+                90.0,
+            )
+        )
+
+    @property
+    def resolved_copilot_max_tokens(self) -> int:
+        return int(
+            self._prefer(
+                self.citypulse_copilot_max_tokens,
+                self.citypulse_qwen_max_tokens,
+                512,
+            )
+        )
+
+    @property
+    def resolved_ai_control_max_tokens(self) -> int:
+        return int(
+            self._prefer(
+                self.citypulse_ai_control_max_tokens,
+                self.citypulse_qwen_max_tokens,
+                512,
+            )
+        )
+
+    @property
+    def resolved_copilot_temperature(self) -> float:
+        return float(
+            self._prefer(
+                self.citypulse_copilot_temperature,
+                self.citypulse_qwen_temperature,
+                0.2,
+            )
+        )
 
     @property
     def cors_origins(self) -> list[str]:

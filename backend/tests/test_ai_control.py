@@ -19,9 +19,16 @@ from backend.app.core.exceptions import AppError
 from backend.app.services.history import InMemoryHistoryRepository
 from backend.app.services.takeover_orchestrator import (
     TakeoverOrchestrator,
+    TakeoverPlanningError,
     _compact_control_context,
     _decode_control_plan_json,
     _parse_control_plan_content,
+    _replan_signature,
+    _unique_active_ai_event,
+)
+from backend.app.services.ai_control_validation import (
+    MULTIPLE_AI_TARGETS_MESSAGE,
+    ensure_at_most_one_ai_target,
 )
 from backend.app.schemas.events import AccidentRequest
 from backend.app.services.simulation_service import SimulationService
@@ -352,6 +359,43 @@ def test_fixed_replan_keeps_live_ai_controller_instead_of_stale_tracker(monkeypa
     assert executor.plan_expired(32.0)
 
 
+class _BrokenRetriever:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def search(self, request: KnowledgeQuery) -> KnowledgeSearchResponse:
+        self.calls += 1
+        raise RuntimeError("RAG unavailable")
+
+
+def _stub_observation_v2(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.app.services.takeover_orchestrator.build_live_observation_v2",
+        lambda *args, **kwargs: {
+            "observation_version": "traffic_observation_v2",
+            "scene": {
+                "period": "morning_peak",
+                "scope": "xiongan_20",
+                "t": 10.0,
+                "seed": 0,
+            },
+            "event": {"event_type": "accident"},
+            "controlled_region": ["j1"],
+            "ix": {},
+            "net": {"veh": 8, "halt": 4, "speed": 2.0},
+            "allowed_phases": {"j1": [0, 1]},
+        },
+    )
+
+
+def _control_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        ai_control_config=AIControlConfig(),
+        citypulse_qwen_max_tokens=512,
+        resolved_ai_control_max_tokens=512,
+    )
+
+
 class _FakeRetriever:
     def __init__(self) -> None:
         self.requests: list[KnowledgeQuery] = []
@@ -428,15 +472,17 @@ class _FakeManager:
         self.fallbacks.append((session_id, dict(payload)))
 
 
-def test_orchestrator_queries_vector_rag_and_installs_plan() -> None:
+def test_orchestrator_installs_plan_without_rag(monkeypatch) -> None:
+    _stub_observation_v2(monkeypatch)
     event = _active_event()
     snapshot = _snapshot(events=(event,))
     manager = _FakeManager(snapshot)
     settings = SimpleNamespace(
         ai_control_config=AIControlConfig(),
         citypulse_qwen_max_tokens=512,
+        resolved_ai_control_max_tokens=512,
     )
-    retriever = _FakeRetriever()
+    retriever = _BrokenRetriever()
     provider = _FakeProvider()
     topology = RoadTopology(lane_to_intersection={"edge_a_0": "j1"})
     orchestrator = TakeoverOrchestrator(
@@ -451,9 +497,12 @@ def test_orchestrator_queries_vector_rag_and_installs_plan() -> None:
     assert manager.pause_calls == ["session-1"]
     assert manager.resume_calls == ["session-1"]
     assert len(manager.installed) == 1
-    assert retriever.requests[0].profile == "control"
-    assert retriever.requests[0].event_type == "accident"
+    assert retriever.calls == 0
+    user_content = provider.messages[0][0][1]["content"]
+    assert "traffic_observation_v2" in user_content
+    assert "observation_version" in user_content
     assert manager.installed[0][1]["allowed_scope"] == ["j1"]
+    assert manager.installed[0][1]["rag_status"] == "not_required"
 
 
 def test_control_plan_decoder_accepts_known_transport_wrappers() -> None:
@@ -523,7 +572,8 @@ def test_control_context_is_bounded_without_cutting_the_json_object() -> None:
     assert compact["intersections"]["j1"]["allowed_phase_ids"] == [0, 1, 2]
 
 
-def test_orchestrator_retries_invalid_format_once_then_installs_plan() -> None:
+def test_orchestrator_retries_invalid_format_once_then_installs_plan(monkeypatch) -> None:
+    _stub_observation_v2(monkeypatch)
     event = _active_event()
     snapshot = _snapshot(events=(event,))
     manager = _FakeManager(snapshot)
@@ -555,7 +605,8 @@ def test_orchestrator_retries_invalid_format_once_then_installs_plan() -> None:
     assert len(manager.installed) == 1
 
 
-def test_orchestrator_falls_back_after_two_invalid_control_plan_outputs() -> None:
+def test_orchestrator_falls_back_after_two_invalid_control_plan_outputs(monkeypatch) -> None:
+    _stub_observation_v2(monkeypatch)
     event = _active_event()
     snapshot = _snapshot(events=(event,))
     manager = _FakeManager(snapshot)
@@ -694,3 +745,181 @@ def test_runtime_ai_event_is_rejected_until_next_session_start(
         simulation_service.add_event("session-1", request)
 
     assert getattr(error.value, "code", None) == "AI_EVENT_MUST_BE_CONFIGURED_AT_START"
+
+
+def _prediction_payload(*, ready: bool, fallback: bool, ratio: float) -> dict:
+    return {
+        "event_detection": {},
+        "prediction": {
+            "ready": ready,
+            "fallback": fallback,
+            "intersections": {"j1": {"delta_ratio": ratio}},
+        },
+    }
+
+
+def test_zero_or_one_ai_target_is_legal_two_are_rejected() -> None:
+    none_enabled = SimpleNamespace(ai_control_enabled=False, details={})
+    one_enabled = SimpleNamespace(ai_control_enabled=True, details={})
+    ensure_at_most_one_ai_target([])
+    ensure_at_most_one_ai_target([none_enabled, none_enabled])
+    ensure_at_most_one_ai_target([one_enabled])
+    with pytest.raises(AppError) as error:
+        ensure_at_most_one_ai_target([one_enabled, one_enabled])
+    assert error.value.status_code == 422
+    assert error.value.code == "MULTIPLE_AI_CONTROL_TARGETS"
+    assert error.value.message == MULTIPLE_AI_TARGETS_MESSAGE
+
+
+def test_simulation_service_rejects_multiple_ai_targets_at_start() -> None:
+    service = SimulationService.__new__(SimulationService)
+    service._settings = SimpleNamespace(ai_control_config=AIControlConfig())
+    ai_event = SimpleNamespace(
+        event_id="event-1",
+        ai_control_enabled=True,
+        start_seconds=0.0,
+        end_seconds=40.0,
+    )
+    request = SimpleNamespace(
+        initial_events=(ai_event, SimpleNamespace(
+            event_id="event-2",
+            ai_control_enabled=True,
+            start_seconds=50.0,
+            end_seconds=80.0,
+        )),
+        duration_seconds=120.0,
+    )
+    with pytest.raises(AppError) as error:
+        service._validate_ai_control_request(request)
+    assert error.value.code == "MULTIPLE_AI_CONTROL_TARGETS"
+
+    legal = SimpleNamespace(initial_events=(ai_event,), duration_seconds=120.0)
+    service._validate_ai_control_request(legal)
+    empty = SimpleNamespace(initial_events=(), duration_seconds=120.0)
+    service._validate_ai_control_request(empty)
+
+
+def test_unique_active_ai_event_refuses_to_pick_the_first() -> None:
+    with pytest.raises(TakeoverPlanningError, match="multiple ACTIVE"):
+        _unique_active_ai_event((_active_event("event-a"), _active_event("event-b")))
+    assert _unique_active_ai_event((_active_event(),)).event_id == "event-1"
+    assert _unique_active_ai_event(()) is None
+
+
+def test_orchestrator_does_not_plan_when_multiple_active_ai_events(monkeypatch) -> None:
+    _stub_observation_v2(monkeypatch)
+    snapshot = _snapshot(events=(_active_event("event-a"), _active_event("event-b")))
+    manager = _FakeManager(snapshot)
+    provider = _FakeProvider()
+    orchestrator = TakeoverOrchestrator(
+        manager=manager,
+        settings=_control_settings(),
+        history_repository=InMemoryHistoryRepository(),
+    )
+    orchestrator.configure(
+        provider=provider,
+        topology=RoadTopology(lane_to_intersection={"edge_a_0": "j1"}),
+    )
+
+    orchestrator.observe(snapshot, intelligence={"event_detection": {}})
+    orchestrator.observe(snapshot, intelligence={"event_detection": {}})
+
+    assert provider.messages == []
+    assert manager.installed == []
+    assert len(manager.fallbacks) == 1
+    assert "multiple ACTIVE" in manager.fallbacks[0][1]["reason"]
+    assert manager.fallbacks[0][1]["rag_status"] == "not_required"
+
+
+def test_executor_does_not_silently_arm_the_first_of_multiple_ai_events() -> None:
+    controller = SafePhaseController(
+        [0, 1],
+        {0: (1.0, 1.0), 1: (1.0, 1.0)},
+        minimum_green=0.0,
+    )
+    executor = AIPlanExecutor(
+        traci=None,
+        selected_manifest={"j1": {}},
+        controllers={"j1": controller},
+        baseline_mode="fixed",
+    )
+    changed = executor.observe_events(
+        (_active_event("event-a"), _active_event("event-b")),
+        0.0,
+    )
+    assert changed is False
+    assert executor.status.state == "INACTIVE"
+    assert executor.status.active_event_id is None
+
+
+def test_narrow_tdp_bucket_change_requests_early_replan(monkeypatch) -> None:
+    _stub_observation_v2(monkeypatch)
+    event = _active_event()
+    snapshot = _snapshot(events=(event,))
+    manager = _FakeManager(snapshot)
+    provider = _FakeProvider()
+    orchestrator = TakeoverOrchestrator(
+        manager=manager,
+        settings=_control_settings(),
+        history_repository=InMemoryHistoryRepository(),
+    )
+    orchestrator.configure(
+        provider=provider,
+        topology=RoadTopology(lane_to_intersection={"edge_a_0": "j1"}),
+    )
+
+    orchestrator.observe(snapshot, intelligence=_prediction_payload(ready=True, fallback=False, ratio=0.0))
+    assert len(manager.installed) == 1
+
+    active = replace(
+        snapshot,
+        elapsed_seconds=12.0,
+        ai_takeover=AIControlStatus(
+            state="ACTIVE",
+            ai_enabled=True,
+            active_event_id=event.event_id,
+            plan_valid_until=40.0,
+            plan_sequence=1,
+        ),
+    )
+    manager.current = active
+    orchestrator.observe(active, intelligence=_prediction_payload(ready=True, fallback=False, ratio=0.05))
+    assert len(manager.installed) == 1
+
+    orchestrator.observe(active, intelligence=_prediction_payload(ready=True, fallback=False, ratio=0.35))
+    assert len(manager.installed) == 2
+
+    orchestrator.observe(
+        replace(active, elapsed_seconds=14.0, ai_takeover=replace(active.ai_takeover, plan_sequence=2, plan_valid_until=44.0)),
+        intelligence=_prediction_payload(ready=False, fallback=True, ratio=0.9),
+    )
+    assert len(manager.installed) == 2
+
+
+def test_replan_signature_ignores_fallback_and_unusable_prediction() -> None:
+    event = _active_event()
+    first = _replan_signature(event, _prediction_payload(ready=True, fallback=False, ratio=0.0), allowed_scope=("j1",))
+    second = _replan_signature(
+        event,
+        _prediction_payload(ready=True, fallback=False, ratio=0.4),
+        allowed_scope=("j1",),
+        last_prediction_token=first[1],
+    )
+    fallback = _replan_signature(
+        event,
+        _prediction_payload(ready=True, fallback=True, ratio=0.9),
+        allowed_scope=("j1",),
+        last_prediction_token=second[1],
+    )
+    unavailable = _replan_signature(
+        event,
+        {"prediction": {"ready": False, "fallback": False}},
+        allowed_scope=("j1",),
+        last_prediction_token=second[1],
+    )
+    assert first[2] is False
+    assert second[2] is True
+    assert fallback[2] is False
+    assert unavailable[2] is False
+    assert fallback[1] == second[1]
+    assert unavailable[1] == second[1]

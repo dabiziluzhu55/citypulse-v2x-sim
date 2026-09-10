@@ -41,15 +41,46 @@ export interface ScenarioDisturbanceInput {
   speedLimitKmh?: number
 }
 
+export interface AiControlSelection {
+  eventId: string
+  intersectionId: string
+}
+
+export function matchesAiControlTarget(
+  target: Pick<DisturbanceTargetPayload, 'event_id' | 'intersection_id'>,
+  selection: AiControlSelection,
+): boolean {
+  if (target.intersection_id !== selection.intersectionId) return false
+  const eventId = target.event_id ?? ''
+  return (
+    eventId === selection.eventId
+    || eventId.startsWith(`${selection.eventId}_${selection.intersectionId}_`)
+  )
+}
+
+export function isAiSelectionValid(
+  events: Array<{ event_id: string; intersection_ids: string[] }>,
+  selection: AiControlSelection | null | undefined,
+): boolean {
+  if (!selection) return false
+  const event = events.find((item) => item.event_id === selection.eventId)
+  return Boolean(event?.intersection_ids.includes(selection.intersectionId))
+}
+
 export function applyAiControlToSimulationRequest(
   payload: StartSimulationRequest,
   enabled: boolean,
+  selection?: AiControlSelection | null,
 ): StartSimulationRequest {
   return {
     ...payload,
     disturbance_targets: payload.disturbance_targets.map((target) => ({
       ...target,
-      ai_control_enabled: enabled,
+      ai_control_enabled: Boolean(
+        enabled
+        && selection
+        && matchesAiControlTarget(target, selection),
+      ),
     })),
   }
 }
