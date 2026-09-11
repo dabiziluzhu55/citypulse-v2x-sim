@@ -654,6 +654,8 @@ async function handleStop() {
   padding: 0;
   place-items: stretch;
   background: transparent;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .ai-control-overlay__panel {
@@ -662,6 +664,7 @@ async function handleStop() {
   height: 100%;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   pointer-events: none;
 }
 

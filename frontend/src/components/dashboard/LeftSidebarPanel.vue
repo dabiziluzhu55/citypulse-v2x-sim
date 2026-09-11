@@ -1211,67 +1211,65 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
     <Teleport to="body">
       <div
         v-if="aiTakeoverDialogOpen"
-        class="runtime-error-modal ai-takeover-dialog"
+        class="ai-takeover-dialog"
         role="presentation"
         @mousedown.self="cancelAiTakeoverDialog"
       >
         <section
-          class="runtime-error-modal__dialog"
+          class="ai-takeover-dialog__panel"
           role="dialog"
           aria-modal="true"
           aria-labelledby="ai-takeover-title"
         >
-          <header>
-            <div>
-              <span>开启AI事件接管</span>
-              <h2 id="ai-takeover-title">选择主要扰动事件及主要路口</h2>
-            </div>
+          <header class="ai-takeover-dialog__header">
+            <h2 id="ai-takeover-title">选择主要扰动事件及主要路口</h2>
             <button type="button" aria-label="取消开启 AI 管控" title="关闭" @click="cancelAiTakeoverDialog">×</button>
           </header>
-          <p class="ai-takeover-dialog__lead">
-            一次仅针对一个主要扰动事件进行接管管控。请选择本次AI管控的主要扰动事件及主要路口。
+          <p class="ai-takeover-dialog__hint">
+            AI管控仅针对一个扰动事件进行管控，请选择管控事件和路口
           </p>
-          <p class="ai-takeover-dialog__note">
-            其他扰动仍会正常作用于仿真，但AI仅对本次选择的主要事件进行主动接管。
-          </p>
-          <fieldset class="ai-takeover-dialog__fieldset">
-            <legend>主要扰动事件</legend>
-            <label
-              v-for="event in aiTakeoverCandidateEvents"
-              :key="event.event_id"
-              class="ai-takeover-dialog__choice"
-            >
-              <input
-                type="radio"
-                name="ai-takeover-event"
-                :value="event.event_id"
-                :checked="aiTakeoverDraftEventId === event.event_id"
-                @change="selectAiTakeoverEvent(event.event_id)"
+          <div class="ai-takeover-dialog__body">
+            <fieldset class="ai-takeover-dialog__fieldset">
+              <legend>主要扰动事件</legend>
+              <label
+                v-for="event in aiTakeoverCandidateEvents"
+                :key="event.event_id"
+                class="ai-takeover-dialog__choice"
+                :class="{ 'is-selected': aiTakeoverDraftEventId === event.event_id }"
               >
-              <span>
-                <strong>{{ disturbanceEventTypeLabel(event.event_type) }}</strong>
-                <em>{{ event.start_time }} – {{ event.end_time }}</em>
-                <small>已配置路口：{{ event.intersection_ids.map(formatIntersectionLabel).join('、') }}</small>
-              </span>
-            </label>
-          </fieldset>
-          <fieldset class="ai-takeover-dialog__fieldset">
-            <legend>主要路口</legend>
-            <label
-              v-for="intersectionId in aiTakeoverDraftIntersections"
-              :key="intersectionId"
-              class="ai-takeover-dialog__choice"
-            >
-              <input
-                type="radio"
-                name="ai-takeover-intersection"
-                :value="intersectionId"
-                :checked="aiTakeoverDraftIntersectionId === intersectionId"
-                @change="aiTakeoverDraftIntersectionId = intersectionId"
+                <input
+                  type="radio"
+                  name="ai-takeover-event"
+                  :value="event.event_id"
+                  :checked="aiTakeoverDraftEventId === event.event_id"
+                  @change="selectAiTakeoverEvent(event.event_id)"
+                >
+                <span>
+                  <strong>{{ disturbanceEventTypeLabel(event.event_type) }}</strong>
+                  <em>{{ event.start_time }} – {{ event.end_time }}</em>
+                  <small>已配置路口：{{ event.intersection_ids.map(formatIntersectionLabel).join('、') }}</small>
+                </span>
+              </label>
+            </fieldset>
+            <fieldset class="ai-takeover-dialog__fieldset">
+              <legend>主要路口</legend>
+              <label
+                v-for="intersectionId in aiTakeoverDraftIntersections"
+                :key="intersectionId"
+                class="ai-takeover-dialog__choice"
+                :class="{ 'is-selected': aiTakeoverDraftIntersectionId === intersectionId }"
               >
-              <span>{{ formatIntersectionLabel(intersectionId) }}</span>
-            </label>
-          </fieldset>
+                <input
+                  type="radio"
+                  name="ai-takeover-intersection"
+                  :value="intersectionId"
+                  :checked="aiTakeoverDraftIntersectionId === intersectionId"
+                  @change="aiTakeoverDraftIntersectionId = intersectionId"
+                >
+                <span>{{ formatIntersectionLabel(intersectionId) }}</span>
+              </label>
+            </fieldset>
+          </div>
           <div class="ai-takeover-dialog__actions">
             <button type="button" class="ai-takeover-dialog__cancel" @click="cancelAiTakeoverDialog">取消</button>
             <button
@@ -1883,26 +1881,136 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
   color: #c8e6f5; font: 11px/1.55 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 
-.ai-takeover-dialog .runtime-error-modal__dialog {
+.ai-takeover-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 3200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 8, 20, .72);
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
+.ai-takeover-dialog__panel {
+  display: flex;
+  flex-direction: column;
   width: min(560px, calc(100vw - 48px));
+  max-height: min(640px, calc(100vh - 48px));
+  overflow: hidden;
+  padding: 22px 24px 18px;
+  border: 1px solid rgba(49, 173, 255, .72);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  background: linear-gradient(180deg, #06294d 0%, #03172d 100%);
+  box-shadow:
+    0 18px 60px rgba(0, 0, 0, .52),
+    0 0 28px rgba(33, 230, 255, .16),
+    inset 0 0 36px rgba(39, 131, 214, .14);
+  color: #eaf7ff;
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
-.ai-takeover-dialog__lead,
-.ai-takeover-dialog__note {
-  margin: 14px 0 0;
-  color: #c8e6f5;
+.ai-takeover-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ai-takeover-dialog__header h2 {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 1.3;
+}
+.ai-takeover-dialog__header h2::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 3px;
+  height: 18px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, #21e6ff 0%, #f0ca70 100%);
+  box-shadow: 0 0 8px rgba(33, 230, 255, .55);
+}
+.ai-takeover-dialog__header > button {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(49, 173, 255, .62);
+  border-radius: 50%;
+  background: rgba(3, 23, 45, .88);
+  color: #d9f4ff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(33, 230, 255, .18);
+}
+.ai-takeover-dialog__header > button:hover,
+.ai-takeover-dialog__header > button:focus-visible {
+  border-color: #52c2fa;
+  background: rgba(8, 52, 96, .9);
+  box-shadow: 0 0 12px rgba(33, 230, 255, .5);
+  outline: none;
+}
+.ai-takeover-dialog__hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  color: #f0ca70;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.55;
 }
-.ai-takeover-dialog__note { color: #8fd9f7; }
+.ai-takeover-dialog__hint::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-top: 6px;
+  background: #f0ca70;
+  box-shadow: 0 0 6px rgba(240, 202, 112, .7);
+  transform: rotate(45deg);
+}
+.ai-takeover-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 14px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: #31adff rgba(3, 23, 45, .35);
+}
+.ai-takeover-dialog__body::-webkit-scrollbar {
+  width: 6px;
+}
+.ai-takeover-dialog__body::-webkit-scrollbar-track {
+  background: rgba(3, 23, 45, .35);
+  border-radius: 999px;
+}
+.ai-takeover-dialog__body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: linear-gradient(180deg, #52c2fa 0%, #21e6ff 100%);
+  box-shadow: 0 0 8px rgba(33, 230, 255, .45);
+}
+.ai-takeover-dialog__body::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #7ad4ff 0%, #52c2fa 100%);
+}
 .ai-takeover-dialog__fieldset {
-  margin: 16px 0 0;
+  margin: 0 0 12px;
   padding: 12px;
-  border: 1px solid rgba(79,148,199,.25);
-  background: rgba(3,14,29,.55);
+  border: 1px solid rgba(49, 173, 255, .38);
+  background: rgba(3, 23, 45, .55);
 }
+.ai-takeover-dialog__fieldset:last-child { margin-bottom: 0; }
 .ai-takeover-dialog__fieldset legend {
   padding: 0 6px;
-  color: #73cfff;
+  color: #52c2fa;
   font-size: 12px;
 }
 .ai-takeover-dialog__choice {
@@ -1910,39 +2018,95 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleModalKeydown))
   align-items: flex-start;
   gap: 10px;
   margin: 8px 0 0;
-  cursor: pointer;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  background: transparent;
   color: #eaf7ff;
   font-size: 13px;
   line-height: 1.45;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease;
 }
-.ai-takeover-dialog__choice input { margin-top: 3px; }
+.ai-takeover-dialog__choice:hover {
+  background: rgba(49, 173, 255, .12);
+}
+.ai-takeover-dialog__choice.is-selected {
+  border-color: rgba(240, 202, 112, .72);
+  background: rgba(3, 23, 45, .92);
+  box-shadow: inset 0 0 12px rgba(240, 202, 112, .08);
+}
+.ai-takeover-dialog__choice input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 3px 0 0;
+  border: 1px solid #31adff;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(3, 23, 45, .8);
+  cursor: pointer;
+}
+.ai-takeover-dialog__choice input:checked {
+  border-color: #f0ca70;
+  box-shadow: 0 0 8px rgba(240, 202, 112, .55);
+}
+.ai-takeover-dialog__choice input:checked::after {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 6px;
+  margin: 3px auto;
+  border-radius: 50%;
+  background: #ffe09a;
+  box-shadow: 0 0 6px rgba(255, 224, 154, .8);
+}
 .ai-takeover-dialog__choice span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
-.ai-takeover-dialog__choice strong { font-weight: 700; }
-.ai-takeover-dialog__choice em { color: #91cde9; font-style: normal; font-size: 12px; }
-.ai-takeover-dialog__choice small { color: #6d9fbd; font-size: 11px; }
+.ai-takeover-dialog__choice strong { color: #ffffff; font-weight: 700; }
+.ai-takeover-dialog__choice em { color: #9ad8ff; font-style: normal; font-size: 12px; }
+.ai-takeover-dialog__choice small { color: #7a94a8; font-size: 11px; }
 .ai-takeover-dialog__actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 18px;
+  margin-top: 16px;
 }
 .ai-takeover-dialog__cancel,
 .ai-takeover-dialog__confirm {
   min-width: 88px;
   height: 34px;
   padding: 0 14px;
-  border: 1px solid rgba(115,207,255,.45);
-  background: #03101f;
-  color: #d9f4ff;
   cursor: pointer;
+  font-size: 13px;
+}
+.ai-takeover-dialog__cancel {
+  border: 1px solid rgba(49, 173, 255, .55);
+  background: #03172d;
+  color: #9ad8ff;
+}
+.ai-takeover-dialog__cancel:hover,
+.ai-takeover-dialog__cancel:focus-visible {
+  border-color: #52c2fa;
+  background: rgba(6, 41, 77, .92);
+  outline: none;
 }
 .ai-takeover-dialog__confirm {
-  border-color: rgba(19,206,102,.7);
-  background: #0b3a28;
-  color: #b8ffd9;
+  border: 1px solid rgba(240, 202, 112, .75);
+  background: rgba(119, 82, 15, .15);
+  color: #ffe09a;
+  box-shadow: inset 0 0 10px rgba(240, 202, 112, .16);
+}
+.ai-takeover-dialog__confirm:hover:not(:disabled),
+.ai-takeover-dialog__confirm:focus-visible:not(:disabled) {
+  border-color: #ffe09a;
+  background: linear-gradient(180deg, rgba(240, 202, 112, .22), rgba(119, 82, 15, .18));
+  box-shadow: 0 0 16px rgba(240, 202, 112, .35), inset 0 0 12px rgba(240, 202, 112, .12);
+  outline: none;
 }
 .ai-takeover-dialog__confirm:disabled {
-  opacity: .45;
+  opacity: .42;
+  box-shadow: none;
   cursor: not-allowed;
 }
 

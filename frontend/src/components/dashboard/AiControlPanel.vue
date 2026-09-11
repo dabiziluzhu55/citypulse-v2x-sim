@@ -3,12 +3,18 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { chatWithCopilot } from '../../api/copilot'
 import { simulationApiErrorMessage } from '../../api/client'
+import {
+  CITYPULSE_QWEN_BENCHMARK_METRICS,
+} from '../../constants/citypulseQwenBenchmark'
 import type { CopilotHistoryMessage } from '../../types/copilot'
 import type { AIControlStatus } from '../../types/simulation'
 import {
   formatIntersectionLabel,
   formatIntersectionReferences,
 } from '../../utils/intersectionLabels'
+import borderSvg from '../../assets/design/dashboard/border.svg?url'
+import improveIconSvg from '../../assets/design/dashboard/improve_icon.svg?url'
+import baseSvg from '../../assets/design/dashboard/base.svg?url'
 import AiOutlineIcon from './AiOutlineIcon.vue'
 
 const props = withDefaults(defineProps<{
@@ -55,22 +61,61 @@ const welcomeBody = computed(() => {
   }
   return '我可以帮您查询交通状态、分析拥堵原因或提供管控建议。'
 })
-const identitySubtitle = computed(() => (
-  hasSession.value
-    ? '可查询实时仿真交通，并进行交通知识问答'
-    : '可进行交通知识问答；启动仿真后可查询实时交通状态'
-))
+const identitySubtitle = '交通知识问答 · 态势分析 · AI事件管控'
 const thinkingLabel = computed(() => (
   hasSession.value ? '正在分析当前仿真交通状态……' : '正在思考……'
 ))
+const benchmarkMetrics = CITYPULSE_QWEN_BENCHMARK_METRICS
+
+type StatusTone = 'idle' | 'planning' | 'executing' | 'failed'
+
+const statusTone = computed<StatusTone>(() => {
+  const status = props.aiTakeover
+  if (status?.last_error) return 'failed'
+  if (!status?.ai_enabled) return 'idle'
+  if (status.state === 'ACTIVE') return 'executing'
+  if (status.state === 'ARMED' || status.state === 'RECOVERY' || status.state === 'FALLBACK') {
+    return 'planning'
+  }
+  return 'idle'
+})
 
 const takeoverLabel = computed(() => {
   const status = props.aiTakeover
-  if (!status?.ai_enabled) return 'AI接管未启用'
-  if (status.state === 'ACTIVE') return 'AI接管执行中'
-  if (status.state === 'RECOVERY') return 'AI接管恢复中'
+  if (status?.last_error) return 'AI接管失败'
+  if (!status?.ai_enabled) return 'AI管控未开启'
+  if (status.state === 'ACTIVE') return 'AI接管中'
+  if (status.state === 'ARMED') return 'AI规划中'
+  if (status.state === 'RECOVERY' || status.state === 'FALLBACK') return 'AI恢复中'
   return `AI接管：${status.state}`
 })
+
+const statusTarget = computed(() => {
+  const status = props.aiTakeover
+  if (!status?.ai_enabled) return ''
+  const eventLabel = formatIntersectionReferences(
+    props.activeEventLabel || props.activeEventId || '',
+  ).trim()
+  const intersectionLabel = status.controlled_intersections[0]
+    ? formatIntersectionLabel(status.controlled_intersections[0])
+    : ''
+  return [eventLabel, intersectionLabel].filter(Boolean).join(' · ')
+})
+
+const statusMeta = computed(() => {
+  const status = props.aiTakeover
+  if (!status?.ai_enabled) return ''
+  const parts: string[] = []
+  if (status.plan_sequence > 0) parts.push(`第${status.plan_sequence}轮规划`)
+  if (status.controlled_intersections.length > 0) {
+    parts.push(`受控${status.controlled_intersections.length}个路口`)
+  }
+  return parts.join(' · ')
+})
+
+function formatBenchmarkPercent(value: number): string {
+  return `${value.toFixed(1)}%`
+}
 
 function messageTime(): string {
   return new Intl.DateTimeFormat('zh-CN', {
@@ -172,20 +217,57 @@ onBeforeUnmount(() => requestController?.abort())
       </button>
     </header>
 
-    <div class="ai-control-panel__runtime-status" :class="{ 'is-active': aiTakeover?.ai_enabled }">
-      <i aria-hidden="true" />
-      <span>{{ takeoverLabel }}</span>
-      <span v-if="aiTakeover?.baseline_controller">基线：{{ aiTakeover.baseline_controller }}</span>
-      <span v-if="aiTakeover?.plan_sequence">规划轮次：{{ aiTakeover.plan_sequence }}</span>
-      <span v-if="aiTakeover?.controlled_intersections.length">
-        受控路口：{{ aiTakeover.controlled_intersections.map(formatIntersectionLabel).join('、') }}
-      </span>
-      <span v-if="aiTakeover?.last_objective">控制目标：{{ formatIntersectionReferences(aiTakeover.last_objective) }}</span>
-      <span v-if="aiTakeover?.last_reason">规划依据：{{ formatIntersectionReferences(aiTakeover.last_reason) }}</span>
-      <span v-if="aiTakeover?.rag_status">知识库：{{ aiTakeover.rag_status }}</span>
-      <span v-if="activeEventId" class="ai-control-panel__active-event">
-        当前事件：{{ formatIntersectionReferences(activeEventLabel || activeEventId) }}
-      </span>
+    <div class="ai-control-panel__meta">
+      <div class="ai-control-panel__runtime-status" :class="`is-${statusTone}`">
+        <i aria-hidden="true" />
+        <div class="ai-control-panel__status-copy">
+          <strong>{{ takeoverLabel }}<template v-if="statusTarget"> · {{ statusTarget }}</template></strong>
+          <span v-if="statusMeta">{{ statusMeta }}</span>
+        </div>
+      </div>
+
+      <section class="ai-control-panel__effect" aria-label="AI管控效能，模型验证结果，相对固定配时">
+        <div class="ai-control-panel__effect-heading">
+          <h3>AI管控效能</h3>
+          <span>模型验证 · 相对固定配时</span>
+        </div>
+        <div class="ai-control-panel__effect-grid">
+          <article
+            v-for="item in benchmarkMetrics"
+            :key="item.key"
+            class="ai-control-panel__effect-card"
+          >
+            <img
+              :src="borderSvg"
+              class="ai-control-panel__effect-frame"
+              alt=""
+              aria-hidden="true"
+              draggable="false"
+            >
+            <div class="ai-control-panel__effect-content">
+              <img
+                :src="improveIconSvg"
+                class="ai-control-panel__effect-icon"
+                alt=""
+                aria-hidden="true"
+                draggable="false"
+              >
+              <span class="ai-control-panel__effect-label">{{ item.label }}</span>
+              <strong class="ai-control-panel__effect-value">
+                <em>{{ item.direction === 'up' ? '↑' : '↓' }}</em>
+                <span>{{ formatBenchmarkPercent(item.value) }}</span>
+              </strong>
+            </div>
+          </article>
+        </div>
+        <img
+          :src="baseSvg"
+          class="ai-control-panel__effect-base"
+          alt=""
+          aria-hidden="true"
+          draggable="false"
+        >
+      </section>
     </div>
 
     <div ref="conversationRef" class="ai-control-panel__conversation" aria-live="polite">
@@ -266,6 +348,7 @@ onBeforeUnmount(() => requestController?.abort())
   color: #edf8ff;
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
   overflow: hidden;
+  overflow-x: hidden;
   border: 1px solid rgba(82, 194, 250, .42);
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(8, 48, 94, .70), rgba(3, 29, 66, .70));
@@ -276,7 +359,13 @@ onBeforeUnmount(() => requestController?.abort())
   pointer-events: none;
 }
 
-.ai-control-panel__header { display: flex; align-items: center; gap: 12px; padding: 4px 8px 12px; }
+.ai-control-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 65px;
+  padding: 17px 16px 11px;
+}
 .ai-control-panel__avatar,
 .ai-control-panel__message-avatar {
   display: grid;
@@ -315,30 +404,212 @@ onBeforeUnmount(() => requestController?.abort())
 .ai-control-panel__close:hover,
 .ai-control-panel__close:focus-visible { border-color: #62d8ff; background: rgba(12,61,103,.58); box-shadow: 0 0 12px rgba(33,230,255,.5); outline: none; }
 
+.ai-control-panel__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0 14px 8px;
+}
+
 .ai-control-panel__runtime-status {
   display: flex;
-  flex-wrap: wrap;
   align-items: flex-start;
-  align-content: flex-start;
-  gap: 4px 10px;
+  gap: 8px;
   box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 28px;
-  padding: 0 14px 8px 56px;
+  min-height: 32px;
+  max-height: 40px;
+  padding: 2px 4px 6px 6px;
   overflow: hidden;
-  color: rgba(158,200,220,.76);
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: normal;
+  color: #8aa4b6;
+  font-size: 12px;
+  line-height: 1.35;
   text-shadow: 0 1px 4px rgba(0,0,0,.86);
 }
-.ai-control-panel__runtime-status > span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
-.ai-control-panel__runtime-status i { flex: 0 0 auto; width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: #607d8b; box-shadow: 0 0 7px rgba(96,125,139,.65); }
-.ai-control-panel__runtime-status.is-active { color: #75f2b1; }
-.ai-control-panel__runtime-status.is-active i { background: #13ce66; box-shadow: 0 0 9px rgba(19,206,102,.8); }
-.ai-control-panel__active-event { margin-left: 0; max-width: 100%; color: #8fd9f7; white-space: normal; overflow-wrap: anywhere; }
+.ai-control-panel__runtime-status i {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: #6d8494;
+  box-shadow: 0 0 7px rgba(109, 132, 148, .65);
+}
+.ai-control-panel__status-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.ai-control-panel__status-copy strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-control-panel__status-copy span {
+  overflow: hidden;
+  color: rgba(154, 216, 255, .78);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-control-panel__runtime-status.is-planning { color: #f0ca70; }
+.ai-control-panel__runtime-status.is-planning i {
+  background: #f0ca70;
+  box-shadow: 0 0 9px rgba(240, 202, 112, .8);
+}
+.ai-control-panel__runtime-status.is-executing { color: #52c2fa; }
+.ai-control-panel__runtime-status.is-executing i {
+  background: #21e6ff;
+  box-shadow: 0 0 9px rgba(33, 230, 255, .8);
+}
+.ai-control-panel__runtime-status.is-failed { color: #ff8a8a; }
+.ai-control-panel__runtime-status.is-failed i {
+  background: #ff5b64;
+  box-shadow: 0 0 9px rgba(255, 91, 100, .75);
+}
+
+.ai-control-panel__effect {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 110px;
+  overflow: hidden;
+}
+.ai-control-panel__effect-heading {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+.ai-control-panel__effect-heading h3 {
+  margin: 0;
+  color: #eef8ff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-shadow: 0 1px 4px rgba(0,0,0,.86);
+}
+.ai-control-panel__effect-heading span {
+  overflow: hidden;
+  color: rgba(154, 216, 255, .72);
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-control-panel__effect-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+.ai-control-panel__effect-card {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 70px;
+}
+.ai-control-panel__effect-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+}
+.ai-control-panel__effect-content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-items: center;
+  column-gap: 4px;
+  row-gap: 1px;
+  width: 100%;
+  height: 100%;
+  padding: 7px 6px 6px 6px;
+}
+.ai-control-panel__effect-icon {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  display: block;
+  width: 22px;
+  height: 34px;
+  object-fit: contain;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+}
+.ai-control-panel__effect-label {
+  grid-column: 2;
+  grid-row: 1;
+  overflow: hidden;
+  color: #accde6;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ai-control-panel__effect-value {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  color: #f0ca70;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  line-height: 1;
+}
+.ai-control-panel__effect-value em {
+  font-style: normal;
+  font-size: 16px;
+  color: #f0ca70;
+  filter: drop-shadow(0 0 4px rgba(240, 202, 112, .55));
+}
+.ai-control-panel__effect-value span {
+  background: linear-gradient(180deg, #ffffff 0%, #dffaff 28%, #9aeaff 62%, #56cfff 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: .25px rgba(221, 250, 255, .70);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-family: 'Arial Narrow', 'Roboto Condensed', 'DIN Alternate', Bahnschrift, 'Microsoft YaHei', sans-serif;
+  filter:
+    drop-shadow(0 0 2px rgba(255, 255, 255, .55))
+    drop-shadow(0 0 5px rgba(56, 218, 255, .45))
+    drop-shadow(0 0 10px rgba(33, 121, 255, .22));
+}
+.ai-control-panel__effect-base {
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  z-index: 0;
+  width: 118px;
+  height: auto;
+  transform: translateX(-50%);
+  opacity: .55;
+  pointer-events: none;
+  user-select: none;
+}
 
 .ai-control-panel__conversation {
   display: flex;
@@ -426,10 +697,22 @@ onBeforeUnmount(() => requestController?.abort())
 .ai-control-panel__send:disabled { filter: grayscale(.6); opacity: .5; cursor: not-allowed; transform: none; }
 .ai-control-panel__disclaimer { margin: 8px 0 0; color: rgba(178,205,220,.54); font-size: 10px; text-align: center; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
 
+@media (max-width: 900px), (max-height: 760px) {
+  .ai-control-panel__effect {
+    height: auto;
+    max-height: 168px;
+  }
+  .ai-control-panel__effect-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ai-control-panel__effect-card { height: 64px; }
+  .ai-control-panel__effect-value { font-size: 22px; }
+}
+
 @media (max-width: 720px) {
-  .ai-control-panel__identity span,
-  .ai-control-panel__runtime-status > span:not(:first-of-type) { display: none; }
-  .ai-control-panel__runtime-status { padding-left: 10px; }
+  .ai-control-panel__identity span { display: none; }
+  .ai-control-panel__status-copy span { display: none; }
+  .ai-control-panel__runtime-status { padding-left: 2px; }
   .ai-control-panel__message { max-width: 92%; }
 }
 
