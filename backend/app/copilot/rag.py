@@ -1,12 +1,4 @@
-"""Manifest-aware knowledge chunking and local Chroma retrieval.
-
-The traffic knowledge directory is deliberately kept as a human-readable
-source corpus.  This module provides the deterministic build contract and the
-runtime retriever without importing optional ML/vector-store dependencies at
-module import time.  That keeps the simulation backend startable when the RAG
-artifacts or model packages are not installed; a RAG query then reports an
-explicit unavailable error instead of silently falling back to keyword search.
-"""
+"""知识库构建与本地向量检索"""
 
 from __future__ import annotations
 

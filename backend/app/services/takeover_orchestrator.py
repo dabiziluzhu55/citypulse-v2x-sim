@@ -1,10 +1,4 @@
-"""Backend orchestration for event-scoped Traffic-Qwen signal control.
-
-The orchestrator is fed by the existing per-session snapshot watcher.  It
-pauses simulation time while building Observation V2 and asking Traffic-Qwen
-for a plan, then sends only the validated JSON plan to the SUMO manager.
-The worker remains the final safety boundary.
-"""
+"""Backend事件范围Traffic-Qwen信号控制编排器"""
 
 from __future__ import annotations
 
@@ -50,14 +44,6 @@ class TakeoverPlanningError(RuntimeError):
 
 
 def _parse_control_plan_content(raw_content: str) -> Mapping[str, Any]:
-    """Extract the first JSON object from a Qwen control-plan response.
-
-    Chat models occasionally wrap an otherwise valid object in a Markdown
-    fence or a short explanation.  ``json.loads`` rejects that harmless
-    decoration with ``Extra data``; ``raw_decode`` lets us accept the object
-    while the existing AIControlPlan validation still enforces every safety
-    and runtime constraint.
-    """
 
     content = raw_content.strip()
     decoder = json.JSONDecoder()

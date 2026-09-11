@@ -109,3 +109,64 @@ def test_three_episode_rollouts_queue_without_generation_drift():
             os.environ.pop("COV2X_MODE", None)
         else:
             os.environ["COV2X_MODE"] = previous_mode
+
+
+def test_offpeak_guard_releases_unnecessary_vehicle_advice(monkeypatch):
+    monkeypatch.setenv("COV2X_RUNTIME", "mvp")
+    monkeypatch.setenv("COV2X_MODE", "train")
+    monkeypatch.setenv("COV2X_TEMPORARY_SPEED_CAP_V1", "1")
+    monkeypatch.setenv("COV2X_LOCAL_CREDIT_V1", "1")
+    monkeypatch.setenv("COV2X_OFFPEAK_GUARD_V2", "1")
+    monkeypatch.setenv("COV2X_OFFPEAK_GUARD_PERIODS", "off_peak")
+    monkeypatch.delenv("COV2X_MODEL_PATH", raising=False)
+
+    mvp_runtime.reset_untrained_state()
+    payload = _payload()
+    controller.initialize(payload)
+    with torch.no_grad():
+        mvp_runtime._vehicle_actor.mean.weight.zero_()
+        mvp_runtime._vehicle_actor.mean.bias.fill_(-1.0)
+
+    response = controller.step({**payload, "step_id": 0, "simulation_time": 0})
+    assert response["actions"]["vehicles"] == {}
+    diagnostics = response["diagnostics"]["authority"]
+    assert diagnostics["context_gate:NO_FEASIBLE_ADVICE"] == 1
+
+
+def test_offpeak_guard_uses_exact_mp_without_changing_peak_path(monkeypatch):
+    monkeypatch.setenv("COV2X_RUNTIME", "mvp")
+    monkeypatch.setenv("COV2X_MODE", "train")
+    monkeypatch.setenv("COV2X_OFFPEAK_GUARD_V2", "1")
+    monkeypatch.setenv("COV2X_OFFPEAK_GUARD_PERIODS", "off_peak")
+    monkeypatch.setenv("COV2X_OFFPEAK_ROAD_FALLBACK", "strong_mp")
+    monkeypatch.setenv("COV2X_VEHICLE_MODE", "off")
+    monkeypatch.delenv("COV2X_MODEL_PATH", raising=False)
+
+    mvp_runtime.reset_untrained_state()
+    payload = _payload(vehicle_ids=())
+    controller.initialize(payload)
+    controller.step({**payload, "step_id": 0, "simulation_time": 0})
+    controller.finish(
+        {
+            "simulation_time": 5,
+            "vehicles": {},
+            "intersections": payload["intersections"],
+        }
+    )
+    offpeak = controller.take_collected_rollout()
+    assert offpeak.metrics["role_steps"].get("road", 0) == 0
+    assert offpeak.metrics["base_policy_recovery"]["road_decisions"] > 0
+
+    mvp_runtime.reset_untrained_state()
+    morning = {**payload, "episode_id": "morning", "period": "morning_peak"}
+    controller.initialize(morning)
+    controller.step({**morning, "step_id": 0, "simulation_time": 0})
+    controller.finish(
+        {
+            "simulation_time": 5,
+            "vehicles": {},
+            "intersections": morning["intersections"],
+        }
+    )
+    peak = controller.take_collected_rollout()
+    assert peak.metrics["role_steps"]["road"] > 0

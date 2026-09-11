@@ -1,4 +1,4 @@
-"""读取已有终态评估结果并生成管控评估 PDF，不重算任何指标。"""
+"""读取已有终态评估结果并生成管控评估PDF，不重算任何指标"""
 
 from __future__ import annotations
 
@@ -37,9 +37,8 @@ logger = logging.getLogger(__name__)
 
 MISSING_CELL = "—"
 FOOTNOTE_TEXT = (
-    "主表为当前典型场景 scene_metrics；全网影响见 network_metrics，不替代场景主指标。"
-    "TripInfo 行程/TTI/DTP/油耗为整段行程（scene_affected_trip_metrics），不是纯场景内累计。"
-    "— 表示该算法尚未完成本场景仿真与评估。"
+    "以上表格当前典型场景下的仿真与评估结果"
+    "— 表示该算法尚未完成本场景仿真与评估"
 )
 ASCII_FALLBACK_FILENAME = "control-evaluation.pdf"
 
@@ -64,7 +63,7 @@ PERIOD_START_SECONDS: dict[str, int] = {
     "evening_peak": 17 * 3600 + 30 * 60,
 }
 
-# 仅控制 PDF 小数位，不改变 traffic_eval 已有指标语义。
+# 仅控制PDF小数位，不改变traffic_eval已有指标语义
 METRIC_DIGITS: dict[str, int] = {
     "path_avg_speed_kmh": 2,
     "avg_stops_per_vehicle": 2,

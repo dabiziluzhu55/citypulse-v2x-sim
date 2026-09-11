@@ -1,4 +1,4 @@
-"""管控评估报告导出请求 Schema：只传场景与 session 映射，不传指标数值。"""
+"""管控评估报告导出请求Schema：只传场景与session映射，不传指标数值"""
 
 from __future__ import annotations
 

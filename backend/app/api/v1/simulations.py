@@ -1,4 +1,4 @@
-# 仿真生命周期接口与WebSocket实时推送SimulationService
+"""仿真生命周期接口与WebSocket实时推送SimulationService"""
 
 from __future__ import annotations
 

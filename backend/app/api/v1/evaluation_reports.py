@@ -1,4 +1,4 @@
-"""管控评估报告 PDF 导出接口。"""
+"""管控评估报告PDF导出接口"""
 
 from __future__ import annotations
 

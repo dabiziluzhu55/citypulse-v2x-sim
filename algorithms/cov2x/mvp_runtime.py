@@ -88,6 +88,11 @@ from algorithms.cov2x.vehicle.actuator import (
     classify_constraint,
     vehicle_limits,
 )
+from algorithms.cov2x.vehicle.context_gate import (
+    ADVICE_ELIGIBLE,
+    GateConfig,
+    build_gate_evidence,
+)
 from algorithms.cov2x.vehicle.movement_corridor import MovementApproachCorridor
 from algorithms.cov2x.vehicle.movement_local_credit import MovementLocalCreditLedger
 from algorithms.cov2x.vehicle.pooling import masked_movement_pool
@@ -192,6 +197,28 @@ _phase_history_audit: dict[str, list[dict[str, Any]]] = {
 _phase_a_joint_action_override: dict[str, dict[str, Any]] | None = None
 
 
+def _offpeak_guard_enabled() -> bool:
+    """Return whether the opt-in v2 low-demand protection is active."""
+
+    return os.environ.get("COV2X_OFFPEAK_GUARD_V2", "0") == "1"
+
+
+def _offpeak_guard_period_active() -> bool:
+    if not _offpeak_guard_enabled():
+        return False
+    configured = os.environ.get("COV2X_OFFPEAK_GUARD_PERIODS", "off_peak")
+    periods = {item.strip() for item in configured.split(",") if item.strip()}
+    return _period in periods
+
+
+def _offpeak_road_fallback_enabled() -> bool:
+    return (
+        _offpeak_guard_period_active()
+        and os.environ.get("COV2X_OFFPEAK_ROAD_FALLBACK", "strong_mp")
+        == "strong_mp"
+    )
+
+
 def _temporary_speed_cap_enabled() -> bool:
     return os.environ.get("COV2X_TEMPORARY_SPEED_CAP_V1", "0") == "1"
 
@@ -269,6 +296,15 @@ def _runtime_actor_update_schedule_id() -> str:
 def _vehicle_local_policy_generation_limit(
     *, temporary: bool, schedule_id: str
 ) -> int:
+    if temporary and _offpeak_guard_enabled():
+        limit = int(
+            os.environ.get("COV2X_OFFPEAK_GUARD_MAX_GENERATION", "128")
+        )
+        if limit < 24:
+            raise ValueError(
+                "COV2X_OFFPEAK_GUARD_MAX_GENERATION must preserve generation 24"
+            )
+        return limit
     if schedule_id == ROAD_FOCUSED_ACTOR_UPDATE_SCHEDULE_ID:
         return ROAD_FOCUSED_ACTOR_UPDATES
     if temporary and schedule_id in {
@@ -1397,7 +1433,9 @@ def _road_actions(payload: Mapping[str, Any], snapshot_id: str, sim_time: float,
                 sent_ids=sent_ids,
             )
         return actions, transitions
-    gain = _authority_gains["road"]
+    # The opt-in v2 candidate keeps the already-good peak policy intact.
+    # During the configured low-demand period it uses exact frozen Strong-MP.
+    gain = 0.0 if _offpeak_road_fallback_enabled() else _authority_gains["road"]
     baseline_actions = (
         _strong_mp_controller.compute_actions(dict(payload))
         if gain == 0.0 and _strong_mp_controller is not None
@@ -1485,6 +1523,57 @@ def _advice_key(
     tls_id: str, movement: str, vehicle_id: str, assignment_epoch: int
 ) -> tuple[str, str, str, int]:
     return str(tls_id), str(movement), str(vehicle_id), int(assignment_epoch)
+
+
+def _offpeak_vehicle_gate(
+    *,
+    payload: Mapping[str, Any],
+    signal_actions: Mapping[str, Mapping[str, int]],
+    vehicle_id: str,
+    tls_id: str,
+    movement: str,
+    base_speed_mps: float,
+    speed_mps: float,
+    signal_distance_m: float,
+    leader_gap_m: float | None,
+    minimum_gap_m: float,
+) -> dict[str, Any] | None:
+    """Evaluate the existing causal context gate for the opt-in v2 candidate."""
+
+    if not _offpeak_guard_period_active():
+        return None
+    metadata = {
+        "intersections": _intersection_metadata,
+        "vehicle_types": _vehicle_types,
+        "minimum_green": _minimum_green,
+    }
+    opportunity = {
+        "vehicle_id": str(vehicle_id),
+        "intersection_id": str(tls_id),
+        "movement_id": str(movement),
+        "signal_distance_m": float(signal_distance_m),
+        "speed_mps": float(speed_mps),
+        "base_speed_mps": float(base_speed_mps),
+        "leader_gap_m": None if leader_gap_m is None else float(leader_gap_m),
+        "minimum_gap_m": float(minimum_gap_m),
+    }
+    config = GateConfig(
+        sumo_step_s=float(
+            os.environ.get("COV2X_OFFPEAK_GUARD_SUMO_STEP_S", "0.05")
+        ),
+        decision_interval_s=float(_decision_interval),
+        horizon_s=float(
+            os.environ.get("COV2X_OFFPEAK_GUARD_HORIZON_S", "20.0")
+        ),
+    )
+    evidence = build_gate_evidence(
+        metadata=metadata,
+        payload=payload,
+        joint_action={"signals": dict(signal_actions)},
+        opportunity=opportunity,
+        config=config,
+    )
+    return dict(evidence["gate_decision"])
 
 
 def _selected_leaders(
@@ -1772,6 +1861,30 @@ def _vehicle_actions(payload: Mapping[str, Any], signal_actions: Mapping[str, Ma
             _speed_advice.pop(advice_key, None)
             fail_closed("dangerous_leader_gap")
             continue
+        gate_decision = _offpeak_vehicle_gate(
+            payload=payload,
+            signal_actions=signal_actions,
+            vehicle_id=vehicle_id,
+            tls_id=tls_id,
+            movement=movement,
+            base_speed_mps=base_speed,
+            speed_mps=speed,
+            signal_distance_m=distance_m,
+            leader_gap_m=None if leader_gap is None else float(leader_gap),
+            minimum_gap_m=minimum_gap,
+        )
+        if gate_decision is not None:
+            category = str(gate_decision.get("category", "UNKNOWN"))
+            key = f"context_gate:{category}"
+            diagnostics[key] = int(diagnostics.get(key, 0)) + 1
+            _authority[key] = int(_authority.get(key, 0)) + 1
+            if category != ADVICE_ELIGIBLE:
+                # Do not train an intervention on states where it is unnecessary
+                # or causally infeasible; immediately restore native behavior.
+                _speed_advice.pop(advice_key, None)
+                diagnostics["native_release"] += 1
+                _authority["native_release"] += 1
+                continue
         diagnostics["eligible_action_opportunities"] += 1
         _authority["eligible_action_opportunities"] += 1
         advice_state = _speed_advice.get(advice_key)
@@ -3312,6 +3425,15 @@ def save_checkpoint(path: str) -> str:
             if local_credit
             else os.environ.get("COV2X_ACTOR_UPDATE_SCHEDULE_ID")
         ),
+        "offpeak_guard_v2": {
+            "enabled": _offpeak_guard_enabled(),
+            "periods": os.environ.get(
+                "COV2X_OFFPEAK_GUARD_PERIODS", "off_peak"
+            ),
+            "road_fallback": os.environ.get(
+                "COV2X_OFFPEAK_ROAD_FALLBACK", "strong_mp"
+            ),
+        },
         "optimizer_roles": sorted(_optimizers),
         "component_schema": {
             name: _module_schema(module) for name, module in components.items()

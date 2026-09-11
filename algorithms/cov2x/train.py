@@ -57,6 +57,21 @@ def _parse_args() -> argparse.Namespace:
         help="train=PPO episodes, eval=deterministic checkpoint, rule=rule baseline",
     )
     parser.add_argument("--episodes", type=int, default=20)
+    parser.add_argument(
+        "--balanced-updates",
+        type=int,
+        default=0,
+        help=(
+            "opt-in v2 training: updates over "
+            "morning,off-peak,evening,off-peak episode batches"
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=5,
+        help="save a non-destructive v2 checkpoint every N balanced updates",
+    )
     parser.add_argument("--duration", type=int, default=300)
     parser.add_argument(
         "--period",
@@ -266,6 +281,90 @@ def _run_fixed_xiongan_pilot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_balanced_xiongan_training(args: argparse.Namespace) -> int:
+    """Continue the v2 Vehicle policy with 50% off-peak sampling.
+
+    The road and cloud actors remain frozen by the existing temporary-cap
+    contract. Peak road behavior is therefore unchanged, while off-peak Road
+    actions use the exact Strong-MP fallback and Vehicle PPO sees only
+    context-gate-eligible interventions.
+    """
+
+    from algorithms.cov2x.seeds import TRAIN_SEEDS
+
+    periods = ("morning_peak", "off_peak", "evening_peak", "off_peak")
+    completed = 0
+    for update_index in range(1, args.balanced_updates + 1):
+        records = []
+        generation = int(
+            cov2x.diagnostics().get("policy_generation", 24 + update_index - 1)
+        )
+        for offset, period in enumerate(periods):
+            episode = (update_index - 1) * len(periods) + offset + 1
+            seed = TRAIN_SEEDS[(episode - 1) % len(TRAIN_SEEDS)]
+            record = _run_episode(args, episode, period, seed)
+            _append_log(
+                args.log,
+                {
+                    "update": update_index,
+                    "policy_generation": generation,
+                    **record,
+                },
+            )
+            if record.get("state") != "COMPLETED":
+                logger.error(
+                    "balanced update %d failed in %s: %s",
+                    update_index,
+                    period,
+                    record.get("error") or record.get("state"),
+                )
+                return 1
+            records.append(record)
+            completed += 1
+
+        rollouts = [cov2x.take_collected_rollout() for _ in records]
+        if any(rollout is None for rollout in rollouts):
+            logger.error("balanced update %d lost an episode rollout", update_index)
+            return 1
+        diagnostics = cov2x.train_on_rollouts(rollouts)
+        if not diagnostics or diagnostics.get("updates") != 1:
+            logger.error("balanced update %d did not perform one PPO update", update_index)
+            return 1
+        _append_log(
+            args.log,
+            {
+                "update": update_index,
+                "episodes": len(periods),
+                "training": diagnostics,
+            },
+        )
+        current_generation = int(diagnostics["policy_generation"])
+        logger.info(
+            "balanced update %d/%d complete: generation=%d samples=%s",
+            update_index,
+            args.balanced_updates,
+            current_generation,
+            diagnostics.get("steps"),
+        )
+        if (
+            update_index % args.checkpoint_every == 0
+            or update_index == args.balanced_updates
+        ):
+            checkpoint = (
+                args.checkpoint_dir
+                / f"cov2x_offpeak_guard_v2_g{current_generation:03d}.pt"
+            )
+            cov2x.save_checkpoint(checkpoint)
+
+    cov2x.save_checkpoint(args.save)
+    logger.info(
+        "balanced v2 training complete: %d episodes / %d updates",
+        completed,
+        args.balanced_updates,
+    )
+    return 0
+
+
 def main() -> int:
     args = _parse_args()
     if args.signal_mode == "learned":
@@ -309,6 +408,8 @@ def main() -> int:
             args.signal_mode = "max_pressure"
     if args.episodes < 1 or args.duration < 1:
         raise SystemExit("--episodes and --duration must be positive")
+    if args.balanced_updates < 0 or args.checkpoint_every < 1:
+        raise SystemExit("--balanced-updates must be non-negative and checkpoint interval positive")
     periods: list[str] = []
     if args.periods:
         periods = [
@@ -353,6 +454,13 @@ def main() -> int:
         args.cloud_mode,
         args.vehicle_mode,
     )
+    if (
+        args.mode == "train"
+        and args.preset == "xiongan_20"
+        and args.signal_mode == "learned"
+        and args.balanced_updates > 0
+    ):
+        return _run_balanced_xiongan_training(args)
     if args.mode == "train" and args.preset == "xiongan_20" and args.signal_mode == "learned":
         return _run_fixed_xiongan_pilot(args)
 

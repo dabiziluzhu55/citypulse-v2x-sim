@@ -1,4 +1,4 @@
-"""Traffic Copilot 对话 API。"""
+"""Traffic Copilot对话API"""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def chat_general(
     request: Request,
     provider: LLMProvider = Depends(get_copilot_provider),
 ) -> CopilotChatResponse:
-    """无仿真或有仿真均可使用的 Copilot 问答。``session_id`` 可选。"""
+    """无仿真或有仿真均可使用的Copilot问答。``session_id`` 可选"""
 
     return _run_copilot_chat(
         request,
@@ -62,7 +62,7 @@ def chat(
     request: Request,
     provider: LLMProvider = Depends(get_copilot_provider),
 ) -> CopilotChatResponse:
-    """兼容旧路径：在指定仿真会话上执行只读 Copilot 问答。"""
+    """兼容旧路径：在指定仿真会话上执行只读Copilot问答。"""
 
     return _run_copilot_chat(
         request,
@@ -140,21 +140,21 @@ def _run_copilot_chat(
         logger.warning("Copilot Qwen service unavailable: code=%s", exc.code)
         raise AppError(
             code="COPILOT_LLM_UNAVAILABLE",
-            message="Copilot 模型服务当前不可用，请稍后重试。",
+            message="Copilot模型服务当前不可用，请稍后重试。",
             status_code=503,
         ) from exc
     except LLMProtocolError as exc:
         logger.error("Copilot Qwen protocol error: code=%s", exc.code)
         raise AppError(
             code="COPILOT_LLM_PROTOCOL_ERROR",
-            message="Copilot 模型服务返回了无法识别的结果。",
+            message="Copilot模型服务返回了无法识别的结果。",
             status_code=502,
         ) from exc
     except LLMInputError as exc:
         logger.error("Copilot Qwen configuration/input error: code=%s", exc.code)
         raise AppError(
             code="COPILOT_LLM_CONFIG_ERROR",
-            message="Copilot 模型配置无效。",
+            message="Copilot模型配置无效。",
             status_code=503,
         ) from exc
     except CopilotInputError as exc:
@@ -173,21 +173,21 @@ def _run_copilot_chat(
         logger.error("Copilot model error: code=%s", exc.code)
         raise AppError(
             code="COPILOT_MODEL_ERROR",
-            message="Copilot 暂时无法生成回答，请稍后重试。",
+            message="Copilot暂时无法生成回答，请稍后重试。",
             status_code=502,
         ) from exc
     except CopilotError as exc:
         logger.error("Copilot error: code=%s", exc.code)
         raise AppError(
             code="COPILOT_ERROR",
-            message="Copilot 请求未能完成。",
+            message="Copilot请求未能完成。",
             status_code=502,
         ) from exc
     except LLMError as exc:
         logger.error("Unhandled Copilot LLM error: code=%s", exc.code)
         raise AppError(
             code="COPILOT_LLM_ERROR",
-            message="Copilot 模型请求失败，请稍后重试。",
+            message="Copilot模型请求失败，请稍后重试。",
             status_code=502,
         ) from exc
 
@@ -206,13 +206,6 @@ def _resolve_event_context(
     snapshot: Mapping[str, Any] | Any,
     explicit_event_id: str | None = None,
 ) -> str | None:
-    """Resolve a safe event context for conversational references.
-
-    The UI can provide an exact event ID and that value always wins. When it
-    does not, infer an ID only when the snapshot contains one unambiguous
-    active event, or one event in total. Event type words such as ``accident``
-    are never converted into IDs here, and multiple events remain ambiguous.
-    """
 
     if isinstance(explicit_event_id, str) and explicit_event_id.strip():
         return explicit_event_id.strip()
@@ -266,9 +259,6 @@ def _resolve_event_context(
         state_field="status",
     )
 
-    # Configured disturbances are the authoritative event context. Detection
-    # cards may describe the same physical disturbance with a generated ID;
-    # do not let that derived card replace the one configured by the user.
     if len(configured_active_event_ids) == 1:
         return next(iter(configured_active_event_ids))
     if len(configured_event_ids) == 1:

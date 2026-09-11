@@ -1,4 +1,4 @@
-"""Traffic Copilot HTTP 请求与响应 Schema。"""
+"""Traffic Copilot HTTP 请求与响应Schema"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CopilotHistoryMessage(BaseModel):
-    """仅允许普通文本历史，工具消息由后端在一次请求内维护。"""
+    """仅允许普通文本历史，工具消息由后端在一次请求内维护"""
 
     model_config = ConfigDict(extra="forbid")
 

@@ -20,15 +20,13 @@ import {
   buildAlgorithmMetricSeries,
   evaluationAxisFromDurationSeconds,
   evaluationTimes,
-  metricValue,
 } from '../../constants/metricsEvaluation'
 import RightSidebarFrameSvg from './RightSidebarFrameSvg.vue'
 import RightSidebarSectionHeader from './RightSidebarSectionHeader.vue'
 import { exportEvaluationReportPdf } from '../../api/evaluationReport.ts'
-import { ApiError } from '../../api/client.ts'
 import type { EvaluationComparisonRun, ScenarioComparisonContractV3 } from '../../composables/useEvaluationComparison.ts'
 import type { CollaborationLogEntry } from '../../types/collaboration'
-import type { EvaluationMetricKey, MetricsTimeseriesResponse } from '../../types/metrics'
+import type { MetricsTimeseriesResponse } from '../../types/metrics'
 import type { SimulationState } from '../../types/simulation.ts'
 import {
   buildAdvantageMetrics,
@@ -45,7 +43,6 @@ import {
   buildEvaluationReportRequest,
   hasFinishedComparisonRun,
 } from '../../utils/evaluationReport.ts'
-import { formatEvaluationScopeNote } from '../../utils/scenarioDisplay.ts'
 import borderSvg from '../../assets/design/dashboard/border.svg?url'
 import improveIconSvg from '../../assets/design/dashboard/improve_icon.svg?url'
 import baseSvg from '../../assets/design/dashboard/base.svg?url'
@@ -82,10 +79,8 @@ const chartAxis = computed(() => {
   ))
   return evaluationAxisFromDurationSeconds(durationSeconds)
 })
-const hasRealData = computed(() => points.value.length > 0)
 const canExport = computed(() => hasFinishedComparisonRun(props.comparisonRuns))
 const exporting = ref(false)
-const exportError = ref<string | null>(null)
 const exportTitle = computed(() => (
   exporting.value
     ? '正在生成评估报告...'
@@ -93,7 +88,6 @@ const exportTitle = computed(() => (
       ? '导出当前场景已完成算法的终态评估报告'
       : '当前场景暂无已完成的终态评估结果'
 ))
-const hasProvisionalData = computed(() => points.value.some((point) => point.finished === false))
 const activeMetric = computed(() => EVALUATION_METRICS[activeMetricIndex.value] ?? EVALUATION_METRICS[0])
 const comparison = computed(() => (
   buildAlgorithmMetricSeries(points.value, activeMetric.value.key)
@@ -102,25 +96,9 @@ const comparison = computed(() => (
 const currentAlgorithmId = computed(() => props.activeAlgorithm
   || points.value.at(-1)?.algorithm
   || '')
-const currentAlgorithmLabel = computed(() => METRICS_ALGORITHMS.find(
-  (algorithm) => algorithm.id === currentAlgorithmId.value,
-)?.shortLabel ?? currentAlgorithmId.value)
 const latestCurrentPoint = computed(() => points.value
   .filter((point) => point.algorithm === currentAlgorithmId.value)
   .at(-1) ?? null)
-const evaluationScopeNote = computed(() => {
-  const point = latestCurrentPoint.value
-  const scope = point?.evaluation_scope
-  const contract = props.comparisonContract
-  return formatEvaluationScopeNote({
-    presetId: scope?.preset_id || contract?.scenario_preset_id,
-    intersectionIds: scope?.intersection_ids?.length
-      ? scope.intersection_ids
-      : contract?.controlled_intersection_ids,
-    coversFullNetwork: scope?.covers_full_network,
-    hasNetworkMetrics: Boolean(point?.network_metrics),
-  })
-})
 const rawAdvantageMetrics = computed(() => buildAdvantageMetrics(
   points.value,
   currentAlgorithmId.value,
@@ -171,41 +149,6 @@ const displayedAdvantageMetrics = computed((): AdvantageMetric[] => {
 })
 const trafficStateLabel = computed(() => props.trafficState?.trim() || '—')
 const vehicleCountLabel = computed(() => formatActiveVehicleCount(props.activeVehicleCount))
-
-function metricHasAnyValue(metric: EvaluationMetricKey): boolean {
-  return buildAlgorithmMetricSeries(points.value, metric)
-    .some((series) => series.values.some((value) => typeof value === 'number'))
-}
-
-function pointMetricStatus(metric: EvaluationMetricKey) {
-  const point = latestCurrentPoint.value
-  if (!point) return null
-  const explicit = point.metric_status?.[metric]
-  if (explicit) return explicit
-  if (typeof metricValue(point, metric) === 'number') return point.finished ? 'final' : 'provisional'
-  return point.finished ? 'unavailable' : 'pending'
-}
-
-function metricStatusMessage(metric: EvaluationMetricKey): string {
-  const point = latestCurrentPoint.value
-  if (!point) return ''
-  if (typeof metricValue(point, metric) === 'number') return ''
-  const status = pointMetricStatus(metric)
-  if (!status) return ''
-  const algorithm = currentAlgorithmLabel.value || '当前算法'
-  if (metric === 'fuel_intensity' && status === 'pending') return `${algorithm}运行中，燃油消耗数据将在仿真结束后生成`
-  if (metric === 'fuel_intensity' && status === 'unavailable') return `${algorithm}本次仿真暂无可用的燃油消耗数据`
-  if (status === 'pending') return `${algorithm}运行中，实时指标数据暂未返回`
-  return ''
-}
-
-function metricStatusTitle(metric: EvaluationMetricKey): string {
-  const matcher = metric === 'fuel_intensity' ? /燃油|fuel|powertrain|里程/i : /等待|waiting|TripInfo/i
-  return (latestCurrentPoint.value?.warnings ?? [])
-    .filter((warning) => matcher.test(warning))
-    .filter((warning, index, values) => values.indexOf(warning) === index)
-    .join('\n')
-}
 
 function chartOption() {
   const metric = activeMetric.value
@@ -311,7 +254,6 @@ function downloadPdfBlob(blob: Blob, filename: string) {
 async function handleExport() {
   if (!canExport.value || exporting.value) return
   exporting.value = true
-  exportError.value = null
   try {
     const { blob, filename } = await exportEvaluationReportPdf(
       buildEvaluationReportRequest(props.comparisonContract, props.comparisonRuns),
@@ -320,10 +262,7 @@ async function handleExport() {
       throw new Error('empty-or-invalid-pdf')
     }
     downloadPdfBlob(blob, filename || buildEvaluationReportFilename(props.comparisonContract))
-  } catch (cause) {
-    exportError.value = cause instanceof ApiError && cause.code === 'NO_FINAL_EVALUATION_AVAILABLE'
-      ? '当前场景暂无已完成的终态评估结果'
-      : '评估报告生成失败，请稍后重试'
+  } catch {
   } finally {
     exporting.value = false
   }
@@ -456,42 +395,8 @@ watch(() => [
                 </el-button-group>
               </div>
               <div ref="chartRef" class="right-sidebar__chart" :style="{ height: `${layout.chart.height}px` }" />
-              <div
-                v-if="metricStatusMessage(activeMetric.key)"
-                class="right-sidebar__metric-status"
-                :class="{ 'has-comparison-data': metricHasAnyValue(activeMetric.key) }"
-                :title="metricStatusTitle(activeMetric.key)"
-              >
-                <strong>暂无数据</strong>
-                <span>{{ metricStatusMessage(activeMetric.key) }}</span>
-              </div>
             </div>
 
-            <div
-              v-if="exportError"
-              class="right-sidebar__export-error"
-              :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.sourceNote.top}px` }"
-            >{{ exportError }}</div>
-            <div
-              v-else-if="timeseriesLoading && !hasRealData"
-              class="right-sidebar__source-note"
-              :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.sourceNote.top}px` }"
-            >等待真实仿真评估时序</div>
-            <div
-              v-else-if="!hasRealData"
-              class="right-sidebar__source-note"
-              :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.sourceNote.top}px` }"
-            >尚无相同配置的真实算法结果</div>
-            <div
-              v-else-if="!hasProvisionalData"
-              class="right-sidebar__source-note"
-              :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.sourceNote.top}px` }"
-            >{{ evaluationScopeNote ? `仅显示相同配置的真实后端最终结果；${evaluationScopeNote}` : '仅显示相同配置的真实后端最终结果' }}</div>
-            <div
-              v-else-if="evaluationScopeNote"
-              class="right-sidebar__source-note"
-              :style="{ left: `${RIGHT_SIDEBAR_METRICS_COLUMN_LEFT}px`, width: `${RIGHT_SIDEBAR_METRICS_COLUMN_WIDTH}px`, top: `${layout.sourceNote.top}px` }"
-            >{{ evaluationScopeNote }}</div>
             <button
               type="button"
               class="right-sidebar__export"
@@ -872,40 +777,6 @@ watch(() => [
   color: #f4fcff;
 }
 .right-sidebar__chart { width: 100%; pointer-events: auto; }
-.right-sidebar__metric-status {
-  position: absolute;
-  left: 38px;
-  right: 10px;
-  top: 52px;
-  bottom: 30px;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  background: rgba(5, 18, 39, .68);
-  color: rgba(188, 219, 241, .82);
-  font-size: 10px;
-  text-align: center;
-  pointer-events: auto;
-}
-.right-sidebar__metric-status strong { color: #d8f4ff; font-size: 18px; letter-spacing: 0; }
-.right-sidebar__metric-status.has-comparison-data {
-  left: auto;
-  right: 10px;
-  top: 34px;
-  bottom: auto;
-  width: 170px;
-  min-height: 34px;
-  padding: 5px 8px;
-  border: 1px solid rgba(82, 194, 250, .24);
-  background: rgba(5, 18, 39, .88);
-  align-items: flex-end;
-}
-.right-sidebar__metric-status.has-comparison-data strong { display: none; }
-.right-sidebar__source-note { position: absolute; z-index: 5; color: rgba(141, 190, 220, .65); font-size: 9px; text-align: center; }
-.right-sidebar__export-error { position: absolute; z-index: 6; color: #ffb458; font-size: 9px; text-align: center; pointer-events: none; }
 .right-sidebar__export {
   position: absolute;
   z-index: 6;
