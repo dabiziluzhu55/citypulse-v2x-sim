@@ -61,7 +61,6 @@ const welcomeBody = computed(() => {
   }
   return '我可以帮您查询交通状态、分析拥堵原因或提供管控建议。'
 })
-const identitySubtitle = '交通知识问答 · 态势分析 · AI事件管控'
 const thinkingLabel = computed(() => (
   hasSession.value ? '正在分析当前仿真交通状态……' : '正在思考……'
 ))
@@ -210,7 +209,6 @@ onBeforeUnmount(() => requestController?.abort())
       </span>
       <div class="ai-control-panel__identity">
         <strong>CityPulse-Qwen AI助手</strong>
-        <span>{{ identitySubtitle }}</span>
       </div>
       <button type="button" class="ai-control-panel__close" aria-label="关闭AI交通助手" title="关闭" @click="emit('close')">
         ×
@@ -229,7 +227,6 @@ onBeforeUnmount(() => requestController?.abort())
       <section class="ai-control-panel__effect" aria-label="AI管控效能，模型验证结果，相对固定配时">
         <div class="ai-control-panel__effect-heading">
           <h3>AI管控效能</h3>
-          <span>模型验证 · 相对固定配时</span>
         </div>
         <div class="ai-control-panel__effect-grid">
           <article
