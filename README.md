@@ -147,14 +147,15 @@ celery -A simulation.sumo.engine.distributed.celery_app:app worker \
 
 Worker使用prefork，一子进程同时只跑一个SUMO会话;与后端Backend共享`generated`与`outputs/sessions`
 
-## 容器化部署
+## 容器化部署（5 容器）
 
 | 容器 | 内容 |
 |------|------|
-| frontend | 静态资源/Nginx |
-| backend | FastAPI+CPU torch（NarrowNet-TDP预测），无SUMO |
-| sumo-worker | `simulation`+`traffic_control`+SUMO(+torch) |
-| redis | 队列与会话状态 |
+| frontend | Node build + Nginx（同源 `/api/` 反代） |
+| backend | FastAPI + Redis/Celery client + traffic_eval + Narrow-TDP + RAG；**无 SUMO、无 checkpoint** |
+| sumo-worker | SUMO/libsumo + Celery worker + simulation + traffic_control + 算法 checkpoint |
+| redis | 官方 Redis（会话状态 + Celery broker） |
+| citypulse-qwen | vLLM + CityPulse-Qwen V2 AWQ（GPU） |
 
 `traffic_control`由仿真的Worker进程内加载
 

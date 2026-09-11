@@ -1,5 +1,8 @@
 """Redis/Celery-backed SUMO session execution."""
 
-from .manager import RedisSimulationManager, RedisUnavailableError
+from simulation_protocol.client import RedisSimulationClient
+from simulation_protocol.exceptions import RedisUnavailableError
 
-__all__ = ["RedisSimulationManager", "RedisUnavailableError"]
+RedisSimulationManager = RedisSimulationClient
+
+__all__ = ["RedisSimulationManager", "RedisSimulationClient", "RedisUnavailableError"]

@@ -30,19 +30,16 @@ def create_simulation_manager(settings: Settings) -> Any:
         )
 
     if mode == "redis":
-        from simulation.sumo.engine.distributed import (
-            RedisSimulationManager,
-            RedisUnavailableError,
-        )
+        from simulation_protocol.client import RedisSimulationClient
 
         logger.info(
-            "Simulation manager mode=redis (RedisSimulationManager) "
+            "Simulation manager mode=redis (RedisSimulationClient) "
             "state_url=%s key_prefix=%s session_ttl=%ss",
             settings.citypulse_redis_state_url,
             settings.citypulse_redis_key_prefix,
             settings.citypulse_session_ttl_seconds,
         )
-        return RedisSimulationManager(
+        return RedisSimulationClient(
             redis_url=settings.citypulse_redis_state_url,
             generated_dir=settings.generated_dir,
             session_root=settings.session_root,
@@ -60,7 +57,7 @@ def probe_redis_manager(settings: Settings) -> tuple[bool, str | None]:
     """探测 Redis 会话存储是否可用；不创建 Celery 任务"""
 
     try:
-        from simulation.sumo.engine.distributed.store import RedisSessionStore
+        from simulation_protocol.store import RedisSessionStore
 
         store = RedisSessionStore(
             settings.citypulse_redis_state_url,
@@ -74,7 +71,7 @@ def probe_redis_manager(settings: Settings) -> tuple[bool, str | None]:
 
 
 def redis_unavailable_error_type():
-    from simulation.sumo.engine.distributed import RedisUnavailableError
+    from simulation_protocol.exceptions import RedisUnavailableError
 
     return RedisUnavailableError
 

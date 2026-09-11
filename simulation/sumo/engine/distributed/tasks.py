@@ -8,7 +8,12 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-from ..scenario import DEFAULT_GENERATED_DIR, DEFAULT_SESSION_ROOT, load_compiled_scenario
+from ..scenario import (
+    DEFAULT_GENERATED_DIR,
+    DEFAULT_SESSION_ROOT,
+    compile_session_scenario,
+    load_compiled_scenario,
+)
 from ..session import SimulationManager, _SessionRecord
 from .celery_app import app
 from .commands import RedisCommandQueue
@@ -112,6 +117,21 @@ def run_session(self, session_id: str):
         if not store.compare_and_publish("QUEUED", starting):
             return {"session_id": session_id, "state": store.state(session_id)}
 
+        manifest_path = session_root / session_id / "session_manifest.json"
+        if not manifest_path.is_file():
+            compile_session_scenario(
+                session_id,
+                config.intersection_ids,
+                config.period,
+                origins=config.origins,
+                window_start_seconds=config.window_start_seconds,
+                duration_seconds=config.duration_seconds,
+                flow_multiplier=config.flow_multiplier,
+                scenario_scope=config.scenario_scope,
+                step_length=config.step_length,
+                generated_dir=generated_dir,
+                session_root=session_root,
+            )
         scenario = load_compiled_scenario(
             session_id,
             generated_dir=generated_dir,

@@ -65,12 +65,11 @@ async def lifespan(app: FastAPI):
     if missing_files:
         logger.warning("Missing generated artifacts: %s", missing_files)
 
-    session_root_ok = settings.session_root.exists() or True
+    session_root_ok = False
     try:
         settings.session_root.mkdir(parents=True, exist_ok=True)
         session_root_ok = True
     except OSError as exc:
-        session_root_ok = False
         logger.error("Cannot prepare session_root %s: %s", settings.session_root, exc)
 
     redis_ready = True
@@ -90,7 +89,7 @@ async def lifespan(app: FastAPI):
                 manager = create_simulation_manager(settings)
                 manager_ready = True
             except Exception as exc:
-                from simulation.sumo.engine.distributed import RedisUnavailableError
+                from simulation_protocol.exceptions import RedisUnavailableError
 
                 if isinstance(exc, RedisUnavailableError):
                     redis_ready = False

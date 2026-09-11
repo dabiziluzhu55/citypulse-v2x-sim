@@ -52,38 +52,29 @@ from .scenario import (
 logger = logging.getLogger(__name__)
 
 
-class SessionError(RuntimeError):
-    pass
-
-
-class SessionBusyError(SessionError):
-    pass
-
-
-class UnknownSessionError(SessionError):
-    pass
-
-
-PLAYBACK_SPEEDS = (1.0, 1.25, 1.5, 2.0, 3.0, 5.0)
+from simulation_protocol.dto import (
+    IntersectionCapability,
+    IntersectionRuntimeSnapshot,
+    LaneCapability,
+    LaneRuntimeSnapshot,
+    OriginCapability,
+    ScenarioScopeCapability,
+    SessionMetrics,
+    SimulationCatalog,
+    SimulationConfig,
+    SimulationSnapshot,
+    VehicleRuntimeSnapshot,
+)
+from simulation_protocol.events import EventSnapshot
+from simulation_protocol.exceptions import SessionBusyError, SessionError, UnknownSessionError
+from simulation_protocol.playback import PLAYBACK_SPEEDS, normalize_playback_speed as _normalize_playback_speed
+from simulation_protocol.catalog import load_catalog
+from simulation_protocol.validation import validate_simulation_config as _validate_simulation_config
 # CoV2X emits SEND/DELIVER/CONSUME per typed envelope each decision step.
 # A 20-intersection snapshot with a few hundred vehicles can exceed 1k
 # lifecycle events; keep a bounded session window without dropping the
 # current step's batch.
 V2X_EVENT_WINDOW_SIZE = 4_000
-
-
-def _normalize_playback_speed(value: object) -> float:
-    if isinstance(value, bool):
-        raise ValueError("playback speed must be a number, not a boolean.")
-    try:
-        speed = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"invalid playback speed: {value!r}.") from exc
-    if speed not in PLAYBACK_SPEEDS:
-        raise ValueError(
-            f"playback speed must be one of {PLAYBACK_SPEEDS}, got {value!r}."
-        )
-    return speed
 
 
 def _playback_delay_seconds(
@@ -175,190 +166,6 @@ def _notify_algorithm_decision_observer(
     )
 
 
-@dataclass(frozen=True)
-class SimulationConfig:
-    intersection_ids: tuple[str, ...]
-    period: str = "morning_peak"
-    scenario_preset_id: str = ""
-    scenario_scope: str = DEFAULT_TRAFFIC_SCOPE_ID
-    origins: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    window_start_seconds: float = 0.0
-    duration_seconds: float | None = None
-    flow_multiplier: float = 1.0
-    control_mode: str = "fixed"
-    algorithm_transport: str = "local"
-    algorithm_module: str = ""
-    decision_interval: float = 5.0
-    minimum_green: float = 5.0
-    seed: int = 42
-    step_length: float = 0.2
-    gui: bool = False
-    realtime: bool = False
-    playback_speed: float | None = None
-    start_paused: bool = False
-    snapshot_interval_seconds: float = 1
-    ai_observer_module: str = ""
-    ai_frame_interval_seconds: float = 1
-    ai_observer_shutdown_timeout: float = 5.0
-    initial_events: tuple[DisturbanceEvent, ...] = ()
-    baseline_controller: str = ""
-    ai_control: AIControlConfig = field(default_factory=AIControlConfig)
-    # Optional, default-off observer. Never serialized across Redis/Celery.
-    # Signature: callback(payload: Mapping) -> None. Must not mutate SUMO state.
-    algorithm_decision_observer: Callable[[Mapping[str, Any]], None] | None = field(
-        default=None,
-        compare=False,
-        repr=False,
-    )
-
-
-@dataclass(frozen=True)
-class OriginCapability:
-    origin_id: str
-    label: str
-    lane_ids: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class LaneCapability:
-    lane_id: str
-    edge_id: str
-    lane_index: int
-    role: str
-    approach: str | None
-    approach_label: str | None
-    length: float
-    max_speed: float
-
-
-@dataclass(frozen=True)
-class IntersectionCapability:
-    intersection_id: str
-    longitude: float | None
-    latitude: float | None
-    periods: tuple[str, ...]
-    origins: tuple[OriginCapability, ...]
-    lanes: tuple[LaneCapability, ...]
-
-
-@dataclass(frozen=True)
-class ScenarioScopeCapability:
-    scope_id: str
-    label: str
-    periods: tuple[str, ...]
-    intersection_ids: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class SimulationCatalog:
-    intersections: Mapping[str, IntersectionCapability]
-    scenario_scopes: Mapping[str, ScenarioScopeCapability] = field(default_factory=dict)
-    event_types: tuple[str, ...] = (
-        "lane_closure",
-        "speed_limit",
-        "accident",
-        "major_event_opening",
-        "major_event_closing",
-    )
-    flow_multiplier_min: float = 0.1
-    flow_multiplier_max: float = 5.0
-    playback_speeds: tuple[float, ...] = PLAYBACK_SPEEDS
-
-
-@dataclass(frozen=True)
-class LaneRuntimeSnapshot:
-    vehicle_count: int
-    halting_count: int
-    mean_speed: float
-    waiting_time: float
-    occupancy: float
-    edge_id: str = ""
-    lane_index: int = 0
-    role: str = ""
-    approach_id: str | None = None
-    downstream_lane_ids: tuple[str, ...] = ()
-    lane_has_green: bool | None = None
-    signal_state: str | None = None
-    current_allowed_speed_mps: float | None = None
-    # 与算法 payload 同一套确定性空间估算，不是 TraCI queue 检测器读数。
-    queue_length_m: float | None = None
-    queue_length_is_estimate: bool = True
-    # 进口车道可用长度近似：复用初始化时读取的 SUMO lane length，不是每帧 TraCI。
-    # 当前路网没有独立 storage_length_m，评测溢流时用该值作为有效储车长度近似。
-    lane_length_m: float | None = None
-
-
-@dataclass(frozen=True)
-class IntersectionRuntimeSnapshot:
-    current_phase: int
-    pending_phase: int | None
-    stage: str
-    stage_elapsed: float
-    lanes: Mapping[str, LaneRuntimeSnapshot]
-
-
-@dataclass(frozen=True)
-class VehicleRuntimeSnapshot:
-    vehicle_id: str
-    x: float
-    y: float
-    speed: float
-    angle: float
-    road_id: str
-    lane_id: str
-    controllable: bool = False
-    type_id: str = ""
-    acceleration: float = 0.0
-    lane_index: int = -1
-    lane_position: float = 0.0
-    allowed_speed: float = 0.0
-    route_id: str = ""
-    route_index: int = -1
-    waiting_time: float = 0.0
-    time_loss: float = 0.0
-    distance: float = 0.0
-    fuel_rate_mg_s: float = 0.0
-    fuel_total_mg: float = 0.0
-    fuel_total_ml: float = 0.0
-    hard_braking_events: int = 0
-    next_intersection_id: str | None = None
-    target_speed: float | None = None
-    target_lane_index: int | None = None
-
-
-@dataclass(frozen=True)
-class SessionMetrics:
-    active_vehicles: int = 0
-    departed_vehicles: int = 0
-    arrived_vehicles: int = 0
-    remaining_vehicles: int = 0
-    halting_vehicles: int = 0
-    total_waiting_time: float = 0.0
-    mean_speed: float = 0.0
-    fuel_consumed_mg: float = 0.0
-    fuel_consumed_ml: float = 0.0
-    hard_braking_events: int = 0
-
-
-@dataclass(frozen=True)
-class SimulationSnapshot:
-    session_id: str
-    state: str
-    sequence: int
-    elapsed_seconds: float
-    duration_seconds: float
-    progress: float
-    official_time: str
-    playback_speed: float | None = None
-    intersections: Mapping[str, IntersectionRuntimeSnapshot] = field(default_factory=dict)
-    vehicles: tuple[VehicleRuntimeSnapshot, ...] = ()
-    events: tuple[EventSnapshot, ...] = ()
-    v2x_events: tuple[Mapping[str, object], ...] = ()
-    metrics: SessionMetrics = field(default_factory=SessionMetrics)
-    error: str | None = None
-    ai_takeover: AIControlStatus = field(default_factory=AIControlStatus)
-    evaluation_scope: Mapping[str, object] | None = None
-
 
 @dataclass
 class _Command:
@@ -400,157 +207,6 @@ class SnapshotSubscription:
         if not self._closed:
             self._manager._unsubscribe(self._session_id, self._channel)
             self._closed = True
-
-
-def _read_json(path: Path) -> Mapping[str, object]:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError) as exc:
-        raise SessionError(f"Cannot read generated metadata {path}: {exc}") from exc
-
-
-def _lane_specs(net_path: Path, required: set[str]):
-    result = {}
-    try:
-        for _, element in ET.iterparse(net_path, events=("end",)):
-            if element.tag == "lane" and element.get("id") in required:
-                result[element.get("id")] = (
-                    float(element.get("length", "0")),
-                    float(element.get("speed", "0")),
-                )
-            element.clear()
-    except (FileNotFoundError, ET.ParseError) as exc:
-        raise SessionError(f"Cannot inspect generated network {net_path}: {exc}") from exc
-    missing = required - set(result)
-    if missing:
-        raise SessionError(f"Generated network is missing lanes: {sorted(missing)}")
-    return result
-
-
-def load_catalog(generated_dir: Path = DEFAULT_GENERATED_DIR) -> SimulationCatalog:
-    layout = GeneratedArtifactLayout(generated_dir)
-    traffic = _read_json(layout.traffic_manifest)
-    tls = _read_json(layout.tls_manifest)
-    if int(traffic.get("schema_version", 0)) != 3:
-        raise SessionError("Rebuild traffic artifacts to obtain manifest schema_version 3.")
-    if int(tls.get("schema_version", 0)) != 2:
-        raise SessionError("Rebuild signal artifacts to obtain manifest schema_version 2.")
-    mapping_path = generated_dir.parent / "official" / "map" / "TotalMap_20.intersections.json"
-    mapping = _read_json(mapping_path)
-    traffic_intersections = traffic.get("intersections", {})
-    tls_intersections = tls.get("intersections", {})
-    missing_tls = set(traffic_intersections) - set(tls_intersections)
-    if missing_tls:
-        raise SessionError(
-            "Traffic manifest references intersections missing from the TLS manifest: "
-            f"{sorted(missing_tls)}"
-        )
-    required_lanes = set()
-    for intersection_id in traffic_intersections:
-        for connection in tls_intersections[intersection_id]["connections"]:
-            required_lanes.add(f"{connection['from_edge']}_{connection['from_lane']}")
-            required_lanes.add(f"{connection['to_edge']}_{connection['to_lane']}")
-    specs = _lane_specs(layout.network_file, required_lanes)
-
-    intersections = {}
-    period_order = {"morning_peak": 0, "off_peak": 1, "evening_peak": 2}
-    raw_scopes = traffic.get("available_scopes", {})
-    if not isinstance(raw_scopes, Mapping) or not raw_scopes:
-        raw_scopes = {
-            DEFAULT_TRAFFIC_SCOPE_ID: {
-                "scope_id": DEFAULT_TRAFFIC_SCOPE_ID,
-                "label": "Global official demand",
-                "periods": sorted(
-                    {
-                        str(item.get("period_id"))
-                        for item in traffic.get("scenarios", {}).values()
-                        if str(item.get("scope_id", DEFAULT_TRAFFIC_SCOPE_ID))
-                        == DEFAULT_TRAFFIC_SCOPE_ID
-                    },
-                    key=lambda value: (period_order.get(value, 99), value),
-                ),
-                "intersection_ids": list(traffic_intersections),
-            }
-        }
-    scenario_scopes = {}
-    for raw_scope_id, raw_scope in sorted(raw_scopes.items()):
-        scope_id = str(raw_scope.get("scope_id", raw_scope_id))
-        scenario_scopes[scope_id] = ScenarioScopeCapability(
-            scope_id=scope_id,
-            label=str(raw_scope.get("label", scope_id)),
-            periods=tuple(
-                sorted(
-                    (str(value) for value in raw_scope.get("periods", ())),
-                    key=lambda value: (period_order.get(value, 99), value),
-                )
-            ),
-            intersection_ids=tuple(
-                str(value) for value in raw_scope.get("intersection_ids", ())
-            ),
-        )
-    for intersection_id, traffic_item in sorted(traffic_intersections.items()):
-        tls_item = tls_intersections.get(intersection_id)
-        if tls_item is None:
-            continue
-        origin_data = traffic_item.get("origins", {})
-        origins = tuple(
-            OriginCapability(
-                origin_id=name,
-                label=str(item["label"]),
-                lane_ids=tuple(str(value) for value in item["lane_ids"]),
-            )
-            for name, item in sorted(origin_data.items())
-        )
-        sumo_to_official = {
-            str(item["sumo_approach"]): (name, str(item["label"]))
-            for name, item in origin_data.items()
-        }
-        lane_values = {}
-        for connection in tls_item["connections"]:
-            incoming = f"{connection['from_edge']}_{connection['from_lane']}"
-            outgoing = f"{connection['to_edge']}_{connection['to_lane']}"
-            official = sumo_to_official.get(str(connection["approach"]))
-            lane_values[incoming] = (
-                str(connection["from_edge"]),
-                int(connection["from_lane"]),
-                "incoming",
-                official,
-            )
-            lane_values.setdefault(
-                outgoing,
-                (str(connection["to_edge"]), int(connection["to_lane"]), "outgoing", None),
-            )
-        lanes = tuple(
-            LaneCapability(
-                lane_id=lane_id,
-                edge_id=value[0],
-                lane_index=value[1],
-                role=value[2],
-                approach=value[3][0] if value[3] else None,
-                approach_label=value[3][1] if value[3] else None,
-                length=specs[lane_id][0],
-                max_speed=specs[lane_id][1],
-            )
-            for lane_id, value in sorted(lane_values.items())
-        )
-        mapped = mapping.get(intersection_id, {})
-        intersections[intersection_id] = IntersectionCapability(
-            intersection_id=intersection_id,
-            longitude=float(mapped["lon"]) if "lon" in mapped else None,
-            latitude=float(mapped["lat"]) if "lat" in mapped else None,
-            periods=tuple(
-                sorted(
-                    (str(value) for value in traffic_item.get("periods", ())),
-                    key=lambda value: (period_order.get(value, 99), value),
-                )
-            ),
-            origins=origins,
-            lanes=lanes,
-        )
-    return SimulationCatalog(
-        intersections=intersections,
-        scenario_scopes=scenario_scopes,
-    )
 
 
 class SimulationManager:
@@ -698,107 +354,7 @@ class SimulationManager:
         return self.snapshot(session_id)
 
     def _validate_config(self, config: SimulationConfig) -> None:
-        catalog = self.catalog()
-        unknown = set(config.intersection_ids) - set(catalog.intersections)
-        if unknown:
-            raise ScenarioCompilationError(f"Unknown intersections: {sorted(unknown)}")
-        if config.control_mode not in {"fixed", "algorithm"}:
-            raise ScenarioCompilationError("control_mode must be fixed or algorithm.")
-        ai_events = tuple(
-            event
-            for event in config.initial_events
-            if bool(getattr(event, "ai_control_enabled", False))
-        )
-        if len(ai_events) > 1:
-            raise ScenarioCompilationError(
-                "当前Traffic-Qwen仅支持单一主要扰动事件接管，请只选择一个AI管控目标。"
-            )
-        if ai_events and abs(config.decision_interval - config.ai_control.slot_seconds) > 1e-6:
-            raise ScenarioCompilationError(
-                "AI control slot_seconds must equal the simulation decision_interval."
-            )
-        if ai_events and config.duration_seconds is not None and (
-            config.duration_seconds < config.ai_control.plan_valid_seconds
-        ):
-            raise ScenarioCompilationError(
-                "AI-controlled simulations must last at least one AI plan window."
-            )
-        ordered_ai_events = sorted(ai_events, key=lambda event: event.start_seconds)
-        if any(
-            current.start_seconds < previous.end_seconds
-            for previous, current in zip(ordered_ai_events, ordered_ai_events[1:])
-        ):
-            raise ScenarioCompilationError(
-                "AI-controlled disturbance windows cannot overlap."
-            )
-        if config.scenario_scope not in SUPPORTED_TRAFFIC_SCOPE_IDS:
-            raise ScenarioCompilationError(
-                f"scenario_scope must be one of {SUPPORTED_TRAFFIC_SCOPE_IDS}."
-            )
-        scope = catalog.scenario_scopes.get(config.scenario_scope)
-        if scope is None:
-            raise ScenarioCompilationError(
-                f"Traffic scenario scope {config.scenario_scope!r} is unavailable."
-            )
-        unavailable = set(config.intersection_ids) - set(scope.intersection_ids)
-        if unavailable:
-            raise ScenarioCompilationError(
-                f"Traffic scenario scope {config.scenario_scope!r} does not include "
-                f"intersections: {sorted(unavailable)}"
-            )
-        if config.period not in scope.periods:
-            raise ScenarioCompilationError(
-                f"Traffic scenario scope {config.scenario_scope!r} has no period "
-                f"{config.period!r}."
-            )
-        if config.algorithm_transport not in {"local"}:
-            raise ScenarioCompilationError(
-                "algorithm_transport must be local."
-            )
-        if config.control_mode == "algorithm":
-            if not config.algorithm_module:
-                raise ScenarioCompilationError(
-                    "algorithm_module is required for local algorithm transport."
-                )
-        if config.seed < 0 or config.snapshot_interval_seconds <= 0:
-            raise ScenarioCompilationError("seed and snapshot interval are invalid.")
-        if config.step_length <= 0:
-            raise ScenarioCompilationError("step_length must be positive.")
-        if config.decision_interval <= 0 or config.minimum_green < 0:
-            raise ScenarioCompilationError("Algorithm timing values are invalid.")
-        if config.ai_frame_interval_seconds + 1e-9 < config.step_length:
-            raise ScenarioCompilationError(
-                "ai_frame_interval_seconds cannot be smaller than step_length."
-            )
-        if config.ai_observer_shutdown_timeout <= 0:
-            raise ScenarioCompilationError(
-                "ai_observer_shutdown_timeout must be positive."
-            )
-        if config.playback_speed is not None:
-            try:
-                _normalize_playback_speed(config.playback_speed)
-            except ValueError as exc:
-                raise ScenarioCompilationError(str(exc)) from exc
-        lane_ids = {
-            lane.lane_id
-            for intersection_id in config.intersection_ids
-            for lane in catalog.intersections[intersection_id].lanes
-        }
-        event_ids = set()
-        duration = config.duration_seconds
-        for event in config.initial_events:
-            if not event.event_id or event.event_id in event_ids:
-                raise EventValidationError("Initial event IDs must be non-empty and unique.")
-            event_ids.add(event.event_id)
-            event_lanes = _config_event_lanes(event)
-            if event_lanes - lane_ids:
-                raise EventValidationError(f"Initial event {event.event_id} targets unknown lanes.")
-            if isinstance(event, (MajorEventOpeningEvent, MajorEventClosingEvent)) and event.vehicle_count <= 0:
-                raise EventValidationError(
-                    f"Initial event {event.event_id} vehicle_count must be positive."
-                )
-            if duration is not None and event.end_seconds > duration + 1e-9:
-                raise EventValidationError(f"Initial event {event.event_id} exceeds duration.")
+        _validate_simulation_config(config, self.catalog())
 
     def _command(self, session_id: str, name: str, payload: object = None) -> None:
         record = self._record(session_id)

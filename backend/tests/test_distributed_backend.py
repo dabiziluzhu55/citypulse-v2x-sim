@@ -23,12 +23,11 @@ from backend.app.services.session_metadata import (
 )
 from backend.app.services.simulation_service import SimulationService
 from backend.app.services.snapshot_serializer import SnapshotSerializer
-from simulation.sumo.engine.distributed import RedisUnavailableError
-from simulation.sumo.engine.session import (
+from simulation_protocol.exceptions import RedisUnavailableError, UnknownSessionError
+from simulation_protocol.dto import (
     SessionMetrics,
     SimulationConfig,
     SimulationSnapshot,
-    UnknownSessionError,
 )
 
 
@@ -245,7 +244,7 @@ def test_create_manager_local_mode() -> None:
 
 def test_create_manager_redis_mode() -> None:
     settings = Settings(simulation_manager_mode="redis")
-    with patch("simulation.sumo.engine.distributed.RedisSimulationManager") as cls:
+    with patch("simulation_protocol.client.RedisSimulationClient") as cls:
         cls.return_value = MagicMock(name="redis-manager")
         manager = create_simulation_manager(settings)
         cls.assert_called_once()
@@ -255,7 +254,7 @@ def test_create_manager_redis_mode() -> None:
 def test_create_manager_redis_unavailable_does_not_fallback() -> None:
     settings = Settings(simulation_manager_mode="redis")
     with patch(
-        "simulation.sumo.engine.distributed.RedisSimulationManager",
+        "simulation_protocol.client.RedisSimulationClient",
         side_effect=RedisUnavailableError("boom"),
     ):
         with pytest.raises(RedisUnavailableError):

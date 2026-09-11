@@ -149,11 +149,15 @@ def main() -> None:
     if not args.net_file.is_file():
         raise SystemExit(f"SUMO network does not exist: {args.net_file}")
 
-    from backend.app.core.config import get_settings
-    from backend.app.core.sumo_env import configure_sumo_home, import_sumolib
+    import os
 
-    configure_sumo_home(get_settings())
-    sumolib = import_sumolib()
+    sumo_home = os.environ.get("SUMO_HOME")
+    if not sumo_home:
+        raise SystemExit("SUMO_HOME must be set for offline road-network conversion.")
+    tools = os.path.join(sumo_home, "tools")
+    if tools not in os.sys.path:
+        os.sys.path.insert(0, tools)
+    import sumolib  # type: ignore
     net = sumolib.net.readNet(str(args.net_file))
     collection = convert_network(
         net,

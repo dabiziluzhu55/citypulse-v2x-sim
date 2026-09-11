@@ -8,7 +8,8 @@ import math
 from pathlib import Path
 from typing import Any
 
-from simulation.sumo.engine.session import SimulationCatalog, SimulationManager
+from simulation_protocol.catalog import load_catalog
+from simulation_protocol.dto import SimulationCatalog
 
 from ..core.config import Settings
 from ..core.exceptions import AppError
@@ -18,13 +19,24 @@ logger = logging.getLogger(__name__)
 
 
 class MapService:
-    def __init__(self, settings: Settings, manager: SimulationManager) -> None:
+    def __init__(self, settings: Settings, manager: Any) -> None:
         self._settings = settings
         self._manager = manager
         self._net = None
         self._cache: dict[tuple[str, float, int | None], MapGeoJsonResponse] = {}
 
+    @property
+    def _allow_sumolib_fallback(self) -> bool:
+        return self._settings.normalized_manager_mode() == "local"
+
+    def _catalog(self) -> SimulationCatalog:
+        if self._manager is not None and hasattr(self._manager, "catalog"):
+            return self._manager.catalog()
+        return load_catalog(self._settings.generated_dir)
+
     def xy_to_lonlat(self, x: float, y: float) -> tuple[float | None, float | None]:
+        if not self._allow_sumolib_fallback:
+            return None, None
         try:
             net = self._load_net()
             lon, lat = net.convertXY2LonLat(float(x), float(y))
@@ -41,6 +53,8 @@ class MapService:
 
     def validate_coordinate_projection(self) -> None:
         """Fail startup clearly when SUMO's projection dependency is unavailable."""
+        if not self._allow_sumolib_fallback:
+            return
         try:
             net = self._load_net()
             net.convertXY2LonLat(0.0, 0.0)
@@ -51,6 +65,8 @@ class MapService:
             ) from exc
 
     def lane_center_lonlat(self, lane_id: str) -> tuple[float | None, float | None]:
+        if not self._allow_sumolib_fallback:
+            return None, None
         net = self._load_net()
         try:
             lane = net.getLane(lane_id)
@@ -65,7 +81,7 @@ class MapService:
     def intersection_lonlat(
         self, intersection_id: str
     ) -> tuple[float | None, float | None]:
-        catalog = self._manager.catalog()
+        catalog = self._catalog()
         item = catalog.intersections.get(intersection_id)
         if item is None or item.longitude is None or item.latitude is None:
             return None, None
@@ -84,7 +100,7 @@ class MapService:
             )
             return cached
 
-        catalog = self._manager.catalog()
+        catalog = self._catalog()
         intersection = catalog.intersections.get(intersection_id)
         if intersection is None:
             raise AppError(
@@ -111,18 +127,17 @@ class MapService:
         if generated is not None:
             self._cache = {cache_key: generated}
             return generated
-        net = self._load_net()
-        generated = self._load_generated_geojson(
-            artifact_path,
-            intersection_id=intersection_id,
-            center_lon=center_lon,
-            center_lat=center_lat,
-            radius_m=radius_m,
-        )
-        if generated is not None:
-            self._cache = {cache_key: generated}
-            return generated
+        if not self._allow_sumolib_fallback:
+            raise AppError(
+                code="MAP_ARTIFACT_MISSING",
+                message=(
+                    f"Pre-generated GeoJSON is required in production for "
+                    f"{intersection_id!r}: {artifact_path.name}"
+                ),
+                status_code=503,
+            )
 
+        net = self._load_net()
         center_x, center_y = net.convertLonLat2XY(center_lon, center_lat)
 
         features: list[dict[str, Any]] = []

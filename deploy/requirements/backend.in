@@ -5,7 +5,7 @@
 # 原则：
 # - CPU-only torch（勿安装 +cu130 索引）
 # - 禁止 eclipse-sumo / traci / libsumo
-# - 禁止 celery / vllm / peft / bitsandbytes
+# - 允许 celery client；禁止 vllm / peft / bitsandbytes
 # - 共享源码包 traffic_eval 随仓库 COPY，不在此列出
 
 # --- Web API ---
@@ -16,6 +16,9 @@ pydantic-settings>=2.6.0,<3
 
 # --- Redis 客户端（history / metadata / redis manager；非 Celery worker）---
 redis>=5,<7
+
+# --- Celery client（Backend 仅 send_task，不启动 worker）---
+celery>=5.3,<6
 
 # --- 数值 / 推理（CPU）---
 numpy>=1.26.0,<3

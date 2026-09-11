@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
-from simulation.sumo.engine.session import SimulationSnapshot
+from simulation_protocol.dto import SimulationSnapshot
 
 from traffic_llm_runtime.feature_builder import build_observation_v2
 from traffic_llm_runtime.manifest import neighbor_map, tls_phase_orders

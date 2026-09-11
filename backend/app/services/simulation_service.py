@@ -8,7 +8,8 @@ import threading
 from datetime import datetime, timezone
 from queue import Empty
 from typing import Any, Iterable
-from simulation.sumo.engine.events import (
+from simulation_protocol.dto import SimulationConfig, SimulationSnapshot
+from simulation_protocol.events import (
     AccidentEvent,
     DisturbanceEvent,
     LaneClosureEvent,
@@ -16,11 +17,7 @@ from simulation.sumo.engine.events import (
     MajorEventOpeningEvent,
     SpeedLimitEvent,
 )
-from simulation.sumo.engine.session import (
-    SimulationConfig,
-    SimulationSnapshot,
-    UnknownSessionError,
-)
+from simulation_protocol.exceptions import UnknownSessionError
 
 from ..controllers.registry import require_control_mode
 from ..core.config import Settings

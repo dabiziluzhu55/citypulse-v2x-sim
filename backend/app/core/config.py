@@ -193,7 +193,7 @@ class Settings(BaseSettings):
 
     @property
     def ai_control_config(self):
-        from simulation.sumo.engine.ai_control import AIControlConfig
+        from simulation_protocol.ai_control import AIControlConfig
 
         return AIControlConfig(
             plan_valid_seconds=self.ai_control_plan_valid_seconds,

@@ -8,10 +8,8 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from simulation.sumo.engine.ai_control import (
-    AIControlPlan,
-)
-from simulation.sumo.engine.session import SimulationSnapshot
+from simulation_protocol.ai_control import AIControlPlan
+from simulation_protocol.dto import SimulationSnapshot
 
 from traffic_llm_runtime.plan_schema import PLAN_JSON_SCHEMA
 from traffic_llm_runtime.prompts import POLICY_INSTRUCTION, SYSTEM_PROMPT

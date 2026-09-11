@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from simulation.sumo.engine.ai_control import (
+from simulation_protocol.ai_control import (
     AIControlConfig as RuntimeAIControlConfig,
     AIControlPlan as RuntimeAIControlPlan,
     AIControlValidationError,
