@@ -12,7 +12,6 @@ from simulation.sumo.engine.session import SimulationCatalog, SimulationManager
 
 from ..core.config import Settings
 from ..core.exceptions import AppError
-from ..core.sumo_env import import_sumolib
 from ..schemas.maps import BoundsSchema, CenterSchema, MapGeoJsonResponse
 
 logger = logging.getLogger(__name__)
@@ -278,6 +277,8 @@ class MapService:
 
     def _load_net(self):
         if self._net is None:
+            from ..core.sumo_env import import_sumolib
+
             sumolib = import_sumolib()
             net_path = self._settings.signals_net_path
             if not net_path.is_file():

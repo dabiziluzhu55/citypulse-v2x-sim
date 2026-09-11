@@ -9,7 +9,8 @@
 | `frontend/` | Vue前端，通过REST/WebSocket调用后端 |
 | `backend/` | FastAPI后端，不直接调用仿真TraCI |
 | `simulation/` | SUMO/libsumo仿真内核与分布式Worker |
-| `traffic_control/` | 产品管控算法包（fixed/sotl/max_pressure/ippo/mappo） |
+| `traffic_control/` | 产品管控算法包（fixed/sotl/max_pressure/ippo/mappo/cov2x） |
+| `traffic_intelligence/` | 运行时事件识别与交通状态（Backend部署包） |
 | `traffic_eval/` | 部署侧公共交通评估口径（Backend与命令行共用） |
 | `algorithms/` | 算法组训练与实验代码，不参与项目的部署 |
 | `data/maps/` | 地图与SUMO生成产物 |
@@ -42,11 +43,10 @@
 | `sotl` | SOTL，本地Protocol 2.0 |
 | `max_pressure` | Max Pressure，本地Protocol 2.0 |
 | `ippo` | 部署版IPPO，仅`xiongan_20`，默认加载包内checkpoint |
+| `mappo` | 部署版MAPPO，多路口协同 |
+| `cov2x` | 部署版CoV2X，车路协同 |
 
-**仿真与算法分离**：`simulation/` 在生产环境独占进程内libsumo；Max Pressure、IPPO和多路口
-强化学习通过HTTP/JSON协议2.0接收路口、单车及油耗状态，并返回官方目标相位、
-单车目标速度和换道请求。后端只转发snapshot，前端不直接连接SUMO。TraCI仅保留给
-本地`sumo-gui`调试。
+**仿真与算法分离**：`simulation/` 在生产环境独占进程内 libsumo；所有管控算法由 SUMO Worker 按 `traffic_control.registry` 动态加载，经本地 Protocol 2.0（`initialize` / `step` / `finish`）在 Worker 进程内执行。Backend 只管理会话与指标，不实例化 Controller、不加载 checkpoint。TraCI 仅保留给本地 `sumo-gui` 调试。
 
 ## 快速开始
 
@@ -91,7 +91,7 @@ pip install -r requirements.txt          # SUMO Worker(含torch等)
 ### 3. 启动Backend(local调试)
 
 ```bash
-PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
+PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 ```
 
 前端:

@@ -57,9 +57,6 @@ class Settings(BaseSettings):
     # 启用模式白名单（逗号分隔）；必须是registry子集空字符串表示启用注册表全部模式
     enabled_control_modes_csv: str = ""
 
-    # SUMO worker回调backend内部算法协议的可达基址（多机部署时必须改成外部可达URL）
-    algorithm_base_url: str = "http://127.0.0.1:8000"
-    algorithm_timeout: float = 2.0
     decision_interval: float = 5.0
 
     # 事件识别与短时预测采样

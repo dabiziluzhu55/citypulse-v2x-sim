@@ -1,0 +1,19 @@
+# CityPulse Backend — 开发/测试依赖草案
+# 包含 backend.in 全部内容 + 以下包
+
+-r backend.in
+
+# --- 测试 ---
+pytest>=8.3.0,<10
+httpx>=0.28.0,<1
+
+# --- 类型/开发工具（按需追加）---
+# mypy
+# ruff
+
+# --- 集成测试可能需要的可选包 ---
+shapely>=2.1.0,<3.0
+
+# 注意：以下仍在 backend/tests 使用但不应进入 production 镜像：
+# - traffic_control.* / simulation.sumo.*  — 集成测试，依赖 worker 环境或 mock
+# - algorithms.*                           — AI control 测试

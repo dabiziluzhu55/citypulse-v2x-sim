@@ -1,0 +1,5 @@
+pymatgen 2025.10.7 requires plotly, which is not installed.
+matplotlib 3.10.9 requires contourpy, which is not installed.
+matplotlib 3.10.9 requires cycler, which is not installed.
+matplotlib 3.10.9 requires fonttools, which is not installed.
+matplotlib 3.10.9 requires kiwisolver, which is not installed.

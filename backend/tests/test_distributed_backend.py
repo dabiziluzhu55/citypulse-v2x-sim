@@ -13,7 +13,6 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.controllers.runtime import AlgorithmRuntimeStore
 from backend.app.core.config import Settings
 from backend.app.main import create_app
 from backend.app.metrics.session_hub import SessionMetricsHub
@@ -186,7 +185,6 @@ def multi_manager(demo_catalog) -> FakeMultiSessionManager:
 def redis_like_service(
     multi_manager: FakeMultiSessionManager,
     serializer: SnapshotSerializer,
-    algorithm_store: AlgorithmRuntimeStore,
     memory_meta: InMemorySessionMetadataStore,
 ) -> SimulationService:
     settings = Settings(simulation_manager_mode="redis")
@@ -201,7 +199,6 @@ def redis_like_service(
         manager=multi_manager,
         serializer=serializer,
         settings=settings,
-        algorithm_store=algorithm_store,
         metrics_hub=hub,
         metadata_store=memory_meta,
     )
@@ -211,7 +208,6 @@ def redis_like_service(
 def local_service(
     multi_manager: FakeMultiSessionManager,
     serializer: SnapshotSerializer,
-    algorithm_store: AlgorithmRuntimeStore,
     memory_meta: InMemorySessionMetadataStore,
 ) -> SimulationService:
     settings = Settings(simulation_manager_mode="local")
@@ -220,7 +216,6 @@ def local_service(
         manager=multi_manager,
         serializer=serializer,
         settings=settings,
-        algorithm_store=algorithm_store,
         metrics_hub=hub,
         metadata_store=memory_meta,
     )
@@ -241,7 +236,7 @@ def _start_body(**overrides: Any) -> dict[str, Any]:
 
 def test_create_manager_local_mode() -> None:
     settings = Settings(simulation_manager_mode="local")
-    with patch("backend.app.services.manager_factory.SimulationManager") as cls:
+    with patch("simulation.sumo.engine.session.SimulationManager") as cls:
         cls.return_value = MagicMock(name="local-manager")
         manager = create_simulation_manager(settings)
         cls.assert_called_once()
@@ -250,7 +245,7 @@ def test_create_manager_local_mode() -> None:
 
 def test_create_manager_redis_mode() -> None:
     settings = Settings(simulation_manager_mode="redis")
-    with patch("backend.app.services.manager_factory.RedisSimulationManager") as cls:
+    with patch("simulation.sumo.engine.distributed.RedisSimulationManager") as cls:
         cls.return_value = MagicMock(name="redis-manager")
         manager = create_simulation_manager(settings)
         cls.assert_called_once()
@@ -260,7 +255,7 @@ def test_create_manager_redis_mode() -> None:
 def test_create_manager_redis_unavailable_does_not_fallback() -> None:
     settings = Settings(simulation_manager_mode="redis")
     with patch(
-        "backend.app.services.manager_factory.RedisSimulationManager",
+        "simulation.sumo.engine.distributed.RedisSimulationManager",
         side_effect=RedisUnavailableError("boom"),
     ):
         with pytest.raises(RedisUnavailableError):
@@ -321,7 +316,6 @@ def test_sessions_metrics_do_not_cross_talk(redis_like_service: SimulationServic
 def test_session_recovery_after_restart(
     multi_manager: FakeMultiSessionManager,
     serializer: SnapshotSerializer,
-    algorithm_store: AlgorithmRuntimeStore,
     memory_meta: InMemorySessionMetadataStore,
     demo_catalog,
 ):
@@ -332,7 +326,6 @@ def test_session_recovery_after_restart(
         manager=multi_manager,
         serializer=serializer,
         settings=settings,
-        algorithm_store=algorithm_store,
         metrics_hub=SessionMetricsHub(metadata_store=memory_meta),
         metadata_store=memory_meta,
     )
@@ -345,7 +338,6 @@ def test_session_recovery_after_restart(
         manager=multi_manager,
         serializer=serializer,
         settings=settings,
-        algorithm_store=AlgorithmRuntimeStore(),
         metrics_hub=SessionMetricsHub(metadata_store=memory_meta),
         metadata_store=memory_meta,
     )
@@ -402,7 +394,6 @@ def test_queued_command_restrictions(redis_like_service: SimulationService):
 def test_websocket_streams_from_queued_to_terminal(
     redis_like_service: SimulationService,
     multi_manager: FakeMultiSessionManager,
-    algorithm_store: AlgorithmRuntimeStore,
 ):
     from backend.app.schemas.simulations import StartSimulationRequest
 
@@ -414,7 +405,6 @@ def test_websocket_streams_from_queued_to_terminal(
         app.state.redis_ready = True
         app.state.simulation_manager_ready = True
         app.state.simulation_service = redis_like_service
-        app.state.algorithm_store = algorithm_store
         app.state.missing_files = []
 
         session_id, _ = redis_like_service.start(StartSimulationRequest(**_start_body()))
@@ -454,7 +444,6 @@ def test_websocket_streams_from_queued_to_terminal(
 def test_websocket_final_snapshot_waits_for_tripinfo_race(
     multi_manager: FakeMultiSessionManager,
     serializer: SnapshotSerializer,
-    algorithm_store: AlgorithmRuntimeStore,
     memory_meta: InMemorySessionMetadataStore,
     tmp_path,
 ):
@@ -480,7 +469,6 @@ def test_websocket_final_snapshot_waits_for_tripinfo_race(
         manager=multi_manager,
         serializer=serializer,
         settings=settings,
-        algorithm_store=algorithm_store,
         metrics_hub=hub,
         metadata_store=memory_meta,
     )
@@ -493,7 +481,6 @@ def test_websocket_final_snapshot_waits_for_tripinfo_race(
         app.state.redis_ready = True
         app.state.simulation_manager_ready = True
         app.state.simulation_service = service
-        app.state.algorithm_store = algorithm_store
         app.state.missing_files = []
 
         session_id, _ = service.start(StartSimulationRequest(**_start_body()))
@@ -585,13 +572,11 @@ def test_health_includes_manager_mode(client: TestClient) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert "simulation_manager_mode" in payload
-    assert "algorithm_base_url" in payload
-    assert payload["recommended_uvicorn_workers"] == 1
+    assert payload["recommended_uvicorn_workers"] >= 1
 
 
 def test_list_sessions_api(
     redis_like_service: SimulationService,
-    algorithm_store: AlgorithmRuntimeStore,
 ):
     from backend.app.schemas.simulations import StartSimulationRequest
 
@@ -603,7 +588,6 @@ def test_list_sessions_api(
         app.state.redis_ready = True
         app.state.simulation_manager_ready = True
         app.state.simulation_service = redis_like_service
-        app.state.algorithm_store = algorithm_store
         app.state.missing_files = []
 
         s1, _ = redis_like_service.start(StartSimulationRequest(**_start_body()))
@@ -623,7 +607,6 @@ def test_list_sessions_api(
 
 def test_unknown_session_returns_404(
     redis_like_service: SimulationService,
-    algorithm_store: AlgorithmRuntimeStore,
 ):
     app = create_app()
     with TestClient(app) as client:
@@ -633,7 +616,6 @@ def test_unknown_session_returns_404(
         app.state.redis_ready = True
         app.state.simulation_manager_ready = True
         app.state.simulation_service = redis_like_service
-        app.state.algorithm_store = algorithm_store
         app.state.missing_files = []
 
         response = client.get("/api/v1/simulations/does-not-exist")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from scripts.llm.qwen_transformers_server import _tool_call_from_text
+from scripts.archive.llm.qwen_transformers_server import _tool_call_from_text
 
 
 def _arguments(call: dict) -> dict:

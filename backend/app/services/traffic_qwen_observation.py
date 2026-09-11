@@ -6,9 +6,10 @@ from typing import Any, Mapping, Sequence
 
 from simulation.sumo.engine.session import SimulationSnapshot
 
-from algorithms.traffic_llm.dataset.feature_builder import build_observation_v2
-from algorithms.traffic_llm.dataset.schema import EventSpec, ScenarioSpec
-from algorithms.traffic_llm.dataset.trace_collector import compact_snapshot_summary
+from traffic_llm_runtime.feature_builder import build_observation_v2
+from traffic_llm_runtime.manifest import neighbor_map, tls_phase_orders
+from traffic_llm_runtime.schema import EventSpec, ScenarioSpec
+from traffic_llm_runtime.snapshot import compact_snapshot_summary
 
 
 def _tuple_ids(value: Any) -> tuple[str, ...]:
@@ -106,8 +107,6 @@ def build_live_observation_v2(
     resolved_neighbors = dict(neighbors or neighbors_from_topology(topology))
     if not resolved_neighbors:
         try:
-            from algorithms.traffic_llm.dataset.catalog import neighbor_map
-
             resolved_neighbors = neighbor_map()
         except Exception:
             resolved_neighbors = {}
@@ -122,8 +121,6 @@ def build_live_observation_v2(
             }
     if not resolved_phases:
         try:
-            from algorithms.traffic_llm.dataset.catalog import tls_phase_orders
-
             resolved_phases = tls_phase_orders()
         except Exception:
             resolved_phases = {}

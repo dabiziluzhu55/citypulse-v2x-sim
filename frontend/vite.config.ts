@@ -5,8 +5,6 @@ import { defineConfig, loadEnv, searchForWorkspaceRoot, type Plugin, type ProxyO
 
 import vue from '@vitejs/plugin-vue'
 
-import cesium from 'vite-plugin-cesium'
-
 import { createRoadsideMediaPlugin } from './vite.roadside-media'
 
 function createApiProxy(target: string): ProxyOptions {
@@ -76,7 +74,6 @@ export default defineConfig(({ mode }) => {
       createDevSourceNoStorePlugin(),
       createRoadsideMediaPlugin(roadsideMediaDir),
       vue(),
-      cesium(),
     ],
     optimizeDeps: {
       include: [

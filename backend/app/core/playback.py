@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from simulation.sumo import PLAYBACK_SPEEDS
+from simulation.sumo.engine.session import PLAYBACK_SPEEDS
 
 ALLOWED_PLAYBACK_SPEEDS: tuple[float, ...] = PLAYBACK_SPEEDS
 

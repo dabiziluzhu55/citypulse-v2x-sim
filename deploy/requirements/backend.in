@@ -1,0 +1,44 @@
+# CityPulse Backend — 直接依赖草案（production runtime）
+# 生成：2026-09-11 依赖审计第一轮
+# 用法：pip-compile backend.in → backend.txt（第二阶段）
+#
+# 原则：
+# - CPU-only torch（勿安装 +cu130 索引）
+# - 禁止 eclipse-sumo / traci / libsumo
+# - 禁止 celery / vllm / peft / bitsandbytes
+# - 共享源码包 traffic_eval 随仓库 COPY，不在此列出
+
+# --- Web API ---
+fastapi>=0.115.0,<1
+uvicorn[standard]>=0.32.0,<1
+pydantic>=2.10.0,<3
+pydantic-settings>=2.6.0,<3
+
+# --- Redis 客户端（history / metadata / redis manager；非 Celery worker）---
+redis>=5,<7
+
+# --- 数值 / 推理（CPU）---
+numpy>=1.26.0,<3
+# NarrowNet-TDP + RAG embedding；镜像构建时使用 CPU wheel 索引，例如：
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2.0,<3
+
+# --- Copilot RAG ---
+chromadb>=0.5.0,<2
+sentence-transformers>=2.7.0,<7
+transformers>=4.51.0,<6
+
+# --- 报表 / 导出 ---
+reportlab>=4.2.0,<6
+matplotlib>=3.8.0,<4
+pillow>=10.0.0,<13
+pyparsing>=3.1.0,<4
+
+# --- 坐标（map_service 经 sumolib 投影链；第二阶段改预生成 GeoJSON 后可移除）---
+pyproj>=3.7.0,<4
+
+# 注意：以下在当前 backend/requirements.txt 但本草案故意不含：
+# - pytest          → backend-dev.in
+# - httpx           → backend-dev.in（runtime llm 使用 urllib）
+# - shapely         → 仅 tests/simulation 工具使用，backend/app 未直接 import
+# - eclipse-sumo    → sumo-worker.in

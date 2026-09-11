@@ -10,7 +10,6 @@ from .v1 import (
     copilot,
     evaluation_reports,
     health,
-    internal_algorithm,
     maps,
     scenarios,
     simulations,
@@ -27,4 +26,3 @@ api_router.include_router(simulations.router, tags=["simulations"])
 api_router.include_router(evaluation_reports.router, tags=["evaluation-reports"])
 api_router.include_router(copilot.router, tags=["copilot"])
 api_router.include_router(scenarios.router, tags=["scenarios"])
-api_router.include_router(internal_algorithm.router, tags=["internal-algorithm"])

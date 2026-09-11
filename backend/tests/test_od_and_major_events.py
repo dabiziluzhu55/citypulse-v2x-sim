@@ -27,7 +27,6 @@ from backend.app.services.od_export import (
 )
 from backend.app.services.scenario_export_service import ScenarioExportService, _serialize_event
 from backend.app.services.simulation_service import SimulationService
-from backend.app.controllers.runtime import AlgorithmRuntimeStore
 from backend.app.services.snapshot_serializer import SnapshotSerializer
 from simulation.sumo import MajorEventClosingEvent, MajorEventOpeningEvent, SpeedLimitEvent
 from simulation.sumo.engine.session import (
@@ -474,7 +473,6 @@ def test_speed_limit_speed_kmh_converts_for_sumo() -> None:
 def test_major_event_initial_and_runtime_paths(
     mock_manager: MagicMock,
     serializer: SnapshotSerializer,
-    algorithm_store: AlgorithmRuntimeStore,
 ) -> None:
     catalog = _full_catalog()
     mock_manager.catalog.return_value = catalog
@@ -487,7 +485,6 @@ def test_major_event_initial_and_runtime_paths(
         mock_manager,
         serializer,
         settings,
-        algorithm_store,
         metadata_store=InMemorySessionMetadataStore(),
     )
     service._metadata.upsert(

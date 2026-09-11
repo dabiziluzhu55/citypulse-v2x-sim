@@ -10,9 +10,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from algorithms.event_detection.cards import EventCard, build_event_cards
-from algorithms.event_detection.rules import RuleConfig, detect_states
-from algorithms.event_detection.state import (
+from traffic_intelligence.event_detection.cards import EventCard, build_event_cards
+from traffic_intelligence.event_detection.rules import RuleConfig, detect_states
+from traffic_intelligence.event_detection.state import (
     IntersectionState,
     LaneState,
     edge_id_from_lane,

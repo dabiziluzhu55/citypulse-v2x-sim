@@ -9,7 +9,6 @@ from typing import Any, Mapping
 
 import pytest
 
-from backend.app.controllers.runtime import AlgorithmRuntimeStore
 from backend.app.metrics.collector import TrafficMetricsCollector
 from backend.app.metrics.models import EvalResult
 from backend.app.metrics.powertrain import (
@@ -623,9 +622,6 @@ def test_hard_braking_rate_null_when_no_departures() -> None:
 
 
 def test_fixed_decision_latency_is_none() -> None:
-    store = AlgorithmRuntimeStore()
-    assert store.get_decision_latency_ms("missing") is None
-
     collector = TrafficMetricsCollector("fixed")
     result = collector.result(finished=True, decision_latency_ms=None)
     assert result.avg_decision_latency_ms is None
@@ -982,7 +978,6 @@ def test_serialize_terminal_snapshot_waits_for_delayed_tripinfo(
     import time
     from unittest.mock import MagicMock
 
-    from backend.app.controllers.runtime import AlgorithmRuntimeStore
     from backend.app.core.config import Settings
     from backend.app.services.session_metadata import InMemorySessionMetadataStore
     from backend.app.services.simulation_service import SimulationService
@@ -1078,7 +1073,6 @@ def test_serialize_terminal_snapshot_waits_for_delayed_tripinfo(
         manager=mgr,
         serializer=SnapshotSerializer(converter),
         settings=settings,
-        algorithm_store=AlgorithmRuntimeStore(),
         metrics_hub=hub,
         metadata_store=meta,
     )

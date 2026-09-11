@@ -13,9 +13,8 @@ from simulation.sumo.engine.ai_control import (
 )
 from simulation.sumo.engine.session import SimulationSnapshot
 
-from algorithms.traffic_llm.dataset.sft_builder import SYSTEM_PROMPT
-from algorithms.traffic_llm.deployment.schema import PLAN_JSON_SCHEMA
-from algorithms.traffic_llm.evaluation.policy import POLICY_INSTRUCTION
+from traffic_llm_runtime.plan_schema import PLAN_JSON_SCHEMA
+from traffic_llm_runtime.prompts import POLICY_INSTRUCTION, SYSTEM_PROMPT
 
 from ..copilot.llm import LLMProvider
 from .ai_control_validation import active_ai_control_events

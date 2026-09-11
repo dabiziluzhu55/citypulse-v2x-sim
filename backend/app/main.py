@@ -8,16 +8,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from simulation.sumo.engine.distributed import RedisUnavailableError
-
 from .copilot.llm import LLMError, QwenProvider
 from .copilot.rag import ChromaKnowledgeRetriever, CompositeKnowledgeRetriever
 from .copilot.traffic_tools import RoadTopology, ToolDataUnavailableError
 from .api.router import api_router
-from .controllers.runtime import AlgorithmRuntimeStore
 from .core.config import get_settings
 from .core.exceptions import register_exception_handlers
-from .core.sumo_env import configure_sumo_home
 from .metrics.session_hub import SessionMetricsHub
 from .services.manager_factory import create_simulation_manager, probe_redis_manager
 from .services.map_service import MapService
@@ -51,30 +47,25 @@ async def lifespan(app: FastAPI):
     logger.info("Session root: %s", settings.session_root)
     logger.info("Simulation manager mode: %s", mode)
     logger.info("Enabled control modes: %s", list(settings.enabled_control_modes()))
-    logger.info("Algorithm base URL: %s", settings.algorithm_base_url)
 
     worker_count = detect_uvicorn_worker_count()
-    algorithm_state_shared = False
-    if worker_count is not None and worker_count > 1:
-        logger.warning(
-            "检测到 Uvicorn/Web worker=%s > 1；AlgorithmRuntimeStore 为进程内状态，"
-            "不支持跨进程共享。请使用 --workers %s",
-            worker_count,
-            recommended_uvicorn_workers(),
-        )
-    else:
-        logger.info(
-            "AlgorithmRuntimeStore 为进程内状态；推荐 Uvicorn workers=%s",
-            recommended_uvicorn_workers(),
-        )
+    if worker_count is not None:
+        logger.info("Detected Uvicorn/Web workers=%s", worker_count)
+    logger.info("Recommended Uvicorn workers=%s", recommended_uvicorn_workers())
 
-    sumo_home = configure_sumo_home(settings)
+    sumo_home = None
+    if mode == "local":
+        from .core.sumo_env import configure_sumo_home
+
+        sumo_home = configure_sumo_home(settings)
+    else:
+        logger.info("Redis mode: skipping SUMO_HOME configuration in API container")
+
     missing_files = settings.missing_generated_files()
     if missing_files:
         logger.warning("Missing generated artifacts: %s", missing_files)
 
     session_root_ok = settings.session_root.exists() or True
-    # session_root允许启动时不存在，首次仿真会创建；但路径父目录应可写
     try:
         settings.session_root.mkdir(parents=True, exist_ok=True)
         session_root_ok = True
@@ -98,10 +89,15 @@ async def lifespan(app: FastAPI):
             try:
                 manager = create_simulation_manager(settings)
                 manager_ready = True
-            except RedisUnavailableError as exc:
-                redis_ready = False
-                redis_error = str(exc)
-                logger.error("Failed to create RedisSimulationManager: %s", exc)
+            except Exception as exc:
+                from simulation.sumo.engine.distributed import RedisUnavailableError
+
+                if isinstance(exc, RedisUnavailableError):
+                    redis_ready = False
+                    redis_error = str(exc)
+                    logger.error("Failed to create RedisSimulationManager: %s", exc)
+                else:
+                    raise
     else:
         manager = create_simulation_manager(settings)
         manager_ready = True
@@ -122,14 +118,13 @@ async def lifespan(app: FastAPI):
             logger.error("%s", redis_error)
 
     map_service = MapService(settings, manager) if manager is not None else None
-    if map_service is not None:
+    if map_service is not None and mode == "local":
         map_service.validate_coordinate_projection()
     serializer = (
         SnapshotSerializer(map_service)
         if map_service is not None
         else SnapshotSerializer(_NullConverter())
     )
-    algorithm_store = AlgorithmRuntimeStore()
     metrics_hub = SessionMetricsHub(
         session_root=settings.session_root,
         traffic_manifest_path=settings.generated_dir
@@ -143,7 +138,6 @@ async def lifespan(app: FastAPI):
             manager=manager,
             serializer=serializer,
             settings=settings,
-            algorithm_store=algorithm_store,
             metrics_hub=metrics_hub,
             metadata_store=metadata_store,
         )
@@ -159,7 +153,7 @@ async def lifespan(app: FastAPI):
         copilot_provider = QwenProvider.from_settings(settings, role="copilot")
         control_provider = QwenProvider.from_settings(settings, role="control")
         logger.info(
-            "Traffic-Qwen providers ready: model=%s base_url=%s copilot_timeout=%ss control_timeout=%ss",
+            "CityPulse-Qwen providers ready: model=%s base_url=%s copilot_timeout=%ss control_timeout=%ss",
             settings.llm_model,
             settings.llm_base_url,
             settings.resolved_copilot_timeout_seconds,
@@ -167,7 +161,7 @@ async def lifespan(app: FastAPI):
         )
     except LLMError as exc:
         copilot_config_error = "Copilot model configuration is invalid."
-        logger.error("Traffic-Qwen provider configuration failed: code=%s", exc.code)
+        logger.error("CityPulse-Qwen provider configuration failed: code=%s", exc.code)
 
     copilot_topology = None
     topology_path = settings.generated_dir / "manifests" / "tls_manifest.json"
@@ -229,7 +223,6 @@ async def lifespan(app: FastAPI):
     app.state.simulation_manager = manager
     app.state.map_service = map_service
     app.state.snapshot_serializer = serializer
-    app.state.algorithm_store = algorithm_store
     app.state.metrics_hub = metrics_hub
     app.state.session_metadata_store = metadata_store
     app.state.simulation_service = simulation_service
@@ -260,7 +253,6 @@ async def lifespan(app: FastAPI):
     app.state.simulation_manager_ready = bool(manager_ready)
     app.state.redis_ready = redis_ready
     app.state.redis_error = redis_error
-    app.state.algorithm_state_shared = algorithm_state_shared
     app.state.recommended_uvicorn_workers = recommended_uvicorn_workers()
     app.state.detected_uvicorn_workers = worker_count
 

@@ -13,20 +13,21 @@
 - TraCI 由 `simulation` 层的仿真管理器持有：
   - `local` 模式：`SimulationManager`（本机进程内）
   - `redis` 模式：`RedisSimulationManager`（Celery SUMO worker + Redis 会话状态）
-- Backend **复用** `simulation.sumo.RedisSimulationManager`，不在 backend 重写 Celery / TraCI / SUMO worker
-- `AlgorithmRuntimeStore` 为**进程内**状态，Uvicorn 必须 `--workers 1`
+- Backend **复用** `simulation.sumo.engine.distributed.RedisSimulationManager`，不在 backend 重写 Celery / TraCI / SUMO worker
+- 管控算法只在 SUMO Worker 内加载；Backend **不**实例化 Controller、**不**加载 checkpoint
+- 事件识别在 `traffic_intelligence/`；Backend 通过 `app/services/intelligence_runtime.py` 调用
 
 分层职责：
 
 | 层 | 路径 | 说明 |
 |---|---|---|
 | API | `app/api/v1/` | 对外统一 REST / WebSocket |
-| 管控算法 | `app/controllers/` | fixed / max_pressure / sotl 等纯决策逻辑 |
+| 管控元数据 | `app/controllers/registry.py` | 只读 `traffic_control.registry`，供 catalog API |
 | 指标计算 | `app/metrics/` | 薄封装，转发至仓库根目录 `traffic_eval/` |
+| 运行时智能 | `traffic_intelligence/` + `app/services/intelligence_runtime.py` | 事件识别、交通状态展示 |
 | 会话元数据 | `app/services/session_metadata.py` | backend 独立 Redis/内存命名空间 |
 | 场景层 | `app/scenario/` | 场景预设与启动请求解析 |
 | 场景导出 | `app/services/scenario_export_service.py` / `od_export.py` | ZIP 含路网与九区域 OD |
-| 内部算法协议 | `app/api/v1/internal_algorithm.py` | 供 SUMO worker HTTP 回调 |
 
 ---
 
@@ -46,8 +47,8 @@
 3. **指标 watcher**：按 `session_id` 订阅快照；用 Redis 锁保证同一 session 只有一个 watcher；WebSocket 断开不影响采集
 4. **重启恢复**：backend 启动后可根据元数据恢复未完成会话的指标 watcher
 5. **Redis 不可用**：健康检查 `degraded`，仿真 API 返回 **503** `REDIS_UNAVAILABLE`，**不会**静默降级为 local
-6. **SUMO_HOME**：redis 模式下调用仿真 API **不强制**本机 `SUMO_HOME`（SUMO 在 worker 侧）；仍需检查 generated 产物与共享 `session_root`
-7. **算法回调地址**：`ALGORITHM_BASE_URL` 必须是 SUMO worker 可达的 backend 地址，不能假设 worker 里的 `127.0.0.1` 就是 API 容器
+6. **SUMO_HOME**：redis 模式下 Backend **不需要**本机 `SUMO_HOME` 或 libsumo；仍需检查 generated 产物与共享 `session_root`
+7. **算法执行**：全部 `algorithm_transport=local`，由 Worker 内 `traffic_control.*` 模块执行；无 HTTP 算法回调
 
 ### 相关环境变量
 
@@ -61,11 +62,9 @@ CITYPULSE_REDIS_KEY_PREFIX=citypulse
 CITYPULSE_SESSION_TTL_SECONDS=86400
 CITYPULSE_COMMAND_TIMEOUT_SECONDS=30
 CITYPULSE_WORKER_HEARTBEAT_TTL_SECONDS=15
-
-ALGORITHM_BASE_URL=http://127.0.0.1:8000
 ```
 
-系统唯一大模型为 **Traffic-Qwen V2 AWQ-vLLM**。Copilot 与 AI Control 共用
+系统唯一大模型为 **CityPulse-Qwen V2 AWQ**（vLLM）。Copilot 与 AI Control 共用
 `base_url` + `model`，但 prompt / timeout / tools / RAG 彼此独立：
 
 ```bash
@@ -129,30 +128,30 @@ pip install -r backend/requirements.txt
 
 ## 启动后端
 
-在仓库根目录执行（把仓库根加入 `PYTHONPATH`；事件识别会 import `algorithms.event_detection`）：
+在仓库根目录执行（把仓库根加入 `PYTHONPATH`）：
 
 ```bash
 cd <repo-root>
 export PYTHONPATH=.
 uvicorn backend.app.main:app \
   --host 0.0.0.0 \
-  --port 8000 \
-  --workers 1
+  --port 8000
 ```
 
 或一行：
 
 ```bash
-PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
+PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 ```
 
 注意：
 
-- 场景预设定义在 `backend/app/scenario/presets.py`，与 `algorithms/` 训练代码完全解耦
-- 必须使用 `--workers 1`（算法控制器状态不跨进程共享）
+- 场景预设 canonical 定义在 `scenario_catalog/`；`backend/app/scenario/presets.py` 为 re-export
+- 事件识别在 `traffic_intelligence/`，Backend **不** import `algorithms/`
+- redis 生产模式可使用多 worker（算法状态在 Worker 侧，不在 Backend 进程内）
 - **local 模式**下活动仿真运行时不要使用 `--reload`，否则 reload 会导致本机会话丢失
 - **redis 模式**下 reload/重启 API 不会停止已在 SUMO worker 中运行的会话
-- Traffic-Qwen V2 AWQ-vLLM 需先在 GPU1 监听 `8001`（served name：`traffic-qwen-v2`），再启动 Backend
+- CityPulse-Qwen（vLLM）需先监听 `8001`（served name：`traffic-qwen-v2`），再启动 Backend
 
 Swagger 文档：`http://localhost:8000/docs`
 
@@ -182,7 +181,7 @@ python -m traffic_eval \
 
 ```bash
 # 后端需已启动
-PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
+PYTHONPATH=. uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 
 python backend/tools/eval.py
 python backend/tools/eval.py \
@@ -231,7 +230,7 @@ python backend/tools/eval.py \
 | 平均停车等待时间 | `avg_waiting_time` | 同上车辆的 `waitingTime` 总和 ÷ departed；不是完整延误 |
 | 进口车道平均排队车辆数 | `avg_queue_length` | 仅 `role=incoming`；车道 `halting_count` 均值再按仿真 Δt 加权（veh/lane） |
 | 网络实际吞吐流率 | `throughput` | `arrived / evaluation_duration_s × 3600`，不是通行能力 |
-| 决策延迟 | `avg_decision_latency_ms` | `AlgorithmRuntimeStore` 的 perf_counter；Fixed 无样本为 `null` |
+| 决策延迟 | `avg_decision_latency_ms` | Worker 侧决策耗时经 snapshot 回传；Fixed 无样本为 `null` |
 | 急刹车事件数 | `hard_braking_events` | 终态快照 `metrics.hard_braking_events`（单调累计，取终态/历史最大，禁止多帧相加） |
 | 急刹车率 | `hard_braking_rate` | `hard_braking_events / departed × 100`，单位「次/100辆」 |
 
@@ -360,9 +359,7 @@ od/
   "session_root_ready": true,
   "simulation_manager_ready": true,
   "redis_ready": true,
-  "algorithm_base_url": "http://127.0.0.1:8000",
-  "algorithm_state_shared": false,
-  "recommended_uvicorn_workers": 1
+  "recommended_uvicorn_workers": 2
 }
 ```
 
@@ -888,28 +885,6 @@ od/                         # 仅 xiongan_20
 
 ---
 
-## 8. 内部算法协议 Internal Algorithm
-
-> 供 SUMO worker 回调，非前端接口。算法名：`max_pressure` / `sotl`
-
-Worker 应回调 `ALGORITHM_BASE_URL` + `/api/v1/internal/algorithm/{name}/...`
-
-### 8.1 初始化
-
-**接口：** `POST /api/v1/internal/algorithm/{algorithm_name}/initialize`
-
-### 8.2 决策 Step
-
-**接口：** `POST /api/v1/internal/algorithm/{algorithm_name}/step`
-
-### 8.3 结束
-
-**接口：** `POST /api/v1/internal/algorithm/{algorithm_name}/finish`
-
-**返回：** `{"ok": true}`
-
----
-
 ## 接口总览
 
 | 模块 | 方法 | 路径 |
@@ -935,7 +910,6 @@ Worker 应回调 `ALGORITHM_BASE_URL` + `/api/v1/internal/algorithm/{name}/...`
 | 6 Simulations | WS | `/simulations/{id}/stream` |
 | 6.11 Copilot | POST | `/simulations/{id}/copilot/chat` |
 | 7 Scenarios | POST | `/scenarios/export` |
-| 8 Internal | POST | `/internal/algorithm/{name}/initialize\|step\|finish` |
 
 ---
 

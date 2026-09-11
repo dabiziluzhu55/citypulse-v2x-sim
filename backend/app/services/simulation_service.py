@@ -8,19 +8,21 @@ import threading
 from datetime import datetime, timezone
 from queue import Empty
 from typing import Any, Iterable
-from simulation.sumo import (
+from simulation.sumo.engine.events import (
     AccidentEvent,
+    DisturbanceEvent,
     LaneClosureEvent,
     MajorEventClosingEvent,
     MajorEventOpeningEvent,
-    SimulationConfig,
     SpeedLimitEvent,
 )
-from simulation.sumo.engine.events import DisturbanceEvent
-from simulation.sumo.engine.session import SimulationSnapshot, UnknownSessionError
+from simulation.sumo.engine.session import (
+    SimulationConfig,
+    SimulationSnapshot,
+    UnknownSessionError,
+)
 
 from ..controllers.registry import require_control_mode
-from ..controllers.runtime import AlgorithmRuntimeStore
 from ..core.config import Settings
 from ..core.exceptions import AppError
 from ..metrics.session_hub import SessionMetricsHub
@@ -64,7 +66,6 @@ class SimulationService:
         manager: Any,
         serializer: SnapshotSerializer,
         settings: Settings,
-        algorithm_store: AlgorithmRuntimeStore,
         metrics_hub: SessionMetricsHub | None = None,
         metadata_store: SessionMetadataStore | None = None,
         history_repository: HistoryRepository | None = None,
@@ -72,7 +73,6 @@ class SimulationService:
         self._manager = manager
         self._serializer = serializer
         self._settings = settings
-        self._algorithm_store = algorithm_store
         self._metadata = metadata_store or create_session_metadata_store(
             mode=settings.normalized_manager_mode(),
             redis_url=settings.citypulse_redis_state_url,
@@ -394,7 +394,7 @@ class SimulationService:
         return self._manager.subscribe(session_id)
 
     def get_metrics(self, session_id: str) -> dict[str, Any]:
-        latency = self._algorithm_store.get_decision_latency_ms(session_id)
+        latency = None
         finished_hint = None
         try:
             state = self._manager.snapshot(session_id).state
@@ -516,14 +516,10 @@ class SimulationService:
                         "Failed to stop local session %s during shutdown.",
                         meta.session_id,
                     )
-                    self._algorithm_store.abort_episode(meta.session_id)
                     self._metrics_hub.abort_without_snapshot(
                         meta.session_id,
-                        decision_latency_ms=self._algorithm_store.get_decision_latency_ms(
-                            meta.session_id
-                        ),
+                        decision_latency_ms=None,
                     )
-            self._algorithm_store.clear_all()
             self._metrics_hub.clear_all()
             self._intelligence.clear_all()
         else:
@@ -634,12 +630,9 @@ class SimulationService:
                     break
         except Exception:
             logger.exception("metrics watcher failed for session %s", session_id)
-            self._algorithm_store.abort_episode(session_id)
             self._metrics_hub.abort_without_snapshot(
                 session_id,
-                decision_latency_ms=self._algorithm_store.get_decision_latency_ms(
-                    session_id
-                ),
+                decision_latency_ms=None,
             )
             self._metadata.update(session_id, metrics_status="aborted")
         finally:
@@ -661,8 +654,7 @@ class SimulationService:
         intelligence: dict[str, Any] | None = None,
     ) -> None:
         session_id = snapshot.session_id
-        self._algorithm_store.abort_episode(session_id)
-        latency = self._algorithm_store.get_decision_latency_ms(session_id)
+        latency = None
         try:
             self._metrics_hub.finalize(snapshot, decision_latency_ms=latency)
         except Exception:
@@ -966,7 +958,9 @@ def _iso(ts: float) -> str:
 
 
 def recommended_uvicorn_workers() -> int:
-    return 1
+    """Backend no longer hosts in-process algorithm state; multiple workers are OK."""
+
+    return max(1, (os.cpu_count() or 1) // 2)
 
 
 def detect_uvicorn_worker_count() -> int | None:

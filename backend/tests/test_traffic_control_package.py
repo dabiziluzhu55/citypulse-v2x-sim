@@ -12,7 +12,6 @@ import pytest
 
 from backend.app.controllers.registry import (
     CONTROL_MODE_REGISTRY,
-    create_controller,
     list_control_modes,
     require_control_mode,
 )
@@ -141,7 +140,6 @@ def _make_service(**settings_kwargs: object) -> SimulationService:
         manager=MagicMock(),
         serializer=MagicMock(),
         settings=settings,
-        algorithm_store=MagicMock(),
         metrics_hub=MagicMock(),
         metadata_store=MagicMock(),
     )
@@ -397,11 +395,8 @@ def test_ippo_protocol_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_sotl_migration_matches_controller_output() -> None:
-    from backend.app.controllers.sotl import SOTLController as BackendSOTL
-
-    assert BackendSOTL is tc_sotl.SOTLController
     metadata = _sotl_metadata()
-    controller = create_controller("sotl", metadata)
+    controller = tc_sotl.SOTLController(metadata)
     tc_sotl.initialize(metadata)
     observation = {
         "episode_id": metadata["episode_id"],
@@ -441,13 +436,8 @@ def test_sotl_migration_matches_controller_output() -> None:
 
 
 def test_max_pressure_migration_matches_controller_output() -> None:
-    from backend.app.controllers.max_pressure import (
-        MaxPressureController as BackendMP,
-    )
-
-    assert BackendMP is tc_max_pressure.MaxPressureController
     metadata = _max_pressure_metadata()
-    controller = create_controller("max_pressure", metadata)
+    controller = tc_max_pressure.MaxPressureController(metadata)
     observation = {
         "episode_id": metadata["episode_id"],
         "step_id": 1,

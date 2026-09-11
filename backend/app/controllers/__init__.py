@@ -1,23 +1,23 @@
-"""管控算法层"""
+"""Backend control-mode registry (metadata only; algorithms run in SUMO worker)."""
 
-from .max_pressure import MaxPressureController
 from .registry import (
     CONTROL_MODE_REGISTRY,
     ControlModeSpec,
-    create_controller,
+    get_control_mode,
+    is_supported_control_mode,
     list_control_modes,
+    list_local_algorithm_modules,
     require_control_mode,
+    validate_enabled_modes,
 )
-from .runtime import AlgorithmRuntimeStore
-from .sotl import SOTLController
 
 __all__ = [
-    "AlgorithmRuntimeStore",
     "CONTROL_MODE_REGISTRY",
     "ControlModeSpec",
-    "MaxPressureController",
-    "SOTLController",
-    "create_controller",
+    "get_control_mode",
+    "is_supported_control_mode",
     "list_control_modes",
+    "list_local_algorithm_modules",
     "require_control_mode",
+    "validate_enabled_modes",
 ]

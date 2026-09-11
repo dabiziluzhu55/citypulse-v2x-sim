@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.app.controllers.sotl import SOTLController
+from traffic_control.sotl import SOTLController
 
 
 def _metadata(*, minimum_green: float = 5.0, decision_interval: float = 5.0) -> dict:

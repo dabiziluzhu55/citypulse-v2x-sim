@@ -269,7 +269,7 @@ def run_local_episode(
 def load_preset_intersection_ids(preset_id: str) -> tuple[str, ...]:
     """读取与Backend一致的场景预设"""
 
-    from backend.app.scenario.presets import require_scenario_preset
+    from scenario_catalog.presets import require_scenario_preset
 
     return require_scenario_preset(preset_id).intersection_ids
 

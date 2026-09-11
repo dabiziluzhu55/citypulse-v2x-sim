@@ -1,6 +1,5 @@
 import { inject, onScopeDispose, provide, ref, shallowRef } from 'vue'
 import type Map from 'ol/Map'
-import type { Viewer } from 'cesium'
 import {
   DEFAULT_CESIUM_CAMERA_PRESET_ID,
   DEFAULT_MAP_CENTER,
@@ -15,7 +14,6 @@ import {
 import type { AppMapMode, AppMapView, CesiumCameraPresetId, MapDimension, ThreeMapController } from '../types/map'
 import { appMapViewKey } from '../types/map'
 import {
-  applyCesiumViewport,
   applyOlViewport,
   type ApplyViewportOptions,
   type StoredMapViewport,
@@ -38,7 +36,6 @@ export function provideAppMapView() {
   })
   const mapRef = shallowRef<Map | null>(null)
   const threeMapRef = shallowRef<ThreeMapController | null>(null)
-  const cesiumRef = shallowRef<Viewer | null>(null)
 
   function setDimension(next: MapDimension) {
     dimension.value = next
@@ -99,14 +96,6 @@ export function provideAppMapView() {
         )
       }
     }
-
-    const viewer = cesiumRef.value
-    if (viewer) {
-      applyCesiumViewport(viewer, viewport.value, {
-        ...options,
-        cameraPreset: resolveCesiumCameraPreset(cameraPreset.value),
-      })
-    }
   }
 
   function registerMap(map: Map) {
@@ -127,13 +116,12 @@ export function provideAppMapView() {
     threeMapRef.value = null
   }
 
-  function registerCesium(viewer: Viewer) {
-    cesiumRef.value = viewer
-    applyViewport({ duration: 0 })
+  function registerCesium(_viewer: unknown) {
+    // Legacy no-op: production 3D uses MapV-Three, not Cesium.
   }
 
   function unregisterCesium() {
-    cesiumRef.value = null
+    // Legacy no-op.
   }
 
   function setViewport(next: StoredMapViewport, options: ApplyViewportOptions = {}) {
@@ -272,12 +260,5 @@ export function bindThreeMapInstance(mapView: AppMapView, map: ThreeMapControlle
   mapView.registerThreeMap(map)
   onScopeDispose(() => {
     mapView.unregisterThreeMap()
-  })
-}
-
-export function bindCesiumInstance(mapView: AppMapView, viewer: Viewer) {
-  mapView.registerCesium(viewer)
-  onScopeDispose(() => {
-    mapView.unregisterCesium()
   })
 }

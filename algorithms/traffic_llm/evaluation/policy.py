@@ -14,10 +14,7 @@ from simulation.sumo.engine.ai_control import (
     AIControlValidationError,
 )
 
-from algorithms.traffic_llm.dataset.sft_builder import SYSTEM_PROMPT
-
-
-POLICY_INSTRUCTION = "根据当前观测生成未来 30 秒多路口信号计划。"
+from traffic_llm_runtime.prompts import POLICY_INSTRUCTION, SYSTEM_PROMPT
 
 
 def extract_json_object(text: str) -> dict[str, Any] | None:

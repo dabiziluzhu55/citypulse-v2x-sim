@@ -13,7 +13,7 @@ import {
   ROAD_MAX_WIDTH_METERS,
   ROAD_MIN_WIDTH_METERS,
   ROAD_SURFACE_CSS,
-} from '../constants/cesiumTrafficVisualization'
+} from '../constants/trafficVisualization'
 import { projectSimulationCoordinateToBaiduMap } from './sceneCoordinates'
 import type { RoadCoordinateProjector } from './roadGeometry'
 import { BAIDU_ROAD_SURFACE_Z } from './sceneElevation'

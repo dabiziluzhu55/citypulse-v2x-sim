@@ -1,0 +1,4009 @@
+{
+  "packages": {
+    "PIL": {
+      "file_count": 3,
+      "files_sample": [
+        "backend/app/services/od_export.py",
+        "simulation/carla/data_export/exporters/stream.py",
+        "simulation/carla/data_export/selfcheck.py"
+      ],
+      "services": [
+        "backend",
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only",
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/od_export.py:465 (from PIL)",
+        "backend/app/services/od_export.py:585 (from PIL)",
+        "simulation/carla/data_export/selfcheck.py:689 (from PIL)",
+        "simulation/carla/data_export/exporters/stream.py:130 (from PIL)",
+        "simulation/carla/data_export/exporters/stream.py:335 (import PIL)"
+      ],
+      "in_requirements": []
+    },
+    "__future__": {
+      "file_count": 434,
+      "files_sample": [
+        "algorithms/common/pressure_shaping.py",
+        "algorithms/common/test_pressure_shaping.py",
+        "algorithms/cov2x/actuator_runtime.py",
+        "algorithms/cov2x/cloud/observations.py",
+        "algorithms/cov2x/collab/joint_policy.py",
+        "algorithms/cov2x/collab/joint_rewards.py",
+        "algorithms/cov2x/collab/joint_rollout.py",
+        "algorithms/cov2x/collab/mvp_policy.py"
+      ],
+      "services": [
+        "backend",
+        "backend+sumo-worker",
+        "backend/offline",
+        "citypulse-qwen",
+        "offline-training",
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only",
+        "runtime",
+        "test",
+        "training"
+      ],
+      "import_samples": [
+        "backend/tools/eval.py:31 (from __future__)",
+        "backend/app/main.py:3 (from __future__)",
+        "backend/app/copilot/traffic_tools.py:9 (from __future__)",
+        "backend/app/copilot/orchestrator.py:10 (from __future__)",
+        "backend/app/copilot/llm.py:11 (from __future__)"
+      ],
+      "in_requirements": []
+    },
+    "_common": {
+      "file_count": 3,
+      "files_sample": [
+        "simulation/carla/data_export/exporters/kitti.py",
+        "simulation/carla/data_export/exporters/lidar.py",
+        "simulation/carla/data_export/exporters/rgb_camera.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/data_export/exporters/rgb_camera.py:12 (from ._common _common)",
+        "simulation/carla/data_export/exporters/lidar.py:9 (from ._common _common)",
+        "simulation/carla/data_export/exporters/kitti.py:38 (from ._common _common)"
+      ],
+      "in_requirements": []
+    },
+    "action_parser": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/episode_runner.py",
+        "algorithms/traffic_llm/dataset/sft_builder.py",
+        "algorithms/traffic_llm/dataset/trace_collector.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/sft_builder.py:11 (from .action_parser action_parser)",
+        "algorithms/traffic_llm/dataset/trace_collector.py:9 (from .action_parser action_parser)",
+        "algorithms/traffic_llm/dataset/episode_runner.py:17 (from .action_parser action_parser)"
+      ],
+      "in_requirements": []
+    },
+    "aggregator": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/v2x/collab/engine.py",
+        "algorithms/v2x/collab/state.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/collab/state.py:8 (from .aggregator aggregator)",
+        "algorithms/v2x/collab/engine.py:12 (from .aggregator aggregator)"
+      ],
+      "in_requirements": []
+    },
+    "ai_control": {
+      "file_count": 5,
+      "files_sample": [
+        "backend/app/schemas/simulations.py",
+        "simulation/sumo/engine/ai_executor.py",
+        "simulation/sumo/engine/distributed/codec.py",
+        "simulation/sumo/engine/distributed/manager.py",
+        "simulation/sumo/engine/session.py"
+      ],
+      "services": [
+        "backend",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/schemas/simulations.py:13 (from .ai_control ai_control)",
+        "simulation/sumo/engine/ai_executor.py:10 (from .ai_control ai_control)",
+        "simulation/sumo/engine/session.py:38 (from .ai_control ai_control)",
+        "simulation/sumo/engine/distributed/codec.py:27 (from .ai_control ai_control)",
+        "simulation/sumo/engine/distributed/manager.py:29 (from .ai_control ai_control)"
+      ],
+      "in_requirements": []
+    },
+    "ai_control_validation": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/services/simulation_service.py",
+        "backend/app/services/takeover_orchestrator.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/simulation_service.py:39 (from .ai_control_validation ai_control_validation)",
+        "backend/app/services/takeover_orchestrator.py:21 (from .ai_control_validation ai_control_validation)"
+      ],
+      "in_requirements": []
+    },
+    "ai_executor": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/sumo/engine/session.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/session.py:39 (from .ai_executor ai_executor)"
+      ],
+      "in_requirements": []
+    },
+    "ai_observer": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/sumo/algorithm/__init__.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/algorithm/__init__.py:3 (from .ai_observer ai_observer)"
+      ],
+      "in_requirements": []
+    },
+    "algorithm": {
+      "file_count": 5,
+      "files_sample": [
+        "simulation/sumo/__init__.py",
+        "simulation/sumo/engine/run.py",
+        "simulation/sumo/engine/session.py",
+        "simulation/sumo/engine/tripinfo.py",
+        "simulation/sumo/engine/vehicle.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/__init__.py:3 (from .algorithm algorithm)",
+        "simulation/sumo/engine/vehicle.py:9 (from .algorithm.policy algorithm.policy)",
+        "simulation/sumo/engine/run.py:20 (from .algorithm.policy algorithm.policy)",
+        "simulation/sumo/engine/tripinfo.py:11 (from .algorithm.policy algorithm.policy)",
+        "simulation/sumo/engine/session.py:40 (from .algorithm.local_policy algorithm.local_policy)"
+      ],
+      "in_requirements": []
+    },
+    "aliases": {
+      "file_count": 3,
+      "files_sample": [
+        "traffic_control/cov2x/dispatch.py",
+        "traffic_control/ippo/controller.py",
+        "traffic_control/mappo/controller.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_control/mappo/controller.py:88 (from .aliases aliases)",
+        "traffic_control/cov2x/dispatch.py:10 (from .aliases aliases)",
+        "traffic_control/ippo/controller.py:79 (from .aliases aliases)"
+      ],
+      "in_requirements": []
+    },
+    "api": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/main.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/main.py:16 (from .api.router api.router)"
+      ],
+      "in_requirements": []
+    },
+    "arbiter": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/v2x/collab/engine.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/collab/engine.py:13 (from .arbiter arbiter)"
+      ],
+      "in_requirements": []
+    },
+    "archive": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/prediction/train_narrow_net_tdp.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/train_narrow_net_tdp.py:13 (from .archive.experiments.train_dynamic_lane_v1 archive.experiments.train_dynamic_lane_v1)"
+      ],
+      "in_requirements": []
+    },
+    "artifacts": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/sumo/building/build_tls.py",
+        "simulation/sumo/building/build_traffic.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/building/build_tls.py:19 (from .artifacts artifacts)",
+        "simulation/sumo/building/build_traffic.py:21 (from .artifacts artifacts)"
+      ],
+      "in_requirements": []
+    },
+    "awq": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/deployment/quantize_awq.py"
+      ],
+      "services": [
+        "citypulse-qwen"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/deployment/quantize_awq.py:59 (from awq)"
+      ],
+      "in_requirements": []
+    },
+    "base": {
+      "file_count": 12,
+      "files_sample": [
+        "simulation/carla/data_export/__init__.py",
+        "simulation/carla/data_export/config.py",
+        "simulation/carla/data_export/context.py",
+        "simulation/carla/data_export/exporters/_common.py",
+        "simulation/carla/data_export/exporters/kitti.py",
+        "simulation/carla/data_export/exporters/lidar.py",
+        "simulation/carla/data_export/exporters/manifest.py",
+        "simulation/carla/data_export/exporters/rgb_camera.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/data_export/selfcheck.py:27 (from .base base)",
+        "simulation/carla/data_export/manager.py:10 (from .base base)",
+        "simulation/carla/data_export/config.py:42 (from .base base)",
+        "simulation/carla/data_export/output.py:23 (from .base base)",
+        "simulation/carla/data_export/context.py:9 (from .base base)"
+      ],
+      "in_requirements": []
+    },
+    "batch_clip": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/carla/xml2odr/cli.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/xml2odr/cli.py:8 (from .batch_clip batch_clip)",
+        "simulation/carla/xml2odr/cli.py:13 (from .batch_clip batch_clip)",
+        "simulation/carla/xml2odr/cli.py:348 (from .batch_clip batch_clip)"
+      ],
+      "in_requirements": []
+    },
+    "bin2pcd": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/carla/data_export/selfcheck.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/data_export/selfcheck.py:933 (import bin2pcd)"
+      ],
+      "in_requirements": []
+    },
+    "build_directional_lane_graph": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py",
+        "algorithms/prediction/static_directional_lane_model.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/static_directional_lane_model.py:24 (from .build_directional_lane_graph build_directional_lane_graph)",
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py:24 (from .build_directional_lane_graph build_directional_lane_graph)"
+      ],
+      "in_requirements": []
+    },
+    "build_dynamic_lane_graph": {
+      "file_count": 9,
+      "files_sample": [
+        "algorithms/prediction/archive/experiments/build_lane_junction_mapping.py",
+        "algorithms/prediction/archive/experiments/dynamic_cheb_lane_model.py",
+        "algorithms/prediction/archive/experiments/dynamic_lane_model.py",
+        "algorithms/prediction/archive/experiments/static_hierarchical_lane_model.py",
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py",
+        "algorithms/prediction/build_directional_lane_graph.py",
+        "algorithms/prediction/preflight_official20_lane206.py",
+        "algorithms/prediction/static_cheb_lane_model.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/preflight_official20_lane206.py:22 (from .build_dynamic_lane_graph build_dynamic_lane_graph)",
+        "algorithms/prediction/build_directional_lane_graph.py:26 (from .build_dynamic_lane_graph build_dynamic_lane_graph)",
+        "algorithms/prediction/static_directional_lane_model.py:25 (from .build_dynamic_lane_graph build_dynamic_lane_graph)",
+        "algorithms/prediction/static_cheb_lane_model.py:19 (from .build_dynamic_lane_graph build_dynamic_lane_graph)",
+        "algorithms/prediction/archive/experiments/dynamic_cheb_lane_model.py:26 (from .build_dynamic_lane_graph build_dynamic_lane_graph)"
+      ],
+      "in_requirements": []
+    },
+    "build_lane_junction_mapping": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/prediction/archive/experiments/static_hierarchical_lane_model.py",
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/archive/experiments/static_hierarchical_lane_model.py:26 (from .build_lane_junction_mapping build_lane_junction_mapping)",
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py:25 (from .build_lane_junction_mapping build_lane_junction_mapping)"
+      ],
+      "in_requirements": []
+    },
+    "build_traffic": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/sumo/building/build_tls.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/building/build_tls.py:999 (from .build_traffic build_traffic)"
+      ],
+      "in_requirements": []
+    },
+    "building": {
+      "file_count": 5,
+      "files_sample": [
+        "simulation/sumo/__init__.py",
+        "simulation/sumo/engine/run.py",
+        "simulation/sumo/engine/scenario.py",
+        "simulation/sumo/engine/session.py",
+        "simulation/sumo/engine/vehicle.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/__init__.py:21 (from .building.tls building.tls)",
+        "simulation/sumo/engine/scenario.py:13 (from .building.artifacts building.artifacts)",
+        "simulation/sumo/engine/scenario.py:14 (from .building.build_traffic building.build_traffic)",
+        "simulation/sumo/engine/scenario.py:19 (from .building.vehicle_profiles building.vehicle_profiles)",
+        "simulation/sumo/engine/vehicle.py:23 (from .building.vehicle_profiles building.vehicle_profiles)"
+      ],
+      "in_requirements": []
+    },
+    "calibration": {
+      "file_count": 4,
+      "files_sample": [
+        "simulation/carla/data_export/exporters/kitti.py",
+        "simulation/carla/data_export/exporters/rgb_camera.py",
+        "simulation/carla/data_export/exporters/stream.py",
+        "simulation/carla/data_export/selfcheck.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/data_export/selfcheck.py:466 (from .calibration calibration)",
+        "simulation/carla/data_export/selfcheck.py:903 (from .calibration calibration)",
+        "simulation/carla/data_export/exporters/rgb_camera.py:10 (from .calibration calibration)",
+        "simulation/carla/data_export/exporters/stream.py:457 (from .calibration calibration)",
+        "simulation/carla/data_export/exporters/kitti.py:36 (from .calibration calibration)"
+      ],
+      "in_requirements": []
+    },
+    "cards": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/event_detection/ai_observer.py",
+        "algorithms/event_detection/rules.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/event_detection/ai_observer.py:10 (from .cards cards)",
+        "algorithms/event_detection/rules.py:1041 (from .cards cards)"
+      ],
+      "in_requirements": []
+    },
+    "carla": {
+      "file_count": 6,
+      "files_sample": [
+        "simulation/carla/data_export/calibration.py",
+        "simulation/carla/data_export/sensors.py",
+        "simulation/carla/run_cosimulation.py",
+        "simulation/carla/spectator_coords.py",
+        "simulation/carla/tp.py",
+        "simulation/utils/netcovert_sumo_20.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only",
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/utils/netcovert_sumo_20.py:48 (import carla)",
+        "simulation/carla/run_cosimulation.py:270 (import carla)",
+        "simulation/carla/run_cosimulation.py:929 (import carla)",
+        "simulation/carla/run_cosimulation.py:1245 (import carla)",
+        "simulation/carla/run_cosimulation.py:409 (import carla)"
+      ],
+      "in_requirements": []
+    },
+    "catalog": {
+      "file_count": 6,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/episode_runner.py",
+        "algorithms/traffic_llm/dataset/event_window.py",
+        "algorithms/traffic_llm/dataset/feature_builder.py",
+        "algorithms/traffic_llm/dataset/pipeline.py",
+        "algorithms/traffic_llm/dataset/scenario_generator.py",
+        "algorithms/traffic_llm/dataset/sft_audit.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/sft_audit.py:13 (from .catalog catalog)",
+        "algorithms/traffic_llm/dataset/event_window.py:9 (from .catalog catalog)",
+        "algorithms/traffic_llm/dataset/pipeline.py:13 (from .catalog catalog)",
+        "algorithms/traffic_llm/dataset/scenario_generator.py:24 (from .catalog catalog)",
+        "algorithms/traffic_llm/dataset/feature_builder.py:7 (from .catalog catalog)"
+      ],
+      "in_requirements": []
+    },
+    "celery": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/sumo/engine/distributed/celery_app.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/distributed/celery_app.py:7 (from celery)"
+      ],
+      "in_requirements": [
+        "requirements.txt"
+      ]
+    },
+    "celery_app": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/sumo/engine/distributed/manager.py",
+        "simulation/sumo/engine/distributed/tasks.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/distributed/tasks.py:13 (from .celery_app celery_app)",
+        "simulation/sumo/engine/distributed/manager.py:399 (from .celery_app celery_app)"
+      ],
+      "in_requirements": []
+    },
+    "chromadb": {
+      "file_count": 4,
+      "files_sample": [
+        "backend/app/copilot/rag.py",
+        "scripts/copilot/preflight.py",
+        "scripts/standards/build_standards_rag_index.py",
+        "scripts/standards/validate_rag_indices.py"
+      ],
+      "services": [
+        "backend",
+        "backend/offline"
+      ],
+      "roles": [
+        "build-only",
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/copilot/rag.py:808 (import chromadb)",
+        "backend/app/copilot/rag.py:1055 (import chromadb)",
+        "scripts/copilot/preflight.py:201 (import chromadb)",
+        "scripts/standards/validate_rag_indices.py:64 (import chromadb)",
+        "scripts/standards/build_standards_rag_index.py:257 (import chromadb)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "codec": {
+      "file_count": 3,
+      "files_sample": [
+        "simulation/sumo/engine/distributed/commands.py",
+        "simulation/sumo/engine/distributed/manager.py",
+        "simulation/sumo/engine/distributed/store.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/distributed/commands.py:9 (from .codec codec)",
+        "simulation/sumo/engine/distributed/manager.py:30 (from .codec codec)",
+        "simulation/sumo/engine/distributed/store.py:9 (from .codec codec)"
+      ],
+      "in_requirements": []
+    },
+    "collab": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/v2x/adapters/coslight.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/adapters/coslight.py:23 (from .collab.aggregator collab.aggregator)",
+        "algorithms/v2x/adapters/coslight.py:24 (from .collab.arbiter collab.arbiter)",
+        "algorithms/v2x/adapters/coslight.py:25 (from .collab.engine collab.engine)",
+        "algorithms/v2x/adapters/coslight.py:26 (from .collab.policy collab.policy)",
+        "algorithms/v2x/adapters/coslight.py:27 (from .collab.proposals collab.proposals)"
+      ],
+      "in_requirements": []
+    },
+    "collector": {
+      "file_count": 6,
+      "files_sample": [
+        "algorithms/evaluation/__init__.py",
+        "algorithms/evaluation/fuel_audit.py",
+        "algorithms/evaluation/metrics.py",
+        "algorithms/evaluation/runtime.py",
+        "traffic_eval/__init__.py",
+        "traffic_eval/session_hub.py"
+      ],
+      "services": [
+        "backend+sumo-worker",
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_eval/session_hub.py:13 (from .collector collector)",
+        "traffic_eval/__init__.py:11 (from .collector collector)",
+        "algorithms/evaluation/runtime.py:8 (from .collector collector)",
+        "algorithms/evaluation/fuel_audit.py:23 (from .collector collector)",
+        "algorithms/evaluation/metrics.py:10 (from .collector collector)"
+      ],
+      "in_requirements": []
+    },
+    "commands": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/sumo/engine/distributed/tasks.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/distributed/tasks.py:14 (from .commands commands)"
+      ],
+      "in_requirements": []
+    },
+    "config": {
+      "file_count": 13,
+      "files_sample": [
+        "algorithms/v2x/__init__.py",
+        "algorithms/v2x/adapters/coslight.py",
+        "algorithms/v2x/adapters/coslight_learned.py",
+        "algorithms/v2x/entities.py",
+        "algorithms/v2x/hub.py",
+        "backend/app/core/sumo_env.py",
+        "simulation/carla/data_export/__init__.py",
+        "simulation/carla/data_export/base.py"
+      ],
+      "services": [
+        "backend",
+        "offline-training",
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only",
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/core/sumo_env.py:10 (from .config config)",
+        "simulation/carla/data_export/base.py:21 (from .config config)",
+        "simulation/carla/data_export/selfcheck.py:28 (from .config config)",
+        "simulation/carla/data_export/selfcheck.py:424 (from .config config)",
+        "simulation/carla/data_export/selfcheck.py:602 (from .config config)"
+      ],
+      "in_requirements": []
+    },
+    "congestion": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/event_detection/rules.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/event_detection/rules.py:12 (from .congestion congestion)"
+      ],
+      "in_requirements": []
+    },
+    "context": {
+      "file_count": 3,
+      "files_sample": [
+        "simulation/carla/data_export/__init__.py",
+        "simulation/carla/data_export/base.py",
+        "simulation/carla/data_export/manager.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/data_export/base.py:22 (from .context context)",
+        "simulation/carla/data_export/manager.py:12 (from .context context)",
+        "simulation/carla/data_export/__init__.py:23 (from .context context)"
+      ],
+      "in_requirements": []
+    },
+    "contract": {
+      "file_count": 1,
+      "files_sample": [
+        "traffic_control/cov2x/aliases.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_control/cov2x/aliases.py:9 (from .contract contract)"
+      ],
+      "in_requirements": []
+    },
+    "controller": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/ippo/server.py",
+        "algorithms/sotl/server.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/sotl/server.py:19 (from .controller controller)",
+        "algorithms/ippo/server.py:24 (from .controller controller)"
+      ],
+      "in_requirements": []
+    },
+    "controllers": {
+      "file_count": 5,
+      "files_sample": [
+        "backend/app/api/v1/internal_algorithm.py",
+        "backend/app/core/config.py",
+        "backend/app/main.py",
+        "backend/app/schemas/simulations.py",
+        "backend/app/services/simulation_service.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/main.py:17 (from .controllers.runtime controllers.runtime)",
+        "backend/app/schemas/simulations.py:9 (from .controllers.registry controllers.registry)",
+        "backend/app/api/v1/internal_algorithm.py:9 (from .controllers.registry controllers.registry)",
+        "backend/app/api/v1/internal_algorithm.py:10 (from .controllers.runtime controllers.runtime)",
+        "backend/app/services/simulation_service.py:22 (from .controllers.registry controllers.registry)"
+      ],
+      "in_requirements": []
+    },
+    "copilot": {
+      "file_count": 4,
+      "files_sample": [
+        "backend/app/api/deps.py",
+        "backend/app/api/v1/copilot.py",
+        "backend/app/main.py",
+        "backend/app/services/takeover_orchestrator.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/main.py:13 (from .copilot.llm copilot.llm)",
+        "backend/app/main.py:14 (from .copilot.rag copilot.rag)",
+        "backend/app/main.py:15 (from .copilot.traffic_tools copilot.traffic_tools)",
+        "backend/app/api/deps.py:7 (from .copilot.llm copilot.llm)",
+        "backend/app/api/v1/copilot.py:11 (from .copilot.llm copilot.llm)"
+      ],
+      "in_requirements": []
+    },
+    "core": {
+      "file_count": 15,
+      "files_sample": [
+        "backend/app/api/deps.py",
+        "backend/app/api/v1/config.py",
+        "backend/app/api/v1/copilot.py",
+        "backend/app/api/v1/maps.py",
+        "backend/app/api/v1/tiles.py",
+        "backend/app/main.py",
+        "backend/app/scenario/resolver.py",
+        "backend/app/schemas/simulations.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/main.py:18 (from .core.config core.config)",
+        "backend/app/main.py:19 (from .core.exceptions core.exceptions)",
+        "backend/app/main.py:20 (from .core.sumo_env core.sumo_env)",
+        "backend/app/schemas/simulations.py:10 (from .core.playback core.playback)",
+        "backend/app/api/deps.py:8 (from .core.exceptions core.exceptions)"
+      ],
+      "in_requirements": []
+    },
+    "coverage": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/v2x/adapters/coslight.py",
+        "algorithms/v2x/adapters/coslight_learned.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/adapters/coslight_learned.py:24 (from .coverage coverage)",
+        "algorithms/v2x/adapters/coslight.py:18 (from .coverage coverage)"
+      ],
+      "in_requirements": []
+    },
+    "data_export": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/carla/run_cosimulation.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/run_cosimulation.py:39 (from data_export)",
+        "simulation/carla/run_cosimulation.py:521 (from data_export)",
+        "simulation/carla/run_cosimulation.py:574 (from data_export)",
+        "simulation/carla/run_cosimulation.py:537 (from data_export)",
+        "simulation/carla/run_cosimulation.py:565 (from data_export.exporters.stream)"
+      ],
+      "in_requirements": []
+    },
+    "dataset": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/prediction/archive/legacy/baseline.py",
+        "algorithms/prediction/export_stgcn_dataset.py",
+        "algorithms/prediction/prepare_stgcn_episode_dataset.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/prepare_stgcn_episode_dataset.py:20 (from .dataset dataset)",
+        "algorithms/prediction/export_stgcn_dataset.py:14 (from .dataset dataset)",
+        "algorithms/prediction/archive/legacy/baseline.py:12 (from .dataset dataset)"
+      ],
+      "in_requirements": []
+    },
+    "datasets": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/training/train_qlora.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/training/train_qlora.py:150 (from datasets)"
+      ],
+      "in_requirements": [
+        "algorithms/traffic_llm/training/requirements.txt"
+      ]
+    },
+    "deps": {
+      "file_count": 6,
+      "files_sample": [
+        "backend/app/api/v1/catalog.py",
+        "backend/app/api/v1/copilot.py",
+        "backend/app/api/v1/evaluation_reports.py",
+        "backend/app/api/v1/maps.py",
+        "backend/app/api/v1/scenarios.py",
+        "backend/app/api/v1/simulations.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/api/v1/catalog.py:9 (from .deps deps)",
+        "backend/app/api/v1/maps.py:10 (from .deps deps)",
+        "backend/app/api/v1/scenarios.py:10 (from .deps deps)",
+        "backend/app/api/v1/copilot.py:33 (from .deps deps)",
+        "backend/app/api/v1/evaluation_reports.py:14 (from .deps deps)"
+      ],
+      "in_requirements": []
+    },
+    "derive": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/v2x/adapters/coslight.py",
+        "algorithms/v2x/adapters/coslight_learned.py",
+        "algorithms/v2x/protocol.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/protocol.py:7 (from .derive derive)",
+        "algorithms/v2x/adapters/coslight_learned.py:25 (from .derive derive)",
+        "algorithms/v2x/adapters/coslight.py:19 (from .derive derive)"
+      ],
+      "in_requirements": []
+    },
+    "disturbance_targets": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/schemas/simulations.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/schemas/simulations.py:12 (from .disturbance_targets disturbance_targets)"
+      ],
+      "in_requirements": []
+    },
+    "dynamic_cheb_lane_model": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py:52 (from .dynamic_cheb_lane_model dynamic_cheb_lane_model)"
+      ],
+      "in_requirements": []
+    },
+    "dynamic_lane_model": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py:51 (from .dynamic_lane_model dynamic_lane_model)"
+      ],
+      "in_requirements": []
+    },
+    "engine": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/sumo/__init__.py",
+        "simulation/sumo/export_snapshots.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/export_snapshots.py:10 (from .engine.session engine.session)",
+        "simulation/sumo/__init__.py:22 (from .engine.signal engine.signal)",
+        "simulation/sumo/__init__.py:23 (from .engine.ai_control engine.ai_control)",
+        "simulation/sumo/__init__.py:24 (from .engine.events engine.events)",
+        "simulation/sumo/__init__.py:31 (from .engine.session engine.session)"
+      ],
+      "in_requirements": []
+    },
+    "entities": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/v2x/adapters/coslight.py",
+        "algorithms/v2x/adapters/coslight_learned.py",
+        "algorithms/v2x/coverage.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/coverage.py:7 (from .entities entities)",
+        "algorithms/v2x/adapters/coslight_learned.py:30 (from .entities entities)",
+        "algorithms/v2x/adapters/coslight.py:17 (from .entities entities)"
+      ],
+      "in_requirements": []
+    },
+    "episode_runner": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/pipeline.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/pipeline.py:14 (from .episode_runner episode_runner)"
+      ],
+      "in_requirements": []
+    },
+    "eval_cli": {
+      "file_count": 1,
+      "files_sample": [
+        "traffic_eval/__main__.py"
+      ],
+      "services": [
+        "backend+sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_eval/__main__.py:3 (from .eval_cli eval_cli)"
+      ],
+      "in_requirements": []
+    },
+    "evaluation": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/evaluation/compare.py",
+        "algorithms/ippo/server.py",
+        "algorithms/sotl/server.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/evaluation/compare.py:27 (from evaluation.metrics)",
+        "algorithms/sotl/server.py:40 (from evaluation.collector)",
+        "algorithms/ippo/server.py:48 (from evaluation.collector)"
+      ],
+      "in_requirements": []
+    },
+    "evaluation_scope": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/sumo/engine/session.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/session.py:37 (from .evaluation_scope evaluation_scope)"
+      ],
+      "in_requirements": []
+    },
+    "event_window": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/episode_runner.py",
+        "algorithms/traffic_llm/dataset/pipeline.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/pipeline.py:15 (from .event_window event_window)",
+        "algorithms/traffic_llm/dataset/episode_runner.py:19 (from .event_window event_window)"
+      ],
+      "in_requirements": []
+    },
+    "events": {
+      "file_count": 7,
+      "files_sample": [
+        "backend/app/schemas/disturbance_targets.py",
+        "simulation/sumo/engine/ai_executor.py",
+        "simulation/sumo/engine/distributed/codec.py",
+        "simulation/sumo/engine/distributed/manager.py",
+        "simulation/sumo/engine/run.py",
+        "simulation/sumo/engine/scenario.py",
+        "simulation/sumo/engine/session.py"
+      ],
+      "services": [
+        "backend",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/schemas/disturbance_targets.py:9 (from .events events)",
+        "simulation/sumo/engine/scenario.py:18 (from .events events)",
+        "simulation/sumo/engine/ai_executor.py:17 (from .events events)",
+        "simulation/sumo/engine/run.py:694 (from .events events)",
+        "simulation/sumo/engine/session.py:24 (from .events events)"
+      ],
+      "in_requirements": []
+    },
+    "export_control": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/carla/run_cosimulation.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/run_cosimulation.py:46 (from export_control)"
+      ],
+      "in_requirements": []
+    },
+    "export_stgcn_dataset": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/prediction/prepare_stgcn_episode_dataset.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/prepare_stgcn_episode_dataset.py:136 (from .export_stgcn_dataset export_stgcn_dataset)"
+      ],
+      "in_requirements": []
+    },
+    "exporters": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/carla/data_export/selfcheck.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/data_export/selfcheck.py:696 (from .exporters.stream exporters.stream)"
+      ],
+      "in_requirements": []
+    },
+    "fastapi": {
+      "file_count": 26,
+      "files_sample": [
+        "algorithms/ippo/server.py",
+        "algorithms/sotl/server.py",
+        "backend/app/api/deps.py",
+        "backend/app/api/router.py",
+        "backend/app/api/v1/catalog.py",
+        "backend/app/api/v1/config.py",
+        "backend/app/api/v1/copilot.py",
+        "backend/app/api/v1/evaluation_reports.py"
+      ],
+      "services": [
+        "backend",
+        "offline-training"
+      ],
+      "roles": [
+        "build-only",
+        "runtime",
+        "test"
+      ],
+      "import_samples": [
+        "backend/app/main.py:8 (from fastapi)",
+        "backend/app/main.py:9 (from fastapi.middleware.cors)",
+        "backend/app/api/deps.py:5 (from fastapi)",
+        "backend/app/api/router.py:5 (from fastapi)",
+        "backend/app/api/v1/catalog.py:5 (from fastapi)"
+      ],
+      "in_requirements": [
+        "algorithms/ippo/requirements.txt",
+        "algorithms/sotl/requirements.txt",
+        "backend/requirements.txt"
+      ]
+    },
+    "feature_builder": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/sft_builder.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/sft_builder.py:12 (from .feature_builder feature_builder)"
+      ],
+      "in_requirements": []
+    },
+    "graph_io": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/services/narrow_net_tdp/__init__.py",
+        "backend/app/services/narrow_net_tdp/model.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/narrow_net_tdp/model.py:12 (from .graph_io graph_io)",
+        "backend/app/services/narrow_net_tdp/__init__.py:3 (from .graph_io graph_io)"
+      ],
+      "in_requirements": []
+    },
+    "graph_model": {
+      "file_count": 3,
+      "files_sample": [
+        "simulation/carla/xml2odr/net_parser.py",
+        "simulation/carla/xml2odr/net_writer.py",
+        "simulation/carla/xml2odr/topological_clipper.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/xml2odr/topological_clipper.py:16 (from .graph_model graph_model)",
+        "simulation/carla/xml2odr/net_writer.py:16 (from .graph_model graph_model)",
+        "simulation/carla/xml2odr/net_parser.py:10 (from .graph_model graph_model)"
+      ],
+      "in_requirements": []
+    },
+    "history": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/services/simulation_service.py",
+        "backend/app/services/takeover_orchestrator.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/simulation_service.py:40 (from .history history)",
+        "backend/app/services/takeover_orchestrator.py:22 (from .history history)"
+      ],
+      "in_requirements": []
+    },
+    "httpx": {
+      "file_count": 4,
+      "files_sample": [
+        "backend/app/api/v1/tiles.py",
+        "backend/tests/integration_demo_2.py",
+        "backend/tests/test_map_config.py",
+        "backend/tools/eval.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime",
+        "test"
+      ],
+      "import_samples": [
+        "backend/tools/eval.py:42 (import httpx)",
+        "backend/app/api/v1/tiles.py:5 (import httpx)",
+        "backend/tests/integration_demo_2.py:15 (import httpx)",
+        "backend/tests/test_map_config.py:7 (import httpx)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "hub": {
+      "file_count": 5,
+      "files_sample": [
+        "algorithms/v2x/__init__.py",
+        "algorithms/v2x/adapters/coslight.py",
+        "algorithms/v2x/adapters/coslight_learned.py",
+        "algorithms/v2x/collab/engine.py",
+        "algorithms/v2x/collab/stats.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/__init__.py:4 (from .hub hub)",
+        "algorithms/v2x/adapters/coslight_learned.py:36 (from .hub hub)",
+        "algorithms/v2x/adapters/coslight.py:11 (from .hub hub)",
+        "algorithms/v2x/collab/stats.py:9 (from .hub hub)",
+        "algorithms/v2x/collab/engine.py:10 (from .hub hub)"
+      ],
+      "in_requirements": []
+    },
+    "identity": {
+      "file_count": 2,
+      "files_sample": [
+        "traffic_control/ippo/aliases.py",
+        "traffic_control/ippo/contract.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_control/ippo/contract.py:20 (from .identity identity)",
+        "traffic_control/ippo/aliases.py:18 (from .identity identity)"
+      ],
+      "in_requirements": []
+    },
+    "intelligence_runtime": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/simulation_service.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/simulation_service.py:38 (from .intelligence_runtime intelligence_runtime)"
+      ],
+      "in_requirements": []
+    },
+    "io_utils": {
+      "file_count": 6,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/cli.py",
+        "algorithms/traffic_llm/dataset/episode_runner.py",
+        "algorithms/traffic_llm/dataset/pipeline.py",
+        "algorithms/traffic_llm/dataset/sensitivity_audit.py",
+        "algorithms/traffic_llm/dataset/sft_audit.py",
+        "algorithms/traffic_llm/dataset/sft_builder.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/sft_audit.py:14 (from .io_utils io_utils)",
+        "algorithms/traffic_llm/dataset/pipeline.py:19 (from .io_utils io_utils)",
+        "algorithms/traffic_llm/dataset/sensitivity_audit.py:10 (from .io_utils io_utils)",
+        "algorithms/traffic_llm/dataset/cli.py:10 (from .io_utils io_utils)",
+        "algorithms/traffic_llm/dataset/sft_builder.py:13 (from .io_utils io_utils)"
+      ],
+      "in_requirements": []
+    },
+    "live_answers": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/copilot/orchestrator.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/copilot/orchestrator.py:19 (from .live_answers live_answers)"
+      ],
+      "in_requirements": []
+    },
+    "llm": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/copilot/__init__.py",
+        "backend/app/copilot/orchestrator.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/copilot/orchestrator.py:18 (from .llm llm)",
+        "backend/app/copilot/__init__.py:3 (from .llm llm)"
+      ],
+      "in_requirements": []
+    },
+    "local_policy": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/sumo/algorithm/__init__.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/algorithm/__init__.py:4 (from .local_policy local_policy)"
+      ],
+      "in_requirements": []
+    },
+    "logger": {
+      "file_count": 6,
+      "files_sample": [
+        "algorithms/v2x/__init__.py",
+        "algorithms/v2x/adapters/coslight.py",
+        "algorithms/v2x/adapters/coslight_learned.py",
+        "algorithms/v2x/collab/records.py",
+        "algorithms/v2x/collab/stats.py",
+        "algorithms/v2x/hub.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/hub.py:11 (from .logger logger)",
+        "algorithms/v2x/__init__.py:6 (from .logger logger)",
+        "algorithms/v2x/adapters/coslight_learned.py:37 (from .logger logger)",
+        "algorithms/v2x/adapters/coslight.py:12 (from .logger logger)",
+        "algorithms/v2x/collab/records.py:7 (from .logger logger)"
+      ],
+      "in_requirements": []
+    },
+    "lxml": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/utils/netcovert_sumo_20.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/utils/netcovert_sumo_20.py:32 (import lxml.etree)"
+      ],
+      "in_requirements": []
+    },
+    "manager": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/carla/data_export/__init__.py",
+        "simulation/sumo/engine/distributed/__init__.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only",
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/distributed/__init__.py:3 (from .manager manager)",
+        "simulation/carla/data_export/__init__.py:26 (from .manager manager)"
+      ],
+      "in_requirements": []
+    },
+    "map_service": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/simulation_service.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/simulation_service.py:166 (from .map_service map_service)"
+      ],
+      "in_requirements": []
+    },
+    "matplotlib": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/services/od_export.py",
+        "scripts/export_od_heatmap.py"
+      ],
+      "services": [
+        "backend",
+        "offline-training"
+      ],
+      "roles": [
+        "build-only",
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/od_export.py:393 (import matplotlib)",
+        "backend/app/services/od_export.py:396 (import matplotlib.pyplot)",
+        "backend/app/services/od_export.py:397 (from matplotlib)",
+        "backend/app/services/od_export.py:601 (from matplotlib)",
+        "scripts/export_od_heatmap.py:188 (from matplotlib)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "max_pressure": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/controllers/__init__.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/controllers/__init__.py:3 (from .max_pressure max_pressure)"
+      ],
+      "in_requirements": []
+    },
+    "messages": {
+      "file_count": 7,
+      "files_sample": [
+        "algorithms/v2x/__init__.py",
+        "algorithms/v2x/adapters/coslight.py",
+        "algorithms/v2x/adapters/coslight_learned.py",
+        "algorithms/v2x/collab/engine.py",
+        "algorithms/v2x/entities.py",
+        "algorithms/v2x/hub.py",
+        "algorithms/v2x/protocol.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/protocol.py:8 (from .messages messages)",
+        "algorithms/v2x/hub.py:15 (from .messages messages)",
+        "algorithms/v2x/entities.py:9 (from .messages messages)",
+        "algorithms/v2x/__init__.py:5 (from .messages messages)",
+        "algorithms/v2x/adapters/coslight_learned.py:38 (from .messages messages)"
+      ],
+      "in_requirements": []
+    },
+    "metrics": {
+      "file_count": 4,
+      "files_sample": [
+        "algorithms/evaluation/__init__.py",
+        "algorithms/evaluation/fuel_audit.py",
+        "backend/app/main.py",
+        "backend/app/services/simulation_service.py"
+      ],
+      "services": [
+        "backend",
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/main.py:21 (from .metrics.session_hub metrics.session_hub)",
+        "backend/app/services/simulation_service.py:26 (from .metrics.session_hub metrics.session_hub)",
+        "algorithms/evaluation/fuel_audit.py:24 (from .metrics metrics)",
+        "algorithms/evaluation/__init__.py:4 (from .metrics metrics)"
+      ],
+      "in_requirements": []
+    },
+    "model": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/prediction/train_stgcn_stage1.py",
+        "backend/app/services/narrow_net_tdp/__init__.py",
+        "traffic_control/ippo/contract.py"
+      ],
+      "services": [
+        "backend",
+        "offline-training",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/narrow_net_tdp/__init__.py:9 (from .model model)",
+        "traffic_control/ippo/contract.py:21 (from .model model)",
+        "algorithms/prediction/train_stgcn_stage1.py:51 (from model)"
+      ],
+      "in_requirements": []
+    },
+    "models": {
+      "file_count": 4,
+      "files_sample": [
+        "traffic_eval/__init__.py",
+        "traffic_eval/collector.py",
+        "traffic_eval/session_hub.py",
+        "traffic_eval/tripinfo.py"
+      ],
+      "services": [
+        "backend+sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_eval/session_hub.py:14 (from .models models)",
+        "traffic_eval/collector.py:27 (from .models models)",
+        "traffic_eval/tripinfo.py:12 (from .models models)",
+        "traffic_eval/__init__.py:12 (from .models models)"
+      ],
+      "in_requirements": []
+    },
+    "narrow_net_tdp": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/prediction_runtime.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/prediction_runtime.py:130 (from .narrow_net_tdp narrow_net_tdp)"
+      ],
+      "in_requirements": []
+    },
+    "net_parser": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/carla/xml2odr/batch_clip.py",
+        "simulation/carla/xml2odr/cli.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/xml2odr/cli.py:9 (from .net_parser net_parser)",
+        "simulation/carla/xml2odr/batch_clip.py:28 (from .net_parser net_parser)"
+      ],
+      "in_requirements": []
+    },
+    "net_writer": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/carla/xml2odr/batch_clip.py",
+        "simulation/carla/xml2odr/cli.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/xml2odr/cli.py:11 (from .net_writer net_writer)",
+        "simulation/carla/xml2odr/batch_clip.py:29 (from .net_writer net_writer)"
+      ],
+      "in_requirements": []
+    },
+    "netconvert_runner": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/carla/xml2odr/batch_clip.py",
+        "simulation/carla/xml2odr/cli.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/xml2odr/cli.py:10 (from .netconvert_runner netconvert_runner)",
+        "simulation/carla/xml2odr/batch_clip.py:30 (from .netconvert_runner netconvert_runner)"
+      ],
+      "in_requirements": []
+    },
+    "network_validation": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/sumo/building/build_tls.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/building/build_tls.py:26 (from .network_validation network_validation)"
+      ],
+      "in_requirements": []
+    },
+    "numpy": {
+      "file_count": 108,
+      "files_sample": [
+        "algorithms/common/pressure_shaping.py",
+        "algorithms/cov2x/cloud/observations.py",
+        "algorithms/cov2x/collab/joint_policy.py",
+        "algorithms/cov2x/collab/joint_rollout.py",
+        "algorithms/cov2x/collab/mvp_policy.py",
+        "algorithms/cov2x/contract.py",
+        "algorithms/cov2x/controller.py",
+        "algorithms/cov2x/mvp_runtime.py"
+      ],
+      "services": [
+        "backend",
+        "offline-training",
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only",
+        "runtime",
+        "test",
+        "training"
+      ],
+      "import_samples": [
+        "backend/app/services/od_export.py:354 (import numpy)",
+        "backend/app/services/prediction_runtime.py:13 (import numpy)",
+        "backend/app/services/narrow_net_tdp/model.py:8 (import numpy)",
+        "backend/app/services/narrow_net_tdp/graph_io.py:9 (import numpy)",
+        "simulation/sumo/building/build_traffic.py:235 (import numpy)"
+      ],
+      "in_requirements": [
+        "algorithms/ippo/requirements.txt",
+        "backend/requirements.txt",
+        "requirements.txt"
+      ]
+    },
+    "nvidia": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/training/cuda_env.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/training/cuda_env.py:20 (import nvidia)"
+      ],
+      "in_requirements": []
+    },
+    "od_export": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/scenario_export_service.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/scenario_export_service.py:31 (from .od_export od_export)"
+      ],
+      "in_requirements": []
+    },
+    "orchestrator": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/copilot/__init__.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/copilot/__init__.py:15 (from .orchestrator orchestrator)"
+      ],
+      "in_requirements": []
+    },
+    "output": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/carla/data_export/__init__.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/data_export/__init__.py:24 (from .output output)"
+      ],
+      "in_requirements": []
+    },
+    "peft": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/traffic_llm/evaluation/policy.py",
+        "algorithms/traffic_llm/training/eval_structured.py",
+        "algorithms/traffic_llm/training/train_qlora.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime",
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/evaluation/policy.py:127 (from peft)",
+        "algorithms/traffic_llm/training/train_qlora.py:151 (from peft)",
+        "algorithms/traffic_llm/training/eval_structured.py:273 (from peft)"
+      ],
+      "in_requirements": [
+        "algorithms/traffic_llm/training/requirements.txt"
+      ]
+    },
+    "phase_service": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/feature_builder.py",
+        "algorithms/traffic_llm/dataset/pipeline.py",
+        "algorithms/traffic_llm/dataset/sft_audit.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/sft_audit.py:15 (from .phase_service phase_service)",
+        "algorithms/traffic_llm/dataset/pipeline.py:20 (from .phase_service phase_service)",
+        "algorithms/traffic_llm/dataset/feature_builder.py:8 (from .phase_service phase_service)"
+      ],
+      "in_requirements": []
+    },
+    "pipeline": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/cli.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/cli.py:11 (from .pipeline pipeline)"
+      ],
+      "in_requirements": []
+    },
+    "plan_lidar_points": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/carla/data_export/selfcheck.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/data_export/selfcheck.py:969 (import plan_lidar_points)"
+      ],
+      "in_requirements": []
+    },
+    "policy": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/v2x/collab/engine.py",
+        "simulation/sumo/algorithm/__init__.py",
+        "simulation/sumo/algorithm/policy_transport.py"
+      ],
+      "services": [
+        "offline-training",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/algorithm/policy_transport.py:8 (from .policy policy)",
+        "simulation/sumo/algorithm/__init__.py:5 (from .policy policy)",
+        "algorithms/v2x/collab/engine.py:14 (from .policy policy)"
+      ],
+      "in_requirements": []
+    },
+    "policy_transport": {
+      "file_count": 3,
+      "files_sample": [
+        "simulation/sumo/algorithm/__init__.py",
+        "simulation/sumo/algorithm/ai_observer.py",
+        "simulation/sumo/algorithm/local_policy.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/algorithm/ai_observer.py:11 (from .policy_transport policy_transport)",
+        "simulation/sumo/algorithm/local_policy.py:9 (from .policy_transport policy_transport)",
+        "simulation/sumo/algorithm/__init__.py:19 (from .policy_transport policy_transport)"
+      ],
+      "in_requirements": []
+    },
+    "powertrain": {
+      "file_count": 4,
+      "files_sample": [
+        "traffic_eval/__init__.py",
+        "traffic_eval/collector.py",
+        "traffic_eval/session_hub.py",
+        "traffic_eval/tripinfo.py"
+      ],
+      "services": [
+        "backend+sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_eval/session_hub.py:15 (from .powertrain powertrain)",
+        "traffic_eval/collector.py:28 (from .powertrain powertrain)",
+        "traffic_eval/tripinfo.py:13 (from .powertrain powertrain)",
+        "traffic_eval/__init__.py:13 (from .powertrain powertrain)"
+      ],
+      "in_requirements": []
+    },
+    "prediction_runtime": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/intelligence_runtime.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/intelligence_runtime.py:21 (from .prediction_runtime prediction_runtime)"
+      ],
+      "in_requirements": []
+    },
+    "presets": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/scenario/__init__.py",
+        "backend/app/scenario/resolver.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/scenario/resolver.py:28 (from .presets presets)",
+        "backend/app/scenario/__init__.py:4 (from .presets presets)"
+      ],
+      "in_requirements": []
+    },
+    "proposals": {
+      "file_count": 7,
+      "files_sample": [
+        "algorithms/v2x/collab/__init__.py",
+        "algorithms/v2x/collab/arbiter.py",
+        "algorithms/v2x/collab/engine.py",
+        "algorithms/v2x/collab/policy.py",
+        "algorithms/v2x/collab/records.py",
+        "algorithms/v2x/collab/state.py",
+        "algorithms/v2x/collab/stats.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/collab/state.py:9 (from .proposals proposals)",
+        "algorithms/v2x/collab/records.py:8 (from .proposals proposals)",
+        "algorithms/v2x/collab/stats.py:11 (from .proposals proposals)",
+        "algorithms/v2x/collab/arbiter.py:9 (from .proposals proposals)",
+        "algorithms/v2x/collab/engine.py:15 (from .proposals proposals)"
+      ],
+      "in_requirements": []
+    },
+    "protocol": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/v2x/adapters/coslight.py",
+        "algorithms/v2x/adapters/coslight_learned.py",
+        "algorithms/v2x/hub.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/hub.py:16 (from .protocol protocol)",
+        "algorithms/v2x/adapters/coslight_learned.py:39 (from .protocol protocol)",
+        "algorithms/v2x/adapters/coslight.py:13 (from .protocol protocol)"
+      ],
+      "in_requirements": []
+    },
+    "pydantic": {
+      "file_count": 15,
+      "files_sample": [
+        "backend/app/core/exceptions.py",
+        "backend/app/schemas/ai_control.py",
+        "backend/app/schemas/catalog.py",
+        "backend/app/schemas/copilot.py",
+        "backend/app/schemas/disturbance_targets.py",
+        "backend/app/schemas/evaluation_reports.py",
+        "backend/app/schemas/events.py",
+        "backend/app/schemas/intelligence.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime",
+        "test"
+      ],
+      "import_samples": [
+        "backend/app/schemas/catalog.py:5 (from pydantic)",
+        "backend/app/schemas/disturbance_targets.py:7 (from pydantic)",
+        "backend/app/schemas/events.py:7 (from pydantic)",
+        "backend/app/schemas/maps.py:7 (from pydantic)",
+        "backend/app/schemas/ai_control.py:7 (from pydantic)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "pydantic_settings": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/core/config.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/core/config.py:8 (from pydantic_settings)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "pymupdf": {
+      "file_count": 1,
+      "files_sample": [
+        "scripts/standards/pdf_to_markdown.py"
+      ],
+      "services": [
+        "backend/offline"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "scripts/standards/pdf_to_markdown.py:37 (import pymupdf)"
+      ],
+      "in_requirements": []
+    },
+    "pyproj": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/tests/test_road_network_conversion.py",
+        "simulation/utils/convert_sumo_road_network.py"
+      ],
+      "services": [
+        "backend",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime",
+        "test"
+      ],
+      "import_samples": [
+        "backend/tests/test_road_network_conversion.py:8 (from pyproj)",
+        "simulation/utils/convert_sumo_road_network.py:12 (from pyproj)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "pytest": {
+      "file_count": 84,
+      "files_sample": [
+        "algorithms/common/test_pressure_shaping.py",
+        "algorithms/cov2x/tests/test_actuator.py",
+        "algorithms/cov2x/tests/test_controller.py",
+        "algorithms/cov2x/tests/test_controller_joint.py",
+        "algorithms/cov2x/tests/test_frozen_mvp_contract.py",
+        "algorithms/cov2x/tests/test_joint_policy.py",
+        "algorithms/cov2x/tests/test_joint_rewards.py",
+        "algorithms/cov2x/tests/test_movement_corridor_contract.py"
+      ],
+      "services": [
+        "backend",
+        "offline-training",
+        "sumo-worker"
+      ],
+      "roles": [
+        "test",
+        "training"
+      ],
+      "import_samples": [
+        "backend/tests/test_copilot_llm.py:9 (import pytest)",
+        "backend/tests/test_distributed_backend.py:13 (import pytest)",
+        "backend/tests/test_copilot_api.py:8 (import pytest)",
+        "backend/tests/test_map_service.py:6 (import pytest)",
+        "backend/tests/test_algorithm_protocol.py:5 (import pytest)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "query_intent": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/copilot/live_answers.py",
+        "backend/app/copilot/orchestrator.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/copilot/orchestrator.py:24 (from .query_intent query_intent)",
+        "backend/app/copilot/live_answers.py:10 (from .query_intent query_intent)"
+      ],
+      "in_requirements": []
+    },
+    "queue_estimate": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/sumo/engine/run.py",
+        "simulation/sumo/engine/session.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/run.py:18 (from .queue_estimate queue_estimate)",
+        "simulation/sumo/engine/session.py:36 (from .queue_estimate queue_estimate)"
+      ],
+      "in_requirements": []
+    },
+    "rag": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/copilot/__init__.py",
+        "backend/app/copilot/traffic_tools.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/copilot/traffic_tools.py:30 (from .rag rag)",
+        "backend/app/copilot/__init__.py:25 (from .rag rag)"
+      ],
+      "in_requirements": []
+    },
+    "records": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/v2x/collab/engine.py",
+        "algorithms/v2x/collab/stats.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/collab/stats.py:12 (from .records records)",
+        "algorithms/v2x/collab/engine.py:20 (from .records records)"
+      ],
+      "in_requirements": []
+    },
+    "redis": {
+      "file_count": 3,
+      "files_sample": [
+        "backend/app/services/history.py",
+        "backend/app/services/session_metadata.py",
+        "simulation/sumo/engine/distributed/store.py"
+      ],
+      "services": [
+        "backend",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/history.py:340 (import redis)",
+        "backend/app/services/session_metadata.py:256 (import redis)",
+        "simulation/sumo/engine/distributed/store.py:27 (import redis)"
+      ],
+      "in_requirements": [
+        "requirements.txt"
+      ]
+    },
+    "registry": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/controllers/__init__.py",
+        "backend/app/controllers/runtime.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/controllers/runtime.py:12 (from .registry registry)",
+        "backend/app/controllers/__init__.py:4 (from .registry registry)"
+      ],
+      "in_requirements": []
+    },
+    "reporting": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/pipeline.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/pipeline.py:21 (from .reporting reporting)"
+      ],
+      "in_requirements": []
+    },
+    "reportlab": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/evaluation_report_service.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/evaluation_report_service.py:12 (from reportlab.lib)",
+        "backend/app/services/evaluation_report_service.py:13 (from reportlab.lib.enums)",
+        "backend/app/services/evaluation_report_service.py:14 (from reportlab.lib.pagesizes)",
+        "backend/app/services/evaluation_report_service.py:15 (from reportlab.lib.styles)",
+        "backend/app/services/evaluation_report_service.py:16 (from reportlab.lib.units)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "resolver": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/scenario/__init__.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/scenario/__init__.py:24 (from .resolver resolver)"
+      ],
+      "in_requirements": []
+    },
+    "rules": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/event_detection/ai_observer.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/event_detection/ai_observer.py:11 (from .rules rules)"
+      ],
+      "in_requirements": []
+    },
+    "run": {
+      "file_count": 3,
+      "files_sample": [
+        "simulation/sumo/engine/ai_executor.py",
+        "simulation/sumo/engine/session.py",
+        "simulation/sumo/export_snapshots.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/export_snapshots.py:9 (from .run run)",
+        "simulation/sumo/engine/ai_executor.py:512 (from .run run)",
+        "simulation/sumo/engine/session.py:882 (from .run run)",
+        "simulation/sumo/engine/session.py:1434 (from .run run)",
+        "simulation/sumo/engine/session.py:1347 (from .run run)"
+      ],
+      "in_requirements": []
+    },
+    "run_synchronization": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/carla/run_cosimulation.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/run_cosimulation.py:692 (from run_synchronization)"
+      ],
+      "in_requirements": []
+    },
+    "runner": {
+      "file_count": 2,
+      "files_sample": [
+        "traffic_eval/__init__.py",
+        "traffic_eval/eval_cli.py"
+      ],
+      "services": [
+        "backend+sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_eval/eval_cli.py:28 (from .runner runner)",
+        "traffic_eval/__init__.py:18 (from .runner runner)"
+      ],
+      "in_requirements": []
+    },
+    "runtime": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/controllers/__init__.py",
+        "simulation/sumo/engine/session.py"
+      ],
+      "services": [
+        "backend",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/controllers/__init__.py:11 (from .runtime runtime)",
+        "simulation/sumo/engine/session.py:901 (from .runtime runtime)"
+      ],
+      "in_requirements": []
+    },
+    "safetensors": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/deployment/merge_adapter.py"
+      ],
+      "services": [
+        "citypulse-qwen"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/deployment/merge_adapter.py:16 (from safetensors)"
+      ],
+      "in_requirements": []
+    },
+    "safety": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/evaluation/collector.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/evaluation/collector.py:19 (from .safety safety)"
+      ],
+      "in_requirements": []
+    },
+    "scenario": {
+      "file_count": 8,
+      "files_sample": [
+        "backend/app/schemas/simulations.py",
+        "backend/app/services/evaluation_report_service.py",
+        "backend/app/services/map_service.py",
+        "backend/app/services/scenario_export_service.py",
+        "backend/app/services/simulation_service.py",
+        "simulation/sumo/engine/distributed/manager.py",
+        "simulation/sumo/engine/distributed/tasks.py",
+        "simulation/sumo/engine/session.py"
+      ],
+      "services": [
+        "backend",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/schemas/simulations.py:11 (from .scenario.presets scenario.presets)",
+        "backend/app/services/evaluation_report_service.py:28 (from .scenario.presets scenario.presets)",
+        "backend/app/services/simulation_service.py:35 (from .scenario.presets scenario.presets)",
+        "backend/app/services/simulation_service.py:36 (from .scenario.resolver scenario.resolver)",
+        "backend/app/services/simulation_service.py:819 (from .scenario.presets scenario.presets)"
+      ],
+      "in_requirements": []
+    },
+    "scenario_generator": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/episode_runner.py",
+        "algorithms/traffic_llm/dataset/pipeline.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/pipeline.py:28 (from .scenario_generator scenario_generator)",
+        "algorithms/traffic_llm/dataset/episode_runner.py:26 (from .scenario_generator scenario_generator)"
+      ],
+      "in_requirements": []
+    },
+    "schema": {
+      "file_count": 11,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/__init__.py",
+        "algorithms/traffic_llm/dataset/action_parser.py",
+        "algorithms/traffic_llm/dataset/catalog.py",
+        "algorithms/traffic_llm/dataset/episode_runner.py",
+        "algorithms/traffic_llm/dataset/feature_builder.py",
+        "algorithms/traffic_llm/dataset/pipeline.py",
+        "algorithms/traffic_llm/dataset/scenario_generator.py",
+        "algorithms/traffic_llm/dataset/sft_builder.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/teacher_selector.py:7 (from .schema schema)",
+        "algorithms/traffic_llm/dataset/catalog.py:20 (from .schema schema)",
+        "algorithms/traffic_llm/dataset/action_parser.py:7 (from .schema schema)",
+        "algorithms/traffic_llm/dataset/split.py:10 (from .schema schema)",
+        "algorithms/traffic_llm/dataset/pipeline.py:29 (from .schema schema)"
+      ],
+      "in_requirements": []
+    },
+    "schemas": {
+      "file_count": 12,
+      "files_sample": [
+        "backend/app/api/v1/catalog.py",
+        "backend/app/api/v1/config.py",
+        "backend/app/api/v1/copilot.py",
+        "backend/app/api/v1/evaluation_reports.py",
+        "backend/app/api/v1/maps.py",
+        "backend/app/api/v1/scenarios.py",
+        "backend/app/api/v1/simulations.py",
+        "backend/app/scenario/resolver.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/api/v1/catalog.py:7 (from .schemas.catalog schemas.catalog)",
+        "backend/app/api/v1/maps.py:8 (from .schemas.maps schemas.maps)",
+        "backend/app/api/v1/scenarios.py:8 (from .schemas.simulations schemas.simulations)",
+        "backend/app/api/v1/config.py:8 (from .schemas.map_config schemas.map_config)",
+        "backend/app/api/v1/copilot.py:31 (from .schemas.copilot schemas.copilot)"
+      ],
+      "in_requirements": []
+    },
+    "scipy": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/prediction/export_stgcn_dataset.py",
+        "algorithms/prediction/train_stgcn_stage1.py",
+        "simulation/sumo/building/build_traffic.py"
+      ],
+      "services": [
+        "offline-training",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/building/build_traffic.py:236 (import scipy.optimize)",
+        "algorithms/prediction/train_stgcn_stage1.py:19 (import scipy.sparse)",
+        "algorithms/prediction/export_stgcn_dataset.py:12 (import scipy.sparse)"
+      ],
+      "in_requirements": [
+        "requirements.txt"
+      ]
+    },
+    "scope": {
+      "file_count": 1,
+      "files_sample": [
+        "traffic_eval/collector.py"
+      ],
+      "services": [
+        "backend+sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_eval/collector.py:29 (from .scope scope)"
+      ],
+      "in_requirements": []
+    },
+    "scorer": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/sensitivity_audit.py",
+        "algorithms/traffic_llm/dataset/teacher_selector.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/teacher_selector.py:8 (from .scorer scorer)",
+        "algorithms/traffic_llm/dataset/sensitivity_audit.py:11 (from .scorer scorer)"
+      ],
+      "in_requirements": []
+    },
+    "script": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/prediction/train_stgcn_stage1.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/train_stgcn_stage1.py:52 (from script)"
+      ],
+      "in_requirements": []
+    },
+    "scripts": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/tests/test_qwen_transformers_server.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "test"
+      ],
+      "import_samples": [
+        "backend/tests/test_qwen_transformers_server.py:7 (from scripts.llm.qwen_transformers_server)"
+      ],
+      "in_requirements": []
+    },
+    "semantics": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/event_detection/cards.py",
+        "algorithms/event_detection/evaluate.py",
+        "algorithms/event_detection/rules.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/event_detection/rules.py:19 (from .semantics semantics)",
+        "algorithms/event_detection/cards.py:12 (from .semantics semantics)",
+        "algorithms/event_detection/evaluate.py:12 (from .semantics semantics)"
+      ],
+      "in_requirements": []
+    },
+    "sensitivity_audit": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/cli.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/cli.py:19 (from .sensitivity_audit sensitivity_audit)"
+      ],
+      "in_requirements": []
+    },
+    "sensors": {
+      "file_count": 7,
+      "files_sample": [
+        "simulation/carla/data_export/__init__.py",
+        "simulation/carla/data_export/exporters/_common.py",
+        "simulation/carla/data_export/exporters/kitti.py",
+        "simulation/carla/data_export/exporters/lidar.py",
+        "simulation/carla/data_export/exporters/rgb_camera.py",
+        "simulation/carla/data_export/exporters/stream.py",
+        "simulation/carla/data_export/selfcheck.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/data_export/selfcheck.py:587 (from .sensors sensors)",
+        "simulation/carla/data_export/selfcheck.py:604 (from .sensors sensors)",
+        "simulation/carla/data_export/__init__.py:25 (from .sensors sensors)",
+        "simulation/carla/data_export/exporters/rgb_camera.py:11 (from .sensors sensors)",
+        "simulation/carla/data_export/exporters/stream.py:109 (from .sensors sensors)"
+      ],
+      "in_requirements": []
+    },
+    "sentence_transformers": {
+      "file_count": 3,
+      "files_sample": [
+        "backend/app/copilot/rag.py",
+        "scripts/standards/build_standards_rag_index.py",
+        "scripts/standards/validate_rag_indices.py"
+      ],
+      "services": [
+        "backend",
+        "backend/offline"
+      ],
+      "roles": [
+        "build-only",
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/copilot/rag.py:1275 (from sentence_transformers)",
+        "scripts/standards/validate_rag_indices.py:65 (from sentence_transformers)",
+        "scripts/standards/build_standards_rag_index.py:258 (from sentence_transformers)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "services": {
+      "file_count": 9,
+      "files_sample": [
+        "backend/app/api/deps.py",
+        "backend/app/api/v1/catalog.py",
+        "backend/app/api/v1/copilot.py",
+        "backend/app/api/v1/evaluation_reports.py",
+        "backend/app/api/v1/maps.py",
+        "backend/app/api/v1/scenarios.py",
+        "backend/app/api/v1/simulations.py",
+        "backend/app/copilot/traffic_tools.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/main.py:22 (from .services.manager_factory services.manager_factory)",
+        "backend/app/main.py:23 (from .services.map_service services.map_service)",
+        "backend/app/main.py:24 (from .services.scenario_export_service services.scenario_export_service)",
+        "backend/app/main.py:25 (from .services.session_metadata services.session_metadata)",
+        "backend/app/main.py:26 (from .services.simulation_service services.simulation_service)"
+      ],
+      "in_requirements": []
+    },
+    "session": {
+      "file_count": 5,
+      "files_sample": [
+        "simulation/sumo/engine/distributed/codec.py",
+        "simulation/sumo/engine/distributed/commands.py",
+        "simulation/sumo/engine/distributed/manager.py",
+        "simulation/sumo/engine/distributed/tasks.py",
+        "simulation/sumo/engine/run.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/run.py:784 (from .session session)",
+        "simulation/sumo/engine/distributed/commands.py:8 (from .session session)",
+        "simulation/sumo/engine/distributed/codec.py:18 (from .session session)",
+        "simulation/sumo/engine/distributed/tasks.py:12 (from .session session)",
+        "simulation/sumo/engine/distributed/manager.py:20 (from .session session)"
+      ],
+      "in_requirements": []
+    },
+    "session_hub": {
+      "file_count": 2,
+      "files_sample": [
+        "traffic_eval/__init__.py",
+        "traffic_eval/runner.py"
+      ],
+      "services": [
+        "backend+sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_eval/runner.py:18 (from .session_hub session_hub)",
+        "traffic_eval/__init__.py:19 (from .session_hub session_hub)"
+      ],
+      "in_requirements": []
+    },
+    "session_metadata": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/simulation_service.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/simulation_service.py:45 (from .session_metadata session_metadata)"
+      ],
+      "in_requirements": []
+    },
+    "sft_audit": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/cli.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/cli.py:20 (from .sft_audit sft_audit)"
+      ],
+      "in_requirements": []
+    },
+    "sft_builder": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/pipeline.py",
+        "algorithms/traffic_llm/dataset/sft_audit.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/sft_audit.py:16 (from .sft_builder sft_builder)",
+        "algorithms/traffic_llm/dataset/pipeline.py:30 (from .sft_builder sft_builder)"
+      ],
+      "in_requirements": []
+    },
+    "shapely": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/tests/test_road_network_conversion.py",
+        "simulation/utils/convert_sumo_road_network.py"
+      ],
+      "services": [
+        "backend",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime",
+        "test"
+      ],
+      "import_samples": [
+        "backend/tests/test_road_network_conversion.py:9 (from shapely.geometry)",
+        "backend/tests/test_road_network_conversion.py:10 (from shapely.ops)",
+        "simulation/utils/convert_sumo_road_network.py:13 (from shapely.geometry)",
+        "simulation/utils/convert_sumo_road_network.py:14 (from shapely.ops)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "simulation_service": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/evaluation_report_service.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/evaluation_report_service.py:34 (from .simulation_service simulation_service)"
+      ],
+      "in_requirements": []
+    },
+    "snapshot": {
+      "file_count": 5,
+      "files_sample": [
+        "algorithms/v2x/collab/aggregator.py",
+        "algorithms/v2x/collab/engine.py",
+        "algorithms/v2x/collab/policy.py",
+        "algorithms/v2x/collab/records.py",
+        "algorithms/v2x/collab/state.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/collab/state.py:10 (from .snapshot snapshot)",
+        "algorithms/v2x/collab/records.py:9 (from .snapshot snapshot)",
+        "algorithms/v2x/collab/engine.py:24 (from .snapshot snapshot)",
+        "algorithms/v2x/collab/policy.py:26 (from .snapshot snapshot)",
+        "algorithms/v2x/collab/aggregator.py:15 (from .snapshot snapshot)"
+      ],
+      "in_requirements": []
+    },
+    "snapshot_serializer": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/simulation_service.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/simulation_service.py:51 (from .snapshot_serializer snapshot_serializer)"
+      ],
+      "in_requirements": []
+    },
+    "sotl": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/controllers/__init__.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/controllers/__init__.py:12 (from .sotl sotl)"
+      ],
+      "in_requirements": []
+    },
+    "spectator_coords": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/carla/data_export/selfcheck.py",
+        "simulation/carla/plan_lidar_points.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/plan_lidar_points.py:30 (from spectator_coords)",
+        "simulation/carla/data_export/selfcheck.py:294 (import spectator_coords)",
+        "simulation/carla/data_export/selfcheck.py:360 (import spectator_coords)"
+      ],
+      "in_requirements": []
+    },
+    "split": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/pipeline.py",
+        "algorithms/traffic_llm/dataset/sft_audit.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/sft_audit.py:17 (from .split split)",
+        "algorithms/traffic_llm/dataset/pipeline.py:31 (from .split split)"
+      ],
+      "in_requirements": []
+    },
+    "state": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/event_detection/ai_observer.py",
+        "algorithms/event_detection/rules.py",
+        "algorithms/v2x/collab/engine.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/event_detection/ai_observer.py:12 (from .state state)",
+        "algorithms/event_detection/rules.py:13 (from .state state)",
+        "algorithms/v2x/collab/engine.py:25 (from .state state)"
+      ],
+      "in_requirements": []
+    },
+    "static_cheb_lane_model": {
+      "file_count": 4,
+      "files_sample": [
+        "algorithms/prediction/archive/experiments/dynamic_cheb_lane_model.py",
+        "algorithms/prediction/archive/experiments/static_hierarchical_lane_model.py",
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py",
+        "algorithms/prediction/static_directional_lane_model.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/static_directional_lane_model.py:26 (from .static_cheb_lane_model static_cheb_lane_model)",
+        "algorithms/prediction/static_directional_lane_model.py:268 (from .static_cheb_lane_model static_cheb_lane_model)",
+        "algorithms/prediction/archive/experiments/dynamic_cheb_lane_model.py:27 (from .static_cheb_lane_model static_cheb_lane_model)",
+        "algorithms/prediction/archive/experiments/static_hierarchical_lane_model.py:27 (from .static_cheb_lane_model static_cheb_lane_model)",
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py:53 (from .static_cheb_lane_model static_cheb_lane_model)"
+      ],
+      "in_requirements": []
+    },
+    "static_directional_lane_model": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py:55 (from .static_directional_lane_model static_directional_lane_model)"
+      ],
+      "in_requirements": []
+    },
+    "static_hierarchical_lane_model": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/archive/experiments/train_dynamic_lane_v1.py:54 (from .static_hierarchical_lane_model static_hierarchical_lane_model)"
+      ],
+      "in_requirements": []
+    },
+    "stats": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/v2x/collab/engine.py",
+        "algorithms/v2x/hub.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/v2x/hub.py:17 (from .stats stats)",
+        "algorithms/v2x/collab/engine.py:26 (from .stats stats)"
+      ],
+      "in_requirements": []
+    },
+    "store": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/sumo/engine/distributed/manager.py",
+        "simulation/sumo/engine/distributed/tasks.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/distributed/tasks.py:15 (from .store store)",
+        "simulation/sumo/engine/distributed/manager.py:31 (from .store store)"
+      ],
+      "in_requirements": []
+    },
+    "sumo_integration": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/carla/run_cosimulation.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/run_cosimulation.py:853 (from sumo_integration.constants)",
+        "simulation/carla/run_cosimulation.py:882 (from sumo_integration.bridge_helper)",
+        "simulation/carla/run_cosimulation.py:681 (from sumo_integration.carla_simulation)",
+        "simulation/carla/run_cosimulation.py:682 (from sumo_integration.bridge_helper)"
+      ],
+      "in_requirements": []
+    },
+    "sumolib": {
+      "file_count": 5,
+      "files_sample": [
+        "backend/app/core/sumo_env.py",
+        "simulation/carla/run_cosimulation.py",
+        "simulation/utils/generate_citypulse_debug_pois.py",
+        "simulation/utils/netcovert_sumo_20.py",
+        "simulation/utils/sync_citypulse_intersection_mapping.py"
+      ],
+      "services": [
+        "backend",
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only",
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/core/sumo_env.py:39 (import sumolib)",
+        "backend/app/core/sumo_env.py:29 (import sumolib)",
+        "simulation/utils/sync_citypulse_intersection_mapping.py:27 (import sumolib)",
+        "simulation/utils/netcovert_sumo_20.py:49 (import sumolib)",
+        "simulation/utils/generate_citypulse_debug_pois.py:16 (import sumolib)"
+      ],
+      "in_requirements": []
+    },
+    "takeover_orchestrator": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/simulation_service.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/simulation_service.py:134 (from .takeover_orchestrator takeover_orchestrator)"
+      ],
+      "in_requirements": []
+    },
+    "teacher_selector": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/pipeline.py",
+        "algorithms/traffic_llm/dataset/sensitivity_audit.py",
+        "algorithms/traffic_llm/dataset/sft_builder.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/pipeline.py:32 (from .teacher_selector teacher_selector)",
+        "algorithms/traffic_llm/dataset/sensitivity_audit.py:12 (from .teacher_selector teacher_selector)",
+        "algorithms/traffic_llm/dataset/sft_builder.py:15 (from .teacher_selector teacher_selector)"
+      ],
+      "in_requirements": []
+    },
+    "tls": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/sumo/building/build_tls.py",
+        "simulation/sumo/building/network_validation.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/building/build_tls.py:20 (from .tls tls)",
+        "simulation/sumo/building/network_validation.py:11 (from .tls tls)"
+      ],
+      "in_requirements": []
+    },
+    "token_budget": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/sft_audit.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/sft_audit.py:18 (from .token_budget token_budget)"
+      ],
+      "in_requirements": []
+    },
+    "toolchain_env": {
+      "file_count": 10,
+      "files_sample": [
+        "simulation/carla/data_export/calibration.py",
+        "simulation/carla/data_export/config.py",
+        "simulation/carla/list_junctions.py",
+        "simulation/carla/plan_lidar_points.py",
+        "simulation/carla/run_cosimulation.py",
+        "simulation/carla/spectator_coords.py",
+        "simulation/carla/tp.py",
+        "simulation/carla/validate.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/plan_lidar_points.py:29 (import toolchain_env)",
+        "simulation/carla/run_cosimulation.py:44 (import toolchain_env)",
+        "simulation/carla/list_junctions.py:15 (import toolchain_env)",
+        "simulation/carla/spectator_coords.py:47 (import toolchain_env)",
+        "simulation/carla/tp.py:44 (import toolchain_env)"
+      ],
+      "in_requirements": []
+    },
+    "topological_clipper": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/carla/xml2odr/batch_clip.py",
+        "simulation/carla/xml2odr/cli.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/xml2odr/cli.py:12 (from .topological_clipper topological_clipper)",
+        "simulation/carla/xml2odr/batch_clip.py:31 (from .topological_clipper topological_clipper)"
+      ],
+      "in_requirements": []
+    },
+    "torch": {
+      "file_count": 69,
+      "files_sample": [
+        "algorithms/cov2x/collab/joint_policy.py",
+        "algorithms/cov2x/collab/mvp_policy.py",
+        "algorithms/cov2x/controller.py",
+        "algorithms/cov2x/mvp_runtime.py",
+        "algorithms/cov2x/road/mp_prior.py",
+        "algorithms/cov2x/tests/test_frozen_mvp_contract.py",
+        "algorithms/cov2x/tests/test_movement_corridor_contract.py",
+        "algorithms/cov2x/tests/test_mvp_runtime.py"
+      ],
+      "services": [
+        "backend",
+        "backend/offline",
+        "citypulse-qwen",
+        "offline-training",
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only",
+        "runtime",
+        "test",
+        "training"
+      ],
+      "import_samples": [
+        "backend/app/copilot/rag.py:1259 (import torch)",
+        "backend/app/copilot/rag.py:1290 (import torch)",
+        "backend/app/services/prediction_runtime.py:122 (import torch)",
+        "backend/app/services/narrow_net_tdp/model.py:9 (import torch)",
+        "backend/app/services/narrow_net_tdp/model.py:10 (from torch)"
+      ],
+      "in_requirements": [
+        "algorithms/ippo/requirements.txt",
+        "backend/requirements.txt",
+        "requirements.txt"
+      ]
+    },
+    "tpi": {
+      "file_count": 2,
+      "files_sample": [
+        "traffic_eval/collector.py",
+        "traffic_eval/tripinfo.py"
+      ],
+      "services": [
+        "backend+sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "traffic_eval/collector.py:30 (from .tpi tpi)",
+        "traffic_eval/tripinfo.py:14 (from .tpi tpi)"
+      ],
+      "in_requirements": []
+    },
+    "trace_collector": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/episode_runner.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/dataset/episode_runner.py:30 (from .trace_collector trace_collector)"
+      ],
+      "in_requirements": []
+    },
+    "traci": {
+      "file_count": 3,
+      "files_sample": [
+        "algorithms/cov2x/tests/test_phase_boundary_sumo_fixture.py",
+        "algorithms/prediction/archive/legacy/collect_standard_sumo_snapshots.py",
+        "simulation/carla/run_cosimulation.py"
+      ],
+      "services": [
+        "offline-training",
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only",
+        "runtime",
+        "test"
+      ],
+      "import_samples": [
+        "simulation/carla/run_cosimulation.py:881 (import traci)",
+        "simulation/carla/run_cosimulation.py:1246 (import traci)",
+        "simulation/carla/run_cosimulation.py:779 (import traci)",
+        "simulation/carla/run_cosimulation.py:446 (import traci)",
+        "simulation/carla/run_cosimulation.py:990 (import traci)"
+      ],
+      "in_requirements": []
+    },
+    "traffic": {
+      "file_count": 3,
+      "files_sample": [
+        "simulation/sumo/building/build_tls.py",
+        "simulation/sumo/building/build_traffic.py",
+        "simulation/sumo/building/network_validation.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/building/build_tls.py:27 (from .traffic traffic)",
+        "simulation/sumo/building/build_traffic.py:22 (from .traffic traffic)",
+        "simulation/sumo/building/network_validation.py:12 (from .traffic traffic)"
+      ],
+      "in_requirements": []
+    },
+    "traffic_metrics": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/history.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/history.py:19 (from .traffic_metrics traffic_metrics)"
+      ],
+      "in_requirements": []
+    },
+    "traffic_qwen_observation": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/services/takeover_orchestrator.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/services/takeover_orchestrator.py:23 (from .traffic_qwen_observation traffic_qwen_observation)"
+      ],
+      "in_requirements": []
+    },
+    "traffic_tools": {
+      "file_count": 2,
+      "files_sample": [
+        "backend/app/copilot/__init__.py",
+        "backend/app/copilot/orchestrator.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/copilot/orchestrator.py:37 (from .traffic_tools traffic_tools)",
+        "backend/app/copilot/__init__.py:50 (from .traffic_tools traffic_tools)"
+      ],
+      "in_requirements": []
+    },
+    "train_stgcn_stage1": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/prediction/archive/legacy/analyze_smape_by_volume.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/archive/legacy/analyze_smape_by_volume.py:13 (from .train_stgcn_stage1 train_stgcn_stage1)"
+      ],
+      "in_requirements": []
+    },
+    "transformers": {
+      "file_count": 8,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/sft_audit.py",
+        "algorithms/traffic_llm/deployment/merge_adapter.py",
+        "algorithms/traffic_llm/deployment/quantize_awq.py",
+        "algorithms/traffic_llm/evaluation/policy.py",
+        "algorithms/traffic_llm/training/eval_structured.py",
+        "algorithms/traffic_llm/training/train_qlora.py",
+        "backend/app/copilot/rag.py",
+        "scripts/llm/qwen_transformers_server.py"
+      ],
+      "services": [
+        "backend",
+        "citypulse-qwen",
+        "offline-training"
+      ],
+      "roles": [
+        "build-only",
+        "runtime",
+        "training"
+      ],
+      "import_samples": [
+        "backend/app/copilot/rag.py:1291 (from transformers)",
+        "algorithms/traffic_llm/deployment/merge_adapter.py:17 (from transformers)",
+        "algorithms/traffic_llm/deployment/quantize_awq.py:60 (from transformers)",
+        "algorithms/traffic_llm/evaluation/policy.py:128 (from transformers)",
+        "algorithms/traffic_llm/training/train_qlora.py:152 (from transformers)"
+      ],
+      "in_requirements": [
+        "backend/requirements.txt"
+      ]
+    },
+    "tripinfo": {
+      "file_count": 3,
+      "files_sample": [
+        "simulation/sumo/engine/session.py",
+        "traffic_eval/__init__.py",
+        "traffic_eval/collector.py"
+      ],
+      "services": [
+        "backend+sumo-worker",
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/session.py:900 (from .tripinfo tripinfo)",
+        "traffic_eval/collector.py:31 (from .tripinfo tripinfo)",
+        "traffic_eval/__init__.py:20 (from .tripinfo tripinfo)"
+      ],
+      "in_requirements": []
+    },
+    "trl": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/traffic_llm/training/train_qlora.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/training/train_qlora.py:153 (from trl)"
+      ],
+      "in_requirements": [
+        "algorithms/traffic_llm/training/requirements.txt"
+      ]
+    },
+    "uvicorn": {
+      "file_count": 1,
+      "files_sample": [
+        "scripts/llm/qwen_transformers_server.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "scripts/llm/qwen_transformers_server.py:21 (import uvicorn)"
+      ],
+      "in_requirements": [
+        "algorithms/ippo/requirements.txt",
+        "algorithms/sotl/requirements.txt",
+        "backend/requirements.txt"
+      ]
+    },
+    "v1": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/app/api/router.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "backend/app/api/router.py:7 (from .v1 v1)"
+      ],
+      "in_requirements": []
+    },
+    "vehicle": {
+      "file_count": 1,
+      "files_sample": [
+        "simulation/sumo/engine/session.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/engine/session.py:894 (from .vehicle vehicle)"
+      ],
+      "in_requirements": []
+    },
+    "vehicle_profiles": {
+      "file_count": 2,
+      "files_sample": [
+        "simulation/sumo/building/build_tls.py",
+        "simulation/sumo/building/build_traffic.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "simulation/sumo/building/build_tls.py:32 (from .vehicle_profiles vehicle_profiles)",
+        "simulation/sumo/building/build_traffic.py:34 (from .vehicle_profiles vehicle_profiles)"
+      ],
+      "in_requirements": []
+    },
+    "websockets": {
+      "file_count": 1,
+      "files_sample": [
+        "backend/tests/integration_demo_2.py"
+      ],
+      "services": [
+        "backend"
+      ],
+      "roles": [
+        "test"
+      ],
+      "import_samples": [
+        "backend/tests/integration_demo_2.py:54 (import websockets)"
+      ],
+      "in_requirements": []
+    },
+    "xgboost": {
+      "file_count": 1,
+      "files_sample": [
+        "algorithms/prediction/train_xgboost_stage1.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "runtime"
+      ],
+      "import_samples": [
+        "algorithms/prediction/train_xgboost_stage1.py:89 (from xgboost)",
+        "algorithms/prediction/train_xgboost_stage1.py:109 (from xgboost)"
+      ],
+      "in_requirements": []
+    },
+    "xml2odr": {
+      "file_count": 3,
+      "files_sample": [
+        "simulation/carla/plan_lidar_points.py",
+        "simulation/carla/run_xml2odr.py",
+        "simulation/carla/tp.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/plan_lidar_points.py:31 (from xml2odr.batch_clip)",
+        "simulation/carla/run_xml2odr.py:42 (from xml2odr.cli)",
+        "simulation/carla/tp.py:45 (from xml2odr.batch_clip)"
+      ],
+      "in_requirements": []
+    },
+    "yaml": {
+      "file_count": 2,
+      "files_sample": [
+        "algorithms/traffic_llm/dataset/io_utils.py",
+        "algorithms/traffic_llm/training/train_qlora.py"
+      ],
+      "services": [
+        "offline-training"
+      ],
+      "roles": [
+        "training"
+      ],
+      "import_samples": [
+        "algorithms/traffic_llm/training/train_qlora.py:14 (import yaml)",
+        "algorithms/traffic_llm/dataset/io_utils.py:10 (import yaml)"
+      ],
+      "in_requirements": []
+    },
+    "zmq": {
+      "file_count": 3,
+      "files_sample": [
+        "simulation/carla/data_export/exporters/stream.py",
+        "simulation/carla/data_export/selfcheck.py",
+        "simulation/carla/stream_consumer.py"
+      ],
+      "services": [
+        "sumo-worker"
+      ],
+      "roles": [
+        "build-only"
+      ],
+      "import_samples": [
+        "simulation/carla/stream_consumer.py:100 (import zmq)",
+        "simulation/carla/stream_consumer.py:217 (import zmq)",
+        "simulation/carla/data_export/selfcheck.py:683 (import zmq)",
+        "simulation/carla/data_export/exporters/stream.py:251 (import zmq)"
+      ],
+      "in_requirements": []
+    }
+  },
+  "violations": [
+    {
+      "file": "backend/app/controllers/max_pressure.py",
+      "line": 8,
+      "import": "traffic_control.max_pressure",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/controllers/sotl.py",
+      "line": 8,
+      "import": "traffic_control.sotl",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/controllers/registry.py",
+      "line": 11,
+      "import": "traffic_control.registry",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/traffic_qwen_observation.py",
+      "line": 9,
+      "import": "algorithms.traffic_llm.dataset.feature_builder",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/traffic_qwen_observation.py",
+      "line": 10,
+      "import": "algorithms.traffic_llm.dataset.schema",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/traffic_qwen_observation.py",
+      "line": 11,
+      "import": "algorithms.traffic_llm.dataset.trace_collector",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/traffic_qwen_observation.py",
+      "line": 109,
+      "import": "algorithms.traffic_llm.dataset.catalog",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/traffic_qwen_observation.py",
+      "line": 125,
+      "import": "algorithms.traffic_llm.dataset.catalog",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/intelligence_runtime.py",
+      "line": 13,
+      "import": "algorithms.event_detection.cards",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/intelligence_runtime.py",
+      "line": 14,
+      "import": "algorithms.event_detection.rules",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/intelligence_runtime.py",
+      "line": 15,
+      "import": "algorithms.event_detection.state",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/takeover_orchestrator.py",
+      "line": 16,
+      "import": "algorithms.traffic_llm.dataset.sft_builder",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/takeover_orchestrator.py",
+      "line": 17,
+      "import": "algorithms.traffic_llm.deployment.schema",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/services/takeover_orchestrator.py",
+      "line": 18,
+      "import": "algorithms.traffic_llm.evaluation.policy",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/scenario/resolver.py",
+      "line": 58,
+      "import": "traffic_control.ippo.aliases",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/scenario/resolver.py",
+      "line": 68,
+      "import": "traffic_control.mappo.aliases",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/scenario/resolver.py",
+      "line": 78,
+      "import": "traffic_control.cov2x.aliases",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/app/core/sumo_env.py",
+      "line": 39,
+      "import": "sumolib",
+      "violation": "backend → SUMO/libsumo",
+      "kind": "import"
+    },
+    {
+      "file": "backend/app/core/sumo_env.py",
+      "line": 29,
+      "import": "sumolib",
+      "violation": "backend → SUMO/libsumo",
+      "kind": "import"
+    },
+    {
+      "file": "backend/tests/test_mappo_scenario_aliases.py",
+      "line": 7,
+      "import": "traffic_control.mappo.aliases",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/tests/test_mappo_scenario_aliases.py",
+      "line": 13,
+      "import": "traffic_control.ippo.identity",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/tests/test_scenario_aliases.py",
+      "line": 7,
+      "import": "traffic_control.ippo.aliases",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/tests/test_scenario_aliases.py",
+      "line": 12,
+      "import": "traffic_control.ippo.identity",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/tests/test_scenario_aliases.py",
+      "line": 40,
+      "import": "traffic_control.ippo.aliases",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/tests/test_traffic_control_package.py",
+      "line": 27,
+      "import": "traffic_control.registry",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "from"
+    },
+    {
+      "file": "backend/tests/test_traffic_control_package.py",
+      "line": 342,
+      "import": "traffic_control.ippo",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "import"
+    },
+    {
+      "file": "backend/tests/test_traffic_control_package.py",
+      "line": 343,
+      "import": "traffic_control.ippo.controller",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "import"
+    },
+    {
+      "file": "backend/tests/test_traffic_control_package.py",
+      "line": 485,
+      "import": "traffic_control.ippo",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "import"
+    },
+    {
+      "file": "backend/tests/test_traffic_control_package.py",
+      "line": 486,
+      "import": "traffic_control.ippo.controller",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "import"
+    },
+    {
+      "file": "backend/tests/test_traffic_control_package.py",
+      "line": 550,
+      "import": "traffic_control.mappo",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "import"
+    },
+    {
+      "file": "backend/tests/test_traffic_control_package.py",
+      "line": 551,
+      "import": "traffic_control.mappo.controller",
+      "violation": "backend → algorithms/traffic_control",
+      "kind": "import"
+    },
+    {
+      "file": "simulation/utils/convert_sumo_road_network.py",
+      "line": 152,
+      "import": "backend.app.core.config",
+      "violation": "simulation → backend",
+      "kind": "from"
+    },
+    {
+      "file": "simulation/utils/convert_sumo_road_network.py",
+      "line": 153,
+      "import": "backend.app.core.sumo_env",
+      "violation": "simulation → backend",
+      "kind": "from"
+    },
+    {
+      "file": "traffic_eval/runner.py",
+      "line": 272,
+      "import": "backend.app.scenario.presets",
+      "violation": "traffic_eval → backend",
+      "kind": "from"
+    }
+  ]
+}

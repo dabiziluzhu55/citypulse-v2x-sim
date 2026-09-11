@@ -9,7 +9,6 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.controllers.runtime import AlgorithmRuntimeStore
 from backend.app.core.config import get_settings
 from backend.app.main import create_app
 from backend.app.services.map_service import MapService
@@ -100,7 +99,6 @@ def serializer(coordinate_converter: MagicMock) -> SnapshotSerializer:
 def simulation_service(
     mock_manager: MagicMock,
     serializer: SnapshotSerializer,
-    algorithm_store: AlgorithmRuntimeStore,
 ) -> SimulationService:
     from backend.app.core.config import get_settings
     from backend.app.services.session_metadata import InMemorySessionMetadataStore
@@ -113,14 +111,8 @@ def simulation_service(
         mock_manager,
         serializer,
         settings,
-        algorithm_store,
         metadata_store=meta,
     )
-
-
-@pytest.fixture
-def algorithm_store() -> AlgorithmRuntimeStore:
-    return AlgorithmRuntimeStore()
 
 
 @pytest.fixture
@@ -137,7 +129,6 @@ def client(
     mock_manager: MagicMock,
     simulation_service: SimulationService,
     scenario_export_service: ScenarioExportService,
-    algorithm_store: AlgorithmRuntimeStore,
 ) -> TestClient:
     app = create_app()
     map_service = MagicMock(spec=MapService)
@@ -150,14 +141,12 @@ def client(
         app.state.simulation_manager = mock_manager
         app.state.simulation_service = simulation_service
         app.state.scenario_export_service = scenario_export_service
-        app.state.algorithm_store = algorithm_store
         app.state.map_service = map_service
         app.state.simulation_manager_mode = "local"
         app.state.simulation_manager_ready = True
         app.state.redis_ready = True
         app.state.session_root_ready = True
-        app.state.algorithm_state_shared = False
-        app.state.recommended_uvicorn_workers = 1
+        app.state.recommended_uvicorn_workers = 2
         app.state.detected_uvicorn_workers = None
         yield test_client
 
@@ -168,9 +157,4 @@ def degraded_client() -> TestClient:
     with TestClient(app) as test_client:
         app.state.artifacts_ready = False
         app.state.sumo_home_configured = True
-        app.state.missing_files = ["data/maps/sumo/generated/traffic_manifest.json"]
-        app.state.simulation_manager_mode = "local"
-        app.state.simulation_manager_ready = True
-        app.state.redis_ready = True
-        app.state.session_root_ready = True
         yield test_client

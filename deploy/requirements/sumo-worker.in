@@ -1,0 +1,35 @@
+# CityPulse SUMO Worker — 直接依赖草案
+# 生成：2026-09-11 依赖审计第一轮
+#
+# 原则：
+# - 允许 SUMO / simulation / traffic_control / Celery
+# - 禁止 FastAPI / chromadb / sentence-transformers / vllm
+# - RL 推理默认 CPU torch
+# - 共享源码：simulation/, traffic_control/, traffic_eval/ 随仓库 COPY
+
+# --- 任务队列 ---
+celery[redis]>=5.4,<6
+redis>=5,<7
+
+# --- 数值 ---
+numpy>=1.23,<3
+scipy>=1.9,<2
+
+# --- RL 推理（CPU 默认；CoV2X/IPPO/MAPPO checkpoint 均为 map_location=cpu）---
+torch>=2.0.0,<3
+
+# --- SUMO ---
+# 建议容器内固定单一 SUMO 版本（与 libsumo/traci 一致），二选一：
+#   A) apt 安装 Eclipse SUMO + SUMO_HOME
+#   B) pip eclipse-sumo（须验证 libsumo 可用）
+eclipse-sumo>=1.20.0
+
+# 系统级（非 pip，Dockerfile 中安装）：
+# - sumo binary, netconvert, duarouter
+# - libsumo Python bindings 与 SUMO 版本对齐
+
+# 注意：以下在当前混装环境但 worker 不需要：
+# - fastapi / uvicorn / pydantic
+# - chromadb / sentence-transformers / transformers
+# - vllm / peft / bitsandbytes / trl
+# - reportlab / matplotlib（除非 worker 承担报表，当前不）

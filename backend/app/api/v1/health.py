@@ -34,10 +34,6 @@ def health(request: Request) -> dict:
         "session_root_ready": session_root_ready,
         "simulation_manager_ready": manager_ready,
         "redis_ready": redis_ready,
-        "algorithm_base_url": settings.algorithm_base_url,
-        "algorithm_state_shared": bool(
-            getattr(request.app.state, "algorithm_state_shared", False)
-        ),
         "recommended_uvicorn_workers": getattr(
             request.app.state, "recommended_uvicorn_workers", 1
         ),

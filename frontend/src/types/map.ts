@@ -1,6 +1,5 @@
 import type { InjectionKey } from 'vue'
 import type Map from 'ol/Map'
-import type { Viewer } from 'cesium'
 import type { StoredMapViewport } from '../utils/mapViewportSync'
 
 export type AppMapMode = 'explore' | 'anchored'
@@ -54,7 +53,7 @@ export interface AppMapView {
   unregisterMap: () => void
   registerThreeMap: (map: ThreeMapController) => void
   unregisterThreeMap: () => void
-  registerCesium: (viewer: Viewer) => void
+  registerCesium: (viewer: unknown) => void
   unregisterCesium: () => void
   flyTo: (
     center: [number, number],

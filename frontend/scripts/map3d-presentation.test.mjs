@@ -46,10 +46,6 @@ const backgroundMapSource = await readFile(
   new URL('../src/components/visualization/AppBackgroundMap.vue', import.meta.url),
   'utf8',
 )
-const cesiumMapSource = await readFile(
-  new URL('../src/components/visualization/CesiumMap.vue', import.meta.url),
-  'utf8',
-)
 const simulationStoreSource = await readFile(
   new URL('../src/composables/useSimulationStore.ts', import.meta.url),
   'utf8',
@@ -460,7 +456,7 @@ test('clears 2D and 3D vehicle state exactly when a new backend session is accep
   assert.match(baiduThreeMapSource, /watch\([\s\S]*renderSessionRevision[\s\S]*vehicleRenderer\?\.clear\(\)/)
   assert.match(baiduThreeMapSource, /sceneEventMarkerLayer\?\.setMarkers\(\[\]\)/)
   assert.match(baiduThreeMapSource, /realisticIntersectionLayer\?\.updateRuntimeDisturbances\(\[\]\)/)
-  assert.match(cesiumMapSource, /renderSessionRevision[\s\S]*vehicleRenderer\?\.clear\(\)/)
+  assert.match(baiduThreeMapSource, /renderSessionRevision[\s\S]*vehicleRenderer\?\.clear\(\)/)
   assert.doesNotMatch(bindSessionBlock, /TERMINAL_SIMULATION_STATES/)
 })
 

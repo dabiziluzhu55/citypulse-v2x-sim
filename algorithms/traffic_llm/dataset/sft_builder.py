@@ -12,18 +12,9 @@ from .action_parser import parse_target_phases
 from .feature_builder import build_observation, build_observation_v2
 from .io_utils import read_jsonl
 from .schema import DATASET_VERSION, OBSERVATION_VERSION_V2, ScenarioSpec
+from traffic_llm_runtime.prompts import SYSTEM_PROMPT
+
 from .teacher_selector import signal_sft_reason
-
-
-SYSTEM_PROMPT = (
-    "你是 CityPulse 的高层交通信号控制规划器。"
-    "只根据用户提供的当前交通观测和扰动事件生成一个 30 秒信号计划。"
-    "必须只输出一个严格 JSON 对象，字段仅限："
-    "controlled_intersections, valid_seconds, signal_plan, objective, reason, fallback_to_baseline。"
-    "valid_seconds 必须为 30；signal_plan 每个路口必须是长度为 6 的整数相位数组。"
-    "相位必须来自 allowed_phases，不得输出车辆控制。"
-    "若应保持固定配时基线，则 controlled_intersections=[], signal_plan={}, fallback_to_baseline=true。"
-)
 
 
 def _nearest_record(records: Sequence[Mapping[str, Any]], time_s: float) -> Mapping[str, Any] | None:

@@ -1,12 +1,9 @@
-"""仿真管理器工厂：按配置选择local SimulationManager或RedisSimulationManager"""
+"""仿真管理器工厂：按配置选择 local SimulationManager 或 RedisSimulationManager"""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
-
-from simulation.sumo import RedisSimulationManager, SimulationManager
-from simulation.sumo.engine.distributed import RedisUnavailableError
 
 from ..core.config import Settings
 
@@ -14,13 +11,16 @@ logger = logging.getLogger(__name__)
 
 
 def create_simulation_manager(settings: Settings) -> Any:
-    """根据simulation_manager_mode创建管理器
+    """根据 simulation_manager_mode 创建管理器
 
-    redis模式连接失败时抛出RedisUnavailableError，绝不静默降级为local
+    redis 模式只导入 distributed client，避免加载本地 SUMO kernel。
+    local 模式 lazy import SimulationManager。
     """
 
     mode = settings.simulation_manager_mode
     if mode == "local":
+        from simulation.sumo.engine.session import SimulationManager
+
         logger.info(
             "Simulation manager mode=local (in-process SimulationManager)"
         )
@@ -30,6 +30,11 @@ def create_simulation_manager(settings: Settings) -> Any:
         )
 
     if mode == "redis":
+        from simulation.sumo.engine.distributed import (
+            RedisSimulationManager,
+            RedisUnavailableError,
+        )
+
         logger.info(
             "Simulation manager mode=redis (RedisSimulationManager) "
             "state_url=%s key_prefix=%s session_ttl=%ss",
@@ -52,7 +57,7 @@ def create_simulation_manager(settings: Settings) -> Any:
 
 
 def probe_redis_manager(settings: Settings) -> tuple[bool, str | None]:
-    """探测Redis会话存储是否可用；不创建Celery任务"""
+    """探测 Redis 会话存储是否可用；不创建 Celery 任务"""
 
     try:
         from simulation.sumo.engine.distributed.store import RedisSessionStore
@@ -68,8 +73,14 @@ def probe_redis_manager(settings: Settings) -> tuple[bool, str | None]:
         return False, str(exc)
 
 
+def redis_unavailable_error_type():
+    from simulation.sumo.engine.distributed import RedisUnavailableError
+
+    return RedisUnavailableError
+
+
 __all__ = [
-    "RedisUnavailableError",
     "create_simulation_manager",
     "probe_redis_manager",
+    "redis_unavailable_error_type",
 ]
