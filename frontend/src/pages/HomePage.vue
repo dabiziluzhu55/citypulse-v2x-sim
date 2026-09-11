@@ -386,6 +386,9 @@ async function handleStop() {
             :active-event-label="copilotActiveEventLabel"
             :active-scope="copilotActiveScope"
             :ai-takeover="snapshot?.ai_takeover ?? null"
+            :simulation-elapsed-seconds="snapshot?.elapsed_seconds ?? null"
+            :prediction="snapshot?.prediction ?? null"
+            :simulation-state="snapshot?.state ?? null"
             @close="closeAiControlPanel"
           />
         </div>

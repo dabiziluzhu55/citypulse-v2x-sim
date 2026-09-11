@@ -270,20 +270,25 @@ def test_model_facing_road_context_lists_only_direct_connections() -> None:
             "scope": "intersection:demo_14",
             "timestamp": 10.0,
             "data": {
-                "target": {"type": "intersection", "id": "demo_14"},
+                "target": {"type": "intersection", "id": "demo_14", "intersection_id": "demo_14"},
+                "intersection_id": "demo_14",
+                "lane_count": 2,
+                "lane_ids": ["A", "B"],
                 "topology_available": True,
                 "upstream_intersections": ["demo_19"],
                 "downstream_intersections": ["demo_19"],
                 "adjacent_intersections": ["demo_19"],
                 "lanes": [],
-                "connections": [],
+                "connections": [{"from_lane": "A", "to_lane": "B"}],
             },
         },
+        question="demo_14和哪些路口直接相连",
     )
 
     assert result is not None
     data = result["data"]
     assert data["directly_connected_intersections"] == ["demo_19"]
+    assert data["lane_count"] == 2
     assert "corridor_neighbors" not in data
     assert "路径邻居" in data["connection_note"]
 
@@ -390,28 +395,14 @@ def test_orchestrator_runs_real_provider_protocol_with_read_only_tool() -> None:
 
 
 def test_orchestrator_can_answer_current_ai_takeover_from_status_tool() -> None:
-    provider = _SequenceProvider(
-        [
-            LLMCompletion(
-                message=AssistantMessage(
-                    tool_calls=(
-                        ToolCall(
-                            call_id="call-ai-status",
-                            name="get_ai_takeover_status",
-                            arguments="{}",
-                        ),
-                    )
-                )
-            ),
-            LLMCompletion(message=AssistantMessage(content="AI 接管当前正在生效。")),
-        ]
-    )
+    provider = _SequenceProvider([])
 
     response = CopilotOrchestrator(provider, _ai_takeover_service()).run(
         "现在 AI 管控是否真正生效？"
     )
 
-    assert response.answer == "AI 接管当前正在生效。"
+    assert "正在执行" in response.answer
+    assert provider.requests == []
     status_call = next(call for call in response.tool_calls if call.name == "get_ai_takeover_status")
     assert status_call.result["data"]["control_active"] is True
     assert status_call.result["data"]["installed_plan"][
@@ -435,8 +426,8 @@ def test_orchestrator_sends_compact_views_for_verbose_traffic_tools() -> None:
                         "intersection_id": "demo_14",
                         "totals": {"vehicle_count": 3},
                         "lanes": [
-                            {"lane_id": "-52216_0", "vehicle_count": 0},
-                            {"lane_id": "-52216_1", "vehicle_count": 2},
+                            {"lane_id": "-52216_0", "vehicle_count": 0, "halting_count": 0, "mean_speed_kmh": 40.0},
+                            {"lane_id": "-52216_1", "vehicle_count": 2, "halting_count": 2, "mean_speed_kmh": 8.0},
                         ],
                     }
                 ],
@@ -452,12 +443,12 @@ def test_orchestrator_sends_compact_views_for_verbose_traffic_tools() -> None:
     )
     current_data = json.loads(current_message["content"])["result"]["data"]
     assert current_data["model_view"] == "compact_current_traffic"
-    assert current_data["model_summary"]["intersections"][0]["lanes"][0] == {
-        "lane_id": "-52216_0",
-        "vehicle_count": 0,
-    }
-    assert "intersections" not in current_data
+    assert current_data["intersection_id"] == "demo_14"
+    assert current_data["lane_count"] == 2
+    assert current_data["top_queued_lanes"][0]["lane_id"] == "-52216_1"
     assert "lanes" not in current_data
+    assert "model_summary" not in current_data
+    assert "intersections" not in current_data
 
     prediction_result = {
         "source": "get_prediction",
@@ -480,11 +471,12 @@ def test_orchestrator_sends_compact_views_for_verbose_traffic_tools() -> None:
         error=None,
     )
     prediction_data = json.loads(prediction_message["content"])["result"]["data"]
-    assert prediction_data["model_view"] == "network_prediction_summary"
+    assert prediction_data["model_view"] == "compact_prediction"
     assert prediction_data["top_increases"] == [
         {"intersection_id": "demo_14", "delta": 5.0}
     ]
     assert "intersections" not in prediction_data
+    assert prediction_data["network_summary"]["horizon_seconds"] == 60.0
 
 
 def test_orchestrator_rejects_unknown_write_tool_without_executing_it() -> None:

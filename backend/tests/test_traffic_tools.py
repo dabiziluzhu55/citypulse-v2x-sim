@@ -496,6 +496,9 @@ def test_prediction_and_network_summary_are_read_only(service: TrafficToolServic
 def test_road_context_knowledge_and_calculator(service: TrafficToolService) -> None:
     context = service.execute("get_road_context", {"lane_id": "L1_0"})
     assert context["data"]["target"]["intersection_id"] == "demo_1"
+    assert context["data"]["intersection_id"] == "demo_1"
+    assert context["data"]["lane_count"] == len(context["data"]["lane_ids"])
+    assert "L1_0" in context["data"]["lane_ids"]
     assert context["data"]["downstream_intersections"] == ["demo_2"]
     lane = next(item for item in context["data"]["lanes"] if item["lane_id"] == "L1_0")
     assert lane["downstream_lane_ids"] == ["L2_0"]

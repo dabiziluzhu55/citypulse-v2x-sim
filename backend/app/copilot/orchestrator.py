@@ -16,6 +16,24 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 from .llm import LLMError, LLMProvider, ToolCall
+from .live_answers import (
+    compact_tool_result_for_model,
+    format_deterministic_answer,
+    guard_answer,
+)
+from .query_intent import (
+    CURRENT_TRAFFIC,
+    DETERMINISTIC_INTENTS,
+    KNOWLEDGE,
+    LANE_COUNT,
+    LIVE_INTENTS,
+    NETWORK_RISK,
+    PREDICTION,
+    ROAD_CONTEXT,
+    AI_STATUS,
+    QueryIntent,
+    route_query_intent,
+)
 from .traffic_tools import (
     LIVE_SESSION_TOOL_NAMES,
     SESSIONLESS_TOOL_NAMES,
@@ -26,17 +44,22 @@ from .traffic_tools import (
 )
 
 
-DEFAULT_SYSTEM_PROMPT = """你是 CityPulse-Qwen，CityPulse 车路云交通 Copilot。你负责交通知识问答；当仿真会话可用时，也可以解释当前仿真中的交通状态。
+DEFAULT_SYSTEM_PROMPT = """你是 CityPulse-Qwen，CityPulse 车路云交通 Copilot。
 
 必须遵守：
-1. 当前车辆数、停车数、速度、事件状态、历史趋势和预测等实时仿真事实，必须先调用只读交通工具获得；没有工具结果就明确说无法确认，不得编造实时数据。凡是涉及本项目实现、评估口径、标准条款或用户已点名的控制算法，必须先调用 search_knowledge。search_knowledge 无命中时，一般交通工程常识可以基于通用知识回答，但不得编造本项目实现、指标公式或标准编号/条款；不要因为 matched_count=0 就回答“知识库没有，所以无法回答”。
-2. 工具结果中的 timestamp、scope、source 代表数据口径。回答时区分观测事实、预测结果、基于证据的推断和未知原因。`get_current_traffic` 返回的 `model_summary` 是逐车道精确摘要，以其中的车道值为准，不要把路口总量分摊或推算到单条车道。用户未指定路口或车道，却询问“当前车流”“全网交通”“整体拥堵”等范围问题时，必须调用 `get_network_summary`，不要先反问路口 ID；只有用户明确指定路口或车道时才调用 `get_current_traffic`。没有指定路口的全网预测问题，调用 `get_prediction` 时不要填写任何路口 ID，直接依据工具返回的 `top_increases` 排序结果回答。预测只能使用工具返回的 horizon_seconds（当前运行配置通常约为 60 秒）；用户要求超过该范围（例如 5 分钟）时，直接说明当前不支持，不要虚构路口 ID 重试，也不要把短时预测外推成更长预测。
-3. 事件的具体成因如果工具没有确认，就说“原因未确认”；不要把前端注入事件直接当成识别结论。事件类型（例如“事故”“施工”）不是事件 ID；如果当前会话上下文已经提供唯一事件 ID，使用该 ID 查询，不要把事件类型当作 ID。
-4. 如果用户是在查看前端选中的事件并请求事件简报，必须先查询该事件详情；同时查询相关路口当前状态和历史趋势，再生成简报。只有用户点击/主动提问时才生成简报，不要因为事件写入历史就主动调用模型。
-5. 你只能查询和计算，不能启动、停止、暂停仿真，不能修改信号灯、车辆、事件或任何系统状态。用户要求控制操作时，说明当前 Copilot 只支持只读分析。
-6. 查询事故、施工占道、限速、大型活动、回溢或多路口协同的一般处置原则时，search_knowledge 是必需的第一步，使用 profile="control" 和 knowledge_sources=["traffic"]；如果用户只问处置原则而没有提供具体路口/车道 ID，不要索要 ID。一般交通原则查询不要自行填写 information_types，除非用户明确要求按已知类别筛选；不要创造 `disposal_principle` 等不存在的类别。知识来源最终由后端按用户原问题再次约束：普通项目指标/公式问题只检索当前正式指标文档；明确的国家/行业标准问题只检索标准索引；只有用户明确要求比较项目口径与国家/行业标准时才同时检索两者；AI 管控评估问题检索 AI 评估规范；用户明确点名 Fixed / SOTL / Max Pressure / IPPO / MAPPO / CoV2X / CityPulse-Qwen / Narrow-TDP 时，后端会锁定对应项目文档，模型仍应调用 search_knowledge，profile 使用 "general"。不要为了猜测而同时选择多个知识来源。不得引用检索结果中没有明确出现的标准编号、条款或数值；没有直接标准条款时明确说明没有直接条款。比较项目口径和标准时，只有公式、对象、时间窗口以及边界/统计处理都明确一致才说“一致”，否则说“部分对应”；没有直接条款就明确写“没有直接条款”。查询雄安规划时，使用 profile="general" 和 knowledge_sources=["policy"]。普通算法说明使用 profile="general"。检索片段标明【规划功能】的内容表示尚未实现；标明【项目事实】的内容按当前系统能力回答。回答时保留标准编号、章节、页码和文档状态。
-7. 最终用简洁、清楚的中文回答；涉及多个数据来源时说明各自的范围和时间。
-8. 关于当前或最近一次 AI 接管的问题（是否真正生效、当前状态、接管事件、控制范围、已安装计划、目标相位、失败或回退原因），必须先调用 get_ai_takeover_status；不要根据事件的 ai_control_enabled 字段自行推断接管成功。回答“当前正在管控吗”时，以工具返回的 `is_currently_executing` 和 `execution_state` 为准：只有 `is_currently_executing=true` 或 `execution_state=EXECUTING` 才能说当前管控正在执行；`PLANNING_PAUSED` 只能说仿真正在暂停并进行规划，不能说信号控制动作正在执行；终态仿真（FAILED/STOPPED/COMPLETED）不能说仍在管控。`installed_plan_active` 表示计划仍安装在非终态会话中，不等于当前正在执行。get_ai_takeover_status 返回的目标相位序列是已安装的控制请求，不是 SUMO 当前实测相位；要回答当前实际相位，另调 get_current_traffic。询问“管控后车流如何变化”时，先调用 get_ai_takeover_status，再调用 get_traffic_history，将管控动作与实际交通指标分开说明。AI 接管状态和计划信息是运行时事实，不要调用 search_knowledge 替代。
+A. 实时事实必须来自 Tool；没有工具结果就明确说无法确认，不得编造实时数据。
+B. 短时预测必须来自 get_prediction，只能使用工具返回的 horizon_seconds，不得外推到更长时段。
+C. 路网结构、车道数量和连接关系来自 get_road_context。
+D. 全网风险和热点来自 get_network_summary；不要先拉取一个路口的全部车道。
+E. 项目知识、算法说明和标准条款来自 search_knowledge。点名 Max Pressure / SOTL / IPPO / MAPPO / Fixed / CoV2X / CityPulse-Qwen / Narrow-TDP 时必须先检索知识库，profile 使用 general。
+F. 不得重复工具原始数组，不得输出 JSON、字段名或占位符。
+G. 默认只总结最重要的 1~3 项；普通问答不超过 5~8 句，除非用户明确要求详细解释。
+H. 不确定就明确说不知道。
+
+绝对不要逐项复述大量结构相同的 lane 数据。不要重复相同结论。用户没有要求逐车道详情时，只给聚合结果和最重要异常。
+fallback=true 的预测是降级结果，不要称为 Narrow-TDP 正式预测。
+你只能查询和计算，不能启动、停止或修改仿真、信号灯、车辆或事件。
+关于当前 AI 接管是否生效，调用 get_ai_takeover_status，以 is_currently_executing 和 execution_state 为准。
 """
 
 SESSIONLESS_NO_LIVE_DATA_ANSWER = (
@@ -53,23 +76,6 @@ _UNHELPFUL_LIVE_ANSWER_PATTERN = re.compile(
     r"可以.{0,12}(?:使用|调用).{0,24}get_current_traffic)",
     re.IGNORECASE,
 )
-_LIVE_CONTEXT_KEYWORDS = (
-    "当前",
-    "实时",
-    "现在",
-    "本路口",
-    "这个路口",
-)
-_LIVE_METRIC_KEYWORDS = (
-    "车辆",
-    "速度",
-    "排队",
-    "等待",
-    "拥堵",
-    "信号灯",
-    "交通状态",
-)
-_LIVE_QUERY_INTENTS = ("多少", "几辆", "状态", "情况", "趋势", "是否", "多长")
 
 
 def _invalid_visible_answer(answer: str) -> bool:
@@ -85,46 +91,45 @@ def _invalid_visible_answer(answer: str) -> bool:
     return _PLACEHOLDER_PATTERN.search(normalized) is not None
 
 
-def _requires_live_data(question: str) -> bool:
-    if any(keyword in question for keyword in _LIVE_CONTEXT_KEYWORDS):
-        return True
-    return (
-        any(keyword in question for keyword in _LIVE_METRIC_KEYWORDS)
-        and any(keyword in question for keyword in _LIVE_QUERY_INTENTS)
-    )
-
-
-_LIVE_SIMULATION_NEEDLES = (
-    "多少辆",
-    "多少车",
-    "最堵",
-    "最拥堵",
-    "未来60秒",
-    "未来六十秒",
-    "实时车流",
-    "实时交通",
-    "当前车流",
-    "现在有多少",
-    "哪个路口堵",
-    "哪个路口最",
-    "哪里会拥堵",
-    "哪里拥堵",
-    "现在交通怎么样",
-)
+def _requires_live_data(intent: QueryIntent) -> bool:
+    return intent.name in LIVE_INTENTS
 
 
 def _asks_for_live_simulation_data(question: str) -> bool:
-    normalized = str(question).strip()
-    return any(needle in normalized for needle in _LIVE_SIMULATION_NEEDLES)
+    return route_query_intent(question).name in LIVE_INTENTS
 
 
-def _intersection_from_scope(active_scope: str | None) -> str | None:
-    normalized = str(active_scope or "").strip()
-    prefix = "intersection:"
-    if not normalized.startswith(prefix):
-        return None
-    intersection_id = normalized[len(prefix) :].strip()
-    return intersection_id or None
+def _prefetch_tool_call(intent: QueryIntent) -> ToolCall | None:
+    if intent.name == NETWORK_RISK:
+        return ToolCall("prefetch_network_summary", "get_network_summary", {})
+    if intent.name == PREDICTION:
+        arguments = (
+            {"intersection_id": intent.intersection_id}
+            if intent.intersection_id
+            else {}
+        )
+        return ToolCall("prefetch_prediction", "get_prediction", arguments)
+    if intent.name in {LANE_COUNT, ROAD_CONTEXT}:
+        if not intent.intersection_id and not intent.lane_id:
+            return None
+        arguments: dict[str, str] = {}
+        if intent.intersection_id:
+            arguments["intersection_id"] = intent.intersection_id
+        if intent.lane_id:
+            arguments["lane_id"] = intent.lane_id
+        return ToolCall("prefetch_road_context", "get_road_context", arguments)
+    if intent.name == AI_STATUS:
+        return ToolCall("prefetch_ai_status", "get_ai_takeover_status", {})
+    if intent.name == CURRENT_TRAFFIC:
+        if intent.intersection_id or intent.lane_id:
+            arguments = {}
+            if intent.intersection_id:
+                arguments["intersection_id"] = intent.intersection_id
+            if intent.lane_id:
+                arguments["lane_id"] = intent.lane_id
+            return ToolCall("prefetch_current_traffic", "get_current_traffic", arguments)
+        return ToolCall("prefetch_network_summary", "get_network_summary", {})
+    return None
 
 
 class CopilotError(RuntimeError):
@@ -246,6 +251,7 @@ class CopilotOrchestrator:
         question = str(user_message).strip()
         if not question:
             raise CopilotInputError("user_message must not be empty.")
+        intent = route_query_intent(question, active_scope=active_scope)
         if not self.session_available and _asks_for_live_simulation_data(question):
             return CopilotResponse(
                 answer=SESSIONLESS_NO_LIVE_DATA_ANSWER,
@@ -257,58 +263,66 @@ class CopilotOrchestrator:
             history=history,
             active_event_id=active_event_id,
             active_scope=active_scope,
+            intent=intent,
         )
         records: list[ToolCallRecord] = []
         usage: dict[str, Any] = {}
         total_latency_ms = 0.0
         model: str | None = None
 
-        # The compact Qwen smoke service is not guaranteed to honor
-        # tool_choice="auto".  Current-state questions nevertheless require
-        # authoritative data, so bind one read-only observation before asking
-        # the model to write the user-facing summary.
-        if self.session_available and _requires_live_data(question):
-            intersection_id = _intersection_from_scope(active_scope)
-            call = ToolCall(
-                call_id="prefetch_current_traffic",
-                name=(
-                    "get_current_traffic"
-                    if intersection_id
-                    else "get_network_summary"
-                ),
-                arguments=(
-                    {"intersection_id": intersection_id}
-                    if intersection_id
-                    else {}
-                ),
-            )
-            result, error = self._execute_tool(call)
-            records.append(
-                ToolCallRecord(
-                    call_id=call.call_id,
-                    name=call.name,
-                    arguments=call.arguments,
-                    result=result,
-                    error=error,
+        if self.session_available and _requires_live_data(intent):
+            call = _prefetch_tool_call(intent)
+            if call is not None:
+                result, error = self._execute_tool(call)
+                records.append(
+                    ToolCallRecord(
+                        call_id=call.call_id,
+                        name=call.name,
+                        arguments=call.arguments,
+                        result=result,
+                        error=error,
+                    )
                 )
-            )
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [call.as_dict()],
-                }
-            )
-            messages.append(self._tool_message(call, result=result, error=error))
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "请根据上面的只读工具结果回答最初的问题。"
-                        "只输出简洁自然的中文结论，不要复述字段名。"
-                    ),
-                }
-            )
+                if (
+                    error is None
+                    and intent.name in DETERMINISTIC_INTENTS
+                ):
+                    formatted = format_deterministic_answer(intent, records)
+                    if formatted:
+                        return CopilotResponse(
+                            answer=guard_answer(
+                                formatted,
+                                intent=intent,
+                                records=records,
+                                question=question,
+                            ),
+                            rounds=1,
+                            tool_calls=tuple(records),
+                        )
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [call.as_dict()],
+                    }
+                )
+                messages.append(
+                    self._tool_message(
+                        call,
+                        result=result,
+                        error=error,
+                        question=question,
+                    )
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "请根据上面的只读工具结果回答最初的问题。"
+                            "只输出简洁自然的中文结论，不要复述字段名，不要逐项复述车道数组，不要重复同一句话。"
+                        ),
+                    }
+                )
 
         for round_number in range(1, self.max_rounds + 1):
             try:
@@ -336,12 +350,13 @@ class CopilotOrchestrator:
                 answer = (assistant.content or "").strip()
                 missing_required_tool = (
                     self.session_available
-                    and _requires_live_data(question)
+                    and _requires_live_data(intent)
                     and not records
+                    and intent.name != KNOWLEDGE
                 )
                 invalid_answer = _invalid_visible_answer(answer) or (
                     self.session_available
-                    and _requires_live_data(question)
+                    and _requires_live_data(intent)
                     and _UNHELPFUL_LIVE_ANSWER_PATTERN.search(answer) is not None
                 )
                 if (
@@ -355,18 +370,34 @@ class CopilotOrchestrator:
                             "content": (
                                 "刚才的回答不符合要求。如果问题涉及当前仿真数据，"
                                 "请先调用合适的只读工具；最终只输出简洁自然的中文结论，"
-                                "禁止返回 JSON、字段定义和占位符。"
+                                "禁止返回 JSON、字段定义和占位符，禁止重复同一句话。"
                             ),
                         }
                     )
                     continue
-                if missing_required_tool or invalid_answer:
+                guarded = guard_answer(
+                    answer,
+                    intent=intent,
+                    records=records,
+                    question=question,
+                )
+                if missing_required_tool or _invalid_visible_answer(guarded):
+                    formatted = format_deterministic_answer(intent, records)
+                    if formatted:
+                        return CopilotResponse(
+                            answer=formatted,
+                            rounds=round_number,
+                            tool_calls=tuple(records),
+                            model=model,
+                            usage=usage,
+                            latency_ms=total_latency_ms,
+                        )
                     raise CopilotModelError(
                         "大模型未能生成有效的交通分析文字，请重新提问。",
                         code="COPILOT_INVALID_VISIBLE_ANSWER",
                     )
                 return CopilotResponse(
-                    answer=answer,
+                    answer=guarded,
                     rounds=round_number,
                     tool_calls=tuple(records),
                     model=model,
@@ -397,8 +428,20 @@ class CopilotOrchestrator:
                         call,
                         result=result,
                         error=error,
+                        question=question,
                     )
                 )
+                formatted_response = self._deterministic_response(
+                    intent,
+                    records,
+                    question=question,
+                    rounds=round_number,
+                    model=model,
+                    usage=usage,
+                    latency_ms=total_latency_ms,
+                )
+                if formatted_response is not None:
+                    return formatted_response
 
         raise CopilotLimitError(
             f"模型连续 {self.max_rounds} 轮仍未生成最终回答。",
@@ -412,6 +455,7 @@ class CopilotOrchestrator:
         history: Sequence[Mapping[str, Any]],
         active_event_id: str | None,
         active_scope: str | None,
+        intent: QueryIntent | None = None,
     ) -> list[dict[str, Any]]:
         if self.session_available:
             context_lines = [
@@ -432,6 +476,10 @@ class CopilotOrchestrator:
             )
         if active_scope and str(active_scope).strip():
             context_lines.append(f"当前前端选中的分析范围：{str(active_scope).strip()}")
+        if intent is not None and intent.name == KNOWLEDGE:
+            context_lines.append(
+                "当前问题已判定为项目知识问答，请调用 search_knowledge，不要调用实时交通工具。"
+            )
         context = "\n\n当前会话上下文（只用于确定查询范围，不是实时事实）：\n" + "\n".join(
             f"- {line}" for line in context_lines
         )
@@ -485,12 +533,43 @@ class CopilotOrchestrator:
             }
         return result, None
 
+    def _deterministic_response(
+        self,
+        intent: QueryIntent,
+        records: Sequence[ToolCallRecord],
+        *,
+        question: str,
+        rounds: int,
+        model: str | None = None,
+        usage: Mapping[str, Any] | None = None,
+        latency_ms: float | None = None,
+    ) -> CopilotResponse | None:
+        if intent.name not in DETERMINISTIC_INTENTS:
+            return None
+        formatted = format_deterministic_answer(intent, records)
+        if not formatted:
+            return None
+        return CopilotResponse(
+            answer=guard_answer(
+                formatted,
+                intent=intent,
+                records=records,
+                question=question,
+            ),
+            rounds=rounds,
+            tool_calls=tuple(records),
+            model=model,
+            usage=dict(usage or {}),
+            latency_ms=latency_ms,
+        )
+
     def _tool_message(
         self,
         call: ToolCall,
         *,
         result: Mapping[str, Any] | None,
         error: Mapping[str, Any] | None,
+        question: str = "",
     ) -> dict[str, Any]:
         payload: dict[str, Any]
         if error is not None:
@@ -498,7 +577,12 @@ class CopilotOrchestrator:
         else:
             payload = {
                 "ok": True,
-                "result": _model_facing_tool_result(call.name, result),
+                "result": _model_facing_tool_result(
+                    call.name,
+                    result,
+                    question=question,
+                    arguments=call.arguments,
+                ),
             }
         content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         if len(content) > self.max_tool_result_chars:
@@ -525,140 +609,22 @@ class CopilotOrchestrator:
 def _model_facing_tool_result(
     tool_name: str,
     result: Mapping[str, Any] | None,
+    *,
+    question: str = "",
+    arguments: Mapping[str, Any] | str | None = None,
 ) -> Mapping[str, Any] | None:
     """Reduce verbose read-only results before sending them to Qwen.
 
     The complete result is still retained in ``ToolCallRecord`` for the API
-    caller.  Qwen only needs the authoritative compact view for current
-    traffic and the deterministic ranking for a network prediction; sending
-    the duplicated lane/all-intersection payload makes small local models
-    more likely to confuse adjacent rows.
+    caller.  Compact views prevent 7B models from looping over lane arrays.
     """
 
-    if not isinstance(result, Mapping):
-        return result
-    data = result.get("data")
-    if not isinstance(data, Mapping):
-        return result
-
-    envelope = {
-        key: result[key]
-        for key in ("source", "scope", "timestamp")
-        if key in result
-    }
-    if tool_name == "get_current_traffic":
-        summary = data.get("model_summary")
-        if isinstance(summary, Mapping):
-            envelope["data"] = {
-                "as_of_seconds": data.get("as_of_seconds"),
-                "model_summary": summary,
-                "model_view": "compact_current_traffic",
-            }
-            return envelope
-
-    if tool_name == "get_ai_takeover_status":
-        execution_state, execution_note = _ai_execution_view(data)
-        envelope["data"] = {
-            "available": data.get("available", False),
-            "as_of_seconds": data.get("as_of_seconds"),
-            "simulation_state": data.get("simulation_state"),
-            "takeover_state": data.get("takeover_state"),
-            "execution_state": execution_state,
-            "is_currently_executing": execution_state == "EXECUTING",
-            "execution_note": execution_note,
-            "ai_enabled": data.get("ai_enabled", False),
-            "active_event_id": data.get("active_event_id"),
-            "allowed_scope": data.get("allowed_scope", []),
-            "controlled_intersections": data.get("controlled_intersections", []),
-            "plan_sequence": data.get("plan_sequence", 0),
-            "installed_plan_active": data.get("installed_plan_active", False),
-            "installed_plan": data.get("installed_plan"),
-            "last_error": data.get("last_error"),
-            "fallback_reason": data.get("fallback_reason"),
-            "rag_status": data.get("rag_status"),
-        }
-        return envelope
-
-    if tool_name == "get_road_context":
-        upstream = data.get("upstream_intersections", [])
-        downstream = data.get("downstream_intersections", [])
-        upstream_values = (
-            list(upstream)
-            if isinstance(upstream, Sequence) and not isinstance(upstream, (str, bytes))
-            else []
-        )
-        downstream_values = (
-            list(downstream)
-            if isinstance(downstream, Sequence) and not isinstance(downstream, (str, bytes))
-            else []
-        )
-        direct_values = sorted(
-            {
-                str(value)
-                for value in [*upstream_values, *downstream_values]
-                if str(value).strip()
-            }
-        )
-        envelope["data"] = {
-            "target": data.get("target"),
-            "topology_available": data.get("topology_available", False),
-            "upstream_intersections": upstream_values,
-            "downstream_intersections": downstream_values,
-            "directly_connected_intersections": direct_values,
-            "connection_note": (
-                "只回答当前 TLS manifest 能证明的直接相连路口；同一路口同时出现在上游和下游时，"
-                "表示双向直接连接，不要重复计数，也不要扩展到其他走廊或路径邻居。"
-            ),
-        }
-        return envelope
-
-    if tool_name == "get_prediction" and "top_increases" in data:
-        compact_keys = (
-            "available",
-            "as_of_seconds",
-            "supported_horizon_seconds",
-            "horizon_seconds",
-            "model",
-            "model_version",
-            "ready",
-            "fallback",
-            "fallback_reason",
-            "top_increases",
-            "not_found",
-            "predicted_affected_intersections",
-        )
-        compact_data = {
-            key: data[key] for key in compact_keys if key in data
-        }
-        rows = data.get("intersections")
-        # A scoped prediction is already small and should retain the exact
-        # requested row. A network prediction uses top_increases instead of
-        # forwarding all rows for the model to sort itself.
-        if isinstance(rows, Sequence) and not isinstance(rows, (str, bytes)):
-            if len(rows) <= 5:
-                compact_data["intersections"] = rows
-            else:
-                compact_data["model_view"] = "network_prediction_summary"
-        envelope["data"] = compact_data
-        return envelope
-
-    return result
-
-
-def _ai_execution_view(data: Mapping[str, Any]) -> tuple[str, str]:
-    """Return one unambiguous execution state for the model-facing payload."""
-
-    simulation_state = str(data.get("simulation_state", "")).upper()
-    takeover_state = str(data.get("takeover_state", "")).upper()
-    if simulation_state in {"STOPPED", "COMPLETED", "FAILED"}:
-        return "FINISHED", "仿真已经结束，AI 信号控制当前没有执行。"
-    if bool(data.get("control_active", False)):
-        return "EXECUTING", "仿真正在运行，AI 信号控制计划当前正在执行。"
-    if simulation_state == "PAUSED" and takeover_state == "ACTIVE":
-        return "PLANNING_PAUSED", "仿真当前暂停，AI 正在规划或安装计划，信号控制动作尚未执行。"
-    if takeover_state in {"RECOVERY", "FALLBACK"}:
-        return "RECOVERY", "AI 接管正在恢复或回退到基线，当前不能视为正常 AI 计划执行。"
-    return "BASELINE", "当前没有正在执行的 AI 信号控制计划，仿真使用基线控制。"
+    return compact_tool_result_for_model(
+        tool_name,
+        result,
+        question=question,
+        arguments=arguments,
+    )
 
 
 def _positive_int(value: Any, field_name: str) -> int:

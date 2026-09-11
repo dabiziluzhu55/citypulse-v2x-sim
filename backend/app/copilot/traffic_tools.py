@@ -1272,24 +1272,32 @@ class TrafficToolService:
         target_type = "lane" if requested_lane else "intersection"
         scope = f"{target_type}:{requested_lane or intersection_id}"
         timestamp = _snapshot_timestamp(snapshot) if snapshot is not None else None
-        return _result(
-            "get_road_context",
-            scope,
-            timestamp,
-            {
-                "target": {
-                    "type": target_type,
-                    "id": requested_lane or intersection_id,
-                    "intersection_id": intersection_id,
-                },
-                "topology_available": self._topology is not None,
-                "upstream_intersections": list(upstream),
-                "downstream_intersections": list(downstream),
-                "adjacent_intersections": list(adjacent),
-                "lanes": lane_rows,
-                "connections": connections,
-            },
+        incoming_count, outgoing_count = _proven_lane_role_counts(
+            self._topology,
+            intersection_id,
+            lane_ids,
         )
+        payload: dict[str, Any] = {
+            "target": {
+                "type": target_type,
+                "id": requested_lane or intersection_id,
+                "intersection_id": intersection_id,
+            },
+            "intersection_id": intersection_id,
+            "lane_count": len(lane_ids),
+            "lane_ids": lane_ids,
+            "topology_available": self._topology is not None,
+            "upstream_intersections": list(upstream),
+            "downstream_intersections": list(downstream),
+            "adjacent_intersections": list(adjacent),
+            "lanes": lane_rows,
+            "connections": connections,
+        }
+        if incoming_count is not None:
+            payload["incoming_lane_count"] = incoming_count
+        if outgoing_count is not None:
+            payload["outgoing_lane_count"] = outgoing_count
+        return _result("get_road_context", scope, timestamp, payload)
 
     def search_knowledge(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         args = _prepare_arguments(
@@ -1777,7 +1785,7 @@ TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "type": "function",
         "function": {
             "name": "get_road_context",
-            "description": "查询当前 TLS manifest 能证明的直接路口或车道连接关系。回答直接相连路口时只使用返回的列表；同一路口同时出现在上游和下游表示双向直接连接，不要重复计数，也不要扩展到其他走廊或路径邻居。",
+            "description": "查询路口或车道的路网定义：相关车道数量、车道 ID，以及 TLS manifest 能证明的直接连接关系。询问车道数量时使用本工具，不要用实时交通工具自行计数。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2604,7 +2612,14 @@ def _event_brief(card: Mapping[str, Any]) -> dict[str, Any]:
 def _network_prediction_trend(prediction: Mapping[str, Any]) -> dict[str, Any]:
     intersections = _mapping_field(prediction, "intersections")
     if not intersections:
-        return {"direction": "unknown", "source": "prediction", "delta_vehicle_count": None}
+        return {
+            "direction": "unknown",
+            "source": "prediction",
+            "delta_vehicle_count": None,
+            "ready": bool(_field(prediction, "ready", False)),
+            "fallback": bool(_field(prediction, "fallback", False)),
+            "horizon_seconds": _field(prediction, "horizon_seconds"),
+        }
     delta = sum(
         _number_or_zero(_field(item, "delta", 0.0)) for item in intersections.values()
     )
@@ -2612,6 +2627,9 @@ def _network_prediction_trend(prediction: Mapping[str, Any]) -> dict[str, Any]:
         "direction": _direction_from_delta(delta),
         "source": "prediction",
         "delta_vehicle_count": delta,
+        "ready": bool(_field(prediction, "ready", False)),
+        "fallback": bool(_field(prediction, "fallback", False)),
+        "horizon_seconds": _field(prediction, "horizon_seconds"),
     }
 
 
@@ -2661,6 +2679,44 @@ def _query_terms(query: str) -> list[str]:
     pieces = re.split(r"[\s,，。；;、/\\|]+", normalized)
     terms = [piece for piece in pieces if piece]
     return terms or [normalized]
+
+
+def _proven_lane_role_counts(
+    topology: RoadTopology | None,
+    intersection_id: str,
+    lane_ids: Sequence[str],
+) -> tuple[int | None, int | None]:
+    """Return incoming/outgoing counts only when TLS topology can prove them."""
+
+    if topology is None:
+        return None, None
+    known = {str(item) for item in lane_ids if str(item).strip()}
+    incoming: list[str] = []
+    outgoing: list[str] = []
+    for lane_id, metadata in topology.lane_metadata.items():
+        if not isinstance(metadata, Mapping):
+            continue
+        role = str(metadata.get("role") or "")
+        owner = str(metadata.get("intersection_id") or "")
+        if lane_id not in known:
+            continue
+        if role == "incoming" and (not owner or owner == intersection_id):
+            incoming.append(lane_id)
+        elif role == "outgoing" and (not owner or owner == intersection_id):
+            outgoing.append(lane_id)
+    for row in topology.connections_by_intersection.get(intersection_id, ()):
+        if not isinstance(row, Mapping):
+            continue
+        from_lane = str(row.get("from_lane") or "")
+        to_lane = str(row.get("to_lane") or "")
+        if from_lane in known and from_lane not in incoming:
+            incoming.append(from_lane)
+        if to_lane in known and to_lane not in outgoing:
+            outgoing.append(to_lane)
+    return (
+        len(incoming) if incoming else None,
+        len(outgoing) if outgoing else None,
+    )
 
 
 def _require_two(values: Sequence[float], operation: str) -> None:

@@ -3,18 +3,12 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { chatWithCopilot } from '../../api/copilot'
 import { simulationApiErrorMessage } from '../../api/client'
-import {
-  CITYPULSE_QWEN_BENCHMARK_METRICS,
-} from '../../constants/citypulseQwenBenchmark'
 import type { CopilotHistoryMessage } from '../../types/copilot'
+import type { PredictionPayload } from '../../types/intelligence'
 import type { AIControlStatus } from '../../types/simulation'
-import {
-  formatIntersectionLabel,
-  formatIntersectionReferences,
-} from '../../utils/intersectionLabels'
+import { buildAiRuntimeCards } from '../../utils/aiRuntimeCards'
+import { formatIntersectionReferences } from '../../utils/intersectionLabels'
 import borderSvg from '../../assets/design/dashboard/border.svg?url'
-import improveIconSvg from '../../assets/design/dashboard/improve_icon.svg?url'
-import baseSvg from '../../assets/design/dashboard/base.svg?url'
 import AiOutlineIcon from './AiOutlineIcon.vue'
 
 const props = withDefaults(defineProps<{
@@ -23,11 +17,17 @@ const props = withDefaults(defineProps<{
   activeEventLabel?: string | null
   activeScope?: string | null
   aiTakeover?: AIControlStatus | null
+  simulationElapsedSeconds?: number | null
+  prediction?: PredictionPayload | null
+  simulationState?: string | null
 }>(), {
   activeEventId: null,
   activeEventLabel: null,
   activeScope: null,
   aiTakeover: null,
+  simulationElapsedSeconds: null,
+  prediction: null,
+  simulationState: null,
 })
 
 const emit = defineEmits<{ close: [] }>()
@@ -64,7 +64,6 @@ const welcomeBody = computed(() => {
 const thinkingLabel = computed(() => (
   hasSession.value ? '正在分析当前仿真交通状态……' : '正在思考……'
 ))
-const benchmarkMetrics = CITYPULSE_QWEN_BENCHMARK_METRICS
 
 type StatusTone = 'idle' | 'planning' | 'executing' | 'failed'
 
@@ -72,10 +71,12 @@ const statusTone = computed<StatusTone>(() => {
   const status = props.aiTakeover
   if (status?.last_error) return 'failed'
   if (!status?.ai_enabled) return 'idle'
-  if (status.state === 'ACTIVE') return 'executing'
-  if (status.state === 'ARMED' || status.state === 'RECOVERY' || status.state === 'FALLBACK') {
+  if (status.state === 'ARMED') return 'planning'
+  if (status.state === 'ACTIVE' && String(props.simulationState || '').toUpperCase() === 'PAUSED') {
     return 'planning'
   }
+  if (status.state === 'ACTIVE') return 'executing'
+  if (status.state === 'RECOVERY' || status.state === 'FALLBACK') return 'planning'
   return 'idle'
 })
 
@@ -83,38 +84,22 @@ const takeoverLabel = computed(() => {
   const status = props.aiTakeover
   if (status?.last_error) return 'AI接管失败'
   if (!status?.ai_enabled) return 'AI管控未开启'
-  if (status.state === 'ACTIVE') return 'AI接管中'
   if (status.state === 'ARMED') return 'AI规划中'
+  if (status.state === 'ACTIVE' && String(props.simulationState || '').toUpperCase() === 'PAUSED') {
+    return 'AI规划中'
+  }
+  if (status.state === 'ACTIVE') return 'AI接管中'
   if (status.state === 'RECOVERY' || status.state === 'FALLBACK') return 'AI恢复中'
   return `AI接管：${status.state}`
 })
 
-const statusTarget = computed(() => {
-  const status = props.aiTakeover
-  if (!status?.ai_enabled) return ''
-  const eventLabel = formatIntersectionReferences(
-    props.activeEventLabel || props.activeEventId || '',
-  ).trim()
-  const intersectionLabel = status.controlled_intersections[0]
-    ? formatIntersectionLabel(status.controlled_intersections[0])
-    : ''
-  return [eventLabel, intersectionLabel].filter(Boolean).join(' · ')
-})
-
-const statusMeta = computed(() => {
-  const status = props.aiTakeover
-  if (!status?.ai_enabled) return ''
-  const parts: string[] = []
-  if (status.plan_sequence > 0) parts.push(`第${status.plan_sequence}轮规划`)
-  if (status.controlled_intersections.length > 0) {
-    parts.push(`受控${status.controlled_intersections.length}个路口`)
-  }
-  return parts.join(' · ')
-})
-
-function formatBenchmarkPercent(value: number): string {
-  return `${value.toFixed(1)}%`
-}
+const runtimeCards = computed(() => buildAiRuntimeCards({
+  aiTakeover: props.aiTakeover,
+  prediction: props.prediction,
+  elapsedSeconds: props.simulationElapsedSeconds,
+  simulationState: props.simulationState,
+  activeScope: props.activeScope,
+}))
 
 function messageTime(): string {
   return new Intl.DateTimeFormat('zh-CN', {
@@ -218,21 +203,17 @@ onBeforeUnmount(() => requestController?.abort())
     <div class="ai-control-panel__meta">
       <div class="ai-control-panel__runtime-status" :class="`is-${statusTone}`">
         <i aria-hidden="true" />
-        <div class="ai-control-panel__status-copy">
-          <strong>{{ takeoverLabel }}<template v-if="statusTarget"> · {{ statusTarget }}</template></strong>
-          <span v-if="statusMeta">{{ statusMeta }}</span>
-        </div>
+        <strong>{{ takeoverLabel }}</strong>
       </div>
 
-      <section class="ai-control-panel__effect" aria-label="AI管控效能，模型验证结果，相对固定配时">
-        <div class="ai-control-panel__effect-heading">
-          <h3>AI管控效能</h3>
-        </div>
+      <section class="ai-control-panel__effect" aria-label="AI运行状态">
         <div class="ai-control-panel__effect-grid">
           <article
-            v-for="item in benchmarkMetrics"
+            v-for="item in runtimeCards"
             :key="item.key"
             class="ai-control-panel__effect-card"
+            :class="[`is-${item.tone}`, { 'is-text': item.textValue }]"
+            :title="item.title"
           >
             <img
               :src="borderSvg"
@@ -242,28 +223,11 @@ onBeforeUnmount(() => requestController?.abort())
               draggable="false"
             >
             <div class="ai-control-panel__effect-content">
-              <img
-                :src="improveIconSvg"
-                class="ai-control-panel__effect-icon"
-                alt=""
-                aria-hidden="true"
-                draggable="false"
-              >
               <span class="ai-control-panel__effect-label">{{ item.label }}</span>
-              <strong class="ai-control-panel__effect-value">
-                <em>{{ item.direction === 'up' ? '↑' : '↓' }}</em>
-                <span>{{ formatBenchmarkPercent(item.value) }}</span>
-              </strong>
+              <strong class="ai-control-panel__effect-value">{{ item.value }}</strong>
             </div>
           </article>
         </div>
-        <img
-          :src="baseSvg"
-          class="ai-control-panel__effect-base"
-          alt=""
-          aria-hidden="true"
-          draggable="false"
-        >
       </section>
     </div>
 
@@ -410,15 +374,14 @@ onBeforeUnmount(() => requestController?.abort())
 
 .ai-control-panel__runtime-status {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  min-height: 32px;
-  max-height: 40px;
-  padding: 2px 4px 6px 6px;
+  min-height: 28px;
+  padding: 2px 4px 8px 6px;
   overflow: hidden;
   color: #8aa4b6;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.35;
   text-shadow: 0 1px 4px rgba(0,0,0,.86);
 }
@@ -426,30 +389,15 @@ onBeforeUnmount(() => requestController?.abort())
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
-  margin-top: 6px;
   border-radius: 50%;
   background: #6d8494;
   box-shadow: 0 0 7px rgba(109, 132, 148, .65);
 }
-.ai-control-panel__status-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-}
-.ai-control-panel__status-copy strong {
+.ai-control-panel__runtime-status strong {
   overflow: hidden;
   color: inherit;
   font-size: 13px;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ai-control-panel__status-copy span {
-  overflow: hidden;
-  color: rgba(154, 216, 255, .78);
-  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -474,38 +422,14 @@ onBeforeUnmount(() => requestController?.abort())
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 110px;
+  height: 78px;
   overflow: hidden;
-}
-.ai-control-panel__effect-heading {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px 12px;
-  min-width: 0;
-  margin-bottom: 8px;
-}
-.ai-control-panel__effect-heading h3 {
-  margin: 0;
-  color: #eef8ff;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-shadow: 0 1px 4px rgba(0,0,0,.86);
-}
-.ai-control-panel__effect-heading span {
-  overflow: hidden;
-  color: rgba(154, 216, 255, .72);
-  font-size: 11px;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .ai-control-panel__effect-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  align-items: stretch;
+  gap: 4px;
   min-width: 0;
   min-height: 0;
   flex: 1;
@@ -529,31 +453,16 @@ onBeforeUnmount(() => requestController?.abort())
 .ai-control-panel__effect-content {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  align-content: center;
-  align-items: center;
-  column-gap: 4px;
-  row-gap: 1px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 4px;
   width: 100%;
   height: 100%;
-  padding: 7px 6px 6px 6px;
-}
-.ai-control-panel__effect-icon {
-  grid-column: 1;
-  grid-row: 1 / span 2;
-  display: block;
-  width: 22px;
-  height: 34px;
-  object-fit: contain;
-  object-position: center;
-  pointer-events: none;
-  user-select: none;
+  padding: 5px 40px 7px;
 }
 .ai-control-panel__effect-label {
-  grid-column: 2;
-  grid-row: 1;
   overflow: hidden;
   color: #accde6;
   font-size: 11px;
@@ -561,51 +470,67 @@ onBeforeUnmount(() => requestController?.abort())
   line-height: 14px;
   white-space: nowrap;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 .ai-control-panel__effect-value {
-  grid-column: 2;
-  grid-row: 2;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-  color: #f0ca70;
-  font-size: 26px;
+  overflow: hidden;
+  max-width: 100%;
+  color: #eef8ff;
+  font-size: 24px;
   font-weight: 800;
   letter-spacing: .01em;
-  line-height: 1;
-}
-.ai-control-panel__effect-value em {
-  font-style: normal;
-  font-size: 16px;
-  color: #f0ca70;
-  filter: drop-shadow(0 0 4px rgba(240, 202, 112, .55));
-}
-.ai-control-panel__effect-value span {
+  line-height: 1.1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-family: 'Arial Narrow', 'Roboto Condensed', 'DIN Alternate', Bahnschrift, 'Microsoft YaHei', sans-serif;
   background: linear-gradient(180deg, #ffffff 0%, #dffaff 28%, #9aeaff 62%, #56cfff 100%);
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   -webkit-text-stroke: .25px rgba(221, 250, 255, .70);
-  font-variant-numeric: tabular-nums lining-nums;
-  font-feature-settings: 'tnum' 1, 'lnum' 1;
-  font-family: 'Arial Narrow', 'Roboto Condensed', 'DIN Alternate', Bahnschrift, 'Microsoft YaHei', sans-serif;
   filter:
     drop-shadow(0 0 2px rgba(255, 255, 255, .55))
     drop-shadow(0 0 5px rgba(56, 218, 255, .45))
     drop-shadow(0 0 10px rgba(33, 121, 255, .22));
 }
-.ai-control-panel__effect-base {
-  position: absolute;
-  left: 50%;
-  bottom: -10px;
-  z-index: 0;
-  width: 118px;
-  height: auto;
-  transform: translateX(-50%);
-  opacity: .55;
-  pointer-events: none;
-  user-select: none;
+.ai-control-panel__effect-card.is-text .ai-control-panel__effect-value {
+  font-size: 18px;
+  letter-spacing: 0;
+}
+.ai-control-panel__effect-card.is-up .ai-control-panel__effect-value {
+  background: linear-gradient(180deg, #fff8e4 0%, #ffe7a3 42%, #f0ca70 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 4px rgba(240, 202, 112, .55));
+}
+.ai-control-panel__effect-card.is-down .ai-control-panel__effect-value {
+  background: linear-gradient(180deg, #f4ffff 0%, #9aeaff 48%, #21e6ff 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.ai-control-panel__effect-card.is-planning .ai-control-panel__effect-value {
+  background: none;
+  -webkit-text-fill-color: #f0ca70;
+  color: #f0ca70;
+  -webkit-text-stroke: 0;
+  filter: drop-shadow(0 0 4px rgba(240, 202, 112, .55));
+}
+.ai-control-panel__effect-card.is-alert .ai-control-panel__effect-value {
+  background: none;
+  -webkit-text-fill-color: #ff9a6b;
+  color: #ff9a6b;
+  -webkit-text-stroke: 0;
+  font-size: 16px;
+}
+.ai-control-panel__effect-card.is-muted .ai-control-panel__effect-value {
+  background: none;
+  -webkit-text-fill-color: rgba(174, 201, 216, .72);
+  color: rgba(174, 201, 216, .72);
+  -webkit-text-stroke: 0;
 }
 
 .ai-control-panel__conversation {
@@ -695,22 +620,18 @@ onBeforeUnmount(() => requestController?.abort())
 .ai-control-panel__disclaimer { margin: 8px 0 0; color: rgba(178,205,220,.54); font-size: 10px; text-align: center; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
 
 @media (max-width: 900px), (max-height: 760px) {
-  .ai-control-panel__effect {
-    height: auto;
-    max-height: 168px;
-  }
-  .ai-control-panel__effect-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .ai-control-panel__effect-card { height: 64px; }
-  .ai-control-panel__effect-value { font-size: 22px; }
+  .ai-control-panel__effect { height: 70px; }
+  .ai-control-panel__effect-card { height: 62px; }
+  .ai-control-panel__effect-value { font-size: 20px; }
+  .ai-control-panel__effect-card.is-text .ai-control-panel__effect-value { font-size: 16px; }
 }
 
 @media (max-width: 720px) {
   .ai-control-panel__identity span { display: none; }
-  .ai-control-panel__status-copy span { display: none; }
   .ai-control-panel__runtime-status { padding-left: 2px; }
   .ai-control-panel__message { max-width: 92%; }
+  .ai-control-panel__effect-label { font-size: 10px; }
+  .ai-control-panel__effect-value { font-size: 18px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
