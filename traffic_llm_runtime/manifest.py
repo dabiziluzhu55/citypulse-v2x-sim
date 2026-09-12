@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Mapping
 
-from simulation.sumo.building.artifacts import DEFAULT_GENERATED_DIR
+from simulation_protocol.artifacts import DEFAULT_GENERATED_DIR
 
 
 def tls_phase_orders(generated_dir: Path | None = None) -> dict[str, tuple[int, ...]]:

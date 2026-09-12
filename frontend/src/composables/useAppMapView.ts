@@ -1,3 +1,4 @@
+import { captureMapView } from '../utils/mapViewCheckpoint'
 import { inject, onScopeDispose, provide, ref, shallowRef } from 'vue'
 import type Map from 'ol/Map'
 import {
@@ -36,6 +37,10 @@ export function provideAppMapView() {
   })
   const mapRef = shallowRef<Map | null>(null)
   const threeMapRef = shallowRef<ThreeMapController | null>(null)
+
+  function captureView(): () => void {
+    return captureMapView({ mode, cameraPreset, anchorId, viewport }, () => applyViewport({ force: true, duration: 0 }))
+  }
 
   function setDimension(next: MapDimension) {
     dimension.value = next
@@ -218,6 +223,7 @@ export function provideAppMapView() {
     anchorId,
     viewport,
     setDimension,
+    captureView,
     setCameraPreset,
     registerMap,
     unregisterMap,

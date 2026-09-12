@@ -265,7 +265,7 @@ async def simulation_stream(websocket: WebSocket, session_id: str) -> None:
         return terminal
     try:
         # 支持从QUEUED一直推送到终态
-        initial_snapshot = subscription.get(timeout=2.0)
+        initial_snapshot = await asyncio.to_thread(subscription.get, 2.0)
         if await _send_snapshot(initial_snapshot):
             return
 

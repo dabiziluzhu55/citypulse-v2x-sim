@@ -580,7 +580,8 @@ class SimulationService:
         subscription = None
         try:
             self._metadata.update(session_id, metrics_status="collecting")
-            subscription = self._manager.subscribe(session_id)
+            subscribe = getattr(self._manager, "subscribe_metrics", self._manager.subscribe)
+            subscription = subscribe(session_id)
             while True:
                 with self._lock:
                     if session_id in self._watcher_stop:

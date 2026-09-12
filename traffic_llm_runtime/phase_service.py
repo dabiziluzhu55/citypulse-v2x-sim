@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from simulation.sumo.building.artifacts import DEFAULT_GENERATED_DIR
+from simulation_protocol.artifacts import DEFAULT_GENERATED_DIR
 
 GREEN_STATES = frozenset("gG")
 

@@ -47,6 +47,7 @@ export interface AppMapView {
   cameraPreset: { value: CesiumCameraPresetId }
   anchorId: { value: string | null }
   viewport: { value: StoredMapViewport }
+  captureView: () => (() => void)
   setDimension: (next: MapDimension) => void
   setCameraPreset: (next: CesiumCameraPresetId) => void
   registerMap: (map: Map) => void

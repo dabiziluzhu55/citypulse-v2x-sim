@@ -26,11 +26,18 @@ class _RedisWorkerManager(SimulationManager):
         self.store = store
 
     def _publish(self, record, snapshot) -> None:
+        from simulation_protocol.snapshot_journal import append_snapshot
+        if snapshot.state in TERMINAL_STATES and snapshot.sequence <= record.snapshot.sequence:
+            snapshot = replace(snapshot, sequence=record.snapshot.sequence + 1)
+        # Durable, compressed samples for evaluation; UI delivery may skip frames.
+        from simulation_protocol.codec import dumps_snapshot
+        raw = dumps_snapshot(snapshot)
+        append_snapshot(self.session_root / record.session_id, snapshot, raw=raw)
         deadline = time.monotonic() + 10.0
         delay = 0.1
         while True:
             try:
-                self.store.publish(snapshot)
+                self.store.publish(snapshot, raw=raw)
                 record.snapshot = snapshot
                 return
             except Exception:

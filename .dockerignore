@@ -1,0 +1,13 @@
+.git
+**/.env
+**/.env.*
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/secrets
+**/*.pem
+**/*.key
+outputs
+logs
+.codex-backups
+roadside_media

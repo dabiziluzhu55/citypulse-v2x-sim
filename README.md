@@ -149,6 +149,10 @@ Worker使用prefork，一子进程同时只跑一个SUMO会话;与后端Backend�
 
 ## 容器化部署（5 容器）
 
+生产部署先阅读 [边界、静态地图与运行时配置](docs/deployment/production_boundaries.md)。
+Redis Backend 不加载 SUMO 内核；道路 GeoJSON 在 SUMO 环境离线生成。
+浏览器地图 Key 由容器启动时的 `runtime-config.js` 提供，服务端 secrets 单独注入。
+
 | 容器 | 内容 |
 |------|------|
 | frontend | Node build + Nginx（同源 `/api/` 反代） |
@@ -159,7 +163,7 @@ Worker使用prefork，一子进程同时只跑一个SUMO会话;与后端Backend�
 
 `traffic_control`由仿真的Worker进程内加载
 
-当前仓库只有 `compose.redis.yml`，没有正式 frontend compose。frontend 镜像由 `frontend/Dockerfile` 构建静态资源，**不要把 `roadside_media/` 打进镜像**。路侧 MP4 以只读 volume 挂载：
+当前仓库提供 `deploy/compose.acceptance.yml`，用于 Frontend、Backend、SUMO Worker 和 Redis 的独立 SSH 验收部署；`compose.redis.yml` 保留用于原分布式运行方式。frontend 镜像由 `frontend/Dockerfile` 构建静态资源，**不要把 `roadside_media/` 打进镜像**。路侧 MP4 以只读 volume 挂载：
 
 ```text
 ./roadside_media/encoded  →  /usr/share/nginx/html/roadside-media:ro
@@ -175,3 +179,11 @@ Worker使用prefork，一子进程同时只跑一个SUMO会话;与后端Backend�
 - 算法协议2.0:[docs/algorithm_interface.md](docs/algorithm_interface.md)
 - 车流与OD:[docs/traffic_demand.md](docs/traffic_demand.md)
 - 环境依赖:[docs/setup.md](docs/setup.md)
+
+### 部署交付（develop / fix3）
+
+- [详细部署运行说明](docs/deployment/deployment-runbook.md)
+- [部署版改动与优化说明](docs/deployment/deployed-vs-original-change-summary.md)
+- [正确性与交通流优化验证](docs/deployment/fix3-correctness-and-traffic-optimization.md)
+- 算法执行源码位于 `traffic_control/`、`algorithms/`，本次交通流生成优化位于 `simulation/sumo/building/build_traffic.py`。既有算法源码随分支保留，未改动的算法不重复复制。
+- 真实地图 Key、认证文件、模型和大体积运行数据不随本次提交新增；恢复运行所需交接项见部署说明第 8 节。

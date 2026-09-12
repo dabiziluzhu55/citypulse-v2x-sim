@@ -94,3 +94,8 @@ official20_lane206_prediction_backend_bundle_20260810/
 # Copilot local configuration and service runtime (model paths stay machine-local)
 scripts/copilot/copilot.env
 outputs/.copilot_runtime/
+
+# Machine-local deployment configuration and secrets
+/deploy/local/
+/deploy/secrets/
+/frontend/public/runtime-config.local.js

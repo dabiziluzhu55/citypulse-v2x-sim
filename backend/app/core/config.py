@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,7 +22,8 @@ REQUIRED_GENERATED_FILES = (
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(resolve_project_root() / "backend" / ".env"),
+        env_file=os.getenv("CITYPULSE_ENV_FILE", str(resolve_project_root() / "backend" / ".env")) or None,
+        secrets_dir=os.getenv("CITYPULSE_SECRETS_DIR") or None,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -348,10 +350,13 @@ class Settings(BaseSettings):
 
     def missing_generated_files(self) -> list[str]:
         missing: list[str] = []
-        for name in REQUIRED_GENERATED_FILES:
+        required = list(REQUIRED_GENERATED_FILES)
+        if self.normalized_manager_mode() == 'redis':
+            required.extend(f'geojson/demo_{index}.roads.wgs84.geojson' for index in range(1, 21))
+        for name in required:
             path = self.generated_dir / name
             if not path.is_file():
-                missing.append(str(path.relative_to(self.project_root)))
+                missing.append(str(path.relative_to(self.project_root)) if path.is_relative_to(self.project_root) else str(path))
         return missing
 
 

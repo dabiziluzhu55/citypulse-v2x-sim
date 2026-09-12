@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import math
+import threading
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,10 @@ class MapService:
         self._settings = settings
         self._manager = manager
         self._net = None
+        self._projection = None
+        self._projection_offset = (0.0, 0.0)
+        self._lane_centers: dict[str, tuple[float, float]] = {}
+        self._projection_lock = threading.Lock()
         self._cache: dict[tuple[str, float, int | None], MapGeoJsonResponse] = {}
 
     @property
@@ -35,11 +41,16 @@ class MapService:
         return load_catalog(self._settings.generated_dir)
 
     def xy_to_lonlat(self, x: float, y: float) -> tuple[float | None, float | None]:
-        if not self._allow_sumolib_fallback:
-            return None, None
         try:
-            net = self._load_net()
-            lon, lat = net.convertXY2LonLat(float(x), float(y))
+            if self._allow_sumolib_fallback:
+                net = self._load_net()
+                lon, lat = net.convertXY2LonLat(float(x), float(y))
+            else:
+                projection = self._load_projection()
+                offset_x, offset_y = self._projection_offset
+                lon, lat = projection(float(x) - offset_x, float(y) - offset_y, inverse=True)
+            if not math.isfinite(lon) or not math.isfinite(lat):
+                raise ValueError("Non-finite projected vehicle coordinate")
             return round(float(lon), 7), round(float(lat), 7)
         except ModuleNotFoundError as exc:
             logger.exception("SUMO coordinate projection dependency is unavailable")
@@ -53,11 +64,16 @@ class MapService:
 
     def validate_coordinate_projection(self) -> None:
         """Fail startup clearly when SUMO's projection dependency is unavailable."""
-        if not self._allow_sumolib_fallback:
-            return
         try:
-            net = self._load_net()
-            net.convertXY2LonLat(0.0, 0.0)
+            if self._allow_sumolib_fallback:
+                net = self._load_net()
+                net.convertXY2LonLat(0.0, 0.0)
+            else:
+                projection = self._load_projection()
+                offset_x, offset_y = self._projection_offset
+                lon, lat = projection(-offset_x, -offset_y, inverse=True)
+                if not math.isfinite(lon) or not math.isfinite(lat):
+                    raise ValueError("Invalid network projection")
         except Exception as exc:
             raise RuntimeError(
                 "SUMO coordinate projection is unavailable. "
@@ -66,7 +82,9 @@ class MapService:
 
     def lane_center_lonlat(self, lane_id: str) -> tuple[float | None, float | None]:
         if not self._allow_sumolib_fallback:
-            return None, None
+            self._load_projection()
+            point = self._lane_centers.get(lane_id)
+            return self.xy_to_lonlat(*point) if point is not None else (None, None)
         net = self._load_net()
         try:
             lane = net.getLane(lane_id)
@@ -88,7 +106,7 @@ class MapService:
         return float(item.longitude), float(item.latitude)
 
     def get_geojson(self, intersection_id: str, radius_m: float) -> MapGeoJsonResponse:
-        artifact_path = self._generated_geojson_path(intersection_id)
+        artifact_path = self._generated_geojson_path(intersection_id, radius_m)
         artifact_mtime_ns = artifact_path.stat().st_mtime_ns if artifact_path.is_file() else None
         cache_key = (intersection_id, float(radius_m), artifact_mtime_ns)
         cached = self._cache.get(cache_key)
@@ -209,7 +227,13 @@ class MapService:
         self._cache = {cache_key: response}
         return response
 
-    def _generated_geojson_path(self, intersection_id: str) -> Path:
+    def _generated_geojson_path(self, intersection_id: str, radius_m: float = 600) -> Path:
+        radius_path = (
+            self._settings.generated_dir / "geojson" / f"radius_{float(radius_m):g}"
+            / f"{intersection_id}.roads.wgs84.geojson"
+        )
+        if radius_path.is_file():
+            return radius_path
         return self._settings.generated_dir / "geojson" / f"{intersection_id}.roads.wgs84.geojson"
 
     def _load_generated_geojson(
@@ -289,6 +313,36 @@ class MapService:
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             logger.warning("Ignoring invalid generated GeoJSON %s: %s", path, exc)
             return None
+
+    def _load_projection(self):
+        """Read projection metadata and lane centers without importing SUMO."""
+        if self._projection is not None:
+            return self._projection
+        with self._projection_lock:
+            if self._projection is not None:
+                return self._projection
+            from pyproj import Proj
+
+            location = None
+            lane_centers = {}
+            for _, element in ET.iterparse(self._settings.signals_net_path, events=("end",)):
+                if element.tag == "location":
+                    location = dict(element.attrib)
+                elif element.tag == "lane" and element.get("shape"):
+                    points = element.attrib["shape"].split()
+                    middle = points[len(points) // 2].split(",")
+                    lane_centers[element.attrib["id"]] = (float(middle[0]), float(middle[1]))
+                element.clear()
+            if location is None:
+                raise ValueError("Network has no location/projection metadata")
+            offset = tuple(float(value) for value in location["netOffset"].split(","))
+            if len(offset) != 2 or not all(math.isfinite(value) for value in offset):
+                raise ValueError("Invalid network coordinate offset")
+            projection = Proj(location["projParameter"])
+            self._projection_offset = offset
+            self._lane_centers = lane_centers
+            self._projection = projection
+            return projection
 
     def _load_net(self):
         if self._net is None:

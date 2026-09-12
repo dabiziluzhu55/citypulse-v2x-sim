@@ -1,0 +1,64 @@
+# Run with: docker compose --env-file deploy/local/acceptance.env -f deploy/compose.acceptance.yml up -d
+name: citypulse-acceptance
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: [redis-server, --appendonly, 'yes', --appendfsync, everysec]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  backend:
+    image: citypulse-backend:${CITYPULSE_RELEASE_TAG}
+    env_file: ${CITYPULSE_CONFIG_DIR}/backend.env
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ${CITYPULSE_MAPS_DIR}:/app/data/maps/sumo:ro
+      - ${CITYPULSE_SHARED_DIR}/sessions:/app/outputs/sessions
+      - ${CITYPULSE_SHARED_DIR}/rag:/app/outputs/rag
+      - ${CITYPULSE_EMBEDDING_DIR}:/models/embedding:ro
+      - ${CITYPULSE_CONFIG_DIR}/secrets:/run/secrets:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import json,urllib.request; x=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')); assert x['status']=='ok' and x['simulation_manager_mode']=='redis'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+  worker:
+    image: citypulse-worker:${CITYPULSE_RELEASE_TAG}
+    env_file: ${CITYPULSE_CONFIG_DIR}/worker.env
+    volumes:
+      - ${CITYPULSE_MAPS_DIR}:/app/data/maps/sumo:ro
+      - ${CITYPULSE_SHARED_DIR}/sessions:/app/outputs/sessions
+    depends_on:
+      redis:
+        condition: service_healthy
+    stop_grace_period: 120s
+    restart: unless-stopped
+  frontend:
+    image: citypulse-frontend:${CITYPULSE_RELEASE_TAG}
+    env_file: ${CITYPULSE_CONFIG_DIR}/browser.env
+    ports:
+      - 127.0.0.1:18080:80
+    volumes:
+      - ${CITYPULSE_MEDIA_DIR}:/usr/share/nginx/html/roadside-media:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  redis-data:
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${CITYPULSE_ACCEPTANCE_SUBNET}

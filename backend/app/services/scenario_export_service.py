@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from simulation.sumo.engine.scenario import ScenarioCompilationError, compile_session_scenario
-from simulation.sumo.engine.session import SimulationManager
+from simulation_protocol.scenario import ScenarioCompilationError, compile_session_scenario
+from typing import Any
 
 from ..core.config import Settings
 from ..core.exceptions import AppError
@@ -38,7 +38,7 @@ OD_EXPORT_PRESET_ID = "xiongan_20"
 
 
 class ScenarioExportService:
-    def __init__(self, settings: Settings, manager: SimulationManager) -> None:
+    def __init__(self, settings: Settings, manager: Any) -> None:
         self._settings = settings
         self._manager = manager
 

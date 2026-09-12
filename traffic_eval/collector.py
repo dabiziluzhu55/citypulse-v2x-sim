@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
-from simulation.sumo.engine.session import SimulationSnapshot
+from simulation_protocol.dto import SimulationSnapshot
 
 from .models import EvalResult
 from .powertrain import VehicleTypeFuelMeta
@@ -827,6 +827,11 @@ class TrafficMetricsCollector:
         self._scene.extend_warnings(messages)
 
     def observe_snapshot(self, snapshot: SimulationSnapshot) -> None:
+        # Guard before mutating membership and accumulated per-vehicle counters.
+        if self._network._sample_accepted and float(snapshot.elapsed_seconds) <= self._network._last_sim_time:
+            if float(snapshot.elapsed_seconds) < self._network._last_sim_time:
+                self.extend_warnings(["评价帧时间倒退，已忽略该帧"])
+            return
         scope = snapshot_evaluation_scope(snapshot)
         if scope is not None:
             self._scope = scope

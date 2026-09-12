@@ -502,8 +502,10 @@ class SimulationManager:
                 selected_manifest=selected_manifest,
             )
             _persist_evaluation_scope(scenario.directory, record.evaluation_scope)
-            traffic_manifest = _read_json(
-                GeneratedArtifactLayout(self.generated_dir).traffic_manifest
+            traffic_manifest = json.loads(
+                GeneratedArtifactLayout(self.generated_dir).traffic_manifest.read_text(
+                    encoding="utf-8"
+                )
             )
             endpoint_policy = traffic_manifest.get("route_endpoint_policy", {})
             if not isinstance(endpoint_policy, Mapping):

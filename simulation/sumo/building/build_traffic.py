@@ -58,19 +58,8 @@ ROUTE_SAMPLER_REQUIRED_OPTIONS = (
     "--seed",
     "--attributes",
 )
-DEFAULT_TRAFFIC_SCOPE_ID = "global"
-DENSE_TRAFFIC_SCOPES = {
-    "east_dense": ("demo_3", "demo_5", "demo_6", "demo_9"),
-    "west_dense": ("demo_14", "demo_15", "demo_19"),
-}
-TRAFFIC_SCOPE_LABELS = {
-    "global": "Global official demand",
-    "east_dense": "East dense area",
-    "west_dense": "West dense area",
-}
-SUPPORTED_TRAFFIC_SCOPE_IDS = (
-    DEFAULT_TRAFFIC_SCOPE_ID,
-    *DENSE_TRAFFIC_SCOPES,
+from simulation_protocol.traffic_scopes import (
+    DEFAULT_TRAFFIC_SCOPE_ID, DENSE_TRAFFIC_SCOPES, TRAFFIC_SCOPE_LABELS, SUPPORTED_TRAFFIC_SCOPE_IDS,
 )
 
 
@@ -699,8 +688,24 @@ def _extend_route_endpoints(
 
 
 def _route_contains(route: Sequence[str], path: Sequence[str]) -> bool:
-    width = len(path)
-    return any(tuple(route[index : index + width]) == tuple(path) for index in range(len(route) - width + 1))
+    target = tuple(path)
+    width = len(target)
+    if not width:
+        return True
+    limit = len(route) - width
+    start = 0
+    # Skip unrelated edges using the sequence's native search; retain repeated-edge semantics.
+    while start <= limit:
+        try:
+            index = route.index(target[0], start)
+        except ValueError:
+            return False
+        if index > limit:
+            return False
+        if tuple(route[index:index + width]) == target:
+            return True
+        start = index + 1
+    return False
 
 
 def _inspect_route_network(

@@ -147,6 +147,10 @@ class RedisSimulationClient:
         snapshot = self._get_snapshot(session_id)
         return self._reconcile(snapshot)
 
+    def subscribe_metrics(self, session_id: str):
+        from .snapshot_journal import JournalSubscription
+        return JournalSubscription(self, session_id, self.session_root / session_id)
+
     def subscribe(self, session_id: str):
         try:
             exists = self._store.exists(session_id)
@@ -335,6 +339,8 @@ class RedisSnapshotSubscription:
         self._pubsub = manager._store.pubsub(session_id)
         self._initial = manager.snapshot(session_id)
         self._last_raw = dumps_snapshot(self._initial)
+        self._last_sequence = self._initial.sequence
+        self._last_state = self._initial.state
         self._closed = False
 
     def get(self, timeout: float | None = None) -> SimulationSnapshot:
@@ -362,12 +368,19 @@ class RedisSnapshotSubscription:
             if message is not None and message.get("type") == "message":
                 raw = message["data"]
                 raw_text = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
-                if raw_text != self._last_raw:
-                    self._last_raw = raw_text
-                    return loads_snapshot(raw_text)
+                candidate = loads_snapshot(raw_text)
+                terminal_transition = candidate.sequence == self._last_sequence and candidate.state in TERMINAL_STATES and self._last_state not in TERMINAL_STATES
+                if candidate.sequence < self._last_sequence or (candidate.sequence == self._last_sequence and not terminal_transition):
+                    continue
+                self._last_raw = raw_text
+                self._last_sequence = candidate.sequence
+                self._last_state = candidate.state
+                return candidate
             current = self._manager.snapshot(self._session_id)
             current_raw = dumps_snapshot(current)
-            if current_raw != self._last_raw:
+            if current.sequence > self._last_sequence or (current.sequence == self._last_sequence and current.state in TERMINAL_STATES and self._last_state not in TERMINAL_STATES):
+                self._last_sequence = current.sequence
+                self._last_state = current.state
                 self._last_raw = current_raw
                 return current
 

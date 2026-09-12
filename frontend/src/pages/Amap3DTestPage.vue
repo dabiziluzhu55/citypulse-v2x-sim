@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { browserConfigValue } from '../config/runtime'
 import { onMounted, onUnmounted, ref } from 'vue'
 
-const AMAP_KEY = import.meta.env.VITE_AMAP_MAP_KEY?.trim() || 'caffa74076c7fa91c91b133e0fa9fb20'
+const AMAP_KEY = browserConfigValue('amapMapKey', import.meta.env.DEV ? import.meta.env.VITE_AMAP_MAP_KEY : undefined)
 const WGS84_ROOT_CENTER: [number, number] = [115.95498986829843, 38.986485772313685]
 const GCJ02_ROOT_CENTER: [number, number] = [115.96086939777948, 38.987238499128665]
 const BD09_ROOT_CENTER: [number, number] = [115.96742068199087, 38.99304707932014]
@@ -15,6 +16,7 @@ let map: AMap.Map | null = null
 let scriptEl: HTMLScriptElement | null = null
 
 function loadAmapScript(): Promise<void> {
+  if (!AMAP_KEY) return Promise.reject(new Error('未配置高德地图浏览器端 Key'))
   if (window.AMap) return Promise.resolve()
 
   return new Promise((resolve, reject) => {

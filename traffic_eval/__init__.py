@@ -15,7 +15,6 @@ from .powertrain import (
     load_fuel_meta_by_type,
     load_powertrain_by_type,
 )
-from .runner import LocalEvalRunResult, run_local_episode
 from .session_hub import SessionMetricsHub
 from .tripinfo import apply_tripinfo_completed_metrics, apply_tripinfo_fuel_intensity, apply_tripinfo_official_metrics
 
@@ -33,3 +32,11 @@ __all__ = [
     "load_powertrain_by_type",
     "run_local_episode",
 ]
+
+
+def __getattr__(name):
+    # CLI-only entry points must not load the kernel when Backend imports metrics.
+    if name in {"LocalEvalRunResult", "run_local_episode"}:
+        from . import runner
+        return getattr(runner, name)
+    raise AttributeError(name)

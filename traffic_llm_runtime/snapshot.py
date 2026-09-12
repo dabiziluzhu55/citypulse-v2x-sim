@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from simulation.sumo.engine.session import SimulationSnapshot
+from simulation_protocol.dto import SimulationSnapshot
 
 
 def compact_snapshot_summary(snapshot: SimulationSnapshot) -> dict[str, Any]:

@@ -34,8 +34,7 @@ def create_simulation_manager(settings: Settings) -> Any:
 
         logger.info(
             "Simulation manager mode=redis (RedisSimulationClient) "
-            "state_url=%s key_prefix=%s session_ttl=%ss",
-            settings.citypulse_redis_state_url,
+            "key_prefix=%s session_ttl=%ss",
             settings.citypulse_redis_key_prefix,
             settings.citypulse_session_ttl_seconds,
         )

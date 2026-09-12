@@ -81,7 +81,7 @@ def test_geojson_format(monkeypatch) -> None:
     monkeypatch.setattr(
         service,
         "_generated_geojson_path",
-        lambda _intersection_id: settings.generated_dir / "missing.geojson",
+        lambda _intersection_id, _radius: settings.generated_dir / "missing.geojson",
     )
 
     response = service.get_geojson("demo_2", 600.0)
@@ -107,14 +107,21 @@ def test_geojson_format(monkeypatch) -> None:
     assert cached is response
 
 
-def test_generated_geojson_does_not_load_sumo(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize("radius", [600.0, 900.0])
+def test_generated_geojson_does_not_load_sumo(monkeypatch, tmp_path, radius) -> None:
     from backend.app.core.config import get_settings
 
-    settings = get_settings()
+    settings = get_settings().model_copy(update={
+        "sumo_generated_dir": str(tmp_path), "simulation_manager_mode": "redis",
+    })
     manager = MagicMock()
     manager.catalog.return_value = build_demo_catalog()
     service = MapService(settings, manager)
-    artifact_path = tmp_path / "demo_2.roads.wgs84.geojson"
+    directory = tmp_path / "geojson"
+    if radius != 600:
+        directory = directory / f"radius_{radius:g}"
+    directory.mkdir(parents=True)
+    artifact_path = directory / "demo_2.roads.wgs84.geojson"
     artifact_path.write_text(
         json.dumps(
             {
@@ -122,7 +129,7 @@ def test_generated_geojson_does_not_load_sumo(monkeypatch, tmp_path) -> None:
                 "metadata": {
                     "intersection_id": "demo_2",
                     "output_crs": "WGS84",
-                    "radius_m": 600.0,
+                    "radius_m": radius,
                 },
                 "features": [
                     {
@@ -141,11 +148,10 @@ def test_generated_geojson_does_not_load_sumo(monkeypatch, tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(service, "_generated_geojson_path", lambda _id: artifact_path)
     load_net = MagicMock(side_effect=AssertionError("SUMO must not load for generated GeoJSON"))
     monkeypatch.setattr(service, "_load_net", load_net)
 
-    response = service.get_geojson("demo_2", 600.0)
+    response = service.get_geojson("demo_2", radius)
     lines = [
         feature
         for feature in response.geojson["features"]
@@ -153,5 +159,31 @@ def test_generated_geojson_does_not_load_sumo(monkeypatch, tmp_path) -> None:
     ]
 
     assert response.geojson["metadata"]["data_source"] == "generated"
+    assert response.radius_m == radius
     assert len(lines) == 1
     load_net.assert_not_called()
+
+
+def test_redis_vehicle_coordinates_match_network_projection_without_sumo(tmp_path, monkeypatch):
+    from backend.app.core.config import Settings
+    from backend.app.services.snapshot_serializer import SnapshotSerializer
+    from simulation_protocol.dto import VehicleRuntimeSnapshot
+
+    settings = Settings(_env_file=None, simulation_manager_mode="redis", sumo_generated_dir=str(tmp_path))
+    settings.signals_net_path.parent.mkdir(parents=True)
+    settings.signals_net_path.write_text(
+        '<net><location netOffset="-500000,10" projParameter="+proj=utm +zone=50 +datum=WGS84"/>'
+        '<edge id="road"><lane id="road_0" shape="-2,10 0,10 2,10"/></edge></net>',
+        encoding="utf-8",
+    )
+    service = MapService(settings, None)
+    forbidden = MagicMock(side_effect=AssertionError("Redis must never load sumolib"))
+    monkeypatch.setattr(service, "_load_net", forbidden)
+    service.validate_coordinate_projection()
+    vehicle = VehicleRuntimeSnapshot(vehicle_id="v", x=0, y=10, speed=5, angle=90,
+                                     road_id="road", lane_id="road_0")
+    payload = SnapshotSerializer(service)._serialize_vehicle(vehicle)
+    assert (payload["longitude"], payload["latitude"]) == pytest.approx((117, 0))
+    assert service.lane_center_lonlat("road_0") == pytest.approx((117, 0))
+    assert service.lane_center_lonlat("missing") == (None, None)
+    forbidden.assert_not_called()

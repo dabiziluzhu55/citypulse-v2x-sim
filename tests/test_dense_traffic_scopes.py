@@ -64,6 +64,7 @@ class DenseTrafficScopeTests(unittest.TestCase):
             generated = root / "generated"
             sessions = root / "sessions"
             _write_minimal_generated_artifacts(generated)
+            _write_minimal_tls_catalog_artifacts(generated)
 
             compiled = compile_session_scenario(
                 "session-ok",
@@ -200,6 +201,7 @@ def _write_minimal_tls_catalog_artifacts(generated: Path) -> None:
             "schema_version": 2,
             "intersections": {
                 "demo_3": {
+                    "tls_ids": ["tls_demo_3"],
                     "connections": [
                         {
                             "from_edge": "E",

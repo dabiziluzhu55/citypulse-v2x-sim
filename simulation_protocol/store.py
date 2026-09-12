@@ -105,8 +105,8 @@ class RedisSessionStore:
             return None
         return loads_snapshot(raw)
 
-    def publish(self, snapshot) -> None:
-        raw = dumps_snapshot(snapshot)
+    def publish(self, snapshot, *, raw: str | None = None) -> None:
+        raw = dumps_snapshot(snapshot) if raw is None else raw
         now = repr(time.time())
         with self.client.pipeline(transaction=True) as pipe:
             pipe.hset(

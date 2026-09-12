@@ -1,0 +1,4 @@
+FROM citypulse-worker:develop-6f18a23-fix2
+COPY simulation /app/simulation
+COPY simulation_protocol /app/simulation_protocol
+COPY traffic_eval /app/traffic_eval

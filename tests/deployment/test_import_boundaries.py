@@ -38,14 +38,14 @@ def _scan_package(rel: str, forbidden_roots: tuple[str, ...]) -> list[str]:
         return []
     violations: list[str] = []
     for path in base.rglob("*.py"):
-        if "/tests/" in str(path) or path.name.startswith("test_"):
+        if "/tests/" in path.as_posix() or path.name.startswith("test_"):
             continue
         for lineno, root in _imports_in_file(path):
             if root in STDLIB:
                 continue
             if root in forbidden_roots:
                 violations.append(
-                    f"{path.relative_to(REPO)}:{lineno} imports {root}"
+                    f"{path.relative_to(REPO).as_posix()}:{lineno} imports {root}"
                 )
     return violations
 
@@ -69,18 +69,9 @@ def test_backend_does_not_import_algorithms() -> None:
 
 def test_backend_does_not_import_simulation_sumo_engine_session() -> None:
     violations = _scan_package("backend/app", ("simulation",))
-    session_violations = [
-        item
-        for item in violations
-        if "simulation.sumo.engine.session" in item
-        or item.endswith(" imports simulation")
-        and "manager_factory" not in item
-        and "scenario_export" not in item
-    ]
-    # local-only lazy imports in manager_factory / scenario_export are allowed.
+    # Only the explicit local development manager may import the kernel.
     allowed = {
         "backend/app/services/manager_factory.py",
-        "backend/app/services/scenario_export_service.py",
     }
     filtered = [
         item
@@ -88,6 +79,14 @@ def test_backend_does_not_import_simulation_sumo_engine_session() -> None:
         if not any(allowed_path in item for allowed_path in allowed)
     ]
     assert filtered == []
+
+
+def test_protocol_is_independent_of_sumo() -> None:
+    assert _scan_package('simulation_protocol', ('simulation', 'sumolib', 'libsumo', 'traci')) == []
+
+
+def test_llm_runtime_is_independent_of_sumo() -> None:
+    assert _scan_package('traffic_llm_runtime', ('simulation', 'sumolib', 'libsumo', 'traci')) == []
 
 
 def test_backend_does_not_import_traffic_control_checkpoints() -> None:

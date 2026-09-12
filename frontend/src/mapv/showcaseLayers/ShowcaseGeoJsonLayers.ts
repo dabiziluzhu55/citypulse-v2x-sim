@@ -3,6 +3,7 @@ import { Color, type Material } from 'three'
 import type { RoadCoordinateProjector } from '../roadGeometry'
 import { projectFeatureCollection } from './showcaseLayerData'
 import { SHOWCASE_CITY_THEME } from './showcaseCityTheme'
+import { fetchJsonAsset } from '../../utils/fetchJsonAsset'
 
 export interface ShowcaseGeoJsonLayerUrls {
   water?: string
@@ -63,14 +64,16 @@ export class ShowcaseGeoJsonLayers {
       else this.addLabels(data)
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
+      // Required static landcover must fail scene preparation instead of being cached as loaded.
+      if (kind === 'green' || kind === 'water') throw cause
       console.warn(`[showcase-layers] ${kind} layer disabled`, cause)
     }
   }
 
   private async fetchProjected(url: string, signal?: AbortSignal) {
-    const response = await fetch(url, { signal })
-    if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`)
-    return projectFeatureCollection(await response.json(), this.projector)
+    const data = await fetchJsonAsset<{ type: string; features: unknown[] }>(url, '地图静态图层', { signal })
+    if (data.type !== 'FeatureCollection' || !Array.isArray(data.features)) throw new Error(`Invalid GeoJSON: ${url}`)
+    return projectFeatureCollection(data, this.projector)
   }
 
   setVisible(visible: boolean): void {

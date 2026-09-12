@@ -1,0 +1,4 @@
+FROM citypulse-backend:develop-6f18a23-fix2
+COPY backend /app/backend
+COPY simulation_protocol /app/simulation_protocol
+COPY traffic_eval /app/traffic_eval

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { browserConfigValue } from '../../config/runtime'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as mapvthree from '@baidumap/mapv-three'
 import { Color, Vector2, Vector3 } from 'three'
@@ -388,6 +389,7 @@ let consecutiveEmptyTwinFrames = 0
 let sceneSwitchRevision = 0
 let viewportPipelineGeneration = 0
 let suppressedRollbackIntersectionId: string | null = null
+let restoreCommittedCamera: (() => void) | null = null
 let viewportStageStatus = 'idle'
 let viewportStageRejectionReasons: string[] = []
 let vehicleHistorySessionId = ''
@@ -418,7 +420,7 @@ const coordinateProjector = resolveSimulationCoordinateProjector(scenePlacement)
 const sceneCenter = scenePlacement === 'xiongan-demo'
   ? XIONGAN_SCENE_ANCHOR_BD09
   : DEMO_2_SOURCE_CENTER_BD09
-const baiduAk = import.meta.env.VITE_BAIDU_MAP_AK?.trim() || ''
+const baiduAk = browserConfigValue('baiduMapAk', import.meta.env.DEV ? import.meta.env.VITE_BAIDU_MAP_AK : undefined)
 const showBaiduBuildings = false
 const showBaiduRoads = import.meta.env.VITE_BAIDU_ROADS !== 'false'
 const roadRendererMode = import.meta.env.VITE_BAIDU_ROAD_RENDERER?.trim() || 'detailed'
@@ -1543,6 +1545,8 @@ async function switchRealisticIntersection(
   const revision = ++sceneSwitchRevision
   let prepared = false
   let committed = false
+  let failureMessage = "路口切换未完成，已恢复原场景"
+  restoreCommittedCamera ??= mapView.captureView()
   setSceneLoading()
   if (trackInitialPresentation) emit('loading', '正在准备当前高精度路口')
   try {
@@ -1669,6 +1673,7 @@ async function switchRealisticIntersection(
     commitIntersectionEnvironment(intersectionId, preparedEnvironment, revision)
     setSceneReady(intersectionId)
     committed = true
+    restoreCommittedCamera = mapView.captureView()
     intersectionTopologyLayer?.setActiveIntersection(intersectionId)
     installSceneDebugApi()
     syncRuntimeDisturbanceRoads()
@@ -1690,29 +1695,31 @@ async function switchRealisticIntersection(
     viewportStageRejectionReasons = []
     return true
   } catch (cause) {
+    if (!sceneSwitchCoordinator.isCurrent(transaction)) return false
     if (prepared && !committed) realisticIntersectionLayer.discard(intersectionId)
     if (cause instanceof DOMException && cause.name === 'AbortError') return false
     realisticDetailReady = realisticIntersectionLayer.activeIntersectionId !== null
     syncRoadRendering(geojson.value)
     roadsideFacilityRenderer?.setRealisticDetailActive(realisticDetailReady)
-    const message = cause instanceof Error ? cause.message : '高精度路口加载失败'
-    viewportStageStatus = 'failed'
-    if (committedIntersectionId.value) {
-      suppressedRollbackIntersectionId = committedIntersectionId.value
-      const restoredIntersectionId = restoreCommittedIntersection(message)
-      if (restoredIntersectionId) {
-        intersectionTopologyLayer?.setActiveIntersection(restoredIntersectionId)
-      }
-    } else {
-      setSceneError(message)
-      if (trackInitialPresentation) {
-        throw cause instanceof Error ? cause : new Error(message)
-      }
-    }
+    failureMessage = cause instanceof Error ? cause.message : '高精度路口加载失败'
+    console.warn('[scene-switch] failed', { intersectionId, revision, message: failureMessage })
+    if (trackInitialPresentation && !committedIntersectionId.value) throw cause
     return false
   } finally {
     const current = sceneSwitchCoordinator.complete(transaction)
-    if (current && !committed) vehicleRenderer?.cancelViewportTransition()
+    if (current && !committed) {
+      vehicleRenderer?.cancelViewportTransition()
+      viewportStageStatus = 'failed'
+      if (committedIntersectionId.value) {
+        suppressedRollbackIntersectionId = activeIntersectionId.value !== committedIntersectionId.value
+          ? committedIntersectionId.value : null
+        const restored = restoreCommittedIntersection(failureMessage)
+        if (restored) intersectionTopologyLayer?.setActiveIntersection(restored)
+      } else {
+        setSceneError(failureMessage)
+      }
+      restoreCommittedCamera?.()
+    }
     syncPerformanceSampling()
   }
 }
@@ -2214,7 +2221,7 @@ async function initMap(): Promise<void> {
     throw new Error(capability.reason ?? '当前浏览器不支持三维地图')
   }
   if (!baiduAk) {
-    throw new Error('未配置 VITE_BAIDU_MAP_AK，请先填写百度地图浏览器端 AK')
+    throw new Error('未配置百度地图浏览器端 AK，请检查地图运行时配置')
   }
   renderQuality = capability.quality === 'reduced' ? 'reduced' : 'full'
   if (renderQuality === 'reduced') {
