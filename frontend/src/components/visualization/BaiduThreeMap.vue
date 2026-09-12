@@ -364,6 +364,7 @@ const showcaseGeoJsonLoading = new Map<string, {
   signal?: AbortSignal
 }>()
 const showcaseGeoJsonUsedAt = new Map<string, number>()
+let globalLandcoverLayers: ShowcaseGeoJsonLayers | null = null
 let showcaseModelLayers: ShowcaseModelLayers | null = null
 let roadsideFacilityRenderer: RoadsideFacilityRenderer | null = null
 let vegetationRenderer: VegetationRenderer | null = null
@@ -447,7 +448,11 @@ const BUILDING_CACHE_BYTES = 96 * 1024 * 1024
 const BUILDING_CACHE_OVERFLOW_BYTES = 32 * 1024 * 1024
 const RECOVERY_BUILDING_CACHE_BYTES = 48 * 1024 * 1024
 const RECOVERY_BUILDING_CACHE_OVERFLOW_BYTES = 16 * 1024 * 1024
-const LANDCOVER_CACHE_LIMIT = 4
+const LANDCOVER_CACHE_LIMIT = 20
+const FULL_LANDCOVER_GREEN_URL = import.meta.env.VITE_FULL_LANDCOVER_GREEN_URL?.trim()
+  || '/intersections/v3/full-landcover.green.geojson'
+const FULL_LANDCOVER_WATER_URL = import.meta.env.VITE_FULL_LANDCOVER_WATER_URL?.trim()
+  || '/intersections/v3/full-landcover.water.geojson'
 const buildingZOffsetMeters = Number(import.meta.env.VITE_XIONGAN_BUILDING_Z_OFFSET_METERS ?? 0)
 const enableBuildingContactShadows = import.meta.env.VITE_XIONGAN_BUILDING_CONTACT_SHADOWS === 'true'
 const ACTIVE_FRAME_TIME_MS = 1_000 / MAP3D_NORMAL_FRAME_RATE
@@ -932,7 +937,7 @@ function createBaiduProvider(): mapvthree.BaiduVectorTileProvider {
     ak: baiduAk,
     styleJson: BAIDU_DARK_BASE_STYLE,
     displayOptions: createBaiduBaseDisplayOptions(showBaiduRoads),
-    placeholderColor: '#122e2b',
+    placeholderColor: '#102820',
   })
   return baiduProvider
 }
@@ -1749,6 +1754,28 @@ function handleDocumentVisibility(): void {
   syncAnimationLoop()
 }
 
+async function ensureGlobalLandcover(signal?: AbortSignal): Promise<void> {
+  if (!engine || !enableShowcaseLayers || globalLandcoverLayers) return
+  const layers = new ShowcaseGeoJsonLayers(engine, coordinateProjector)
+  try {
+    await layers.load({
+      green: FULL_LANDCOVER_GREEN_URL,
+      water: FULL_LANDCOVER_WATER_URL,
+    }, signal)
+    if (!engine || signal?.aborted) {
+      layers.destroy()
+      if (signal?.aborted) throw new DOMException('Landcover loading aborted', 'AbortError')
+      return
+    }
+    layers.setVisible(true)
+    globalLandcoverLayers = layers
+  } catch (cause) {
+    layers.destroy()
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
+    console.warn('[landcover] full-network overlay failed', cause)
+  }
+}
+
 async function ensureIntersectionLandcover(
   intersectionId: string,
   environment?: IntersectionEnvironmentManifest,
@@ -1844,9 +1871,10 @@ function commitIntersectionEnvironment(
   revision: number,
 ): void {
   if (revision !== sceneSwitchRevision || activeIntersectionId.value !== intersectionId) return
-  for (const [id, layers] of showcaseGeoJsonLayers) layers.setVisible(id === intersectionId)
+  for (const layers of showcaseGeoJsonLayers.values()) layers.setVisible(true)
+  globalLandcoverLayers?.setVisible(true)
   showcaseGeoJsonUsedAt.set(intersectionId, performance.now())
-  trimLandcoverCache(new Set([intersectionId]))
+  trimLandcoverCache()
   if (prepared.facilities && roadsideFacilityRenderer) {
     roadsideFacilityRenderer.render(prepared.facilities)
     displaySignalsAt(vehicleStats.value.displayElapsedSeconds ?? snapshot.value?.elapsed_seconds ?? 0)
@@ -2449,6 +2477,11 @@ async function initMap(): Promise<void> {
     syncAnimationLoop()
   }
   overviewReady = true
+  await ensureGlobalLandcover(lifecycleController.signal).catch((cause: unknown) => {
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
+    console.warn('[landcover] full-network overlay failed', cause)
+  })
+  if (componentDestroyed || lifecycleController.signal.aborted || !engine) return
 
   const initialSceneReady = await switchRealisticIntersection(
     activeIntersectionId.value,
@@ -2535,6 +2568,8 @@ onUnmounted(() => {
   showcaseGeoJsonLayers.clear()
   showcaseGeoJsonLoading.clear()
   showcaseGeoJsonUsedAt.clear()
+  globalLandcoverLayers?.destroy()
+  globalLandcoverLayers = null
   showcaseModelLayers?.destroy()
   showcaseModelLayers = null
   roadsideFacilityRenderer?.destroy()

@@ -28,6 +28,7 @@
     "generate:topology-routes": "node scripts/generate-topology-routes.mjs",
     "generate:intersection-environments": "node scripts/generate-intersection-environments.mjs",
     "generate:showcase-landcover": "node scripts/generate-showcase-landcover.mjs",
+    "generate:full-landcover": "node scripts/generate-full-landcover.mjs",
     "audit:intersections": "node scripts/audit-intersection-environments.mjs --output=reports/intersection-environment-audit.json",
     "audit:road-continuity": "node scripts/audit-road-continuity.mjs --output=reports/road-continuity-audit.json",
     "audit:road-buildings": "node scripts/audit-road-building-collisions.mjs --output=reports/road-building-collision-audit.json",

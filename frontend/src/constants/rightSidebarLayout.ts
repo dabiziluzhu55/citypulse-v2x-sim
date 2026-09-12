@@ -171,8 +171,8 @@ export const RIGHT_SIDEBAR_METRICS_LAYOUT = {
   advantage: { top: 76, height: 216 },
   trafficOverview: { top: 305, height: 105 },
   legend: { top: 436, height: 76 },
-  chart: { top: 528, titleHeight: 28, height: 188 },
-  sourceNote: { top: 748 },
+  chart: { top: 548, titleHeight: 28, height: 188 },
+  sourceNote: { top: 768 },
   exportButton: {
     left: RIGHT_SIDEBAR_METRICS_COLUMN_LEFT,
     top: 786,

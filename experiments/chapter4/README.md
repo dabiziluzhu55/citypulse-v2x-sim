@@ -84,3 +84,16 @@ PYTHONPATH=. python experiments/chapter4/run_chapter4_experiments.py \
 | `run_status.json` | 每轮 SUCCESS / FAILED |
 
 `fixed` 没有算法推理，决策时延记为 `null` / `—`，不会写成 0 ms。
+
+`SimulationManager` 与 `SessionMetricsHub` 必须使用同一个 `session_root`（`output_dir/sessions`）。否则 SUMO 会把 `tripinfo.xml` 写到默认 `outputs/sessions/`，评估脚本在实验目录找不到文件，TTI / TripInfo DTP / TripInfo 油耗不会回填。
+
+## 已有结果离线后处理
+
+不要重跑 36 次仿真。若旧实验已经把 TripInfo 写到 `outputs/sessions/<session_id>/`，用：
+
+```bash
+PYTHONPATH=. python experiments/chapter4/postprocess_existing_results.py \
+  --output-dir outputs/chapter4_experiments/20260912_115540
+```
+
+该命令只读 JSON/XML 并调用 `traffic_eval.tripinfo.apply_tripinfo_official_metrics`，不启动 SUMO。原 `results_raw.json` / `results_summary.csv` 不会被覆盖。

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from inspect import getsource
 from typing import Any
 from urllib.parse import unquote
 
@@ -253,7 +254,6 @@ def test_generated_pdf_is_valid_and_keeps_six_algorithms() -> None:
     )
     pdf_bytes = generate_evaluation_report_pdf(
         "表 1 雄安20路口路网早高峰 07:00-07:15 管控算法通行效率对比",
-        "表 2 雄安20路口路网早高峰 07:00-07:15 管控算法其他指标对比",
         rows,
     )
     assert pdf_bytes.startswith(b"%PDF")
@@ -267,6 +267,10 @@ def test_generated_pdf_is_valid_and_keeps_six_algorithms() -> None:
         "CoV2X",
     ]
     assert len(pdf_bytes) > 1000
+    source = getsource(generate_evaluation_report_pdf)
+    assert "table2" not in source
+    assert "caption" not in source
+    assert "FOOTNOTE" not in source
 
 
 def test_export_pdf_http_protocol() -> None:

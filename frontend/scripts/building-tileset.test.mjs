@@ -30,6 +30,12 @@ const appMapViewSource = readFileSync(
   'utf8',
 )
 
+test('keeps a full-network green and water overlay on the 3D overview', () => {
+  assert.match(baiduThreeMapSource, /full-landcover\.green\.geojson/)
+  assert.match(baiduThreeMapSource, /full-landcover\.water\.geojson/)
+  assert.match(baiduThreeMapSource, /ensureGlobalLandcover\(/)
+})
+
 test('keeps Baidu roads and base landcover while native buildings stay disabled', () => {
   assert.deepEqual(createBaiduBaseDisplayOptions(true), {
     base: true,

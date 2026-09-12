@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { resolveSimulationStreamUrl } from '../src/utils/runWebSocketManager.ts'
+import {
+  isUnknownSessionStreamClose,
+  resolveSimulationStreamUrl,
+  UNKNOWN_SESSION_WS_CLOSE_CODE,
+} from '../src/utils/runWebSocketManager.ts'
 
 const httpLocation = {
   protocol: 'http:',
@@ -32,4 +36,10 @@ test('falls back to the standard stream path when the backend omits a URL', () =
     resolveSimulationStreamUrl('session one', '', httpLocation),
     'ws://localhost:5173/api/v1/simulations/session%20one/stream',
   )
+})
+
+test('treats backend 4004 as a vanished session instead of a reconnectable drop', () => {
+  assert.equal(isUnknownSessionStreamClose(UNKNOWN_SESSION_WS_CLOSE_CODE), true)
+  assert.equal(isUnknownSessionStreamClose(1011), false)
+  assert.equal(isUnknownSessionStreamClose(1006), false)
 })

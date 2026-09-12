@@ -19,7 +19,6 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import (
     Paragraph,
     SimpleDocTemplate,
-    Spacer,
     Table,
     TableStyle,
 )
@@ -36,11 +35,6 @@ from .simulation_service import SimulationService
 logger = logging.getLogger(__name__)
 
 MISSING_CELL = "—"
-FOOTNOTE_TEXT = (
-    "主表为当前典型场景 scene_metrics；全网影响见 network_metrics，不替代场景主指标。"
-    "TripInfo 行程/TTI/DTP/油耗为整段行程（scene_affected_trip_metrics），不是纯场景内累计。"
-    "— 表示该算法尚未完成本场景仿真与评估。"
-)
 ASCII_FALLBACK_FILENAME = "control-evaluation.pdf"
 
 REPORT_ALGORITHM_LABELS: dict[str, str] = {
@@ -111,14 +105,6 @@ TABLE1_HEADERS: tuple[str, ...] = (
     "TTI<br/>↓",
     "DTP<br/>↓",
     "TPI<br/>↓",
-)
-
-TABLE2_HEADERS: tuple[str, ...] = (
-    "算法",
-    "溢流率<br/>↓",
-    "急刹车率<br/>↓",
-    "百公里油耗强度<br/>↓",
-    "平均决策时延<br/>↓",
 )
 
 _CID_FONTS_REGISTERED = False
@@ -361,17 +347,6 @@ def _title_style(font_name: str) -> ParagraphStyle:
     )
 
 
-def _footnote_style(font_name: str) -> ParagraphStyle:
-    return ParagraphStyle(
-        name="eval-footnote",
-        fontName=font_name,
-        fontSize=8,
-        leading=11,
-        textColor=colors.HexColor("#555555"),
-        alignment=TA_CENTER,
-    )
-
-
 def _table_style(font_name: str) -> TableStyle:
     return TableStyle(
         [
@@ -413,9 +388,7 @@ def _value_cells(
 
 def generate_evaluation_report_pdf(
     title1: str,
-    title2: str,
     rows: list[ReportAlgorithmRow],
-    caption: str | None = None,
 ) -> bytes:
     font_name = _ensure_cid_fonts()
     header_style = _cell_style(font_name, 7.5, 10)
@@ -427,15 +400,9 @@ def generate_evaluation_report_pdf(
         usable_width * ratio
         for ratio in (0.118, 0.112, 0.100, 0.112, 0.108, 0.108, 0.104, 0.080, 0.080, 0.078)
     ]
-    table2_widths = [
-        usable_width * ratio for ratio in (0.18, 0.20, 0.20, 0.22, 0.20)
-    ]
 
     table1_data = [_header_cells(TABLE1_HEADERS, header_style)] + [
         _value_cells(row, TABLE1_FIELDS, body_style, emphasis_style) for row in rows
-    ]
-    table2_data = [_header_cells(TABLE2_HEADERS, header_style)] + [
-        _value_cells(row, TABLE2_FIELDS, body_style, emphasis_style) for row in rows
     ]
 
     buffer = BytesIO()
@@ -451,23 +418,7 @@ def generate_evaluation_report_pdf(
     )
     table1 = Table(table1_data, colWidths=table1_widths, repeatRows=0)
     table1.setStyle(_table_style(font_name))
-    table2 = Table(table2_data, colWidths=table2_widths, repeatRows=0)
-    table2.setStyle(_table_style(font_name))
-    story: list[Any] = [Paragraph(title1, _title_style(font_name))]
-    if caption:
-        story.append(Paragraph(caption, _footnote_style(font_name)))
-        story.append(Spacer(1, 4 * mm))
-    story.extend(
-        [
-            table1,
-            Spacer(1, 14 * mm),
-            Paragraph(title2, _title_style(font_name)),
-            table2,
-            Spacer(1, 8 * mm),
-            Paragraph(FOOTNOTE_TEXT, _footnote_style(font_name)),
-        ]
-    )
-    document.build(story)
+    document.build([Paragraph(title1, _title_style(font_name)), table1])
     return buffer.getvalue()
 
 
@@ -511,15 +462,5 @@ class EvaluationReportService:
         }
         rows = build_report_rows(request, metrics_by_algorithm)
         title1 = build_report_title(1, request.scenario, "管控算法通行效率对比")
-        title2 = build_report_title(2, request.scenario, "管控算法其他指标对比")
-        caption_source = next(
-            (
-                metrics
-                for metrics in metrics_by_algorithm.values()
-                if isinstance(metrics, dict) and metrics.get("finished") is True
-            ),
-            None,
-        )
-        caption = build_evaluation_scope_caption(request.scenario, caption_source)
-        pdf_bytes = generate_evaluation_report_pdf(title1, title2, rows, caption)
+        pdf_bytes = generate_evaluation_report_pdf(title1, rows)
         return build_download_filename(request.scenario), pdf_bytes

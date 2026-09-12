@@ -19,6 +19,7 @@ from simulation.sumo.engine.ai_control import (
 )
 from simulation.sumo.engine.session import SimulationSnapshot
 
+from algorithms.traffic_llm.dataset.feature_builder import resolve_controlled_region
 from algorithms.traffic_llm.dataset.sft_builder import SYSTEM_PROMPT
 from algorithms.traffic_llm.deployment.schema import PLAN_JSON_SCHEMA
 from algorithms.traffic_llm.evaluation.policy import POLICY_INSTRUCTION
@@ -26,7 +27,7 @@ from algorithms.traffic_llm.evaluation.policy import POLICY_INSTRUCTION
 from ..copilot.llm import LLMProvider
 from .ai_control_validation import active_ai_control_events
 from .history import HistoryRepository
-from .traffic_qwen_observation import build_live_observation_v2
+from .traffic_qwen_observation import build_live_observation_v2, neighbors_from_topology
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,45 @@ class TakeoverPlanningError(RuntimeError):
         super().__init__(message)
         self.rag_status = rag_status
         self.event_id = event_id
+
+
+def _clip_plan_to_scope(
+    plan: AIControlPlan,
+    allowed_scope: Sequence[str],
+    *,
+    config: Any,
+) -> AIControlPlan:
+    """Drop extra intersections instead of failing the whole takeover."""
+
+    allowed = {str(item) for item in allowed_scope}
+    extras = [
+        intersection_id
+        for intersection_id in plan.controlled_intersections
+        if intersection_id not in allowed
+    ]
+    if not extras:
+        return plan
+    kept = [
+        intersection_id
+        for intersection_id in plan.controlled_intersections
+        if intersection_id in allowed
+    ]
+    if not kept:
+        raise ValueError(
+            "Traffic-Qwen selected an intersection outside the allowed scope."
+        )
+    payload = plan.to_dict()
+    payload["controlled_intersections"] = kept
+    payload["signal_plan"] = {
+        key: value
+        for key, value in (payload.get("signal_plan") or {}).items()
+        if key in set(kept)
+    }
+    logger.warning(
+        "Clipped Traffic-Qwen plan intersections outside allowed scope: %s",
+        extras,
+    )
+    return AIControlPlan.from_mapping(payload, config=config)
 
 
 def _parse_control_plan_content(raw_content: str) -> Mapping[str, Any]:
@@ -271,6 +311,11 @@ class TakeoverOrchestrator:
                 period=period,
                 seed=seed,
             )
+            allowed_scope, phase_orders = self._align_scope_with_observation(
+                live,
+                observation,
+                allowed_scope,
+            )
             plan = self._request_valid_plan(
                 observation,
                 allowed_scope=allowed_scope,
@@ -388,10 +433,11 @@ class TakeoverOrchestrator:
                     payload,
                     config=self._settings.ai_control_config,
                 )
-                if not set(plan.controlled_intersections) <= set(allowed_scope):
-                    raise ValueError(
-                        "Traffic-Qwen selected an intersection outside the allowed scope."
-                    )
+                plan = _clip_plan_to_scope(
+                    plan,
+                    allowed_scope,
+                    config=self._settings.ai_control_config,
+                )
                 if phase_orders:
                     plan.validate_runtime(
                         allowed_scope=allowed_scope,
@@ -503,29 +549,33 @@ class TakeoverOrchestrator:
         snapshot: SimulationSnapshot,
         event,
     ) -> tuple[str, ...]:
-        session_intersections = set(str(item) for item in snapshot.intersections)
         targets = _event_intersections(snapshot, event, self._topology)
         if not targets:
             return ()
-        scope = set(targets)
-        frontier = set(targets)
-        for _ in range(self._settings.ai_control_config.scope_hops):
-            next_frontier: set[str] = set()
-            for intersection_id in frontier:
-                if self._topology is None:
-                    continue
-                next_frontier.update(
-                    str(item)
-                    for item in self._topology.upstream_intersections.get(intersection_id, ())
-                )
-                next_frontier.update(
-                    str(item)
-                    for item in self._topology.downstream_intersections.get(intersection_id, ())
-                )
-            next_frontier -= scope
-            scope.update(next_frontier)
-            frontier = next_frontier
-        return tuple(sorted(scope & session_intersections))
+        return resolve_controlled_region(
+            tuple(str(item) for item in snapshot.intersections),
+            tuple(sorted(targets)),
+            neighbors_from_topology(self._topology),
+            int(self._settings.ai_control_config.scope_hops),
+        )
+
+    def _align_scope_with_observation(
+        self,
+        snapshot: SimulationSnapshot,
+        observation: Mapping[str, Any],
+        allowed_scope: Sequence[str],
+    ) -> tuple[tuple[str, ...], dict[str, tuple[int, ...]]]:
+        """Keep plan validation on the same region Observation V2 showed the model."""
+
+        session_intersections = {str(item) for item in snapshot.intersections}
+        region = [
+            str(item)
+            for item in observation.get("controlled_region") or ()
+            if str(item) in session_intersections
+        ]
+        if region:
+            allowed_scope = tuple(sorted(set(region)))
+        return tuple(allowed_scope), self._phase_orders_for_scope(allowed_scope)
 
     def _phase_orders_for_scope(
         self, allowed_scope: Sequence[str]

@@ -904,7 +904,18 @@ def main(argv: list[str] | None = None) -> int:
 
     _ensure_sumo_env()
     generated_dir = DEFAULT_GENERATED_DIR
-    manager = SimulationManager(generated_dir=generated_dir)
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        if not output_dir.is_absolute():
+            output_dir = PROJECT_ROOT / output_dir
+    else:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = PROJECT_ROOT / "outputs" / "chapter4_experiments" / stamp
+    session_root = output_dir / "sessions"
+    manager = SimulationManager(
+        generated_dir=generated_dir,
+        session_root=session_root,
+    )
     catalog = manager.catalog()
     resolved_by_group: dict[str, list[ResolvedEvent]] = {}
     for group in groups:
@@ -918,15 +929,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_only:
         return 0
 
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
-        if not output_dir.is_absolute():
-            output_dir = PROJECT_ROOT / output_dir
-    else:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = PROJECT_ROOT / "outputs" / "chapter4_experiments" / stamp
     output_dir.mkdir(parents=True, exist_ok=True)
-    session_root = output_dir / "sessions"
     session_root.mkdir(parents=True, exist_ok=True)
 
     existing_manifest = load_json(output_dir / "experiment_manifest.json", {})

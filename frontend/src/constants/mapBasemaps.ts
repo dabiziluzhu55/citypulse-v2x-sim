@@ -38,7 +38,6 @@ export const BASEMAP_OPTIONS: BasemapOption[] = [
 ]
 
 export const DEFAULT_PANEL_BASEMAP: BasemapVariant = 'osm'
-export const DEFAULT_APP_BASEMAP: BasemapVariant = 'carto_dark'
 
 const CARTO_ATTRIBUTION = '© OpenStreetMap contributors © CARTO'
 const TIANDITU_ATTRIBUTION = '© 天地图 · 国家地理信息公共服务平台'
@@ -48,6 +47,8 @@ export const TIANDITU_BROWSER_TOKEN = (import.meta.env.VITE_TIANDITU_TOKEN ?? ''
 const CARTO_BASEMAP_KEY = (
   import.meta.env.VITE_CARTO_BASEMAP_KEY ?? ''
 ).trim()
+// 无 Carto Key 时官方会返回带 “API KEY REQUIRED” 水印的瓦片（HTTP 仍是 200）。
+export const DEFAULT_APP_BASEMAP: BasemapVariant = CARTO_BASEMAP_KEY ? 'carto_dark' : 'osm'
 /** 天地图官方 8 个子域，直连多子域可绕开同源 6 连接上限，显著提速 */
 const TIANDITU_SUBDOMAINS = ['0', '1', '2', '3', '4', '5', '6', '7']
 
