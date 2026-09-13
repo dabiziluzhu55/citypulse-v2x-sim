@@ -224,7 +224,7 @@ def test_resolve_cov2x_east_dense_default_candidate(
 
     assert resolved.control_mode == "cov2x"
     assert resolved.intersection_ids == ("demo_3", "demo_5", "demo_6", "demo_9")
-    assert resolved.model_alias == "cov2x_g30_temp_cap_u24"
+    assert resolved.model_alias == "cov2x_offpeak_guard_v2_final"
 
 
 def test_backend_presets_are_self_contained() -> None:

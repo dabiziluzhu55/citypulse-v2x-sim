@@ -99,3 +99,4 @@ outputs/.copilot_runtime/
 /deploy/local/
 /deploy/secrets/
 /frontend/public/runtime-config.local.js
+/frontend/roadside-media/

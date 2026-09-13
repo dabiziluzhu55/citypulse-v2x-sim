@@ -1,0 +1,4 @@
+FROM citypulse-frontend:develop-6f18a23-fix3
+COPY frontend/dist /usr/share/nginx/html
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/roadside-media/ /usr/share/nginx/html/roadside-media/

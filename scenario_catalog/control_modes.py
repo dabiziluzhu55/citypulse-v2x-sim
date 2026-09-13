@@ -56,10 +56,15 @@ MAPPO_SCENARIO_DEFAULTS: dict[str, ScenarioModelDefault] = {
 }
 
 COV2X_MODEL_ALIASES: dict[str, PublicModelAlias] = {
+    "cov2x_offpeak_guard_v2_final": PublicModelAlias(
+        alias="cov2x_offpeak_guard_v2_final",
+        training_intersection_ids=TRAINING_INTERSECTION_IDS_20,
+        description="Final CoV2X generation off-peak guard v2 checkpoint",
+    ),
     "cov2x_g30_temp_cap_u24": PublicModelAlias(
         alias="cov2x_g30_temp_cap_u24",
         training_intersection_ids=TRAINING_INTERSECTION_IDS_20,
-        description="CoV2X G30 temporary cap candidate (default)",
+        description="Rollback CoV2X G30 temporary cap candidate",
     ),
     "cov2x_joint_ep12": PublicModelAlias(
         alias="cov2x_joint_ep12",
@@ -71,7 +76,7 @@ COV2X_MODEL_ALIASES: dict[str, PublicModelAlias] = {
 COV2X_SCENARIO_DEFAULTS: dict[str, ScenarioModelDefault] = {
     preset_id: ScenarioModelDefault(
         scenario_preset_id=preset_id,
-        default_model_alias="cov2x_g30_temp_cap_u24",
+        default_model_alias="cov2x_offpeak_guard_v2_final",
     )
     for preset_id in ("xiongan_20", "east_dense", "west_dense")
 }

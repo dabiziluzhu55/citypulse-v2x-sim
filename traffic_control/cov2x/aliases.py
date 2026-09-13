@@ -8,13 +8,15 @@ from typing import Any
 
 from .contract import (
     DEFAULT_JOINT_MODEL_FILENAME,
+    OFFPEAK_GUARD_V2_MODEL_ALIAS,
+    OFFPEAK_GUARD_V2_MODEL_FILENAME,
     TEMPORARY_CAP_MANIFEST_FILENAME,
     TEMPORARY_CAP_MODEL_FILENAME,
     TRAINING_INTERSECTION_IDS,
 )
 
 
-DEFAULT_MODEL_ALIAS = "cov2x_g30_temp_cap_u24"
+DEFAULT_MODEL_ALIAS = OFFPEAK_GUARD_V2_MODEL_ALIAS
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,18 @@ _MODEL_DIR = Path(__file__).resolve().parent / "models"
 MODEL_ALIASES: dict[str, ModelAlias] = {
     DEFAULT_MODEL_ALIAS: ModelAlias(
         alias=DEFAULT_MODEL_ALIAS,
+        checkpoint_path=_MODEL_DIR / OFFPEAK_GUARD_V2_MODEL_FILENAME,
+        training_intersection_ids=TRAINING_INTERSECTION_IDS,
+        adapter_module=(
+            "traffic_control.cov2x.candidates.offpeak_guard_v2_final"
+        ),
+        description=(
+            "Final generation-54 temporary speed-cap policy with off-peak "
+            "Strong-MP fallback and causal vehicle context gate"
+        ),
+    ),
+    "cov2x_g30_temp_cap_u24": ModelAlias(
+        alias="cov2x_g30_temp_cap_u24",
         checkpoint_path=_MODEL_DIR / TEMPORARY_CAP_MODEL_FILENAME,
         manifest_path=_MODEL_DIR / TEMPORARY_CAP_MANIFEST_FILENAME,
         training_intersection_ids=TRAINING_INTERSECTION_IDS,
@@ -47,8 +61,8 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "traffic_control.cov2x.candidates.temporary_cap_u24"
         ),
         description=(
-            "Frozen G30 Road/Cloud plus update-24 temporary base-relative "
-            "Vehicle speed-cap candidate"
+            "Rollback: frozen G30 Road/Cloud plus update-24 temporary "
+            "base-relative Vehicle speed-cap candidate"
         ),
     ),
     "cov2x_joint_ep12": ModelAlias(

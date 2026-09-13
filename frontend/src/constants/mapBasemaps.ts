@@ -48,7 +48,7 @@ export const TIANDITU_BROWSER_TOKEN = browserConfigValue('tiandituToken', import
 const CARTO_BASEMAP_KEY = (
   browserConfigValue('cartoBasemapKey', import.meta.env.DEV ? import.meta.env.VITE_CARTO_BASEMAP_KEY : undefined)
 ).trim()
-// Without a key CARTO serves "API KEY REQUIRED" image tiles with HTTP 200.
+// 无 Carto Key 时官方会返回带 “API KEY REQUIRED” 水印的瓦片（HTTP 仍是 200）。
 export const DEFAULT_APP_BASEMAP: BasemapVariant = CARTO_BASEMAP_KEY ? 'carto_dark' : 'osm'
 /** 天地图官方 8 个子域，直连多子域可绕开同源 6 连接上限，显著提速 */
 const TIANDITU_SUBDOMAINS = ['0', '1', '2', '3', '4', '5', '6', '7']

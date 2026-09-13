@@ -20,6 +20,7 @@ from backend.app.services.history import InMemoryHistoryRepository
 from backend.app.services.takeover_orchestrator import (
     TakeoverOrchestrator,
     TakeoverPlanningError,
+    _clip_plan_to_scope,
     _compact_control_context,
     _decode_control_plan_json,
     _parse_control_plan_content,
@@ -51,11 +52,12 @@ from simulation.sumo.engine.session import (
 from simulation.sumo.engine.signal import SafePhaseController, SignalStage
 
 
-def _plan(intersection_id: str = "j1") -> dict:
+def _plan(*intersection_ids: str) -> dict:
+    ids = list(intersection_ids) or ["j1"]
     return {
-        "controlled_intersections": [intersection_id],
+        "controlled_intersections": ids,
         "valid_seconds": 30,
-        "signal_plan": {intersection_id: [1, 0, 1, 0, 1, 0]},
+        "signal_plan": {intersection_id: [1, 0, 1, 0, 1, 0] for intersection_id in ids},
         "objective": "protect the blocked approach",
         "reason": "keep the affected junction safe while reducing queue growth",
         "fallback_to_baseline": False,
@@ -98,6 +100,8 @@ def _snapshot(
     state: str = "RUNNING",
     events: tuple[EventSnapshot, ...] = (),
     ai_takeover: AIControlStatus | None = None,
+    intersection_ids: tuple[str, ...] = ("j1",),
+    primary_intersection: str | None = None,
 ) -> SimulationSnapshot:
     lane = LaneRuntimeSnapshot(
         vehicle_count=8,
@@ -114,12 +118,20 @@ def _snapshot(
         signal_state="r",
         current_allowed_speed_mps=13.9,
     )
-    intersection = IntersectionRuntimeSnapshot(
+    primary = primary_intersection or intersection_ids[0]
+    primary_intersection = IntersectionRuntimeSnapshot(
         current_phase=0,
         pending_phase=None,
         stage="GREEN",
         stage_elapsed=10.0,
         lanes={"edge_a_0": lane},
+    )
+    other_intersection = IntersectionRuntimeSnapshot(
+        current_phase=0,
+        pending_phase=None,
+        stage="GREEN",
+        stage_elapsed=10.0,
+        lanes={},
     )
     return SimulationSnapshot(
         session_id=session_id,
@@ -129,7 +141,12 @@ def _snapshot(
         duration_seconds=120.0,
         progress=elapsed / 120.0,
         official_time="08:00:10",
-        intersections={"j1": intersection},
+        intersections={
+            intersection_id: (
+                primary_intersection if intersection_id == primary else other_intersection
+            )
+            for intersection_id in intersection_ids
+        },
         events=events,
         metrics=SessionMetrics(active_vehicles=8),
         ai_takeover=ai_takeover or AIControlStatus(),
@@ -368,22 +385,26 @@ class _BrokenRetriever:
         raise RuntimeError("RAG unavailable")
 
 
-def _stub_observation_v2(monkeypatch) -> None:
+def _stub_observation_v2(
+    monkeypatch,
+    region: tuple[str, ...] = ("j1",),
+    scope: str = "xiongan_20",
+) -> None:
     monkeypatch.setattr(
         "backend.app.services.takeover_orchestrator.build_live_observation_v2",
         lambda *args, **kwargs: {
             "observation_version": "traffic_observation_v2",
             "scene": {
                 "period": "morning_peak",
-                "scope": "xiongan_20",
+                "scope": scope,
                 "t": 10.0,
                 "seed": 0,
             },
             "event": {"event_type": "accident"},
-            "controlled_region": ["j1"],
+            "controlled_region": list(region),
             "ix": {},
             "net": {"veh": 8, "halt": 4, "speed": 2.0},
-            "allowed_phases": {"j1": [0, 1]},
+            "allowed_phases": {intersection_id: [0, 1] for intersection_id in region},
         },
     )
 
@@ -421,13 +442,14 @@ class _FakeRetriever:
 
 
 class _FakeProvider:
-    def __init__(self) -> None:
+    def __init__(self, plan: dict | None = None) -> None:
         self.messages = []
+        self.plan = plan or _plan()
 
     def complete(self, messages, **kwargs):
         self.messages.append((messages, kwargs))
         return LLMCompletion(
-            message=AssistantMessage(content=__import__("json").dumps(_plan()))
+            message=AssistantMessage(content=json.dumps(self.plan))
         )
 
 
@@ -923,3 +945,127 @@ def test_replan_signature_ignores_fallback_and_unusable_prediction() -> None:
     assert unavailable[2] is False
     assert fallback[1] == second[1]
     assert unavailable[1] == second[1]
+
+
+EAST_DENSE_IDS = ("demo_3", "demo_5", "demo_6", "demo_9")
+WEST_DENSE_IDS = ("demo_14", "demo_15", "demo_19")
+XIONGAN_20_IDS = tuple(f"demo_{index}" for index in range(1, 21))
+
+
+def _hop_limited_topology(primary: str, neighbor: str) -> RoadTopology:
+    """1-hop topology that cannot reach every intersection in a compact preset."""
+
+    return RoadTopology(
+        lane_to_intersection={"edge_a_0": primary},
+        upstream_intersections={primary: (neighbor,)},
+        downstream_intersections={primary: (neighbor,)},
+    )
+
+
+def test_allowed_scope_uses_full_session_for_compact_presets() -> None:
+    event = _active_event()
+    orchestrator = TakeoverOrchestrator(
+        manager=_FakeManager(_snapshot(events=(event,))),
+        settings=_control_settings(),
+        history_repository=InMemoryHistoryRepository(),
+    )
+    orchestrator.configure(topology=_hop_limited_topology("demo_3", "demo_5"))
+
+    east = orchestrator.allowed_scope(
+        _snapshot(events=(event,), intersection_ids=EAST_DENSE_IDS),
+        event,
+    )
+    west_orchestrator = TakeoverOrchestrator(
+        manager=_FakeManager(_snapshot(events=(event,))),
+        settings=_control_settings(),
+        history_repository=InMemoryHistoryRepository(),
+    )
+    west_orchestrator.configure(topology=_hop_limited_topology("demo_14", "demo_15"))
+    west = west_orchestrator.allowed_scope(
+        _snapshot(events=(event,), intersection_ids=WEST_DENSE_IDS),
+        event,
+    )
+
+    assert east == EAST_DENSE_IDS
+    assert west == WEST_DENSE_IDS
+
+
+def test_allowed_scope_still_uses_hops_on_full_network() -> None:
+    event = _active_event()
+    orchestrator = TakeoverOrchestrator(
+        manager=_FakeManager(_snapshot(events=(event,))),
+        settings=_control_settings(),
+        history_repository=InMemoryHistoryRepository(),
+    )
+    orchestrator.configure(topology=_hop_limited_topology("demo_3", "demo_5"))
+
+    scope = orchestrator.allowed_scope(
+        _snapshot(
+            events=(event,),
+            intersection_ids=XIONGAN_20_IDS,
+            primary_intersection="demo_3",
+        ),
+        event,
+    )
+
+    assert scope == ("demo_3", "demo_5")
+
+
+def test_orchestrator_installs_full_east_dense_plan(monkeypatch) -> None:
+    _stub_observation_v2(monkeypatch, region=EAST_DENSE_IDS, scope="east_dense")
+    event = _active_event()
+    snapshot = _snapshot(events=(event,), intersection_ids=EAST_DENSE_IDS)
+    manager = _FakeManager(snapshot)
+    provider = _FakeProvider(_plan(*EAST_DENSE_IDS))
+    orchestrator = TakeoverOrchestrator(
+        manager=manager,
+        settings=_control_settings(),
+        history_repository=InMemoryHistoryRepository(),
+    )
+    orchestrator.configure(
+        provider=provider,
+        topology=_hop_limited_topology("demo_3", "demo_5"),
+    )
+
+    orchestrator.observe(snapshot, intelligence={"event_detection": {}})
+
+    assert manager.fallbacks == []
+    assert len(manager.installed) == 1
+    assert manager.installed[0][1]["allowed_scope"] == list(EAST_DENSE_IDS)
+    assert manager.installed[0][1]["plan"]["controlled_intersections"] == list(
+        EAST_DENSE_IDS
+    )
+
+
+def test_orchestrator_installs_full_west_dense_plan(monkeypatch) -> None:
+    _stub_observation_v2(monkeypatch, region=WEST_DENSE_IDS, scope="west_dense")
+    event = _active_event()
+    snapshot = _snapshot(events=(event,), intersection_ids=WEST_DENSE_IDS)
+    manager = _FakeManager(snapshot)
+    provider = _FakeProvider(_plan(*WEST_DENSE_IDS))
+    orchestrator = TakeoverOrchestrator(
+        manager=manager,
+        settings=_control_settings(),
+        history_repository=InMemoryHistoryRepository(),
+    )
+    orchestrator.configure(
+        provider=provider,
+        topology=_hop_limited_topology("demo_14", "demo_15"),
+    )
+
+    orchestrator.observe(snapshot, intelligence={"event_detection": {}})
+
+    assert manager.fallbacks == []
+    assert len(manager.installed) == 1
+    assert manager.installed[0][1]["allowed_scope"] == list(WEST_DENSE_IDS)
+
+
+def test_clip_plan_keeps_in_scope_intersections() -> None:
+    plan = AIControlPlan.from_mapping(_plan("demo_3", "demo_5", "demo_99"))
+    clipped = _clip_plan_to_scope(
+        plan,
+        ("demo_3", "demo_5"),
+        config=AIControlConfig(),
+    )
+    assert clipped.controlled_intersections == ("demo_3", "demo_5")
+    assert set(clipped.signal_plan) == {"demo_3", "demo_5"}

@@ -22,6 +22,10 @@ LANE_FIELDS = (
 
 V2_INCOMING_ROLES = frozenset({"incoming", "both", ""})
 
+# Compact presets (east_dense / west_dense) expose the whole session as the
+# control region.  Keep this threshold shared with live takeover validation.
+FULL_REGION_INTERSECTION_LIMIT = 6
+
 
 def _lane_payload(lane: Mapping[str, Any]) -> dict[str, Any]:
     return {key: lane.get(key) for key in LANE_FIELDS if key in lane}
@@ -112,21 +116,50 @@ def event_status_at(spec: ScenarioSpec, simulation_time: float) -> str:
     return "active"
 
 
+def resolve_controlled_region(
+    intersection_ids: Sequence[str],
+    seeds: Sequence[str],
+    neighbors: Mapping[str, Sequence[str]],
+    scope_hops: int,
+) -> tuple[str, ...]:
+    """Resolve the intersections Traffic-Qwen may control.
+
+    Compact sessions stay region-wide so the live takeover validator matches
+    Observation V2.  Larger networks still expand a few hops from the event.
+    """
+
+    allowed = {str(item) for item in intersection_ids}
+    if not allowed:
+        return ()
+    if len(allowed) <= FULL_REGION_INTERSECTION_LIMIT:
+        return tuple(sorted(allowed))
+    seed_tuple = tuple(str(item) for item in seeds if str(item) in allowed)
+    if not seed_tuple:
+        seed_tuple = tuple(sorted(allowed)[:1])
+    neighbor_map = {
+        str(key): tuple(str(item) for item in value)
+        for key, value in neighbors.items()
+    }
+    controlled = expand_scope(seed_tuple, scope_hops, neighbor_map, allowed)
+    return controlled or tuple(sorted(allowed))
+
+
 def _controlled_region(
     spec: ScenarioSpec,
     neighbors: Mapping[str, Sequence[str]],
     scope_hops: int,
 ) -> tuple[str, ...]:
-    allowed = set(spec.intersection_ids)
-    if len(allowed) <= 6:
-        return tuple(sorted(allowed))
     seeds = (
         (spec.event.intersection_id,)
-        if spec.event.intersection_id in allowed
-        else tuple(sorted(allowed)[:1])
+        if spec.event.intersection_id
+        else ()
     )
-    controlled = expand_scope(seeds, scope_hops, neighbors, allowed)
-    return controlled or tuple(sorted(allowed))
+    return resolve_controlled_region(
+        spec.intersection_ids,
+        seeds,
+        neighbors,
+        scope_hops,
+    )
 
 
 def build_observation(

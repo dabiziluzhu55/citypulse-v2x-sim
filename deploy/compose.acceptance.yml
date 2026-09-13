@@ -49,8 +49,6 @@ services:
     env_file: ${CITYPULSE_CONFIG_DIR}/browser.env
     ports:
       - 127.0.0.1:18080:80
-    volumes:
-      - ${CITYPULSE_MEDIA_DIR}:/usr/share/nginx/html/roadside-media:ro
     depends_on:
       backend:
         condition: service_healthy

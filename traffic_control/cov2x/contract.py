@@ -36,6 +36,14 @@ TEMPORARY_CAP_PARENT_SHA256 = (
     "8f6674465ce44150b83e5e4789ccecdddb7471e39e35a4b9eb40801e44dfe271"
 )
 
+OFFPEAK_GUARD_V2_CHECKPOINT_CONTRACT_VERSION = 4
+OFFPEAK_GUARD_V2_MODEL_ALIAS = "cov2x_offpeak_guard_v2_final"
+OFFPEAK_GUARD_V2_MODEL_FILENAME = "cov2x_offpeak_guard_v2_final.pt"
+OFFPEAK_GUARD_V2_CHECKPOINT_SHA256 = (
+    "25a5df603b851a34ca3507f0547b0c9c6013683d31b54b53500146cfea898946"
+)
+OFFPEAK_GUARD_V2_POLICY_GENERATION = 54
+
 TRAINING_INTERSECTION_IDS: tuple[str, ...] = tuple(
     f"demo_{i}" for i in range(1, 21)
 )
@@ -240,3 +248,66 @@ def load_temporary_cap_contract(
         "manifest": manifest,
     }
     return TEMPORARY_CAP_CHECKPOINT_CONTRACT_VERSION, view
+
+
+def load_offpeak_guard_v2_contract(
+    checkpoint_path: str | Path,
+    checkpoint: Mapping[str, Any],
+) -> tuple[int, dict[str, Any]]:
+    """Validate the exact final generation-54 off-peak guard checkpoint."""
+    path = Path(checkpoint_path)
+    if not isinstance(checkpoint, Mapping):
+        raise ValueError("CoV2X off-peak guard checkpoint must be a dictionary")
+    actual_sha256 = checkpoint_sha256(path)
+    if actual_sha256 != OFFPEAK_GUARD_V2_CHECKPOINT_SHA256:
+        raise ValueError("CoV2X off-peak guard checkpoint SHA-256 mismatch")
+    expected = {
+        "candidate_id": TEMPORARY_CAP_RUNTIME_CANDIDATE_ID,
+        "format_version": TEMPORARY_CAP_CHECKPOINT_FORMAT_VERSION,
+        "policy_generation": OFFPEAK_GUARD_V2_POLICY_GENERATION,
+        "actor_update_schedule_id": TEMPORARY_CAP_ACTOR_UPDATE_SCHEDULE_ID,
+        "vehicle_action_semantics": TEMPORARY_CAP_ACTION_SEMANTICS,
+        "parent_checkpoint_sha256": TEMPORARY_CAP_PARENT_SHA256,
+        "frozen_actor_roles": ["cloud", "road"],
+        "trainable_actor_roles_at_save": ["vehicle"],
+        "critic_lineage": "fresh_role_intersection_movement_context_v1",
+        "local_credit_reward_semantics": (
+            "movement_local_time_loss_rate_per_vehicle_v1"
+        ),
+        "initial_deterministic_vehicle_mean": 0.0,
+        "delta_v_max_speed_ceiling_fraction": 0.1,
+        "native_release_tolerance_mps": None,
+        "offpeak_guard_v2": {
+            "enabled": True,
+            "periods": "off_peak",
+            "road_fallback": "strong_mp",
+        },
+    }
+    for field, value in expected.items():
+        if checkpoint.get(field) != value:
+            raise ValueError(f"CoV2X off-peak guard checkpoint {field} mismatch")
+    for component in ("road_actor", "cloud_actor", "vehicle_actor", "critic"):
+        if not isinstance(checkpoint.get(component), Mapping):
+            raise ValueError(f"CoV2X off-peak guard checkpoint missing {component}")
+    schema = checkpoint.get("component_schema")
+    if not isinstance(schema, Mapping) or set(schema) != {
+        "road", "cloud", "vehicle", "critic"
+    }:
+        raise ValueError("CoV2X off-peak guard component schema mismatch")
+    if set(checkpoint.get("optimizer_roles", ())) != {
+        "road", "cloud", "vehicle", "critic"
+    }:
+        raise ValueError("CoV2X off-peak guard optimizer role set mismatch")
+    view = {
+        "checkpoint_contract_version": OFFPEAK_GUARD_V2_CHECKPOINT_CONTRACT_VERSION,
+        "checkpoint_filename": path.name,
+        "sha256": actual_sha256,
+        "format_version": int(checkpoint["format_version"]),
+        "model_family": "temporary_cap_offpeak_guard_v2",
+        "candidate_id": checkpoint["candidate_id"],
+        "policy_generation": int(checkpoint["policy_generation"]),
+        "actor_update_schedule_id": checkpoint["actor_update_schedule_id"],
+        "vehicle_action_semantics": checkpoint["vehicle_action_semantics"],
+        "offpeak_guard_v2": dict(checkpoint["offpeak_guard_v2"]),
+    }
+    return OFFPEAK_GUARD_V2_CHECKPOINT_CONTRACT_VERSION, view

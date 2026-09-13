@@ -163,10 +163,10 @@ Redis Backend 不加载 SUMO 内核；道路 GeoJSON 在 SUMO 环境离线生成
 
 `traffic_control`由仿真的Worker进程内加载
 
-当前仓库提供 `deploy/compose.acceptance.yml`，用于 Frontend、Backend、SUMO Worker 和 Redis 的独立 SSH 验收部署；`compose.redis.yml` 保留用于原分布式运行方式。frontend 镜像由 `frontend/Dockerfile` 构建静态资源，**不要把 `roadside_media/` 打进镜像**。路侧 MP4 以只读 volume 挂载：
+当前仓库提供 `deploy/compose.acceptance.yml`，用于 Frontend、Backend、SUMO Worker 和 Redis 的独立 SSH 验收部署；`compose.redis.yml` 保留用于原分布式运行方式。frontend 镜像由 `frontend/Dockerfile` 构建静态资源，fix4 将选定的预编码 MP4 内置到前端镜像。构建前将 `roadside_media/encoded/demo_14.mp4`、`demo_15.mp4`、`demo_19.mp4` 复制到 `frontend/roadside-media/`；不打包原始采集帧。镜像内路径：
 
 ```text
-./roadside_media/encoded  →  /usr/share/nginx/html/roadside-media:ro
+frontend/roadside-media  →  /usr/share/nginx/html/roadside-media
 ```
 
 浏览器通过 `/roadside-media/demo_14.mp4` 等相对路径访问。转码与挂载说明见 [roadside_media/README.md](roadside_media/README.md)。
@@ -180,10 +180,12 @@ Redis Backend 不加载 SUMO 内核；道路 GeoJSON 在 SUMO 环境离线生成
 - 车流与OD:[docs/traffic_demand.md](docs/traffic_demand.md)
 - 环境依赖:[docs/setup.md](docs/setup.md)
 
-### 部署交付（develop / fix3）
+### 部署交付
 
 - [详细部署运行说明](docs/deployment/deployment-runbook.md)
 - [部署版改动与优化说明](docs/deployment/deployed-vs-original-change-summary.md)
 - [正确性与交通流优化验证](docs/deployment/fix3-correctness-and-traffic-optimization.md)
 - 算法执行源码位于 `traffic_control/`、`algorithms/`，本次交通流生成优化位于 `simulation/sumo/building/build_traffic.py`。既有算法源码随分支保留，未改动的算法不重复复制。
 - 真实地图 Key、认证文件、模型和大体积运行数据不随本次提交新增；恢复运行所需交接项见部署说明第 8 节。
+
+- [fix4 上游同步与内置视频发布说明](docs/deployment/fix4-upstream-and-embedded-media.md)
