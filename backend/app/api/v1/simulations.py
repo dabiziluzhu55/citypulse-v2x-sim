@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from queue import Empty
 
 from fastapi import APIRouter, Depends, Query, Response, WebSocket, WebSocketDisconnect, status
+from simulation.sumo.engine.session import UnknownSessionError
 
 from ...schemas.events import EventCreatedResponse, EventRequest
 from ...schemas.ai_control import AIControlStatus
@@ -29,6 +30,9 @@ from ..deps import get_simulation_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Application-specific close: the frontend must stop reconnecting a vanished session.
+UNKNOWN_SESSION_WS_CLOSE_CODE = 4004
 
 
 @router.get("/simulations", response_model=SimulationSessionListResponse)
@@ -222,6 +226,10 @@ async def simulation_stream(websocket: WebSocket, session_id: str) -> None:
     service: SimulationService = app.state.simulation_service
     try:
         subscription = service.subscribe(session_id)
+    except UnknownSessionError:
+        logger.info("WebSocket subscribe ignored unknown session %s", session_id)
+        await websocket.close(code=UNKNOWN_SESSION_WS_CLOSE_CODE, reason="Unknown session")
+        return
     except Exception:
         logger.exception("WebSocket subscribe failed for session %s", session_id)
         await websocket.close(code=1011)

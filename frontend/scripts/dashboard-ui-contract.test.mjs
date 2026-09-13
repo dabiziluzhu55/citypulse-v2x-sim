@@ -110,7 +110,7 @@ test('keeps the viewing-intersection selector available while a session is activ
 })
 
 test('uses the labeled dark 2D map and follows the active intersection safely', () => {
-  assert.match(basemapSource, /DEFAULT_APP_BASEMAP:\s*BasemapVariant\s*=\s*'carto_dark'/)
+  assert.match(basemapSource, /DEFAULT_APP_BASEMAP:\s*BasemapVariant\s*=\s*CARTO_BASEMAP_KEY \? 'carto_dark' : 'osm'/)
   assert.match(backgroundMapSource, /useSimulationMap\(activeIntersectionId\)/)
   assert.match(backgroundMapSource, /duration:\s*700/)
   assert.match(backgroundMapSource, /当前路口路网加载失败，已保留深色底图定位/)

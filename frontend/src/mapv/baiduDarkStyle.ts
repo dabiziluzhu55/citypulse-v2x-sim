@@ -1,7 +1,7 @@
 export const BAIDU_DARK_BASE_STYLE = [
-  ['land', 'geometry', '#122e2bff', 'on'],
-  ['water', 'geometry', '#0a2551ff', 'on'],
-  ['green', 'geometry', '#1a4443ff', 'on'],
+  ['land', 'geometry', '#102820ff', 'on'],
+  ['water', 'geometry', '#1a5c8cff', 'on'],
+  ['green', 'geometry', '#1c5a3cff', 'on'],
   ['manmade', 'geometry', '#142825ff', 'on'],
   ['road', 'geometry', '#202c46ff', 'on'],
   ['road', 'geometry.stroke', '#394a67ff', 'on'],

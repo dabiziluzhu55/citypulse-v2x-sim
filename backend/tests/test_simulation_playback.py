@@ -2,6 +2,10 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+from starlette.websockets import WebSocketDisconnect
+
+from backend.app.api.v1.simulations import UNKNOWN_SESSION_WS_CLOSE_CODE
 from simulation.sumo.engine.session import SessionMetrics, SimulationSnapshot, UnknownSessionError
 
 
@@ -108,3 +112,20 @@ def test_pause_requires_artifacts(degraded_client) -> None:
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "ARTIFACTS_NOT_READY"
+
+
+def test_websocket_unknown_session_closes_without_internal_error(
+    client,
+    mock_manager: MagicMock,
+) -> None:
+    mock_manager.subscribe.side_effect = UnknownSessionError(
+        "Unknown session: 21b4af59-fadb-42f4-a18e-dd11fce04755"
+    )
+
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(
+            "/api/v1/simulations/21b4af59-fadb-42f4-a18e-dd11fce04755/stream"
+        ) as websocket:
+            websocket.receive_text()
+
+    assert exc_info.value.code == UNKNOWN_SESSION_WS_CLOSE_CODE

@@ -20,6 +20,8 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_JUNCTION_MARKERS?: string
   readonly VITE_SHOWCASE_WATER_GEOJSON_URL?: string
   readonly VITE_SHOWCASE_GREEN_GEOJSON_URL?: string
+  readonly VITE_FULL_LANDCOVER_GREEN_URL?: string
+  readonly VITE_FULL_LANDCOVER_WATER_URL?: string
   readonly VITE_SHOWCASE_URBAN_GEOJSON_URL?: string
   readonly VITE_SHOWCASE_BUILDINGS_GEOJSON_URL?: string
   readonly VITE_SHOWCASE_LABEL_GEOJSON_URL?: string

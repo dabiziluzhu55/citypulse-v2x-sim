@@ -7,7 +7,7 @@ import {
   startSimulation,
   stopSimulation,
 } from '../api/simulation'
-import { simulationApiErrorMessage } from '../api/client'
+import { ApiError, simulationApiErrorMessage } from '../api/client'
 import {
   ACTIVE_SESSION_ID_KEY,
   ACTIVE_SIMULATION_CONTEXT_KEY,
@@ -27,6 +27,7 @@ import {
 import {
   connectSimulationStream,
   registerSimulationStreamConnectionListener,
+  registerSimulationStreamGoneListener,
   registerSimulationStreamHandler,
 } from '../utils/runWebSocketManager'
 import type {
@@ -98,8 +99,21 @@ function readStoredSimulationContext(): StoredSimulationContext | null {
   return null
 }
 
-function isMissingSessionError(message: string): boolean {
-  return /(^|\s)404(\s|$)|not found|unknown session|不存在|未找到/i.test(message)
+function isMissingSessionError(cause: unknown): boolean {
+  if (cause instanceof ApiError) {
+    return cause.status === 404 || cause.code === 'UNKNOWN_SESSION'
+  }
+  const message = cause instanceof Error ? cause.message : String(cause ?? '')
+  return /(^|\s)404(\s|$)|not found|unknown session|UNKNOWN_SESSION|不存在|未找到/i.test(message)
+}
+
+function expireMissingSession() {
+  if (!sessionId.value && !localStorage.getItem(ACTIVE_SESSION_ID_KEY)) {
+    connectSimulationStream('')
+    return
+  }
+  bindSession('')
+  statusError.value = '仿真会话已失效，请重新启动仿真'
 }
 
 const sessionId = ref(localStorage.getItem(ACTIVE_SESSION_ID_KEY) ?? '')
@@ -338,29 +352,11 @@ async function pollOnce() {
     if (version !== requestVersion) {
       return
     }
-    const message = err instanceof Error ? err.message : '获取仿真状态失败'
-    if (isMissingSessionError(message)) {
-      stopPolling()
-      localStorage.removeItem(ACTIVE_SESSION_ID_KEY)
-      localStorage.removeItem(ACTIVE_SIMULATION_CONTEXT_KEY)
-      clearPersistedRuntimeDisturbances()
-      connectSimulationStream('')
-      sessionId.value = ''
-      snapshot.value = null
-      trafficView.value = null
-      acceptedState.value = null
-      resetPlaybackRateTracking()
-      sessionIntersectionId.value = ''
-      activeScenarioPresetId.value = ''
-      activeControlMode.value = ''
-      activePlaybackSpeed.value = 1
-      activeWebsocketUrl.value = ''
-      activeSimulationPeriod.value = ''
-      restoredSession.value = false
-      statusError.value = '仿真会话已失效，请重新启动仿真'
+    if (isMissingSessionError(err)) {
+      expireMissingSession()
       return
     }
-    statusError.value = message
+    statusError.value = err instanceof Error ? err.message : '获取仿真状态失败'
   } finally {
     if (pollAbortController === abortController) pollAbortController = null
     pollInFlight = false
@@ -511,6 +507,9 @@ function ensureInitialized() {
     } else if (sessionId.value && !isTerminal(snapshot.value?.state)) {
       startPolling()
     }
+  })
+  registerSimulationStreamGoneListener(() => {
+    expireMissingSession()
   })
 
   if (sessionId.value) {

@@ -150,3 +150,33 @@ test('extracts stable closed OSM green and water polygons', () => {
   assert.equal(result.green.features[0].geometry.type, 'Polygon')
   assert.equal(result.water.features[0].geometry.coordinates[0].length, 5)
 })
+
+test('extracts multipolygon outer rings as full-network water and green', () => {
+  const osm = `<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6">
+  <node id="1" lat="1" lon="1" />
+  <node id="2" lat="1" lon="2" />
+  <node id="3" lat="2" lon="2" />
+  <node id="4" lat="2" lon="1" />
+  <node id="5" lat="3" lon="3" />
+  <node id="6" lat="3" lon="4" />
+  <node id="7" lat="4" lon="4" />
+  <node id="8" lat="4" lon="3" />
+  <way id="100"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="1"/></way>
+  <way id="200"><nd ref="5"/><nd ref="6"/><nd ref="7"/><nd ref="8"/><nd ref="5"/></way>
+  <relation id="9">
+    <member type="way" ref="100" role="outer"/>
+    <tag k="type" v="multipolygon"/>
+    <tag k="natural" v="water"/>
+  </relation>
+  <relation id="10">
+    <member type="way" ref="200" role="outer"/>
+    <tag k="type" v="multipolygon"/>
+    <tag k="leisure" v="park"/>
+  </relation>
+</osm>`
+
+  const result = extractOsmLandcover(osm, { west: 0, south: 0, east: 10, north: 10 })
+  assert.deepEqual(result.water.features.map((feature) => feature.properties.osm_id), ['100'])
+  assert.deepEqual(result.green.features.map((feature) => feature.properties.osm_id), ['200'])
+})

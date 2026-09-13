@@ -3,6 +3,8 @@ import { recordSnapshotDecodeDiagnostics } from './simulationRuntimeDiagnostics.
 
 type MessageHandler = (message: SimulationWsMessage) => void
 
+export const UNKNOWN_SESSION_WS_CLOSE_CODE = 4004
+
 let socket: WebSocket | null = null
 let currentSessionId = ''
 let currentStreamUrl = ''
@@ -19,6 +21,7 @@ let decoderWorkerRetryAfterMs = 0
 let decodeGeneration = 0
 const handlers = new Set<MessageHandler>()
 const connectionListeners = new Set<(connected: boolean) => void>()
+const goneListeners = new Set<() => void>()
 
 interface StreamLocation {
   protocol: string
@@ -50,6 +53,16 @@ function notifyConnection(connected: boolean) {
   for (const listener of connectionListeners) {
     listener(connected)
   }
+}
+
+function notifySessionGone() {
+  for (const listener of goneListeners) {
+    listener()
+  }
+}
+
+export function isUnknownSessionStreamClose(code: number): boolean {
+  return code === UNKNOWN_SESSION_WS_CLOSE_CODE
 }
 
 function clearReconnectTimer() {
@@ -223,9 +236,16 @@ export function connectSimulationStream(sessionId: string, backendStreamUrl = ''
     socket?.close()
   }
 
-  socket.onclose = () => {
+  socket.onclose = (event) => {
     stopStreamWatchdog()
     notifyConnection(false)
+    if (isUnknownSessionStreamClose(event.code)) {
+      shouldReconnect = false
+      currentSessionId = ''
+      currentStreamUrl = ''
+      notifySessionGone()
+      return
+    }
     scheduleReconnect()
   }
 }
@@ -244,6 +264,13 @@ export function registerSimulationStreamConnectionListener(
   listener(Boolean(socket && socket.readyState === WebSocket.OPEN))
   return () => {
     connectionListeners.delete(listener)
+  }
+}
+
+export function registerSimulationStreamGoneListener(listener: () => void): () => void {
+  goneListeners.add(listener)
+  return () => {
+    goneListeners.delete(listener)
   }
 }
 

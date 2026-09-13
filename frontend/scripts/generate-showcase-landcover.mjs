@@ -50,6 +50,20 @@ function landcoverKind(tags) {
   return URBAN_LANDUSE.has(tags.landuse) ? 'urban' : null
 }
 
+function parseTags(body) {
+  return Object.fromEntries(
+    [...body.matchAll(/<tag\b([^>]*)\/?\s*>/g)].map((candidate) => {
+      const tag = attributes(candidate[1])
+      return [tag.k, tag.v]
+    }).filter(([key]) => key),
+  )
+}
+
+function resolveKind(tags) {
+  if (tags.building && tags.building !== 'no') return 'buildings'
+  return landcoverKind(tags)
+}
+
 function buildingHeight(tags) {
   const explicit = Number.parseFloat(String(tags.height ?? '').replace(',', '.'))
   if (Number.isFinite(explicit) && explicit > 0) return Math.min(120, Math.max(4, explicit))
@@ -69,35 +83,58 @@ export function extractOsmLandcover(osmXml, bounds) {
     }
   }
 
-  const features = { green: [], water: [], urban: [], buildings: [] }
-  // ponytail: the checked-in OSM uses ordinary closed ways here; add relation support only if needed.
+  const ways = new Map()
   for (const match of osmXml.matchAll(/<way\b([^>]*)>([\s\S]*?)<\/way>/g)) {
     const way = attributes(match[1])
     const body = match[2]
     const refs = [...body.matchAll(/<nd\b([^>]*)\/?\s*>/g)]
       .map((candidate) => attributes(candidate[1]).ref)
       .filter(Boolean)
-    if (!way.id || refs.length < 4 || refs[0] !== refs.at(-1)) continue
-    const tags = Object.fromEntries(
-      [...body.matchAll(/<tag\b([^>]*)\/?\s*>/g)].map((candidate) => {
-        const tag = attributes(candidate[1])
-        return [tag.k, tag.v]
-      }).filter(([key]) => key),
-    )
-    const kind = tags.building && tags.building !== 'no' ? 'buildings' : landcoverKind(tags)
-    if (!kind) continue
+    if (!way.id || refs.length < 2) continue
+    ways.set(way.id, {
+      id: way.id,
+      refs,
+      tags: parseTags(body),
+      closed: refs.length >= 4 && refs[0] === refs.at(-1),
+    })
+  }
+
+  const features = { green: [], water: [], urban: [], buildings: [] }
+  const seen = new Set()
+  const addPolygon = (id, kind, tags, refs) => {
+    if (!kind || seen.has(`${kind}:${id}`)) return
     const coordinates = refs.map((ref) => nodes.get(ref)).filter(Boolean)
-    if (coordinates.length !== refs.length || !polygonIntersectsBounds(coordinates, bounds)) continue
+    if (coordinates.length !== refs.length || !polygonIntersectsBounds(coordinates, bounds)) return
+    seen.add(`${kind}:${id}`)
     features[kind].push({
       type: 'Feature',
-      id: `way/${way.id}`,
+      id: `way/${id}`,
       properties: {
-        osm_id: way.id,
+        osm_id: id,
         class: kind === 'buildings' ? 'building' : kind,
         ...(kind === 'buildings' ? { height: buildingHeight(tags) } : {}),
       },
       geometry: { type: 'Polygon', coordinates: [coordinates] },
     })
+  }
+
+  for (const way of ways.values()) {
+    if (!way.closed) continue
+    addPolygon(way.id, resolveKind(way.tags), way.tags, way.refs)
+  }
+
+  for (const match of osmXml.matchAll(/<relation\b([^>]*)>([\s\S]*?)<\/relation>/g)) {
+    const body = match[2]
+    const tags = parseTags(body)
+    const kind = resolveKind(tags)
+    if (!kind) continue
+    for (const memberMatch of body.matchAll(/<member\b([^>]*)\/?\s*>/g)) {
+      const member = attributes(memberMatch[1])
+      if (member.type !== 'way' || (member.role && member.role !== 'outer')) continue
+      const way = ways.get(member.ref)
+      if (!way?.closed) continue
+      addPolygon(way.id, kind, tags, way.refs)
+    }
   }
 
   for (const kind of ['green', 'water', 'urban', 'buildings']) {
@@ -108,7 +145,7 @@ export function extractOsmLandcover(osmXml, bounds) {
     ))
   }
   const metadata = {
-    source: 'OpenStreetMap closed ways',
+    source: 'OpenStreetMap closed ways and multipolygon outers',
     bounds: [bounds.west, bounds.south, bounds.east, bounds.north],
   }
   return Object.fromEntries(
