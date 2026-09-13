@@ -1,4 +1,4 @@
-"""Deployment contract tests for the frozen update-24 CoV2X candidate."""
+"""Deployment contract tests for the final off-peak guard CoV2X candidate."""
 
 from __future__ import annotations
 
@@ -15,35 +15,34 @@ from traffic_control.cov2x.aliases import (
     resolve_model_path,
 )
 from traffic_control.cov2x.contract import (
-    TEMPORARY_CAP_CHECKPOINT_SHA256,
-    load_temporary_cap_contract,
+    OFFPEAK_GUARD_V2_CHECKPOINT_SHA256,
+    load_offpeak_guard_v2_contract,
 )
 from traffic_control.cov2x.test_joint_deploy import _metadata, _payload
 
 
-MODEL_ALIAS = "cov2x_g30_temp_cap_u24"
+MODEL_ALIAS = "cov2x_offpeak_guard_v2_final"
 
 
-def test_update24_alias_is_default_and_exact() -> None:
+def test_final_alias_is_default_and_exact() -> None:
     assert DEFAULT_MODEL_ALIAS == MODEL_ALIAS
     for scenario in ("xiongan_20", "east_dense", "west_dense"):
         assert default_model_alias_for(scenario) == MODEL_ALIAS
 
     model = resolve_model(MODEL_ALIAS)
     path = resolve_model_path(MODEL_ALIAS)
-    assert path.name == "cov2x_g30_temporary_cap_u24.pt"
-    assert model.adapter_module.endswith(".temporary_cap_u24")
+    assert path.name == "cov2x_offpeak_guard_v2_final.pt"
+    assert model.adapter_module.endswith(".offpeak_guard_v2_final")
 
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
-    version, view = load_temporary_cap_contract(
+    version, view = load_offpeak_guard_v2_contract(
         path,
         checkpoint,
-        manifest_path=model.manifest_path,
     )
-    assert version == 3
-    assert view["sha256"] == TEMPORARY_CAP_CHECKPOINT_SHA256
+    assert version == 4
+    assert view["sha256"] == OFFPEAK_GUARD_V2_CHECKPOINT_SHA256
     assert view["format_version"] == 9
-    assert view["policy_generation"] == 24
+    assert view["policy_generation"] == 54
     assert view["vehicle_action_semantics"] == (
         "temporary_base_relative_speed_cap_v1"
     )
@@ -52,7 +51,7 @@ def test_update24_alias_is_default_and_exact() -> None:
     )
 
 
-def test_package_dispatches_update24_through_protocol_2(monkeypatch) -> None:
+def test_package_dispatches_final_guard_through_protocol_2(monkeypatch) -> None:
     monkeypatch.setenv("COV2X_MODEL_ALIAS", MODEL_ALIAS)
     monkeypatch.setenv("COV2X_MODE", "eval")
     monkeypatch.delenv("COV2X_MODEL_PATH", raising=False)
@@ -62,7 +61,7 @@ def test_package_dispatches_update24_through_protocol_2(monkeypatch) -> None:
     assert response["ready"] is True
     assert response["candidate_id"] == "cov2x_temporary_speed_cap_final_v1"
     assert response["deployment_model_alias"] == MODEL_ALIAS
-    assert response["policy_generation"] == 24
+    assert response["policy_generation"] == 54
 
     decision = cov2x_pkg.step(_payload(0, 0.0))
     assert decision["protocol_version"] == "2.0"
@@ -81,7 +80,7 @@ def test_package_dispatches_update24_through_protocol_2(monkeypatch) -> None:
     assert "COV2X_MODEL_PATH" not in os.environ
 
 
-def test_update24_adapter_rejects_training_mode(monkeypatch) -> None:
+def test_final_adapter_rejects_training_mode(monkeypatch) -> None:
     monkeypatch.setenv("COV2X_MODEL_ALIAS", MODEL_ALIAS)
     monkeypatch.setenv("COV2X_MODE", "train")
     import traffic_control.cov2x as cov2x_pkg
